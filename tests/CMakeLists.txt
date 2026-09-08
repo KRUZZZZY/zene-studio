@@ -10,6 +10,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
+	src/core/MixerAbRegressionTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/TimelineTest.cpp
@@ -35,6 +36,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 endforeach()
+
+# D1 A/B render regression (task #587, Phase D): the reference render was
+# captured and committed before the volume-multiply reorder.
+target_compile_definitions(MixerAbRegressionTest PRIVATE
+	MIXER_AB_REFERENCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/reference/mixer-ab-render.raw"
+)
 
 # ---------------------------------------------------------------------------
 # Part C (task #585) - behaviour-preservation harness for the AudioPorts
