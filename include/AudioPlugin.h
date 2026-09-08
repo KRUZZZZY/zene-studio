@@ -225,6 +225,11 @@ public:
 	}
 
 protected:
+	// `Effect` declares its own `processImpl(SampleFrame*, f_cnt_t)`, which would
+	// otherwise hide the planar `AudioProcessingMethod` overload. Merge both into
+	// this class scope so effect plugins can implement the multi-channel interface.
+	using AudioProcessingMethod<Effect, settings>::processImpl;
+
 	auto audioPorts() -> AudioPortsT& { return m_audioPorts; }
 	auto audioPorts() const -> const AudioPortsT& { return m_audioPorts; }
 
@@ -277,12 +282,12 @@ protected:
 
 		switch (status)
 		{
-			case ProcessStatus::Continue:
+			case lmms::ProcessStatus::Continue:
 				break;
-			case ProcessStatus::ContinueIfNotQuiet:
+			case lmms::ProcessStatus::ContinueIfNotQuiet:
 				handleAutoQuit(router.silentOutput());
 				break;
-			case ProcessStatus::Sleep:
+			case lmms::ProcessStatus::Sleep:
 				goToSleep();
 				processUnlock();
 				return false;
