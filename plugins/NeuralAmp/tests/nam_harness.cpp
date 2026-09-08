@@ -576,7 +576,13 @@ int main(int argc, char** argv)
 	const double normError = std::sqrt(errNorm) / (std::sqrt(normIn) + 1e-30);
 	const double rmsGain = outRms / (inRms + 1e-30);
 
-	const bool coloursOk = (normError > 0.05) && (std::fabs(correlation) > 0.3);
+	// (c) The model must actually change the signal (not a pass-through).
+	// NOTE: correlation(in, out) is reported below but is NOT a pass criterion:
+	// high-gain captures legitimately decorrelate from their input. Measured on
+	// the upstream reference renders of the two shipped BossWN models:
+	// corr(in, ref) = 0.028067 (nano) and -0.068227 (standard) -- i.e. the
+	// reference output itself would fail any |corr| > 0.3 test.
+	const bool coloursOk = (normError > 0.05);
 
 	// Harmonic content at the fundamental and its first overtones.
 	const double f0 = 110.0;
@@ -633,7 +639,8 @@ int main(int argc, char** argv)
 		opt.sampleRate, specGate ? "PASS" : "FAIL", cpuPercent);
 	std::printf("      cpu stretch target (<1%% of one core): %s\n",
 		stretchGate ? "PASS" : "FAIL");
-	std::printf("  (c) signal colouring: %s\n", coloursOk ? "PASS" : "FAIL");
+	std::printf("  (c) signal colouring (not a pass-through): %s (corr(in,out)=%.4f, informational)\n",
+		coloursOk ? "PASS" : "FAIL", correlation);
 	std::printf("SUMMARY cpu_per_block_us=%.2f cpu_percent=%.4f rms_gain=%.4f "
 	            "correlation=%.4f norm_error=%.4f finite=%d nonzero=%d\n",
 		meanUs, cpuPercent, rmsGain, correlation, normError,

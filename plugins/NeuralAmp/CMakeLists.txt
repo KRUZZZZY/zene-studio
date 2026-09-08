@@ -8,9 +8,10 @@ SET(NEURALAMP_SOURCES
 	nam/NamModelLoader.cpp
 )
 
-# RTNeural (MIT, header-only) is vendored under rtneural/ and supplies the
-# linear-algebra backend (Eigen, MPL2) and the JSON parser (nlohmann/json, MIT)
-# used by the in-plugin .nam WaveNet engine.
+# RTNeural (BSD-3-Clause, header-only) is vendored under rtneural/. This plugin
+# uses only two of its vendored submodules: Eigen (MPL-2.0, linear algebra) and
+# nlohmann/json (MIT, .nam parsing). See LICENSE-NOTICE.md for the inventory.
+# RTNeural's own layer code is not used (it has no .nam loader).
 INCLUDE_DIRECTORIES(BEFORE
 	"${CMAKE_CURRENT_SOURCE_DIR}"
 	"${CMAKE_CURRENT_SOURCE_DIR}/rtneural/modules/Eigen"
@@ -23,7 +24,6 @@ BUILD_PLUGIN(neuralamp
 		NeuralAmpEffect.h
 		NeuralAmpControls.h
 		NeuralAmpControlDialog.h
-	EMBEDDED_RESOURCES artwork.svg
 )
 
 TARGET_LINK_LIBRARIES(neuralamp m)
@@ -31,3 +31,6 @@ TARGET_LINK_LIBRARIES(neuralamp m)
 # The inference loops are the hot path; make sure they are optimised even if the
 # host build type is not Release.
 TARGET_COMPILE_OPTIONS(neuralamp PRIVATE $<$<CONFIG:Debug>:-O2>)
+
+# Headless verification/benchmark binaries (EXCLUDE_FROM_ALL, see tests/).
+ADD_SUBDIRECTORY(tests)
