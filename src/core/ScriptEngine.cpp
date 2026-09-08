@@ -243,10 +243,12 @@ private:
 		state.instructions += state.hookStep;
 		if (state.instructions > state.budget)
 		{
-			luaL_error(L, "instruction budget exceeded (%llu instructions, budget %llu)"
+			// lua_pushfstring only understands %d, %I, %f, %p, %s, %U, %c and
+			// %%; %llu is rejected as an invalid option ('%l').
+			luaL_error(L, "instruction budget exceeded (%I instructions, budget %I)"
 					" - script aborted",
-					static_cast<unsigned long long>(state.instructions),
-					static_cast<unsigned long long>(state.budget));
+					static_cast<lua_Integer>(state.instructions),
+					static_cast<lua_Integer>(state.budget));
 		}
 	}
 
