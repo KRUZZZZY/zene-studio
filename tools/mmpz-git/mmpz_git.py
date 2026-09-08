@@ -345,11 +345,11 @@ def diff_dom(a, b, path, ops, moves):
           for i in range(b.attributes.length)}
     for k in sorted(set(an) | set(bn)):
         if k not in an:
-            ops.append("  + %s @%s = %s" % (_path(path, a), k, bn[k]))
+            ops.append("  + %s @%s = %s" % (path, k, bn[k]))
         elif k not in bn:
-            ops.append("  - %s @%s (was %s)" % (_path(path, a), k, an[k]))
+            ops.append("  - %s @%s (was %s)" % (path, k, an[k]))
         elif an[k] != bn[k]:
-            ops.append("  ~ %s @%s: %s -> %s" % (_path(path, a), k, an[k], bn[k]))
+            ops.append("  ~ %s @%s: %s -> %s" % (path, k, an[k], bn[k]))
 
     # children, keyed
     am, bm = keyed_children(a), keyed_children(b)
@@ -399,7 +399,8 @@ def cmd_diff(args) -> int:
     da, db = parse(xa), parse(xb)
     ops: list = []
     moves: list = []
-    diff_dom(da.documentElement, db.documentElement, "", ops, moves)
+    diff_dom(da.documentElement, db.documentElement,
+             "/" + _label(da.documentElement), ops, moves)
     lines = ["# mmpz-git diff: %s -> %s" % (args.a, args.b)]
     adds = sum(1 for o in ops if o.startswith("  +"))
     rems = sum(1 for o in ops if o.startswith("  -"))
