@@ -58,11 +58,11 @@ private:
 	static constexpr int RNNOISE_FRAME_SIZE = 480;
 
 	// Input accumulation buffer (mono)
-	float m_inputBuf[RNNOISE_FRAME_SIZE];
+	float m_inputBuf[RNNOISE_FRAME_SIZE] = {};
 	int m_inputCount;
 
 	// Output buffer for the last processed frame
-	float m_outputBuf[RNNOISE_FRAME_SIZE];
+	float m_outputBuf[RNNOISE_FRAME_SIZE] = {};
 	int m_outputPos;
 	bool m_hasOutput;
 
