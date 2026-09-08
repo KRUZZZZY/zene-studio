@@ -225,6 +225,11 @@ public:
 	}
 
 protected:
+	// `Effect` declares its own `processImpl(SampleFrame*, f_cnt_t)`, which would
+	// otherwise hide the planar `AudioProcessingMethod` overload. Merge both into
+	// this class scope so effect plugins can implement the multi-channel interface.
+	using AudioProcessingMethod<Effect, settings>::processImpl;
+
 	auto audioPorts() -> AudioPortsT& { return m_audioPorts; }
 	auto audioPorts() const -> const AudioPortsT& { return m_audioPorts; }
 
@@ -277,12 +282,12 @@ protected:
 
 		switch (status)
 		{
-			case ProcessStatus::Continue:
+			case lmms::ProcessStatus::Continue:
 				break;
-			case ProcessStatus::ContinueIfNotQuiet:
+			case lmms::ProcessStatus::ContinueIfNotQuiet:
 				handleAutoQuit(router.silentOutput());
 				break;
-			case ProcessStatus::Sleep:
+			case lmms::ProcessStatus::Sleep:
 				goToSleep();
 				processUnlock();
 				return false;
@@ -293,6 +298,40 @@ protected:
 		const auto continueProcessing = isAwake();
 		processUnlock();
 		return continueProcessing;
+	}
+
+	/**
+	 * Legacy interleaved entry point (`Effect::processImpl`). The AudioBus
+	 * method above is the normal path; this adapter keeps the legacy
+	 * `AudioBuffer` path working by presenting the interleaved stereo buffer as
+	 * a one-pair bus and routing it through the audio ports.
+	 */
+	auto processImpl(SampleFrame* buf, const f_cnt_t frames) -> ProcessStatus final
+	{
+		SampleFrame* busData[1] = {buf};
+		auto bus = AudioBus{busData, 1, frames};
+
+		if (!m_audioPorts.active())
+		{
+			return ProcessStatus::Continue;
+		}
+
+		auto router = m_audioPorts.getRouter();
+		const auto status = router.process(bus, [this](auto... buffers) {
+			return this->processImpl(buffers...);
+		});
+
+		switch (status)
+		{
+			case lmms::ProcessStatus::Continue:
+				return ProcessStatus::Continue;
+			case lmms::ProcessStatus::ContinueIfNotQuiet:
+				return ProcessStatus::ContinueIfNotQuiet;
+			case lmms::ProcessStatus::Sleep:
+				return ProcessStatus::Sleep;
+		}
+
+		return ProcessStatus::Continue;
 	}
 
 	/**
