@@ -179,7 +179,7 @@ bool StemModelStore::verify(const QString& filePath,
 	}
 	if (actual.compare(expectedSha256.trimmed(), Qt::CaseInsensitive) != 0)
 	{
-		setError(error, QStringLiteral("Model SHA-256 mismatch: expected %1, got %2")
+		setError(error, QStringLiteral("Model checksum (SHA-256) mismatch: expected %1, got %2")
 			.arg(expectedSha256.trimmed(), actual));
 		return false;
 	}

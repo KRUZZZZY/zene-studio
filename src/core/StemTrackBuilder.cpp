@@ -85,10 +85,14 @@ QList<SampleTrack*> StemTrackBuilder::createStemTracks(TrackContainer* container
 		track->setName(sourceName.isEmpty()
 			? QStringLiteral("Stem - %1").arg(stemLabel)
 			: QStringLiteral("%1 - %2").arg(sourceName, stemLabel));
-		container->addTrack(track);
+		// The Track constructor already registers the track with its container
+		// (Track.cpp: m_trackContainer->addTrack(this)); calling addTrack() here
+		// would list it twice and double-free it at teardown.
 
 		auto* clip = new SampleClip(track);
-		track->addClip(clip);
+		// The Clip constructor already registers the clip with its track
+		// (Clip.cpp: getTrack()->addClip(this)); a second addClip() would
+		// list it twice and double-free it at teardown.
 		// Shares the buffer, no copy of the audio data.
 		clip->setSampleBuffer(buffer);
 		clip->movePosition(position);

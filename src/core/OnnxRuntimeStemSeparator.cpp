@@ -169,6 +169,7 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 
 	const auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 	std::vector<float> inputTensor(static_cast<size_t>(Channels) * segment);
+	const SampleFrame* mixFrames = mix.data();
 
 	for (int chunk = 0; chunk < chunkCount; ++chunk)
 	{
@@ -180,8 +181,8 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 		for (int i = 0; i < segment; ++i)
 		{
 			const int src = start + i - padLeft;
-			const float left = (src >= 0 && src < frames) ? mix[static_cast<size_t>(src)].left() : 0.0f;
-			const float right = (src >= 0 && src < frames) ? mix[static_cast<size_t>(src)].right() : 0.0f;
+			const float left = (src >= 0 && src < frames) ? mixFrames[static_cast<size_t>(src)].left() : 0.0f;
+			const float right = (src >= 0 && src < frames) ? mixFrames[static_cast<size_t>(src)].right() : 0.0f;
 			inputTensor[static_cast<size_t>(i)] = left;
 			inputTensor[static_cast<size_t>(segment + i)] = right;
 		}

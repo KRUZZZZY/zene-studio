@@ -2,6 +2,11 @@
 IF(LMMS_HAVE_STEM_SPLIT)
 	SET(LMMS_STEM_GUI_SRCS
 		gui/StemSplitController.cpp
+		# Listed so that AUTOMOC finds the Q_OBJECT header (it lives in
+		# include/, not next to the .cpp). Without this the generated
+		# AutogenInfo.json can reference a path that does not exist and the
+		# build fails in AUTOGEN, not in compilation.
+		${CMAKE_SOURCE_DIR}/include/StemSplitController.h
 	)
 ENDIF()
 

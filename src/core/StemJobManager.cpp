@@ -168,7 +168,9 @@ StemJobManager::State StemJobManager::state(int jobId) const
 {
 	QMutexLocker locker(&m_mutex);
 	auto it = m_jobs.find(jobId);
-	return it == m_jobs.end() ? State::Failed : (*it)->state.load();
+	// Unknown ids read as Queued: "not started" is the least misleading answer
+	// and keeps GUI polling of a just-submitted id race-free.
+	return it == m_jobs.end() ? State::Queued : (*it)->state.load();
 }
 
 

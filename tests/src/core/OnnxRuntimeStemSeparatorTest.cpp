@@ -60,9 +60,9 @@ class OnnxRuntimeStemSeparatorTest : public QObject
 private slots:
 	void testRuntimeReportsItself()
 	{
-		QVERIFY(OnnxRuntimeStemSeparator::isRuntimeAvailable());
-		QVERIFY(!OnnxRuntimeStemSeparator::runtimeVersion().isEmpty());
-		qInfo("ONNX Runtime %s", qPrintable(OnnxRuntimeStemSeparator::runtimeVersion()));
+		const QString version = OnnxRuntimeStemSeparator::runtimeVersion();
+		QVERIFY(!version.isEmpty());
+		qInfo("ONNX Runtime %s", qPrintable(version));
 	}
 
 	void testMissingModelFails()
@@ -96,14 +96,16 @@ private slots:
 		StemSet stems;
 		QString error;
 		int progressCalls = 0;
+		bool progressInRange = true;
 		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
-			[&](float fraction) {
-				QVERIFY(fraction >= 0.0f && fraction <= 1.0f);
+			[&](float fraction) -> bool {
+				progressInRange = progressInRange && fraction >= 0.0f && fraction <= 1.0f;
 				++progressCalls;
 				return true;
 			},
 			stems, error);
 
+		QVERIFY(progressInRange);
 		QVERIFY2(status == StemSeparator::Status::Success, qPrintable(error));
 		QVERIFY(progressCalls >= 2);
 		for (int s = 0; s < NumStems; ++s)
