@@ -27,9 +27,8 @@
 
 #include <numbers>
 
-#include "Effect.h"
+#include "AudioPlugin.h"
 #include "GranularPitchShifterControls.h"
-
 #include "interpolation.h"
 
 namespace lmms
@@ -44,13 +43,11 @@ constexpr float SatuSafeVol = 16.f;
 constexpr float SatuStrength = 0.001f;
 
 
-class GranularPitchShifterEffect : public Effect
+class GranularPitchShifterEffect : public DefaultEffect
 {
 public:
 	GranularPitchShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~GranularPitchShifterEffect() override = default;
-
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
 
 	EffectControls* controls() override
 	{
@@ -112,6 +109,8 @@ public:
 	void changeSampleRate();
 
 private:
+	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+
 	struct PrefilterLowpass
 	{
 		float m_v0z = 0.f, m_v1 = 0.f, m_v2 = 0.f;
