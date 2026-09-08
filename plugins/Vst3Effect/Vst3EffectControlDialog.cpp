@@ -31,6 +31,7 @@
 #include "Knob.h"
 #include "Vst3Effect.h"
 #include "Vst3EffectControls.h"
+#include "embed.h"
 
 namespace lmms::gui
 {
@@ -46,7 +47,7 @@ Vst3EffectControlDialog::Vst3EffectControlDialog(Vst3EffectControls* controls) :
 {
 	setAutoFillBackground(true);
 	QPalette pal;
-	pal.setBrush(backgroundRole(), Vst3Effect::getIconPixmap("logo"));
+	pal.setBrush(backgroundRole(), PLUGIN_NAME::getIconPixmap("logo"));
 	setPalette(pal);
 
 	auto* layout = new QGridLayout(this);

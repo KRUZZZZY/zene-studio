@@ -41,7 +41,7 @@ Vst3EffectControls::Vst3EffectControls(Vst3Effect* effect) :
 	auto* plugin = m_effect->plugin();
 	for (const auto& descriptor : plugin->parameters())
 	{
-		auto* model = new Vst3ParamModel(descriptor, plugin, this);
+		auto* model = new Vst3ParamModel(descriptor, this);
 		m_paramModels.push_back(model);
 		// host -> plug-in: mirror the model value into the lock free snapshot
 		// the audio thread reads. Safe from any thread that changes a model.
@@ -50,7 +50,7 @@ Vst3EffectControls::Vst3EffectControls(Vst3Effect* effect) :
 				plugin->setParamNormalized(id, model->value());
 			});
 		// plug-in -> host: render the value with the plug-in's own formatter
-		model->setFormatter([plugin, id = descriptor.id](float value) {
+		model->setDisplayFormatter([plugin, id = descriptor.id](float value) {
 			return plugin->paramDisplayValue(id, value);
 		});
 	}

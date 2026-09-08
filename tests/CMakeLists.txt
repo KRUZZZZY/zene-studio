@@ -40,7 +40,7 @@ endforeach()
 # (>= 3.8) is available; see cmake/modules/Vst3Sdk.cmake.
 if(TARGET vst3effect)
 	set(LMMS_VST3_EFFECT_DIR ${CMAKE_SOURCE_DIR}/plugins/Vst3Effect)
-	set(LMMS_VST3_TEST_PLUGIN "${CMAKE_BINARY_DIR}/vst3sdk/build/VST3/Release/again.vst3"
+	set(LMMS_VST3_TEST_PLUGIN "${CMAKE_BINARY_DIR}/vst3sdk/build/VST3/Release/again-sample-accurate.vst3"
 		CACHE PATH "VST3 plug-in used by Vst3HostTest")
 
 	add_executable(Vst3BusMapTest
@@ -75,9 +75,14 @@ if(TARGET vst3effect)
 	)
 	add_test(NAME Vst3EffectIntegrationTest COMMAND Vst3EffectIntegrationTest)
 	target_include_directories(Vst3EffectIntegrationTest PRIVATE
+		# generated plugin_export.h (PLUGIN_EXPORT) of the vst3effect plug-in
+		${CMAKE_BINARY_DIR}/plugins/Vst3Effect
 		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 		${LMMS_VST3_EFFECT_DIR}
 	)
+	# the test compiles the plug-in sources itself, so it needs the generated
+	# export header of the plug-in target to exist first
+	add_dependencies(Vst3EffectIntegrationTest vst3effect)
 	target_static_libraries(Vst3EffectIntegrationTest PRIVATE lmmsobjs)
 	target_compile_features(Vst3EffectIntegrationTest PRIVATE cxx_std_20)
 	target_link_libraries(Vst3EffectIntegrationTest PRIVATE
@@ -87,6 +92,7 @@ if(TARGET vst3effect)
 	)
 	target_compile_definitions(Vst3EffectIntegrationTest PRIVATE
 		LMMS_TESTING
+		PLUGIN_NAME=vst3effect
 		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_PLUGIN}"
 	)
 endif()

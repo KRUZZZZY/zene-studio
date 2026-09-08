@@ -84,6 +84,10 @@ auto hostContext() -> IPtr<FUnknown>
 class Vst3ComponentHandler : public IComponentHandler
 {
 public:
+	// `release()` deletes through `this`, so the destructor must be virtual to
+	// keep the polymorphic delete well defined (-Wdelete-non-virtual-dtor).
+	virtual ~Vst3ComponentHandler() = default;
+
 	Vst3ComponentHandler(std::atomic<float>* values,
 			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById) :
 		m_values{values},
@@ -560,9 +564,11 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	d.processData.inputParameterChanges = &d.inputParamChanges;
 	d.processData.processContext = &d.context;
 
+	// Transport state is reported per block through setTransportPlaying() and
+	// setTempo(); until then no state flag is valid.
 	d.context = ProcessContext{};
 	d.context.sampleRate = sampleRate;
-	d.context.state = kPlaying;
+	d.context.state = 0;
 	d.continuousSamples = 0;
 
 	d.sampleRate = sampleRate;
@@ -602,12 +608,16 @@ auto HostedPlugin::preparedSampleRate() const -> double
 
 void HostedPlugin::setTempo(double bpm)
 {
-	m_impl->context.tempo = bpm;
+	auto& context = m_impl->context;
+	context.tempo = bpm;
+	context.state |= static_cast<uint32>(ProcessContext::kTempoValid);
 }
 
 void HostedPlugin::setTransportPlaying(bool playing)
 {
-	m_impl->context.state = playing ? kPlaying : kStopped;
+	auto& state = m_impl->context.state;
+	if (playing) { state |= static_cast<uint32>(ProcessContext::kPlaying); }
+	else { state &= ~static_cast<uint32>(ProcessContext::kPlaying); }
 }
 
 void HostedPlugin::process(const float* const* inputs, float* const* outputs,

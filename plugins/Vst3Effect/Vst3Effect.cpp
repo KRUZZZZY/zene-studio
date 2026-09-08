@@ -138,7 +138,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 	{
 		auto* outChannel = out.bufferPtr(c);
 		const auto* inChannel = in.bufferPtr(c);
-		for (f_cnt_t f = 0; f < frames; ++f)
+		for (int f = 0; f < frames; ++f)
 		{
 			outChannel[f] = dry * inChannel[f] + wet * outChannel[f];
 		}

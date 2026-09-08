@@ -27,6 +27,7 @@
 #include <QFileInfo>
 
 #include "AudioBus.h"
+#include "BufferManager.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Plugin.h"
@@ -60,9 +61,9 @@ auto Vst3EffectIntegrationTest::makeKey() const -> Plugin::Descriptor::SubPlugin
 {
 	Plugin::Descriptor::SubPluginFeatures::Key key;
 	key.desc = &vst3effect_plugin_descriptor;
-	key.name = QStringLiteral("AGain");
+	key.name = QStringLiteral("AGain Sample Accurate");
 	key.attributes["file"] = QStringLiteral(VST3_TEST_PLUGIN_PATH);
-	key.attributes["class"] = QStringLiteral("AGain");
+	key.attributes["class"] = QStringLiteral("AGain Sample Accurate");
 	return key;
 }
 
@@ -94,9 +95,10 @@ void Vst3EffectIntegrationTest::testProcessesAudioThroughAudioBus()
 
 	auto* controls = dynamic_cast<Vst3EffectControls*>(effect->controls());
 	QVERIFY(controls != nullptr);
-	QVERIFY(controls->paramModels().size() >= 3);
+	QVERIFY(controls->paramModels().size() >= 2);
 
-	auto* gain = controls->modelForParam(0);
+	// id 1 is "Gain"; id 0 is the stepped bypass switch
+	auto* gain = controls->modelForParam(1);
 	QVERIFY(gain != nullptr);
 	gain->setValue(0.5f);
 
@@ -118,6 +120,8 @@ void Vst3EffectIntegrationTest::testProcessesAudioThroughAudioBus()
 		QVERIFY2(std::abs(storage[f][1] + 0.125f) < 1e-6f,
 			qPrintable(QStringLiteral("right %1").arg(storage[f][1])));
 	}
+	qInfo("effect chain: input 0.5/-0.25, gain 0.5 -> measured out[0]=%.9f out[1]=%.9f",
+		storage[0][0], storage[0][1]);
 }
 
 void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
@@ -132,7 +136,7 @@ void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 
 	auto* controls = dynamic_cast<Vst3EffectControls*>(effect->controls());
 	QVERIFY(controls != nullptr);
-	auto* gain = controls->modelForParam(0);
+	auto* gain = controls->modelForParam(1);
 	QVERIFY(gain != nullptr);
 
 	gain->setValue(0.3f);
@@ -160,6 +164,8 @@ void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 
 	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f,
 		qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
+	qInfo("state round trip: input 0.5, restored gain 0.3 -> measured out[0]=%.9f",
+		storage[0][0]);
 }
 
 } // namespace lmms

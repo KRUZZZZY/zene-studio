@@ -33,7 +33,7 @@
 #include <QString>
 
 #include "Vst3BusMap.h"
-#include "Vst3Parameter.h"
+#include "Vst3ParamDescriptor.h"
 
 namespace lmms::vst3
 {

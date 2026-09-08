@@ -32,27 +32,10 @@
 #include <QString>
 
 #include "AutomatableModel.h"
+#include "Vst3ParamDescriptor.h"
 
 namespace lmms
 {
-
-//! SDK independent description of a VST3 parameter
-struct Vst3ParamDescriptor
-{
-	//! VST3 parameter ID (ParamID), not an array index
-	std::uint32_t id = 0;
-	QString title;
-	QString shortTitle;
-	QString units;
-	//! Number of steps of a discrete parameter, 0 for continuous parameters
-	std::int32_t stepCount = 0;
-	//! Default value in the normalized [0, 1] range VST3 uses for parameters
-	float defaultNormalized = 0.f;
-	bool readOnly = false;
-	bool hidden = false;
-	bool stepped = false;
-	bool bypass = false;
-};
 
 /**
  * An LMMS model for a single VST3 parameter.
