@@ -326,6 +326,14 @@ private:
 	void setStrumAction();
 	void cancelStrumAction();
 
+	//! Enables/disables the slide-note draw tool: newly drawn notes become
+	//! slide (portamento) notes (SPEC-slide-notes D-4).
+	void setSlideDrawMode( bool enabled );
+	bool slideDrawMode() const
+	{
+		return m_slideDrawMode;
+	}
+
 	void updateScrollbars();
 	void updatePositionLinePos();
 	void updatePositionLineHeight();
@@ -507,6 +515,8 @@ private:
 	int m_strumCurrentVertical = 0;
 	float m_strumHeightRatio = 0.0f;
 	bool m_strumEnabled = false;
+	//! Slide-note draw tool state: new notes are created as slide notes
+	bool m_slideDrawMode = false;
 	//! Handles updating all of the note positions when performing a strum
 	void updateStrumPos(QMouseEvent* me, bool initial, bool warp);
 
