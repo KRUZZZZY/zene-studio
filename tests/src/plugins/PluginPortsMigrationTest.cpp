@@ -50,6 +50,14 @@ auto migratedModules() -> const std::vector<MigratedModule>&
 		{"waveshaper", PART_C_MIGRATED_waveshaper},
 		{"flanger", PART_C_MIGRATED_flanger},
 		{"delay", PART_C_MIGRATED_delay},
+		{"compressor", PART_C_MIGRATED_compressor},
+		{"crossovereq", PART_C_MIGRATED_crossovereq},
+		{"dynamicsprocessor", PART_C_MIGRATED_dynamicsprocessor},
+		{"lomm", PART_C_MIGRATED_lomm},
+		{"multitapecho", PART_C_MIGRATED_multitapecho},
+		{"reverbsc", PART_C_MIGRATED_reverbsc},
+		{"stereoenhancer", PART_C_MIGRATED_stereoenhancer},
+		{"stereomatrix", PART_C_MIGRATED_stereomatrix},
 	};
 	return modules;
 }

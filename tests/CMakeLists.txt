@@ -58,6 +58,14 @@ set(PART_C_REFERENCE_MODULES
 	"waveshaper|WaveShaper|WaveShaper.cpp|WaveShaperControls.cpp|WaveShaperControlDialog.cpp"
 	"flanger|Flanger|FlangerEffect.cpp|FlangerControls.cpp|FlangerControlsDialog.cpp|MonoDelay.cpp"
 	"delay|Delay|DelayEffect.cpp|DelayControls.cpp|DelayControlsDialog.cpp|Lfo.cpp|StereoDelay.cpp"
+	"compressor|Compressor|Compressor.cpp|CompressorControls.cpp|CompressorControlDialog.cpp"
+	"crossovereq|CrossoverEQ|CrossoverEQ.cpp|CrossoverEQControls.cpp|CrossoverEQControlDialog.cpp"
+	"dynamicsprocessor|DynamicsProcessor|DynamicsProcessor.cpp|DynamicsProcessorControls.cpp|DynamicsProcessorControlDialog.cpp"
+	"lomm|LOMM|LOMM.cpp|LOMMControls.cpp|LOMMControlDialog.cpp"
+	"multitapecho|MultitapEcho|MultitapEcho.cpp|MultitapEchoControls.cpp|MultitapEchoControlDialog.cpp"
+	"reverbsc|ReverbSC|ReverbSC.cpp|ReverbSCControls.cpp|ReverbSCControlDialog.cpp|base.c|revsc.c|dcblock.c"
+	"stereoenhancer|StereoEnhancer|StereoEnhancer.cpp|StereoEnhancerControls.cpp|StereoEnhancerControlDialog.cpp"
+	"stereomatrix|StereoMatrix|StereoMatrix.cpp|StereoMatrixControls.cpp|StereoMatrixControlDialog.cpp"
 )
 
 set(PART_C_REFERENCE_TARGETS "")
@@ -75,9 +83,10 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	foreach(SRC IN LISTS FIELDS)
 		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/${PLUGIN_DIR}/${SRC}")
 	endforeach()
-	if(PLUGIN_ID STREQUAL "delay")
+	if(PLUGIN_ID STREQUAL "delay" OR PLUGIN_ID STREQUAL "compressor")
 		# EqFader is header-only; AUTOMOC needs the header to emit its
-		# metaobject and vtable, which DelayControlsDialog.cpp references.
+		# metaobject and vtable, which DelayControlsDialog.cpp and
+		# CompressorControlDialog.cpp reference.
 		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/Eq/EqFader.h")
 	endif()
 

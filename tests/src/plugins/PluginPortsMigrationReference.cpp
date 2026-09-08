@@ -52,6 +52,14 @@ auto referenceModules() -> const std::vector<ReferenceModule>&
 		{"waveshaper", PART_C_REF_waveshaper},
 		{"flanger", PART_C_REF_flanger},
 		{"delay", PART_C_REF_delay},
+		{"compressor", PART_C_REF_compressor},
+		{"crossovereq", PART_C_REF_crossovereq},
+		{"dynamicsprocessor", PART_C_REF_dynamicsprocessor},
+		{"lomm", PART_C_REF_lomm},
+		{"multitapecho", PART_C_REF_multitapecho},
+		{"reverbsc", PART_C_REF_reverbsc},
+		{"stereoenhancer", PART_C_REF_stereoenhancer},
+		{"stereomatrix", PART_C_REF_stereomatrix},
 	};
 	return modules;
 }

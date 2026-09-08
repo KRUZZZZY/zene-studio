@@ -50,11 +50,16 @@ namespace partc
 using namespace lmms; // SampleFrame, AudioBus, Effect, f_cnt_t, ch_cnt_t
 
 //! Canonical plugin order shared by the reference renderer and the test.
-inline auto pluginNames() -> const std::array<const char*, 7>&
+//! peakcontrollereffect is migrated but not rendered here: src/core/PeakController.cpp
+//! includes the migrated plugin header, so a pre-migration reference object of the
+//! same class has an incompatible layout (ODR) and crashes in the reference process.
+inline auto pluginNames() -> const std::array<const char*, 15>&
 {
-	static const std::array<const char*, 7> names{
+	static const std::array<const char*, 15> names{
 		"amplifier", "bassbooster", "bitcrush", "dualfilter",
-		"waveshaper", "flanger", "delay"};
+		"waveshaper", "flanger", "delay",
+		"compressor", "crossovereq", "dynamicsprocessor", "lomm", "multitapecho",
+		"reverbsc", "stereoenhancer", "stereomatrix"};
 	return names;
 }
 
@@ -110,6 +115,55 @@ inline auto overridesFor(const std::string& plugin) -> std::vector<SettingOverri
 	{
 		return {{"DelayTimeSamples", "0.005"}, {"FeebackAmount", "0.6"},
 			{"LfoFrequency", "0.3"}, {"LfoAmount", "0.0005"}, {"OutGain", "-6"}};
+	}
+	if (plugin == "compressor")
+	{
+		return {{"threshold", "-20"}, {"ratio", "4"}, {"attack", "5"}, {"release", "200"},
+			{"knee", "6"}, {"inGain", "3"}, {"outGain", "6"}, {"mix", "70"},
+			{"stereoLink", "2"}, {"limiter", "0.5"}, {"rms", "50"}, {"tilt", "2"},
+			{"tiltFreq", "300"}, {"blend", "0.5"}};
+	}
+	if (plugin == "crossovereq")
+	{
+		return {{"xover12", "200"}, {"xover23", "1500"}, {"xover34", "6000"},
+			{"gain1", "3"}, {"gain2", "-4"}, {"gain3", "1"}, {"gain4", "-1.5"},
+			{"mute1", "1"}, {"mute2", "0"}, {"mute3", "1"}, {"mute4", "0"}};
+	}
+	if (plugin == "dynamicsprocessor")
+	{
+		return {{"inputGain", "1.5"}, {"outputGain", "0.7"}, {"attack", "50"},
+			{"release", "300"}, {"stereoMode", "1"}};
+	}
+	if (plugin == "lomm")
+	{
+		return {{"depth", "0.6"}, {"time", "3"}, {"inVol", "-6"}, {"outVol", "6"},
+			{"upward", "2"}, {"downward", "0"}, {"split1", "4000"}, {"split2", "200"},
+			{"knee", "12"}, {"rmsTime", "20"}};
+	}
+	if (plugin == "multitapecho")
+	{
+		return {{"steps", "8"}, {"steplength", "250"}, {"drygain", "6"},
+			{"swapinputs", "1"}, {"stages", "2"}};
+	}
+	// Not rendered by this harness (see pluginNames() note) — kept so the settings
+	// are ready if the reference module becomes loadable in a later slice.
+	if (plugin == "peakcontrollereffect")
+	{
+		return {{"base", "0.25"}, {"amount", "0.5"}, {"attack", "0.1"}, {"decay", "0.2"},
+			{"treshold", "0.3"}, {"abs", "1"}, {"amountmult", "2"}, {"mute", "0"}};
+	}
+	if (plugin == "reverbsc")
+	{
+		return {{"input_gain", "6"}, {"size", "0.95"}, {"color", "6000"},
+			{"output_gain", "-6"}};
+	}
+	if (plugin == "stereoenhancer")
+	{
+		return {{"width", "120"}};
+	}
+	if (plugin == "stereomatrix")
+	{
+		return {{"l-l", "0.8"}, {"l-r", "0.2"}, {"r-l", "0.1"}, {"r-r", "0.9"}};
 	}
 	return {};
 }

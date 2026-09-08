@@ -35,6 +35,16 @@ extract() { # extract <plugin-dir> <file>
 		extract Delay "$f"
 	done
 	extract Eq EqFader.h
+	# Slice 2 (task #589): next batch of migrated plugins.
+	for p in Compressor CrossoverEQ DynamicsProcessor LOMM MultitapEcho PeakControllerEffect ReverbSC StereoEnhancer StereoMatrix; do
+		for f in "$p.cpp" "$p.h" "${p}ControlDialog.cpp" "${p}ControlDialog.h" "${p}Controls.cpp" "${p}Controls.h"; do
+			extract "$p" "$f"
+		done
+	done
+	# ReverbSC also builds the Sean Costello reverb C sources.
+	for f in base.c base.h dcblock.c dcblock.h revsc.c revsc.h; do
+		extract ReverbSC "$f"
+	done
 } >> "$HERE/ORIGIN.tsv"
 
 echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"
