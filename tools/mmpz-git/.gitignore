@@ -1,0 +1,14 @@
+# throwaway nested repo created by run-demo.sh
+testbed/
+
+# compiled Qt probes (scratch/*.cpp are the sources)
+scratch/qtesc
+scratch/qtroundtrip
+scratch/qtsave
+scratch/qtsave2
+
+# decompressed copy of a data/ fixture, regenerable with `mmpz_git.py dump`
+scratch/sv-DnB-Startup.mmp
+
+__pycache__/
+*.pyc

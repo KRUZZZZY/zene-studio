@@ -1,0 +1,39 @@
+# LMMS project files: store and compare them as readable XML.
+#
+# Install the drivers once per clone:
+#     python3 tools/mmpz-git/mmpz_git.py install --repo .
+#
+# .mmpz/.xptz are qCompress containers (4-byte big-endian length + zlib).
+# The clean filter stores the decompressed XML in git; the smudge filter
+# recompresses it on checkout. The result is byte-identical for unedited
+# files (see GIT-FRIENDLY-MMPZ.md, section 2).
+#
+# .mmp/.xpt are already plain XML: only diff/merge need the drivers. Do NOT
+# give them the filter, or a checkout would turn a plain .mmp into a .mmpz.
+
+*.mmpz filter=mmpz diff=mmpz merge=mmpz
+*.mmp  diff=mmpz merge=mmpz
+
+# Presets use the same qCompress container; the generic diff/merge is safe,
+# but the LMMS-specific identity rules are untested for presets.
+*.xptz filter=mmpz diff=mmpz merge=mmpz
+*.xpt  diff=mmpz merge=mmpz
+
+# ---------------------------------------------------------------------------
+# Audio samples: the part git filters cannot fix.
+#
+# LMMS references samples by path (e.g. src="drums/bassdrum04.ogg"). Keep the
+# binaries in git-lfs and keep the PROJECT FILE out of it:
+#
+#     git lfs track "samples/**/*.wav" "samples/**/*.ogg" "samples/**/*.flac"
+#     git add .gitattributes
+#
+# What git-lfs does NOT cover:
+#   * the project file itself: an LFS pointer is opaque, so .mmpz must stay a
+#     normal text object (that is what the filter/diff/merge lines above do);
+#   * absolute sample paths outside the repo: a project that references
+#     /home/you/... breaks for collaborators even when the samples are in LFS;
+#   * sample edits: LFS versions whole files, so two people editing the same
+#     sample still conflict at file level -- it is not a waveform merge;
+#   * LFS needs server-side support (GitHub/GitLab yes; a bare ssh remote needs
+#     git-lfs-authenticate or a local LFS endpoint).
