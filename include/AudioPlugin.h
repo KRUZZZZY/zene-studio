@@ -301,6 +301,40 @@ protected:
 	}
 
 	/**
+	 * Legacy interleaved entry point (`Effect::processImpl`). The AudioBus
+	 * method above is the normal path; this adapter keeps the legacy
+	 * `AudioBuffer` path working by presenting the interleaved stereo buffer as
+	 * a one-pair bus and routing it through the audio ports.
+	 */
+	auto processImpl(SampleFrame* buf, const f_cnt_t frames) -> ProcessStatus final
+	{
+		SampleFrame* busData[1] = {buf};
+		auto bus = AudioBus{busData, 1, frames};
+
+		if (!m_audioPorts.active())
+		{
+			return ProcessStatus::Continue;
+		}
+
+		auto router = m_audioPorts.getRouter();
+		const auto status = router.process(bus, [this](auto... buffers) {
+			return this->processImpl(buffers...);
+		});
+
+		switch (status)
+		{
+			case lmms::ProcessStatus::Continue:
+				return ProcessStatus::Continue;
+			case lmms::ProcessStatus::ContinueIfNotQuiet:
+				return ProcessStatus::ContinueIfNotQuiet;
+			case lmms::ProcessStatus::Sleep:
+				return ProcessStatus::Sleep;
+		}
+
+		return ProcessStatus::Continue;
+	}
+
+	/**
 	 * Optional method that runs instead of `processImpl` when an effect
 	 * is awake but not running.
 	 */
