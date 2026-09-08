@@ -60,6 +60,7 @@ SET(LMMS_PLUGIN_LIST
 	PeakControllerEffect
 	GigPlayer
 	ReverbSC
+	RnnoiseDenoiser
 	Sf2Player
 	Sfxr
 	Sid
