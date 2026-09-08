@@ -79,7 +79,8 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 	m_songGlobalParentOffset( 0 ),
 	m_midiChannel( midiEventChannel >= 0 ? midiEventChannel : instrumentTrack->midiPort()->realOutputChannel() ),
 	m_origin( origin ),
-	m_frequencyNeedsUpdate( false )
+	m_frequencyNeedsUpdate( false ),
+	m_slideSourceKey( -1 )
 {
 	lock();
 	if( hasParent() == false )
@@ -234,7 +235,7 @@ void NotePlayHandle::play( SampleFrame* _working_buffer )
 			offset() );
 	}
 
-	if( m_frequencyNeedsUpdate )
+	if( m_frequencyNeedsUpdate || hasSlideGlide() )
 	{
 		updateFrequency();
 	}
@@ -517,12 +518,43 @@ bool NotePlayHandle::operator==( const NotePlayHandle & _nph ) const
 
 
 
+bool NotePlayHandle::hasSlideGlide() const
+{
+	if( !slide() || m_slideSourceKey < 0 || m_frames <= 0 )
+	{
+		return false;
+	}
+	const Instrument* instrument = m_instrumentTrack->instrument();
+	return instrument == nullptr || instrument->supportsSlideNotes();
+}
+
+
+
+
+float NotePlayHandle::slidePitchOffset( int fromKey, int toKey, float progress )
+{
+	return ( fromKey - toKey ) * ( 1.f - std::clamp( progress, 0.f, 1.f ) );
+}
+
+
+
+
 void NotePlayHandle::updateFrequency()
 {
 	int masterPitch = m_instrumentTrack->m_useMasterPitchModel.value() ? Engine::getSong()->masterPitch() : 0;
 	int baseNote = m_instrumentTrack->baseNoteModel()->value();
 	float detune = m_baseDetuning->value();
 	float instrumentPitch = m_instrumentTrack->pitchModel()->value();
+
+	// Slide (portamento) glide, SPEC-slide-notes D-2/D-4(b): the glide is a
+	// pitch offset that composes with detuning - detuning automation remains
+	// an offset on top of the gliding base pitch.
+	float slideOffset = 0.f;
+	if( hasSlideGlide() )
+	{
+		const float progress = std::clamp( static_cast<float>( m_totalFramesPlayed ) / m_frames, 0.f, 1.f );
+		slideOffset = slidePitchOffset( m_slideSourceKey, key(), progress );
+	}
 
 	if (m_instrumentTrack->m_microtuner.enabled())
 	{
@@ -532,8 +564,8 @@ void NotePlayHandle::updateFrequency()
 		if (m_instrumentTrack->isKeyMapped(transposedKey))
 		{
 			const auto frequency = m_instrumentTrack->m_microtuner.keyToFreq(transposedKey, baseNote);
-			m_frequency = frequency * std::exp2((detune + instrumentPitch / 100) / 12.f);
-			m_unpitchedFrequency = frequency * std::exp2(detune / 12.f);
+			m_frequency = frequency * std::exp2((detune + slideOffset + instrumentPitch / 100) / 12.f);
+			m_unpitchedFrequency = frequency * std::exp2((detune + slideOffset) / 12.f);
 		}
 		else
 		{
@@ -543,7 +575,7 @@ void NotePlayHandle::updateFrequency()
 	else
 	{
 		// default key mapping and 12-TET frequency computation with default 440 Hz base note frequency
-		const float pitch = (key() - baseNote + masterPitch + detune) / 12.0f;
+		const float pitch = (key() + slideOffset - baseNote + masterPitch + detune) / 12.0f;
 		m_frequency = DefaultBaseFreq * std::exp2(pitch + instrumentPitch / (100 * 12.0f));
 		m_unpitchedFrequency = DefaultBaseFreq * std::exp2(pitch);
 	}

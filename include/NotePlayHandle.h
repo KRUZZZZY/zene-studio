@@ -268,6 +268,28 @@ public:
 		m_frequencyNeedsUpdate = true;
 	}
 
+	/*! Sets the key this handle glides from when it is a slide note.
+	 *  -1 (default) disables the glide. Set by InstrumentTrack::play(). */
+	void setSlideSourceKey( int key )
+	{
+		m_slideSourceKey = key;
+	}
+
+	int slideSourceKey() const
+	{
+		return m_slideSourceKey;
+	}
+
+	/*! Whether this handle has to glide right now: it is a slide note, a
+	 *  source key was found, its length is known and the instrument supports
+	 *  slide notes (per-instrument opt-out, SPEC-slide-notes D-3). */
+	bool hasSlideGlide() const;
+
+	/*! Pitch offset in semitones at \a progress (0 = source key, 1 = own key)
+	 *  of a slide glide from \a fromKey to \a toKey. Linear in pitch, i.e.
+	 *  exponential in Hz. Pure math, unit-tested in SlideNotesTest. */
+	static float slidePitchOffset( int fromKey, int toKey, float progress );
+
 private:
 	class BaseDetuning
 	{
@@ -330,6 +352,7 @@ private:
 	Origin m_origin;
 
 	bool m_frequencyNeedsUpdate;				// used to update pitch
+	int m_slideSourceKey;					// key a slide note glides from, -1 = none
 } ;
 
 
