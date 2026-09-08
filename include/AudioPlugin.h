@@ -225,6 +225,14 @@ public:
 	}
 
 protected:
+	//! The ports API status type, named here so plugin implementations can use the
+	//! unqualified `ProcessStatus` name in both the ports and legacy interfaces.
+	using ProcessStatus = lmms::ProcessStatus;
+
+	//! Un-hide the `processImpl` overloads of the ports base class; the legacy bridge
+	//! below would otherwise hide them from plugin implementations.
+	using AudioProcessingMethod<Effect, settings>::processImpl;
+
 	auto audioPorts() -> AudioPortsT& { return m_audioPorts; }
 	auto audioPorts() const -> const AudioPortsT& { return m_audioPorts; }
 
@@ -293,6 +301,32 @@ protected:
 		const auto continueProcessing = isAwake();
 		processUnlock();
 		return continueProcessing;
+	}
+
+	/**
+	 * Legacy single-buffer entry point, kept until the AudioBuffer interface is
+	 * removed. Effects migrated to the AudioPorts API implement processImpl with
+	 * a buffer view, while unmigrated effects still implement the SampleFrame
+	 * based overload. Present the legacy interleaved buffer as the in-place view
+	 * the ports implementation expects so both interfaces keep working.
+	 */
+	auto processImpl(SampleFrame* buf, const f_cnt_t frames) -> Effect::ProcessStatus final
+	{
+		static_assert(settings.inplace && settings.interleaved,
+			"The legacy single-buffer interface can only be bridged to in-place, interleaved effects");
+
+		switch (AudioProcessingMethod<Effect, settings>::processImpl(
+			GetAudioBufferViewType<settings, false, false>{buf, frames}))
+		{
+			case ProcessStatus::Continue:
+				return Effect::ProcessStatus::Continue;
+			case ProcessStatus::ContinueIfNotQuiet:
+				return Effect::ProcessStatus::ContinueIfNotQuiet;
+			case ProcessStatus::Sleep:
+				return Effect::ProcessStatus::Sleep;
+		}
+
+		return Effect::ProcessStatus::Continue;
 	}
 
 	/**
