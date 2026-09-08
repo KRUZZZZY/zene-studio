@@ -22,6 +22,8 @@
  *
  */
 
+#include <QDomElement>
+
 #include "NeuralAmpControls.h"
 #include "NeuralAmpEffect.h"
 

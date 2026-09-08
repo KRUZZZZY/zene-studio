@@ -70,6 +70,7 @@ void NamModel::reset() noexcept
 		array.layerOutput.setZero();
 	}
 	m_condition.setZero();
+	m_lastChunkFrames = 0;
 }
 
 
@@ -161,13 +162,18 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 			const int D = layer.dilation;
 			const int R = layer.receptiveField;
 
-			// Slide the history window left by numFrames and append the new
-			// block. memmove handles the overlap when numFrames < R; columns
-			// are contiguous in column-major storage.
-			if (R > 0)
+			// Slide the history window left by the number of frames written
+			// by the *previous* processChunk() call and append the new block.
+			// The shift amount must be the previous chunk length, not
+			// numFrames: prewarm() runs one long chunk before the first short
+			// audio block, and shifting by the wrong amount makes the taps
+			// read stale samples from the start of the prewarm transient.
+			// memmove handles the overlap when the previous block was shorter
+			// than R; columns are contiguous in column-major storage.
+			if (R > 0 && m_lastChunkFrames > 0)
 			{
 				std::memmove(layer.history.data(),
-					layer.history.data() + static_cast<std::size_t>(numFrames) * inC,
+					layer.history.data() + static_cast<std::size_t>(m_lastChunkFrames) * inC,
 					sizeof(float) * static_cast<std::size_t>(R) * inC);
 			}
 			layer.history.block(0, R, inC, numFrames) = cur->leftCols(numFrames);
@@ -230,6 +236,10 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 	{
 		output[i] = scale * finalHead(0, i);
 	}
+
+	// Remember this chunk's length: the next call shifts its history windows
+	// by exactly this many frames.
+	m_lastChunkFrames = numFrames;
 }
 
 }  // namespace lmms::nam

@@ -162,6 +162,10 @@ private:
 	Eigen::MatrixXf m_condition;  ///< [1 x kMaxBlock]
 	std::vector<float> m_prewarmBuffer;  ///< kMaxBlock zeros; prewarm() only
 	bool m_ready = false;
+	/// Frames written by the previous processChunk() call. The history windows
+	/// are shifted by exactly this amount, which is NOT necessarily the current
+	/// chunk size (prewarm runs one long chunk before the first short block).
+	int m_lastChunkFrames = 0;
 
 #ifdef NAM_DEBUG_SEAM
 public:
