@@ -139,9 +139,12 @@ auto writeToStream(MemoryStream& stream, const QByteArray& data) -> bool
 	if (data.isEmpty()) { return true; }
 	stream.setSize(static_cast<TSize>(data.size()));
 	int32 written = 0;
-	return stream.write(const_cast<char*>(data.constData()),
-			   static_cast<int32>(data.size()), &written) == kResultOk &&
-		written == data.size();
+	const auto result = stream.write(const_cast<char*>(data.constData()),
+			   static_cast<int32>(data.size()), &written);
+	// Plug-ins read their state from the start of the stream; write() left the
+	// cursor at the end.
+	stream.seek(0, IBStream::kIBSeekSet, nullptr);
+	return result == kResultOk && written == data.size();
 }
 
 auto readFromStream(IBStream* stream) -> QByteArray
@@ -449,13 +452,17 @@ auto HostedPlugin::saveState(QByteArray* componentState, QByteArray* controllerS
 	if (componentState && d.component)
 	{
 		MemoryStream stream;
-		ok = d.component->getState(&stream) == kResultOk && ok;
+		// kNotImplemented means "this plug-in keeps no state", which is not
+		// an error (EditController's base implementation returns it too).
+		const auto result = d.component->getState(&stream);
+		ok = (result == kResultOk || result == kNotImplemented) && ok;
 		*componentState = readFromStream(&stream);
 	}
 	if (controllerState && d.controller && !d.singleComponent)
 	{
 		MemoryStream stream;
-		ok = d.controller->getState(&stream) == kResultOk && ok;
+		const auto result = d.controller->getState(&stream);
+		ok = (result == kResultOk || result == kNotImplemented) && ok;
 		*controllerState = readFromStream(&stream);
 	}
 	return ok;
@@ -470,18 +477,21 @@ auto HostedPlugin::loadState(const QByteArray& componentState,
 	{
 		MemoryStream stream;
 		if (!writeToStream(stream, componentState)) { return false; }
-		ok = d.component->setState(&stream) == kResultOk && ok;
+		const auto componentResult = d.component->setState(&stream);
+		ok = (componentResult == kResultOk || componentResult == kNotImplemented) && ok;
 		if (!d.singleComponent && d.controller)
 		{
 			stream.seek(0, IBStream::kIBSeekSet, nullptr);
-			ok = d.controller->setComponentState(&stream) == kResultOk && ok;
+			const auto controllerResult = d.controller->setComponentState(&stream);
+			ok = (controllerResult == kResultOk || controllerResult == kNotImplemented) && ok;
 		}
 	}
 	if (!controllerState.isEmpty() && d.controller && !d.singleComponent)
 	{
 		MemoryStream stream;
 		if (!writeToStream(stream, controllerState)) { return false; }
-		ok = d.controller->setState(&stream) == kResultOk && ok;
+		const auto result = d.controller->setState(&stream);
+		ok = (result == kResultOk || result == kNotImplemented) && ok;
 	}
 	if (d.controller)
 	{
@@ -525,10 +535,16 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 		setError(error, "setActive() failed");
 		return false;
 	}
-	if (d.processor->setProcessing(true) != kResultOk)
+	// The SDK's AudioEffect base class returns kNotImplemented here and the
+	// SDK's own host ignores the return value (audiohost/audioclient.cpp:
+	// "processor->setProcessing (true); // != kResultOk"). Only an explicit
+	// kResultFalse is a real failure.
+	const auto processingResult = d.processor->setProcessing(true);
+	if (processingResult != kResultOk && processingResult != kNotImplemented)
 	{
 		d.component->setActive(false);
-		setError(error, "setProcessing() failed");
+		setError(error, QString("setProcessing() failed (0x%1)")
+			.arg(static_cast<quint32>(processingResult), 8, 16, QLatin1Char('0')));
 		return false;
 	}
 

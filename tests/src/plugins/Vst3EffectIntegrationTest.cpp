@@ -33,6 +33,7 @@
 #include "Plugin.h"
 #include "Vst3Effect.h"
 #include "Vst3EffectControls.h"
+#include "plugin_export.h" // PLUGIN_EXPORT of the vst3effect plug-in
 
 #ifndef VST3_TEST_PLUGIN_PATH
 #define VST3_TEST_PLUGIN_PATH ""
@@ -141,6 +142,23 @@ void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 
 	gain->setValue(0.3f);
 
+	// Deliver the change to the plug-in before saving. Parameter changes reach
+	// the processor through processAudioBuffer(), exactly as in a running host.
+	SampleFrame storage[fpp];
+	auto fillInput = [&storage, fpp] {
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			storage[f][0] = 0.5f;
+			storage[f][1] = 0.5f;
+		}
+	};
+	fillInput();
+	SampleFrame* busData[1] = { storage };
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f,
+		qPrintable(QStringLiteral("delivered %1").arg(storage[0][0])));
+
 	QDomDocument doc;
 	QDomElement element = doc.createElement("effect");
 	effect->saveSettings(doc, element);
@@ -152,14 +170,7 @@ void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 	QVERIFY2(std::abs(gain->value() - 0.3f) < 1e-6f,
 		qPrintable(QStringLiteral("restored %1").arg(gain->value())));
 
-	SampleFrame storage[fpp];
-	for (f_cnt_t f = 0; f < fpp; ++f)
-	{
-		storage[f][0] = 0.5f;
-		storage[f][1] = 0.5f;
-	}
-	SampleFrame* busData[1] = { storage };
-	AudioBus bus{busData, 1, fpp};
+	fillInput();
 	QVERIFY(chain.processAudioBuffer(bus));
 
 	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f,

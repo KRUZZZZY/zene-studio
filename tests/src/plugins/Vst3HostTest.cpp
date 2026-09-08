@@ -158,7 +158,15 @@ void Vst3HostTest::testParameterSetGet()
 
 void Vst3HostTest::testStateRoundTrip()
 {
+	const auto& layout = m_plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+
 	m_plugin.setParamNormalized(GainParamId, 0.3f);
+	// Parameter changes reach the processor through process(); a host saves the
+	// plug-in state after the value has been delivered.
+	process(m_plugin, inputs, outputs, TestFrames);
+
 	QByteArray componentState;
 	QByteArray controllerState;
 	QVERIFY(m_plugin.saveState(&componentState, &controllerState));
@@ -166,16 +174,17 @@ void Vst3HostTest::testStateRoundTrip()
 
 	m_plugin.setParamNormalized(GainParamId, 0.9f);
 	QCOMPARE(m_plugin.paramNormalized(GainParamId), 0.9f);
+	process(m_plugin, inputs, outputs, TestFrames);
+	QVERIFY2(std::abs(rms(outputs[0]) - 0.45) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
 
 	QVERIFY(m_plugin.loadState(componentState, controllerState));
 	QVERIFY(std::abs(m_plugin.paramNormalized(GainParamId) - 0.3f) < 1e-6f);
 
 	// the restored state must reach the processor, not just the controller
-	const auto& layout = m_plugin.busLayout();
-	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
-	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+	std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
 	process(m_plugin, inputs, outputs, TestFrames);
-	QVERIFY(std::abs(rms(outputs[0]) - 0.15) < 1e-6);
+	QVERIFY2(std::abs(rms(outputs[0]) - 0.15) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
 }
 
 void Vst3HostTest::testAudioGain()
