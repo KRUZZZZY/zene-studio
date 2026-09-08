@@ -154,6 +154,7 @@ public:
 
 	bool isValid() const { return m_track != nullptr; }
 	QString name() const;
+	void setName(const QString& name);
 	QString instrumentName() const;
 	int volume() const;
 	void setVolume(int volume);

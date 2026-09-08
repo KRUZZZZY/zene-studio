@@ -240,6 +240,21 @@ ScriptCommand makeCommand(ScriptCommand::Type type)
 	return command;
 }
 
+//! Queue a track rename. Engine state is never mutated on the worker thread
+//! (spec section 4 / section 10); the apply side performs the rename.
+void enqueueTrackRename(Track* track, const QString& name)
+{
+	if (track == nullptr)
+	{
+		return;
+	}
+	ScriptCommand command = makeCommand(ScriptCommand::Type::SetTrackName);
+	command.object0 = track;
+	const QByteArray utf8 = name.toUtf8();
+	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
+	ScriptEngine::instance()->enqueue(command);
+}
+
 } // namespace
 
 namespace ScriptBindings
@@ -372,6 +387,7 @@ void registerAll(lua_State* L, ScriptEngine* engine)
 			.addConstructor<void (*)()>()
 			.addFunction("isValid", &LuaInstrumentTrack::isValid)
 			.addFunction("name", &LuaInstrumentTrack::name)
+			.addFunction("setName", &LuaInstrumentTrack::setName)
 			.addFunction("instrumentName", &LuaInstrumentTrack::instrumentName)
 			.addFunction("volume", &LuaInstrumentTrack::volume)
 			.addFunction("setVolume", &LuaInstrumentTrack::setVolume)
@@ -596,7 +612,15 @@ QString LuaBoolModel::name() const
 
 QString LuaInstrumentTrack::name() const
 {
-	return m_track ? m_track->name() : QString();
+	if (!m_track) { return QString(); }
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
+	return m_track->name();
+}
+
+void LuaInstrumentTrack::setName(const QString& name)
+{
+	enqueueTrackRename(m_track, name);
 }
 
 QString LuaInstrumentTrack::instrumentName() const
@@ -641,12 +665,15 @@ LuaFloatModel& LuaInstrumentTrack::panningModel() const
 
 QString LuaTrack::name() const
 {
-	return m_track ? m_track->name() : QString();
+	if (!m_track) { return QString(); }
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
+	return m_track->name();
 }
 
 void LuaTrack::setName(const QString& name)
 {
-	if (m_track) { m_track->setName(name); }
+	enqueueTrackRename(m_track, name);
 }
 
 QString LuaTrack::type() const
@@ -709,7 +736,10 @@ LuaBoolModel& LuaTrack::muteModel() const
 
 QString LuaPatternClip::name() const
 {
-	return m_clip ? m_clip->name() : QString();
+	if (!m_clip) { return QString(); }
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
+	return m_clip->name();
 }
 
 void LuaPatternClip::setName(const QString& name)
@@ -864,15 +894,26 @@ LuaPatternClip& LuaPatternStore::patternClip(int patternIndex, int trackIndex) c
 LuaPatternClip& LuaPatternStore::addPattern() const
 {
 	auto* engine = ScriptEngine::instance();
-	engine->enqueue(makeCommand(ScriptCommand::Type::AddPatternTrack));
-	engine->flushCommandsForRead();
+
+	// Adding the first track to the store makes LMMS create pattern 0
+	// implicitly (PatternStore::updateAfterTrackAdd -> Song::addPatternTrack),
+	// so only add a pattern track when the project has none. The clip then
+	// lives at the current pattern index on the newest track.
 	if (engine->patternTrackCount() == 0)
 	{
 		engine->enqueue(makeCommand(ScriptCommand::Type::AddInstrumentTrack));
 		engine->flushCommandsForRead();
 	}
+	if (engine->patternCount() == 0)
+	{
+		engine->enqueue(makeCommand(ScriptCommand::Type::AddPatternTrack));
+		engine->flushCommandsForRead();
+	}
+
 	const int patternIndex = engine->patternCount() - 1;
-	return ScriptBindings::newPatternClip(engine->patternClipAt(patternIndex, 0), patternIndex, 0);
+	const int trackIndex = engine->patternTrackCount() - 1;
+	return ScriptBindings::newPatternClip(
+		engine->patternClipAt(patternIndex, trackIndex), patternIndex, trackIndex);
 }
 
 // ---------------------------------------------------------------------------
