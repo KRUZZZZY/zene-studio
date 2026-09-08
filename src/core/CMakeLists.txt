@@ -2,10 +2,12 @@ set(LMMS_SRCS
 	${LMMS_SRCS}
 
 	core/AudioBuffer.cpp
+	core/AudioBus.cpp
 	core/AudioBusHandle.cpp
 	core/AudioEngine.cpp
 	core/AudioEngineProfiler.cpp
 	core/AudioEngineWorkerThread.cpp
+	core/AudioPortsModel.cpp
 	core/AudioResampler.cpp
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp

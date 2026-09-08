@@ -38,6 +38,7 @@ inline constexpr float F_EPSILON = 1.0e-10f; // 10^-10
 inline constexpr auto DEFAULT_CHANNELS = ch_cnt_t{2};
 inline constexpr auto MaxChannelsPerAudioBuffer = ch_cnt_t{128};
 inline constexpr auto MaxGroupsPerAudioBuffer = group_cnt_t{MaxChannelsPerAudioBuffer / 2};
+inline constexpr auto MaxTrackChannels = ch_cnt_t{256}; // PR #7459: track channel index/count (0-256)
 
 // Microtuner
 inline constexpr unsigned MaxScaleCount = 10;  //!< number of scales per project
