@@ -11,7 +11,7 @@
 |---|---|---|
 | Does LMMS load `librnnoisedenoiser.so` in a headless render? | **YES** | strace `openat(...librnnoisedenoiser.so) = 23` (§1) |
 | Does the plugin run on the audio thread and alter the signal? | **YES** | A vs C differ in 81 % of samples, max\|diff\| 0.473; deterministic ~30 ms latency + OLA re-synthesis + tail flush (§4, §5) |
-| Does it perform noise suppression **at LMMS's signal scale**? | **NO as shipped → YES after fix** | pre-fix **+0.03 dB**, post-fix **−24.05 dB** (A vs C, noise-only passage); band levels now −18…−65 dB (§4, §11) |
+| Does it perform noise suppression **at LMMS's signal scale**? | **NO as shipped → YES after fix** | pre-fix **+0.03 dB**, post-fix **−21.8…−24.1 dB** across repeated renders (mean −23.2 dB; A vs C, noise-only passage); band levels now −15…−65 dB (§4, §11) |
 | Is the DSP core itself broken? | **NO** | same library/binary at RNNoise's native ±32768 scale suppresses the noise-only passage by **−32.0 dB** (library harness) / **−24.0…−29.8 dB** (in-host) (§6) |
 | Root cause | **missing ±32768 (CELT_SIG_SCALE) input/output conversion** in `processImpl()` (§6) | |
 | Audio-thread safety (static) | **no allocation / no locking** on the audio path (§7) | |
@@ -19,7 +19,7 @@
 
 **One-line summary**: the plugin loads, runs, and measurably processes audio in the host, but as shipped it is a ~30 ms delay/re-synthesis no-op at LMMS's ±1.0 float signal scale — the RNNoise network receives inputs ~5 orders of magnitude below its training range and never attenuates the noise. Feed it ±32768 and the same code denoises by 24–32 dB.
 
-> **UPDATE 2026-09-08 (post-verdict, §11):** the root-cause fix is implemented and re-measured. `processImpl()` now converts ±1.0 → ±32768 on the way in and ÷32768 on the way out; the noise-only A-vs-C delta is **−24.05 dB** (acceptance ≤ −10 dB, **PASS**), and bypass equivalence plus the 1439-sample latency are unchanged.
+> **UPDATE 2026-09-08 (post-verdict, §11):** the root-cause fix is implemented and re-measured. `processImpl()` now converts ±1.0 → ±32768 on the way in and ÷32768 on the way out; the noise-only A-vs-C delta is **−21.8 … −24.1 dB** across repeated renders (mean −23.2 dB; first render −24.05 dB) — acceptance ≤ −10 dB, **PASS every run** (§11.7) — and bypass equivalence plus the 1439-sample latency are unchanged.
 
 ---
 
@@ -587,13 +587,13 @@ The 100-sample partial frame is **not** dropped: the plugin keeps emitting a dec
 4. The wet/dry control (`wet="1"` only was exercised; `wet=0.5` and `wet=0` were not).
 5. The host `AudioEngineWorkerThread` shutdown abort (§9.1) — separate LMMS bug.
 
-**Single most important follow-up**: ~~apply `SCALEIN`/`SCALEOUT` (×32768 in, ÷32768 out) in `RnnoiseDenoiserEffect::processImpl()` and re-run `testdata/run_renders.sh`; the A-B noise-only delta should move from +0.03 dB to ≈ −24 dB.~~ → **DONE 2026-09-08 (§11)**: applied and re-measured; the delta moved from +0.03 dB to **−24.05 dB**, exactly as predicted.
+**Single most important follow-up**: ~~apply `SCALEIN`/`SCALEOUT` (×32768 in, ÷32768 out) in `RnnoiseDenoiserEffect::processImpl()` and re-run `testdata/run_renders.sh`; the A-B noise-only delta should move from +0.03 dB to ≈ −24 dB.~~ → **DONE 2026-09-08 (§11)**: applied and re-measured; the delta moved from +0.03 dB to **−21.8…−24.1 dB** (mean −23.2 dB, first render −24.05 dB), as predicted.
 
 ---
 
 ## 11. FIX APPLIED — SCALEIN/SCALEOUT conversion + re-measurement (2026-09-08)
 
-**Status of §6's root cause: FIXED and re-verified end-to-end.** The noise-only A-vs-C delta moved from **+0.03 dB (FAIL)** to **−24.05 dB (PASS, acceptance ≤ −10 dB)**; bypass equivalence and the 1439-sample latency are unchanged.
+**Status of §6's root cause: FIXED and re-verified end-to-end.** The noise-only A-vs-C delta moved from **+0.03 dB (FAIL)** to **−21.8 … −24.1 dB** across repeated renders (first render −24.05 dB, mean −23.2 dB; acceptance ≤ −10 dB — **PASS every run**, see §11.7 for the spread); bypass equivalence and the 1439-sample latency are unchanged.
 
 ### 11.1 The change (plugin source only — no UI/parameter change)
 
@@ -722,6 +722,25 @@ regression max|B-C| outside 0.05 s startup = 0.000000000000
 
 The pre-fix D/E experiment scaled the source WAV by ×32768 so the *host* delivered native-range samples. After the fix the plugin scales by ×32768 again, so E's input is now 32768× too hot (≈±1.07e9): it over-drives the network and suppresses essentially everything (E speech ≈ −53 dBFS). **D/E are therefore no longer the scale proof — A/B/C are** (and the band-table equivalence in §11.3 preserves the original evidence). D/E remain in `run_renders.sh` as a scale-sensitivity control.
 
+### 11.7 Render-to-render spread of the post-fix figure
+
+Re-rendering A/B/C from the committed source and measuring again gave **−21.79 dB** instead of −24.05 dB. Repeating the A render 5× and the C render 3× (`testdata/repeat_fix_renders.sh`, log `repeat-fix-renders.txt`) shows the figure is stable to a few dB but not bit-exact:
+
+| Run | A noise-only | C noise-only | A-vs-C |
+|---|---|---|---|
+| A_1 | −69.10 dBFS | −45.05 dBFS | **−24.05 dB** |
+| A_2 | −69.10 dBFS | −45.05 dBFS | **−24.05 dB** |
+| A_3 | −67.31 dBFS | −45.05 dBFS | −22.26 dB |
+| A_4 | −66.85 dBFS | −45.05 dBFS | −21.79 dB |
+| A_5 | −69.10 dBFS | −45.05 dBFS | **−24.05 dB** |
+
+- C (no-FX) is bit-stable in the noise-only passage: **−45.05 dBFS in 3/3 runs** (0.00 dB spread).
+- A's noise-only level varies by 2.25 dB across runs. **All 5 runs PASS** the ≤ −10 dB acceptance with ≥ 11.8 dB margin; mean delta **−23.24 dB** (target ≈ −24 dB).
+- Cause: the host's startup window is nondeterministic (§4.2 — repeated renders of the same project differ in the first ~70 ms; the repeat renders differ only there, their noise-only passages are identical). Pre-fix the network was saturated into a near-passthrough regime and insensitive to that; post-fix the network is active and its adaptive state carries the startup variation into the noise-only passage. The plugin is deterministic for a given input sample stream; this is measurement spread, not instability.
+- On-disk artifacts: `out_A/B/C.wav` are the latest re-render (delta −21.79 dB), measured in `measure-fix-after-rerun.txt` / `verify-fix-final-rerun.txt`. The first post-fix render set (delta −24.05 dB) is archived in `measure-fix-after.txt` / `verify-fix-final.txt`.
+
+**Acceptance headline: noise-only A-vs-C = −21.8 … −24.1 dB across repeated renders (mean −23.2 dB), every run ≤ −10 dB — PASS.**
+
 ---
 
 ## Appendix A — reproduction
@@ -743,6 +762,7 @@ python3 plugins/RnnoiseDenoiser/testdata/measure_fix.py after      # acceptance 
 python3 plugins/RnnoiseDenoiser/testdata/verify_fix_final.py       # fresh independent re-read (§11.3)
 python3 plugins/RnnoiseDenoiser/testdata/probe_latency_after.py    # delay residual probe (§11.4)
 python3 plugins/RnnoiseDenoiser/testdata/probe_alignment_vs_prefix.py  # post- vs pre-fix alignment (§11.4)
+bash    plugins/RnnoiseDenoiser/testdata/repeat_fix_renders.sh 5   # render-to-render spread: 5x A + 3x C (§11.7)
 ```
 
 The pre-fix baseline (`measure_fix.py before`, archived in `testdata/measure-fix-before.txt`) was
@@ -764,6 +784,6 @@ regenerated A/B/C in place.
 | `make_test_signal.py`, `make_scale_experiment.py`, `measure.py`, `analyze.py`, `run_renders.sh`, `repeat_renders.sh`, `crash_stats.sh` | generators/analysers |
 | `rnn_harness.c`, `run_harness.sh`, `run_harness.py`, `harness_stats_*.csv`, `harness_out_*.f32` | library-level proof (§6.2) |
 | `gate_proof.py`, `final_probe.py`, `probe_bypass_and_delay.py` | characterisation probes (§4.2, §5, §6.3) |
-| `measure_fix.py`, `verify_fix_final.py`, `probe_latency_after.py`, `probe_alignment_vs_prefix.py` | independent post-fix measurement + regression probes (§11) |
-| `build-log-fix.txt`, `render-log-fix.txt`, `measure-fix-before.txt`, `measure-fix-after.txt`, `measurement-log-fix.txt`, `verify-fix-final.txt`, `probe-latency-after.txt`, `probe-alignment-vs-prefix.txt` | §11 fix-verification logs |
+| `measure_fix.py`, `verify_fix_final.py`, `probe_latency_after.py`, `probe_alignment_vs_prefix.py`, `repeat_fix_renders.sh`, `repeat_fix_measure.py` | independent post-fix measurement + regression + spread probes (§11) |
+| `build-log-fix.txt`, `render-log-fix.txt`, `measure-fix-before.txt`, `measure-fix-after.txt`, `measure-fix-after-rerun.txt`, `measurement-log-fix.txt`, `verify-fix-final.txt`, `verify-fix-final-rerun.txt`, `repeat-fix-renders.txt`, `probe-latency-after.txt`, `probe-alignment-vs-prefix.txt` | fix-verification logs (§11) |
 | `crash-evidence/edge_6.log`, `crash-evidence/edge_nofx_4.log`, `crash-evidence/edge_nofx_8.log`, `crash-evidence/gdb_backtrace_edge_nofx.log`, `crash-evidence/crash-rate-log.txt`, `crash-evidence/crash-rate-batch1.txt` | host shutdown abort (§9.1) |

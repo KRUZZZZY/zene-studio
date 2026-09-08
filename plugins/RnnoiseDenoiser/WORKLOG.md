@@ -1,6 +1,6 @@
 # WORKLOG — RNNoise Denoiser Effect Plugin (AI-KOS #559)
 
-## Status: RUNTIME-VERIFIED — DENOISING FIXED (loads, processes, and now suppresses noise by −24.05 dB at LMMS's ±1.0 sample scale; the ×32768 in / ÷32768 out conversion was applied 2026-09-08, commit `bd222bca1`). Full evidence: `RUNTIME-TEST.md` §11.
+## Status: RUNTIME-VERIFIED — DENOISING FIXED (loads, processes, and now suppresses noise by 21.8–24.1 dB at LMMS's ±1.0 sample scale; the ×32768 in / ÷32768 out conversion was applied 2026-09-08, commit `bd222bca1bdc13d147f8493c58ad12f34a757702`). Full evidence: `RUNTIME-TEST.md` §11.
 
 ## Files Created
 
@@ -70,10 +70,11 @@ Also found (host, not plugin): intermittent SIGABRT at shutdown in `lmms::AudioE
   - `RnnoiseDenoiserEffect.h:61,65` frame buffers zero-initialised (`= {}`)
   - No allocation/locking added; the 480-frame accumulation and output indexing are untouched.
 - **Build**: `cd build && make -j8 rnnoisedenoiser lmms` → **exit 0** (`testdata/build-log-fix.txt`); `librnnoisedenoiser.so` relinked 21:19.
-- **Render**: `testdata/run_renders.sh` → **8/8 exit 0**; A/B/C regenerated 21:17 (`testdata/render-log-fix.txt`).
+- **Render**: `testdata/run_renders.sh` → **8/8 exit 0** (`testdata/render-log-fix.txt`); A/B/C re-rendered again from the committed source for the reproducibility gate (spread study §11.7).
 - **Measured A-B result** (independent RIFF parse, `testdata/measure_fix.py`, re-confirmed by fresh `testdata/verify_fix_final.py` and by `testdata/measure.py`):
-  - noise-only 0.85–1.15 s: A = **−69.10 dBFS**, C = −45.05 dBFS → **A-vs-C = −24.05 dB** (was **+0.03 dB**) → **PASS** (acceptance ≤ −10 dB)
-  - band suppression 0–24 kHz: −18.48 / −25.60 / −41.45 / −43.59 / −48.69 / −65.39 dB — identical to 2 decimals to the pre-fix native-scale E-vs-D experiment
+  - noise-only 0.85–1.15 s: C = −45.05 dBFS (bit-stable, 3/3 runs); A = −66.9…−69.1 dBFS across 5 repeated renders → **A-vs-C = −21.8 … −24.1 dB (mean −23.2 dB)** (was **+0.03 dB**) → **PASS every run** (acceptance ≤ −10 dB); first render −24.05 dB
+  - band suppression 0–24 kHz: −15.4 … −65.5 dB across repeats (first render −18.5 / −25.6 / −41.5 / −43.6 / −48.7 / −65.4 dB — identical to 2 decimals to the pre-fix native-scale E-vs-D experiment)
+  - spread cause: the host startup window is nondeterministic (§4.2) and post-fix the now-active adaptive network carries that variation into the noise-only passage; the plugin is deterministic per input stream (`testdata/repeat-fix-renders.txt`)
   - speech 0.10–0.70 s: A-vs-C **+0.37 dB** (speech preserved)
   - regression: `max|B−C|` = **0.0000000000** outside the startup window; latency unchanged at **1439 samples** (post-fix A aligns with the backed-up pre-fix A at lag 0, corr +0.9995)
 - **Robustness**: null-state guard and buffer initialisation fixed. Tail flush for non-480-multiple clips remains a **documented known issue** — LMMS's `Effect` API has no end-of-stream hook, so there is no cheap allocation-free place to flush a partial frame; behaviour is unchanged from §8 (decaying tail to 2.151 s, no crash/hang/NaN).
