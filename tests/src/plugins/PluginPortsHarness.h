@@ -43,6 +43,7 @@
 #include "EffectControls.h"
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
+#include "base64.h"
 
 namespace partc
 {
@@ -64,7 +65,12 @@ inline auto pluginNames() -> const std::array<const char*, 15>&
 }
 
 inline constexpr ch_cnt_t ChannelPairs = 1; //!< stereo track channel pair
-inline constexpr int Buffers = 3;           //!< consecutive buffers per plugin
+//! Consecutive buffers per plugin. 64 buffers * 256 frames = 16384 frames,
+//! which is longer than the longest wet-path latency under test (ReverbSC's
+//! pre-delay is >= 1933 samples, MultitapEcho's first tap is 250 ms at the
+//! default step length, DynamicsProcessor's attack is 50 ms), so the stateful
+//! wet paths are actually reached and compared.
+inline constexpr int Buffers = 64;
 inline constexpr float WetLevel = 0.75f;    //!< dry/wet mix used by both sides
 
 struct SettingOverride
@@ -212,6 +218,26 @@ inline void applyTestSettings(Effect& fx, const std::string& plugin)
 	for (const auto& o : overridesFor(plugin))
 	{
 		controls.setAttribute(QString::fromStdString(o.name), QString::fromStdString(o.value));
+	}
+
+	// DynamicsProcessor's default wavegraph is the identity curve, which turns
+	// the envelope-follower + curve-lookup path into a linear gain. Replace it
+	// with a hard-knee curve (~9 dB of compression above -10 dBFS) so the
+	// dynamics are actually exercised. Serialised exactly like the plugin does
+	// (200 little-endian floats, base64 in the "waveShape" attribute), so both
+	// the migrated and the reference build load the same curve.
+	if (plugin == "dynamicsprocessor")
+	{
+		std::array<float, 200> shape{};
+		for (int i = 0; i < 200; ++i)
+		{
+			const float x = (i + 1.0f) / 200.0f;
+			shape[i] = x < 0.3f ? x : 0.3f + (x - 0.3f) * 0.35f;
+		}
+		QString encoded;
+		base64::encode(reinterpret_cast<const char*>(shape.data()),
+			static_cast<int>(shape.size() * sizeof(float)), encoded);
+		controls.setAttribute(QStringLiteral("waveShape"), encoded);
 	}
 
 	fx.loadSettings(root);
