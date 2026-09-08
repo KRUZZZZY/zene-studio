@@ -40,8 +40,14 @@
 #include <cmath>
 #include <cstring>
 
+#include "NamProfile.h"
+
 namespace lmms::nam
 {
+
+#ifdef NAM_PROFILE_LAYERS
+double g_namProfUs[NAM_PROF_SLOT_COUNT] = {};
+#endif
 
 void NamModel::applyTanh(Eigen::MatrixXf& m, int numFrames) noexcept
 {
@@ -117,9 +123,15 @@ void NamModel::process(const float* input, float* output, int numFrames) noexcep
 
 void NamModel::processChunk(const float* input, float* output, int numFrames) noexcept
 {
+#ifdef NAM_PROFILE_LAYERS
+	double namT0 = 0.0;
+#endif
+
 	// Global condition signal (the raw input), one row.
+	NAM_PROF_TIC();
 	m_condition.row(0).head(numFrames) =
 		Eigen::Map<const Eigen::RowVectorXf>(input, numFrames);
+	NAM_PROF_TOC(NAM_PROF_CONDITION);
 
 	for (std::size_t a = 0; a < m_arrays.size(); ++a)
 	{
@@ -129,6 +141,7 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 		// Array input: rechannel of the condition for the first array, the
 		// previous array's residual output otherwise. The rechannel maps
 		// inputSize -> channels; layer 0 consumes the rechannel output.
+		NAM_PROF_TIC();
 		if (prev == nullptr)
 		{
 			array.rechannelIn.row(0).head(numFrames) =
@@ -140,8 +153,10 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 		}
 		array.layerInput.leftCols(numFrames).noalias() =
 			array.rechannelW * array.rechannelIn.leftCols(numFrames);
+		NAM_PROF_TOC(NAM_PROF_RECHANNEL);
 
 		// Head accumulator: starts from the previous array's head output.
+		NAM_PROF_TIC();
 		if (prev == nullptr)
 		{
 			array.head.leftCols(numFrames).setZero();
@@ -150,6 +165,7 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 		{
 			array.head.leftCols(numFrames) = prev->headOut.leftCols(numFrames);
 		}
+		NAM_PROF_TOC(NAM_PROF_HEAD_INIT);
 
 		const Eigen::MatrixXf* cur = &array.layerInput;
 
@@ -170,6 +186,7 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 			// read stale samples from the start of the prewarm transient.
 			// memmove handles the overlap when the previous block was shorter
 			// than R; columns are contiguous in column-major storage.
+			NAM_PROF_TIC();
 			if (R > 0 && m_lastChunkFrames > 0)
 			{
 				std::memmove(layer.history.data(),
@@ -177,10 +194,12 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 					sizeof(float) * static_cast<std::size_t>(R) * inC);
 			}
 			layer.history.block(0, R, inC, numFrames) = cur->leftCols(numFrames);
+			NAM_PROF_TOC(NAM_PROF_HISTORY);
 
 			// Dilated causal convolution: tap k looks back (K-1-k)*D samples.
 			// The history window is [previous R samples][current block], newest
 			// last, so tap k starts at R - (K-1-k)*D.
+			NAM_PROF_TIC();
 			layer.convOut.leftCols(numFrames).setZero();
 			for (int k = 0; k < K; ++k)
 			{
@@ -188,21 +207,35 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 				layer.convOut.leftCols(numFrames).noalias() +=
 					layer.convW[k] * layer.history.block(0, col, inC, numFrames);
 			}
+			NAM_PROF_TOC(NAM_PROF_CONV);
+
+			NAM_PROF_TIC();
 			layer.convOut.leftCols(numFrames).colwise() += layer.convBias;
+			NAM_PROF_TOC(NAM_PROF_CONV_BIAS);
 
 			// Conditioning mixin (kernel 1, no bias).
+			NAM_PROF_TIC();
 			layer.mixinOut.leftCols(numFrames).noalias() =
 				layer.mixinW * m_condition.leftCols(numFrames);
+			NAM_PROF_TOC(NAM_PROF_MIXIN);
 
 			// z = conv + mixin, then activation.
+			NAM_PROF_TIC();
 			layer.z.leftCols(numFrames) =
 				layer.convOut.leftCols(numFrames) + layer.mixinOut.leftCols(numFrames);
+			NAM_PROF_TOC(NAM_PROF_Z_ADD);
+
+			NAM_PROF_TIC();
 			applyTanh(layer.z, numFrames);
+			NAM_PROF_TOC(NAM_PROF_TANH);
 
 			// Skip connection into the array head.
+			NAM_PROF_TIC();
 			array.head.leftCols(numFrames) += layer.z.leftCols(numFrames);
+			NAM_PROF_TOC(NAM_PROF_HEAD_ADD);
 
 			// Residual connection to the next layer.
+			NAM_PROF_TIC();
 			if (layer.hasOneByOne)
 			{
 				layer.next.leftCols(numFrames).noalias() =
@@ -214,28 +247,35 @@ void NamModel::processChunk(const float* input, float* output, int numFrames) no
 			{
 				layer.next.leftCols(numFrames) = cur->leftCols(numFrames);
 			}
+			NAM_PROF_TOC(NAM_PROF_ONEBYONE);
 
 			cur = &layer.next;
 		}
 
+		NAM_PROF_TIC();
 		array.layerOutput.leftCols(numFrames) = cur->leftCols(numFrames);
+		NAM_PROF_TOC(NAM_PROF_LAYER_OUT);
 
 		// Per-array head rechannel (1x1 + optional bias).
+		NAM_PROF_TIC();
 		array.headOut.leftCols(numFrames).noalias() =
 			array.headRechannelW * array.head.leftCols(numFrames);
 		if (array.headRechannelHasBias)
 		{
 			array.headOut.leftCols(numFrames).colwise() += array.headRechannelBias;
 		}
+		NAM_PROF_TOC(NAM_PROF_HEAD_RECHANNEL);
 	}
 
 	// Output = head_scale * last array's head output (single channel).
+	NAM_PROF_TIC();
 	const float scale = m_spec.headScale;
 	const Eigen::MatrixXf& finalHead = m_arrays.back().headOut;
 	for (int i = 0; i < numFrames; ++i)
 	{
 		output[i] = scale * finalHead(0, i);
 	}
+	NAM_PROF_TOC(NAM_PROF_OUTPUT);
 
 	// Remember this chunk's length: the next call shifts its history windows
 	// by exactly this many frames.

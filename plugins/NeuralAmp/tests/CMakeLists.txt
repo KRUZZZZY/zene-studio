@@ -39,6 +39,20 @@ TARGET_COMPILE_FEATURES(nam_harness PRIVATE cxx_std_20)
 TARGET_COMPILE_OPTIONS(nam_harness PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
 TARGET_LINK_LIBRARIES(nam_harness PRIVATE m)
 
+# Stage-level CPU profile of the engine. NAM_PROFILE_LAYERS is defined for this
+# target only: it turns the NAM_PROF_* hooks in NamModel.cpp into per-stage
+# CLOCK_THREAD_CPUTIME_ID accumulators. The plugin and nam_harness builds do not
+# define it, so their code is unchanged.
+ADD_EXECUTABLE(nam_profile EXCLUDE_FROM_ALL
+	nam_profile.cpp
+	${NEURALAMP_ENGINE_SOURCES}
+)
+TARGET_INCLUDE_DIRECTORIES(nam_profile PRIVATE ${NEURALAMP_TEST_INCLUDES})
+TARGET_COMPILE_FEATURES(nam_profile PRIVATE cxx_std_20)
+TARGET_COMPILE_OPTIONS(nam_profile PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
+TARGET_COMPILE_DEFINITIONS(nam_profile PRIVATE NAM_PROFILE_LAYERS)
+TARGET_LINK_LIBRARIES(nam_profile PRIVATE m)
+
 IF(UNIX AND NOT APPLE)
 	ADD_EXECUTABLE(rt_alloc_probe EXCLUDE_FROM_ALL
 		rt_alloc_probe.cpp
