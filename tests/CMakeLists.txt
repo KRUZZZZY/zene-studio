@@ -13,7 +13,7 @@ set(LMMS_TESTS
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
-	src/core/RoutingGraphTest.cpp
+	src/core/ScriptEngineTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/tracks/AutomationTrackTest.cpp
@@ -37,6 +37,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
+	# Lua scripting examples live in the source tree; tests run from build/tests.
+	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")
 endforeach()
 
 # Real-hardware capture probe (task #556). Deliberately NOT registered with

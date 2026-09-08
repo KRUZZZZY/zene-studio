@@ -1,0 +1,14 @@
+Vendored: LuaBridge 2.10
+Upstream: https://github.com/vinniefalco/LuaBridge/releases/tag/2.10
+Licence:  MIT (see LICENSE)
+
+Files taken: Source/LuaBridge/*.h and Source/LuaBridge/detail/*.h, flat, with
+the detail/ subdirectory preserved.
+
+Why LuaBridge over sol2: see specs/SPEC-lua-api-v0.md section 2 -- sol2's
+template weight would slow down LMMS' already heavy Qt builds for no
+capability the v0 API needs. 2.10 is the last tagged release of the original
+LuaBridge and supports Lua 5.4 (upstream ships a Tests54 target against
+Lua 5.4.4).
+
+Local modifications: none.

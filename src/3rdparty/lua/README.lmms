@@ -1,0 +1,16 @@
+Vendored: Lua 5.4.8
+Upstream: https://www.lua.org/ftp/lua-5.4.8.tar.gz
+SHA-256: 4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae
+Licence:  MIT (see COPYRIGHT)
+
+Files taken: src/*.c and src/*.h from the upstream tarball, except lua.c and
+luac.c (standalone interpreter / bytecode compiler, not embedded).
+
+Vendored rather than found via find_package() because a scripting runtime is
+an optional, always-present dependency of the Lua scripting API (see
+specs/SPEC-lua-api-v0.md section 2) and distributions do not ship a
+consistent Lua 5.4 development package. The runtime is ~300 KB of C with no
+external dependencies.
+
+Local modifications: none. Keep it that way -- any patch must be listed here
+with its rationale so upstream can be re-vendored cleanly.
