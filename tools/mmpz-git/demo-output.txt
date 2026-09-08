@@ -279,7 +279,7 @@ $ cmp /tmp/qtA.mmpz /tmp/qtB.mmpz
 cmp exit=1
 
 $ diff <(dump qtA) <(dump qtB) | wc -l
-1326
+1244
 
 $ # after canonicalisation the two Qt6 saves are byte-identical
 IDENTICAL after canonicalisation
@@ -310,13 +310,13 @@ $ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms
 $ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py diff /tmp/varA.mmpz /tmp/varB.mmpz
 # mmpz-git diff: /tmp/varA.mmpz -> /tmp/varB.mmpz
 # operations: 2 added, 2 removed, 1 changed, 1 moved
-  ~ /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="0"/note pos="0" @vol: 100 -> 80
-  - /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="192" (removed)
-  - /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="288" (removed)
-  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="240" (added)
-  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
+  ~ /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="0" @vol: 100 -> 80
+  - /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="192" (removed)
+  - /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="288" (removed)
+  + /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="240" (added)
+  + /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
 # position/order changes:
-  > /song/trackcontainer type="song"/track name="Bass"/pattern name="I": note key=29 moved pos 192 -> 240
+  > /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I": note key=29 moved pos 192 -> 240
 [exit 0]
 
 $ # the same two files as a raw text diff
@@ -381,19 +381,19 @@ $ # both edits survived: semantic diff of main -> merge result
 $ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py diff /tmp/merge_base.mmpz /tmp/merge_result.mmpz
 # mmpz-git diff: /tmp/merge_base.mmpz -> /tmp/merge_result.mmpz
 # operations: 2 added, 0 removed, 0 changed, 0 moved
-  + /song/trackcontainer type="song"/track name="Drum"/bbtrack/trackcontainer type="bbtrackcontainer"/track name="Kick"/pattern name="Kick"/note pos="96" (added)
-  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
+  + /lmms-project type="song"/song/trackcontainer type="song"/track name="Drum"/bbtrack/trackcontainer type="bbtrackcontainer"/track name="Kick"/pattern name="Kick"/note pos="96" (added)
+  + /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
 [exit 0]
 
 $ git log --oneline --graph --all
-*   2aee6f0 Merge branch 'feat/bass' into feat/drums
+*   a0239c3 Merge branch 'feat/bass' into feat/drums
 |\  
-| * 46df8bd bass: add a bass note
-* | 1e6aacf drums: add a kick note
+| * f8bc75d bass: add a bass note
+* | 91e1bb7 drums: add a kick note
 |/  
-* 3e95b75 main: bpm 175 -> 128 (one-line edit)
-* f5c6aa6 Import sv-DnB-Startup.mmpz (real LMMS demo project)
-* fa2ffb2 Add .gitattributes: .mmpz stored, diffed and merged as XML
+* f602dba main: bpm 175 -> 128 (one-line edit)
+* 0374874 Import sv-DnB-Startup.mmpz (real LMMS demo project)
+* 807207d Add .gitattributes: .mmpz stored, diffed and merged as XML
 [exit 0]
 
 
@@ -430,7 +430,7 @@ $ git switch -q feat/bpm-ours
 
 $ git merge --no-edit feat/bpm-theirs
 CONFLICT (attribute) at /head: bpm
-mmpz-git: 1 conflict(s); resolve in .merge_file_96xfQX
+mmpz-git: 1 conflict(s); resolve in .merge_file_IOYSLv
 Auto-merging project.mmpz
 CONFLICT (content): Merge conflict in project.mmpz
 Automatic merge failed; fix conflicts and then commit the result.
@@ -486,14 +486,14 @@ $ git status --short
 [exit 0]
 
 $ git log --oneline --graph -8
-*   f712b76 Merge branch 'feat/bpm-theirs' into feat/bpm-ours
+*   0fdec46 Merge branch 'feat/bpm-theirs' into feat/bpm-ours
 |\  
-| * 15498a9 bpm: 96 (theirs)
-* | b04c874 bpm: 140 (ours)
+| * ef4dc47 bpm: 96 (theirs)
+* | 434ad67 bpm: 140 (ours)
 |/  
-* 3e95b75 main: bpm 175 -> 128 (one-line edit)
-* f5c6aa6 Import sv-DnB-Startup.mmpz (real LMMS demo project)
-* fa2ffb2 Add .gitattributes: .mmpz stored, diffed and merged as XML
+* f602dba main: bpm 175 -> 128 (one-line edit)
+* 0374874 Import sv-DnB-Startup.mmpz (real LMMS demo project)
+* 807207d Add .gitattributes: .mmpz stored, diffed and merged as XML
 [exit 0]
 
 
@@ -509,7 +509,7 @@ Merge made by the 'ort' strategy.
 [exit 0]
 
 $ git show --stat --format=%h %s HEAD
-6cd7e2d Merge branch 'feat/drums' into feat/bpm-ours
+b46bd13 Merge branch 'feat/drums' into feat/bpm-ours
 
  project.mmpz | 2 ++
  1 file changed, 2 insertions(+)
@@ -564,7 +564,7 @@ $ file /tmp/merged.wav
 [exit 0]
 
 $ ls -la /tmp/merged.wav
--rw-rw-r-- 1 kruzzzzy kruzzzzy 3968088 Sep  8 23:10 /tmp/merged.wav
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 3968088 Sep  8 23:50 /tmp/merged.wav
 [exit 0]
 
 $ # the bpm-140-vs-96 conflict is resolved to 96 in the final file
@@ -572,9 +572,9 @@ $ # the bpm-140-vs-96 conflict is resolved to 96 in the final file
 $ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py diff /tmp/merge_base.mmpz project.mmpz
 # mmpz-git diff: /tmp/merge_base.mmpz -> project.mmpz
 # operations: 2 added, 0 removed, 1 changed, 0 moved
-  ~ /head/head @bpm: 128 -> 96
-  + /song/trackcontainer type="song"/track name="Drum"/bbtrack/trackcontainer type="bbtrackcontainer"/track name="Kick"/pattern name="Kick"/note pos="96" (added)
-  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
+  ~ /lmms-project type="song"/head @bpm: 128 -> 96
+  + /lmms-project type="song"/song/trackcontainer type="song"/track name="Drum"/bbtrack/trackcontainer type="bbtrackcontainer"/track name="Kick"/pattern name="Kick"/note pos="96" (added)
+  + /lmms-project type="song"/song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
 [exit 0]
 
 
