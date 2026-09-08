@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/foverdrive_1196.so CMakeFiles/foverdrive_1196.dir/ladspa/foverdrive_1196.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -fno-strict-aliasing -funroll-loops -ffast-math -O3 -DNDEBUG -shared  -o ../../ladspa/tap_dynamics_st.so "CMakeFiles/tap_dynamics_st.dir/tap-plugins/tap_dynamics_st.c.o"  -lm 

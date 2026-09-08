@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/freq_tracker_1418.so CMakeFiles/freq_tracker_1418.dir/ladspa/freq_tracker_1418.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

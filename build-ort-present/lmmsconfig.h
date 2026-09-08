@@ -1,0 +1,57 @@
+#define LMMS_BUILD_LINUX
+/* #undef LMMS_BUILD_WIN32 */
+/* #undef LMMS_BUILD_WIN64 */
+/* #undef LMMS_BUILD_APPLE */
+/* #undef LMMS_BUILD_OPENBSD */
+/* #undef LMMS_BUILD_FREEBSD */
+/* #undef LMMS_BUILD_HAIKU */
+/* #undef LMMS_BUILD_CYGWIN */
+
+/* #undef LMMS_HOST_X86 */
+#define LMMS_HOST_X86_64
+/* #undef LMMS_HOST_ARM32 */
+/* #undef LMMS_HOST_ARM64 */
+/* #undef LMMS_HOST_RISCV32 */
+/* #undef LMMS_HOST_RISCV64 */
+/* #undef LMMS_HOST_PPC32 */
+/* #undef LMMS_HOST_PPC64 */
+
+#define LMMS_HAVE_ALSA
+/* #undef LMMS_HAVE_FLUIDSYNTH */
+#define LMMS_HAVE_JACK
+#define LMMS_HAVE_JACK_PRENAME
+#define LMMS_HAVE_WEAKJACK
+/* #undef LMMS_HAVE_LV2 */
+/* #undef LMMS_HAVE_SUIL */
+/* #undef LMMS_HAVE_MP3LAME */
+#define LMMS_HAVE_SNDFILE_MP3
+#define LMMS_HAVE_OGGVORBIS
+#define LMMS_HAVE_OSS
+/* #undef LMMS_HAVE_SNDIO */
+/* #undef LMMS_HAVE_PORTAUDIO */
+/* #undef LMMS_HAVE_SOUNDIO */
+#define LMMS_HAVE_PULSEAUDIO
+/* #undef LMMS_HAVE_SDL */
+/* #undef LMMS_HAVE_STK */
+#define LMMS_HAVE_VST
+/* #undef LMMS_HAVE_VST_32 */
+/* #undef LMMS_HAVE_VST_64 */
+#define LMMS_HAVE_SF_COMPLEVEL
+/* #undef LMMS_HAVE_WINMM */
+#define LMMS_HAVE_STEM_SPLIT
+#define LMMS_HAVE_ONNXRUNTIME
+
+/* #undef LMMS_DEBUG_FPE */
+
+#define LMMS_HAVE_PTHREAD_H
+#define LMMS_HAVE_UNISTD_H
+#define LMMS_HAVE_SYS_IPC_H
+#define LMMS_HAVE_SEMAPHORE_H
+#define LMMS_HAVE_SYS_TIMES_H
+#define LMMS_HAVE_SYS_PRCTL_H
+#define LMMS_HAVE_SCHED_H
+#define LMMS_HAVE_SYS_SOUNDCARD_H
+/* #undef LMMS_HAVE_SOUNDCARD_H */
+#define LMMS_HAVE_FCNTL_H
+#define LMMS_HAVE_SYS_IOCTL_H
+/* #undef LMMS_HAVE_PROCESS_H */

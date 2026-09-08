@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/lcr_delay_1436.so CMakeFiles/lcr_delay_1436.dir/ladspa/lcr_delay_1436.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

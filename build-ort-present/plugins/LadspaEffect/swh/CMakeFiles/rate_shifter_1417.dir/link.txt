@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/rate_shifter_1417.so CMakeFiles/rate_shifter_1417.dir/ladspa/rate_shifter_1417.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

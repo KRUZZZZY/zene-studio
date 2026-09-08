@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/se4_1883.so CMakeFiles/se4_1883.dir/ladspa/se4_1883.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm librms.a libdb.a 

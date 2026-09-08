@@ -1,0 +1,2 @@
+/usr/bin/ar qc libiir.a CMakeFiles/iir.dir/ladspa/util/iir.c.o
+/usr/bin/ranlib libiir.a

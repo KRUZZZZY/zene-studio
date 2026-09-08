@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/phasers_1217.so CMakeFiles/phasers_1217.dir/ladspa/phasers_1217.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

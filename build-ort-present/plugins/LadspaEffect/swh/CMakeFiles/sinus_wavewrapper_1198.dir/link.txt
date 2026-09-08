@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/sinus_wavewrapper_1198.so CMakeFiles/sinus_wavewrapper_1198.dir/ladspa/sinus_wavewrapper_1198.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/comb_1190.so CMakeFiles/comb_1190.dir/ladspa/comb_1190.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

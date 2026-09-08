@@ -1,0 +1,2 @@
+/usr/bin/ar qc libblo.a CMakeFiles/blo.dir/ladspa/util/blo.c.o
+/usr/bin/ranlib libblo.a

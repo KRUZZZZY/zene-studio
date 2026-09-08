@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/sin_cos_1881.so CMakeFiles/sin_cos_1881.dir/ladspa/sin_cos_1881.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

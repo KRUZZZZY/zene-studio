@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/sifter_1210.so CMakeFiles/sifter_1210.dir/ladspa/sifter_1210.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

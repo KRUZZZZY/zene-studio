@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/crossover_dist_1404.so CMakeFiles/crossover_dist_1404.dir/ladspa/crossover_dist_1404.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

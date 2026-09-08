@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/vynil_1905.so CMakeFiles/vynil_1905.dir/ladspa/vynil_1905.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

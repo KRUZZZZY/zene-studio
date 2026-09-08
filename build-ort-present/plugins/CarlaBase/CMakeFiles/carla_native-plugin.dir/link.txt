@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared -Wl,-soname,libcarla_native-plugin.so -o ../libcarla_native-plugin.so "CMakeFiles/carla_native-plugin.dir/DummyCarla.cpp.o" 

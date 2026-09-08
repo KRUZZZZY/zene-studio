@@ -1,0 +1,2 @@
+/usr/bin/ar qc libgverb.a CMakeFiles/gverb.dir/ladspa/gverb/gverb.c.o CMakeFiles/gverb.dir/ladspa/gverb/gverbdsp.c.o
+/usr/bin/ranlib libgverb.a

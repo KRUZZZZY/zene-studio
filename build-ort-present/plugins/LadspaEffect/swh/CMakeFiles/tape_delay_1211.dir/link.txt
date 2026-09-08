@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/tape_delay_1211.so CMakeFiles/tape_delay_1211.dir/ladspa/tape_delay_1211.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

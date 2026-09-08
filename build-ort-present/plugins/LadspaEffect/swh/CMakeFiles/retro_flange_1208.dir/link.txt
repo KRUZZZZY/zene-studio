@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/retro_flange_1208.so CMakeFiles/retro_flange_1208.dir/ladspa/retro_flange_1208.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/bandpass_iir_1892.so CMakeFiles/bandpass_iir_1892.dir/ladspa/bandpass_iir_1892.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libiir.a 

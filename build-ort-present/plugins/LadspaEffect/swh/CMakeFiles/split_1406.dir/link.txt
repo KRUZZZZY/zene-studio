@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/split_1406.so CMakeFiles/split_1406.dir/ladspa/split_1406.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

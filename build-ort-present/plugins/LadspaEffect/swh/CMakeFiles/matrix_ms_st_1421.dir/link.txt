@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/matrix_ms_st_1421.so CMakeFiles/matrix_ms_st_1421.dir/ladspa/matrix_ms_st_1421.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

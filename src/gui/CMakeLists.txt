@@ -1,3 +1,10 @@
+# Offline stem separation GUI (opt-in, see doc/STEM-SPLIT.md).
+IF(LMMS_HAVE_STEM_SPLIT)
+	SET(LMMS_STEM_GUI_SRCS
+		gui/StemSplitController.cpp
+	)
+ENDIF()
+
 SET(LMMS_SRCS
 	${LMMS_SRCS}
 	gui/ActionGroup.cpp
@@ -129,6 +136,8 @@ SET(LMMS_SRCS
 	gui/widgets/TextFloat.cpp
 	gui/widgets/TimeDisplayWidget.cpp
 	gui/widgets/ToolButton.cpp
+
+	${LMMS_STEM_GUI_SRCS}
 
 	PARENT_SCOPE
 )

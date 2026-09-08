@@ -1,0 +1,2 @@
+/usr/bin/ar qc librms.a CMakeFiles/rms.dir/ladspa/util/rms.c.o
+/usr/bin/ranlib librms.a

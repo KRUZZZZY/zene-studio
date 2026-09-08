@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "../libladspaeffect.pdb"
+  "../libladspaeffect.so"
+  "moc_LadspaControlDialog.cpp"
+  "moc_LadspaControls.cpp"
+  "moc_LadspaMatrixControlDialog.cpp"
+  "qrc_ladspaeffect.cpp /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-stems/build-ort-present/plugins/LadspaEffect/moc_LadspaEffect.cpp"
+  "CMakeFiles/ladspaeffect.dir/LadspaControlDialog.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/LadspaControlDialog.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/LadspaControls.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/LadspaControls.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/LadspaEffect.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/LadspaEffect.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/LadspaMatrixControlDialog.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/LadspaMatrixControlDialog.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/LadspaSubPluginFeatures.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/LadspaSubPluginFeatures.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/LadspaWidgetFactory.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/LadspaWidgetFactory.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaControlDialog.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaControlDialog.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaControls.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaControls.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaEffect.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaEffect.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaMatrixControlDialog.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/moc_LadspaMatrixControlDialog.cpp.o.d"
+  "CMakeFiles/ladspaeffect.dir/qrc_ladspaeffect.cpp.o"
+  "CMakeFiles/ladspaeffect.dir/qrc_ladspaeffect.cpp.o.d"
+  "ladspaeffect.qrc"
+  "moc_LadspaControlDialog.cpp"
+  "moc_LadspaControls.cpp"
+  "moc_LadspaEffect.cpp"
+  "moc_LadspaMatrixControlDialog.cpp"
+  "qrc_ladspaeffect.cpp"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/ladspaeffect.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

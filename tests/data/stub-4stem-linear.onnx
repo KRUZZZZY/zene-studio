@@ -1,0 +1,43 @@
+lmms-stem-split-stub:╚
+(
+mix
+
+gain_drumsdrums	mul_drums"Mul
+%
+mix
+	gain_bassbassmul_bass"Mul
+(
+mix
+
+gain_otherother	mul_other"Mul
++
+mix
+gain_vocalsvocals
+mul_vocals"Mulstub-4stem-linear*%млл>B
+gain_drums*% ≥≥>B	gain_bass*%млL>B
+gain_other*%млл=Bgain_vocalsZ
+mix
+
+
+
+Tb
+drums
+
+
+
+Tb
+bass
+
+
+
+Tb
+other
+
+
+
+Tb
+vocals
+
+
+
+TB

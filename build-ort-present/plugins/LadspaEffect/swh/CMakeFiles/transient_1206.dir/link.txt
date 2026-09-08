@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/transient_1206.so CMakeFiles/transient_1206.dir/ladspa/transient_1206.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

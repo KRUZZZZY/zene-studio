@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/lowpass_iir_1891.so CMakeFiles/lowpass_iir_1891.dir/ladspa/lowpass_iir_1891.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libiir.a 

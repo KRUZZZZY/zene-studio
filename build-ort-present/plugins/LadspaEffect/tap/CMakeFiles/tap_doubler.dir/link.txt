@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -fno-strict-aliasing -funroll-loops -ffast-math -O3 -DNDEBUG -shared  -o ../../ladspa/tap_doubler.so "CMakeFiles/tap_doubler.dir/tap-plugins/tap_doubler.c.o"  -lm 

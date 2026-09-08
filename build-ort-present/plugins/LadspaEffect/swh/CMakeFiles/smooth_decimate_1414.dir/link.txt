@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/smooth_decimate_1414.so CMakeFiles/smooth_decimate_1414.dir/ladspa/smooth_decimate_1414.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

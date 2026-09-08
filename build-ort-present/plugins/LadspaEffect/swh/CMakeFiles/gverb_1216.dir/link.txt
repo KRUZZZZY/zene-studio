@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/gverb_1216.so CMakeFiles/gverb_1216.dir/ladspa/gverb_1216.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libgverb.a 

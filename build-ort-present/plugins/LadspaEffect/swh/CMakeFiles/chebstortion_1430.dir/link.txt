@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/chebstortion_1430.so CMakeFiles/chebstortion_1430.dir/ladspa/chebstortion_1430.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/delay_1898.so CMakeFiles/delay_1898.dir/ladspa/delay_1898.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

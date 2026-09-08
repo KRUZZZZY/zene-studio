@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -fno-strict-aliasing -funroll-loops -ffast-math -O3 -DNDEBUG -shared  -o ../../ladspa/tap_vibrato.so "CMakeFiles/tap_vibrato.dir/tap-plugins/tap_vibrato.c.o"  -lm 

@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/hermes_filter_1200.so CMakeFiles/hermes_filter_1200.dir/ladspa/hermes_filter_1200.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libblo.a 

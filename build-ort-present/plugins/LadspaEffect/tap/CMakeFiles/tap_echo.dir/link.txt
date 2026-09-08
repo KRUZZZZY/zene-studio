@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -fno-strict-aliasing -funroll-loops -ffast-math -O3 -DNDEBUG -shared  -o ../../ladspa/tap_echo.so "CMakeFiles/tap_echo.dir/tap-plugins/tap_echo.c.o"  -lm 

@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/imp_1199.so CMakeFiles/imp_1199.dir/ladspa/imp_1199.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

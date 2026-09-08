@@ -1,3 +1,21 @@
+# Offline stem separation (opt-in, see doc/STEM-SPLIT.md). The job manager and
+# track builder are pure Qt and always available when the feature is enabled;
+# the C++ ONNX Runtime backend is compiled only when the runtime was found.
+IF(LMMS_HAVE_STEM_SPLIT)
+	SET(LMMS_STEM_SRCS
+		core/ExternalProcessStemSeparator.cpp
+		core/StemJobManager.cpp
+		core/StemModelStore.cpp
+		core/StemTrackBuilder.cpp
+		# Listed so that AUTOMOC finds the Q_OBJECT header (it lives in
+		# include/StemSeparation/, not next to the .cpp).
+		${CMAKE_SOURCE_DIR}/include/StemSeparation/StemJobManager.h
+	)
+	IF(LMMS_HAVE_ONNXRUNTIME)
+		LIST(APPEND LMMS_STEM_SRCS core/OnnxRuntimeStemSeparator.cpp)
+	ENDIF()
+ENDIF()
+
 set(LMMS_SRCS
 	${LMMS_SRCS}
 
@@ -131,6 +149,8 @@ set(LMMS_SRCS
 	core/midi/MidiApple.cpp
 	core/midi/MidiPort.cpp
 	core/midi/MidiWinMM.cpp
+
+	${LMMS_STEM_SRCS}
 
 	PARENT_SCOPE
 )

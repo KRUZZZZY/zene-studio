@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/flanger_1191.so CMakeFiles/flanger_1191.dir/ladspa/flanger_1191.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

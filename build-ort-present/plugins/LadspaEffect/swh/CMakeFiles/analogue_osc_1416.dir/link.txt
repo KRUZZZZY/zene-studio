@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/analogue_osc_1416.so CMakeFiles/analogue_osc_1416.dir/ladspa/analogue_osc_1416.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libblo.a 
