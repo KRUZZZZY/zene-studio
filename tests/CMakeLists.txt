@@ -13,7 +13,9 @@ set(LMMS_TESTS
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
+	src/core/RoutingGraphTest.cpp
 	src/core/ScriptEngineTest.cpp
+	src/core/SlideNotesTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/tracks/AutomationTrackTest.cpp
