@@ -41,6 +41,7 @@ namespace lmms
 {
 
 // forward-declarations
+class AutomatableModel;
 class InstrumentTrack;
 class MidiEvent;
 class NotePlayHandle;
@@ -157,6 +158,30 @@ public:
 	{
 		return m_instrumentTrack;
 	}
+
+	// --------------------------------------------------------------------
+	// Parameter enumeration (Lua scripting API v0, spec section 3)
+	//
+	// Instruments are enumerated by index rather than by name: the base class
+	// has no name-based parameter lookup, and Plugin::childModel() answers a
+	// static dummy model for every plugin that does not override it, so a
+	// name-based binding would silently read and write a shared throwaway
+	// model. Only models with a non-empty display name are counted; the order
+	// is the QObject child order and is stable for the instrument's lifetime.
+	//
+	// These accessors walk the QObject tree and therefore allocate: they are
+	// for the scripting worker thread and the apply side only, never for the
+	// audio thread.
+	// --------------------------------------------------------------------
+
+	//! Number of named automatable parameters this instrument exposes.
+	int parameterCount() const;
+
+	//! Parameter model at \a index, or nullptr when out of range.
+	AutomatableModel* parameterModel(int index) const;
+
+	//! Display name of the parameter at \a index, or an empty string.
+	QString parameterName(int index) const;
 
 
 protected:

@@ -27,12 +27,38 @@
 #include <cmath>
 #include <numbers>
 
+#include "AutomatableModel.h"
 #include "DummyInstrument.h"
 #include "InstrumentTrack.h"
 #include "LmmsTypes.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+//! Named automatable models owned by \a instrument, in QObject child order.
+QList<AutomatableModel*> namedParameterModels(const Instrument* instrument)
+{
+	QList<AutomatableModel*> models;
+	if (instrument == nullptr)
+	{
+		return models;
+	}
+	for (AutomatableModel* model : instrument->findChildren<AutomatableModel*>(
+				QString(), Qt::FindChildrenRecursively))
+	{
+		// Unnamed models are internal bookkeeping, not user-facing parameters.
+		if (!model->displayName().isEmpty())
+		{
+			models.append(model);
+		}
+	}
+	return models;
+}
+
+} // namespace
 
 
 Instrument::Instrument(InstrumentTrack * _instrument_track,
@@ -212,6 +238,30 @@ sample_rate_t Instrument::getSampleRate() const
 QString Instrument::fullDisplayName() const
 {
 	return instrumentTrack()->displayName();
+}
+
+
+int Instrument::parameterCount() const
+{
+	return namedParameterModels(this).size();
+}
+
+
+AutomatableModel* Instrument::parameterModel(int index) const
+{
+	if (index < 0)
+	{
+		return nullptr;
+	}
+	const QList<AutomatableModel*> models = namedParameterModels(this);
+	return index < models.size() ? models.at(index) : nullptr;
+}
+
+
+QString Instrument::parameterName(int index) const
+{
+	const AutomatableModel* model = parameterModel(index);
+	return model != nullptr ? model->displayName() : QString();
 }
 
 
