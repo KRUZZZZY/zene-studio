@@ -44,63 +44,109 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")
 endforeach()
 
-# Native VST3 hosting tests. They only exist when the MIT licensed VST3 SDK
-# (>= 3.8) is available; see cmake/modules/Vst3Sdk.cmake.
-if(TARGET vst3effect)
-	set(LMMS_VST3_EFFECT_DIR ${CMAKE_SOURCE_DIR}/plugins/Vst3Effect)
-	set(LMMS_VST3_TEST_PLUGIN "${CMAKE_BINARY_DIR}/vst3sdk/build/VST3/Release/again-sample-accurate.vst3"
-		CACHE PATH "VST3 plug-in used by Vst3HostTest")
+# ---------------------------------------------------------------------------
+# Part C (task #585) - behaviour-preservation harness for the AudioPorts
+# plugin migration.
+#
+# The pre-migration DSP sources are extracted verbatim from the base commit
+# 4ac5c3e38 into tests/reference/ (blob ids in tests/reference/ORIGIN.tsv,
+# re-extract with tests/reference/extract-reference-sources.sh) and built here
+# into partc_ref_* modules with the same PLUGIN_NAME define the real plugins
+# use. PluginPortsMigrationReference renders them through the normal plugin
+# entry point; PluginPortsMigrationTest renders the migrated plugins built by
+# the normal build and compares both renders sample-exactly.
+# ---------------------------------------------------------------------------
+set(PART_C_REFERENCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/reference")
 
-	add_executable(Vst3BusMapTest
-		src/plugins/Vst3BusMapTest.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
-	)
-	add_test(NAME Vst3BusMapTest COMMAND Vst3BusMapTest)
-	target_include_directories(Vst3BusMapTest PRIVATE ${LMMS_VST3_EFFECT_DIR})
-	target_compile_features(Vst3BusMapTest PRIVATE cxx_std_20)
-	target_link_libraries(Vst3BusMapTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+set(PART_C_REFERENCE_MODULES
+	"amplifier|Amplifier|Amplifier.cpp|AmplifierControls.cpp|AmplifierControlDialog.cpp"
+	"bassbooster|BassBooster|BassBooster.cpp|BassBoosterControls.cpp|BassBoosterControlDialog.cpp"
+	"bitcrush|Bitcrush|Bitcrush.cpp|BitcrushControls.cpp|BitcrushControlDialog.cpp"
+	"dualfilter|DualFilter|DualFilter.cpp|DualFilterControls.cpp|DualFilterControlDialog.cpp"
+	"waveshaper|WaveShaper|WaveShaper.cpp|WaveShaperControls.cpp|WaveShaperControlDialog.cpp"
+	"flanger|Flanger|FlangerEffect.cpp|FlangerControls.cpp|FlangerControlsDialog.cpp|MonoDelay.cpp"
+	"delay|Delay|DelayEffect.cpp|DelayControls.cpp|DelayControlsDialog.cpp|Lfo.cpp|StereoDelay.cpp"
+)
 
-	add_executable(Vst3HostTest
-		src/plugins/Vst3HostTest.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
-	)
-	add_test(NAME Vst3HostTest COMMAND Vst3HostTest)
-	target_include_directories(Vst3HostTest PRIVATE ${LMMS_VST3_EFFECT_DIR})
-	target_compile_features(Vst3HostTest PRIVATE cxx_std_20)
-	target_link_libraries(Vst3HostTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY} lmms_vst3_sdk)
-	target_compile_definitions(Vst3HostTest PRIVATE VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_PLUGIN}")
+set(PART_C_REFERENCE_TARGETS "")
+set(PART_C_MIGRATED_TARGETS "")
+set(PART_C_REFERENCE_DEFINITIONS "")
+set(PART_C_MIGRATED_DEFINITIONS "")
 
-	add_executable(Vst3EffectIntegrationTest
-		src/plugins/Vst3EffectIntegrationTest.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3Effect.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControlDialog.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControls.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3Parameter.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3SubPluginFeatures.cpp
-	)
-	add_test(NAME Vst3EffectIntegrationTest COMMAND Vst3EffectIntegrationTest)
-	target_include_directories(Vst3EffectIntegrationTest PRIVATE
-		# generated plugin_export.h (PLUGIN_EXPORT) of the vst3effect plug-in
-		${CMAKE_BINARY_DIR}/plugins/Vst3Effect
+foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
+	string(REPLACE "|" ";" FIELDS "${ENTRY}")
+	list(GET FIELDS 0 PLUGIN_ID)
+	list(GET FIELDS 1 PLUGIN_DIR)
+	list(REMOVE_AT FIELDS 0 1)
+
+	set(PLUGIN_SOURCES "")
+	foreach(SRC IN LISTS FIELDS)
+		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/${PLUGIN_DIR}/${SRC}")
+	endforeach()
+	if(PLUGIN_ID STREQUAL "delay")
+		# EqFader is header-only; AUTOMOC needs the header to emit its
+		# metaobject and vtable, which DelayControlsDialog.cpp references.
+		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/Eq/EqFader.h")
+	endif()
+
+	add_library(partc_ref_${PLUGIN_ID} MODULE ${PLUGIN_SOURCES})
+	target_include_directories(partc_ref_${PLUGIN_ID} PRIVATE
+		"${PART_C_REFERENCE_DIR}"
+		"${PART_C_REFERENCE_DIR}/${PLUGIN_DIR}"
+		"${PART_C_REFERENCE_DIR}/Eq"
 		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
-		${LMMS_VST3_EFFECT_DIR}
 	)
-	# the test compiles the plug-in sources itself, so it needs the generated
-	# export header of the plug-in target to exist first
-	add_dependencies(Vst3EffectIntegrationTest vst3effect)
-	target_static_libraries(Vst3EffectIntegrationTest PRIVATE lmmsobjs)
-	target_compile_features(Vst3EffectIntegrationTest PRIVATE cxx_std_20)
-	target_link_libraries(Vst3EffectIntegrationTest PRIVATE
-		${QT_LIBRARIES}
-		${QT_QTTEST_LIBRARY}
-		lmms_vst3_sdk
-	)
-	target_compile_definitions(Vst3EffectIntegrationTest PRIVATE
-		LMMS_TESTING
-		PLUGIN_NAME=vst3effect
-		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_PLUGIN}"
-	)
-endif()
+	target_compile_definitions(partc_ref_${PLUGIN_ID} PRIVATE PLUGIN_NAME=${PLUGIN_ID})
+	target_compile_features(partc_ref_${PLUGIN_ID} PRIVATE cxx_std_20)
+	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE ${QT_LIBRARIES})
+	set_target_properties(partc_ref_${PLUGIN_ID} PROPERTIES PREFIX "" OUTPUT_NAME "partc_ref_${PLUGIN_ID}")
+
+	list(APPEND PART_C_REFERENCE_TARGETS partc_ref_${PLUGIN_ID})
+	list(APPEND PART_C_MIGRATED_TARGETS ${PLUGIN_ID})
+	list(APPEND PART_C_REFERENCE_DEFINITIONS
+		"PART_C_REF_${PLUGIN_ID}=\"$<TARGET_FILE:partc_ref_${PLUGIN_ID}>\"")
+	list(APPEND PART_C_MIGRATED_DEFINITIONS
+		"PART_C_MIGRATED_${PLUGIN_ID}=\"$<TARGET_FILE:${PLUGIN_ID}>\"")
+endforeach()
+
+add_executable(PluginPortsMigrationReference
+	src/plugins/PluginPortsMigrationReference.cpp
+	src/plugins/PluginPortsHarness.h
+)
+target_include_directories(PluginPortsMigrationReference PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_static_libraries(PluginPortsMigrationReference PRIVATE lmmsobjs)
+target_link_libraries(PluginPortsMigrationReference PRIVATE ${QT_LIBRARIES})
+target_compile_features(PluginPortsMigrationReference PRIVATE cxx_std_20)
+target_compile_definitions(PluginPortsMigrationReference PRIVATE
+	LMMS_TESTING
+	${PART_C_REFERENCE_DEFINITIONS}
+)
+set_target_properties(PluginPortsMigrationReference PROPERTIES ENABLE_EXPORTS ON)
+add_dependencies(PluginPortsMigrationReference ${PART_C_REFERENCE_TARGETS})
+
+add_executable(PluginPortsMigrationTest
+	src/plugins/PluginPortsMigrationTest.cpp
+	src/plugins/PluginPortsHarness.h
+)
+add_test(NAME PluginPortsMigrationTest COMMAND PluginPortsMigrationTest)
+target_include_directories(PluginPortsMigrationTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_static_libraries(PluginPortsMigrationTest PRIVATE lmmsobjs)
+target_link_libraries(PluginPortsMigrationTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(PluginPortsMigrationTest PRIVATE cxx_std_20)
+target_compile_definitions(PluginPortsMigrationTest PRIVATE
+	LMMS_TESTING
+	PART_C_REFERENCE_EXE="$<TARGET_FILE:PluginPortsMigrationReference>"
+	${PART_C_MIGRATED_DEFINITIONS}
+)
+set_target_properties(PluginPortsMigrationTest PROPERTIES ENABLE_EXPORTS ON)
+add_dependencies(PluginPortsMigrationTest
+	PluginPortsMigrationReference
+	${PART_C_MIGRATED_TARGETS}
+)

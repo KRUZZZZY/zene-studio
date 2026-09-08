@@ -29,6 +29,8 @@
 #include <QProcess>
 #include <QRecursiveMutex>
 
+#include <span>
+
 #include "RemotePluginBase.h"
 #include "SharedMemory.h"
 #include "LmmsTypes.h"
@@ -38,6 +40,7 @@ namespace lmms
 
 class MidiEvent;
 class RemotePlugin;
+class RemotePluginAudioPortsController;
 class SampleFrame;
 
 class ProcessWatcher : public QThread
@@ -72,6 +75,12 @@ class LMMS_EXPORT RemotePlugin : public QObject, public RemotePluginBase
 	Q_OBJECT
 public:
 	RemotePlugin();
+
+	//! Ports-infrastructure constructor (Part C, additive): connects this remote
+	//! plugin's shared audio buffer to the given audio ports controller.
+	//! See RemotePluginAudioPorts.h.
+	explicit RemotePlugin(RemotePluginAudioPortsController& audioPorts);
+
 	~RemotePlugin() override;
 
 	inline bool isRunning()
@@ -100,6 +109,13 @@ public:
 
 	bool process( const SampleFrame* _in_buf, SampleFrame* _out_buf );
 
+	//! (Re)allocates the shared audio buffer used by the ports infrastructure
+	//! and tells the remote client about the new shared memory key (Part C).
+	//! The returned block holds `channelsIn` interleaved input frames followed
+	//! by `channelsOut` interleaved output frames.
+	//! @return pointer to the shared buffer, or nullptr on failure
+	auto updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*;
+
 	void processMidiEvent( const MidiEvent&, const f_cnt_t _offset );
 
 	void updateSampleRate( sample_rate_t _sr )
@@ -126,6 +142,12 @@ public:
 		message m = waitForMessage( IdIsUIVisible );
 		return m.id != IdIsUIVisible ? -1 : m.getInt() ? 1 : 0;
 	}
+
+	//! Audio ports controller this plugin is connected to, or nullptr when the
+	//! legacy processing path is used (Part C, additive). NOTE: the PR returns a
+	//! reference because its constructor always requires a controller; this
+	//! additive slice keeps the controller optional, hence the pointer.
+	auto audioPorts() -> RemotePluginAudioPortsController* { return m_audioPorts; }
 
 	inline bool failed() const
 	{
@@ -172,6 +194,15 @@ private:
 
 	int m_inputCount;
 	int m_outputCount;
+
+	//! Ports-infrastructure state (Part C, additive; see RemotePluginAudioPorts.h).
+	//! Coexists with the legacy members above until the remote-process slice
+	//! retires the old path.
+	RemotePluginAudioPortsController* m_audioPorts = nullptr;
+	ch_cnt_t m_channelsIn = 0;
+	ch_cnt_t m_channelsOut = 0;
+	f_cnt_t m_frames = 0;
+	std::span<float> m_audioOutputs;
 
 #ifndef SYNC_WITH_SHM_FIFO
 	int m_server;

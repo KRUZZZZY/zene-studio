@@ -225,9 +225,12 @@ public:
 	}
 
 protected:
-	// `Effect` declares its own `processImpl(SampleFrame*, f_cnt_t)`, which would
-	// otherwise hide the planar `AudioProcessingMethod` overload. Merge both into
-	// this class scope so effect plugins can implement the multi-channel interface.
+	//! The ports API status type, named here so plugin implementations can use the
+	//! unqualified `ProcessStatus` name in both the ports and legacy interfaces.
+	using ProcessStatus = lmms::ProcessStatus;
+
+	//! Un-hide the `processImpl` overloads of the ports base class; the legacy bridge
+	//! below would otherwise hide them from plugin implementations.
 	using AudioProcessingMethod<Effect, settings>::processImpl;
 
 	auto audioPorts() -> AudioPortsT& { return m_audioPorts; }
@@ -301,37 +304,29 @@ protected:
 	}
 
 	/**
-	 * Legacy interleaved entry point (`Effect::processImpl`). The AudioBus
-	 * method above is the normal path; this adapter keeps the legacy
-	 * `AudioBuffer` path working by presenting the interleaved stereo buffer as
-	 * a one-pair bus and routing it through the audio ports.
+	 * Legacy single-buffer entry point, kept until the AudioBuffer interface is
+	 * removed. Effects migrated to the AudioPorts API implement processImpl with
+	 * a buffer view, while unmigrated effects still implement the SampleFrame
+	 * based overload. Present the legacy interleaved buffer as the in-place view
+	 * the ports implementation expects so both interfaces keep working.
 	 */
-	auto processImpl(SampleFrame* buf, const f_cnt_t frames) -> ProcessStatus final
+	auto processImpl(SampleFrame* buf, const f_cnt_t frames) -> Effect::ProcessStatus final
 	{
-		SampleFrame* busData[1] = {buf};
-		auto bus = AudioBus{busData, 1, frames};
+		static_assert(settings.inplace && settings.interleaved,
+			"The legacy single-buffer interface can only be bridged to in-place, interleaved effects");
 
-		if (!m_audioPorts.active())
+		switch (AudioProcessingMethod<Effect, settings>::processImpl(
+			GetAudioBufferViewType<settings, false, false>{buf, frames}))
 		{
-			return ProcessStatus::Continue;
+			case ProcessStatus::Continue:
+				return Effect::ProcessStatus::Continue;
+			case ProcessStatus::ContinueIfNotQuiet:
+				return Effect::ProcessStatus::ContinueIfNotQuiet;
+			case ProcessStatus::Sleep:
+				return Effect::ProcessStatus::Sleep;
 		}
 
-		auto router = m_audioPorts.getRouter();
-		const auto status = router.process(bus, [this](auto... buffers) {
-			return this->processImpl(buffers...);
-		});
-
-		switch (status)
-		{
-			case lmms::ProcessStatus::Continue:
-				return ProcessStatus::Continue;
-			case lmms::ProcessStatus::ContinueIfNotQuiet:
-				return ProcessStatus::ContinueIfNotQuiet;
-			case lmms::ProcessStatus::Sleep:
-				return ProcessStatus::Sleep;
-		}
-
-		return ProcessStatus::Continue;
+		return Effect::ProcessStatus::Continue;
 	}
 
 	/**

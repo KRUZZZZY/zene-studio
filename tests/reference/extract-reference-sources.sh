@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Part C behaviour-preservation harness: extract the pre-migration plugin
+# sources used as the reference renderer. Every file is written verbatim from
+# the git object named in tests/reference/ORIGIN.md, so `git hash-object` on
+# the extracted file equals the recorded blob id.
+#
+# Usage: tests/reference/extract-reference-sources.sh [<commit>]
+set -euo pipefail
+
+BASE_COMMIT="${1:-4ac5c3e38}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"
+
+extract() { # extract <plugin-dir> <file>
+	local src="plugins/$1/$2"
+	local dst="$HERE/$1/$2"
+	mkdir -p "$(dirname "$dst")"
+	git -C "$REPO" show "$BASE_COMMIT:$src" > "$dst"
+	printf '%s\t%s\t%s\n' "$BASE_COMMIT" "$src" "$(git -C "$REPO" hash-object "$dst")"
+}
+
+: > "$HERE/ORIGIN.tsv"
+{
+	for p in Amplifier BassBooster Bitcrush DualFilter WaveShaper; do
+		for f in "$p.cpp" "$p.h" "${p}ControlDialog.cpp" "${p}ControlDialog.h" "${p}Controls.cpp" "${p}Controls.h"; do
+			extract "$p" "$f"
+		done
+	done
+	for f in FlangerEffect.cpp FlangerEffect.h FlangerControls.cpp FlangerControls.h \
+	         FlangerControlsDialog.cpp FlangerControlsDialog.h MonoDelay.cpp MonoDelay.h; do
+		extract Flanger "$f"
+	done
+	for f in DelayEffect.cpp DelayEffect.h DelayControls.cpp DelayControls.h \
+	         DelayControlsDialog.cpp DelayControlsDialog.h Lfo.cpp Lfo.h StereoDelay.cpp StereoDelay.h; do
+		extract Delay "$f"
+	done
+	extract Eq EqFader.h
+} >> "$HERE/ORIGIN.tsv"
+
+echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"

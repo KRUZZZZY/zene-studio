@@ -36,7 +36,10 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "MidiEvent.h"
+#include "RemotePluginAudioPorts.h"
 #include "Song.h"
+
+#include <iostream>
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -188,6 +191,13 @@ RemotePlugin::RemotePlugin() :
 
 RemotePlugin::~RemotePlugin()
 {
+	// Part C (additive): detach from the audio ports controller, if any, before
+	// the shared buffer is destroyed.
+	if (m_audioPorts != nullptr)
+	{
+		m_audioPorts->disconnectBuffers();
+	}
+
 	m_watcher.stop();
 	m_watcher.wait();
 
@@ -472,6 +482,55 @@ void RemotePlugin::hideUI()
 	lock();
 	sendMessage( IdHideUI );
 	unlock();
+}
+
+
+
+
+RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts) :
+	RemotePlugin()
+{
+	m_audioPorts = &audioPorts;
+	audioPorts.connectBuffers(this);
+}
+
+
+
+
+auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*
+{
+	if (channelsIn == 0 && channelsOut == 0)
+	{
+		std::cerr << "Invalid channel count for shared audio buffer\n";
+		return nullptr;
+	}
+
+	if (channelsIn == m_channelsIn && channelsOut == m_channelsOut && frames == m_frames)
+	{
+		return m_audioBuffer.get();
+	}
+
+	try
+	{
+		m_audioOutputs = {};
+		m_audioBuffer.create((channelsIn + channelsOut) * frames);
+	}
+	catch (const std::runtime_error& error)
+	{
+		std::cerr << "Failed to allocate shared audio buffer: " << error.what() << '\n';
+		m_audioBuffer.detach();
+		return nullptr;
+	}
+
+	m_channelsIn = channelsIn;
+	m_channelsOut = channelsOut;
+	m_frames = frames;
+
+	m_audioOutputs = std::span{m_audioBuffer.get() + channelsIn * frames, channelsOut * frames};
+
+	sendMessage(message(IdChangeSharedMemoryKey).addString(m_audioBuffer.key()));
+
+	return m_audioBuffer.get();
 }
 
 
