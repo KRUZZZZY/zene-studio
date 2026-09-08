@@ -67,7 +67,8 @@ Note::Note( const Note & note ) :
 	m_length( note.m_length ),
 	m_pos( note.m_pos ),
 	m_detuning(note.m_detuning),
-	m_type(note.m_type)
+	m_type(note.m_type),
+	m_slide(note.m_slide)
 {
 }
 
@@ -84,6 +85,7 @@ Note& Note::operator=(const Note& note)
 	m_length = note.m_length;
 	m_pos = note.m_pos;
 	m_type = note.m_type;
+	m_slide = note.m_slide;
 	m_detuning = note.m_detuning;
 
 	return *this;
@@ -194,6 +196,14 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 	parent.setAttribute( "pos", m_pos );
 	parent.setAttribute("type", static_cast<int>(m_type));
 
+	// Slide (portamento) flag - only written when set, so notes (and whole
+	// projects) saved before slide notes existed serialize byte-identically
+	// (SPEC-slide-notes D-1: optional attribute, no DataFile version bump).
+	if( m_slide )
+	{
+		parent.setAttribute( "slide", "1" );
+	}
+
 	if( m_detuning && m_length )
 	{
 		m_detuning->saveSettings( doc, parent );
@@ -214,6 +224,8 @@ void Note::loadSettings( const QDomElement & _this )
 	// Default m_type value is 0, which corresponds to RegularNote
 	static_assert(0 == static_cast<int>(Type::Regular));
 	m_type = static_cast<Type>(_this.attribute("type", "0").toInt());
+	// Absent attribute means a regular note (all projects predating slide notes)
+	m_slide = _this.attribute( "slide" ).toInt();
 
 	if( _this.hasChildNodes() )
 	{
