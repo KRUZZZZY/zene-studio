@@ -27,6 +27,7 @@
 
 #include <QMutex>
 #include <QObject>
+#include <QSemaphore>
 #include <QString>
 #include <QStringList>
 
@@ -180,6 +181,11 @@ public:
 	//! The dedicated worker thread scripts execute on (never the audio thread).
 	QThread* workerThread() const;
 
+	//! Thread that last applied a queued command. Regression guard: engine
+	//! state is only ever mutated by the apply side, never by the worker
+	//! (spec section 4 / section 10). Null before the first apply.
+	QThread* lastApplyThread() const;
+
 	QStringList takeLogMessages();
 	QStringList logMessages() const;
 
@@ -236,6 +242,13 @@ private:
 	std::atomic<bool> m_running{false};
 	std::atomic<bool> m_autoApply{true};
 	std::atomic<quint64> m_instructionBudget{5000000};
+
+	//! Apply-side pump state: while a script runs, runOnWorker() serves the
+	//! worker's flushCommandsForRead() requests on the apply-side thread.
+	std::atomic<bool> m_applyPumpActive{false};
+	QSemaphore m_applyRequest;
+	QSemaphore m_applyDone;
+	std::atomic<QThread*> m_lastApplyThread{nullptr};
 
 	mutable QMutex m_stateMutex;
 	QString m_projectDir;

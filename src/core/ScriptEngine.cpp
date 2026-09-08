@@ -404,19 +404,40 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 
 	if (QThread::currentThread() == m_workerThread)
 	{
-		// Re-entrant invocation from the worker itself: run inline.
+		// Re-entrant invocation from the worker itself: run inline. No
+		// apply-side pump exists, so flushCommandsForRead() applies inline too.
 		result = m_worker->run(source, chunkName, &message);
 	}
 	else
 	{
+		std::atomic<bool> finished{false};
+		m_lastApplyThread.store(nullptr, std::memory_order_release);
+		m_applyPumpActive.store(true, std::memory_order_release);
+
 		const bool invoked = QMetaObject::invokeMethod(m_worker, [&]() {
 			result = m_worker->run(source, chunkName, &message);
-		}, Qt::BlockingQueuedConnection);
+			finished.store(true, std::memory_order_release);
+		}, Qt::QueuedConnection);
 		if (!invoked)
 		{
+			finished.store(true, std::memory_order_release);
 			message = QStringLiteral("could not dispatch to the script worker thread");
 			result = RunResult::ScriptError;
 		}
+
+		// The apply side owns engine state. While the script runs, serve its
+		// flushCommandsForRead() requests here instead of letting the worker
+		// mutate the engine (spec section 4 / section 10). The worker only
+		// sets `finished` after the last request has been served.
+		while (!finished.load(std::memory_order_acquire))
+		{
+			if (m_applyRequest.tryAcquire(1, 2))
+			{
+				applyCommands(ScriptCommandQueueCapacity);
+				m_applyDone.release();
+			}
+		}
+		m_applyPumpActive.store(false, std::memory_order_release);
 	}
 
 	if (m_autoApply.load(std::memory_order_relaxed))
@@ -462,6 +483,7 @@ void ScriptEngine::applyCommands(std::size_t max)
 
 void ScriptEngine::applyCommand(const ScriptCommand& command)
 {
+	m_lastApplyThread.store(QThread::currentThread(), std::memory_order_release);
 	switch (command.type)
 	{
 	case ScriptCommand::Type::AddPatternTrack:
@@ -634,6 +656,12 @@ QThread* ScriptEngine::workerThread() const
 }
 
 
+QThread* ScriptEngine::lastApplyThread() const
+{
+	return m_lastApplyThread.load(std::memory_order_acquire);
+}
+
+
 QStringList ScriptEngine::takeLogMessages()
 {
 	QMutexLocker locker(&m_stateMutex);
@@ -672,6 +700,23 @@ void ScriptEngine::enqueue(const ScriptCommand& command)
 
 void ScriptEngine::flushCommandsForRead()
 {
+	// Engine state is only ever mutated by the apply side (spec section 4 /
+	// section 10). A read on the worker thread must therefore never apply the
+	// queue itself; while a script runs, runOnWorker() pumps apply requests on
+	// the apply-side thread and this waits for it to drain. Off the worker (or
+	// in the re-entrant inline case, where no pump exists) the caller is the
+	// apply side and may apply directly.
+	if (QThread::currentThread() == m_workerThread &&
+			m_applyPumpActive.load(std::memory_order_acquire))
+	{
+		if (m_commands.pending() == 0)
+		{
+			return;
+		}
+		m_applyRequest.release();
+		m_applyDone.acquire();
+		return;
+	}
 	applyCommands(ScriptCommandQueueCapacity);
 }
 

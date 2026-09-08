@@ -22,6 +22,7 @@
  *
  */
 
+#include <QThread>
 #include <QtTest>
 
 #include <QDir>
@@ -356,6 +357,27 @@ assert(string ~= nil and table ~= nil and math ~= nil, "safe stdlib missing")
 			"scripts must not run on the calling (UI/audio) thread");
 		QVERIFY2(engine->workerThread() != Engine::audioEngine()->thread(),
 			"scripts must never run on the audio thread");
+	}
+
+	// --- G3: engine state is only mutated by the apply side ---
+
+	void testApplyRunsOnApplySideThread()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+
+		// Regression: read-side flushes used to apply commands on the worker
+		// thread, so Track::create() ran on the wrong thread (Qt warned about
+		// children in a different thread). Engine state must only ever be
+		// mutated by the apply side (spec section 4 / section 10).
+		QString error;
+		QVERIFY2(engine->runFile(QStringLiteral(LUA_SCRIPT_DIR) + "/create-pattern.lua",
+			&error) == ScriptEngine::RunResult::Ok, qPrintable(error));
+
+		QVERIFY2(engine->lastApplyThread() != nullptr, "no command was applied");
+		QCOMPARE(engine->lastApplyThread(), QThread::currentThread());
+		QVERIFY2(engine->lastApplyThread() != engine->workerThread(),
+			"engine state must never be mutated on the script worker thread");
 	}
 
 	// --- command queue ---
