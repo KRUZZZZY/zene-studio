@@ -48,6 +48,10 @@ public:
 						SampleFrame* _working_buffer ) override;
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
+	//! Slide (portamento) notes are meaningless on a raw sample player: opt
+	//! out so slide notes play as regular notes (SPEC-slide-notes D-3)
+	bool supportsSlideNotes() const override { return false; }
+
 	void saveSettings(QDomDocument& doc, QDomElement& elem) override;
 	void loadSettings(const QDomElement& elem) override;
 
