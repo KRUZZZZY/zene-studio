@@ -28,6 +28,7 @@
 #include <QDomElement>
 
 #include "AudioBuffer.h"
+#include "AudioBus.h"
 #include "ConfigManager.h"
 #include "EffectChain.h"
 #include "EffectControls.h"
@@ -127,6 +128,73 @@ bool Effect::processAudioBuffer(AudioBuffer& inOut)
 
 	// Update silence status for track channels the processor wrote to
 	const bool silentOutput = inOut.updateSilenceFlags(0b11);
+
+	switch (status)
+	{
+		case ProcessStatus::Continue:
+			break;
+		case ProcessStatus::ContinueIfNotQuiet:
+			handleAutoQuit(silentOutput);
+			break;
+		case ProcessStatus::Sleep:
+			goToSleep();
+			return false;
+		default:
+			break;
+	}
+
+	return isAwake();
+}
+
+
+bool Effect::processAudioBuffer(AudioBus& inOut)
+{
+	const auto* apm = audioPortsModel();
+
+	if (!isAwake())
+	{
+		// Sleeping plugins need to zero any track channels their output is routed to in order to
+		// prevent sudden track channel passthrough behavior when the plugin is put to sleep.
+		// Otherwise auto-quit could become audibly noticeable, which is not intended.
+
+		const auto hasInputNoise = apm
+			? inOut.hasInputNoise(*apm)
+			: !(inOut.quietChannels()[0] && inOut.quietChannels()[1]);
+
+		if (!hasInputNoise)
+		{
+			if (apm)
+			{
+				inOut.silenceChannels(*apm);
+			}
+			else
+			{
+				inOut.silenceAllChannels();
+			}
+
+			return false;
+		}
+
+		wakeUp();
+	}
+
+	if (!isProcessingAudio())
+	{
+		// Plugin is awake but not processing audio
+		processBypassedImpl();
+		return false;
+	}
+
+	// Effects without audio ports process the first track channel pair, which
+	// matches the single-buffer AudioBuffer interface. Effects with audio ports
+	// (AudioPlugin) override this method in order to route their ports instead.
+	const auto status = processImpl(inOut.bus()[0], inOut.frames());
+
+	const auto sanitized = Engine::audioEngine()->sanitizationEnabled() ? inOut.sanitizeAll() : false;
+	m_corrupted.store(sanitized, std::memory_order_relaxed);
+
+	// Update silence status for the track channels the processor wrote to
+	const bool silentOutput = apm ? inOut.update(*apm) : inOut.updateAll();
 
 	switch (status)
 	{

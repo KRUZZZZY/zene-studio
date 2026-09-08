@@ -109,7 +109,8 @@ public:
 	//! Sanitizes all used output-side track channels of any Inf/NaN values if "nanhandler" setting is enabled
 	void sanitize(const AudioPortsModel& apm);
 
-	void sanitizeAll();
+	//! @returns true if any channel contained Inf/NaN values which were cleared
+	auto sanitizeAll() -> bool;
 
 	/**
 	 * @brief Updates the silence status of the audio ports' used output-side track channels

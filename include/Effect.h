@@ -38,6 +38,8 @@ namespace lmms
 {
 
 class AudioBuffer;
+class AudioBus;
+class AudioPortsModel;
 class EffectChain;
 class EffectControls;
 
@@ -67,6 +69,18 @@ public:
 
 	//! Returns true if audio was processed and should continue being processed
 	bool processAudioBuffer(AudioBuffer& inOut);
+
+	//! Returns true if audio was processed and should continue being processed.
+	//! Multi-channel variant of processAudioBuffer(). Effects which have audio
+	//! ports override this method in order to route their ports on the bus.
+	virtual bool processAudioBuffer(AudioBus& inOut);
+
+	//! Returns the audio ports model of this effect or nullptr if it does not
+	//! have any audio ports (e.g. legacy effects)
+	virtual auto audioPortsModel() const -> const AudioPortsModel*
+	{
+		return nullptr;
+	}
 
 	inline bool isOkay() const
 	{
@@ -186,7 +200,6 @@ protected:
 
 	virtual void onEnabledChanged() {}
 
-private:
 	/**
 	 * If auto-quit is enabled ("Keep effects running even without input" setting is disabled),
 	 * after "decay" ms of the output buffer remaining below the silence threshold, the effect is
@@ -194,7 +207,7 @@ private:
 	 */
 	void handleAutoQuit(bool silentOutput);
 
-
+private:
 	EffectChain * m_parent;
 
 	bool m_okay;

@@ -26,9 +26,6 @@
 
 #include "BufferManager.h"
 
-#include "SampleFrame.h"
-
-
 namespace lmms
 {
 
@@ -40,16 +37,9 @@ void BufferManager::init( f_cnt_t fpp )
 }
 
 
-SampleFrame* BufferManager::acquire()
+std::vector<SampleFrame> BufferManager::acquire()
 {
-	return new SampleFrame[s_framesPerPeriod];
-}
-
-
-
-void BufferManager::release( SampleFrame* buf )
-{
-	delete[] buf;
+	return std::vector<SampleFrame>(s_framesPerPeriod);
 }
 
 } // namespace lmms

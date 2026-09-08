@@ -25,7 +25,7 @@
 #ifndef LMMS_MIXER_H
 #define LMMS_MIXER_H
 
-#include "AudioBuffer.h"
+#include "AudioBus.h"
 #include "EffectChain.h"
 #include "JournallingObject.h"
 #include "Model.h"
@@ -55,7 +55,12 @@ public:
 
 	float m_peakLeft;
 	float m_peakRight;
-	AudioBuffer m_buffer;
+	//! Interleaved stereo buffer (one track channel pair) this channel is mixed into
+	SampleFrame* m_buffer;
+	//! Bus view over m_buffer, used for effect processing and mixing
+	AudioBus m_bus;
+	//! Set to true when input is fed from mixToChannel or a child channel
+	bool m_hasInput;
 	bool m_muteBeforeSolo;
 	BoolModel m_muteModel;
 	BoolModel m_soloModel;
@@ -142,7 +147,7 @@ public:
 	Mixer();
 	~Mixer() override;
 
-	void mixToChannel(const AudioBuffer& buffer, mix_ch_t dest);
+	void mixToChannel(const AudioBus& bus, mix_ch_t channel);
 
 	void prepareMasterMix();
 	void masterMix( SampleFrame* _buf );

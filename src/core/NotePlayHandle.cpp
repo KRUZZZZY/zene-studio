@@ -147,7 +147,10 @@ NotePlayHandle::~NotePlayHandle()
 
 	m_subNotes.clear();
 
-	if( buffer() ) releaseBuffer();
+	if (buffer().data() != nullptr)
+	{
+		releaseBuffer();
+	}
 
 	unlock();
 }
@@ -183,7 +186,7 @@ int NotePlayHandle::midiKey() const
 
 
 
-void NotePlayHandle::play( SampleFrame* _working_buffer )
+void NotePlayHandle::play( std::span<SampleFrame> buffer )
 {
 	if (m_muted)
 	{
@@ -260,7 +263,7 @@ void NotePlayHandle::play( SampleFrame* _working_buffer )
 	if( framesLeft() > 0 )
 	{
 		// play note!
-		m_instrumentTrack->playNote( this, _working_buffer );
+		m_instrumentTrack->playNote( this, buffer );
 	}
 
 	if( m_released && (!instrumentTrack()->isSustainPedalPressed() ||

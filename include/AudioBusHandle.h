@@ -27,10 +27,12 @@
 #define LMMS_AUDIO_BUS_HANDLE_H
 
 #include <memory>
+#include <span>
+#include <vector>
 #include <QString>
 #include <QMutex>
 
-#include "AudioBuffer.h"
+#include "AudioBus.h"
 #include "PlayHandle.h"
 
 namespace lmms
@@ -81,13 +83,22 @@ public:
 	void addPlayHandle(PlayHandle* handle);
 	void removePlayHandle(PlayHandle* handle);
 
+	//! @returns a span over the mixed buffer of this audio bus handle
+	std::span<SampleFrame> buffer() { return m_buffer; }
+
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 
 private:
 	volatile bool m_bufferUsage;
 
-	AudioBuffer m_buffer;
+	//! Interleaved stereo buffer (one track channel pair) that play handles are mixed into
+	std::vector<SampleFrame> m_buffer;
+	//! First track channel pair of the audio bus
+	SampleFrame* m_trackChannels;
+
+	//! Audio bus view over m_buffer, used for effect processing and mixing
+	AudioBus m_bus;
 
 	bool m_extOutputEnabled;
 	mix_ch_t m_nextMixerChannel;

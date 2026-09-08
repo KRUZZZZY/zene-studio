@@ -28,19 +28,21 @@
 
 #include <QString>
 
+#include <cmath>
+#include <span>
+
 #include "Flags.h"
 #include "lmms_export.h"
 #include "LmmsTypes.h"
 #include "Plugin.h"
 #include "TimePos.h"
 
-#include <cmath>
-
 
 namespace lmms
 {
 
 // forward-declarations
+class AudioPortsModel;
 class InstrumentTrack;
 class MidiEvent;
 class NotePlayHandle;
@@ -78,10 +80,24 @@ public:
 	// output buffer only once per audio engine period
 	virtual void play( SampleFrame* _working_buffer );
 
+	//! Span-based entry point; calls playImpl(). Used by the audio engine
+	//! for all play handles.
+	void play(std::span<SampleFrame> out)
+	{
+		playImpl(out);
+	}
+
 	// to be implemented by actual plugin
 	virtual void playNote( NotePlayHandle * /* _note_to_play */,
-					SampleFrame* /* _working_buf */ )
+						SampleFrame* /* _working_buf */ )
 	{
+	}
+
+	//! Span-based entry point; calls playNoteImpl(). Used by the audio engine
+	//! for all note play handles.
+	void playNote( NotePlayHandle* noteToPlay, std::span<SampleFrame> out )
+	{
+		playNoteImpl(noteToPlay, out);
 	}
 
 	// needed for deleting plugin-specific-data of a note - plugin has to
@@ -126,6 +142,13 @@ public:
 		return m_flags.testFlag(Instrument::Flag::IsMidiBased);
 	}
 
+	//! Returns the audio ports model of this instrument or nullptr if it does
+	//! not have any audio ports (e.g. legacy instruments)
+	virtual auto audioPortsModel() const -> const AudioPortsModel*
+	{
+		return nullptr;
+	}
+
 	bool isBendable() const
 	{
 		return !m_flags.testFlag(Instrument::Flag::IsNotBendable);
@@ -160,6 +183,23 @@ public:
 
 
 protected:
+	//! To be implemented by AudioPlugin or plugin implementation.
+	//! The default implementation calls the legacy single-buffer
+	//! play(SampleFrame*) method so that existing instruments keep working.
+	virtual void playImpl(std::span<SampleFrame> out)
+	{
+		play(out.data());
+	}
+
+	//! To be implemented by AudioPlugin or plugin implementation.
+	//! The default implementation calls the legacy single-buffer
+	//! playNote(NotePlayHandle*, SampleFrame*) method so that existing
+	//! instruments keep working.
+	virtual void playNoteImpl(NotePlayHandle* noteToPlay, std::span<SampleFrame> out)
+	{
+		playNote(noteToPlay, out.data());
+	}
+
 	// fade in to prevent clicks
 	void applyFadeIn(SampleFrame* buf, NotePlayHandle * n);
 

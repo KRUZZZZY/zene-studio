@@ -173,17 +173,22 @@ void AudioBus::sanitize(const AudioPortsModel& apm)
 	}
 }
 
-void AudioBus::sanitizeAll()
+auto AudioBus::sanitizeAll() -> bool
 {
+	bool sanitized = false;
+
 	for (ch_cnt_t tc = 0; tc < channelPairs(); ++tc)
 	{
 		if (sanitizeBuffer(m_bus[tc], m_frames))
 		{
 			// Inf/NaN detected and buffer cleared
+			sanitized = true;
 			m_quietChannels[tc * 2] = true;
 			m_quietChannels[tc * 2 + 1] = true;
 		}
 	}
+
+	return sanitized;
 }
 
 auto AudioBus::update(const std::bitset<MaxTrackChannels>& channels, ch_cnt_t upperBound) -> bool

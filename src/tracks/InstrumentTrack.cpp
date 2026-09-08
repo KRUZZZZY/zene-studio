@@ -567,7 +567,7 @@ f_cnt_t InstrumentTrack::beatLen( NotePlayHandle * _n ) const
 
 
 
-void InstrumentTrack::playNote( NotePlayHandle* n, SampleFrame* workingBuffer )
+void InstrumentTrack::playNote( NotePlayHandle* n, std::span<SampleFrame> workingBuffer )
 {
 	// Note: under certain circumstances the working buffer is a nullptr.
 	// These cases are triggered in PlayHandle::doProcessing when the play method is called with a nullptr.
@@ -589,7 +589,7 @@ void InstrumentTrack::playNote( NotePlayHandle* n, SampleFrame* workingBuffer )
 		{
 			const f_cnt_t frames = n->framesLeftForCurrentPeriod();
 			const f_cnt_t offset = n->noteOffset();
-			processAudioBuffer(workingBuffer, frames + offset, n);
+			processAudioBuffer(workingBuffer.data(), frames + offset, n);
 		}
 	}
 }

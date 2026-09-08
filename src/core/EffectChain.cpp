@@ -28,6 +28,7 @@
 #include <QDomElement>
 #include <cassert>
 
+#include "AudioBus.h"
 #include "AudioBuffer.h"
 #include "Effect.h"
 #include "DummyEffect.h"
@@ -195,6 +196,25 @@ bool EffectChain::processAudioBuffer(AudioBuffer& buffer)
 	for (Effect* effect : m_effects)
 	{
 		moreEffects |= effect->processAudioBuffer(buffer);
+	}
+
+	return moreEffects;
+}
+
+
+
+
+bool EffectChain::processAudioBuffer(AudioBus& bus)
+{
+	if( m_enabledModel.value() == false )
+	{
+		return false;
+	}
+
+	bool moreEffects = false;
+	for (Effect* effect : m_effects)
+	{
+		moreEffects |= effect->processAudioBuffer(bus);
 	}
 
 	return moreEffects;

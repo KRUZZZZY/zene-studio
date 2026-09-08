@@ -64,7 +64,9 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_stillRunning( false ),
 	m_peakLeft( 0.0f ),
 	m_peakRight( 0.0f ),
-	m_buffer(Engine::audioEngine()->framesPerPeriod()),
+	m_buffer( new SampleFrame[Engine::audioEngine()->framesPerPeriod()] ),
+	m_bus( &m_buffer, 1, Engine::audioEngine()->framesPerPeriod() ),
+	m_hasInput( false ),
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
@@ -74,7 +76,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_dependenciesMet(0),
 	m_channelIndex(idx)
 {
-	m_buffer.allocateInterleavedBuffer();
+	m_bus.silenceAllChannels();
 }
 
 
@@ -82,6 +84,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 
 MixerChannel::~MixerChannel()
 {
+	delete[] m_buffer;
 }
 
 
@@ -173,48 +176,46 @@ void MixerChannel::doProcessing()
 			FloatModel * sendModel = senderRoute->amount();
 			if( ! sendModel ) qFatal( "Error: no send model found from %d to %d", senderRoute->senderIndex(), m_channelIndex );
 
-			if (sender->m_buffer.hasAnySignal() || sender->m_stillRunning)
+			if( sender->m_hasInput || sender->m_stillRunning )
 			{
-				auto buffer = m_buffer.interleavedBuffer().asSampleFrames();
-
 				// figure out if we're getting sample-exact input
 				ValueBuffer * sendBuf = sendModel->valueBuffer();
 				ValueBuffer * volBuf = sender->m_volumeModel.valueBuffer();
 
 				// mix it's output with this one's output
-				auto ch_buf = sender->m_buffer.interleavedBuffer().asSampleFrames();
+				SampleFrame* ch_buf = sender->m_buffer;
 
 				// use sample-exact mixing if sample-exact values are available
 				if( ! volBuf && ! sendBuf ) // neither volume nor send has sample-exact data...
 				{
 					const float v = sender->m_volumeModel.value() * sendModel->value();
-					MixHelpers::addMultiplied(buffer.data(), ch_buf.data(), v, fpp);
+					MixHelpers::addMultiplied( m_buffer, ch_buf, v, fpp );
 				}
 				else if( volBuf && sendBuf ) // both volume and send have sample-exact data
 				{
-					MixHelpers::addMultipliedByBuffers(buffer.data(), ch_buf.data(), volBuf, sendBuf, fpp);
+					MixHelpers::addMultipliedByBuffers( m_buffer, ch_buf, volBuf, sendBuf, fpp );
 				}
 				else if( volBuf ) // volume has sample-exact data but send does not
 				{
 					const float v = sendModel->value();
-					MixHelpers::addMultipliedByBuffer(buffer.data(), ch_buf.data(), v, volBuf, fpp);
+					MixHelpers::addMultipliedByBuffer( m_buffer, ch_buf, v, volBuf, fpp );
 				}
 				else // vice versa
 				{
 					const float v = sender->m_volumeModel.value();
-					MixHelpers::addMultipliedByBuffer(buffer.data(), ch_buf.data(), v, sendBuf, fpp);
+					MixHelpers::addMultipliedByBuffer( m_buffer, ch_buf, v, sendBuf, fpp );
 				}
-				toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
-				m_buffer.mixSilenceFlags(sender->m_buffer);
+				m_bus.quietChannels() &= sender->m_bus.quietChannels(); // mix silence status
+				m_hasInput = true;
 			}
 		}
 
 
 		const float v = m_volumeModel.value();
 
-		m_stillRunning = m_fxChain.processAudioBuffer(m_buffer);
+		m_stillRunning = m_fxChain.processAudioBuffer(m_bus);
 
-		const auto peakSamples = SampleFrame{m_buffer.absPeakValue(0), m_buffer.absPeakValue(1)};
+		SampleFrame peakSamples = getAbsPeakValues(m_buffer, fpp);
 		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * v);
 		m_peakRight = std::max(m_peakRight, peakSamples[1] * v);
 	}
@@ -639,19 +640,18 @@ FloatModel * Mixer::channelSendModel( mix_ch_t fromChannel, mix_ch_t toChannel )
 
 
 
-void Mixer::mixToChannel(const AudioBuffer& buffer, mix_ch_t dest)
+void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 {
-	const auto channel = m_mixerChannels[dest];
-	if (!channel->m_muteModel.value())
+	auto mixerChannel = m_mixerChannels[channel];
+	if (mixerChannel->m_muteModel.value() == false)
 	{
-		channel->m_lock.lock();
-		MixHelpers::add(channel->m_buffer.groupBuffers(0), buffer.groupBuffers(0));
+		mixerChannel->m_lock.lock();
 
-		// Copy the planar buffer to the temporary interleaved buffer so they stay in sync
-		toInterleaved(channel->m_buffer.groupBuffers(0), channel->m_buffer.interleavedBuffer());
+		MixHelpers::add(mixerChannel->m_bus.bus()[0], bus.bus()[0], bus.frames());
+		mixerChannel->m_bus.quietChannels() &= bus.quietChannels(); // mix silence status
+		mixerChannel->m_hasInput = true;
 
-		channel->m_buffer.mixSilenceFlags(buffer);
-		channel->m_lock.unlock();
+		mixerChannel->m_lock.unlock();
 	}
 }
 
@@ -660,7 +660,7 @@ void Mixer::mixToChannel(const AudioBuffer& buffer, mix_ch_t dest)
 
 void Mixer::prepareMasterMix()
 {
-	m_mixerChannels[0]->m_buffer.silenceAllChannels();
+	m_mixerChannels[0]->m_bus.silenceAllChannels();
 }
 
 
@@ -711,8 +711,6 @@ void Mixer::masterMix( SampleFrame* _buf )
 		AudioEngineWorkerThread::startAndWaitForJobs();
 	}
 
-	auto buffer = m_mixerChannels[0]->m_buffer.interleavedBuffer().asSampleFrames();
-
 	// handle sample-exact data in master volume fader
 	ValueBuffer * volBuf = m_mixerChannels[0]->m_volumeModel.valueBuffer();
 
@@ -720,23 +718,25 @@ void Mixer::masterMix( SampleFrame* _buf )
 	{
 		for( int f = 0; f < fpp; f++ )
 		{
-			buffer[f][0] *= volBuf->values()[f];
-			buffer[f][1] *= volBuf->values()[f];
+			m_mixerChannels[0]->m_buffer[f][0] *= volBuf->values()[f];
+			m_mixerChannels[0]->m_buffer[f][1] *= volBuf->values()[f];
 		}
 	}
 
 	const float v = volBuf
 		? 1.0f
 		: m_mixerChannels[0]->m_volumeModel.value();
-	MixHelpers::addMultiplied(_buf, buffer.data(), v, fpp);
+	MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
 
 	// clear all channel buffers and
 	// reset channel process state
 	for( int i = 0; i < numChannels(); ++i)
 	{
-		m_mixerChannels[i]->m_buffer.silenceAllChannels();
+		m_mixerChannels[i]->m_bus.silenceAllChannels();
 		m_mixerChannels[i]->reset();
 		m_mixerChannels[i]->m_queued = false;
+		// also reset hasInput
+		m_mixerChannels[i]->m_hasInput = false;
 		m_mixerChannels[i]->m_dependenciesMet = 0;
 	}
 }
