@@ -42,15 +42,63 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")
 endforeach()
 
-# Real-hardware capture probe (task #556). Deliberately NOT registered with
-# CTest: it needs a capture device and records live audio, so it is run
-# manually (see RECORDING-PROTOTYPE.md).
-add_executable(TwoTrackAlsaCaptureProbe src/core/TwoTrackAlsaCaptureProbe.cpp)
-target_include_directories(TwoTrackAlsaCaptureProbe PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
-target_static_libraries(TwoTrackAlsaCaptureProbe PRIVATE lmmsobjs)
-target_link_libraries(TwoTrackAlsaCaptureProbe PRIVATE
-	${QT_LIBRARIES}
-	${ASOUND_LIBRARY}
-)
-target_compile_features(TwoTrackAlsaCaptureProbe PRIVATE cxx_std_20)
-target_compile_definitions(TwoTrackAlsaCaptureProbe PRIVATE LMMS_TESTING)
+# Native VST3 hosting tests. They only exist when the MIT licensed VST3 SDK
+# (>= 3.8) is available; see cmake/modules/Vst3Sdk.cmake.
+if(TARGET vst3effect)
+	set(LMMS_VST3_EFFECT_DIR ${CMAKE_SOURCE_DIR}/plugins/Vst3Effect)
+	set(LMMS_VST3_TEST_PLUGIN "${CMAKE_BINARY_DIR}/vst3sdk/build/VST3/Release/again-sample-accurate.vst3"
+		CACHE PATH "VST3 plug-in used by Vst3HostTest")
+
+	add_executable(Vst3BusMapTest
+		src/plugins/Vst3BusMapTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+	)
+	add_test(NAME Vst3BusMapTest COMMAND Vst3BusMapTest)
+	target_include_directories(Vst3BusMapTest PRIVATE ${LMMS_VST3_EFFECT_DIR})
+	target_compile_features(Vst3BusMapTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3BusMapTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+
+	add_executable(Vst3HostTest
+		src/plugins/Vst3HostTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+	)
+	add_test(NAME Vst3HostTest COMMAND Vst3HostTest)
+	target_include_directories(Vst3HostTest PRIVATE ${LMMS_VST3_EFFECT_DIR})
+	target_compile_features(Vst3HostTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3HostTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY} lmms_vst3_sdk)
+	target_compile_definitions(Vst3HostTest PRIVATE VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_PLUGIN}")
+
+	add_executable(Vst3EffectIntegrationTest
+		src/plugins/Vst3EffectIntegrationTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Effect.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControlDialog.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControls.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Parameter.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3SubPluginFeatures.cpp
+	)
+	add_test(NAME Vst3EffectIntegrationTest COMMAND Vst3EffectIntegrationTest)
+	target_include_directories(Vst3EffectIntegrationTest PRIVATE
+		# generated plugin_export.h (PLUGIN_EXPORT) of the vst3effect plug-in
+		${CMAKE_BINARY_DIR}/plugins/Vst3Effect
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${LMMS_VST3_EFFECT_DIR}
+	)
+	# the test compiles the plug-in sources itself, so it needs the generated
+	# export header of the plug-in target to exist first
+	add_dependencies(Vst3EffectIntegrationTest vst3effect)
+	target_static_libraries(Vst3EffectIntegrationTest PRIVATE lmmsobjs)
+	target_compile_features(Vst3EffectIntegrationTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3EffectIntegrationTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+	)
+	target_compile_definitions(Vst3EffectIntegrationTest PRIVATE
+		LMMS_TESTING
+		PLUGIN_NAME=vst3effect
+		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_PLUGIN}"
+	)
+endif()
