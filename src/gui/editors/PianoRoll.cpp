@@ -1852,6 +1852,8 @@ void PianoRoll::mousePressEvent(QMouseEvent * me )
 					new_note.setSelected( true );
 					new_note.setPanning( m_lastNotePanning );
 					new_note.setVolume( m_lastNoteVolume );
+					// slide-note draw tool: newly drawn notes are slides
+					new_note.setSlide( m_slideDrawMode );
 					created_new_note = m_midiClip->addNote( new_note );
 
 					const InstrumentFunctionNoteStacking::Chord & chord = InstrumentFunctionNoteStacking::ChordTable::getInstance()
@@ -1872,6 +1874,7 @@ void PianoRoll::mousePressEvent(QMouseEvent * me )
 							new_note.setSelected( true );
 							new_note.setPanning( m_lastNotePanning );
 							new_note.setVolume( m_lastNoteVolume );
+							new_note.setSlide( m_slideDrawMode );
 							m_midiClip->addNote( new_note );
 						}
 					}
@@ -2268,6 +2271,18 @@ void PianoRoll::cancelStrumAction()
 	m_action = Action::None;
 	m_strumEnabled = false;
 	update();
+}
+
+
+
+
+void PianoRoll::setSlideDrawMode( bool enabled )
+{
+	if( m_slideDrawMode != enabled )
+	{
+		m_slideDrawMode = enabled;
+		update();
+	}
 }
 
 void PianoRoll::testPlayKey( int key, int velocity, int pan )
@@ -3756,8 +3771,16 @@ void PianoRoll::paintEvent(QPaintEvent * pe )
 		}
 		// -- End ghost MIDI clip
 
+		// previous note in playback order, used for slide-note connectors
+		const Note * previousNote = nullptr;
 		for( const Note *note : m_midiClip->notes() )
 		{
+			// slide-note connector: remember the previous note in playback
+			// order (notes() is pos-sorted, same order InstrumentTrack::play
+			// uses for the glide source, SPEC-slide-notes D-2)
+			const Note * const slideSource = previousNote;
+			previousNote = note;
+
 			int len_ticks = note->length();
 
 			if( len_ticks == 0 )
@@ -3797,6 +3820,18 @@ void PianoRoll::paintEvent(QPaintEvent * pe )
 					note, fillColor, m_noteTextColor, m_selectedNoteColor,
 					m_noteOpacity, m_noteBorders, drawNoteNames
 				);
+			}
+
+			// slide-note connector: diagonal line from the previous note's
+			// end to this note's head (SPEC-slide-notes D-4)
+			if( note->slide() && slideSource != nullptr )
+			{
+				const int fromX = ( slideSource->endPos() - m_currentPosition ) * m_ppb / TimePos::ticksPerBar() + m_whiteKeyWidth;
+				const int fromY = noteYPos( slideSource->key() ) + m_keyLineHeight / 2;
+				const int toX = x + m_whiteKeyWidth;
+				const int toY = noteYPos( note->key() ) + m_keyLineHeight / 2;
+				p.setPen( QPen( note->selected() ? m_selectedNoteColor : m_noteColor, 2 ) );
+				p.drawLine( fromX, fromY, toX, toY );
 			}
 
 			// draw note editing stuff
@@ -5290,6 +5325,12 @@ PianoRollWindow::PianoRollWindow() :
 	connect(strumAction, &QAction::triggered, m_editor, &PianoRoll::setStrumAction);
 	strumAction->setShortcut(keySequence(Qt::SHIFT, Qt::Key_J));
 
+	auto slideAction = new QAction(embed::getIconPixmap("edit_draw"), tr("Slide notes"), noteToolsButton);
+	slideAction->setCheckable(true);
+	slideAction->setToolTip(tr("Draw slide (portamento) notes that glide from the previous note"));
+	connect(slideAction, &QAction::toggled, m_editor, &PianoRoll::setSlideDrawMode);
+	slideAction->setShortcut(keySequence(Qt::SHIFT, Qt::Key_L));
+
 	auto fillAction = new QAction(embed::getIconPixmap("fill"), tr("Fill"), noteToolsButton);
 	connect(fillAction, &QAction::triggered, [this](){ m_editor->fitNoteLengths(true); });
 	fillAction->setShortcut(keySequence(Qt::SHIFT, Qt::Key_F));
@@ -5311,6 +5352,7 @@ PianoRollWindow::PianoRollWindow() :
 	noteToolsButton->addAction(glueAction);
 	noteToolsButton->addAction(knifeAction);
 	noteToolsButton->addAction(strumAction);
+	noteToolsButton->addAction(slideAction);
 	noteToolsButton->addAction(fillAction);
 	noteToolsButton->addAction(cutOverlapsAction);
 	noteToolsButton->addAction(minLengthAction);

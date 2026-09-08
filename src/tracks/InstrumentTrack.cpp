@@ -791,6 +791,12 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 
 			NotePlayHandle* notePlayHandle = NotePlayHandleManager::acquire(this, _offset, noteFrames, *currentNote);
 			notePlayHandle->setPatternTrack(pattern_track);
+			// Slide notes glide from the nearest preceding note in this clip
+			// (SPEC-slide-notes D-2; no preceding note -> no glide)
+			if( currentNote->slide() && nit != notes.begin() )
+			{
+				notePlayHandle->setSlideSourceKey( ( *( nit - 1 ) )->key() );
+			}
 			// are we playing global song?
 			if( _clip_num < 0 )
 			{

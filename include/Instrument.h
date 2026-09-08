@@ -75,6 +75,12 @@ public:
 
 	virtual bool hasNoteInput() const { return true; }
 
+	//! Whether slide (portamento) notes are meaningful on this instrument.
+	//! Instruments that play discrete samples (e.g. AudioFileProcessor)
+	//! return false: slide notes then play as regular notes, no glide
+	//! (SPEC-slide-notes D-3 per-instrument opt-out).
+	virtual bool supportsSlideNotes() const { return true; }
+
 	// if the plugin doesn't play each note, it can create an instrument-
 	// play-handle and re-implement this method, so that it mixes its
 	// output buffer only once per audio engine period

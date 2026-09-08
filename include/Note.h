@@ -124,6 +124,14 @@ public:
 	Type type() const { return m_type; }
 	inline void setType(Type t) { m_type = t; }
 
+	/*! Whether this is a slide (portamento) note: its pitch glides from the
+	 *  nearest preceding note in the same clip to its own key over its whole
+	 *  length (FL-style slide note, SPEC-slide-notes D-1). Serialized as the
+	 *  optional "slide" attribute - notes without it (i.e. every project
+	 *  saved before slide notes existed) load as regular notes. */
+	bool slide() const { return m_slide; }
+	void setSlide( bool slide ) { m_slide = slide; }
+
 	//! Types of per-note automation. Currently only detuning/pitch bending is supported.
 	enum class ParameterType
 	{
@@ -277,6 +285,7 @@ private:
 	std::shared_ptr<DetuningHelper> m_detuning;
 
 	Type m_type = Type::Regular;
+	bool m_slide = false;
 };
 
 using NoteVector = std::vector<Note*>;
