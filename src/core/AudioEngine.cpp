@@ -330,6 +330,13 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	renderStageEffects();       // STAGE 2: process effects of all instrument- and sampletracks
 	renderStageMix();           // STAGE 3: do master mix in mixer
 
+	// STAGE 4 (prototype, task #556): demux the engine input buffer into the
+	// armed per-track recorders. Realtime-safe by contract: the recorders only
+	// touch pre-allocated SPSC ring buffers here. Under the ALSA backend
+	// inputBufferFrames() is always 0 (no capture path in AudioAlsa);
+	// JACK/SDL backends push input frames via pushInputFrames().
+	m_recorder.processInput(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
+
 	s_renderingThread = false;
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
 	m_outputBufferReadIndex = 0;

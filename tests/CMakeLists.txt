@@ -11,9 +11,11 @@ set(LMMS_TESTS
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
 	src/core/ProjectVersionTest.cpp
+	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/TimelineTest.cpp
+	src/core/TwoTrackRecordingHarness.cpp
 	src/tracks/AutomationTrackTest.cpp
 )
 
@@ -36,3 +38,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 endforeach()
+
+# Real-hardware capture probe (task #556). Deliberately NOT registered with
+# CTest: it needs a capture device and records live audio, so it is run
+# manually (see RECORDING-PROTOTYPE.md).
+add_executable(TwoTrackAlsaCaptureProbe src/core/TwoTrackAlsaCaptureProbe.cpp)
+target_include_directories(TwoTrackAlsaCaptureProbe PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_static_libraries(TwoTrackAlsaCaptureProbe PRIVATE lmmsobjs)
+target_link_libraries(TwoTrackAlsaCaptureProbe PRIVATE
+	${QT_LIBRARIES}
+	${ASOUND_LIBRARY}
+)
+target_compile_features(TwoTrackAlsaCaptureProbe PRIVATE cxx_std_20)
+target_compile_definitions(TwoTrackAlsaCaptureProbe PRIVATE LMMS_TESTING)

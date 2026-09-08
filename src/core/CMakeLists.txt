@@ -111,6 +111,8 @@ set(LMMS_SRCS
 	core/audio/AudioPulseAudio.cpp
 	core/audio/AudioSampleRecorder.cpp
 	core/audio/AudioSdl.cpp
+	core/audio/MultiTrackRecorder.cpp
+	core/audio/TrackRecorder.cpp
 
 	core/lv2/Lv2Basics.cpp
 	core/lv2/Lv2ControlBase.cpp

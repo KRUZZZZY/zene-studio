@@ -40,6 +40,7 @@
 #include "LocklessList.h"
 #include "AudioEngineProfiler.h"
 #include "PlayHandle.h"
+#include "MultiTrackRecorder.h"
 
 
 namespace lmms
@@ -240,6 +241,11 @@ public:
 		return m_inputBufferFrames[ m_inputBufferRead ];
 	}
 
+	//! Prototype two-track recorder (task #556). The engine feeds it once per
+	//! period from the audio thread; see renderNextPeriod().
+	MultiTrackRecorder& recorder() { return m_recorder; }
+	const MultiTrackRecorder& recorder() const { return m_recorder; }
+
 	/**
 	 * @returns The internal buffer size used by audio plugins and other processing done within the audio engine.
 	 * Its value is @ref DEFAULT_BUFFER_SIZE or @ref framesPerAudioBuffer(), whichever is lower.
@@ -380,6 +386,9 @@ private:
 	f_cnt_t m_inputBufferSize[2];
 	int m_inputBufferRead;
 	int m_inputBufferWrite;
+
+	// prototype: hardcoded two-track capture (task #556)
+	MultiTrackRecorder m_recorder;
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
