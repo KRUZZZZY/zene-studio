@@ -67,6 +67,9 @@ set(LMMS_SRCS
 	core/RemotePlugin.cpp
 	core/RenderManager.cpp
 	core/RingBuffer.cpp
+	core/RoutingGraph.cpp
+	core/RoutingNode.cpp
+	core/RoutingNodes.cpp
 	core/Sample.cpp
 	core/SampleBuffer.cpp
 	core/SampleClip.cpp
