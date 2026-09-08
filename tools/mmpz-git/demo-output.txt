@@ -1,0 +1,638 @@
+
+
+################################################################
+# 0. the problem: a .mmpz without this tooling is an opaque binary blob
+################################################################
+
+$ git init -q -b main .
+[exit 0]
+
+$ git config user.name baseline demo
+[exit 0]
+
+$ git config user.email baseline@example.invalid
+[exit 0]
+
+$ cp /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/data/projects/shorties/sv-DnB-Startup.mmpz project.mmpz
+[exit 0]
+
+$ git add project.mmpz
+[exit 0]
+
+$ git commit -q -m import project
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py set-bpm project.mmpz 128
+[exit 0]
+
+$ git diff --stat
+ project.mmpz | Bin 3829 -> 3830 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+[exit 0]
+
+$ git diff
+diff --git a/project.mmpz b/project.mmpz
+index db32d34..5b9aa91 100644
+Binary files a/project.mmpz and b/project.mmpz differ
+[exit 0]
+
+$ git commit -qam main: bpm 175 -> 128
+[exit 0]
+
+$ git switch -qc other
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py add-note project.mmpz --track Bass --pattern I --key 43 --pos 384
+[exit 0]
+
+$ git commit -qam other: add a bass note
+[exit 0]
+
+$ git switch -q main
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py add-note project.mmpz --track Kick --pattern Kick --key 36 --pos 96
+[exit 0]
+
+$ git commit -qam main: add a kick note
+[exit 0]
+
+$ git merge --no-edit other
+warning: Cannot merge binary files: project.mmpz (HEAD vs. other)
+Auto-merging project.mmpz
+CONFLICT (content): Merge conflict in project.mmpz
+Automatic merge failed; fix conflicts and then commit the result.
+[exit 1]
+
+$ git status --short
+UU project.mmpz
+[exit 0]
+
+
+################################################################
+# 1. install the filter / diff / merge drivers into a real repo
+################################################################
+
+$ git init -q -b main .
+[exit 0]
+
+$ git config user.name mmpz-git demo
+[exit 0]
+
+$ git config user.email mmpz-git@example.invalid
+[exit 0]
+
+$ git config core.autocrlf false
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py install --repo . --python /usr/bin/python3
+git config filter.mmpz.clean = "/usr/bin/python3" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py" dump
+git config filter.mmpz.smudge = "/usr/bin/python3" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py" compress
+git config filter.mmpz.required = false
+git config diff.mmpz.textconv = "/usr/bin/python3" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py" textconv
+git config merge.mmpz.driver = "/usr/bin/python3" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py" merge %O %A %B %L %P
+git config merge.mmpz.name = LMMS project 3-way merge
+git config diff.mmpz.binary = false
+[exit 0]
+
+$ cp /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/gitattributes.sample .gitattributes
+[exit 0]
+
+$ cat .gitattributes
+# LMMS project files: store and compare them as readable XML.
+#
+# Install the drivers once per clone:
+#     python3 tools/mmpz-git/mmpz_git.py install --repo .
+#
+# .mmpz/.xptz are qCompress containers (4-byte big-endian length + zlib).
+# The clean filter stores the decompressed XML in git; the smudge filter
+# recompresses it on checkout. The result is byte-identical for unedited
+# files (see GIT-FRIENDLY-MMPZ.md, section 2).
+#
+# .mmp/.xpt are already plain XML: only diff/merge need the drivers. Do NOT
+# give them the filter, or a checkout would turn a plain .mmp into a .mmpz.
+
+*.mmpz filter=mmpz diff=mmpz merge=mmpz
+*.mmp  diff=mmpz merge=mmpz
+
+# Presets use the same qCompress container; the generic diff/merge is safe,
+# but the LMMS-specific identity rules are untested for presets.
+*.xptz filter=mmpz diff=mmpz merge=mmpz
+*.xpt  diff=mmpz merge=mmpz
+
+# ---------------------------------------------------------------------------
+# Audio samples: the part git filters cannot fix.
+#
+# LMMS references samples by path (e.g. src="drums/bassdrum04.ogg"). Keep the
+# binaries in git-lfs and keep the PROJECT FILE out of it:
+#
+#     git lfs track "samples/**/*.wav" "samples/**/*.ogg" "samples/**/*.flac"
+#     git add .gitattributes
+#
+# What git-lfs does NOT cover:
+#   * the project file itself: an LFS pointer is opaque, so .mmpz must stay a
+#     normal text object (that is what the filter/diff/merge lines above do);
+#   * absolute sample paths outside the repo: a project that references
+#     /home/you/... breaks for collaborators even when the samples are in LFS;
+#   * sample edits: LFS versions whole files, so two people editing the same
+#     sample still conflict at file level -- it is not a waveform merge;
+#   * LFS needs server-side support (GitHub/GitLab yes; a bare ssh remote needs
+#     git-lfs-authenticate or a local LFS endpoint).
+
+$ git add .gitattributes
+[exit 0]
+
+$ git commit -q -m Add .gitattributes: .mmpz stored, diffed and merged as XML
+[exit 0]
+
+
+################################################################
+# 2. import a real project; prove .mmpz -> git -> .mmpz is byte-identical
+################################################################
+
+$ cp /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/data/projects/shorties/sv-DnB-Startup.mmpz project.mmpz
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py info project.mmpz
+file      : project.mmpz
+root      : <lmms-project>
+bpm       : 175
+tracks    : 9
+patterns  : 51
+notes     : 368
+fxchannels: 8
+sha256    : 58ad4bd5457347dcd92a98492c055659da3c0bcb1c6a532495042ba7dcf086b4
+[exit 0]
+
+$ sha256sum project.mmpz            # BEFORE git ever sees it
+58ad4bd5457347dcd92a98492c055659da3c0bcb1c6a532495042ba7dcf086b4  project.mmpz
+
+$ git add project.mmpz
+[exit 0]
+
+$ git commit -q -m Import sv-DnB-Startup.mmpz (real LMMS demo project)
+[exit 0]
+
+$ git cat-file blob :project.mmpz | head -3   # stored form is readable XML
+<?xml version="1.0"?>
+<!DOCTYPE lmms-project>
+<lmms-project type="song" version="1.0" creator="LMMS" creatorversion="1.2.0">
+
+$ git cat-file -s :project.mmpz; wc -c project.mmpz
+stored blob: 53501 bytes
+worktree   : 3829 bytes
+
+$ rm project.mmpz
+[exit 0]
+
+$ git checkout -- project.mmpz
+[exit 0]
+
+$ sha256sum project.mmpz            # AFTER git checkout (smudge filter ran)
+58ad4bd5457347dcd92a98492c055659da3c0bcb1c6a532495042ba7dcf086b4  project.mmpz
+
+source sha256 : 58ad4bd5457347dcd92a98492c055659da3c0bcb1c6a532495042ba7dcf086b4
+checkout sha256: 58ad4bd5457347dcd92a98492c055659da3c0bcb1c6a532495042ba7dcf086b4
+ROUND-TRIP: byte-identical
+
+$ file project.mmpz
+project.mmpz: data
+[exit 0]
+
+$ # cross-check our stdlib codec against the real LMMS binary
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py dump project.mmpz -o /tmp/py_dump.xml
+[exit 0]
+
+$ cmp /tmp/lmms_comp.mmpz /tmp/py_comp.mmpz
+IDENTICAL: real lmms and our helper agree byte-for-byte
+
+
+################################################################
+# 3. a small edit produces a small, readable diff (not a whole-file rewrite)
+################################################################
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py set-bpm project.mmpz 128
+[exit 0]
+
+$ git diff --stat
+ project.mmpz | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[exit 0]
+
+$ git diff --numstat
+1	1	project.mmpz
+[exit 0]
+
+$ git diff
+diff --git a/project.mmpz b/project.mmpz
+index d01105f..f285f6b 100644
+--- a/project.mmpz
++++ b/project.mmpz
+@@ -1,7 +1,7 @@
+ <?xml version="1.0"?>
+ <!DOCTYPE lmms-project>
+ <lmms-project type="song" version="1.0" creator="LMMS" creatorversion="1.2.0">
+-  <head timesig_denominator="4" bpm="175" masterpitch="5" mastervol="100" timesig_numerator="4"/>
++  <head timesig_denominator="4" bpm="128" masterpitch="5" mastervol="100" timesig_numerator="4"/>
+   <song>
+     <trackcontainer visible="1" width="648" height="184" type="song" x="2" y="1" maximized="0" minimized="0">
+       <track type="1" muted="0" name="Drum" solo="0">
+[exit 0]
+
+$ git commit -qam main: bpm 175 -> 128 (one-line edit)
+[exit 0]
+
+
+################################################################
+# 4. canonical ordering: deterministic, idempotent, content-preserving
+################################################################
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py canonicalize --check project.mmpz
+NOT-CANONICAL project.mmpz (552 line(s) differ from the canonical form; 0 element block reorder(s))
+[exit 1]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py canonicalize project.mmpz -o /tmp/canon.mmpz
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py canonicalize --check /tmp/canon.mmpz
+CANONICAL /tmp/canon.mmpz
+[exit 0]
+
+$ # canonicalisation is content-preserving: the semantic diff is empty
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py diff project.mmpz /tmp/canon.mmpz
+# mmpz-git diff: project.mmpz -> /tmp/canon.mmpz
+# no semantic changes
+[exit 0]
+
+$ # Qt6 re-saves the same project twice: attribute order churns (hash seed)
+
+$ /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/scratch/qtsave2 project.mmpz /tmp/qtA.mmpz
+[exit 0]
+
+$ /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/scratch/qtsave2 project.mmpz /tmp/qtB.mmpz
+[exit 0]
+
+$ cmp /tmp/qtA.mmpz /tmp/qtB.mmpz
+/tmp/qtA.mmpz /tmp/qtB.mmpz differ: byte 61, line 3
+cmp exit=1
+
+$ diff <(dump qtA) <(dump qtB) | wc -l
+1326
+
+$ # after canonicalisation the two Qt6 saves are byte-identical
+IDENTICAL after canonicalisation
+
+
+################################################################
+# 5. XML-aware diff: an operation list, not text lines
+################################################################
+
+$ cp project.mmpz /tmp/varA.mmpz
+[exit 0]
+
+$ cp project.mmpz /tmp/varB.mmpz
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py add-note /tmp/varB.mmpz --track Bass --pattern I --key 43 --pos 384
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py set-note-vol /tmp/varB.mmpz --track Bass --pattern I --pos 0 --key 30 --vol 80
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py move-note /tmp/varB.mmpz --track Bass --pattern I --pos 192 --key 29 --to-pos 240
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py remove-note /tmp/varB.mmpz --track Bass --pattern I --pos 288 --key 28
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py diff /tmp/varA.mmpz /tmp/varB.mmpz
+# mmpz-git diff: /tmp/varA.mmpz -> /tmp/varB.mmpz
+# operations: 2 added, 2 removed, 1 changed, 1 moved
+  ~ /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="0"/note pos="0" @vol: 100 -> 80
+  - /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="192" (removed)
+  - /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="288" (removed)
+  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="240" (added)
+  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
+# position/order changes:
+  > /song/trackcontainer type="song"/track name="Bass"/pattern name="I": note key=29 moved pos 192 -> 240
+[exit 0]
+
+$ # the same two files as a raw text diff
+
+$ git diff --no-index --stat /tmp/varA.mmpz /tmp/varB.mmpz
+ /tmp/{varA.mmpz => varB.mmpz} | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+[exit 1]
+
+
+################################################################
+# 6a. two branches editing DIFFERENT tracks merge cleanly
+################################################################
+
+$ git switch -qc feat/drums
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py add-note project.mmpz --track Kick --pattern Kick --key 57 --pos 96
+[exit 0]
+
+$ git commit -qam drums: add a kick note
+[exit 0]
+
+$ git switch -q main
+[exit 0]
+
+$ git switch -qc feat/bass
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py add-note project.mmpz --track Bass --pattern I --key 43 --pos 384
+[exit 0]
+
+$ git commit -qam bass: add a bass note
+[exit 0]
+
+$ git switch -q feat/drums
+[exit 0]
+
+$ git merge --no-edit feat/bass
+Auto-merging project.mmpz
+Merge made by the 'ort' strategy.
+ project.mmpz | 1176 +++++++++++++++++++++++++++++-----------------------------
+ 1 file changed, 589 insertions(+), 587 deletions(-)
+[exit 0]
+
+$ git status --short
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py info project.mmpz
+file      : project.mmpz
+root      : <lmms-project>
+bpm       : 128
+tracks    : 9
+patterns  : 51
+notes     : 370
+fxchannels: 8
+sha256    : da22da38ac96a51e1dbcec442fe79d246c3fd18418a0afe32dcdbac6754c40dc
+[exit 0]
+
+$ # both edits survived: semantic diff of main -> merge result
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py diff /tmp/merge_base.mmpz /tmp/merge_result.mmpz
+# mmpz-git diff: /tmp/merge_base.mmpz -> /tmp/merge_result.mmpz
+# operations: 2 added, 0 removed, 0 changed, 0 moved
+  + /song/trackcontainer type="song"/track name="Drum"/bbtrack/trackcontainer type="bbtrackcontainer"/track name="Kick"/pattern name="Kick"/note pos="96" (added)
+  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
+[exit 0]
+
+$ git log --oneline --graph --all
+*   2aee6f0 Merge branch 'feat/bass' into feat/drums
+|\  
+| * 46df8bd bass: add a bass note
+* | 1e6aacf drums: add a kick note
+|/  
+* 3e95b75 main: bpm 175 -> 128 (one-line edit)
+* f5c6aa6 Import sv-DnB-Startup.mmpz (real LMMS demo project)
+* fa2ffb2 Add .gitattributes: .mmpz stored, diffed and merged as XML
+[exit 0]
+
+
+################################################################
+# 6b. conflicting BPM edits produce a human-resolvable conflict
+################################################################
+
+$ git switch -q main
+[exit 0]
+
+$ git switch -qc feat/bpm-ours
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py set-bpm project.mmpz 140
+[exit 0]
+
+$ git commit -qam bpm: 140 (ours)
+[exit 0]
+
+$ git switch -q main
+[exit 0]
+
+$ git switch -qc feat/bpm-theirs
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py set-bpm project.mmpz 96
+[exit 0]
+
+$ git commit -qam bpm: 96 (theirs)
+[exit 0]
+
+$ git switch -q feat/bpm-ours
+[exit 0]
+
+$ git merge --no-edit feat/bpm-theirs
+CONFLICT (attribute) at /head: bpm
+mmpz-git: 1 conflict(s); resolve in .merge_file_96xfQX
+Auto-merging project.mmpz
+CONFLICT (content): Merge conflict in project.mmpz
+Automatic merge failed; fix conflicts and then commit the result.
+[exit 1]
+
+$ git status --short
+UU project.mmpz
+[exit 0]
+
+$ # the conflicted project file is still well-formed XML with a comment
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py dump project.mmpz -o /tmp/conflicted.xml
+[exit 0]
+
+$ sed -n '1,15p' /tmp/conflicted.xml   # the whole conflict banner
+<?xml version="1.0"?>
+<!DOCTYPE lmms-project>
+<lmms-project creator="LMMS" creatorversion="1.2.0" type="song" version="1.0">
+  <head bpm="140" masterpitch="5" mastervol="100" timesig_denominator="4" timesig_numerator="4"><!--
+    ======= mmpz-git CONFLICT =======
+    element : /head
+    field   : attribute bpm
+    base    : 128
+    ours    : 140
+    theirs  : 96
+    resolve : keep the correct value, then delete this comment.
+    ===========================================
+  --></head>
+  <song>
+    <trackcontainer height="184" maximized="0" minimized="0" type="song" visible="1" width="648" x="2" y="1">
+
+$ # resolve: keep 96 (a human decision), drop the comment, complete the merge
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py set-bpm project.mmpz 96
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/demo_edits.py resolve project.mmpz
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py verify project.mmpz
+OK     project.mmpz
+       sha256(original) = 8b50bd4616a95748581ccf68a1863cb2bedebeb7f6a9cbc94291f72c57fb1b64
+       sha256(roundtrip)= 8b50bd4616a95748581ccf68a1863cb2bedebeb7f6a9cbc94291f72c57fb1b64
+[exit 0]
+
+$ git add project.mmpz
+[exit 0]
+
+$ git commit -q --no-edit
+[exit 0]
+
+$ git status --short
+[exit 0]
+
+$ git log --oneline --graph -8
+*   f712b76 Merge branch 'feat/bpm-theirs' into feat/bpm-ours
+|\  
+| * 15498a9 bpm: 96 (theirs)
+* | b04c874 bpm: 140 (ours)
+|/  
+* 3e95b75 main: bpm 175 -> 128 (one-line edit)
+* f5c6aa6 Import sv-DnB-Startup.mmpz (real LMMS demo project)
+* fa2ffb2 Add .gitattributes: .mmpz stored, diffed and merged as XML
+[exit 0]
+
+
+################################################################
+# 6c. once both sides are canonical, later merges are small
+################################################################
+
+$ git merge --no-edit feat/drums
+Auto-merging project.mmpz
+Merge made by the 'ort' strategy.
+ project.mmpz | 2 ++
+ 1 file changed, 2 insertions(+)
+[exit 0]
+
+$ git show --stat --format=%h %s HEAD
+6cd7e2d Merge branch 'feat/drums' into feat/bpm-ours
+
+ project.mmpz | 2 ++
+ 1 file changed, 2 insertions(+)
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py info project.mmpz
+file      : project.mmpz
+root      : <lmms-project>
+bpm       : 96
+tracks    : 9
+patterns  : 51
+notes     : 370
+fxchannels: 8
+sha256    : f60e8b24ebc19386069732657807f2a4a4b890b1cfe5ec924f78e317e4d470a9
+[exit 0]
+
+
+################################################################
+# 7. the merged project still opens in real LMMS
+################################################################
+
+$ file project.mmpz
+project.mmpz: data
+[exit 0]
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py info project.mmpz
+file      : project.mmpz
+root      : <lmms-project>
+bpm       : 96
+tracks    : 9
+patterns  : 51
+notes     : 370
+fxchannels: 8
+sha256    : f60e8b24ebc19386069732657807f2a4a4b890b1cfe5ec924f78e317e4d470a9
+[exit 0]
+
+$ QT_QPA_PLATFORM=offscreen /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/build/lmms dump project.mmpz
+[dump exit 0]
+<?xml version="1.0"?>
+<!DOCTYPE lmms-project>
+<lmms-project creator="LMMS" creatorversion="1.2.0" type="song" version="1.0">
+  <head bpm="96" masterpitch="5" mastervol="100" timesig_denominator="4" timesig_numerator="4"/>
+
+$ QT_QPA_PLATFORM=offscreen /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/build/lmms render project.mmpz -o /tmp/merged.wav -f wav
+Loading project...
+Done
+
+[render exit 0]
+
+$ file /tmp/merged.wav
+/tmp/merged.wav: RIFF (little-endian) data, WAVE audio, Microsoft PCM, 16 bit, stereo 44100 Hz
+[exit 0]
+
+$ ls -la /tmp/merged.wav
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 3968088 Sep  8 23:10 /tmp/merged.wav
+[exit 0]
+
+$ # the bpm-140-vs-96 conflict is resolved to 96 in the final file
+
+$ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/mmpz_git.py diff /tmp/merge_base.mmpz project.mmpz
+# mmpz-git diff: /tmp/merge_base.mmpz -> project.mmpz
+# operations: 2 added, 0 removed, 1 changed, 0 moved
+  ~ /head/head @bpm: 128 -> 96
+  + /song/trackcontainer type="song"/track name="Drum"/bbtrack/trackcontainer type="bbtrackcontainer"/track name="Kick"/pattern name="Kick"/note pos="96" (added)
+  + /song/trackcontainer type="song"/track name="Bass"/pattern name="I"/note pos="384" (added)
+[exit 0]
+
+
+################################################################
+# 8. audio samples: git-lfs, and what it does not cover
+################################################################
+
+$ git lfs version   # this environment has no git-lfs -> documented, not tested
+git: 'lfs' is not a git command. See 'git --help'.
+
+The most similar command is
+	log
+[exit 1]
+
+$ cat .gitattributes   # the lfs guidance sits beside the project rules
+# LMMS project files: store and compare them as readable XML.
+#
+# Install the drivers once per clone:
+#     python3 tools/mmpz-git/mmpz_git.py install --repo .
+#
+# .mmpz/.xptz are qCompress containers (4-byte big-endian length + zlib).
+# The clean filter stores the decompressed XML in git; the smudge filter
+# recompresses it on checkout. The result is byte-identical for unedited
+# files (see GIT-FRIENDLY-MMPZ.md, section 2).
+#
+# .mmp/.xpt are already plain XML: only diff/merge need the drivers. Do NOT
+# give them the filter, or a checkout would turn a plain .mmp into a .mmpz.
+
+*.mmpz filter=mmpz diff=mmpz merge=mmpz
+*.mmp  diff=mmpz merge=mmpz
+
+# Presets use the same qCompress container; the generic diff/merge is safe,
+# but the LMMS-specific identity rules are untested for presets.
+*.xptz filter=mmpz diff=mmpz merge=mmpz
+*.xpt  diff=mmpz merge=mmpz
+
+# ---------------------------------------------------------------------------
+# Audio samples: the part git filters cannot fix.
+#
+# LMMS references samples by path (e.g. src="drums/bassdrum04.ogg"). Keep the
+# binaries in git-lfs and keep the PROJECT FILE out of it:
+#
+#     git lfs track "samples/**/*.wav" "samples/**/*.ogg" "samples/**/*.flac"
+#     git add .gitattributes
+#
+# What git-lfs does NOT cover:
+#   * the project file itself: an LFS pointer is opaque, so .mmpz must stay a
+#     normal text object (that is what the filter/diff/merge lines above do);
+#   * absolute sample paths outside the repo: a project that references
+#     /home/you/... breaks for collaborators even when the samples are in LFS;
+#   * sample edits: LFS versions whole files, so two people editing the same
+#     sample still conflict at file level -- it is not a waveform merge;
+#   * LFS needs server-side support (GitHub/GitLab yes; a bare ssh remote needs
+#     git-lfs-authenticate or a local LFS endpoint).
+
+
+################################################################
+# done -- repositories left in place for inspection
+################################################################
+testbed repo : /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-gitmmpz/tools/mmpz-git/testbed
+baseline repo: /tmp/mmpz-baseline-repo
