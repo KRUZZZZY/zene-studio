@@ -113,6 +113,7 @@ OPTION(BUNDLE_QT_TRANSLATIONS	"Install Qt translation files for LMMS" OFF)
 option(WANT_DEBUG_CPACK "Show detailed logs for packaging commands" OFF)
 option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an installer" OFF)
 option(WANT_QT6 "Build with experimental Qt6 support" OFF)
+option(WANT_WASM "Include the WASM DSP sandbox (requires the wasmtime C API)" ON)
 
 
 # Set the target microarchitecture
@@ -860,6 +861,20 @@ include(ErrorFlags)
 # use ccache
 include(CompileCache)
 
+# Optional WASM DSP sandbox. The dependency is strictly optional: without the
+# wasmtime C API on the find path this configures cleanly with the feature off.
+if(WANT_WASM)
+	FIND_PACKAGE(Wasmtime)
+	if(Wasmtime_FOUND)
+		SET(STATUS_WASM "Enabled")
+	else()
+		SET(WANT_WASM OFF)
+		SET(STATUS_WASM "Disabled (wasmtime C API not found; set WASMTIME_ROOT)")
+	endif()
+else()
+	SET(STATUS_WASM "Disabled")
+endif()
+
 # make sub-directories
 ADD_SUBDIRECTORY(cmake)
 ADD_SUBDIRECTORY(src)
@@ -985,6 +1000,7 @@ MESSAGE(
 "* Profile using GNU profiler        : ${STATUS_GPROF}\n"
 "* Debug assertions                  : ${STATUS_ASSERTIONS}\n"
 "* Experimental Qt6 support          : ${STATUS_QT6}\n"
+"* WASM DSP sandbox                  : ${STATUS_WASM}\n"
 )
 
 MESSAGE(
