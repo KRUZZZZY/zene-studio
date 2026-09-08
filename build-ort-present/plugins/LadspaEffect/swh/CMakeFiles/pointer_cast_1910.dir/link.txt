@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/pointer_cast_1910.so CMakeFiles/pointer_cast_1910.dir/ladspa/pointer_cast_1910.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

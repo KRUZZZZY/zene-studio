@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/surround_encoder_1401.so CMakeFiles/surround_encoder_1401.dir/ladspa/surround_encoder_1401.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

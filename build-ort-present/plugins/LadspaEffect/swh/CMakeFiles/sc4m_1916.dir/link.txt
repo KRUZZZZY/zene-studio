@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/sc4m_1916.so CMakeFiles/sc4m_1916.dir/ladspa/sc4m_1916.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm librms.a libdb.a 

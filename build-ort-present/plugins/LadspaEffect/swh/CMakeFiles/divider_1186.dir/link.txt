@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/divider_1186.so CMakeFiles/divider_1186.dir/ladspa/divider_1186.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

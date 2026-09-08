@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/ls_filter_1908.so CMakeFiles/ls_filter_1908.dir/ladspa/ls_filter_1908.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

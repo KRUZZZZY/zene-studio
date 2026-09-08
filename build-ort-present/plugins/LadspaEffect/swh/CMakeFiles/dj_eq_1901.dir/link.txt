@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/dj_eq_1901.so CMakeFiles/dj_eq_1901.dir/ladspa/dj_eq_1901.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/wave_terrain_1412.so CMakeFiles/wave_terrain_1412.dir/ladspa/wave_terrain_1412.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

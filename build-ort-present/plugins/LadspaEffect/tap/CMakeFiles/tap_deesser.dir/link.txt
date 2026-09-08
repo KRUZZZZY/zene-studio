@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -fno-strict-aliasing -funroll-loops -ffast-math -O3 -DNDEBUG -shared  -o ../../ladspa/tap_deesser.so "CMakeFiles/tap_deesser.dir/tap-plugins/tap_deesser.c.o"  -lm 

@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/gong_beater_1439.so CMakeFiles/gong_beater_1439.dir/ladspa/gong_beater_1439.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

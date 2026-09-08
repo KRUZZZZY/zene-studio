@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/karaoke_1409.so CMakeFiles/karaoke_1409.dir/ladspa/karaoke_1409.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

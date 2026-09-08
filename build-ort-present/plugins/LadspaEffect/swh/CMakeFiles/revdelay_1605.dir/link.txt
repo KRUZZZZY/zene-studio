@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/revdelay_1605.so CMakeFiles/revdelay_1605.dir/ladspa/revdelay_1605.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

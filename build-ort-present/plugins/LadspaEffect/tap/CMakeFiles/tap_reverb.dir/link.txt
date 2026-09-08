@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -fno-strict-aliasing -funroll-loops -ffast-math -O3 -DNDEBUG -shared  -o ../../ladspa/tap_reverb.so "CMakeFiles/tap_reverb.dir/tap-plugins/tap_reverb.c.o"  -lm 

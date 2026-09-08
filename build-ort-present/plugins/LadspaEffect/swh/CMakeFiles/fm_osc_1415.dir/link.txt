@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/fm_osc_1415.so CMakeFiles/fm_osc_1415.dir/ladspa/fm_osc_1415.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libblo.a 

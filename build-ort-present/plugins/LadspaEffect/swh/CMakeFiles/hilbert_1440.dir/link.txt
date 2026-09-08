@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/hilbert_1440.so CMakeFiles/hilbert_1440.dir/ladspa/hilbert_1440.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

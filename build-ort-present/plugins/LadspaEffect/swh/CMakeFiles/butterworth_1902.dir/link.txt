@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/butterworth_1902.so CMakeFiles/butterworth_1902.dir/ladspa/butterworth_1902.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libiir.a 

@@ -1,2 +1,0 @@
-/usr/bin/ar qc libadplug.a CMakeFiles/adplug.dir/adplug/src/fmopl.c.o CMakeFiles/adplug.dir/adplug/src/temuopl.cpp.o
-/usr/bin/ranlib libadplug.a

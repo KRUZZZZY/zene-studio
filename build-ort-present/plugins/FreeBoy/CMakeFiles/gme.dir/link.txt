@@ -1,2 +1,0 @@
-/usr/bin/ar qc libgme.a "CMakeFiles/gme.dir/game-music-emu/gme/Gb_Apu.cpp.o" "CMakeFiles/gme.dir/game-music-emu/gme/Gb_Oscs.cpp.o" "CMakeFiles/gme.dir/game-music-emu/gme/Blip_Buffer.cpp.o" "CMakeFiles/gme.dir/game-music-emu/gme/Multi_Buffer.cpp.o"
-/usr/bin/ranlib libgme.a

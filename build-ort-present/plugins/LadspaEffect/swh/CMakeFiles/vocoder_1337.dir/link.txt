@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/vocoder_1337.so CMakeFiles/vocoder_1337.dir/ladspa/vocoder_1337.c.o  -lm 

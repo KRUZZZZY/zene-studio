@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/latency_1914.so CMakeFiles/latency_1914.dir/ladspa/latency_1914.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

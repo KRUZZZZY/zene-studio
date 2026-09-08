@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/highpass_iir_1890.so CMakeFiles/highpass_iir_1890.dir/ladspa/highpass_iir_1890.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm libiir.a 

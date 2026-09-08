@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/satan_maximiser_1408.so CMakeFiles/satan_maximiser_1408.dir/ladspa/satan_maximiser_1408.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

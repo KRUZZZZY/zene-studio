@@ -1,2 +1,0 @@
-/usr/bin/ar qc libweakjack.a CMakeFiles/weakjack.dir/weakjack/weak_libjack.c.o
-/usr/bin/ranlib libweakjack.a

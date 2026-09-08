@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/shaper_1187.so CMakeFiles/shaper_1187.dir/ladspa/shaper_1187.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

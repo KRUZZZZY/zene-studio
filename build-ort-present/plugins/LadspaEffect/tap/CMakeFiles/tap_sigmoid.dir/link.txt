@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -fno-strict-aliasing -funroll-loops -ffast-math -O3 -DNDEBUG -shared  -o ../../ladspa/tap_sigmoid.so "CMakeFiles/tap_sigmoid.dir/tap-plugins/tap_sigmoid.c.o"  -lm 

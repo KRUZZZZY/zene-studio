@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/amp_1181.so CMakeFiles/amp_1181.dir/ladspa/amp_1181.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

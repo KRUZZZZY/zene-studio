@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/triple_para_1204.so CMakeFiles/triple_para_1204.dir/ladspa/triple_para_1204.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

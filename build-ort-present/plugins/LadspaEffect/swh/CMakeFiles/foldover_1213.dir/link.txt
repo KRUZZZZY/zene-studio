@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/foldover_1213.so CMakeFiles/foldover_1213.dir/ladspa/foldover_1213.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

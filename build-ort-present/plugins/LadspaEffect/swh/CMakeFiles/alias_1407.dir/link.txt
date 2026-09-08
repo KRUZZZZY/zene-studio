@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/alias_1407.so CMakeFiles/alias_1407.dir/ladspa/alias_1407.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

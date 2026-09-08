@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/valve_rect_1405.so CMakeFiles/valve_rect_1405.dir/ladspa/valve_rect_1405.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

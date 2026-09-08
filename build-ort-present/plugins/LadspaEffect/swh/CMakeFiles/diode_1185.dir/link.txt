@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/diode_1185.so CMakeFiles/diode_1185.dir/ladspa/diode_1185.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

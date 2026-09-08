@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/sc3_1427.so CMakeFiles/sc3_1427.dir/ladspa/sc3_1427.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm librms.a libdb.a 

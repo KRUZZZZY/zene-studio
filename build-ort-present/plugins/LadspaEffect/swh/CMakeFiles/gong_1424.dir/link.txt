@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/gong_1424.so CMakeFiles/gong_1424.dir/ladspa/gong_1424.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/decay_1886.so CMakeFiles/decay_1886.dir/ladspa/decay_1886.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/svf_1214.so CMakeFiles/svf_1214.dir/ladspa/svf_1214.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 

@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC  -fPIC -DPIC -O3 -DNDEBUG -shared  -o ../../ladspa/giant_flange_1437.so CMakeFiles/giant_flange_1437.dir/ladspa/giant_flange_1437.c.o  /usr/lib/x86_64-linux-gnu/libfftw3f.so -lm 
