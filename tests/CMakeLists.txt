@@ -36,4 +36,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Lua scripting examples live in the source tree; tests run from build/tests.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")
+
+	# ScriptEngineTest loads a real instrument plugin (tripleoscillator) from the
+	# build tree to prove the Lua Instrument binding (spec G4). Plugin modules
+	# resolve LMMS core symbols from the host process at load time, so the test
+	# binary must export its symbols exactly like the lmms executable does.
+	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest")
+		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
 endforeach()
