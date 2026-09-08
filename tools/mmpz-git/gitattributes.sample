@@ -6,7 +6,7 @@
 # .mmpz/.xptz are qCompress containers (4-byte big-endian length + zlib).
 # The clean filter stores the decompressed XML in git; the smudge filter
 # recompresses it on checkout. The result is byte-identical for unedited
-# files (see GIT-FRIENDLY-MMPZ.md, section 2).
+# files (see GIT-FRIENDLY-MMPZ.md, section 5).
 #
 # .mmp/.xpt are already plain XML: only diff/merge need the drivers. Do NOT
 # give them the filter, or a checkout would turn a plain .mmp into a .mmpz.

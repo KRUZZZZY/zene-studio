@@ -107,7 +107,7 @@ $ cat .gitattributes
 # .mmpz/.xptz are qCompress containers (4-byte big-endian length + zlib).
 # The clean filter stores the decompressed XML in git; the smudge filter
 # recompresses it on checkout. The result is byte-identical for unedited
-# files (see GIT-FRIENDLY-MMPZ.md, section 2).
+# files (see GIT-FRIENDLY-MMPZ.md, section 5).
 #
 # .mmp/.xpt are already plain XML: only diff/merge need the drivers. Do NOT
 # give them the filter, or a checkout would turn a plain .mmp into a .mmpz.
@@ -279,7 +279,7 @@ $ cmp /tmp/qtA.mmpz /tmp/qtB.mmpz
 cmp exit=1
 
 $ diff <(dump qtA) <(dump qtB) | wc -l
-1244
+1300
 
 $ # after canonicalisation the two Qt6 saves are byte-identical
 IDENTICAL after canonicalisation
@@ -386,14 +386,14 @@ $ python3 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms
 [exit 0]
 
 $ git log --oneline --graph --all
-*   a0239c3 Merge branch 'feat/bass' into feat/drums
+*   2abd807 Merge branch 'feat/bass' into feat/drums
 |\  
-| * f8bc75d bass: add a bass note
-* | 91e1bb7 drums: add a kick note
+| * c9ae21d bass: add a bass note
+* | 4c5ea1c drums: add a kick note
 |/  
-* f602dba main: bpm 175 -> 128 (one-line edit)
-* 0374874 Import sv-DnB-Startup.mmpz (real LMMS demo project)
-* 807207d Add .gitattributes: .mmpz stored, diffed and merged as XML
+* 47afdcd main: bpm 175 -> 128 (one-line edit)
+* 245fd87 Import sv-DnB-Startup.mmpz (real LMMS demo project)
+* d02c80e Add .gitattributes: .mmpz stored, diffed and merged as XML
 [exit 0]
 
 
@@ -430,7 +430,7 @@ $ git switch -q feat/bpm-ours
 
 $ git merge --no-edit feat/bpm-theirs
 CONFLICT (attribute) at /head: bpm
-mmpz-git: 1 conflict(s); resolve in .merge_file_IOYSLv
+mmpz-git: 1 conflict(s); resolve in .merge_file_poJhLi
 Auto-merging project.mmpz
 CONFLICT (content): Merge conflict in project.mmpz
 Automatic merge failed; fix conflicts and then commit the result.
@@ -486,14 +486,14 @@ $ git status --short
 [exit 0]
 
 $ git log --oneline --graph -8
-*   0fdec46 Merge branch 'feat/bpm-theirs' into feat/bpm-ours
+*   04b606e Merge branch 'feat/bpm-theirs' into feat/bpm-ours
 |\  
-| * ef4dc47 bpm: 96 (theirs)
-* | 434ad67 bpm: 140 (ours)
+| * 2956b01 bpm: 96 (theirs)
+* | 7c17f0b bpm: 140 (ours)
 |/  
-* f602dba main: bpm 175 -> 128 (one-line edit)
-* 0374874 Import sv-DnB-Startup.mmpz (real LMMS demo project)
-* 807207d Add .gitattributes: .mmpz stored, diffed and merged as XML
+* 47afdcd main: bpm 175 -> 128 (one-line edit)
+* 245fd87 Import sv-DnB-Startup.mmpz (real LMMS demo project)
+* d02c80e Add .gitattributes: .mmpz stored, diffed and merged as XML
 [exit 0]
 
 
@@ -509,7 +509,7 @@ Merge made by the 'ort' strategy.
 [exit 0]
 
 $ git show --stat --format=%h %s HEAD
-b46bd13 Merge branch 'feat/drums' into feat/bpm-ours
+12e599b Merge branch 'feat/drums' into feat/bpm-ours
 
  project.mmpz | 2 ++
  1 file changed, 2 insertions(+)
@@ -564,7 +564,7 @@ $ file /tmp/merged.wav
 [exit 0]
 
 $ ls -la /tmp/merged.wav
--rw-rw-r-- 1 kruzzzzy kruzzzzy 3968088 Sep  8 23:50 /tmp/merged.wav
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 3968088 Sep  8 23:59 /tmp/merged.wav
 [exit 0]
 
 $ # the bpm-140-vs-96 conflict is resolved to 96 in the final file
@@ -598,7 +598,7 @@ $ cat .gitattributes   # the lfs guidance sits beside the project rules
 # .mmpz/.xptz are qCompress containers (4-byte big-endian length + zlib).
 # The clean filter stores the decompressed XML in git; the smudge filter
 # recompresses it on checkout. The result is byte-identical for unedited
-# files (see GIT-FRIENDLY-MMPZ.md, section 2).
+# files (see GIT-FRIENDLY-MMPZ.md, section 5).
 #
 # .mmp/.xpt are already plain XML: only diff/merge need the drivers. Do NOT
 # give them the filter, or a checkout would turn a plain .mmp into a .mmpz.
