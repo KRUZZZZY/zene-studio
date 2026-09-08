@@ -70,6 +70,7 @@
 #include "ProjectRenderer.h"
 #include "RenderManager.h"
 #include "Song.h"
+#include "ScriptEngine.h"
 
 #ifdef LMMS_DEBUG_FPE
 #include <fenv.h> // For feenableexcept
@@ -202,6 +203,8 @@ void printHelp()
 		"          If not specified, render will overwrite the input file\n"
 		"          For \"rendertracks\", this might be required\n"
 		"  -p, --profile <out>            Dump profiling information to file <out>\n"
+		"      --run-script <file>        Run the Lua script <file> headless and exit\n"
+		"          Prints the script's LuaLog output to stdout\n"
 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
 		"          Range: 44100 (default) to 192000\n"
 		"          Possible values: 1, 2, 4, 8\n"
@@ -253,7 +256,9 @@ int main( int argc, char * * argv )
 	bool allowRoot = false;
 	bool renderLoop = false;
 	bool renderTracks = false;
-	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile;
+	int scriptExitCode = EXIT_SUCCESS;
+	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile,
+			scriptFile;
 
 	// first of two command-line parsing stages
 	for (int i = 1; i < argc; ++i)
@@ -278,6 +283,12 @@ int main( int argc, char * * argv )
 		{
 			coreOnly = true;
 			renderTracks = true;
+		}
+		else if (arg == "--run-script")
+		{
+			// Scripts always run headless; the script's LuaLog output goes to
+			// stdout and the process exit code reports success.
+			coreOnly = true;
 		}
 		else if (arg == "--allowroot")
 		{
@@ -649,6 +660,17 @@ int main( int argc, char * * argv )
 
 			configFile = QString::fromLocal8Bit( argv[i] );
 		}
+		else if( arg == "--run-script" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No Lua script specified" );
+			}
+
+			scriptFile = QString::fromLocal8Bit( argv[i] );
+		}
 		else
 		{
 			if( argv[i][0] == '-' )
@@ -756,6 +778,32 @@ int main( int argc, char * * argv )
 		{
 			r->renderProject();
 		}
+	}
+	else if( !scriptFile.isEmpty() )
+	{
+		Engine::init( true );
+		destroyEngine = true;
+
+		if( !fileToLoad.isEmpty() )
+		{
+			Engine::getSong()->loadProject( fileToLoad );
+		}
+
+		QString error;
+		const auto result = ScriptEngine::instance()->runFile( scriptFile, &error );
+		ScriptEngine::instance()->processCommands();
+
+		for( const QString& line : ScriptEngine::instance()->takeLogMessages() )
+		{
+			printf( "%s\n", line.toUtf8().constData() );
+		}
+		if( result != ScriptEngine::RunResult::Ok )
+		{
+			fprintf( stderr, "lua: %s\n", error.toUtf8().constData() );
+			scriptExitCode = EXIT_FAILURE;
+		}
+
+		QTimer::singleShot( 0, qApp, &QCoreApplication::quit );
 	}
 	else // otherwise, start the GUI
 	{
@@ -939,5 +987,5 @@ int main( int argc, char * * argv )
 
 	NotePlayHandleManager::free();
 
-	return ret;
+	return scriptExitCode != EXIT_SUCCESS ? scriptExitCode : ret;
 }

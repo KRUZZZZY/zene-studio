@@ -38,3 +38,11 @@ ENDIF()
 # Generate ringbuffer configuration headers
 configure_file(ringbuffer/src/ringbuffer-config.h.in  ringbuffer-config.h)
 configure_file(ringbuffer/src/ringbuffer-version.h.in ringbuffer-version.h)
+
+# Lua 5.4.8 (MIT) -- scripting runtime for the Lua scripting API
+# (specs/SPEC-lua-api-v0.md). See lua/COPYRIGHT and lua/README.lmms.
+ADD_SUBDIRECTORY(lua)
+
+# LuaBridge 2.10 (MIT) -- header-only C++ <-> Lua binding layer.
+# See luabridge/LICENSE and luabridge/README.lmms.
+ADD_SUBDIRECTORY(luabridge)

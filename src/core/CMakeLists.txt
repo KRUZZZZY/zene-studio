@@ -74,6 +74,8 @@ set(LMMS_SRCS
 	core/SamplePlayHandle.cpp
 	core/SampleRecordHandle.cpp
 	core/Scale.cpp
+	core/ScriptBindings.cpp
+	core/ScriptEngine.cpp
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp
 	core/Song.cpp
