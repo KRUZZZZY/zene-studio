@@ -78,6 +78,9 @@ exclude_files = re.compile(
     'plugins/ReverbSC/[a-z]|'
     'plugins/Sf2Player/fluidsynthshims.h|'
     '/portsmf/|'
+    # vendored third-party trees (Lua, LuaBridge) and dev scratch tools:
+    'src/3rdparty/|'
+    'tools/mmpz-git/scratch/|'
     # only forward to headers that are not ours:
     'plugins/ZynAddSubFx/ThreadShims.h'
 )
