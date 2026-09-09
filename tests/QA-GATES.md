@@ -31,7 +31,13 @@ cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 **Pass criterion**: 100% of tests pass, exit code 0.
 
 **Scope**: `tests/` — Qt test binaries plus the migration harness.
-**Current baseline: 17/17 passing** (16 inherited + `AudioBusTest`).
+**Current baseline (product): 26/26 passing** — Debug, `WANT_QT6=ON`,
+`WANT_STEM_SPLIT=ON`, `WANT_WASM=ON`, 37.85 s. The six test files the product
+was missing were ported from the standards fork on 2026-09-09
+(`AudioPortsModelTest`, `MultiTrackRecorderTest`, `PluginAudioPortsTest`,
+`RemotePluginAudioPortsTest`, `ScriptBindingsTest`, `AudioPluginTest` with
+`SyntheticAudioPlugin`), and two real product defects they caught were fixed
+(both recorded in the Gate 5 note). The standards-fork baseline was 17/17.
 
 ## Gate 2: Coverage ratchet (`coverage-gate.sh`)
 
@@ -88,6 +94,37 @@ Fourteen fork files are at **100%**: `RoutingGraph.cpp`, `RoutingNode.cpp`,
 
 Journey: **63.0%** (gate introduction) -> **66.17%** (pre-push baseline) ->
 **82.75%** -> **85.24%** (2026-09-09). Every step is held by the ratchet.
+
+**Product run — `lmms-complete`, first measured 2026-09-09**: **76.07%
+(2661/3498 lines)** over **47 measured files** of the 97 in scope.
+
+| Directory                 | Lines | Hit  | Rate   |
+|---------------------------|-------|------|--------|
+| `src/core` (fork)         | 2420  | 2211 | 91.36% |
+| `include` (fork)          | 493   | 450  | 91.28% |
+| `src/gui` (fork)          | 370   | 0    | 0.00%  |
+| `plugins/NeuralAmp`       | 158   | 0    | 0.00%  |
+| `plugins/RnnoiseDenoiser` | 57    | 0    | 0.00%  |
+| **Total measured**        | 3498  | 2661 | **76.07%** |
+
+Product journey: **57.59%** (20-test baseline, port commit) -> **73.91%** (six
+missing test files ported) -> **76.07%** (RoutingGraphTest / AudioBusTest synced
+from the standards fork). Still short of the 85% aspiration, and the gap is
+structural rather than untested paths: `src/gui/PinConnector.cpp` (269 lines,
+a QWidget whose behaviour is the GUI event loop) and the two unbuilt plugin
+hosts account for all of it.
+
+**50 of the 97 in-scope files have no coverage records at all** in this
+configuration and are therefore outside the denominator above:
+`plugins/Vst3Effect` (15, VST3 SDK absent), `plugins/ClapEffect` (15, CLAP
+headers absent — see below), `src/wasm` plus its `include` counterparts (13),
+`plugins/WasmEffect` (6, wasmtime absent), and
+`plugins/RnnoiseDenoiser/testdata/rnn_harness.c` (1, not built). Enabling CLAP
+is one `git clone` away (pinned `195b42a0`), but doing so **fails to compile**:
+`include/AudioPlugin.h:315` static_asserts that the legacy single-buffer
+interface can only be bridged to in-place, interleaved effects, and
+`ClapEffect.cpp` declares a non-in-place port set. That is a real product
+defect, invisible while the headers are absent — filed, not hidden.
 
 Still at 0%: `src/gui/PinConnector.cpp` (269 lines), plus three headers with no
 line reached (`LmmsPolyfill.h` 2, `PinConnector.h` 5, `RemotePluginAudioPorts.h`
@@ -225,6 +262,24 @@ deliberately uncompilable mutant and requires INVALID.
 
 **Measured (2026-09-09, gcc 13, seed 0, 30 of 170 candidates): 27 killed, 3 survived,
 0 invalid → kill score 27/30 = 90.0%** (threshold 80%).
+
+**Product run (`lmms-complete`, 2026-09-09, same seed/candidates): the first
+attempt scored 43.3% — FAIL.** The cause was test drift, not weak code: the
+product's `RoutingGraphTest.cpp` was 355 lines against the standards fork's
+641, so mutants on paths the fork's later tests cover survived here. After
+syncing the test file the product scores **27/30 = 90.0%** (threshold 80%),
+matching the standards fork.
+
+Two product defects the ported suite caught, both fixed on this branch — each
+was invisible before, because the product carried no test that exercised it:
+
+- `src/core/ScriptEngine.cpp` `SetMasterVolume` applied `command.f0`, but the
+  enqueue side (`LuaSong::setMasterVolume`) fills `command.i0` — every script
+  `setMasterVolume()` silently applied 0. Now reads `i0`, matching `SetTempo`.
+- `src/core/AudioPortsModel.cpp` connected `AudioEngine::sampleRateChanged`
+  with no context object, so a destroyed model's dangling `this` was invoked on
+  the next emission (reproducible SIGSEGV). Now passes `this` as context — the
+  fix the standards fork already had.
 
 Survivors, each named with why it survives:
 
