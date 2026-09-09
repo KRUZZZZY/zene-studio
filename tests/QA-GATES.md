@@ -123,9 +123,9 @@ Helper executables that are registered but are not QTest classes
 `PluginPortsMigrationReference.cpp`) are listed by the script as explicitly
 out of scope rather than silently skipped.
 
-**Measured (2026-09-09):** 16 registered QTest files, **all PASS** — 0 tautologies;
-the two heaviest are `ScriptBindingsTest.cpp` (268 slots / 247 assertions) and
-`RoutingGraphTest.cpp` (172 / 150). Coverage (Gate 2) is the corroborating signal:
+**Measured (2026-09-09):** 20 registered QTest files, **all PASS** — 0 tautologies
+(1,597 slots, 1,408 assertions); the two heaviest are `ScriptBindingsTest.cpp`
+(268 slots / 247 assertions) and `RoutingGraphTest.cpp` (172 / 150). Coverage (Gate 2) is the corroborating signal:
 test-unreachable code shows 0%.
 
 ## Gate 4: Per-method complexity (`complexity-gate.sh`) — WIRED 2026-09-09
