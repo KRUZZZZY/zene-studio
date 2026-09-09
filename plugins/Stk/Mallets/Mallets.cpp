@@ -279,8 +279,7 @@ QString MalletsInstrument::nodeName() const
 
 
 
-void MalletsInstrument::playNote( NotePlayHandle * _n,
-						SampleFrame* _working_buffer )
+void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 {
 	if( m_filesMissing )
 	{
@@ -403,10 +402,8 @@ void MalletsInstrument::playNote( NotePlayHandle * _n,
 
 	for( f_cnt_t frame = offset; frame < frames + offset; ++frame )
 	{
-		_working_buffer[frame][0] = ps->nextSampleLeft() *
-				( m_scalers[p] + add_scale );
-		_working_buffer[frame][1] = ps->nextSampleRight() *
-				( m_scalers[p] + add_scale );
+		out[frame][0] = ps->nextSampleLeft() * (m_scalers[p] + add_scale);
+		out[frame][1] = ps->nextSampleRight() * (m_scalers[p] + add_scale);
 	}
 }
 
