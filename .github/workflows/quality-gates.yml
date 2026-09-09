@@ -43,7 +43,8 @@ jobs:
             cmake g++ \
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
-            libsamplerate0-dev libxml2-dev
+            libsamplerate0-dev libxml2-dev \
+            liblist-moreutils-perl
       - name: Configure (Debug, Qt6)
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
       - name: Build
@@ -70,7 +71,8 @@ jobs:
             cmake g++ lcov \
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
-            libsamplerate0-dev libxml2-dev
+            libsamplerate0-dev libxml2-dev \
+            liblist-moreutils-perl
       - name: Gate 2 - coverage ratchet, CI mode (baseline never written)
         run: |
           bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
