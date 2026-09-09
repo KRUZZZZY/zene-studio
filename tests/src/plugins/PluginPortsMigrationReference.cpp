@@ -102,6 +102,8 @@ auto referenceInstruments() -> const std::vector<ReferenceInstrument>&
 		{"monstro", PART_C_REF_monstro},
 		{"organic", PART_C_REF_organic},
 		{"audiofileprocessor", PART_C_REF_audiofileprocessor},
+		// Slice 6 (task #589)
+		{"lb302", PART_C_REF_lb302},
 	};
 	return instruments;
 }
@@ -119,6 +121,12 @@ int main(int argc, char** argv)
 	}
 	const QString outputPath = QString::fromLocal8Bit(argv[1]);
 
+	// Slice 6 (task #589): LadspaEffect finds its LADSPA libraries through
+	// LADSPA_PATH, which LadspaManager reads when it is first constructed.
+	// Both the reference and the test process point at the in-tree SWH
+	// builds, so both resolve the same plugin binaries.
+	qputenv("LADSPA_PATH", QByteArray{PART_C_LADSPA_DIR});
+
 	lmms::Engine::init(true);
 	lmms::Engine::audioEngine()->audioDev()->stopProcessing();
 
@@ -132,7 +140,8 @@ int main(int argc, char** argv)
 		partc::Buffers);
 
 	std::vector<partc::PluginRender> renders;
-	renders.reserve(referenceModules().size() + referenceInstruments().size());
+	renders.reserve(referenceModules().size() + referenceInstruments().size()
+		+ partc::ladspaSpecs().size());
 
 	for (const auto& m : referenceModules())
 	{
@@ -214,6 +223,32 @@ int main(int argc, char** argv)
 		renders.push_back(std::move(render));
 		delete inst;
 		track.reset();
+	}
+
+	// Slice 6 (task #589): LADSPA-hosted effects. The Key is built from the
+	// same LadspaSpec the test uses, so both sides instantiate the same
+	// LADSPA plugin with the same control-port values.
+	for (const auto& spec : partc::ladspaSpecs())
+	{
+		const auto result = partc::renderLadspa(PART_C_REF_ladspaeffect, spec, frames);
+		if (!result.loaded || !result.effectOkay)
+		{
+			std::fprintf(stderr, "reference %s: %s (loaded=%d effectOkay=%d)\n",
+				qPrintable(result.name), qPrintable(result.error),
+				result.loaded ? 1 : 0, result.effectOkay ? 1 : 0);
+			return 2;
+		}
+
+		partc::PluginRender render;
+		render.name = result.name;
+		render.samples = result.samples;
+		render.checksum = result.checksum;
+
+		std::printf("reference %s: %zu samples, sha256=%s, ports=[%s]\n",
+			qPrintable(result.name), render.samples.size(), qPrintable(render.checksum),
+			qPrintable(result.savedPorts.join(QLatin1Char(' '))));
+
+		renders.push_back(std::move(render));
 	}
 
 	if (!partc::writeRenders(outputPath, renders))

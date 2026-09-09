@@ -89,6 +89,9 @@ set(PART_C_REFERENCE_MODULES
 	"monstro|Monstro|Monstro.cpp|Monstro.h"
 	"organic|Organic|Organic.cpp|Organic.h"
 	"audiofileprocessor|AudioFileProcessor|AudioFileProcessor.cpp|AudioFileProcessor.h|AudioFileProcessorView.cpp|AudioFileProcessorView.h|AudioFileProcessorWaveView.cpp|AudioFileProcessorWaveView.h"
+	# Slice 6 (task #589): LADSPA host and the Lb302 bass synth.
+	"lb302|Lb302|Lb302.cpp|Lb302.h"
+	"ladspaeffect|LadspaEffect|LadspaEffect.cpp|LadspaEffect.h|LadspaControls.cpp|LadspaControls.h|LadspaControlDialog.cpp|LadspaControlDialog.h|LadspaMatrixControlDialog.cpp|LadspaMatrixControlDialog.h|LadspaSubPluginFeatures.cpp|LadspaSubPluginFeatures.h|LadspaWidgetFactory.cpp|LadspaWidgetFactory.h"
 )
 
 set(PART_C_REFERENCE_TARGETS "")
@@ -156,6 +159,20 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 		"PART_C_MIGRATED_${PLUGIN_ID}=\"$<TARGET_FILE:${PLUGIN_ID}>\"")
 endforeach()
 
+# Slice 6 (task #589): LadspaEffect resolves its LADSPA libraries through
+# LADSPA_PATH at runtime, and both the test and the reference renderer have to
+# point at the in-tree SWH builds. The dir is taken from the plugin targets so
+# no path is hardcoded; the two plugins the harness uses are also added as
+# build dependencies of the test so they exist before ctest runs.
+set(PART_C_LADSPA_TARGETS "")
+if(TARGET amp_1181 AND TARGET dj_eq_1901)
+	list(APPEND PART_C_REFERENCE_DEFINITIONS
+		"PART_C_LADSPA_DIR=\"$<TARGET_FILE_DIR:amp_1181>\"")
+	list(APPEND PART_C_MIGRATED_DEFINITIONS
+		"PART_C_LADSPA_DIR=\"$<TARGET_FILE_DIR:amp_1181>\"")
+	list(APPEND PART_C_LADSPA_TARGETS amp_1181 dj_eq_1901)
+endif()
+
 add_executable(PluginPortsMigrationReference
 	src/plugins/PluginPortsMigrationReference.cpp
 	src/plugins/PluginPortsHarness.h
@@ -196,4 +213,5 @@ set_target_properties(PluginPortsMigrationTest PROPERTIES ENABLE_EXPORTS ON)
 add_dependencies(PluginPortsMigrationTest
 	PluginPortsMigrationReference
 	${PART_C_MIGRATED_TARGETS}
+	${PART_C_LADSPA_TARGETS}
 )

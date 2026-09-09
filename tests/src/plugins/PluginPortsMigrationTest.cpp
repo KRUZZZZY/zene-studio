@@ -94,6 +94,8 @@ auto migratedInstruments() -> const std::vector<MigratedInstrument>&
 		{"monstro", PART_C_MIGRATED_monstro},
 		{"organic", PART_C_MIGRATED_organic},
 		{"audiofileprocessor", PART_C_MIGRATED_audiofileprocessor},
+		// Slice 6 (task #589)
+		{"lb302", PART_C_MIGRATED_lb302},
 	};
 	return instruments;
 }
@@ -133,15 +135,22 @@ private slots:
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
+	void slice6PluginsAreLiveAndExact();
 
 private:
 	std::vector<QLibrary*> m_libraries;
 	std::vector<partc::PluginRender> m_migrated;
 	std::vector<partc::PluginRender> m_reference;
+	std::vector<partc::LadspaRender> m_ladspa;
 };
 
 void PluginPortsMigrationTest::initTestCase()
 {
+	// Slice 6 (task #589): LadspaManager reads LADSPA_PATH when it is first
+	// constructed, so it has to be set before Engine::init(). The reference
+	// renderer is spawned as a child process and inherits this environment.
+	qputenv("LADSPA_PATH", QByteArray{PART_C_LADSPA_DIR});
+
 	lmms::Engine::init(true);
 	QVERIFY2(lmms::Engine::audioEngine() != nullptr, "engine failed to initialise");
 	lmms::Engine::audioEngine()->audioDev()->stopProcessing();
@@ -208,6 +217,25 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		m_migrated.push_back(std::move(render));
 
 		delete inst;
+	}
+
+	// 1c. Render the migrated LADSPA-hosted effects (slice 6, task #589).
+	//     LadspaEffect needs its sub-plugin Key, so these go through
+	//     renderLadspa() instead of the plain entry point above.
+	for (const auto& spec : partc::ladspaSpecs())
+	{
+		auto result = partc::renderLadspa(PART_C_MIGRATED_ladspaeffect, spec, frames);
+		QVERIFY2(result.loaded, qPrintable(result.error));
+		QVERIFY2(result.effectOkay,
+			qPrintable(QString{"%1: LadspaEffect did not instantiate the LADSPA plugin "
+				"(LADSPA_PATH=%2)"}.arg(result.name, QString::fromUtf8(PART_C_LADSPA_DIR))));
+
+		partc::PluginRender render;
+		render.name = result.name;
+		render.samples = result.samples;
+		render.checksum = result.checksum;
+		m_migrated.push_back(std::move(render));
+		m_ladspa.push_back(std::move(result));
 	}
 
 	// 2. Render the pre-migration reference sources in a separate process.
@@ -337,6 +365,88 @@ void PluginPortsMigrationTest::slice5InstrumentsAreLiveAndDistinct()
 					.arg(QString::fromUtf8(slice5[i]), QString::fromUtf8(slice5[j]))));
 		}
 	}
+}
+
+/*!
+ * Slice 6 (task #589) negative controls and state round trip.
+ *
+ * The sample-exact comparison in migratedPluginsPreserveBehaviour() proves
+ * "identical to the base commit"; this slot proves the comparison is not
+ * vacuous for the slice-6 modules: Lb302 and both LADSPA-hosted effects must
+ * render audible output, the LADSPA effects must actually change the signal
+ * (a bypassed effect would compare equal trivially), the two distinct LADSPA
+ * plugins must not render identically, and every control-port value applied
+ * through loadSettings() must survive the saveState() round trip.
+ */
+void PluginPortsMigrationTest::slice6PluginsAreLiveAndExact()
+{
+	// Lb302: rendered through the same instrument entry point as every other
+	// instrument, so a non-silent peak proves the note path ran.
+	const auto* lb302 = findRender(m_migrated, "lb302");
+	QVERIFY2(lb302 != nullptr, "lb302 render missing");
+	float lb302Peak = 0.0f;
+	for (const float s : lb302->samples)
+	{
+		lb302Peak = std::max(lb302Peak, std::fabs(s));
+	}
+	qInfo().noquote() << QString{"slice 6 negative control: lb302 peak=%1 (audible)"}
+		.arg(lb302Peak, 0, 'g', 4);
+	QVERIFY2(lb302Peak > 1e-4f, "lb302 rendered silence");
+
+	// LADSPA-hosted effects: audible, wet and round-tripped.
+	const auto dry = partc::dryInput(lmms::Engine::audioEngine()->framesPerPeriod());
+	const auto& specs = partc::ladspaSpecs();
+	QCOMPARE(m_ladspa.size(), specs.size());
+	for (std::size_t i = 0; i < specs.size(); ++i)
+	{
+		const auto& spec = specs[i];
+		const QString name = QString::fromUtf8(spec.name);
+		const auto* render = findRender(m_migrated, spec.name);
+		QVERIFY2(render != nullptr, spec.name);
+		QCOMPARE(render->samples.size(), dry.size());
+
+		float peak = 0.0f;
+		for (const float s : render->samples)
+		{
+			peak = std::max(peak, std::fabs(s));
+		}
+		const float wet = partc::maxAbsDiff(render->samples, dry);
+		qInfo().noquote() << QString{"slice 6 negative control: %1 peak=%2 max|wet-dry|=%3"}
+			.arg(name).arg(peak, 0, 'g', 4).arg(wet, 0, 'g', 4);
+		QVERIFY2(peak > 1e-4f, qPrintable(name + " rendered silence"));
+		QVERIFY2(wet > 0.05f,
+			qPrintable(name + " did not change the signal (bypassed?)"));
+
+		// State round trip: each port value applied by loadSettings() must be
+		// visible again in the serialised state.
+		const auto& ladspa = m_ladspa[i];
+		QCOMPARE(static_cast<int>(ladspa.savedPorts.size()),
+			static_cast<int>(spec.ports.size()));
+		for (int p = 0; p < static_cast<int>(spec.ports.size()); ++p)
+		{
+			const QStringList parts = ladspa.savedPorts[p].split(QLatin1Char('='));
+			QCOMPARE(parts.size(), 2);
+			const double saved = parts[1].toDouble();
+			const double expected = QString::fromUtf8(spec.ports[p].value).toDouble();
+			qInfo().noquote() << QString{"slice 6 state round trip: %1 %2 expected=%3"}
+				.arg(name, ladspa.savedPorts[p]).arg(expected, 0, 'g', 9);
+			QVERIFY2(std::fabs(saved - expected) < 1e-3,
+				qPrintable(QString{"%1: %2 did not round-trip"}.arg(name, ladspa.savedPorts[p])));
+		}
+	}
+
+	// Two distinct LADSPA plugins through the migrated module must differ, so
+	// the comparator is live on the new modules too.
+	const auto* amp = findRender(m_migrated, "ladspaeffect:amp");
+	const auto* djEq = findRender(m_reference, "ladspaeffect:dj_eq");
+	QVERIFY(amp != nullptr && djEq != nullptr);
+	const float worst = partc::maxAbsDiff(amp->samples, djEq->samples);
+	qInfo().noquote()
+		<< QString{"slice 6 negative control: ladspaeffect:amp (migrated) vs ladspaeffect:dj_eq (reference) max|delta|=%1"}
+			   .arg(worst, 0, 'g', 3);
+	QVERIFY2(amp->checksum != djEq->checksum,
+		"distinct LADSPA plugins rendered identically");
+	QVERIFY2(worst > 1e-6f, "LADSPA comparison not sensitive");
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

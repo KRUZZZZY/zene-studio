@@ -38,7 +38,9 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
+#include <QLibrary>
 #include <QString>
+#include <QStringList>
 
 #include "AudioBus.h"
 #include "Effect.h"
@@ -322,11 +324,20 @@ inline auto ladspaSpecs() -> const std::vector<LadspaSpec>&
 		// Mono plugin: LadspaEffect instantiates DEFAULT_CHANNELS/1 = 2
 		// processors, one per channel, so this exercises the multi-processor
 		// path. Port 0 is the gain control (1 = audio in, 2 = audio out).
-		{"ladspaeffect:amp", "amp_1181.so", "amp", {{"port00", "6.0"}}},
+		// amp_1181 is mono: LMMS instantiates it as two *linked* channel
+		// processors, and the linked knob models fan out bidirectionally
+		// (AutomatableModel::linkToModel ring). The saved state therefore
+		// carries port00 *and* port10; both must be driven or the later
+		// load of the untouched port10 resets the linked gain back to 0 dB.
+		{"ladspaeffect:amp", "amp_1181.so", "amp",
+			{{"port00", "6.0"}, {"port10", "6.0"}}},
 		// Stereo plugin: a single processor with stereo ports, exercising the
-		// ChannelIn/ChannelOut mapping plus several control ports.
+		// ChannelIn/ChannelOut mapping plus several control ports. Values are
+		// inside the LADSPA port bounds (dj_eq Lo/Mid/Hi gain are [-70,+6] dB
+		// in dj_eq_1901.c) so the knob models do not clamp them and the
+		// saveState() round trip can be asserted exactly.
 		{"ladspaeffect:dj_eq", "dj_eq_1901.so", "dj_eq",
-			{{"port00", "-9.0"}, {"port01", "5.0"}, {"port02", "7.0"}}},
+			{{"port00", "-9.0"}, {"port01", "5.0"}, {"port02", "4.0"}}},
 	};
 	return specs;
 }
@@ -506,6 +517,122 @@ inline auto maxAbsDiff(const std::vector<float>& a, const std::vector<float>& b)
 	return worst;
 }
 
+/*!
+ * The exact input renderBuffers() feeds an effect, interleaved the same way.
+ * A wet effect must change it; comparing the two proves the effect was not
+ * bypassed (which would otherwise make a sample-exact comparison vacuous).
+ */
+inline auto dryInput(f_cnt_t frames) -> std::vector<float>
+{
+	std::vector<SampleFrame> data(static_cast<std::size_t>(ChannelPairs) * frames);
+	std::vector<float> out;
+	out.reserve(static_cast<std::size_t>(Buffers) * frames * 2);
+	for (int b = 0; b < Buffers; ++b)
+	{
+		fillInput(data, frames, 0x51ed270bu * static_cast<std::uint32_t>(b + 1));
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			out.push_back(data[f].left());
+			out.push_back(data[f].right());
+		}
+	}
+	return out;
+}
+
+// ---------------------------------------------------------------------------
+// Slice 6 (task #589): LADSPA-hosted effects.
+//
+// LadspaEffect resolves its DSP from the sub-plugin Key (LADSPA library file
+// name + label) at construction time, so it cannot be rendered through the
+// plain entry(nullptr, nullptr) path used for the other effects. The helper
+// below loads a LadspaEffect module (migrated or reference), resolves its
+// descriptor + entry point, builds the Key from a LadspaSpec and renders the
+// canonical input through the production controls save/load + AudioBus path.
+// ---------------------------------------------------------------------------
+
+//! Everything a slice-6 LADSPA render reports back to the test.
+struct LadspaRender
+{
+	bool loaded = false;      //!< module loaded, entry point + descriptor found
+	bool effectOkay = false;  //!< LadspaEffect found and instantiated the LADSPA plugin
+	QString error;            //!< first failure, for QVERIFY2 messages
+	QString name;             //!< spec name, e.g. "ladspaeffect:amp"
+	std::vector<float> samples;
+	QString checksum;
+	QStringList savedPorts;   //!< "portNN=<data>" read back after loadSettings()
+};
+
+/*!
+ * Loads `modulePath` (migrated or reference LadspaEffect), resolves
+ * lmms_plugin_main plus the `<plugin>_plugin_descriptor` symbol, instantiates
+ * the effect for `spec`, applies the control-port overrides through the
+ * controls save/load round trip, snapshots the saved state, renders `Buffers`
+ * buffers and deletes the effect. Modules stay loaded for the process
+ * lifetime (the descriptor owns heap objects).
+ */
+inline auto renderLadspa(const char* modulePath, const LadspaSpec& spec, f_cnt_t frames)
+	-> LadspaRender
+{
+	static std::vector<QLibrary*> keepLoaded;
+
+	LadspaRender result;
+	result.name = QString::fromUtf8(spec.name);
+
+	auto* lib = new QLibrary{QString::fromUtf8(modulePath)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	keepLoaded.push_back(lib);
+	if (!lib->load())
+	{
+		result.error = QString{"%1: %2"}.arg(result.name, lib->errorString());
+		return result;
+	}
+
+	using EntryFn = Plugin* (*)(Model*, void*);
+	auto entry = reinterpret_cast<EntryFn>(lib->resolve("lmms_plugin_main"));
+	const QByteArray symbol = QByteArray{spec.name}.split(':').first()
+		+ QByteArray{"_plugin_descriptor"};
+	// Descriptors are exported as *data* symbols (e.g. lb302_plugin_descriptor),
+	// so this is the same reinterpret_cast idiom PluginFactory uses.
+	auto* desc = reinterpret_cast<const Plugin::Descriptor*>(lib->resolve(symbol.constData()));
+	if (entry == nullptr || desc == nullptr)
+	{
+		result.error = QString{"%1: missing lmms_plugin_main or %2 in %3"}
+			.arg(result.name, QString::fromLatin1(symbol), QString::fromUtf8(modulePath));
+		return result;
+	}
+	result.loaded = true;
+
+	auto key = ladspaKeyFor(desc, spec);
+	auto* fx = static_cast<Effect*>(entry(nullptr, &key));
+	if (fx == nullptr)
+	{
+		result.error = result.name + ": entry point returned null";
+		return result;
+	}
+
+	result.effectOkay = fx->isOkay();
+	applyLadspaTestSettings(*fx, spec);
+
+	// State round trip: what loadSettings() applied must come back out of
+	// saveState(), so the port values are visible in the serialised project.
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement("effect");
+		const QDomElement controls = fx->controls()->saveState(doc, root);
+		for (const auto& o : spec.ports)
+		{
+			const QDomElement port = controls.firstChildElement(QString::fromUtf8(o.name));
+			result.savedPorts << QString{"%1=%2"}.arg(QString::fromUtf8(o.name),
+				port.isNull() ? QStringLiteral("<missing>") : port.attribute("data"));
+		}
+	}
+
+	result.samples = renderInFreshThread(*fx, frames);
+	result.checksum = checksum(result.samples);
+	delete fx;
+	return result;
+}
+
 // ---------------------------------------------------------------------------
 // Slice 4 (task #589): instrument plugins.
 //
@@ -521,13 +648,15 @@ inline auto maxAbsDiff(const std::vector<float>& a, const std::vector<float>& b)
 // ---------------------------------------------------------------------------
 
 //! Canonical instrument order shared by the reference renderer and the test.
-inline auto instrumentNames() -> const std::array<const char*, 14>&
+inline auto instrumentNames() -> const std::array<const char*, 15>&
 {
-	static const std::array<const char*, 14> names{
+	static const std::array<const char*, 15> names{
 		"freeboy", "nes", "sid", "opulenz", "sfxr",
 		"bitinvader", "watsyn", "xpressive", "vibedstrings", "kicker",
 		// Slice 5 (task #589): multi-oscillator and sample-playback instruments.
-		"tripleoscillator", "monstro", "organic", "audiofileprocessor"};
+		"tripleoscillator", "monstro", "organic", "audiofileprocessor",
+		// Slice 6 (task #589): Lb302 bass synth.
+		"lb302"};
 	return names;
 }
 
@@ -672,6 +801,15 @@ inline auto instrumentOverridesFor(const std::string& plugin) -> std::vector<Set
 	{
 		return {{"amp", "140"}, {"sframe", "0.1"}, {"eframe", "0.9"}, {"lframe", "0.5"},
 			{"looped", "1"}, {"reversed", "0"}, {"stutter", "0"}, {"interp", "2"}};
+	}
+	// Slice 6 (task #589): Lb302 bass synth. Attribute names come from
+	// Lb302Synth::saveSettings(); the knob values are 0..1, "shape" is the
+	// wave-shape combo index and the three toggles are booleans.
+	if (plugin == "lb302")
+	{
+		return {{"vcf_cut", "0.55"}, {"vcf_res", "0.35"}, {"vcf_mod", "0.4"},
+			{"vcf_dec", "0.25"}, {"shape", "1"}, {"dist", "0.3"},
+			{"slide_dec", "0.2"}, {"slide", "1"}, {"dead", "0"}, {"db24", "1"}};
 	}
 	return {};
 }
