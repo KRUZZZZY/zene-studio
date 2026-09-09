@@ -303,8 +303,7 @@ QString TripleOscillator::nodeName() const
 
 
 
-void TripleOscillator::playNote( NotePlayHandle * _n,
-						SampleFrame* _working_buffer )
+void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 {
 	if (!_n->m_pluginData)
 	{
@@ -374,11 +373,11 @@ void TripleOscillator::playNote( NotePlayHandle * _n,
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
 
-	osc_l->update( _working_buffer + offset, frames, 0 );
-	osc_r->update( _working_buffer + offset, frames, 1 );
+	osc_l->update( out.data() + offset, frames, 0 );
+	osc_r->update( out.data() + offset, frames, 1 );
 
-	applyFadeIn(_working_buffer, _n);
-	applyRelease( _working_buffer, _n );
+	applyFadeIn(out.data(), _n);
+	applyRelease(out.data(), _n);
 }
 
 
