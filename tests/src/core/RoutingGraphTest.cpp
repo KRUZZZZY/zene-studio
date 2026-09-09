@@ -117,6 +117,7 @@ private slots:
 	void NodeTopologyEdgeCases();
 	void LoadMalformedDocuments();
 	void SinkNodeSumsInputs();
+	void BaseNodeSettingsDefaults();
 	void ClearAndMoveSemantics();
 };
 
@@ -503,6 +504,37 @@ void RoutingGraphTest::SinkNodeSumsInputs()
 	// the sink output is the sum of both constants
 	QCOMPARE(channel.buffer(0)[0], 0.75f);
 	QCOMPARE(channel.buffer(0)[Frames - 1], 0.75f);
+}
+
+void RoutingGraphTest::BaseNodeSettingsDefaults()
+{
+	constexpr f_cnt_t Frames = 32;
+
+	// SinkNode intentionally does not override the optional saveSettings()/
+	// loadSettings() hooks, so a round trip through RoutingGraph must execute
+	// the RoutingNode base-class defaults for it.
+	RoutingGraph original;
+	const int sourceId = original.addNode(std::make_unique<ConstantSourceNode>(0.5f));
+	const int sinkId = original.addNode(std::make_unique<SinkNode>());
+	QVERIFY(original.connect(sourceId, sinkId));
+	QVERIFY(original.setOutputNode(sinkId));
+
+	DataFile dataFile(DataFile::Type::InstrumentTrackSettings);
+	original.save(dataFile.content());
+
+	RoutingGraph restored;
+	QVERIFY(restored.load(dataFile.content()));
+	QCOMPARE(restored.nodeCount(), 2);
+	QCOMPARE(restored.node(1)->typeName(), QStringLiteral("sink"));
+	QVERIFY(dynamic_cast<SinkNode*>(restored.node(1)) != nullptr);
+	QCOMPARE(restored.outputNodeId(), sinkId);
+
+	// the base default loadSettings() left the sink fully functional
+	restored.prepare(Frames, 1);
+	AudioBuffer channel(Frames, 1);
+	restored.process(channel);
+	QCOMPARE(channel.buffer(0)[0], 0.5f);
+	QCOMPARE(channel.buffer(0)[Frames - 1], 0.5f);
 }
 
 void RoutingGraphTest::ClearAndMoveSemantics()
