@@ -318,11 +318,20 @@ protected:
 	 */
 	auto processImpl(SampleFrame* buf, const f_cnt_t frames) -> Effect::ProcessStatus final
 	{
+		// A router that is not active cannot process (AudioPortsRouter::process
+		// asserts m_ap->active()), so skip the block and report Continue. This
+		// is a deliberate behaviour delta vs the old direct-view path, which
+		// processed regardless of router state; unreachable in shipped
+		// configurations, since a migrated effect's router is active whenever
+		// the engine renders.
 		if (!m_audioPorts.active())
 		{
 			return Effect::ProcessStatus::Continue;
 		}
 
+		// The legacy entry point only ever expressed one interleaved stereo
+		// pair, so present exactly that; an effect with more than two track
+		// channels was equally out of contract before this bridge existed.
 		SampleFrame* busData[1] = {buf};
 		auto bus = AudioBus{busData, 1, frames};
 
