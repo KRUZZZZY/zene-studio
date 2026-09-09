@@ -109,6 +109,9 @@ auto migratedInstruments() -> const std::vector<MigratedInstrument>&
 #ifdef PART_C_MIGRATED_malletsstk
 		{"malletsstk", PART_C_MIGRATED_malletsstk},
 #endif
+#ifdef PART_C_MIGRATED_gigplayer
+		{"gigplayer", PART_C_MIGRATED_gigplayer},
+#endif
 	};
 	return instruments;
 }
@@ -572,6 +575,9 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 #endif
 #ifdef PART_C_MIGRATED_malletsstk
 	names.push_back(QStringLiteral("malletsstk"));
+#endif
+#ifdef PART_C_MIGRATED_gigplayer
+	names.push_back(QStringLiteral("gigplayer"));
 #endif
 #ifdef PART_C_MIGRATED_lv2effect
 	names.push_back(QStringLiteral("lv2effect:ambience"));

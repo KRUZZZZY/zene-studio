@@ -151,7 +151,16 @@ if(LMMS_HAVE_FLUIDSYNTH AND PART_C_SF2_FILE)
 	list(APPEND PART_C_REFERENCE_MODULES
 		"sf2player|Sf2Player|Sf2Player.cpp|Sf2Player.h|PatchesDialog.cpp|PatchesDialog.h|PatchesDialog.ui")
 endif()
-if(LMMS_HAVE_GIG)
+# GigPlayer renders from a .gig instrument file. With no file to load, both the
+# migrated and the reference host render silence and the sample-exact
+# comparison proves nothing, so the module is only added when the dependency
+# AND an instrument file are both present. tests/data/gigproof/sine440.gig is
+# vendored for exactly this purpose (see its README for provenance and how to
+# regenerate it); the test reports gigplayer as UNPROVEN when it is absent.
+find_file(PART_C_GIG_FILE NAMES sine440.gig
+	HINTS "${CMAKE_SOURCE_DIR}/tests/data/gigproof"
+	      "${CMAKE_SOURCE_DIR}/../tests/data/gigproof")
+if(LMMS_HAVE_GIG AND PART_C_GIG_FILE)
 	list(APPEND PART_C_REFERENCE_MODULES
 		"gigplayer|GigPlayer|GigPlayer.cpp|GigPlayer.h|PatchesDialog.cpp|PatchesDialog.h|PatchesDialog.ui")
 endif()
@@ -283,6 +292,10 @@ if(PART_C_SF2_FILE)
 	list(APPEND PART_C_REFERENCE_DEFINITIONS "PART_C_SF2_FILE=\"${PART_C_SF2_FILE}\"")
 	list(APPEND PART_C_MIGRATED_DEFINITIONS "PART_C_SF2_FILE=\"${PART_C_SF2_FILE}\"")
 endif()
+if(PART_C_GIG_FILE)
+	list(APPEND PART_C_REFERENCE_DEFINITIONS "PART_C_GIG_FILE=\"${PART_C_GIG_FILE}\"")
+	list(APPEND PART_C_MIGRATED_DEFINITIONS "PART_C_GIG_FILE=\"${PART_C_GIG_FILE}\"")
+endif()
 
 add_executable(PluginPortsMigrationReference
 	src/plugins/PluginPortsMigrationReference.cpp
@@ -306,6 +319,11 @@ add_executable(PluginPortsMigrationTest
 	src/plugins/PluginPortsHarness.h
 )
 add_test(NAME PluginPortsMigrationTest COMMAND PluginPortsMigrationTest)
+# The harness constructs a full Engine, which needs a Qt platform plugin even
+# though the test itself is guiless. Without this, ctest aborts before the first
+# assertion on any machine with no display (CI, headless shell).
+set_tests_properties(PluginPortsMigrationTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 )
