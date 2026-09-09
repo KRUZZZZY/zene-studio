@@ -79,6 +79,16 @@ banner 6 "no upstream behavioural regressions"
 bash tests/no-upstream-regression-gate.sh
 [[ $? -eq 0 ]] && record 6 "upstream-regression" "PASS" || record 6 "upstream-regression" "FAIL"
 
+# ---- Gate 7: per-file length -------------------------------------------------
+banner 7 "per-file length (<=500 ratchet)"
+bash tests/file-length-gate.sh --check
+[[ $? -eq 0 ]] && record 7 "file-length" "PASS" || record 7 "file-length" "FAIL"
+
+# ---- Gate 8: token duplication ----------------------------------------------
+banner 8 "token duplication (<5%)"
+bash tests/duplication-gate.sh
+[[ $? -eq 0 ]] && record 8 "duplication" "PASS" || record 8 "duplication" "FAIL"
+
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
 printf '%-6s %-24s %s\n' "gate" "name" "result"

@@ -202,6 +202,23 @@ bash tests/file-length-gate.sh          # ratchet: refresh baseline, fail on reg
 bash tests/file-length-gate.sh --check  # CI mode: report only
 ```
 
+## Gate 8: Token duplication (`duplication-gate.sh`) — 2026-09-09
+
+Source: the adopted code-quality ruleset requires "token duplication < 5% (jscpd)". The
+original six gates did not cover it. jscpd's `cpp` format does **not** claim `.h` files by
+default, so the gate passes an explicit extension map (`cpp:cpp,h,hpp,cc,cxx`) — without it,
+header-to-header clones are invisible (verified: a `.h`-only scan reported 0 files).
+
+**Measured (2026-09-09):** 42 fork sources, 10,658 lines, 4 clones, **0.99% duplicated lines**
+(2.85% of tokens) against a 5% budget. All four clones are the shared license header — counted,
+not suppressed, so the number stays honest.
+
+```sh
+bash tests/duplication-gate.sh
+```
+
+Requires `npx`; if Node is absent the gate reports **SKIP** rather than a false PASS.
+
 ## Running all gates
 
 ```sh

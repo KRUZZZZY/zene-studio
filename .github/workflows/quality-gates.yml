@@ -22,6 +22,10 @@ jobs:
         run: bash tests/complexity-gate.sh --check
       - name: Gate 6 - no upstream behavioural regressions
         run: bash tests/no-upstream-regression-gate.sh
+      - name: Gate 7 - per-file length ratchet
+        run: bash tests/file-length-gate.sh --check
+      - name: Gate 8 - token duplication
+        run: bash tests/duplication-gate.sh
 
   # Gate 1 needs a real build: "it compiles" never substitutes for a passing ctest.
   unit-tests:
