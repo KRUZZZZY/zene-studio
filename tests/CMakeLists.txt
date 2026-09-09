@@ -135,6 +135,39 @@ set(PART_C_REFERENCE_MODULES
 	"slewdistortion|SlewDistortion|SlewDistortion.cpp|SlewDistortionControls.cpp|SlewDistortionControlDialog.cpp"
 )
 
+# Slice 8 (task #589): the external-asset hosts. Each entry is only added when
+# the build actually has the dependency (mirroring the guard in the plugin's
+# own CMakeLists.txt) and, for Sf2Player, when a soundfont exists to render -
+# a module the harness cannot drive would compare silence with silence and
+# prove nothing.
+if(LMMS_HAVE_LV2)
+	list(APPEND PART_C_REFERENCE_MODULES
+		"lv2effect|Lv2Effect|Lv2Effect.cpp|Lv2Effect.h|Lv2FxControls.cpp|Lv2FxControls.h|Lv2FxControlDialog.cpp|Lv2FxControlDialog.h"
+		"lv2instrument|Lv2Instrument|Lv2Instrument.cpp|Lv2Instrument.h")
+endif()
+find_file(PART_C_SF2_FILE NAMES FluidR3_GM.sf2 default-GM.sf2
+	HINTS /usr/share/sounds/sf2 /usr/local/share/sounds/sf2)
+if(LMMS_HAVE_FLUIDSYNTH AND PART_C_SF2_FILE)
+	list(APPEND PART_C_REFERENCE_MODULES
+		"sf2player|Sf2Player|Sf2Player.cpp|Sf2Player.h|PatchesDialog.cpp|PatchesDialog.h|PatchesDialog.ui")
+endif()
+if(LMMS_HAVE_GIG)
+	list(APPEND PART_C_REFERENCE_MODULES
+		"gigplayer|GigPlayer|GigPlayer.cpp|GigPlayer.h|PatchesDialog.cpp|PatchesDialog.h|PatchesDialog.ui")
+endif()
+# Mallets renders from the STK rawwave directory; without it the instrument
+# latches m_filesMissing in its constructor and renders silence, which would
+# make the sample-exact comparison vacuous. So the module is only added when
+# the waves are actually present.
+find_path(PART_C_STK_DIR NAMES sinewave.raw
+	HINTS "${CMAKE_SOURCE_DIR}/thirdparty/stk-rawwaves"
+	      "${CMAKE_SOURCE_DIR}/../thirdparty/stk-rawwaves"
+	      /usr/share/stk/rawwaves /usr/local/share/stk/rawwaves)
+if(LMMS_HAVE_STK AND PART_C_STK_DIR)
+	list(APPEND PART_C_REFERENCE_MODULES
+		"malletsstk|Stk/Mallets|Mallets.cpp|Mallets.h")
+endif()
+
 set(PART_C_REFERENCE_TARGETS "")
 set(PART_C_MIGRATED_TARGETS "")
 set(PART_C_REFERENCE_DEFINITIONS "")
@@ -194,6 +227,26 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 			exprtk_disable_string_capabilities
 			exprtk_disable_rtl_io_file
 			exprtk_disable_rtl_vecops)
+	elseif(PLUGIN_ID STREQUAL "sf2player")
+		# Mirror plugins/Sf2Player/CMakeLists.txt: fluidsynth + samplerate,
+		# and PatchesDialog.ui is built with AUTOUIC like the real plugin.
+		set_target_properties(partc_ref_sf2player PROPERTIES AUTOUIC ON)
+		target_link_libraries(partc_ref_sf2player PRIVATE fluidsynth SampleRate::samplerate)
+	elseif(PLUGIN_ID STREQUAL "gigplayer")
+		# Mirror plugins/GigPlayer/CMakeLists.txt: libgig include dirs, the
+		# forced exceptions libgig needs to not crash, samplerate link.
+		set_target_properties(partc_ref_gigplayer PROPERTIES AUTOUIC ON)
+		target_include_directories(partc_ref_gigplayer PRIVATE ${GIG_INCLUDE_DIRS})
+		target_compile_options(partc_ref_gigplayer PRIVATE -fexceptions)
+		target_link_libraries(partc_ref_gigplayer PRIVATE
+			SampleRate::samplerate ${GIG_LIBRARIES})
+	elseif(PLUGIN_ID STREQUAL "malletsstk")
+		target_link_libraries(partc_ref_malletsstk PRIVATE unofficial::libstk::libstk)
+	elseif(PLUGIN_ID STREQUAL "lv2effect" OR PLUGIN_ID STREQUAL "lv2instrument")
+		# The LV2/Lilv/Suil headers the plugins include; the libraries arrive
+		# through lmmsobjs, which both harness binaries link.
+		target_include_directories(partc_ref_${PLUGIN_ID} PRIVATE
+			${LV2_INCLUDE_DIRS} ${Lilv_INCLUDE_DIRS} ${SUIL_INCLUDE_DIRS})
 	endif()
 
 	list(APPEND PART_C_REFERENCE_TARGETS partc_ref_${PLUGIN_ID})
@@ -216,6 +269,19 @@ if(TARGET amp_1181 AND TARGET dj_eq_1901)
 	list(APPEND PART_C_MIGRATED_DEFINITIONS
 		"PART_C_LADSPA_DIR=\"$<TARGET_FILE_DIR:amp_1181>\"")
 	list(APPEND PART_C_LADSPA_TARGETS amp_1181 dj_eq_1901)
+endif()
+
+# Slice 8 (task #589): runtime assets. The STK rawwaves are vendored in the
+# tree, so Mallets reads the same directory in both processes; the soundfont
+# path is only defined when one was found, which is also what gates the
+# sf2player module above.
+if(TARGET malletsstk)
+	list(APPEND PART_C_REFERENCE_DEFINITIONS "PART_C_STK_DIR=\"${PART_C_STK_DIR}\"")
+	list(APPEND PART_C_MIGRATED_DEFINITIONS "PART_C_STK_DIR=\"${PART_C_STK_DIR}\"")
+endif()
+if(PART_C_SF2_FILE)
+	list(APPEND PART_C_REFERENCE_DEFINITIONS "PART_C_SF2_FILE=\"${PART_C_SF2_FILE}\"")
+	list(APPEND PART_C_MIGRATED_DEFINITIONS "PART_C_SF2_FILE=\"${PART_C_SF2_FILE}\"")
 endif()
 
 add_executable(PluginPortsMigrationReference

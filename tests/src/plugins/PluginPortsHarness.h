@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <thread>
@@ -43,6 +44,7 @@
 #include <QStringList>
 
 #include "AudioBus.h"
+#include "ConfigManager.h"
 #include "Effect.h"
 #include "EffectControls.h"
 #include "Engine.h"
@@ -839,6 +841,24 @@ inline auto instrumentOverridesFor(const std::string& plugin) -> std::vector<Set
 			{"vcf_dec", "0.25"}, {"shape", "1"}, {"dist", "0.3"},
 			{"slide_dec", "0.2"}, {"slide", "1"}, {"dead", "0"}, {"db24", "1"}};
 	}
+	// Slice 8 (task #589): the two asset-driven instruments. Sf2Player needs a
+	// soundfont (src) and a preset; Mallets needs the STK rawwave directory,
+	// which is set up before construction by prepareInstrumentEnvironment().
+	// Attribute names come from each plugin's own saveSettings().
+#ifdef PART_C_SF2_FILE
+	if (plugin == "sf2player")
+	{
+		return {{"src", PART_C_SF2_FILE}, {"patch", "0"}, {"bank", "0"}};
+	}
+#endif
+	if (plugin == "malletsstk")
+	{
+		return {{"hardness", "80"}, {"position", "32"}, {"vib_gain", "16"},
+			{"vib_freq", "48"}, {"stick_mix", "24"}, {"modulator", "72"},
+			{"crossfade", "56"}, {"lfo_speed", "40"}, {"lfo_depth", "8"},
+			{"adsr", "96"}, {"pressure", "100"}, {"velocity", "88"},
+			{"strike", "1"}, {"preset", "0"}, {"spread", "16"}, {"randomness", "0.25"}};
+	}
 	return {};
 }
 
@@ -874,6 +894,41 @@ inline void applyInstrumentTestSettings(Instrument& inst, const std::string& plu
 		saved.setAttribute(QStringLiteral("sampledata"), QString::fromLatin1(bytes.toBase64()));
 	}
 	inst.restoreState(saved);
+}
+
+/*!
+ * Per-instrument environment that has to be in place BEFORE the plugin's
+ * constructor runs: MalletsInstrument scans the STK rawwave directory in its
+ * constructor and latches m_filesMissing, so setting the directory afterwards
+ * would leave the instrument mute. Both the test and the reference renderer
+ * call this immediately before instantiating the plugin.
+ */
+inline void prepareInstrumentEnvironment(const std::string& plugin)
+{
+#ifdef PART_C_STK_DIR
+	if (plugin == "malletsstk")
+	{
+		ConfigManager::inst()->setSTKDir(QString::fromUtf8(PART_C_STK_DIR));
+	}
+#endif
+	(void) plugin;
+}
+
+//! Plugins that are migrated but cannot be proven sample-exact in this build,
+//! with the reason. Printed by the test so a gap is visible, never silent.
+struct UnprovenPlugin
+{
+	const char* plugin;
+	const char* reason;
+};
+
+inline auto unprovenGaps() -> const std::vector<UnprovenPlugin>&
+{
+	static const std::vector<UnprovenPlugin> gaps{
+		{"gigplayer", "no .gig instrument file is packaged on this system, so neither "
+			"the pre-migration nor the migrated host has anything to load; build-proved only"},
+	};
+	return gaps;
 }
 
 /*!
@@ -934,6 +989,133 @@ inline auto renderInstrumentInFreshThread(Instrument& inst, f_cnt_t frames, int 
 	std::thread worker{[&] { out = renderInstrumentBuffers(inst, frames, key); }};
 	worker.join();
 	return out;
+}
+
+// ---------------------------------------------------------------------------
+// Slice 8 (task #589): the LV2 host plugins.
+//
+// Lv2Effect and Lv2Instrument resolve their DSP from the sub-plugin Key's
+// "uri" attribute in the constructor (Lv2Effect.cpp:63), so like the LADSPA
+// host they cannot be rendered through the plain entry(nullptr, nullptr)
+// path. The specs name plugins from the packaged mda bundle: Ambience has two
+// audio inputs and two audio outputs (matching LMMS' fixed stereo ports), and
+// DX10 is an FM synth driven by MIDI note events - the path Lv2Instrument
+// uses when LV2_INSTRUMENT_USE_MIDI is defined.
+// ---------------------------------------------------------------------------
+
+struct Lv2Spec
+{
+	const char* name;   //!< harness name, e.g. "lv2effect:ambience"
+	const char* plugin; //!< module id / descriptor prefix, e.g. "lv2effect"
+	const char* uri;    //!< LV2 plugin URI
+};
+
+inline auto lv2Specs() -> const std::vector<Lv2Spec>&
+{
+	static const std::vector<Lv2Spec> specs{
+		{"lv2effect:ambience", "lv2effect", "http://drobilla.net/plugins/mda/Ambience"},
+		{"lv2instrument:dx10", "lv2instrument", "http://drobilla.net/plugins/mda/DX10"},
+	};
+	return specs;
+}
+
+inline auto lv2KeyFor(const Plugin::Descriptor* desc, const Lv2Spec& spec)
+	-> Plugin::Descriptor::SubPluginFeatures::Key
+{
+	Plugin::Descriptor::SubPluginFeatures::Key key{desc, QString::fromUtf8(spec.name)};
+	key.attributes["uri"] = QString::fromUtf8(spec.uri);
+	return key;
+}
+
+/*!
+ * Loads `modulePath` and resolves lmms_plugin_main plus the module's
+ * `<plugin>_plugin_descriptor` data symbol, exactly like PluginFactory does.
+ */
+inline auto loadPluginModule(const char* modulePath, const QString& name)
+	-> std::pair<Plugin* (*)(Model*, void*), const Plugin::Descriptor*>
+{
+	static std::vector<QLibrary*> keepLoaded;
+
+	auto* lib = new QLibrary{QString::fromUtf8(modulePath)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	keepLoaded.push_back(lib);
+	if (!lib->load())
+	{
+		return {nullptr, nullptr};
+	}
+
+	auto entry = reinterpret_cast<Plugin* (*)(Model*, void*)>(lib->resolve("lmms_plugin_main"));
+	const QByteArray symbol = name.split(':').first().toUtf8() + QByteArray{"_plugin_descriptor"};
+	auto desc = reinterpret_cast<const Plugin::Descriptor*>(lib->resolve(symbol.constData()));
+	return {entry, desc};
+}
+
+//! Keyed render result: the PluginRender payload plus the load/instantiate
+//! status, so a failed load cannot masquerade as an identical silent render.
+struct KeyedRender
+{
+	bool loaded = false;
+	bool okay = false;
+	QString error;
+	PluginRender render;
+};
+
+inline auto renderKeyedEffect(const char* modulePath, const Lv2Spec& spec, f_cnt_t frames) -> KeyedRender
+{
+	KeyedRender result;
+	result.render.name = QString::fromUtf8(spec.name);
+
+	const auto [entry, desc] = loadPluginModule(modulePath, result.render.name);
+	if (entry == nullptr || desc == nullptr)
+	{
+		result.error = result.render.name + ": module did not load or is missing its descriptor";
+		return result;
+	}
+	result.loaded = true;
+
+	auto key = lv2KeyFor(desc, spec);
+	auto* fx = static_cast<Effect*>(entry(nullptr, &key));
+	if (fx == nullptr)
+	{
+		result.error = result.render.name + ": entry point returned null";
+		return result;
+	}
+	result.okay = fx->isOkay();
+	applyTestSettings(*fx, spec.plugin);
+	result.render.samples = renderInFreshThread(*fx, frames);
+	result.render.checksum = checksum(result.render.samples);
+	delete fx;
+	return result;
+}
+
+inline auto renderKeyedInstrument(const char* modulePath, const Lv2Spec& spec, f_cnt_t frames, int key)
+	-> KeyedRender
+{
+	KeyedRender result;
+	result.render.name = QString::fromUtf8(spec.name);
+
+	const auto [entry, desc] = loadPluginModule(modulePath, result.render.name);
+	if (entry == nullptr || desc == nullptr)
+	{
+		result.error = result.render.name + ": module did not load or is missing its descriptor";
+		return result;
+	}
+	result.loaded = true;
+
+	auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
+	auto subKey = lv2KeyFor(desc, spec);
+	auto* inst = static_cast<Instrument*>(entry(track.get(), &subKey));
+	if (inst == nullptr)
+	{
+		result.error = result.render.name + ": entry point returned null";
+		return result;
+	}
+	result.okay = true; // non-null instantiation; audibility is asserted by the
+	                    // slice-8 liveness control in the test.
+	result.render.samples = renderInstrumentInFreshThread(*inst, frames, key);
+	result.render.checksum = checksum(result.render.samples);
+	delete inst;
+	return result;
 }
 
 } // namespace partc
