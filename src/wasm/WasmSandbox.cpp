@@ -85,6 +85,7 @@ struct WasmSandbox::Impl
 	wasmtime_linker_t* linker = nullptr;
 	wasmtime_module_t* module = nullptr;
 	wasmtime_instance_t instance{};
+	bool hasInstance = false;
 	wasmtime_memory_t memory{};
 	wasmtime_func_t process{};
 	bool hasProcess = false;
@@ -102,13 +103,33 @@ struct WasmSandbox::Impl
 		wasm_config_t* config = wasm_config_new();
 		wasmtime_config_consume_fuel_set(config, true);
 		engine = wasm_engine_new_with_config(config);
+		resetStore();
+		linker = wasmtime_linker_new(engine);
+		defineImports();
+	}
+
+	// Wasmtime instances have no destructor in the C API and are owned by
+	// their store; the store limiter counts live instances (limit: 1). A
+	// module reload therefore has to drop the whole store and build a fresh
+	// one before instantiating into it - otherwise the second instantiation
+	// fails with "resource limit exceeded: instance count too high".
+	void resetStore()
+	{
+		if (store != nullptr)
+		{
+			wasmtime_store_delete(store);
+		}
+		instance = {};
+		memory = {};
+		process = {};
+		hasInstance = false;
+		hasProcess = false;
+		hasMemory = false;
 		store = wasmtime_store_new(engine, nullptr, nullptr);
 		wasmtime_store_limiter(store, abi::storeMemoryLimitBytes,
 			abi::storeTableElementLimit, abi::storeInstanceLimit,
 			abi::storeTableLimit, abi::storeMemoryCountLimit);
 		context = wasmtime_store_context(store);
-		linker = wasmtime_linker_new(engine);
-		defineImports();
 	}
 
 	~Impl()
@@ -321,6 +342,13 @@ bool WasmSandbox::loadModuleBytes(const std::uint8_t* bytes, std::size_t size,
 		m_impl->module = nullptr;
 	}
 	m_impl->hasProcess = false;
+	if (m_impl->hasInstance)
+	{
+		// Reload: release the previous instance by dropping its store (the
+		// C API has no wasmtime_instance_delete) and instantiate into a
+		// fresh one. All handles into the old store are invalidated here.
+		m_impl->resetStore();
+	}
 
 	wasmtime_error_t* err = wasmtime_module_new(m_impl->engine, bytes, size,
 		&m_impl->module);
@@ -344,6 +372,7 @@ bool WasmSandbox::loadModuleBytes(const std::uint8_t* bytes, std::size_t size,
 		error = "instantiation trapped: " + takeTrap(trap, code);
 		return false;
 	}
+	m_impl->hasInstance = true;
 
 	wasmtime_extern_t memoryExport;
 	const bool hasMemory = m_impl->exportGet(abi::memoryExport, memoryExport) &&
