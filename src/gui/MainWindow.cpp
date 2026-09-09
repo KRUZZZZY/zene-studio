@@ -26,6 +26,7 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDomElement>
 #include <QFileInfo>

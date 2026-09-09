@@ -15,8 +15,6 @@ Zene Studio is an LMMS-derived digital audio workstation that combines:
   parallel buses on an unbounded mixer.
 - **Native VST3 + CLAP hosting** — run modern instrument and effect plugins
   alongside the built-in devices.
-- **Patcher node-graph signal routing** — wire instruments, effects, and
-  utilities into custom signal chains.
 - **Two-track recording** — capture two input channels into separate tracks.
 - **Lua + WASM scripting** — automate the DAW with Lua or run sandboxed DSP in
   WebAssembly.
@@ -48,6 +46,11 @@ not as shipped features:
 7. **Ableton Link / Link Audio** — tempo and transport sync with other apps.
 8. **Tag + sound-similarity browser** — tag-based browsing and similarity
    search for samples and presets.
+
+Separately from the waves above, the **Patcher node-graph engine**
+(`RoutingGraph` plus a small set of built-in node types) is in the tree and
+unit-tested, but no GUI or audio-path code instantiates it yet — node-graph
+patching is **not available in the current build**.
 
 ## Building
 

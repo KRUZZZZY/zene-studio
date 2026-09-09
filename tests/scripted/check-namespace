@@ -78,6 +78,16 @@ exclude_files = re.compile(
     'plugins/ReverbSC/[a-z]|'
     'plugins/Sf2Player/fluidsynthshims.h|'
     '/portsmf/|'
+    # vendored third-party trees (Lua, LuaBridge, RTNeural/Eigen, RNNoise):
+    'src/3rdparty/|'
+    'plugins/NeuralAmp/rtneural/|'
+    'plugins/RnnoiseDenoiser/rnnoise/|'
+    # non-shipped dev scratch tools and test/demo harnesses:
+    'tools/mmpz-git/scratch/|'
+    'plugins/NeuralAmp/tests/|'
+    'plugins/RnnoiseDenoiser/testdata/|'
+    'modules/wasm/demo/|'
+    'tools/wasm/wat2wasm.cpp|'
     # only forward to headers that are not ours:
     'plugins/ZynAddSubFx/ThreadShims.h'
 )

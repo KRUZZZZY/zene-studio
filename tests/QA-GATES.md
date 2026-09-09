@@ -66,7 +66,7 @@ plus a `genhtml` report under `build-coverage/coverage/html/`.
 
 `--check` runs in CI mode: report only, baseline never written.
 
-**Measured numbers** (2026-09-09, gcc 13 / lcov 2.0, after the coverage push):
+**Measured numbers — standards fork** (2026-09-09, gcc 13 / lcov 2.0, after the coverage push):
 
 | Directory            | Lines | Hit  | Rate   |
 |----------------------|-------|------|--------|
@@ -135,9 +135,12 @@ unit-test binaries run offscreen with no event-loop interaction. This is an
 `PinConnector` (the only hits in `tests/` are the gate metadata files
 `fork-sources.txt`, `QA-GATES.md` and the three baselines).
 
-Gate 2 **met**: the ratchet is live and green at **85.24%**, clearing the adopted
-ruleset's 85% aspiration. `AudioBus.cpp` (95.77%) and `ScriptEngine.cpp` (89.36%)
-remain short of 100%; `PinConnector.cpp` stays excluded for the reason above.
+Gate 2 **met on the standards fork**: the ratchet is live and green there at
+**85.24%**, clearing the adopted ruleset's 85% aspiration. **The product's own
+measured figure is 76.07%** (2661/3498 lines, 47 of 97 in-scope files), still
+short of that aspiration for the structural reasons above. `AudioBus.cpp`
+(95.77%) and `ScriptEngine.cpp` (89.36%) remain short of 100%;
+`PinConnector.cpp` stays excluded for the reason above.
 The only other 0% lines in scope are `LmmsPolyfill.h` (2 lines) and
 `PinConnector.h` (5 lines), both header-only GUI/polyfill declarations.
 

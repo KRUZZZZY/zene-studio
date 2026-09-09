@@ -49,6 +49,7 @@ extern "C"
 #include <QFileInfo>
 
 #include <algorithm>
+#include <cstring>
 #include <deque>
 #include <stdexcept>
 #include <string>
