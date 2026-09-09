@@ -11,6 +11,8 @@ set(LMMS_TESTS
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
 	src/core/MixerAbRegressionTest.cpp
+	src/core/MixerRoutingBackwardCompatTest.cpp
+	src/core/PhaseDSidechainTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/TimelineTest.cpp
@@ -42,6 +44,14 @@ endforeach()
 target_compile_definitions(MixerAbRegressionTest PRIVATE
 	MIXER_AB_REFERENCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/reference/mixer-ab-render.raw"
 )
+
+# Phase D (task #587) sidechain behaviour tests. The demo test instantiates
+# the native Compressor through the normal plugin factory, so it needs the
+# built plugin's path and a build-order dependency on it.
+target_compile_definitions(PhaseDSidechainTest PRIVATE
+	PART_D_COMPRESSOR_LIBRARY="$<TARGET_FILE:compressor>"
+)
+add_dependencies(PhaseDSidechainTest compressor)
 
 # ---------------------------------------------------------------------------
 # Part C (task #585) - behaviour-preservation harness for the AudioPorts
