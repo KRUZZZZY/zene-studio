@@ -1,7 +1,6 @@
 set(LMMS_SRCS
 	${LMMS_SRCS}
 
-	wasm/WasmEffect.cpp
 	wasm/WasmSandbox.cpp
 	wasm/WasmWorker.cpp
 
@@ -17,7 +16,7 @@ TARGET_LINK_LIBRARIES(wasm-wat2wasm PRIVATE ${WASMTIME_LIBRARIES})
 # Assemble the demo modules into <build>/wasm-modules for the tests and for
 # manual experimentation with the sandbox.
 SET(WASM_MODULE_DIR "${CMAKE_BINARY_DIR}/wasm-modules")
-SET(WASM_MODULE_NAMES hello gain spin abort oob probe)
+SET(WASM_MODULE_NAMES hello gain spin abort oob probe latency latency_trap)
 UNSET(WASM_MODULE_OUTPUTS)
 FOREACH(module IN LISTS WASM_MODULE_NAMES)
 	SET(wat "${CMAKE_SOURCE_DIR}/modules/wasm/${module}.wat")

@@ -82,6 +82,17 @@ public:
 	//! Control thread only; safe once the worker has stopped changing state.
 	std::string lastError() const { return m_lastError; }
 
+	//! Channels the loaded module declares (1 when nothing is loaded).
+	int declaredChannels() const { return m_declaredChannels.load(std::memory_order_relaxed); }
+	//! Frames of latency the loaded module declares (0 when it declares none).
+	//! Survives a quarantine so the host can keep compensating the dry path.
+	int declaredLatency() const { return m_declaredLatency.load(std::memory_order_relaxed); }
+	//! Times the module was re-instantiated because the sample rate changed.
+	std::uint64_t reinstantiatedModules() const
+	{
+		return m_reinstantiated.load(std::memory_order_relaxed);
+	}
+
 	// ---- audio thread API (no allocation, no locks, no syscalls) ----
 	//! Copy one interleaved stereo block into a free slot and queue it.
 	//! Returns false (and counts a drop) when no slot or queue entry is free.
@@ -125,13 +136,21 @@ private:
 	void run();
 	void processSlot(Slot& slot, float sampleRate);
 	void passthrough(Slot& slot);
+	//! Worker thread: reload/re-instantiate the module for a new sample rate.
+	bool reinstantiate(float sampleRate);
 
 	std::string m_modulePath;
 	std::thread m_thread;
 	std::atomic<bool> m_stop{false};
 	std::atomic<State> m_state{State::Idle};
 	std::string m_lastError;
-	float m_sampleRate = 44100.0f;
+	//! Rate of the most recent block, written by the audio thread in submit().
+	std::atomic<float> m_sampleRate{44100.0f};
+	//! Rate the current module instance was created for (worker thread only).
+	float m_loadedSampleRate = 0.0f;
+	std::atomic<int> m_declaredChannels{1};
+	std::atomic<int> m_declaredLatency{0};
+	std::atomic<std::uint64_t> m_reinstantiated{0};
 
 	std::unique_ptr<WasmSandbox> m_sandbox;
 	std::array<Slot, slotCount> m_slots{};

@@ -37,13 +37,26 @@ endforeach()
 if(WANT_WASM)
 	# Gate tests for the WASM DSP sandbox. Kept out of LMMS_TESTS so the
 	# pre-existing suite is byte-for-byte unchanged when WANT_WASM=OFF.
-	add_executable(WasmSandboxTest src/wasm/WasmSandboxTest.cpp)
+	# The WasmEffect plugin sources are compiled into the test binary as well
+	# so registration, save/load and latency are testable without loading a
+	# plugin .so (the plugin itself is still built as a module target).
+	add_executable(WasmSandboxTest
+		src/wasm/WasmSandboxTest.cpp
+		${CMAKE_SOURCE_DIR}/plugins/WasmEffect/WasmEffect.cpp
+		${CMAKE_SOURCE_DIR}/plugins/WasmEffect/WasmEffect.h
+		${CMAKE_SOURCE_DIR}/plugins/WasmEffect/WasmEffectControls.cpp
+		${CMAKE_SOURCE_DIR}/plugins/WasmEffect/WasmEffectControls.h
+		${CMAKE_SOURCE_DIR}/plugins/WasmEffect/WasmEffectControlDialog.cpp
+		${CMAKE_SOURCE_DIR}/plugins/WasmEffect/WasmEffectControlDialog.h
+	)
 	add_test(NAME WasmSandboxTest COMMAND WasmSandboxTest)
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs
 	target_include_directories(WasmSandboxTest PRIVATE
 		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 		${CMAKE_SOURCE_DIR}/src/wasm
+		${CMAKE_SOURCE_DIR}/plugins/WasmEffect
+		${CMAKE_BINARY_DIR}/plugins/WasmEffect
 	)
 	target_static_libraries(WasmSandboxTest PRIVATE lmmsobjs)
 	target_link_libraries(WasmSandboxTest PRIVATE
@@ -53,6 +66,7 @@ if(WANT_WASM)
 	target_compile_features(WasmSandboxTest PRIVATE cxx_std_20)
 	target_compile_definitions(WasmSandboxTest PRIVATE
 		LMMS_TESTING
+		PLUGIN_NAME=wasm_effect
 		WASM_MODULES_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
 		WASM_WAT_SOURCE_DIR="${CMAKE_SOURCE_DIR}/modules/wasm"
 	)

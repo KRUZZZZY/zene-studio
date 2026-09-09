@@ -81,6 +81,9 @@ void WasmWorker::stop()
 		m_slots[index].state.store(SlotState::Free, std::memory_order_release);
 	}
 	m_sandbox.reset();
+	m_declaredChannels.store(1, std::memory_order_relaxed);
+	m_declaredLatency.store(0, std::memory_order_relaxed);
+	m_loadedSampleRate = 0.0f;
 }
 
 void WasmWorker::run()
@@ -100,6 +103,9 @@ void WasmWorker::run()
 		m_state.store(State::Failed, std::memory_order_release);
 		return;
 	}
+	m_declaredChannels.store(m_sandbox->declaredChannels(), std::memory_order_relaxed);
+	m_declaredLatency.store(m_sandbox->declaredLatency(), std::memory_order_relaxed);
+	m_loadedSampleRate = m_sampleRate.load(std::memory_order_acquire);
 	m_state.store(State::Ready, std::memory_order_release);
 
 	while (!m_stop.load(std::memory_order_acquire))
@@ -111,7 +117,16 @@ void WasmWorker::run()
 			didWork = true;
 			Slot& slot = m_slots[index];
 			slot.state.store(SlotState::Processing, std::memory_order_release);
-			const float sampleRate = m_sampleRate;
+			const float sampleRate = m_sampleRate.load(std::memory_order_acquire);
+			if (m_state.load(std::memory_order_acquire) == State::Ready &&
+				sampleRate != m_loadedSampleRate)
+			{
+				// Sample-rate change: re-instantiate so the module never runs
+				// with a stale rate or stale state. This happens on the worker
+				// thread only; while it runs the audio thread sees
+				// State::Loading and passes audio through dry.
+				reinstantiate(sampleRate);
+			}
 			if (m_state.load(std::memory_order_acquire) == State::Ready)
 			{
 				processSlot(slot, sampleRate);
@@ -224,6 +239,25 @@ void WasmWorker::passthrough(Slot& slot)
 		slot.frames * sizeof(SampleFrame));
 }
 
+bool WasmWorker::reinstantiate(float sampleRate)
+{
+	m_state.store(State::Loading, std::memory_order_release);
+	std::string error;
+	if (!m_sandbox->loadModuleFile(m_modulePath, error) ||
+		!m_sandbox->hasProcess())
+	{
+		m_lastError = error.empty() ? "module reload failed" : error;
+		m_state.store(State::Failed, std::memory_order_release);
+		return false;
+	}
+	m_loadedSampleRate = sampleRate;
+	m_declaredChannels.store(m_sandbox->declaredChannels(), std::memory_order_relaxed);
+	m_declaredLatency.store(m_sandbox->declaredLatency(), std::memory_order_relaxed);
+	m_reinstantiated.fetch_add(1, std::memory_order_relaxed);
+	m_state.store(State::Ready, std::memory_order_release);
+	return true;
+}
+
 bool WasmWorker::submit(const SampleFrame* interleaved, std::uint32_t frames,
 	float sampleRate)
 {
@@ -249,7 +283,7 @@ bool WasmWorker::submit(const SampleFrame* interleaved, std::uint32_t frames,
 	}
 	std::memcpy(slot->in.data(), interleaved, frames * sizeof(SampleFrame));
 	slot->frames = frames;
-	m_sampleRate = sampleRate;
+	m_sampleRate.store(sampleRate, std::memory_order_release);
 	slot->state.store(SlotState::Filled, std::memory_order_release);
 
 	const std::uint32_t index = static_cast<std::uint32_t>(slot - m_slots.data());

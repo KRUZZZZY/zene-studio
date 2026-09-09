@@ -21,14 +21,17 @@
  */
 
 #include "WasmEffect.h"
+#include "WasmEffectControls.h"
 #include "WasmSandbox.h"
 #include "WasmSpscRingBuffer.h"
 #include "WasmWorker.h"
 
 #include "AudioBuffer.h"
 #include "Engine.h"
+#include "Plugin.h"
 
 #include <QDir>
+#include <QDomDocument>
 #include <QFileInfo>
 #include <QTest>
 
@@ -43,6 +46,7 @@
 #include <fstream>
 #include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 // ---- global allocation detector -------------------------------------------
@@ -94,6 +98,14 @@ void operator delete(void* ptr, const std::nothrow_t&) noexcept { std::free(ptr)
 void operator delete[](void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }
 
 // ---------------------------------------------------------------------------
+
+namespace lmms
+{
+// Defined in plugins/WasmEffect/WasmEffect.cpp, which is compiled into this
+// test binary. The plugin loader resolves exactly this symbol name from
+// libwasm_effect.so (PluginFactory strips the "lib" prefix from the file name).
+extern "C" Plugin::Descriptor wasm_effect_plugin_descriptor;
+} // namespace lmms
 
 namespace lmms::wasm
 {
@@ -154,6 +166,12 @@ private slots:
 	// ---- real-time thread discipline ----
 	void rt_spscRingBufferIsAllocationFree();
 	void rt_audioThreadCallsDoNotAllocate();
+
+	// ---- task #591: WasmEffect as a first-class LMMS plugin ----
+	void p1_pluginDescriptorIsWellFormed();
+	void p2_effectSavesAndReloadsModuleAndParameters();
+	void p3_moduleLatencyIsApplied();
+	void p4_sampleRateChangeReinstantiatesModule();
 
 private:
 };
@@ -570,6 +588,301 @@ void WasmSandboxTest::rt_audioThreadCallsDoNotAllocate()
 
 	qInfo("RT: submit()/collect() on the audio-thread path, allocations=%llu",
 		static_cast<unsigned long long>(g_allocationCount.load()));
+}
+
+// ---------------------------------------------------------------------------
+// Task #591: WasmEffect as a first-class LMMS plugin
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p1_pluginDescriptorIsWellFormed()
+{
+	// The plugin browser and the loader both go through this descriptor. The
+	// name must equal the library base name (libwasm_effect.so -> "wasm_effect")
+	// because PluginFactory looks up <baseName>_plugin_descriptor.
+	QCOMPARE(QString(wasm_effect_plugin_descriptor.name), QString("wasm_effect"));
+	QVERIFY(wasm_effect_plugin_descriptor.type == Plugin::Type::Effect);
+	QVERIFY(wasm_effect_plugin_descriptor.displayName != nullptr);
+	QVERIFY(wasm_effect_plugin_descriptor.description != nullptr);
+	QVERIFY(wasm_effect_plugin_descriptor.author != nullptr);
+	QVERIFY(wasm_effect_plugin_descriptor.logo != nullptr);
+
+	WasmEffect effect(nullptr, nullptr);
+	QCOMPARE(effect.nodeName(), QString("effect"));
+	QVERIFY(effect.controls() != nullptr);
+	QCOMPARE(effect.controls()->nodeName(), QString("wasmeffectcontrols"));
+	QCOMPARE(effect.controls()->controlCount(), 8);
+	QCOMPARE(effect.modulePath(), QString());
+	QCOMPARE(effect.latencyFrames(), 0);
+	QVERIFY(!effect.worker().isReady());
+	QVERIFY(effect.worker().state() == WasmWorker::State::Idle);
+	QVERIFY(!effect.isModuleCorrupted());
+
+	qInfo("P1 registration: descriptor name=%s type=Effect, nodeName=%s, "
+		"controls=%s (%d params)",
+		wasm_effect_plugin_descriptor.name,
+		qPrintable(effect.nodeName()),
+		qPrintable(effect.controls()->nodeName()),
+		effect.controls()->controlCount());
+}
+
+void WasmSandboxTest::p2_effectSavesAndReloadsModuleAndParameters()
+{
+	const QString module = modulePath("gain");
+	WasmEffect saved(nullptr, nullptr);
+	QString error;
+	QVERIFY2(saved.loadModule(module, &error), qPrintable(error));
+	QVERIFY(saved.worker().isReady());
+	saved.setModuleParam(0, 0.125f);
+	saved.setModuleParam(3, 0.75f);
+	saved.setModuleParam(7, 0.25f);
+
+	// Save exactly like EffectChain::saveSettings does: Effect::saveSettings
+	// writes the effect's own attributes and appends
+	// <wasmeffectcontrols module=...> with one <param index= value=/> per knob.
+	QDomDocument doc;
+	QDomElement element = doc.createElement("effect");
+	element.setAttribute("name", "wasm_effect");
+	doc.appendChild(element);
+	saved.saveSettings(doc, element);
+	const QString xml = doc.toString();
+	qInfo().noquote() << "P2 save: project fragment written by saveSettings:\n" + xml;
+
+	// Reopen: a fresh instance loads the element, as when a project is opened.
+	WasmEffect reloaded(nullptr, nullptr);
+	QDomElement savedElement = doc.documentElement();
+	reloaded.loadSettings(savedElement);
+
+	QCOMPARE(reloaded.modulePath(), module);
+	QVERIFY(reloaded.worker().isReady());
+	for (int i = 0; i < reloaded.controls()->controlCount(); ++i)
+	{
+		QCOMPARE(reloaded.controls()->paramModel(i)->value(),
+			saved.controls()->paramModel(i)->value());
+	}
+
+	// The reloaded instance really runs the restored module with the restored
+	// parameter: block 2 carries the previous block scaled by 0.125.
+	AudioBuffer buffer(48, 0);
+	buffer.allocateInterleavedBuffer();
+	for (f_cnt_t f = 0; f < 48; ++f)
+	{
+		buffer.interleavedBuffer()[f][0] = 1.0f;
+		buffer.interleavedBuffer()[f][1] = 1.0f;
+	}
+	buffer.assumeNonSilent(0);
+	buffer.assumeNonSilent(1);
+	QVERIFY(reloaded.processAudioBuffer(buffer));
+	QCOMPARE(buffer.interleavedBuffer()[0][0], 1.0f);
+	QVERIFY(reloaded.worker().waitForIdle(5000));
+	QVERIFY(reloaded.processAudioBuffer(buffer));
+	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.125f);
+	qInfo("P2 round trip: module=%s param0=%.3f param3=%.3f param7=%.3f, "
+		"rendered block2 out[0]=%.4f",
+		qPrintable(reloaded.modulePath()),
+		static_cast<double>(reloaded.controls()->paramModel(0)->value()),
+		static_cast<double>(reloaded.controls()->paramModel(3)->value()),
+		static_cast<double>(reloaded.controls()->paramModel(7)->value()),
+		static_cast<double>(buffer.interleavedBuffer()[0][0]));
+
+	// Backward compatible: a project saved before WasmEffect existed has no
+	// <wasmeffectcontrols> child at all; defaults must survive untouched.
+	QDomDocument legacyDoc;
+	QDomElement legacyElement = legacyDoc.createElement("effect");
+	legacyDoc.appendChild(legacyElement);
+	WasmEffect legacy(nullptr, nullptr);
+	legacy.loadSettings(legacyElement);
+	QCOMPARE(legacy.modulePath(), QString());
+	QVERIFY(!legacy.worker().isReady());
+	QCOMPARE(legacy.controls()->paramModel(0)->value(), 0.5f);
+
+	// Backward compatible: an older element with only a subset of parameters
+	// keeps defaults for the missing ones.
+	QDomDocument partialDoc;
+	QDomElement partialElement = partialDoc.createElement("effect");
+	partialDoc.appendChild(partialElement);
+	QDomElement controlsElement = partialDoc.createElement("wasmeffectcontrols");
+	controlsElement.setAttribute("module", module);
+	QDomElement paramElement = partialDoc.createElement("param");
+	paramElement.setAttribute("index", 0);
+	paramElement.setAttribute("value", QString::number(0.75));
+	controlsElement.appendChild(paramElement);
+	partialElement.appendChild(controlsElement);
+	WasmEffect partial(nullptr, nullptr);
+	partial.loadSettings(partialElement);
+	QCOMPARE(partial.modulePath(), module);
+	QCOMPARE(partial.controls()->paramModel(0)->value(), 0.75f);
+	QCOMPARE(partial.controls()->paramModel(1)->value(), 0.5f);
+	QVERIFY(partial.worker().isReady());
+	qInfo("P2 backward compatibility: empty element -> module \"%s\", "
+		"partial element -> param0=%.3f param1=%.3f (default)",
+		qPrintable(legacy.modulePath()),
+		static_cast<double>(partial.controls()->paramModel(0)->value()),
+		static_cast<double>(partial.controls()->paramModel(1)->value()));
+}
+
+void WasmSandboxTest::p3_moduleLatencyIsApplied()
+{
+	constexpr std::uint32_t kFrames = 48;
+	constexpr int kModuleLatency = 64;
+	constexpr int kTotalLatency = kModuleLatency + static_cast<int>(kFrames);
+	constexpr int kBlocks = 8;
+
+	// Phase 1: the module keeps running. An impulse fed in block 0 must come
+	// out exactly kModuleLatency + one pipeline block later.
+	{
+		WasmEffect effect(nullptr, nullptr);
+		QString error;
+		QVERIFY2(effect.loadModule(modulePath("latency"), &error), qPrintable(error));
+		QVERIFY(effect.worker().isReady());
+		QCOMPARE(effect.worker().declaredLatency(), kModuleLatency);
+
+		std::vector<float> out;
+		out.reserve(kBlocks * kFrames);
+		AudioBuffer buffer(kFrames, 0);
+		buffer.allocateInterleavedBuffer();
+		for (int b = 0; b < kBlocks; ++b)
+		{
+			for (std::uint32_t f = 0; f < kFrames; ++f)
+			{
+				const float in = (b == 0 && f == 0) ? 1.0f : 0.0f;
+				buffer.interleavedBuffer()[f][0] = in;
+				buffer.interleavedBuffer()[f][1] = in;
+			}
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+			QVERIFY(effect.processAudioBuffer(buffer));
+			// Lockstep: collect() runs before the next submit(), so the
+			// pipeline delay is exactly one block (deterministic by design).
+			QVERIFY(effect.worker().waitForIdle(5000));
+			for (std::uint32_t f = 0; f < kFrames; ++f)
+			{
+				out.push_back(buffer.interleavedBuffer()[f][0]);
+			}
+		}
+		int impulseAt = -1;
+		for (std::size_t i = 0; i < out.size(); ++i)
+		{
+			if (std::fabs(out[i]) > 0.5f) { impulseAt = static_cast<int>(i); break; }
+		}
+		qInfo("P3 latency: module declares %d frames; impulse at input frame 0 "
+			"appears at output frame %d (expected %d = latency + 1 block of %u)",
+			kModuleLatency, impulseAt, kTotalLatency, kFrames);
+		QCOMPARE(impulseAt, kTotalLatency);
+		for (int i = 0; i < impulseAt; ++i) { QCOMPARE(out[i], 0.0f); }
+		QCOMPARE(effect.latencyFrames(), kTotalLatency);
+		QVERIFY(!effect.isModuleCorrupted());
+	}
+
+	// Phase 2: the module traps on its fourth call. The dry path must keep the
+	// same latency, so an impulse before and an impulse after the quarantine
+	// land at the same offset.
+	{
+		WasmEffect effect(nullptr, nullptr);
+		QString error;
+		QVERIFY2(effect.loadModule(modulePath("latency_trap"), &error), qPrintable(error));
+		QVERIFY(effect.worker().isReady());
+		QCOMPARE(effect.worker().declaredLatency(), kModuleLatency);
+
+		std::vector<float> out;
+		out.reserve(kBlocks * kFrames);
+		AudioBuffer buffer(kFrames, 0);
+		buffer.allocateInterleavedBuffer();
+		for (int b = 0; b < kBlocks; ++b)
+		{
+			for (std::uint32_t f = 0; f < kFrames; ++f)
+			{
+				// impulse in block 0 (module path) and block 5 (dry path)
+				const float in = ((b == 0 || b == 5) && f == 0) ? 1.0f : 0.0f;
+				buffer.interleavedBuffer()[f][0] = in;
+				buffer.interleavedBuffer()[f][1] = in;
+			}
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+			QVERIFY(effect.processAudioBuffer(buffer));
+			QVERIFY(effect.worker().waitForIdle(5000));
+			for (std::uint32_t f = 0; f < kFrames; ++f)
+			{
+				out.push_back(buffer.interleavedBuffer()[f][0]);
+			}
+		}
+		QVERIFY(effect.isModuleCorrupted());
+		QVERIFY(effect.worker().trappedBlocks() >= std::uint64_t{1});
+
+		int firstImpulse = -1;
+		int secondImpulse = -1;
+		for (std::size_t i = 0; i < out.size(); ++i)
+		{
+			if (std::fabs(out[i]) > 0.5f)
+			{
+				if (firstImpulse < 0) { firstImpulse = static_cast<int>(i); }
+				else { secondImpulse = static_cast<int>(i); }
+			}
+		}
+		qInfo("P3 latency after trap: module impulse at %d (expected %d), "
+			"dry-path impulse at %d (expected %d), corrupted=%d trapped=%llu",
+			firstImpulse, kTotalLatency, secondImpulse,
+			static_cast<int>(5 * kFrames) + kTotalLatency,
+			effect.isModuleCorrupted() ? 1 : 0,
+			static_cast<unsigned long long>(effect.worker().trappedBlocks()));
+		QCOMPARE(firstImpulse, kTotalLatency);
+		QCOMPARE(secondImpulse, static_cast<int>(5 * kFrames) + kTotalLatency);
+		QCOMPARE(effect.latencyFrames(), kTotalLatency);
+	}
+}
+
+void WasmSandboxTest::p4_sampleRateChangeReinstantiatesModule()
+{
+	constexpr std::uint32_t kFrames = 48;
+	WasmWorker worker;
+	std::string error;
+	QVERIFY2(worker.start(modulePath("latency").toStdString(), error),
+		qPrintable(QString::fromStdString("start: " + error)));
+	QVERIFY(worker.isReady());
+	QCOMPARE(worker.declaredLatency(), 64);
+	QCOMPARE(worker.reinstantiatedModules(), std::uint64_t{0});
+
+	std::vector<SampleFrame> block(kFrames, SampleFrame{0.0f, 0.0f});
+	std::vector<SampleFrame> out(kFrames, SampleFrame{0.0f, 0.0f});
+
+	// Block 1 at 44100: impulse goes into the module's 64-slot ring buffer.
+	block[0] = SampleFrame{1.0f, 1.0f};
+	QVERIFY(worker.submit(block.data(), kFrames, 44100.0f));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(out.data(), kFrames));
+	QCOMPARE(out[0][0], 0.0f);
+	QCOMPARE(worker.reinstantiatedModules(), std::uint64_t{0});
+
+	// Block 2 at the same rate: the impulse is still in the ring and must
+	// emerge 64 frames after it was written (64 - 48 = frame 16).
+	QVERIFY(worker.submit(block.data(), kFrames, 44100.0f));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(out.data(), kFrames));
+	QCOMPARE(out[16][0], 1.0f);
+	QCOMPARE(worker.reinstantiatedModules(), std::uint64_t{0});
+
+	// Now the host switches to 48000 Hz. The module must be re-instantiated:
+	// the stale ring content (the impulse would otherwise surface again) must
+	// be gone, and the counter must record exactly one reload.
+	QVERIFY(worker.submit(block.data(), kFrames, 48000.0f));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(out.data(), kFrames));
+	QCOMPARE(worker.reinstantiatedModules(), std::uint64_t{1});
+	QCOMPARE(worker.declaredLatency(), 64);
+	QCOMPARE(worker.declaredChannels(), 1);
+	for (std::uint32_t f = 0; f < kFrames; ++f)
+	{
+		QCOMPARE(out[f][0], 0.0f);
+	}
+
+	// A stable rate must not re-instantiate on every block.
+	QVERIFY(worker.submit(block.data(), kFrames, 48000.0f));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(out.data(), kFrames));
+	QCOMPARE(worker.reinstantiatedModules(), std::uint64_t{1});
+	QCOMPARE(worker.processedBlocks(), std::uint64_t{5});
+	qInfo("P4 sample rate: 44100 -> 44100 (0 reloads) -> 48000 (1 reload, "
+		"ring cleared) -> 48000 (still 1 reload); processed=%llu",
+		static_cast<unsigned long long>(worker.processedBlocks()));
 }
 
 } // namespace lmms::wasm
