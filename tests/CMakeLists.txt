@@ -72,6 +72,17 @@ set(PART_C_REFERENCE_MODULES
 	"analyzer|SpectrumAnalyzer|Analyzer.cpp|SaControls.cpp|SaControlsDialog.cpp|SaProcessor.cpp|SaSpectrumView.cpp|SaWaterfallView.cpp"
 	"granularpitchshifter|GranularPitchShifter|GranularPitchShifterEffect.cpp|GranularPitchShifterControls.cpp|GranularPitchShifterControlDialog.cpp"
 	"eq|Eq|EqEffect.cpp|EqControls.cpp|EqControlsDialog.cpp|EqCurve.cpp|EqParameterWidget.cpp|EqSpectrumView.cpp"
+	# Slice 4 (task #589): synth instruments.
+	"freeboy|FreeBoy|FreeBoy.cpp|FreeBoy.h|GbApuWrapper.cpp|GbApuWrapper.h"
+	"nes|Nes|Nes.cpp|Nes.h"
+	"sid|Sid|SidInstrument.cpp|SidInstrument.h"
+	"opulenz|OpulenZ|OpulenZ.cpp|OpulenZ.h"
+	"sfxr|Sfxr|Sfxr.cpp|Sfxr.h"
+	"bitinvader|BitInvader|BitInvader.cpp|BitInvader.h"
+	"watsyn|Watsyn|Watsyn.cpp|Watsyn.h"
+	"xpressive|Xpressive|Xpressive.cpp|Xpressive.h|ExprSynth.cpp|ExprSynth.h"
+	"vibedstrings|Vibed|Vibed.cpp|Vibed.h|NineButtonSelector.cpp|NineButtonSelector.h|VibratingString.cpp|VibratingString.h"
+	"kicker|Kicker|Kicker.cpp|Kicker.h|KickerOsc.h"
 )
 
 set(PART_C_REFERENCE_TARGETS "")
@@ -107,6 +118,29 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	target_compile_features(partc_ref_${PLUGIN_ID} PRIVATE cxx_std_20)
 	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE ${QT_LIBRARIES})
 	set_target_properties(partc_ref_${PLUGIN_ID} PROPERTIES PREFIX "" OUTPUT_NAME "partc_ref_${PLUGIN_ID}")
+
+	# Slice 4 (task #589): instruments whose plugin CMakeLists.txt links extra
+	# targets or sets extra defines - mirror them so the reference module is
+	# built exactly like the pre-migration plugin was.
+	if(PLUGIN_ID STREQUAL "freeboy")
+		target_link_libraries(partc_ref_freeboy PRIVATE gme)
+	elseif(PLUGIN_ID STREQUAL "sid")
+		target_link_libraries(partc_ref_sid PRIVATE resid)
+	elseif(PLUGIN_ID STREQUAL "opulenz")
+		target_link_libraries(partc_ref_opulenz PRIVATE adplug)
+	elseif(PLUGIN_ID STREQUAL "watsyn")
+		target_link_libraries(partc_ref_watsyn PRIVATE SampleRate::samplerate)
+	elseif(PLUGIN_ID STREQUAL "xpressive")
+		target_link_libraries(partc_ref_xpressive PRIVATE exprtk)
+		target_compile_definitions(partc_ref_xpressive PRIVATE
+			exprtk_disable_sc_andor
+			exprtk_disable_return_statement
+			exprtk_disable_break_continue
+			exprtk_disable_comments
+			exprtk_disable_string_capabilities
+			exprtk_disable_rtl_io_file
+			exprtk_disable_rtl_vecops)
+	endif()
 
 	list(APPEND PART_C_REFERENCE_TARGETS partc_ref_${PLUGIN_ID})
 	list(APPEND PART_C_MIGRATED_TARGETS ${PLUGIN_ID})

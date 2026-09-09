@@ -71,6 +71,38 @@ extract() { # extract <plugin-dir> <file>
 	         EqSpectrumView.cpp EqSpectrumView.h; do
 		extract Eq "$f"
 	done
+	# Slice 4 (task #589): software-synth instruments.
+	for f in FreeBoy.cpp FreeBoy.h GbApuWrapper.cpp GbApuWrapper.h; do
+		extract FreeBoy "$f"
+	done
+	for f in Nes.cpp Nes.h; do
+		extract Nes "$f"
+	done
+	for f in SidInstrument.cpp SidInstrument.h; do
+		extract Sid "$f"
+	done
+	for f in OpulenZ.cpp OpulenZ.h; do
+		extract OpulenZ "$f"
+	done
+	for f in Sfxr.cpp Sfxr.h; do
+		extract Sfxr "$f"
+	done
+	for f in BitInvader.cpp BitInvader.h; do
+		extract BitInvader "$f"
+	done
+	for f in Watsyn.cpp Watsyn.h; do
+		extract Watsyn "$f"
+	done
+	for f in Xpressive.cpp Xpressive.h ExprSynth.cpp ExprSynth.h; do
+		extract Xpressive "$f"
+	done
+	for f in Vibed.cpp Vibed.h NineButtonSelector.cpp NineButtonSelector.h \
+	         VibratingString.cpp VibratingString.h; do
+		extract Vibed "$f"
+	done
+	for f in Kicker.cpp Kicker.h KickerOsc.h; do
+		extract Kicker "$f"
+	done
 } >> "$HERE/ORIGIN.tsv"
 
 echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"
