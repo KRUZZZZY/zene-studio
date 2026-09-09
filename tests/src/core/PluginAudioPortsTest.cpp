@@ -360,6 +360,56 @@ private slots:
 		QCOMPARE(input.frames(), Engine::audioEngine()->framesPerPeriod());
 	}
 
+	//! `PluginAudioPorts<MonoInplace>`/`<QuadInplace>` instantiate the statically
+	//! in-place, non-interleaved buffer specialization. Only `channelName()` was
+	//! exercised before; drive its buffer lifecycle as well.
+	void planarInplaceBufferLifecycle()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		PluginAudioPorts<MonoInplace> mono{false};
+		QVERIFY(mono.buffers() != nullptr);
+		QCOMPARE(mono.buffers()->initialized(), false);
+		QCOMPARE(mono.buffers()->frames(), f_cnt_t{0});
+		QCOMPARE(mono.active(), false);
+
+		mono.init();
+
+		QCOMPARE(mono.active(), true);
+		QCOMPARE(mono.buffers()->initialized(), true);
+		QCOMPARE(mono.buffers()->frames(), frames);
+
+		auto monoInOut = mono.buffers()->inputOutput();
+		QCOMPARE(monoInOut.channels(), ch_cnt_t{1});
+		QCOMPARE(monoInOut.frames(), frames);
+		QVERIFY(monoInOut.bufferPtr(0) != nullptr);
+		monoInOut.sample(0, 0) = 0.25f;
+		QCOMPARE(monoInOut.sample(0, 0), 0.25f);
+
+		// 4x4 in-place: each channel pointer must address its own writable
+		// region of the buffer, laid out consecutively in one allocation
+		PluginAudioPorts<QuadInplace> quad{false};
+		quad.init();
+		QCOMPARE(quad.active(), true);
+		QCOMPARE(quad.buffers()->frames(), frames);
+
+		auto quadInOut = quad.buffers()->inputOutput();
+		QCOMPARE(quadInOut.channels(), ch_cnt_t{4});
+		QCOMPARE(quadInOut.frames(), frames);
+		for (ch_cnt_t channel = 0; channel < 4; ++channel)
+		{
+			quadInOut.sample(channel, 0) = static_cast<float>(channel) + 1.0f;
+		}
+		for (ch_cnt_t channel = 0; channel < 4; ++channel)
+		{
+			QCOMPARE(quadInOut.sample(channel, 0), static_cast<float>(channel) + 1.0f);
+		}
+		QCOMPARE(quadInOut.bufferPtr(1) - quadInOut.bufferPtr(0), frames);
+		QCOMPARE(quadInOut.bufferPtr(2) - quadInOut.bufferPtr(1), frames);
+		QCOMPARE(quadInOut.bufferPtr(3) - quadInOut.bufferPtr(2), frames);
+	}
+
 	void portsWithoutBuffersAreInactive()
 	{
 		NullBufferPorts<InterleavedStereo> ports{false};
