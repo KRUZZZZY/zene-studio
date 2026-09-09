@@ -119,6 +119,7 @@ private slots:
 	void SinkNodeSumsInputs();
 	void BaseNodeSettingsDefaults();
 	void ClearAndMoveSemantics();
+	void ProcessClampsToPreparedSize();
 };
 
 void RoutingGraphTest::ProcessesKnownBlock_data()
@@ -428,11 +429,25 @@ void RoutingGraphTest::NodeTopologyEdgeCases()
 	QVERIFY(!graph.connect(first, other, 0, 0, &error));
 	QCOMPARE(error, QStringLiteral("connection already exists"));
 
+	// negative ports are rejected as well — a negative source port must not be
+	// mistaken for a valid one (checked on a fresh pair so no duplicate exists)
+	const int third = graph.addNode(std::make_unique<GainNode>(3.f));
+	QVERIFY(third >= 0);
+	error.clear();
+	QVERIFY(!graph.connect(first, third, -1, 0, &error));
+	QCOMPARE(error, QStringLiteral("source port out of range"));
+	error.clear();
+	QVERIFY(!graph.connect(first, third, 0, -1, &error));
+	QCOMPARE(error, QStringLiteral("destination port out of range"));
+	QCOMPARE(graph.connections().size(), std::size_t(1));
+
 	// the output node is remembered and cleared with the node again
 	QVERIFY(graph.setOutputNode(other));
 	QCOMPARE(graph.outputNodeId(), other);
 	QVERIFY(graph.removeNode(other));
 	QCOMPARE(graph.outputNodeId(), -1);
+	// ...and every connection that referenced it is dropped with it
+	QVERIFY(graph.connections().empty());
 }
 
 void RoutingGraphTest::LoadMalformedDocuments()
@@ -574,6 +589,52 @@ void RoutingGraphTest::ClearAndMoveSemantics()
 	// a cleared graph does not process
 	moved.process(channel);
 	QCOMPARE(channel.buffer(0)[0], 0.25f);
+}
+
+//! process() must write only the prepared frame/channel window. The caller's
+//! buffer may legitimately be larger than the graph; everything outside the
+//! prepared window must stay untouched.
+void RoutingGraphTest::ProcessClampsToPreparedSize()
+{
+	constexpr f_cnt_t PreparedFrames = 16;
+	constexpr f_cnt_t BufferFrames = 32;
+	constexpr ch_cnt_t BufferChannels = 2;
+	constexpr float Untouched = -123.0f;
+
+	RoutingGraph graph;
+	const int sourceId = graph.addNode(std::make_unique<ConstantSourceNode>(0.5f));
+	const int gainId = graph.addNode(std::make_unique<GainNode>(1.0f));
+	QVERIFY(graph.connect(sourceId, gainId));
+	QVERIFY(graph.setOutputNode(gainId));
+	graph.prepare(PreparedFrames, 1);
+	QCOMPARE(graph.frames(), PreparedFrames);
+	QCOMPARE(graph.channels(), ch_cnt_t(1));
+
+	AudioBuffer channel(BufferFrames, BufferChannels);
+	for (ch_cnt_t c = 0; c < BufferChannels; ++c)
+	{
+		for (f_cnt_t f = 0; f < BufferFrames; ++f)
+		{
+			channel.buffer(c)[f] = Untouched;
+		}
+	}
+
+	graph.process(channel);
+
+	// the prepared window carries the signal...
+	for (f_cnt_t f = 0; f < PreparedFrames; ++f)
+	{
+		QCOMPARE(channel.buffer(0)[f], 0.5f);
+	}
+	// ...and neither the extra frames nor the extra channel are written to
+	for (f_cnt_t f = PreparedFrames; f < BufferFrames; ++f)
+	{
+		QCOMPARE(channel.buffer(0)[f], Untouched);
+	}
+	for (f_cnt_t f = 0; f < BufferFrames; ++f)
+	{
+		QCOMPARE(channel.buffer(1)[f], Untouched);
+	}
 }
 
 QTEST_GUILESS_MAIN(RoutingGraphTest)
