@@ -64,6 +64,15 @@ public:
 		return m_sampleRate;
 	}
 
+#ifdef LMMS_TESTING
+	//! Test-only: pin the device sample rate to a spec value.
+	//! The production setter is protected because the backend owns the rate;
+	//! unit tests that must run at a fixed rate (e.g. the 48 kHz sidechain
+	//! performance gate) need an explicit hook. Inline and non-virtual, so it
+	//! adds no ABI surface to the production build.
+	void setSampleRateForTesting(const sample_rate_t _new_sr) { setSampleRate(_new_sr); }
+#endif
+
 	void startProcessing();
 
 	void stopProcessing();

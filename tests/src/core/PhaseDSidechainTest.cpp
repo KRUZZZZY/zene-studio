@@ -116,7 +116,7 @@ private slots:
 		// AudioEngine::outputSampleRate(), i.e. the device rate, so pinning
 		// the dummy device pins the whole DSP path. Done before any effect
 		// is instantiated so plugin coefficients are computed for 48 kHz.
-		Engine::audioEngine()->audioDev()->setSampleRate(48000);
+		Engine::audioEngine()->audioDev()->setSampleRateForTesting(48000);
 		QVERIFY2(Engine::audioEngine()->outputSampleRate() == 48000u,
 			"the output sample rate did not follow the device rate");
 
