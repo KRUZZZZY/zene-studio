@@ -177,7 +177,7 @@ bool Lv2Instrument::handleMidiEvent(
 
 // not yet working
 #ifndef LV2_INSTRUMENT_USE_MIDI
-void Lv2Instrument::playNoteImpl(NotePlayHandle *nph, std::span<SampleFrame>)
+void Lv2Instrument::playNote(NotePlayHandle *nph, SampleFrame*)
 {
 }
 #endif
@@ -185,14 +185,16 @@ void Lv2Instrument::playNoteImpl(NotePlayHandle *nph, std::span<SampleFrame>)
 
 
 
-void Lv2Instrument::playImpl(std::span<SampleFrame> out)
+void Lv2Instrument::play(SampleFrame* buf)
 {
 	copyModelsFromLmms();
 
-	run(out.size());
+	f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+
+	run(fpp);
 
 	copyModelsToLmms();
-	copyBuffersToLmms(out.data(), out.size());
+	copyBuffersToLmms(buf, fpp);
 }
 
 

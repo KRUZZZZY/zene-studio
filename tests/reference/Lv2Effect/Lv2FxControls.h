@@ -1,5 +1,5 @@
 /*
- * Lv2Effect.h - implementation of LV2 effect
+ * Lv2FxControls.h - Lv2FxControls implementation
  *
  * Copyright (c) 2018-2023 Johannes Lorenz <jlsf2013$users.sourceforge.net, $=@>
  *
@@ -22,37 +22,51 @@
  *
  */
 
-#ifndef LV2_EFFECT_H
-#define LV2_EFFECT_H
+#ifndef LV2_FX_CONTROLS_H
+#define LV2_FX_CONTROLS_H
 
-#include "AudioPlugin.h"
-#include "Lv2FxControls.h"
+#include "EffectControls.h"
+#include "Lv2ControlBase.h"
 
 namespace lmms
 {
 
 
-// TODO: Add support for a variable number of audio input/output ports
-class Lv2Effect : public DefaultEffect
+class Lv2Effect;
+
+namespace gui
+{
+class Lv2FxControlDialog;
+}
+
+
+class Lv2FxControls : public EffectControls, public Lv2ControlBase
 {
 	Q_OBJECT
-
+signals:
+	void modelChanged();
 public:
-	/*
-		initialization
-	*/
-	Lv2Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* _key);
+	Lv2FxControls(Lv2Effect *effect, const QString &uri);
+	void reload();
 
-	EffectControls* controls() override { return &m_controls; }
+	void saveSettings(QDomDocument &_doc, QDomElement &_parent) override;
+	void loadSettings(const QDomElement &that) override;
+	inline QString nodeName() const override
+	{
+		return Lv2ControlBase::nodeName();
+	}
 
-	Lv2FxControls* lv2Controls() { return &m_controls; }
-	const Lv2FxControls* lv2Controls() const { return &m_controls; }
+	int controlCount() override;
+	gui::EffectControlDialog* createView() override;
+
+private slots:
+	void changeControl();
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	void onSampleRateChanged();
 
-	Lv2FxControls m_controls;
-	std::vector<SampleFrame> m_tmpOutputSmps;
+	friend class gui::Lv2FxControlDialog;
+	friend class Lv2Effect;
 };
 
 

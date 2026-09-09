@@ -108,6 +108,14 @@ auto referenceInstruments() -> const std::vector<ReferenceInstrument>&
 		{"audiofileprocessor", PART_C_REF_audiofileprocessor},
 		// Slice 6 (task #589)
 		{"lb302", PART_C_REF_lb302},
+		// Slice 8 (task #589): the asset-driven instruments, mirroring the
+		// test's list exactly.
+#ifdef PART_C_REF_sf2player
+		{"sf2player", PART_C_REF_sf2player},
+#endif
+#ifdef PART_C_REF_malletsstk
+		{"malletsstk", PART_C_REF_malletsstk},
+#endif
 	};
 	return instruments;
 }
@@ -206,6 +214,7 @@ int main(int argc, char** argv)
 
 		// Instruments are parented to an InstrumentTrack, exactly like the
 		// engine creates them (InstrumentTrack's constructor).
+		partc::prepareInstrumentEnvironment(m.plugin);
 		auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
 		auto* inst = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
 		if (inst == nullptr)
@@ -254,6 +263,45 @@ int main(int argc, char** argv)
 
 		renders.push_back(std::move(render));
 	}
+
+	// Slice 8 (task #589): LV2 host plugins, keyed by URI exactly like the
+	// test side, so both processes instantiate the same LV2 plugin.
+#ifdef PART_C_REF_lv2effect
+	for (const auto& spec : partc::lv2Specs())
+	{
+		if (QString::fromUtf8(spec.plugin) == QLatin1String("lv2effect"))
+		{
+			auto result = partc::renderKeyedEffect(PART_C_REF_lv2effect, spec, frames);
+			if (!result.loaded || !result.okay)
+			{
+				std::fprintf(stderr, "reference %s: %s (loaded=%d okay=%d)\n",
+					qPrintable(result.render.name), qPrintable(result.error),
+					result.loaded ? 1 : 0, result.okay ? 1 : 0);
+				return 2;
+			}
+			std::printf("reference %s: %zu samples, sha256=%s\n", qPrintable(result.render.name),
+				result.render.samples.size(), qPrintable(result.render.checksum));
+			renders.push_back(std::move(result.render));
+		}
+#ifdef PART_C_REF_lv2instrument
+		else
+		{
+			auto result = partc::renderKeyedInstrument(PART_C_REF_lv2instrument, spec, frames,
+				lmms::DefaultKey);
+			if (!result.loaded || !result.okay)
+			{
+				std::fprintf(stderr, "reference %s: %s (loaded=%d okay=%d)\n",
+					qPrintable(result.render.name), qPrintable(result.error),
+					result.loaded ? 1 : 0, result.okay ? 1 : 0);
+				return 2;
+			}
+			std::printf("reference %s: %zu samples, sha256=%s\n", qPrintable(result.render.name),
+				result.render.samples.size(), qPrintable(result.render.checksum));
+			renders.push_back(std::move(result.render));
+		}
+#endif
+	}
+#endif
 
 	if (!partc::writeRenders(outputPath, renders))
 	{

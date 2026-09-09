@@ -144,6 +144,24 @@ extract() { # extract <plugin-dir> <file>
 	         SlewDistortionControlDialog.h; do
 		extract SlewDistortion "$f"
 	done
+	# Slice 8 (task #589): the external-asset plugin hosts.
+	for f in Lv2Effect.cpp Lv2Effect.h Lv2FxControls.cpp Lv2FxControls.h \
+	         Lv2FxControlDialog.cpp Lv2FxControlDialog.h; do
+		extract Lv2Effect "$f"
+	done
+	for f in Lv2Instrument.cpp Lv2Instrument.h; do
+		extract Lv2Instrument "$f"
+	done
+	for f in Sf2Player.cpp Sf2Player.h PatchesDialog.cpp PatchesDialog.h PatchesDialog.ui \
+	         fluidsynthshims.h; do
+		extract Sf2Player "$f"
+	done
+	for f in GigPlayer.cpp GigPlayer.h PatchesDialog.cpp PatchesDialog.h PatchesDialog.ui; do
+		extract GigPlayer "$f"
+	done
+	for f in Mallets.cpp Mallets.h; do
+		extract Stk/Mallets "$f"
+	done
 } >> "$HERE/ORIGIN.tsv"
 
 echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"

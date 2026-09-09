@@ -38,7 +38,6 @@
 
 #include "AudioEngine.h"
 #include "ConfigManager.h"
-#include "SampleFrame.h"
 #include "endian_handling.h"
 #include "Engine.h"
 #include "FileDialog.h"
@@ -287,7 +286,7 @@ QString GigInstrument::getCurrentPatchName()
 
 
 // A key has been pressed
-void GigInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
+void GigInstrument::playNote( NotePlayHandle * _n, SampleFrame* )
 {
 	const float LOG440 = 2.643452676f;
 
@@ -318,13 +317,13 @@ void GigInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 
 // Process the notes and output a certain number of frames (e.g. 256, set in
 // the preferences)
-void GigInstrument::playImpl(std::span<SampleFrame> out)
+void GigInstrument::play( SampleFrame* _working_buffer )
 {
 	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
 	const auto rate = Engine::audioEngine()->outputSampleRate();
 
 	// Initialize to zeros
-	zeroSampleFrames(out.data(), out.size());
+	std::memset( &_working_buffer[0][0], 0, DEFAULT_CHANNELS * frames * sizeof( float ) );
 
 	m_synthMutex.lock();
 	m_notesMutex.lock();
@@ -461,14 +460,14 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 
 				if (inputFramesUsed == 0 && outputFramesGenerated == 0)
 				{
-					std::fill_n(&out[framesMixed], frames - framesMixed, SampleFrame{});
+					std::fill_n(&_working_buffer[framesMixed], frames - framesMixed, SampleFrame{});
 					break;
 				}
 
 				const auto framesToMix = std::min(outputFramesGenerated, frames - framesMixed);
 				for (auto i = f_cnt_t{0}; i < framesToMix; ++i)
 				{
-					out[framesMixed + i] += sample.m_mixBufferView[i];
+					_working_buffer[framesMixed + i] += sample.m_mixBufferView[i];
 				}
 
 				sample.m_sourceBufferView = sample.m_sourceBufferView.subspan(inputFramesUsed);
@@ -484,8 +483,8 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 	// Set gain properly based on volume control
 	for( f_cnt_t i = 0; i < frames; ++i )
 	{
-		out[i][0] *= m_gain.value();
-		out[i][1] *= m_gain.value();
+		_working_buffer[i][0] *= m_gain.value();
+		_working_buffer[i][1] *= m_gain.value();
 	}
 }
 

@@ -100,6 +100,15 @@ auto migratedInstruments() -> const std::vector<MigratedInstrument>&
 		{"audiofileprocessor", PART_C_MIGRATED_audiofileprocessor},
 		// Slice 6 (task #589)
 		{"lb302", PART_C_MIGRATED_lb302},
+		// Slice 8 (task #589): the asset-driven instruments. An entry exists
+		// only when its CMake module was added, i.e. when the build has the
+		// dependency AND the asset the harness needs to render it.
+#ifdef PART_C_MIGRATED_sf2player
+		{"sf2player", PART_C_MIGRATED_sf2player},
+#endif
+#ifdef PART_C_MIGRATED_malletsstk
+		{"malletsstk", PART_C_MIGRATED_malletsstk},
+#endif
 	};
 	return instruments;
 }
@@ -141,6 +150,7 @@ private slots:
 	void slice5InstrumentsAreLiveAndDistinct();
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
+	void slice8PluginsAreLiveAndExact();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -209,6 +219,7 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
 		QVERIFY2(entry != nullptr, m.plugin);
 
+		partc::prepareInstrumentEnvironment(m.plugin);
 		auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
 		auto* inst = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
 		QVERIFY2(inst != nullptr, m.plugin);
@@ -242,6 +253,34 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		m_migrated.push_back(std::move(render));
 		m_ladspa.push_back(std::move(result));
 	}
+
+	// 1d. Render the migrated LV2 host plugins (slice 8, task #589). Both
+	//     resolve their DSP from the Key's "uri" attribute, so they go through
+	//     the keyed render helpers instead of the plain entry point.
+#ifdef PART_C_MIGRATED_lv2effect
+	for (const auto& spec : partc::lv2Specs())
+	{
+		if (QString::fromUtf8(spec.plugin) == QLatin1String("lv2effect"))
+		{
+			auto result = partc::renderKeyedEffect(PART_C_MIGRATED_lv2effect, spec, frames);
+			QVERIFY2(result.loaded, qPrintable(result.error));
+			QVERIFY2(result.okay, qPrintable(QString{"%1: Lv2Effect did not instantiate %2"}
+				.arg(result.render.name, QString::fromUtf8(spec.uri))));
+			m_migrated.push_back(std::move(result.render));
+		}
+#ifdef PART_C_MIGRATED_lv2instrument
+		else
+		{
+			auto result = partc::renderKeyedInstrument(PART_C_MIGRATED_lv2instrument, spec, frames,
+				lmms::DefaultKey);
+			QVERIFY2(result.loaded, qPrintable(result.error));
+			QVERIFY2(result.okay, qPrintable(QString{"%1: Lv2Instrument did not instantiate %2"}
+				.arg(result.render.name, QString::fromUtf8(spec.uri))));
+			m_migrated.push_back(std::move(result.render));
+		}
+#endif
+	}
+#endif
 
 	// 2. Render the pre-migration reference sources in a separate process.
 	QTemporaryDir tmp;
@@ -297,6 +336,14 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 							   "(max|delta|=%2)"}
 						   .arg(migrated.name)
 						   .arg(worst, 0, 'g', 3)));
+	}
+
+	// 4. Migrated but not provable in this build: report each gap explicitly
+	//    so it can never be mistaken for a pass.
+	for (const auto& gap : partc::unprovenGaps())
+	{
+		qWarning().noquote() << QString{"UNPROVEN %1: %2"}
+			.arg(QString::fromUtf8(gap.plugin), QString::fromUtf8(gap.reason));
 	}
 }
 
@@ -508,6 +555,65 @@ void PluginPortsMigrationTest::slice7PluginsAreLiveAndExact()
 			   .arg(worst, 0, 'g', 3);
 	QVERIFY2(shifter->checksum != slew->checksum, "distinct plugins rendered identically");
 	QVERIFY2(worst > 1e-6f, "slice 7 comparison not sensitive");
+}
+
+/*!
+ * Slice 8 (task #589) negative control: every newly proven slice-8 render
+ * must be audible and pairwise distinct. Without this a host that failed to
+ * load its asset (an unloaded soundfont, a missing rawwave directory, an LV2
+ * plugin that never instantiated) would render silence on both sides and the
+ * sample-exact comparison would pass trivially.
+ */
+void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
+{
+	std::vector<QString> names;
+#ifdef PART_C_MIGRATED_sf2player
+	names.push_back(QStringLiteral("sf2player"));
+#endif
+#ifdef PART_C_MIGRATED_malletsstk
+	names.push_back(QStringLiteral("malletsstk"));
+#endif
+#ifdef PART_C_MIGRATED_lv2effect
+	names.push_back(QStringLiteral("lv2effect:ambience"));
+#endif
+#ifdef PART_C_MIGRATED_lv2instrument
+	names.push_back(QStringLiteral("lv2instrument:dx10"));
+#endif
+	QVERIFY2(!names.empty(), "no slice-8 plugin is built into this configuration");
+
+	for (const auto& name : names)
+	{
+		const auto* render = findRender(m_migrated, name.toUtf8().constData());
+		QVERIFY2(render != nullptr, qPrintable(name));
+
+		float peak = 0.0f;
+		for (const float s : render->samples)
+		{
+			peak = std::max(peak, std::fabs(s));
+		}
+		qInfo().noquote() << QString{"slice 8 negative control: %1 peak=%2"}
+			.arg(name).arg(peak, 0, 'g', 4);
+		QVERIFY2(peak > 1e-4f, qPrintable(QString{"%1 rendered silence"}.arg(name)));
+	}
+
+	for (std::size_t i = 0; i < names.size(); ++i)
+	{
+		for (std::size_t j = i + 1; j < names.size(); ++j)
+		{
+			const auto* a = findRender(m_migrated, names[i].toUtf8().constData());
+			const auto* b = findRender(m_reference, names[j].toUtf8().constData());
+			QVERIFY(a != nullptr && b != nullptr);
+
+			const float worst = partc::maxAbsDiff(a->samples, b->samples);
+			qInfo().noquote()
+				<< QString{"slice 8 negative control: %1 (migrated) vs %2 (reference) max|delta|=%3"}
+					   .arg(names[i], names[j])
+					   .arg(worst, 0, 'g', 3);
+			QVERIFY2(a->checksum != b->checksum,
+				qPrintable(QString{"%1 and %2 rendered identically"}.arg(names[i], names[j])));
+			QVERIFY2(worst > 1e-6f, "slice 8 comparison not sensitive");
+		}
+	}
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

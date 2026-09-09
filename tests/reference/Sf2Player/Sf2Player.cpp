@@ -650,7 +650,7 @@ void Sf2Instrument::reloadSynth()
 
 
 
-void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
+void Sf2Instrument::playNote( NotePlayHandle * _n, SampleFrame* )
 {
 	if( _n->isMasterNote() || ( _n->hasParent() && _n->isReleased() ) )
 	{
@@ -785,8 +785,10 @@ void Sf2Instrument::noteOff( Sf2PluginData * n )
 }
 
 
-void Sf2Instrument::playImpl(std::span<SampleFrame> out)
+void Sf2Instrument::play( SampleFrame* _working_buffer )
 {
+	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+
 	// set midi pitch for this period
 	const int currentMidiPitch = instrumentTrack()->midiPitch();
 	if( m_lastMidiPitch != currentMidiPitch )
@@ -808,7 +810,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 	// if we have no new noteons/noteoffs, just render a period and call it a day
 	if( m_playingNotes.isEmpty() )
 	{
-		renderFrames(out.size(), out.data());
+		renderFrames( frames, _working_buffer );
 		return;
 	}
 
@@ -835,7 +837,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 		auto currentData = static_cast<Sf2PluginData*>(currentNote->m_pluginData);
 		if( currentData->offset > currentFrame )
 		{
-			renderFrames(currentData->offset - currentFrame, out.data() + currentFrame);
+			renderFrames( currentData->offset - currentFrame, _working_buffer + currentFrame );
 			currentFrame = currentData->offset;
 		}
 		if( currentData->isNew )
@@ -862,9 +864,9 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 		}
 	}
 
-	if (currentFrame < out.size())
+	if( currentFrame < frames )
 	{
-		renderFrames(out.size() - currentFrame, out.data() + currentFrame);
+		renderFrames( frames - currentFrame, _working_buffer + currentFrame );
 	}
 }
 

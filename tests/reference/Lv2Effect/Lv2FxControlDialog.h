@@ -1,5 +1,5 @@
 /*
- * Lv2Effect.h - implementation of LV2 effect
+ * Lv2FxControlDialog.h - Lv2FxControlDialog implementation
  *
  * Copyright (c) 2018-2023 Johannes Lorenz <jlsf2013$users.sourceforge.net, $=@>
  *
@@ -22,39 +22,35 @@
  *
  */
 
-#ifndef LV2_EFFECT_H
-#define LV2_EFFECT_H
+#ifndef LV2_FX_CONTROL_DIALOG_H
+#define LV2_FX_CONTROL_DIALOG_H
 
-#include "AudioPlugin.h"
-#include "Lv2FxControls.h"
+#include "EffectControlDialog.h"
+#include "Lv2ViewBase.h"
 
 namespace lmms
 {
 
+class Lv2FxControls;
 
-// TODO: Add support for a variable number of audio input/output ports
-class Lv2Effect : public DefaultEffect
+namespace gui
+{
+
+class Lv2FxControlDialog : public EffectControlDialog, public Lv2ViewBase
 {
 	Q_OBJECT
 
 public:
-	/*
-		initialization
-	*/
-	Lv2Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* _key);
-
-	EffectControls* controls() override { return &m_controls; }
-
-	Lv2FxControls* lv2Controls() { return &m_controls; }
-	const Lv2FxControls* lv2Controls() const { return &m_controls; }
+	Lv2FxControlDialog(Lv2FxControls *controls);
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
-
-	Lv2FxControls m_controls;
-	std::vector<SampleFrame> m_tmpOutputSmps;
+	Lv2FxControls *lv2Controls();
+	void modelChanged() final;
+	void hideEvent(QHideEvent *event) override;
 };
 
+
+} // namespace gui
 
 } // namespace lmms
 
