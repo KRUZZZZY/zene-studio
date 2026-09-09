@@ -87,8 +87,13 @@ if not coverage:
 	sys.exit(2)
 
 now = {}
+totals = {}
+hits = {}
 for path, (total, hit) in coverage.items():
-	now[normalize(path)] = 100.0 if total == 0 else round(100.0 * hit / total, 2)
+	key = normalize(path)
+	totals[key] = total
+	hits[key] = hit
+	now[key] = 100.0 if total == 0 else round(100.0 * hit / total, 2)
 
 # --- load baseline -----------------------------------------------------------
 baseline = {}
@@ -98,24 +103,39 @@ if os.path.exists(baseline_path):
 			line = line.rstrip("\n")
 			if not line or line.startswith("#"):
 				continue
-			path, _, pct = line.partition("\t")
+			path, _, pct = line.partition("	")
 			baseline[path] = float(pct)
 
 # --- ratchet -----------------------------------------------------------------
+# Compare HIT LINES, not rounded percentages. One gcov line can flip between
+# runs on byte-identical code (thread scheduling, template/inline attribution),
+# so a file tolerates up to COVERAGE_JITTER_LINES lost lines (default 1); more
+# than that is a real regression. Any net gain raises the baseline.
+jitter_lines = int(os.environ.get("COVERAGE_JITTER_LINES", "1"))
 regressions, improvements, additions = [], [], []
 for path in sorted(now):
 	if path not in baseline:
 		additions.append(path)
 		continue
-	delta = now[path] - baseline[path]
-	if delta < -tolerance:
-		regressions.append((path, baseline[path], now[path]))
-	elif delta > tolerance:
-		improvements.append((path, baseline[path], now[path]))
+	total = totals.get(path, 0)
+	hit = hits.get(path, 0)
+	if total:
+		expected = round(baseline[path] * total / 100.0)
+		lost = expected - hit
+		if lost > jitter_lines:
+			regressions.append((path, baseline[path], now[path], total, lost))
+		elif lost < 0:
+			improvements.append((path, baseline[path], now[path]))
+	else:
+		delta = now[path] - baseline[path]
+		if delta < -tolerance:
+			regressions.append((path, baseline[path], now[path], 0, 0))
+		elif delta > tolerance:
+			improvements.append((path, baseline[path], now[path]))
 removed = sorted(set(baseline) - set(now))
 
-for path, old, new in regressions:
-	print(f"REGRESSION  {path}: {old:.2f}% -> {new:.2f}%")
+for path, old, new, total, lost in regressions:
+	print(f"REGRESSION  {path}: {old:.2f}% -> {new:.2f}%  ({lost} of {total} covered lines lost)")
 for path, old, new in improvements:
 	print(f"improved    {path}: {old:.2f}% -> {new:.2f}%")
 for path in additions:

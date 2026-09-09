@@ -93,7 +93,11 @@ jobs:
         if: ${{ inputs.capture_baseline }}
         run: |
           bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
-          bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info || true
+          # Drop the committed baseline first: with no baseline every file counts
+          # as an addition, so write mode records this run's numbers instead of
+          # refusing to write because the old baseline looks "regressed".
+          rm -f tests/coverage-baseline.tsv
+          bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info
           echo "--- captured baseline ---"
           cat tests/coverage-baseline.tsv
       - name: Upload the CI-captured baseline
