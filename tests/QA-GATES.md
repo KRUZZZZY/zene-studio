@@ -75,15 +75,30 @@ is met for the routing core (`RoutingGraph.cpp`, `RoutingNode.cpp`) but not
 yet for `AudioBus.cpp`/`AudioPortsModel.cpp`. The ratchet makes every future
 improvement permanent.
 
-## Gate 3: No tautological tests
+## Gate 3: No tautological tests (`no-tautology-gate.sh`) — WIRED 2026-09-09
 
-**Rule** (enforced by review, aided by coverage): every test must reference at
-least one SUT symbol and contain real assertions. Empty tests, `QVERIFY(true)`
-tests, and tests without assertions against production behaviour are banned.
-The two test files added with this gate (`AudioBusTest.cpp` — 13 slots,
-`RoutingGraphTest.cpp` — extended to 14 slots) each assert concrete values
-produced by the SUT, which the coverage numbers above confirm (unreachable-by-test
-code would show 0%).
+**Command**: `bash tests/no-tautology-gate.sh` (add `--strict` to also require at
+least one assertion per test slot).
+
+This was review-only, which contradicted this document's own first line ("if it is
+not checked by a script, it is not a gate"). It is now mechanical. For every QTest
+class registered in `tests/CMakeLists.txt`:
+
+1. it must declare at least one test slot (a function under `private slots:`);
+2. it must contain at least one real assertion macro
+   (`QVERIFY`/`QVERIFY2`/`QCOMPARE`/`QEXPECT_FAIL`/`QTRY_*`);
+3. it must not contain a literal tautology (`QVERIFY(true|false|1|0)`,
+   `QVERIFY2(true|false|1|0, ...)`).
+
+Helper executables that are registered but are not QTest classes
+(`TwoTrackAlsaCaptureProbe.cpp`, `TwoTrackRecordingHarness.cpp`,
+`PluginPortsMigrationReference.cpp`) are listed by the script as explicitly
+out of scope rather than silently skipped.
+
+**Measured (2026-09-09):** 16 registered QTest files, **all PASS** — 0 tautologies;
+the two heaviest are `ScriptBindingsTest.cpp` (267 slots / 246 assertions) and
+`RoutingGraphTest.cpp` (144 / 127). Coverage (Gate 2) is the corroborating signal:
+test-unreachable code shows 0%.
 
 ## Gate 4: Per-method complexity (`complexity-gate.sh`) — WIRED 2026-09-09
 

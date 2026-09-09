@@ -971,7 +971,7 @@ int LuaSong::masterVolume() const
 void LuaSong::setMasterVolume(int volume)
 {
 	ScriptCommand command = makeCommand(ScriptCommand::Type::SetMasterVolume);
-	command.i0 = std::clamp(volume, 0, 200);
+	command.f0 = static_cast<float>(std::clamp(volume, 0, 200));
 	ScriptEngine::instance()->enqueue(command);
 }
 

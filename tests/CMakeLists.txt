@@ -15,6 +15,7 @@ set(LMMS_TESTS
 	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/RoutingGraphTest.cpp
+	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/SlideNotesTest.cpp
 	src/core/TimelineTest.cpp

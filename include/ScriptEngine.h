@@ -71,7 +71,7 @@ struct ScriptCommand
 		SetClipName,		//!< object0 = Clip*, text = new name
 		SetClipLength,		//!< object0 = Clip*, i0 = length in ticks
 		SetTempo,		//!< i0 = bpm
-		SetMasterVolume,	//!< f0 = volume [0..1] (mapped to the 0..100 model)
+		SetMasterVolume,	//!< f0 = volume [0..200] (Song master volume model)
 		SetTrackName,		//!< object0 = Track*, text = new name
 		SetTrackVolume,		//!< object0 = Track*, f0 = volume [0..1]
 		Play,			//!< transport play
