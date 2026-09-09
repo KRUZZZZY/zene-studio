@@ -8,13 +8,18 @@ set(LMMS_TESTS
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
+	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
+	src/core/MultiTrackRecorderTest.cpp
+	src/core/PluginAudioPortsTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
+	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RoutingGraphTest.cpp
+	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/SlideNotesTest.cpp
 	src/core/TimelineTest.cpp
@@ -34,6 +39,21 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
+# gcov coverage instrumentation (see WANT_COVERAGE in the top-level
+# CMakeLists.txt). Applied to the unit-test executables only; the Part C
+# reference/migration targets below keep the plain debug build so behaviour
+# comparisons stay instrumentation-independent.
+set(LMMS_COVERAGE_FLAGS "")
+if(WANT_COVERAGE)
+	set(LMMS_COVERAGE_FLAGS "--coverage")
+endif()
+function(lmms_add_coverage TARGET)
+	if(LMMS_COVERAGE_FLAGS)
+		target_compile_options(${TARGET} PRIVATE ${LMMS_COVERAGE_FLAGS})
+		target_link_options(${TARGET} PRIVATE ${LMMS_COVERAGE_FLAGS})
+	endif()
+endfunction()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -52,6 +72,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
+	lmms_add_coverage(${LMMS_TEST_NAME})
 	# Lua scripting examples live in the source tree; tests run from build/tests.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")
@@ -468,3 +489,50 @@ if(TARGET lmms_clap)
 		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>"
 	)
 endif()
+
+# Instrument the plugin/gate test executables as well - they compile fork
+# sources directly, so their objects carry the coverage the ratchet tracks.
+# PluginPortsMigrationReference is deliberately left un-instrumented: the
+# reference side of the behaviour comparison must stay plain.
+foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapEffectIntegrationTest
+		WasmSandboxTest PluginPortsMigrationTest AudioPluginTest
+		synthetic_audio_plugin)
+	if(TARGET ${LMMS_GATE_TEST})
+		lmms_add_coverage(${LMMS_GATE_TEST})
+	endif()
+endforeach()
+
+# Synthetic plug-in host test (ported from the standards fork): builds a MODULE
+# plug-in from src/plugins/SyntheticAudioPlugin.cpp and drives it through the
+# AudioPlugin host path, so the host code is exercised for real.
+add_library(synthetic_audio_plugin MODULE src/plugins/SyntheticAudioPlugin.cpp)
+target_include_directories(synthetic_audio_plugin PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(synthetic_audio_plugin PRIVATE PLUGIN_NAME=synthetic)
+target_compile_features(synthetic_audio_plugin PRIVATE cxx_std_20)
+target_link_libraries(synthetic_audio_plugin PRIVATE ${QT_LIBRARIES})
+set_target_properties(synthetic_audio_plugin PROPERTIES PREFIX "")
+
+add_executable(AudioPluginTest src/plugins/AudioPluginTest.cpp)
+add_test(NAME AudioPluginTest COMMAND AudioPluginTest)
+target_include_directories(AudioPluginTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_static_libraries(AudioPluginTest PRIVATE lmmsobjs)
+target_link_libraries(AudioPluginTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(AudioPluginTest PRIVATE cxx_std_20)
+target_compile_definitions(AudioPluginTest PRIVATE
+	LMMS_TESTING
+	SYNTHETIC_PLUGIN_PATH="$<TARGET_FILE:synthetic_audio_plugin>"
+)
+set_target_properties(AudioPluginTest PROPERTIES ENABLE_EXPORTS ON)
+add_dependencies(AudioPluginTest synthetic_audio_plugin)
+set_tests_properties(AudioPluginTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+lmms_add_coverage(synthetic_audio_plugin)
+lmms_add_coverage(AudioPluginTest)

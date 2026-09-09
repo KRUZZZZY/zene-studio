@@ -110,6 +110,7 @@ option(WANT_DEBUG_TSAN	"Enable ThreadSanitizer" OFF)
 option(WANT_DEBUG_MSAN	"Enable MemorySanitizer" OFF)
 option(WANT_DEBUG_UBSAN	"Enable UndefinedBehaviorSanitizer" OFF)
 option(WANT_DEBUG_GPROF	"Enable gprof profiler" OFF)
+option(WANT_COVERAGE	"Build test targets with gcov coverage instrumentation" OFF)
 OPTION(BUNDLE_QT_TRANSLATIONS	"Install Qt translation files for LMMS" OFF)
 option(WANT_DEBUG_CPACK "Show detailed logs for packaging commands" OFF)
 option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an installer" OFF)
@@ -857,6 +858,21 @@ else()
 	set(STATUS_GPROF "Disabled ${STATUS_GPROF}")
 endif()
 
+# gcov coverage instrumentation for the test suite (GCC/Clang). Like the
+# sanitizers below, the flags are appended to the debug configuration so a
+# coverage build is opt-in via -DWANT_COVERAGE=ON; tests/CMakeLists.txt
+# applies them to the test targets only.
+SET(STATUS_COVERAGE "Disabled")
+if(WANT_COVERAGE)
+	if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+		SET(STATUS_COVERAGE "Enabled")
+		SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} --coverage")
+		SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} --coverage")
+	else()
+		SET(STATUS_COVERAGE "Wanted but disabled due to unsupported compiler")
+	endif()
+endif()
+
 # add enabled sanitizers
 function(add_sanitizer sanitizer supported_compilers want_flag status_flag)
 	if(${want_flag})
@@ -1024,6 +1040,7 @@ MESSAGE(
 "* Debug using UBSanitizer           : ${STATUS_DEBUG_UBSAN}\n"
 "* Debug packaging commands          : ${STATUS_DEBUG_CPACK}\n"
 "* Profile using GNU profiler        : ${STATUS_GPROF}\n"
+"* Test coverage instrumentation     : ${STATUS_COVERAGE}\n"
 "* Debug assertions                  : ${STATUS_ASSERTIONS}\n"
 "* Experimental Qt6 support          : ${STATUS_QT6}\n"
 "* WASM DSP sandbox                  : ${STATUS_WASM}\n"

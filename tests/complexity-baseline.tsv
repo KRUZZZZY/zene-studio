@@ -1,0 +1,25 @@
+# per-method CCN baseline for fork-NEW code (functions over the target only)
+# maintained by tests/complexity-gate.sh; do not edit by hand
+lmms::ExternalProcessStemSeparator::separate@238-451@src/core/ExternalProcessStemSeparator.cpp	41	198	214
+lmms::clap::HostedPlugin::load@469-636@plugins/ClapEffect/ClapHost.cpp	31	158	168
+lmms::ScriptEngine::applyCommand@485-601@src/core/ScriptEngine.cpp	29	100	117
+lmms::OnnxRuntimeStemSeparator::separate@91-241@src/core/OnnxRuntimeStemSeparator.cpp	27	135	151
+lmms::vst3::HostedPlugin::load@250-381@plugins/Vst3Effect/Vst3Host.cpp	25	122	132
+lmms::AudioPortsModel::updateDirectRouting@247-337@src/core/AudioPortsModel.cpp	23	64	91
+lmms::vst3::HostedPlugin::loadState@471-506@plugins/Vst3Effect/Vst3Host.cpp	18	36	36
+lmms::AudioBus::update@195-279@src/core/AudioBus.cpp	17	80	85
+lmms::AudioBus::sanitize@96-175@src/core/AudioBus.cpp	15	64	80
+lmms::RoutingGraph::connect@90-127@src/core/RoutingGraph.cpp	15	35	38
+lmms::RoutingGraph::rebuildPlan@310-362@src/core/RoutingGraph.cpp	15	42	53
+lmms::wasm::WasmSandbox::loadModuleBytes@336-420@src/wasm/WasmSandbox.cpp	15	75	85
+main@20-83@plugins/RnnoiseDenoiser/testdata/rnn_harness.c	15	58	64
+lmms::gui::PinConnector::paintEvent@184-313@src/gui/PinConnector.cpp	14	96	130
+lmms::ScriptEngine::resolveProjectPath@742-789@src/core/ScriptEngine.cpp	14	44	48
+lmms::clap::HostedPlugin::process@741-834@plugins/ClapEffect/ClapHost.cpp	13	84	94
+lmms::vst3::HostedPlugin::prepare@508-594@plugins/Vst3Effect/Vst3Host.cpp	13	75	87
+lmms::vst3::HostedPlugin::process@639-699@plugins/Vst3Effect/Vst3Host.cpp	12	53	61
+lmms::wasm::WasmWorker::processSlot@155-234@src/wasm/WasmWorker.cpp	12	68	80
+lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp	11	35	41
+lmms::clap::describe@65-86@plugins/ClapEffect/ClapHost.cpp	11	22	22
+lmms::StemModelStore::download@203-282@src/core/StemModelStore.cpp	11	71	80
+lmms::wasm::WasmWorker::run@89-153@src/wasm/WasmWorker.cpp	11	58	65

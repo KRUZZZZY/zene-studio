@@ -551,7 +551,9 @@ void ScriptEngine::applyCommand(const ScriptCommand& command)
 		break;
 
 	case ScriptCommand::Type::SetMasterVolume:
-		Engine::getSong()->setMasterVolume(static_cast<int>(command.f0));
+		// The enqueue side fills i0 (see LuaSong::setMasterVolume); f0 is
+		// unused for this command and reading it always applied 0.
+		Engine::getSong()->setMasterVolume(command.i0);
 		break;
 
 	case ScriptCommand::Type::SetTrackName:
