@@ -90,6 +90,6 @@ Zene Studio is built on LMMS (https://github.com/LMMS/lmms), licensed GNU GPL v2
 
 ## Naming
 
-The product name is **Zene Studio**. The repository rename from `lmms-complete`
-to `zene-studio` is deferred to the end of the naming transition; the plan and
+The product name is **Zene Studio**. The repository was renamed to
+`zene-studio` on 2026-09-09; the remaining code/branding items (wave R) and the
 checklist live in [DOCS-NAMING.md](DOCS-NAMING.md).

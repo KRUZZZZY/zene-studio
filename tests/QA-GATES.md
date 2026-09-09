@@ -1,6 +1,6 @@
 # QA Gates
 
-Executable quality gates for **`lmms-complete`** — the derived product repo —
+Executable quality gates for **`zene-studio`** — the derived product repo —
 ported from the LMMS standards fork on 2026-09-09. Every gate is a script under
 this directory; nothing in this document is aspirational — if it is not checked
 by a script, it is not a gate.
@@ -95,7 +95,7 @@ Fourteen fork files are at **100%**: `RoutingGraph.cpp`, `RoutingNode.cpp`,
 Journey: **63.0%** (gate introduction) -> **66.17%** (pre-push baseline) ->
 **82.75%** -> **85.24%** (2026-09-09). Every step is held by the ratchet.
 
-**Product run — `lmms-complete`, first measured 2026-09-09**: **76.07%
+**Product run — `zene-studio`, first measured 2026-09-09**: **76.07%
 (2661/3498 lines)** over **47 measured files** of the 97 in scope.
 
 | Directory                 | Lines | Hit  | Rate   |
@@ -263,7 +263,7 @@ deliberately uncompilable mutant and requires INVALID.
 **Measured (2026-09-09, gcc 13, seed 0, 30 of 170 candidates): 27 killed, 3 survived,
 0 invalid → kill score 27/30 = 90.0%** (threshold 80%).
 
-**Product run (`lmms-complete`, 2026-09-09, same seed/candidates): the first
+**Product run (`zene-studio`, 2026-09-09, same seed/candidates): the first
 attempt scored 43.3% — FAIL.** The cause was test drift, not weak code: the
 product's `RoutingGraphTest.cpp` was 355 lines against the standards fork's
 641, so mutants on paths the fork's later tests cover survived here. After
