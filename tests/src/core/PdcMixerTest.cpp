@@ -53,6 +53,7 @@
 #include "Engine.h"
 #include "LatencyCompensation.h"
 #include "Mixer.h"
+#include "PlayHandle.h"
 #include "Plugin.h"
 #include "SampleFrame.h"
 
@@ -169,6 +170,48 @@ int windowStart()
 {
 	return kLatency + 3 * static_cast<int>(periodFrames());
 }
+
+//! Captures the one-shot PDC capacity diagnostic (B-1) while forwarding every
+//! message to the previously installed handler, so test output is unchanged.
+int g_pdcCapacityWarnings = 0;
+QString g_lastPdcCapacityWarning;
+QtMessageHandler g_previousMessageHandler = nullptr;
+
+void capturePdcCapacityWarnings(QtMsgType type, const QMessageLogContext& context,
+	const QString& message)
+{
+	if (type == QtWarningMsg && message.contains(QStringLiteral("PDC delay-line capacity")))
+	{
+		++g_pdcCapacityWarnings;
+		g_lastPdcCapacityWarning = message;
+	}
+	if (g_previousMessageHandler != nullptr)
+	{
+		g_previousMessageHandler(type, context, message);
+	}
+}
+
+//! Fills its buffer with the shared deterministic signal, one frame per
+//! sample, so two handles render the same absolute signal (B-2).
+class RampPlayHandle : public PlayHandle
+{
+public:
+	RampPlayHandle() : PlayHandle{PlayHandle::Type::InstrumentPlayHandle, 0} {}
+
+	void play(std::span<SampleFrame> buffer) override
+	{
+		for (f_cnt_t f = 0; f < buffer.size(); ++f)
+		{
+			buffer[f] = frameAt(m_pos++);
+		}
+	}
+
+	bool isFinished() const override { return false; }
+	bool isFromTrack(const Track*) const override { return false; }
+
+private:
+	int m_pos = 0;
+};
 
 } // namespace
 
@@ -432,6 +475,161 @@ private slots:
 		QVERIFY2(sameHash,
 			"bypass vs no-FX is not bit-identical; the PDC path changed behaviour");
 		QVERIFY2(differsWhenActive, "the sensitivity control did not differ");
+	}
+
+	//! B-1 (audit follow-up): a chain whose reported latency exceeds the
+	//! delay-line capacity must be diagnosed once on the control thread, and
+	//! the published total must be clamped to what the graph can actually
+	//! apply. At the cap the acceptance behaviour is unchanged: the null still
+	//! cancels to exact zero.
+	void latencyAboveTheCapIsClampedAndDiagnosed()
+	{
+		auto mixer = Engine::mixer();
+		const int cap = LatencyCompensation::MaxFrames;
+		const int over = cap + 116; // the audit probe's over-cap value
+		const int periods = 72;
+		const int from = over + 3 * static_cast<int>(periodFrames());
+		const int to = periods * static_cast<int>(periodFrames());
+
+		g_pdcCapacityWarnings = 0;
+		g_lastPdcCapacityWarning.clear();
+		g_previousMessageHandler = qInstallMessageHandler(capturePdcCapacityWarnings);
+
+		auto buildNull = [mixer](int reportedLatency) {
+			mixer->clear();
+			while (mixer->numChannels() < 3) { mixer->createChannel(); }
+			EffectChain* chain = chainOf(mixer, 2);
+			chain->appendEffect(
+				new LatentDelayEffect(chain, reportedLatency, reportedLatency));
+			chain->appendEffect(new FixedGainEffect(chain, -1.0f, -1.0f));
+		};
+
+		// Above the cap: the graph cannot align, so the null must comb.
+		buildNull(over);
+		const int warningsAfterOverCap = g_pdcCapacityWarnings;
+		const auto combed = renderSignal(mixer, {1, 2}, periods);
+		const double combedDb = rmsDb(combed, from, to);
+		const int totalOverCap = mixer->totalLatencyFrames();
+
+		// At the cap: exact cancellation, as before the change.
+		buildNull(cap);
+		const auto cancelled = renderSignal(mixer, {1, 2}, periods);
+		const double cancelledDb = rmsDb(cancelled, from, to);
+		const int totalAtCap = mixer->totalLatencyFrames();
+
+		const int warningsTotal = g_pdcCapacityWarnings;
+		const QString warningText = g_lastPdcCapacityWarning;
+		qInstallMessageHandler(g_previousMessageHandler);
+
+		evidence("PDC_CAP cap=%d over=%d total_over_cap=%d combed_dbfs=%.2f "
+			"total_at_cap=%d cancelled_at_cap_dbfs=%.2f cancelled_at_cap_rms=%.9g "
+			"capacity_warnings=%d warnings_after_over_cap=%d",
+			cap, over, totalOverCap, combedDb, totalAtCap, cancelledDb,
+			rmsLinear(cancelled, from, to), warningsTotal, warningsAfterOverCap);
+
+		QVERIFY2(totalOverCap == cap,
+			qPrintable(QString("published total %1 was not clamped to the "
+				"applicable %2 frames").arg(totalOverCap).arg(cap)));
+		QVERIFY2(combedDb >= -20.0,
+			"the over-cap graph did not comb; the clamp is not real");
+		QVERIFY2(warningsAfterOverCap == 1,
+			qPrintable(QString("expected exactly one capacity diagnostic, got %1")
+				.arg(warningsAfterOverCap)));
+		QVERIFY2(warningText.contains(QStringLiteral("capacity exceeded")),
+			"the diagnostic does not describe the capacity clamp");
+		QVERIFY2(totalAtCap == cap,
+			"a chain at the cap must publish the unclamped value");
+		QVERIFY2(cancelledDb <= -60.0,
+			qPrintable(QString("the at-cap null only reached %1 dBFS")
+				.arg(cancelledDb)));
+		QVERIFY2(warningsTotal == 1,
+			"a chain at the cap must not emit a capacity diagnostic");
+	}
+
+	//! B-2 (audit follow-up): the direct track-input path
+	//! (AudioBusHandle::doProcessing) must delay a track to the alignment point
+	//! of the channel it feeds. Two handles feed one channel, one through a
+	//! latent chain; the channel sum must be the coherent 2*x[n-N], not the
+	//! combed x[n] + x[n-N]. The same DSP reporting 0 is the must-differ
+	//! control (the pre-PDC situation).
+	void handleInputPathIsCompensated()
+	{
+		auto mixer = Engine::mixer();
+		const int from = windowStart();
+		const int to = kPeriods * static_cast<int>(periodFrames());
+
+		auto renderHandles = [mixer](int reportedLatency) {
+			mixer->clear();
+			while (mixer->numChannels() < 2) { mixer->createChannel(); }
+
+			AudioBusHandle dry{QStringLiteral("pdc-handle-dry"), false};
+			dry.setNextMixerChannel(1);
+			AudioBusHandle latent{QStringLiteral("pdc-handle-latent"), true};
+			latent.setNextMixerChannel(1);
+			EffectChain* chain = latent.effects();
+			chain->appendEffect(new LatentDelayEffect(chain, kLatency, reportedLatency));
+
+			RampPlayHandle phDry;
+			RampPlayHandle phLatent;
+			dry.addPlayHandle(&phDry);
+			latent.addPlayHandle(&phLatent);
+
+			std::vector<SampleFrame> out;
+			out.reserve(static_cast<std::size_t>(kPeriods) * periodFrames());
+			for (int p = 0; p < kPeriods; ++p)
+			{
+				phDry.doProcessing();
+				phLatent.doProcessing();
+				// The real period order: alignment pass, then the handle
+				// workers, then the channels.
+				mixer->prepareMasterMix();
+				SampleFrame* channel = mixer->mixerChannel(1)->m_buffer;
+				for (f_cnt_t f = 0; f < periodFrames(); ++f)
+				{
+					channel[f] = SampleFrame{};
+				}
+				dry.doProcessing();
+				latent.doProcessing();
+				for (f_cnt_t f = 0; f < periodFrames(); ++f)
+				{
+					out.push_back(channel[f]);
+				}
+				AutomatableModel::incrementPeriodCounter();
+			}
+
+			dry.removePlayHandle(&phDry);
+			latent.removePlayHandle(&phLatent);
+			return out;
+		};
+
+		const auto compensated = renderHandles(kLatency);
+		const int inputLatency = mixer->channelInputLatency(1);
+		const double levelDb = rmsDb(compensated, from, to);
+		const double alignedDb = residualDb(compensated, from, to, kLatency, 2.0);
+		const double unshiftedDb = residualDb(compensated, from, to, 0, 1.0);
+
+		const auto control = renderHandles(0);
+		const double controlDb = residualDb(control, from, to, kLatency, 2.0);
+
+		evidence("PDC_HANDLE latency=%d in_latency_ch1=%d level_dbfs=%.2f "
+			"aligned_vs_2x_shifted_dbfs=%.2f aligned_rms=%.9g "
+			"vs_unshifted_dbfs=%.2f control_vs_2x_shifted_dbfs=%.2f",
+			kLatency, inputLatency, levelDb, alignedDb,
+			residualRms(compensated, from, to, kLatency, 2.0),
+			unshiftedDb, controlDb);
+
+		QVERIFY2(inputLatency == kLatency,
+			qPrintable(QString("channel input latency %1 != %2")
+				.arg(inputLatency).arg(kLatency)));
+		QVERIFY2(alignedDb <= -60.0,
+			qPrintable(QString("the handle path only aligned to %1 dBFS")
+				.arg(alignedDb)));
+		QVERIFY2(controlDb >= -20.0,
+			"the under-reporting control did not misalign the handle path");
+		QVERIFY2(controlDb - std::max(alignedDb, -240.0) >= 40.0,
+			"the compensated handle path is not decisively better than the control");
+		QVERIFY2(sha256(compensated) != sha256(control),
+			"the compensated and under-reported handle renders are identical");
 	}
 };
 

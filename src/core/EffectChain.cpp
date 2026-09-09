@@ -25,6 +25,7 @@
 
 #include "EffectChain.h"
 
+#include <QDebug>
 #include <QDomElement>
 #include <algorithm>
 #include <cassert>
@@ -33,6 +34,7 @@
 #include "AudioBuffer.h"
 #include "Effect.h"
 #include "DummyEffect.h"
+#include "LatencyCompensation.h"
 
 namespace lmms
 {
@@ -61,6 +63,21 @@ void EffectChain::refreshLatency()
 				frames += std::max(0, effect->latencyFrames());
 			}
 		}
+	}
+	// The delay lines that align this chain at a summing point cannot apply
+	// more than LatencyCompensation::MaxFrames (#605). Report a chain that
+	// exceeds that bound once, on the control thread: the mixer then clamps
+	// the alignment it publishes, and compensation against this chain may be
+	// incomplete. This is the only place the diagnostic can live -- the audio
+	// thread may not call qWarning (it locks and may allocate).
+	if (frames > LatencyCompensation::MaxFrames && !m_latencyClampWarned)
+	{
+		m_latencyClampWarned = true;
+		qWarning("EffectChain: PDC delay-line capacity exceeded: this chain "
+			"reports %d frames of latency, the delay lines can apply at most "
+			"%d; delays above the capacity are clamped, so compensation "
+			"against this chain may be incomplete.",
+			frames, LatencyCompensation::MaxFrames);
 	}
 	m_latencyFrames.store(frames, std::memory_order_relaxed);
 }

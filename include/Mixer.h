@@ -354,6 +354,12 @@ public:
 
 	//! PDC (#605): total latency from a source entering the mixer to the
 	//! master output. A null test shifts its dry reference by this amount.
+	//! When a requested alignment exceeds what the delay lines can apply
+	//! (LatencyCompensation::MaxFrames) the value is clamped to that bound, so
+	//! it never advertises a compensation the graph cannot honour; the
+	//! exceeding chain reports the shortfall once on the control thread
+	//! (EffectChain::refreshLatency). At or below the bound this is the exact
+	//! requested value.
 	int totalLatencyFrames() const
 	{
 		return m_totalLatencyFrames.load(std::memory_order_relaxed);

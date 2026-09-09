@@ -106,6 +106,10 @@ private:
 	//! Cached chain latency for the PDC graph (#605); see latencyFrames().
 	std::atomic<int> m_latencyFrames{0};
 
+	//! One-shot guard for the "chain latency exceeds the delay-line capacity"
+	//! diagnostic; only touched on the control thread.
+	bool m_latencyClampWarned = false;
+
 
 	friend class gui::EffectRackView;
 

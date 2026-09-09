@@ -1304,11 +1304,19 @@ void Mixer::updateLatencyCompensation()
 		m_mixerChannels[i]->setInputLatencyFrames(m_latencyInputScratch[i]);
 	}
 
+	// A requested delay above the ring capacity is clamped by the delay line
+	// itself (LatencyCompensation::effectiveDelay); track whether any edge
+	// needs more than the graph can apply so the published total can report
+	// only what the graph can honour (#605 follow-up, audit B-1).
+	const int cap = LatencyCompensation::MaxFrames;
+	bool clamped = false;
+
 	// Regular sends: delay the sender so it lands on the receiver's point.
 	for (MixerRoute* route : m_mixerRoutes)
 	{
 		const int delay = m_latencyInputScratch[route->receiverIndex()]
 			- m_latencyOutputScratch[route->senderIndex()];
+		clamped = clamped || delay > cap;
 		route->setCompensationFrames(std::max(delay, 0));
 	}
 
@@ -1320,12 +1328,36 @@ void Mixer::updateLatencyCompensation()
 			? m_latencyInputScratch[sender]
 			: m_latencyOutputScratch[sender];
 		const int delay = m_latencyInputScratch[route->receiverIndex()] - tap;
+		clamped = clamped || delay > cap;
 		route->setCompensationFrames(std::max(delay, 0));
 	}
 
+	// Direct track inputs are delayed by the handle itself (see
+	// AudioBusHandle::doProcessing), which uses the same cap.
+	if (Engine::audioEngine() != nullptr)
+	{
+		for (const AudioBusHandle* handle : Engine::audioEngine()->audioBusHandles())
+		{
+			const mix_ch_t channel = handle->nextMixerChannel();
+			if (channel < count && !m_mixerChannels[channel]->isBus())
+			{
+				clamped = clamped
+					|| (m_latencyInputScratch[channel]
+						- std::max(0, handle->latencyFrames())) > cap;
+			}
+		}
+	}
+
+	const int masterChain =
+		std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames());
+	const int alignment = m_latencyInputScratch[0];
+	// The alignment point is realised by delaying the earlier paths; no path
+	// can be delayed by more than the ring capacity, so a clamped alignment
+	// cannot be honoured. Publish what the graph can actually apply, keeping
+	// the master chain's own (always applied) latency on top. At or below the
+	// cap this is the exact requested value.
 	m_totalLatencyFrames.store(
-		m_latencyInputScratch[0]
-			+ std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames()),
+		(clamped ? std::min(alignment, cap) : alignment) + masterChain,
 		std::memory_order_relaxed);
 }
 
