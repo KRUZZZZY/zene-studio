@@ -55,10 +55,17 @@ mkdir -p "${COVERAGE_DIR}"
 GCOV_TOOL="$(command -v gcov)"
 LCOV_IGNORE=("--ignore-errors" "mismatch" "--ignore-errors" "unused" "--ignore-errors" "empty" "--ignore-errors" "inconsistent")
 
+# Capture-time only: geninfo reports "negative" counters on multithreaded runs
+# (a known gcov artifact when .gcda files are updated concurrently) and warns
+# about unexecuted inline-header blocks. Neither is a coverage signal, so they
+# are suppressed here and only here (genhtml does not accept these names).
+LCOV_CAPTURE_IGNORE=("${LCOV_IGNORE[@]}" "--ignore-errors" "negative"
+	"-rc" "geninfo_unexecuted_blocks=1")
+
 lcov --capture --directory "${BUILD_DIR}" \
 	--output-file "${COVERAGE_DIR}/coverage.info" \
 	--gcov-tool "${GCOV_TOOL}" \
-	"${LCOV_IGNORE[@]}"
+	"${LCOV_CAPTURE_IGNORE[@]}"
 
 # Keep only the fork's own code: everything under src/include/plugins that is
 # also a fork-added source (fork-sources.txt) or one of its headers. This is
