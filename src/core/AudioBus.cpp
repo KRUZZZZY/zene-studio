@@ -25,6 +25,7 @@
 #include "AudioBus.h"
 
 #include <algorithm>
+#include <iostream>
 #include <type_traits>
 
 #include "AudioPortsModel.h"
@@ -337,7 +338,9 @@ void AudioBus::silenceChannels(const AudioPortsModel& apm)
 
 void AudioBus::silenceAllChannels()
 {
-	for (ch_cnt_t tc = 0; tc < m_channelPairs; tc += 2)
+	// m_channelPairs counts *pairs*, not track channels: step one pair at a
+	// time (as sanitizeAll() does) so that every pair is zeroed.
+	for (ch_cnt_t tc = 0; tc < m_channelPairs; ++tc)
 	{
 		std::fill_n(m_bus[tc], m_frames, SampleFrame{});
 	}
