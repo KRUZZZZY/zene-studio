@@ -28,7 +28,13 @@ declare -a RESULTS
 fail=0
 
 banner() { printf '\n================ Gate %s: %s ================\n' "$1" "$2"; }
-record() { RESULTS+=("$1|$2|$3"); [[ "$3" != "PASS" ]] && fail=1; }
+# NOTE: record must always return 0. It is called as `cmd && record PASS || record FAIL`,
+# so a non-zero return from the PASS branch would fall through and record FAIL as well.
+record() {
+	RESULTS+=("$1|$2|$3")
+	if [[ "$3" != "PASS" ]]; then fail=1; fi
+	return 0
+}
 
 # ---- Gate 1: unit tests -----------------------------------------------------
 banner 1 "unit tests (ctest)"

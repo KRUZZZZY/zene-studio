@@ -12,6 +12,7 @@
 # Mechanical rule, for every file changed in <base>..HEAD:
 #   - tests/**            -> allowed (that is the point of the gate)
 #   - build/config files  -> allowed, non-behavioural (CMakeLists.txt, .gitignore, *.cmake)
+#   - CI config           -> allowed, non-runtime (.github/**)
 #   - fork-NEW sources    -> allowed (listed in tests/fork-sources.txt)
 #   - any other production source -> VIOLATION unless listed in
 #     tests/upstream-modifications.txt with a reason (compile-only fixes).
@@ -45,6 +46,7 @@ for f in "${CHANGED[@]}"; do
 	case "$f" in
 		tests/*) verdict="tests (allowed)" ;;
 		CMakeLists.txt|.gitignore|*.cmake|*/CMakeLists.txt) verdict="build/config (allowed)" ;;
+		.github/*) verdict="CI config (allowed, non-runtime)" ;;
 		*.md) verdict="docs (allowed)" ;;
 		*)
 			if grep -qxF "$f" <<< "$FORK_NEW"; then verdict="fork-NEW (allowed)"
