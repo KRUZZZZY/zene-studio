@@ -57,6 +57,19 @@ add_dependencies(PhaseDSidechainTest compressor)
 # lmms host (src/CMakeLists.txt) and the Part C plugin tests below.
 set_target_properties(PhaseDSidechainTest PROPERTIES ENABLE_EXPORTS ON)
 
+# D3 per-send CPU gate (task #587): standalone benchmark, deliberately NOT
+# registered with ctest because it is timing-sensitive. Run manually:
+#   ./tests/PhaseDPerfBench
+add_executable(PhaseDPerfBench src/core/PhaseDPerfBench.cpp)
+target_include_directories(PhaseDPerfBench PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_static_libraries("PhaseDPerfBench" PRIVATE lmmsobjs)
+target_link_libraries(PhaseDPerfBench PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(PhaseDPerfBench PRIVATE cxx_std_20)
+target_compile_definitions(PhaseDPerfBench PRIVATE LMMS_TESTING)
+
 # ---------------------------------------------------------------------------
 # Part C (task #585) - behaviour-preservation harness for the AudioPorts
 # plugin migration.
