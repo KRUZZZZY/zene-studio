@@ -127,6 +127,10 @@ public:
 	//! Copy this channel's signal at the given tap point into the private
 	//! intermediate buffer of every outgoing sidechain send using that mode.
 	void writeSidechainTaps(const SidechainTapPoint point, const f_cnt_t frames);
+	//! Number of incoming sidechain routes that gate this channel's
+	//! scheduling. Deferred routes never gate (spec 5.2), so they are
+	//! excluded here.
+	int gatingSidechainReceives() const;
 
 	auto color() const -> const std::optional<QColor>& { return m_color; }
 	void setColor(const std::optional<QColor>& color) { m_color = color; }
@@ -208,7 +212,7 @@ class MixerSidechainRoute : public QObject
 	Q_OBJECT
 public:
 	MixerSidechainRoute( MixerChannel * from, MixerChannel * to, float amount,
-			SidechainTapPoint mode );
+			SidechainTapPoint mode, bool deferred = false );
 
 	mix_ch_t senderIndex() const
 	{
@@ -254,6 +258,27 @@ public:
 
 	void clearIntermediate();
 
+	//! A deferred route closes a cycle through at least one regular send, so
+	//! it must not gate its receiver (spec 5.2: sidechain edges never create
+	//! circular waits). The receiver reads the previous period's committed
+	//! tap instead of the current intermediate.
+	bool deferred() const
+	{
+		return m_deferred;
+	}
+
+	//! Tap snapshot the receiver reads for a deferred route: the sender's
+	//! intermediate as committed at the start of the current period.
+	const AudioBuffer& committed() const
+	{
+		return m_committed;
+	}
+
+	//! Copy the current intermediate into the committed snapshot. Runs on
+	//! the control thread in Mixer::prepareMasterMix() before the period's
+	//! workers start; pre-allocated, so no allocation on the audio path.
+	void commitIntermediate();
+
 	void updateName();
 
 	private:
@@ -262,6 +287,8 @@ public:
 		FloatModel m_amount;
 		SidechainTapPoint m_mode;
 		AudioBuffer m_intermediate;
+		bool m_deferred;
+		AudioBuffer m_committed;
 };
 
 
@@ -328,6 +355,10 @@ public:
 	//! Cycle check over the union of regular and sidechain edges, so a
 	//! sidechain edge can never deadlock the dependency counter.
 	bool checkInfiniteLoop( MixerChannel * from, MixerChannel * to );
+	//! True when adding from->to would close a cycle made of sidechain sends
+	//! alone. Such a cycle has no regular send to anchor the ordering, so it
+	//! is refused outright (see createSidechainSend).
+	bool checkSidechainCycle( MixerChannel * from, MixerChannel * to );
 
 	// determine if adding a send from sendFrom to
 	// sendTo would result in an infinite mixer loop.

@@ -64,7 +64,7 @@ void MixerRoute::updateName()
 
 
 MixerSidechainRoute::MixerSidechainRoute( MixerChannel * from, MixerChannel * to,
-			float amount, SidechainTapPoint mode ) :
+			float amount, SidechainTapPoint mode, bool deferred ) :
 	m_from( from ),
 	m_to( to ),
 	m_amount(amount, 0, 1, 0.001f, nullptr,
@@ -72,15 +72,32 @@ MixerSidechainRoute::MixerSidechainRoute( MixerChannel * from, MixerChannel * to
 	m_mode( mode ),
 	// one private intermediate buffer per (sender, receiver) pair: the sender
 	// worker writes only this buffer, the receiver worker sums it post-hoc.
-	m_intermediate( Engine::audioEngine()->framesPerPeriod(), 2 )
+	m_intermediate( Engine::audioEngine()->framesPerPeriod(), 2 ),
+	m_deferred( deferred ),
+	// deferred routes deliver the previous period's tap; the snapshot is
+	// pre-allocated here so the audio path only ever copies into it.
+	m_committed( Engine::audioEngine()->framesPerPeriod(), 2 )
 {
 	m_intermediate.silenceAllChannels();
+	m_committed.silenceAllChannels();
 }
 
 
 void MixerSidechainRoute::clearIntermediate()
 {
 	m_intermediate.silenceAllChannels();
+}
+
+
+void MixerSidechainRoute::commitIntermediate()
+{
+	for( ch_cnt_t ch = 0; ch < 2; ++ch )
+	{
+		auto src = m_intermediate.buffer( ch );
+		auto dst = m_committed.buffer( ch );
+		std::copy( src.begin(), src.end(), dst.begin() );
+	}
+	m_committed.updateSilenceFlags( 0b11 );
 }
 
 
@@ -140,8 +157,14 @@ inline void MixerChannel::processed()
 	// Phase D: a sidechain send is also a scheduling edge. The receiver must
 	// run after the sender has written the sender's private intermediate
 	// buffer, otherwise the post-hoc sum would read a partial or stale tap.
+	// Deferred routes are the exception: they close a cycle through a regular
+	// send, so they must not gate (spec 5.2) and are skipped here.
 	for( const MixerSidechainRoute * receiverRoute : m_sidechainSends )
 	{
+		if( receiverRoute->deferred() )
+		{
+			continue;
+		}
 		if( receiverRoute->receiver()->m_muted == false )
 		{
 			receiverRoute->receiver()->incrementDeps();
@@ -149,10 +172,23 @@ inline void MixerChannel::processed()
 	}
 }
 
+int MixerChannel::gatingSidechainReceives() const
+{
+	int count = 0;
+	for( const MixerSidechainRoute * route : m_sidechainReceives )
+	{
+		if( ! route->deferred() )
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
 void MixerChannel::incrementDeps()
 {
 	const auto i = m_dependenciesMet++ + 1;
-	if( i >= m_receives.size() + m_sidechainReceives.size() && ! m_queued )
+	if( i >= m_receives.size() + gatingSidechainReceives() && ! m_queued )
 	{
 		m_queued = true;
 		AudioEngineWorkerThread::addJob( this );
@@ -236,7 +272,12 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 
 	for( MixerSidechainRoute * route : m_sidechainReceives )
 	{
-		const AudioBuffer& src = route->intermediate();
+		// Deferred routes do not gate their receiver, so the current
+		// intermediate may not have been written yet this period: read the
+		// snapshot committed in prepareMasterMix() instead (one period late).
+		const AudioBuffer& src = route->deferred()
+			? route->committed()
+			: route->intermediate();
 		const float amount = route->mode() == SidechainTapPoint::PostFaderNoGain
 			? 1.0f
 			: route->amount()->value();
@@ -258,7 +299,11 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 				dst1[f] += s1[f] * amount;
 			}
 		}
-		route->clearIntermediate();
+		if( ! route->deferred() )
+		{
+			// deferred routes are consumed by the commit instead
+			route->clearIntermediate();
+		}
 	}
 	m_sidechainBuffer.updateSilenceFlags(0b11);
 }
@@ -830,15 +875,29 @@ MixerSidechainRoute * Mixer::createSidechainSend( mix_ch_t fromChannel,
 		}
 	}
 
-	// a sidechain edge is part of the scheduling graph, so reject routes that
-	// would close a cycle (they would deadlock the dependency counter).
-	if( checkInfiniteLoop(from, to) )
+	// can't send master to anything (legacy rule, kept for sidechain sends)
+	if( from == m_mixerChannels[0] )
 	{
 		return nullptr;
 	}
 
+	// A cycle made of sidechain sends alone has no regular send to anchor
+	// the ordering, so it is refused outright.
+	if( checkSidechainCycle(from, to) )
+	{
+		return nullptr;
+	}
+
+	// A cycle through at least one regular send cannot be ordered either,
+	// but a sidechain send is observation-only (spec 5.2: it never creates a
+	// circular wait), so the route is accepted as deferred: it does not gate
+	// its receiver and the receiver reads the previous period's committed
+	// tap. Refusing it would silently drop the send (see
+	// MixerRoutingBackwardCompatTest::phaseDProjectRoundTripsThroughSaveLoad).
+	const bool deferred = checkInfiniteLoop(from, to);
+
 	Engine::audioEngine()->requestChangeInModel();
-	auto route = new MixerSidechainRoute(from, to, amount, mode);
+	auto route = new MixerSidechainRoute(from, to, amount, mode, deferred);
 	from->m_sidechainSends.push_back(route);
 	to->m_sidechainReceives.push_back(route);
 	m_mixerSidechainRoutes.push_back(route);
@@ -970,9 +1029,10 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 	}
 
 	// follow sendTo's outputs recursively looking for something that sends
-	// to sendFrom. Phase D: sidechain edges are traversed as well, because a
-	// sidechain send is a scheduling dependency and a cycle through one would
-	// deadlock the dependency counter.
+	// to sendFrom. Phase D: gating sidechain edges are traversed as well,
+	// because a non-deferred sidechain send is a scheduling dependency and a
+	// cycle through one would deadlock the dependency counter. Deferred
+	// routes never gate, so they cannot deadlock and are skipped.
 	for (const auto& send : to->m_sends)
 	{
 		if (checkInfiniteLoop(from, send->receiver()))
@@ -982,12 +1042,36 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 	}
 	for (const auto& send : to->m_sidechainSends)
 	{
+		if (send->deferred())
+		{
+			continue;
+		}
 		if (checkInfiniteLoop(from, send->receiver()))
 		{
 			return true;
 		}
 	}
 
+	return false;
+}
+
+
+bool Mixer::checkSidechainCycle( MixerChannel * from, MixerChannel * to )
+{
+	// would adding from->to close a cycle made of sidechain sends alone?
+	// There is no regular send to anchor the ordering, so such a route is
+	// refused instead of deferred (see createSidechainSend).
+	if( from == to )
+	{
+		return true;
+	}
+	for( const auto& send : to->m_sidechainSends )
+	{
+		if( checkSidechainCycle(from, send->receiver()) )
+		{
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -1042,6 +1126,20 @@ void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 void Mixer::prepareMasterMix()
 {
 	m_mixerChannels[0]->m_bus.silenceAllChannels();
+
+	// Phase D: publish the deferred sidechain taps. A deferred route closes a
+	// cycle through a regular send, so it must not gate its receiver (spec
+	// 5.2); the receiver instead reads the previous period's snapshot. This
+	// runs on the audio render path (AudioEngine::renderStageNoteSetup)
+	// before the period's workers start and only copies between pre-allocated
+	// buffers (no allocation, no locking).
+	for( MixerSidechainRoute * route : m_mixerSidechainRoutes )
+	{
+		if( route->deferred() )
+		{
+			route->commitIntermediate();
+		}
+	}
 }
 
 
@@ -1066,7 +1164,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 			ch->processed();
 			ch->done();
 		}
-		else if( ch->m_receives.size() == 0 && ch->m_sidechainReceives.size() == 0 )
+		else if( ch->m_receives.size() == 0 && ch->gatingSidechainReceives() == 0 )
 		{
 			ch->m_queued = true;
 			AudioEngineWorkerThread::addJob( ch );
