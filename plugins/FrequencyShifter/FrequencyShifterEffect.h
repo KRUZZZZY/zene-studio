@@ -24,7 +24,7 @@
 #ifndef LMMS_FREQUENCY_SHIFTER_EFFECT_H
 #define LMMS_FREQUENCY_SHIFTER_EFFECT_H
 
-#include "Effect.h"
+#include "AudioPlugin.h"
 #include "FrequencyShifterControls.h"
 
 #include "HilbertTransform.h"
@@ -39,14 +39,14 @@
 namespace lmms
 {
 
-class FrequencyShifterEffect : public Effect
+class FrequencyShifterEffect : public DefaultEffect
 {
 	Q_OBJECT
 public:
 	FrequencyShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~FrequencyShifterEffect() override = default;
 
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
 	EffectControls* controls() override
 	{
 		return &m_controls;

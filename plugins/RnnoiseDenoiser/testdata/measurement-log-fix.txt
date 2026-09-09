@@ -1,0 +1,76 @@
+##############################################################################
+# 1. SOURCE SANITY
+##############################################################################
+source speechlike_noise_2s_48k.wav: frames=96000 sr=48000 peak=0.3200 RMS=-21.85 dBFS
+  speech seg 0.10-0.70s RMS=-22.11 dBFS | noise-only 0.85-1.15s RMS=-45.05 dBFS
+edge source speechlike_noise_2s_plus100.wav: frames=96100 (= 200*480 + 100; 96100 mod 480 = 100)
+
+##############################################################################
+# 2. PER-FILE MEASUREMENTS (all renders, 4.0 s @ 48 kHz stereo, mono mixdown)
+##############################################################################
+A_denoised(1.0scale)     frames= 192000 finite=True  peak=    0.301240 (  -10.42 dBFS) RMS=   -27.05 dB
+B_bypassed(on=0)         frames= 192000 finite=True  peak=    0.319977 (   -9.90 dBFS) RMS=   -24.89 dB
+C_nofx(1.0scale)         frames= 192000 finite=True  peak=    0.319977 (   -9.90 dBFS) RMS=   -24.89 dB
+D_float_nofx(x32768)     frames= 192000 finite=True  peak=10485.000000 (   80.41 dBFS) RMS=    65.42 dB
+E_float_denoised         frames= 192000 finite=True  peak= 6738.000000 (   76.57 dBFS) RMS=    45.38 dB
+F_bogus_plugin           frames= 192000 finite=True  peak=    0.319977 (   -9.90 dBFS) RMS=   -24.89 dB
+EDGE_denoised            frames= 192000 finite=True  peak=    0.301240 (  -10.42 dBFS) RMS=   -27.05 dB
+EDGE_nofx                frames= 192000 finite=True  peak=    0.319977 (   -9.90 dBFS) RMS=   -24.88 dB
+
+per-segment RMS (dBFS):
+file                      speech1 .1-.7  noise .85-1.15  speech2 1.3-1.9  tail 2.1-3.9
+A_denoised(1.0scale)             -21.74          -69.10           -25.56       -117.62
+B_bypassed(on=0)                 -22.11          -45.05           -20.92          -inf
+C_nofx(1.0scale)                 -22.11          -45.05           -20.92          -inf
+D_float_nofx(x32768)              68.20           45.26            69.39          -inf
+E_float_denoised                  36.93            1.22             4.78        -34.78
+F_bogus_plugin                   -22.11          -45.05           -20.92          -inf
+EDGE_denoised                    -21.74          -69.10           -25.56       -125.57
+EDGE_nofx                        -22.11          -45.05           -20.92          -inf
+
+##############################################################################
+# 3. A-B-C DIFFERENCES (int16-scale sample; plugin active vs bypassed vs absent)
+##############################################################################
+A_denoised(1.0scale)   vs B_bypassed(on=0)    : RMS(all)   -2.17 dB | speech   +0.37 dB | noise-only  -24.05 dB | max|diff| 0.473155 | identical=False
+A_denoised(1.0scale)   vs C_nofx(1.0scale)    : RMS(all)   -2.17 dB | speech   +0.37 dB | noise-only  -24.05 dB | max|diff| 0.473155 | identical=False
+B_bypassed(on=0)       vs C_nofx(1.0scale)    : RMS(all)   +0.00 dB | speech   +0.00 dB | noise-only   +0.00 dB | max|diff| 0.000000 | identical=True
+F_bogus_plugin         vs C_nofx(1.0scale)    : RMS(all)   +0.00 dB | speech   +0.00 dB | noise-only   +0.00 dB | max|diff| 0.000000 | identical=True
+
+##############################################################################
+# 4. SCALE EXPERIMENT (same plugin binary, float sample at RNNoise's native scale)
+##############################################################################
+speech1      rmsD=  2569.4915 rmsE=    70.2472  E/D=   0.0273  ( -31.26 dB)
+NOISE-ONLY   rmsD=   183.1663 rmsE=     1.1506  E/D=   0.0063  ( -44.04 dB)
+speech2      rmsD=  2948.0669 rmsE=     1.7338  E/D=   0.0006  ( -64.61 dB)
+silent tail  rmsD=     0.0000 rmsE=     0.0182  E/D=18243994563817975921617403904.0000  (   +inf dB)
+overall: rmsD=1866.7137 rmsE=185.7604 (-20.04 dB) | peakD=10485.0 peakE=6738.0
+noise-only band levels dB(E/D):
+       0-   200 Hz:  -40.01 dB
+     200-  1000 Hz:  -41.99 dB
+    1000-  4000 Hz:  -77.92 dB
+    4000-  8000 Hz: -141.10 dB
+    8000- 16000 Hz: -186.60 dB
+   16000- 24000 Hz: -195.36 dB
+
+##############################################################################
+# 5. EDGE CASE (96100-frame clip = 200 full frames + 100-sample partial frame)
+##############################################################################
+EDGE_denoised finite=True  EDGE_nofx finite=True
+last non-zero sample: EDGE_denoised=103268 (2.151417 s)  EDGE_nofx=96099 (2.002063 s)   [clip ends at frame 96100 = 2.002083 s]
+  tail 2.00-2.01s: rms EDGE_denoised=0.000003  EDGE_nofx=0.056264
+  tail 2.01-2.05s: rms EDGE_denoised=0.000097  EDGE_nofx=0.000000
+  tail 2.05-2.10s: rms EDGE_denoised=0.000029  EDGE_nofx=0.000000
+  tail 2.10-2.50s: rms EDGE_denoised=0.000001  EDGE_nofx=0.000000
+max|EDGE_denoised - EDGE_nofx| = 0.473155
+
+##############################################################################
+# 6. LATENCY ESTIMATE (A vs C, normalised cross-correlation)
+##############################################################################
+model: A[n] ~= C[n-L]  ->  maximise normalised corr over L
+  speech1    : best lag=1435 samples =  29.90 ms  (normalised corr +0.9854)
+  noise-only : best lag=1439 samples =  29.98 ms  (normalised corr +0.1391)
+  speech2    : best lag=1116 samples =  23.25 ms  (normalised corr +0.6786)
+NOTE: 3 x 480 = 1440 samples is the structural latency (480 dry while the
+first frame fills + 2 x 480 for RNNoise's overlap-add analysis/synthesis).
+The speech segments also show near-equal correlation aliases at the pitch
+period; the noise-only segment (corr > 0.997) pins the delay unambiguously.

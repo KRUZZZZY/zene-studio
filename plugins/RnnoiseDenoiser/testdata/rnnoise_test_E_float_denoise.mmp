@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!DOCTYPE multimedia-project>
+<multimedia-project version="1.0" creator="LMMS" creatorversion="1.3.0" type="song">
+  <head timesig_numerator="4" mastervol="100" timesig_denominator="4" bpm="120" masterpitch="0" />
+  <song>
+    <trackcontainer width="600" x="5" y="5" maximized="0" height="300" visible="1" type="song" minimized="0">
+      <track muted="0" type="2" name="DenoiseTest">
+        <sampletrack vol="100" pan="0" mixch="0">
+          <fxchain numofeffects="1" enabled="1">
+            <effect name="rnnoisedenoiser" on="1" wet="1" autoquit="1">
+              <RnnoiseDenoiserControls/>
+              <key/>
+            </effect>
+          </fxchain>
+        </sampletrack>
+        <sampleclip pos="0" len="240" muted="0" src="/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/speechlike_noise_2s_48k_x32768.wav" off="0" autoresize="1" sample_rate="48000"/>
+      </track>
+    </trackcontainer>
+    <mixer width="865" x="5" y="310" maximized="0" height="278" visible="1" minimized="0">
+      <mixerchannel num="0" muted="0" volume="1" name="Master">
+        <fxchain numofeffects="0" enabled="0"/>
+      </mixerchannel>
+    </mixer>
+    <controllerrackview width="258" x="880" y="310" maximized="0" height="278" visible="1" minimized="0"/>
+    <timeline lp1pos="192" lp0pos="0" lpstate="0"/>
+    <controllers/>
+  </song>
+</multimedia-project>

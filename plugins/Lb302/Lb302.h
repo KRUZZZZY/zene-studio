@@ -34,6 +34,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <span>
 
 #include "Hardware.h"
 #include "Instrument.h"
@@ -142,8 +143,8 @@ class Lb302Synth : public Instrument
 
 public:
 	Lb302Synth(InstrumentTrack*);
-	void play(SampleFrame* working_buffer) override;
-	void playNote(NotePlayHandle* nph, SampleFrame* working_buffer) override;
+	void playImpl(std::span<SampleFrame> out) override;
+	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 	void deleteNotePluginData(NotePlayHandle* nph) override;
 	void saveSettings(QDomDocument& doc, QDomElement& el) override;
 	void loadSettings(const QDomElement& el) override;

@@ -152,7 +152,29 @@ public:
 		return m_parent;
 	}
 
+	//! Phase D: set the owning chain when the effect is appended, so that
+	//! sidechainBuffer() also works for directly-constructed effects
+	//! (Effect::instantiate() sets it for factory-created ones).
+	void setEffectChain( EffectChain * _chain )
+	{
+		m_parent = _chain;
+	}
+
+	//! Sidechain input for the current processing block, or nullptr when the
+	//! owning channel has no incoming sidechain sends (Phase D, spec 4.2).
+	//! Delivered through the EffectChain back-pointer so the processImpl()
+	//! signature stays unchanged.
+	const AudioBuffer* sidechainBuffer() const;
+
 	virtual EffectControls * controls() = 0;
+
+	//! Frames of latency this effect adds to the signal path.
+	//! Latency-compensating hosts (see mixer/SPEC-dynamic-routing.md) query
+	//! this to align parallel paths. Defaults to 0 for zero-latency effects.
+	virtual int latencyFrames() const
+	{
+		return 0;
+	}
 
 	static Effect * instantiate( const QString & _plugin_name,
 				Model * _parent,

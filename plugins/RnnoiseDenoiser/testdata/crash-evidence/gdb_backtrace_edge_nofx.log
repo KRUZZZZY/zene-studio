@@ -1,0 +1,78 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[New Thread 0x7ffff27ff6c0 (LWP 3908310)]
+[New Thread 0x7ffff1ffe6c0 (LWP 3908311)]
+[New Thread 0x7ffff17fd6c0 (LWP 3908312)]
+[New Thread 0x7ffff0ffc6c0 (LWP 3908313)]
+[Thread 0x7ffff0ffc6c0 (LWP 3908313) exited]
+[Thread 0x7ffff1ffe6c0 (LWP 3908311) exited]
+[Thread 0x7ffff17fd6c0 (LWP 3908312) exited]
+[Thread 0x7ffff27ff6c0 (LWP 3908310) exited]
+[New Thread 0x7ffff0ffc6c0 (LWP 3908328)]
+[New Thread 0x7ffff17fd6c0 (LWP 3908329)]
+[New Thread 0x7ffff1ffe6c0 (LWP 3908330)]
+[New Thread 0x7ffff27ff6c0 (LWP 3908331)]
+[New Thread 0x7fffe3fff6c0 (LWP 3908332)]
+[New Thread 0x7fffe37fe6c0 (LWP 3908333)]
+[New Thread 0x7fffe2ffd6c0 (LWP 3908334)]
+[New Thread 0x7fffe27fc6c0 (LWP 3908335)]
+[New Thread 0x7fffe1ffb6c0 (LWP 3908336)]
+[New Thread 0x7fffe17fa6c0 (LWP 3908337)]
+[New Thread 0x7fffe0ff96c0 (LWP 3908338)]
+[New Thread 0x7fffc3fff6c0 (LWP 3908339)]
+[New Thread 0x7fffc37fe6c0 (LWP 3908340)]
+[New Thread 0x7fffc2ffd6c0 (LWP 3908341)]
+[New Thread 0x7fffc27fc6c0 (LWP 3908342)]
+[New Thread 0x7fffc1ffb6c0 (LWP 3908343)]
+[New Thread 0x7fffc17fa6c0 (LWP 3908344)]
+[New Thread 0x7fffc0ff96c0 (LWP 3908345)]
+[New Thread 0x7fffa3fff6c0 (LWP 3908346)]
+[New Thread 0x7fffa37fe6c0 (LWP 3908347)]
+[Thread 0x7fffa37fe6c0 (LWP 3908347) exited]
+[New Thread 0x7fffa37fe6c0 (LWP 3908351)]
+PERFLOG |       Project Render | 0.02user, 0.07system 0.03elapsed
+[Thread 0x7fffa37fe6c0 (LWP 3908351) exited]
+[Thread 0x7ffff27ff6c0 (LWP 3908331) exited]
+[Thread 0x7fffc2ffd6c0 (LWP 3908341) exited]
+[Thread 0x7fffc1ffb6c0 (LWP 3908343) exited]
+[Thread 0x7fffc37fe6c0 (LWP 3908340) exited]
+[Thread 0x7fffe2ffd6c0 (LWP 3908334) exited]
+[Thread 0x7fffe37fe6c0 (LWP 3908333) exited]
+[Thread 0x7fffc27fc6c0 (LWP 3908342) exited]
+[Thread 0x7ffff1ffe6c0 (LWP 3908330) exited]
+[Thread 0x7fffe27fc6c0 (LWP 3908335) exited]
+[Thread 0x7ffff0ffc6c0 (LWP 3908328) exited]
+[Thread 0x7fffc17fa6c0 (LWP 3908344) exited]
+[Thread 0x7fffc3fff6c0 (LWP 3908339) exited]
+[Thread 0x7fffe3fff6c0 (LWP 3908332) exited]
+[Thread 0x7fffe0ff96c0 (LWP 3908338) exited]
+[Thread 0x7fffa3fff6c0 (LWP 3908346) exited]
+[Thread 0x7fffe1ffb6c0 (LWP 3908336) exited]
+[Thread 0x7fffe17fa6c0 (LWP 3908337) exited]
+QThread: Destroyed while thread is still running
+
+Thread 1 "lmms" received signal SIGABRT, Aborted.
+__pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+warning: 44	./nptl/pthread_kill.c: No such file or directory
+
+=== BACKTRACE ===
+#0  __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+#1  __pthread_kill_internal (signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:78
+#2  __GI___pthread_kill (threadid=<optimized out>, signo=signo@entry=6) at ./nptl/pthread_kill.c:89
+#3  0x00007ffff5e4527e in __GI_raise (sig=sig@entry=6) at ../sysdeps/posix/raise.c:26
+#4  0x00007ffff5e288ff in __GI_abort () at ./stdlib/abort.c:79
+#5  0x00007ffff6aa8e5f in qAbort() () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6aa9232 in QMessageLogger::fatal(char const*, ...) const () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6ac2c57 in ?? () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x0000555555689560 in lmms::AudioEngineWorkerThread::~AudioEngineWorkerThread() ()
+#9  0x00007ffff6b76fb7 in QObjectPrivate::deleteChildren() () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+#10 0x00007ffff6b7a548 in QObject::~QObject() () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+#11 0x000055555568812d in lmms::AudioEngine::~AudioEngine() ()
+#12 0x00005555556d1b5e in lmms::Engine::destroy() ()
+#13 0x0000555555643741 in main ()

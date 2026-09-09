@@ -27,6 +27,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "AudioBuffer.h"
 #include "embed.h"
 #include "lmms_math.h"
 #include "plugin_export.h"
@@ -55,7 +56,7 @@ Plugin::Descriptor PLUGIN_EXPORT compressor_plugin_descriptor =
 
 
 CompressorEffect::CompressorEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	Effect(&compressor_plugin_descriptor, parent, key),
+	AudioPlugin(&compressor_plugin_descriptor, parent, key),
 	m_compressorControls(this)
 {
 	m_sampleRate = Engine::audioEngine()->outputSampleRate();
@@ -236,7 +237,7 @@ void CompressorEffect::calcMix()
 
 
 
-Effect::ProcessStatus CompressorEffect::processImpl(SampleFrame* buf, const f_cnt_t frames)
+ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
 	m_cleanedBuffers = false;
 
@@ -261,9 +262,20 @@ Effect::ProcessStatus CompressorEffect::processImpl(SampleFrame* buf, const f_cn
 	const bool feedback = m_compressorControls.m_feedbackModel.value();
 	const bool lookahead = m_compressorControls.m_lookaheadModel.value();
 
-	for(f_cnt_t f = 0; f < frames; ++f)
+	// Phase D (task #587): native external sidechain. When the mixer delivers
+	// a sidechain signal to this channel, the detector listens to that signal
+	// instead of the channel signal, so this compressor can duck the channel
+	// from another source without a Peak Controller workaround. The audio
+	// path below is unchanged; only the detector input is replaced.
+	const AudioBuffer* scBuffer = sidechainBuffer();
+	const float* sc0 = scBuffer ? scBuffer->buffer(0).data() : nullptr;
+	const float* sc1 = scBuffer ? scBuffer->buffer(1).data() : nullptr;
+
+	// Frame index alongside the range-for so the sidechain key can be read.
+	f_cnt_t f = 0;
+	for (float* frame : inOut.framesView())
 	{
-		auto drySignal = std::array{buf[f][0], buf[f][1]};
+		auto drySignal = std::array{frame[0], frame[1]};
 		auto s = std::array{drySignal[0] * m_inGainVal, drySignal[1] * m_inGainVal};
 
 		// Calculate tilt filters, to bias the sidechain to the low or high frequencies
@@ -288,7 +300,16 @@ Effect::ProcessStatus CompressorEffect::processImpl(SampleFrame* buf, const f_cn
 
 		for (int i = 0; i < 2; i++)
 		{
-			float inputValue = (feedback && !lookahead) ? m_prevOut[i] : s[i];
+			float inputValue;
+			if (scBuffer)
+			{
+				// external sidechain key input
+				inputValue = (i == 0) ? sc0[f] : sc1[f];
+			}
+			else
+			{
+				inputValue = (feedback && !lookahead) ? m_prevOut[i] : s[i];
+			}
 
 			// Calculate the crest factor of the audio by diving the peak by the RMS
 			m_crestPeakVal[i] = qMax(qMax(COMP_NOISE_FLOOR, inputValue * inputValue), m_crestTimeConst * m_crestPeakVal[i] + (1 - m_crestTimeConst) * (inputValue * inputValue));
@@ -493,10 +514,10 @@ Effect::ProcessStatus CompressorEffect::processImpl(SampleFrame* buf, const f_cn
 		// Calculate wet/dry value results
 		const float temp1 = delayedDrySignal[0];
 		const float temp2 = delayedDrySignal[1];
-		buf[f][0] = d * temp1 + w * s[0];
-		buf[f][1] = d * temp2 + w * s[1];
-		buf[f][0] = (1 - m_mixVal) * temp1 + m_mixVal * buf[f][0];
-		buf[f][1] = (1 - m_mixVal) * temp2 + m_mixVal * buf[f][1];
+		frame[0] = d * temp1 + w * s[0];
+		frame[1] = d * temp2 + w * s[1];
+		frame[0] = (1 - m_mixVal) * temp1 + m_mixVal * frame[0];
+		frame[1] = (1 - m_mixVal) * temp2 + m_mixVal * frame[1];
 
 		if (--m_lookWrite < 0) { m_lookWrite = m_lookBufLength - 1; }
 
@@ -504,6 +525,7 @@ Effect::ProcessStatus CompressorEffect::processImpl(SampleFrame* buf, const f_cn
 		rInPeak = drySignal[1] > rInPeak ? drySignal[1] : rInPeak;
 		lOutPeak = s[0] > lOutPeak ? s[0] : lOutPeak;
 		rOutPeak = s[1] > rOutPeak ? s[1] : rOutPeak;
+		++f;
 	}
 
 	m_compressorControls.m_outPeakL = lOutPeak;

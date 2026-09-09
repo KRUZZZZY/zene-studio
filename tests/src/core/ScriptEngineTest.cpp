@@ -28,8 +28,12 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QTemporaryDir>
+#include <cmath>
 
+#include "AutomatableModel.h"
 #include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -43,6 +47,11 @@
 #define LUA_SCRIPT_DIR "data/scripts"
 #endif
 
+//! Build-tree plugin dir, injected by tests/CMakeLists.txt.
+#ifndef LMMS_TEST_PLUGIN_DIR
+#define LMMS_TEST_PLUGIN_DIR "plugins"
+#endif
+
 class ScriptEngineTest : public QObject
 {
 	Q_OBJECT
@@ -50,6 +59,9 @@ private slots:
 	void initTestCase()
 	{
 		using namespace lmms;
+		// Tell PluginFactory where the build-tree plugins live *before* it is
+		// first instantiated (it reads LMMS_PLUGIN_DIR in its constructor).
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
 		Engine::init(true);
 	}
 
@@ -378,6 +390,130 @@ assert(string ~= nil and table ~= nil and math ~= nil, "safe stdlib missing")
 		QCOMPARE(engine->lastApplyThread(), QThread::currentThread());
 		QVERIFY2(engine->lastApplyThread() != engine->workerThread(),
 			"engine state must never be mutated on the script worker thread");
+	}
+
+	// --- G4: Instrument binding (spec section 3) ---
+
+	void testInstrumentParameterReadWrite()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+
+		// A real plugin, loaded through the normal InstrumentTrack path. The
+		// test binary exports its symbols and knows the build-tree plugin dir
+		// (tests/CMakeLists.txt), so plugin modules resolve core symbols the
+		// same way they do inside the lmms executable.
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::patternStore()));
+		QVERIFY2(track != nullptr, "could not create an instrument track");
+		Instrument* instrument = track->loadInstrument("tripleoscillator");
+		QVERIFY(instrument != nullptr);
+		QCOMPARE(instrument->displayName(), QStringLiteral("TripleOscillator"));
+
+		const int count = instrument->parameterCount();
+		QVERIFY2(count > 0, "instrument exposes no named parameters");
+		QVERIFY2(!instrument->parameterName(0).isEmpty(), "parameter 0 has no name");
+		qInfo() << "C++ side: instrument" << instrument->displayName()
+			<< "parameterCount" << count << "parameterName(0)"
+			<< instrument->parameterName(0);
+
+		AutomatableModel* model = instrument->parameterModel(0);
+		QVERIFY2(model != nullptr, "parameter 0 has no model");
+		const float minimum = model->minValue<float>();
+		const float maximum = model->maxValue<float>();
+		const float before = model->value<float>();
+		QVERIFY2(maximum > minimum, "parameter has no usable range");
+
+		// Pick a target inside the range that differs from the current value.
+		float target = 40.0f;
+		if (target < minimum || target > maximum
+			|| qFuzzyCompare(target + 1.0f, before + 1.0f))
+		{
+			target = (before + maximum) / 2.0f;
+		}
+		QVERIFY2(!qFuzzyCompare(target + 1.0f, before + 1.0f),
+			"target value must differ from the current value");
+		qInfo().noquote() << QString("C++ side: %1 = %2 (range %3..%4), target %5")
+			.arg(instrument->parameterName(0))
+			.arg(double(before), 0, 'f', 4)
+			.arg(double(minimum), 0, 'f', 4)
+			.arg(double(maximum), 0, 'f', 4)
+			.arg(double(target), 0, 'f', 4);
+
+		// Read AND write the same parameter from Lua. Every assert runs inside
+		// the script, so a wrong read or a lost write fails the run itself.
+		const QString source = QStringLiteral(R"(
+local track = lmms.song():patternStore():track(0)
+local instrument = track:asInstrumentTrack():instrument()
+assert(instrument:isValid(), 'instrument wrapper invalid')
+assert(instrument:name() == 'TripleOscillator', 'unexpected instrument: ' .. instrument:name())
+local count = instrument:parameterCount()
+assert(count > 0, 'instrument exposes no parameters')
+local model = instrument:parameterModel(%1)
+assert(model:isValid(), 'parameter model invalid')
+local read = model:value()
+assert(math.abs(read - %3) < 0.0001, string.format('read %.4f, expected %.4f', read, %3))
+lmms.log():info(string.format('read  %s (%s) = %.4f range %.4f..%.4f',
+    model:name(), model:type(), read, model:minValue(), model:maxValue()))
+model:setValue(%2)
+local written = model:value()
+assert(math.abs(written - %2) < 0.0001, string.format('read-back %.4f, expected %.4f', written, %2))
+lmms.log():info(string.format('wrote %s = %.4f', model:name(), written))
+lmms.log():info(string.format('parameterCount=%d parameterName(0)=%s',
+    count, instrument:parameterName(0)))
+)").arg(0)
+		.arg(QString::number(double(target), 'f', 4))
+		.arg(QString::number(double(before), 'f', 4));
+
+		QString error;
+		const auto result = engine->runString(source, &error, QStringLiteral("=(instrument)"));
+		QVERIFY2(result == ScriptEngine::RunResult::Ok, qPrintable(error));
+		engine->processCommands();
+
+		const QStringList log = engine->takeLogMessages();
+		for (const QString& line : log) { qInfo().noquote() << "lua:" << line; }
+		QVERIFY2(log.filter("parameterCount=").size() == 1, qPrintable(log.join('|')));
+
+		// The C++ side observes the Lua write: the model really changed.
+		const float after = model->value<float>();
+		qInfo() << "C++ side: value after Lua write" << double(after);
+		QVERIFY2(std::fabs(after - target) < 1e-3f,
+			qPrintable(QString("model value %1 != target %2")
+				.arg(double(after)).arg(double(target))));
+	}
+
+	void testModelWritesAreQueuedNotDirect()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::patternStore()));
+		QVERIFY(track != nullptr);
+		const int before = track->getVolume();
+
+		// With autoApply off nothing drains the queue, so the write must stay
+		// pending: proof the worker thread never touches the model directly
+		// (spec section 4 / section 7 item 5).
+		engine->setAutoApply(false);
+		QString error;
+		const auto result = engine->runString(QStringLiteral(R"(
+local track = lmms.song():patternStore():track(0)
+local model = track:volumeModel()
+model:setValue(42)
+lmms.log():info('queued a model write')
+)"), &error, QStringLiteral("=(queue)"));
+		QVERIFY2(result == ScriptEngine::RunResult::Ok, qPrintable(error));
+
+		qInfo() << "pending commands after script:" << engine->pendingCommandCount()
+			<< "track volume:" << track->getVolume();
+		QVERIFY2(engine->pendingCommandCount() > 0, "model write must be queued");
+		QCOMPARE(track->getVolume(), before);
+
+		engine->processCommands();
+		qInfo() << "track volume after apply:" << track->getVolume();
+		QCOMPARE(track->getVolume(), 42);
+		engine->setAutoApply(true);
 	}
 
 	// --- command queue ---

@@ -1,0 +1,346 @@
+/*
+ * Lb302.h - Incomplete Roland TB-303 bass synth emulation
+ *
+ * Copyright (c) 2006-2008 Paul Giblock <pgib/at/users.sourceforge.net>
+ * Copyright (c) 2026 Fawn Sannar <rubiefawn/at/gmail.com>
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * Lb302FilterIIR2 is based on the gsyn filter code by Andy Sloane.
+ *
+ * Lb302Filter3Pole is based on the TB-303 instrument written by
+ * Josep M Comajuncosas for the CSounds library
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#ifndef LB302_H
+#define LB302_H
+
+#include <array>
+#include <atomic>
+#include <memory>
+
+#include "Hardware.h"
+#include "Instrument.h"
+#include "InstrumentView.h"
+#include "NotePlayHandle.h"
+
+namespace lmms
+{
+
+namespace DspEffectLibrary { class Distortion; }
+
+namespace gui
+{
+class AutomatableButtonGroup;
+class Knob;
+class Lb302SynthView;
+class LedCheckBox;
+}
+
+
+struct Lb302FilterKnobState
+{
+	float cutoff;
+	float reso;
+	float envmod;
+	float envdecay;
+	float dist;
+};
+
+
+class Lb302Filter
+{
+public:
+	Lb302Filter(Lb302FilterKnobState* p_fs) : fs{p_fs} {};
+	virtual ~Lb302Filter() = default;
+
+	virtual void recalc();
+	virtual void envRecalc();
+	virtual void playNote();
+	virtual sample_t process(sample_t samp) = 0;
+
+protected:
+	Lb302FilterKnobState *fs;
+
+	// Filter Decay
+	struct
+	{
+		float c0 = 0.f; //!< @ref c0 = @ref e[1] on retrigger; @ref c0 *=ed every sample; cutoff = @ref e[0] + @ref c0
+		std::array<float, 2> e = {0.f, 0.f}; //!< Two values for interpolation
+		float resCoeff; //!< %Resonance coefficient [0.30, 9.54]
+	} m_vcf;
+};
+
+
+class Lb302FilterIIR2 : public Lb302Filter
+{
+public:
+	Lb302FilterIIR2(Lb302FilterKnobState* p_fs);
+
+	void recalc() override;
+	void envRecalc() override;
+	sample_t process(sample_t samp) override;
+
+protected:
+	struct
+	{
+		//! @brief IIR2 resonance loop.
+		//! @ref d[0] and @ref d[1] are added back into the sample with @ref a
+		//! and @ref b as coefficients.
+		std::array<float, 2> d = {0.f, 0.f};
+
+		// IIR2 Coefficients for mixing dry and delay. Mixing coefficients for the final sound.
+		float a = 0.f;
+		float b = 0.f;
+		float c = 1.f;
+	} m_iir2;
+
+	std::unique_ptr<DspEffectLibrary::Distortion> m_dist;
+};
+
+
+class Lb302Filter3Pole : public Lb302Filter
+{
+public:
+	Lb302Filter3Pole(Lb302FilterKnobState* p_fs) : Lb302Filter(p_fs) { envRecalc(); };
+
+	void envRecalc() override;
+	void recalc() override;
+	sample_t process(sample_t samp) override;
+
+protected:
+	float m_kfcn;
+	float m_kp;
+	float m_kp1h; //!< Cached value of (@ref m_kp + 1) / 2
+	float m_kres;
+	std::array<sample_t, 3> m_ay = { 0.f, 0.f, 0.f };
+	float m_lastin = 0.f;
+	float m_value;
+};
+
+
+class Lb302Synth : public Instrument
+{
+	Q_OBJECT
+	friend class gui::Lb302SynthView;
+
+public:
+	Lb302Synth(InstrumentTrack*);
+	void play(SampleFrame* working_buffer) override;
+	void playNote(NotePlayHandle* nph, SampleFrame* working_buffer) override;
+	void deleteNotePluginData(NotePlayHandle* nph) override;
+	void saveSettings(QDomDocument& doc, QDomElement& el) override;
+	void loadSettings(const QDomElement& el) override;
+	QString nodeName() const override;
+	gui::PluginView* instantiateView(QWidget* parent) override;
+
+public slots:
+	void filterChanged();
+
+	//! @brief Adjusts @ref m_fs 's @ref Lb302FilterKnobState::envdecay for both sampling rate and @ref s_envInc
+	void decayChanged();
+
+	void db24Toggled();
+
+private:
+	void processNote(NotePlayHandle* nph);
+	void process(SampleFrame* outbuf, const f_cnt_t size);
+	void recalcFilter();
+
+	enum class VcoShape { Sawtooth, Triangle, Square, RoundSquare, Moog, Sine, Exponential, WhiteNoise,
+		BLSawtooth, BLSquare, BLTriangle, BLMoog };
+	enum class VcaMode { Attack, Decay, Idle, NeverPlayed };
+
+	static constexpr float   s_distRatio = 4.f;
+	static constexpr f_cnt_t s_envInc = 64; //!< %Envelope Recalculation period
+	static constexpr float   s_vcaAttack = 1.f - 0.96406088f; //!< Amplitude attack
+	static constexpr float   s_vcaInitial = 0.5f; //!< Initial amplifier coefficient
+
+	FloatModel m_vcfCutKnob;
+	FloatModel m_vcfResKnob;
+	FloatModel m_vcfModKnob;
+	FloatModel m_vcfDecKnob;
+	FloatModel m_vcoDetuneKnob;
+
+	FloatModel m_distKnob;
+	IntModel m_waveShape;
+	FloatModel m_slideDecKnob;
+
+	BoolModel m_slideToggle;
+	BoolModel m_accentToggle;
+	BoolModel m_deadToggle;
+	BoolModel m_db24Toggle;
+
+	// Oscillator
+	float m_vcoInc = 0.f; //!< %Sample increment for the frequency. Creates Sawtooth.
+	float m_vcoK = 0.f;   //!< Raw oscillator sample [-0.5, 0.5]
+	float m_vcoC = 0.f;   //!< Raw oscillator sample [-0.5, 0.5]
+
+	bool  m_newFreq = false;
+	float m_trueFreq = 0.f;
+	float m_slide = 0.f;     //!< Current value of slide exponential curve. Nonzero=sliding
+	float m_slideInc = 0.f;  //!< Slide base to use in next node. Nonzero=slide next note
+	float m_slideBase = 0.f; //!< The base @ref m_vcoInc while sliding.
+
+	VcoShape m_vcoShape = VcoShape::BLSawtooth;
+
+	// User settings
+	Lb302FilterKnobState m_fs = {};
+
+	std::array<std::unique_ptr<Lb302Filter>, 2> m_vcfs; //!< Filters (just keep both loaded and switch)
+
+	//! @brief Helper to get current vcf
+	//! @see m_vcfs
+	//! @see db24Toggle
+	Lb302Filter& vcf() { return *m_vcfs[m_db24Toggle.value()]; }
+
+	f_cnt_t m_vcfEnvPos = s_envInc; //!< Update counter. Updates when >= @ref s_envInc
+	f_cnt_t m_releaseFrame = 0;
+
+	// Envelope State
+	float m_vca = 0.f; //!< Amplifier coefficient.
+	float m_noteVolume = 1.f; //!< The per-note volume (velocity) of the most recent note, within [0, 1]
+	panning_t m_notePan = DefaultPanning; //!< The per-note panning of the most recent note
+	VcaMode m_vcaMode = VcaMode::NeverPlayed;
+
+	NotePlayHandle* m_playingNote = nullptr;
+
+	//! @brief The maximum number of note events Lb302 can process per audio buffer.
+	//!
+	//! This value was arbitrarily chosen based off of stress tests with LMMS's
+	//! buffer size set to its maximum value (4096 samples) to maximize the
+	//! ratio of enqueue operations to dequeue operations per buffer. It may be
+	//! adjusted as needed, but it must always be a power of 2.
+	//!
+	//! @see m_notes
+	static constexpr std::size_t s_maxPendingNotes = 128;
+	static_assert(std::has_single_bit(s_maxPendingNotes)); // s_maxPendingNotes MUST be a power of 2
+
+	//! @brief The maximum number of retries permitted per enqueue operation before a note is dropped.
+	//!
+	//! Enqueue operations may fail during high contention as multiple threads
+	//! attempt to reserve the next spot in the ringbuffer using atomic CAS
+	//! operations, or when there are already @ref s_maxPendingNotes enqueued
+	//! notes in the ringbuffer. This constant determines the maximum number of
+	//! times an enqueue operation is allowed to retry under either of these
+	//! circumstances before it gives up and drops the note.
+	//!
+	//! This limit should never be met under normal operation and is a failsafe
+	//! for catastrophic performance situations to prevent hanging in
+	//! spinlocks.
+	//!
+	//! @see playNote
+	static constexpr std::size_t s_maxNoteEnqueueRetries = s_maxPendingNotes;
+
+	//! @brief Bitmask used to wrap arbitrary indicies within the bounds of @ref m_notes.
+	//!
+	//! @see m_notesReadSeq
+	//! @see m_notesWriteCommitted
+	//! @see m_notesWriteClaimed
+	static constexpr std::size_t s_notesBufMask = s_maxPendingNotes - 1;
+
+	//! @brief Backing array for the multiple-producer single-consumer realtime-safe ring buffer queue for note events.
+	//!
+	//! This is used to implement monophony, since multiple LMMS threads can
+	//! independently send note events to an instance of Lb302.
+	//!
+	//! @see s_maxPendingNotes
+	//! @see m_notesReadSeq
+	//! @see m_notesWriteCommitted
+	//! @see m_notesWriteClaimed
+	std::array<NotePlayHandle*, s_maxPendingNotes> m_notes {};
+
+	//! @brief Sequence number indicating complete dequeue operations.
+	//!
+	//! As notes are dequeued, this sequence number is incremented. It can be
+	//! used as an index into @ref m_notes if bitwise-AND'd with
+	//! @ref s_notesBufMask.
+	//! 
+	//! The difference between this sequence number and @ref m_notesReadSeq
+	//! is the number of currently vacant indicies in @ref m_notes that are
+	//! available to be written to, and can never exceed @ref s_maxPendingNotes.
+	//!
+	//! @see play
+	alignas(hardware_destructive_interference_size) std::atomic_size_t m_notesReadSeq {0};
+
+	//! @brief Sequence number indicating complete enqueue operations.
+	//!
+	//! As note enqueue operations complete, this sequence number is
+	//! incremented. It can be used as an index into @ref m_notes if
+	//! bitwise-AND'd with @ref s_notesBufMask.
+	//!
+	//! The difference between this sequence number and @ref m_notesReadSeq
+	//! is the number of currently enqueued notes ready to be dequeued, and can
+	//! never exceed @ref s_maxPendingNotes. It should always be less than or
+	//! equal to @ref m_notesWriteClaimed.
+	//!
+	//! @see playNote
+	alignas(hardware_destructive_interference_size) std::atomic_size_t m_notesWriteCommitted {0};
+
+	//! @brief Sequence number indicating in-progress enqueue operations.
+	//!
+	//! As note enqueue operations begin, this sequence number is incremented.
+	//! It can be used as an index into @ref m_notes if bitwise-AND'd with
+	//! @ref s_notesBufMask.
+	//!
+	//! The difference between this sequence number and @ref m_notesReadSeq
+	//! is the number of currently occupied indicies in @ref m_notes (even
+	//! those not yet written to), and can never exceed @ref s_maxPendingNotes.
+	//!
+	//! @see playNote
+	alignas(hardware_destructive_interference_size) std::atomic_size_t m_notesWriteClaimed {0};
+};
+
+
+namespace gui
+{
+
+
+class Lb302SynthView : public InstrumentViewFixedSize
+{
+	Q_OBJECT
+
+public:
+	Lb302SynthView(Instrument* instrument, QWidget* parent);
+	~Lb302SynthView() override = default;
+
+private:
+	void modelChanged() override;
+
+	Knob* m_vcfCutKnob;
+	Knob* m_vcfResKnob;
+	Knob* m_vcfDecKnob;
+	Knob* m_vcfModKnob;
+
+	Knob* m_distKnob;
+	Knob* m_slideDecKnob;
+	AutomatableButtonGroup* m_waveBtnGrp;
+
+	LedCheckBox* m_slideToggle;
+	// LedCheckBox* m_accentToggle; // TODO: implement accent notes
+	LedCheckBox* m_deadToggle;
+	LedCheckBox* m_db24Toggle;
+};
+
+
+} // namespace gui
+
+} // namespace lmms
+
+#endif // LB302_H

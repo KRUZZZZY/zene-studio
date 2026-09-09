@@ -1,0 +1,8 @@
+# .nam captures are never committed (SPEC-neural-amp.md §4): they carry their own
+# licences and are loaded at runtime from user-provided files.
+models/*.nam
+models/*.json
+
+# Local build artefacts from the harness
+/tests/nam_harness
+*.o

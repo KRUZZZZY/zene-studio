@@ -64,9 +64,16 @@ public:
 	void removeEffect( Effect * _effect );
 	void moveDown( Effect * _effect );
 	void moveUp( Effect * _effect );
-	bool processAudioBuffer(AudioBuffer& buffer);
+	bool processAudioBuffer(AudioBuffer& buffer,
+		const AudioBuffer* sidechainBuffer = nullptr);
 	//! Processes the effects chain on a multi-channel audio bus
-	bool processAudioBuffer(AudioBus& bus);
+	bool processAudioBuffer(AudioBus& bus,
+		const AudioBuffer* sidechainBuffer = nullptr);
+
+	//! Sidechain input for the current processing block, or nullptr when the
+	//! owning mixer channel has no incoming sidechain sends (Phase D). Effects
+	//! query this through Effect::sidechainBuffer().
+	auto sidechainBuffer() const -> const AudioBuffer* { return m_sidechainBuffer; }
 
 	void clear();
 
@@ -76,6 +83,9 @@ private:
 	EffectList m_effects;
 
 	BoolModel m_enabledModel;
+
+	//! Non-owning; set by processAudioBuffer() for the duration of the call
+	const AudioBuffer* m_sidechainBuffer = nullptr;
 
 
 	friend class gui::EffectRackView;

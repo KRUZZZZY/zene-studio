@@ -103,6 +103,7 @@ OPTION(WANT_VST		"Include VST support" ON)
 OPTION(WANT_VST_32	"Include 32-bit Windows VST support" ON)
 OPTION(WANT_VST_64	"Include 64-bit Windows VST support" ON)
 OPTION(WANT_WINMM	"Include WinMM MIDI support" OFF)
+OPTION(WANT_STEM_SPLIT	"Include offline stem separation (HTDemucs via ONNX Runtime, opt-in)" OFF)
 OPTION(WANT_DEBUG_FPE	"Debug floating point exceptions" OFF)
 option(WANT_DEBUG_ASAN	"Enable AddressSanitizer" OFF)
 option(WANT_DEBUG_TSAN	"Enable ThreadSanitizer" OFF)
@@ -113,6 +114,25 @@ OPTION(BUNDLE_QT_TRANSLATIONS	"Install Qt translation files for LMMS" OFF)
 option(WANT_DEBUG_CPACK "Show detailed logs for packaging commands" OFF)
 option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an installer" OFF)
 option(WANT_QT6 "Build with experimental Qt6 support" OFF)
+option(WANT_WASM "Include the WASM DSP sandbox (requires the wasmtime C API)" ON)
+
+
+# Offline stem separation (HTDemucs). Opt-in, background-only: the model needs
+# ~7.8 s of lookahead, so it can never run on the audio thread (see
+# doc/STEM-SPLIT.md). ONNX Runtime is an optional dependency of this feature:
+# when it is absent the C++ inference backend is disabled but the feature
+# still builds and runs with the external-process backend. Models are never
+# bundled - they are optional downloads with SHA-256 pinning.
+IF(WANT_STEM_SPLIT)
+	SET(LMMS_HAVE_STEM_SPLIT 1)
+	find_package(ONNXRuntime QUIET)
+	IF(ONNXRuntime_FOUND)
+		SET(LMMS_HAVE_ONNXRUNTIME 1)
+		MESSAGE(STATUS "Stem separation: ONNX Runtime ${ONNXRuntime_VERSION} found (${ONNXRuntime_LIBRARY}) - C++ inference backend enabled")
+	ELSE()
+		MESSAGE(STATUS "Stem separation: ONNX Runtime not found - C++ inference backend disabled, external-process backend enabled")
+	ENDIF()
+ENDIF()
 
 
 # Set the target microarchitecture
@@ -309,6 +329,13 @@ set(QT_LIBRARIES
 IF(LMMS_BUILD_LINUX AND WANT_VST AND NOT WANT_QT6)
     FIND_PACKAGE(Qt5 COMPONENTS X11Extras REQUIRED)
     LIST(APPEND QT_LIBRARIES Qt5::X11Extras)
+ENDIF()
+
+IF(LMMS_HAVE_STEM_SPLIT)
+	# Only the optional model downloader needs Qt Network; the feature stays
+	# usable without a network connection.
+	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
+	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
 ENDIF()
 
 # Resolve qmake to full path for use in packaging scripts
@@ -860,6 +887,20 @@ include(ErrorFlags)
 # use ccache
 include(CompileCache)
 
+# Optional WASM DSP sandbox. The dependency is strictly optional: without the
+# wasmtime C API on the find path this configures cleanly with the feature off.
+if(WANT_WASM)
+	FIND_PACKAGE(Wasmtime)
+	if(Wasmtime_FOUND)
+		SET(STATUS_WASM "Enabled")
+	else()
+		SET(WANT_WASM OFF)
+		SET(STATUS_WASM "Disabled (wasmtime C API not found; set WASMTIME_ROOT)")
+	endif()
+else()
+	SET(STATUS_WASM "Disabled")
+endif()
+
 # make sub-directories
 ADD_SUBDIRECTORY(cmake)
 ADD_SUBDIRECTORY(src)
@@ -985,6 +1026,7 @@ MESSAGE(
 "* Profile using GNU profiler        : ${STATUS_GPROF}\n"
 "* Debug assertions                  : ${STATUS_ASSERTIONS}\n"
 "* Experimental Qt6 support          : ${STATUS_QT6}\n"
+"* WASM DSP sandbox                  : ${STATUS_WASM}\n"
 )
 
 MESSAGE(

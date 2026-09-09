@@ -194,7 +194,7 @@ QString Xpressive::nodeName() const {
 	return (xpressive_plugin_descriptor.name);
 }
 
-void Xpressive::playNote(NotePlayHandle* nph, SampleFrame* working_buffer) {
+void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 	m_A1=m_parameterA1.value();
 	m_A2=m_parameterA2.value();
 	m_A3=m_parameterA3.value();
@@ -230,7 +230,7 @@ void Xpressive::playNote(NotePlayHandle* nph, SampleFrame* working_buffer) {
 	const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = nph->noteOffset();
 
-	ps->renderOutput(frames, working_buffer + offset);
+	ps->renderOutput(frames, out.data() + offset);
 }
 
 void Xpressive::deleteNotePluginData(NotePlayHandle* nph) {

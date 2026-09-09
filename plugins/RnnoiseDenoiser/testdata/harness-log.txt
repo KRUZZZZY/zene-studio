@@ -1,0 +1,24 @@
+/home/kruzzzzy/.hermes/hermes-agent/venv/lib/python3.11/site-packages/numpy/_core/fromnumeric.py:3824: RuntimeWarning: Mean of empty slice
+  return _methods._mean(a, axis=axis, dtype=dtype,
+/home/kruzzzzy/.hermes/hermes-agent/venv/lib/python3.11/site-packages/numpy/_core/_methods.py:142: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/run_harness.py:48: RuntimeWarning: Mean of empty slice
+  f"mean_vad={v.mean():.3f}  frames_vad>0.5={int(np.sum(v>0.5))}/{len(v)}")
+### library-level harness runs (vendored rnnoise, same sources as the plugin)
+$ /tmp/rnn_harness harness_in.f32 harness_out_s1.f32 1 harness_stats_s1.csv
+  frames=200 mean_vad_prob=0.0000  exit=0
+$ /tmp/rnn_harness harness_in.f32 harness_out_s32768.f32 32768 harness_stats_s32768.csv
+  frames=200 mean_vad_prob=0.4887  exit=0
+
+### per-frame stats (frame = 10 ms; passages: speech 0.10-0.70s = frames 10-70, noise-only 0.85-1.15s = frames 85-115)
+-- scale x1 (s1) --
+   speech               in_rms=  -22.11 dB out_rms=  -21.75 dB  change=  +0.36 dB  mean_vad=0.000  frames_vad>0.5=0/60
+   noise-only           in_rms=  -45.05 dB out_rms=  -45.02 dB  change=  +0.03 dB  mean_vad=0.000  frames_vad>0.5=0/30
+   silence after 2.0s   in_rms=    -inf dB out_rms=    -inf dB  change=   +nan dB  mean_vad=nan  frames_vad>0.5=0/0
+-- scale x32768 (s32768) --
+   speech               in_rms=  -22.11 dB out_rms=  -21.81 dB  change=  +0.30 dB  mean_vad=0.990  frames_vad>0.5=60/60
+   noise-only           in_rms=  -45.05 dB out_rms=  -77.06 dB  change= -32.01 dB  mean_vad=0.174  frames_vad>0.5=3/30
+   silence after 2.0s   in_rms=    -inf dB out_rms=    -inf dB  change=   +nan dB  mean_vad=nan  frames_vad>0.5=0/0
+
+### time-domain check: is the scale-1.0 output a delayed copy of the input?
+   best lag = 957 frames, corr = +0.98669  (480 frames = 1 RNNoise frame = 10 ms)

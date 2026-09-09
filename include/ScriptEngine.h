@@ -73,7 +73,8 @@ struct ScriptCommand
 		SetTempo,		//!< i0 = bpm
 		SetMasterVolume,	//!< f0 = volume [0..1] (mapped to the 0..100 model)
 		SetTrackName,		//!< object0 = Track*, text = new name
-		SetTrackVolume,		//!< object0 = Track*, f0 = volume [0..1]
+		SetTrackVolume,		//!< object0 = Track*, f0 = volume [0..200] (Track::setVolume)
+		SetModelValue,		//!< object0 = AutomatableModel*, f0 = new value
 		Play,			//!< transport play
 		Stop,			//!< transport stop
 		AddCheckPoint,		//!< object0 = JournallingObject* (undo checkpoint)

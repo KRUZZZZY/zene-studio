@@ -253,6 +253,7 @@ private:
 private slots:
 	void browseHelp();
 	void showTool( QAction * _idx );
+	void runScript();
 	void updateViewMenu();
 	void updateConfig( QAction * _who );
 	void onToggleMetronome();

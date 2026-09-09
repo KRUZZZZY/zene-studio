@@ -32,6 +32,9 @@ ADD_SUBDIRECTORY(common)
 ADD_SUBDIRECTORY(core)
 ADD_SUBDIRECTORY(gui)
 ADD_SUBDIRECTORY(tracks)
+IF(WANT_WASM)
+	ADD_SUBDIRECTORY(wasm)
+ENDIF()
 
 LIST(APPEND LMMS_SRCS ${LMMS_COMMON_SRCS})
 
@@ -107,6 +110,21 @@ ADD_LIBRARY(lmmsobjs OBJECT
 	${LMMS_RCC_OUT}
 )
 
+IF(NOT LMMS_HAVE_STEM_SPLIT)
+	# include/*.h is globbed into lmmsobjs for AUTOMOC. The stem separation
+	# header is feature-gated: with the feature off its .cpp is not built, so
+	# moc'ing it here would leave undefined references in mocs_compilation.
+	SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/StemSplitController.h"
+		PROPERTIES SKIP_AUTOMOC ON)
+ENDIF()
+
+IF(WANT_WASM)
+	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${WASMTIME_INCLUDE_DIRS})
+	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE LMMS_HAVE_WASM=1)
+	target_static_definitions(lmmsobjs LMMS_HAVE_WASM=1)
+	target_static_libraries(lmmsobjs ${WASMTIME_LIBRARIES})
+ENDIF()
+
 GENERATE_EXPORT_HEADER(lmmsobjs
 	BASE_NAME lmms
 )
@@ -177,6 +195,14 @@ if(LMMS_HAVE_LV2)
 	list(APPEND EXTRA_LIBRARIES Lilv::lilv)
 endif()
 
+if(LMMS_HAVE_STEM_SPLIT)
+	# Dev builds: default location of the reference separation CLI. Installed
+	# packages must install tools/stem_split_cli.py; the runtime environment
+	# variable LMMS_STEM_CLI overrides this path.
+	target_compile_definitions(lmmsobjs PRIVATE
+		LMMS_STEM_CLI_DEFAULT="${CMAKE_SOURCE_DIR}/tools/stem_split_cli.py")
+endif()
+
 SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 	${CMAKE_THREAD_LIBS_INIT}
 	${QT_LIBRARIES}
@@ -197,6 +223,14 @@ SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 target_link_libraries(lmmsobjs
 	${LMMS_REQUIRED_LIBS}
 )
+
+# Optional ONNX Runtime dependency of the stem-separation feature. The imported
+# target only exists when find_package(ONNXRuntime) succeeded at configure time.
+IF(LMMS_HAVE_ONNXRUNTIME)
+	TARGET_LINK_LIBRARIES(lmmsobjs ONNXRuntime::ONNXRuntime)
+	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${ONNXRuntime_INCLUDE_DIRS})
+ENDIF()
+
 target_static_libraries(lmmsobjs ringbuffer lua luabridge)
 
 set_target_properties(lmms PROPERTIES

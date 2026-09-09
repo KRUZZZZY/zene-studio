@@ -21,10 +21,12 @@
 #ifndef LMMS_TESTS_PLUGIN_PORTS_HARNESS_H
 #define LMMS_TESTS_PLUGIN_PORTS_HARNESS_H
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <string>
 #include <thread>
 #include <utility>
@@ -36,13 +38,25 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
+#include <QLibrary>
 #include <QString>
+#include <QStringList>
 
 #include "AudioBus.h"
 #include "Effect.h"
 #include "EffectControls.h"
+#include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "LmmsTypes.h"
+#include "Midi.h"
+#include "MidiEvent.h"
+#include "Note.h"
+#include "NotePlayHandle.h"
 #include "SampleFrame.h"
+#include "Song.h"
+#include "TimePos.h"
+#include "base64.h"
 
 namespace partc
 {
@@ -50,16 +64,30 @@ namespace partc
 using namespace lmms; // SampleFrame, AudioBus, Effect, f_cnt_t, ch_cnt_t
 
 //! Canonical plugin order shared by the reference renderer and the test.
-inline auto pluginNames() -> const std::array<const char*, 7>&
+//! peakcontrollereffect is migrated but not rendered here: src/core/PeakController.cpp
+//! includes the migrated plugin header, so a pre-migration reference object of the
+//! same class has an incompatible layout (ODR) and crashes in the reference process.
+inline auto pluginNames() -> const std::array<const char*, 23>&
 {
-	static const std::array<const char*, 7> names{
+	static const std::array<const char*, 23> names{
 		"amplifier", "bassbooster", "bitcrush", "dualfilter",
-		"waveshaper", "flanger", "delay"};
+		"waveshaper", "flanger", "delay",
+		"compressor", "crossovereq", "dynamicsprocessor", "lomm", "multitapecho",
+		"reverbsc", "stereoenhancer", "stereomatrix",
+		// Slice 3 (task #589): analysers, Dispersion, granular shifter and Eq.
+		"dispersion", "vectorscope", "analyzer", "granularpitchshifter", "eq",
+		// Slice 7 (task #589): the last in-tree legacy-API plugins.
+		"frequencyshifter", "oscilloscope", "slewdistortion"};
 	return names;
 }
 
 inline constexpr ch_cnt_t ChannelPairs = 1; //!< stereo track channel pair
-inline constexpr int Buffers = 3;           //!< consecutive buffers per plugin
+//! Consecutive buffers per plugin. 64 buffers * 256 frames = 16384 frames,
+//! which is longer than the longest wet-path latency under test (ReverbSC's
+//! pre-delay is >= 1933 samples, MultitapEcho's first tap is 250 ms at the
+//! default step length, DynamicsProcessor's attack is 50 ms), so the stateful
+//! wet paths are actually reached and compared.
+inline constexpr int Buffers = 64;
 inline constexpr float WetLevel = 0.75f;    //!< dry/wet mix used by both sides
 
 struct SettingOverride
@@ -111,6 +139,122 @@ inline auto overridesFor(const std::string& plugin) -> std::vector<SettingOverri
 		return {{"DelayTimeSamples", "0.005"}, {"FeebackAmount", "0.6"},
 			{"LfoFrequency", "0.3"}, {"LfoAmount", "0.0005"}, {"OutGain", "-6"}};
 	}
+	if (plugin == "compressor")
+	{
+		return {{"threshold", "-20"}, {"ratio", "4"}, {"attack", "5"}, {"release", "200"},
+			{"knee", "6"}, {"inGain", "3"}, {"outGain", "6"}, {"mix", "70"},
+			{"stereoLink", "2"}, {"limiter", "0.5"}, {"rms", "50"}, {"tilt", "2"},
+			{"tiltFreq", "300"}, {"blend", "0.5"}};
+	}
+	if (plugin == "crossovereq")
+	{
+		return {{"xover12", "200"}, {"xover23", "1500"}, {"xover34", "6000"},
+			{"gain1", "3"}, {"gain2", "-4"}, {"gain3", "1"}, {"gain4", "-1.5"},
+			{"mute1", "1"}, {"mute2", "0"}, {"mute3", "1"}, {"mute4", "0"}};
+	}
+	if (plugin == "dynamicsprocessor")
+	{
+		return {{"inputGain", "1.5"}, {"outputGain", "0.7"}, {"attack", "50"},
+			{"release", "300"}, {"stereoMode", "1"}};
+	}
+	if (plugin == "lomm")
+	{
+		return {{"depth", "0.6"}, {"time", "3"}, {"inVol", "-6"}, {"outVol", "6"},
+			{"upward", "2"}, {"downward", "0"}, {"split1", "4000"}, {"split2", "200"},
+			{"knee", "12"}, {"rmsTime", "20"}};
+	}
+	if (plugin == "multitapecho")
+	{
+		return {{"steps", "8"}, {"steplength", "250"}, {"drygain", "6"},
+			{"swapinputs", "1"}, {"stages", "2"}};
+	}
+	// Slice 3 (task #589) plugins.
+	if (plugin == "dispersion")
+	{
+		return {{"amount", "12"}, {"freq", "440"}, {"reso", "2.0"},
+			{"feedback", "0.7"}, {"dc", "1"}};
+	}
+	if (plugin == "vectorscope")
+	{
+		return {{"Logarithmic", "1"}, {"LinesMode", "0"}};
+	}
+	if (plugin == "analyzer")
+	{
+		return {{"Waterfall", "1"}, {"Smooth", "1"}, {"Stereo", "1"}, {"PeakHold", "1"},
+			{"LogX", "0"}, {"LogY", "0"}, {"RangeX", "1"}, {"RangeY", "2"},
+			{"BlockSize", "3"}, {"WindowType", "1"}, {"EnvelopeRes", "0.5"},
+			{"SpectrumRes", "2.0"}, {"PeakDecayFactor", "0.995"}, {"AverageWeight", "0.3"},
+			{"WaterfallHeight", "400"}, {"WaterfallGamma", "0.5"}, {"WindowOverlap", "4"},
+			{"ZeroPadding", "2"}};
+	}
+	if (plugin == "granularpitchshifter")
+	{
+		return {{"pitch", "7"}, {"size", "50"}, {"spray", "0.01"}, {"jitter", "0.3"},
+			{"twitch", "0.2"}, {"pitchSpread", "5"}, {"spraySpread", "0.5"},
+			{"shape", "1.5"}, {"fadeLength", "0.5"}, {"feedback", "0.4"},
+			{"minLatency", "0.05"}, {"prefilter", "0"}, {"density", "4"}, {"glide", "0.2"}};
+	}
+	if (plugin == "eq")
+	{
+		return {{"Inputgain", "3"}, {"Outputgain", "-3"}, {"Lowshelfgain", "6"},
+			{"Peak1gain", "4"}, {"Peak2gain", "-5"}, {"Peak3gain", "2"}, {"Peak4gain", "-2"},
+			{"HighShelfgain", "4"}, {"HPres", "0.8"}, {"LowShelfres", "0.8"},
+			{"Peak1bw", "1.5"}, {"Peak2bw", "1.0"}, {"Peak3bw", "2.0"}, {"Peak4bw", "1.2"},
+			{"HighShelfres", "0.9"}, {"LPres", "0.8"}, {"HPfreq", "80"},
+			{"LowShelffreq", "120"}, {"Peak1freq", "250"}, {"Peak2freq", "800"},
+			{"Peak3freq", "3000"}, {"Peak4freq", "8000"}, {"Highshelffreq", "12000"},
+			{"LPfreq", "16000"}, {"HPactive", "1"}, {"Lowshelfactive", "1"},
+			{"Peak1active", "1"}, {"Peak2active", "1"}, {"Peak3active", "1"},
+			{"Peak4active", "1"}, {"Highshelfactive", "1"}, {"LPactive", "0"},
+			{"LP12", "1"}, {"LP24", "0"}, {"LP48", "0"}, {"HP12", "1"}, {"HP24", "0"},
+			{"HP48", "0"}, {"LP", "0"}, {"HP", "0"}, {"AnalyseIn", "1"}, {"AnalyseOut", "1"}};
+	}
+	// Not rendered by this harness (see pluginNames() note) — kept so the settings
+	// are ready if the reference module becomes loadable in a later slice.
+	if (plugin == "peakcontrollereffect")
+	{
+		return {{"base", "0.25"}, {"amount", "0.5"}, {"attack", "0.1"}, {"decay", "0.2"},
+			{"treshold", "0.3"}, {"abs", "1"}, {"amountmult", "2"}, {"mute", "0"}};
+	}
+	if (plugin == "reverbsc")
+	{
+		return {{"input_gain", "6"}, {"size", "0.95"}, {"color", "6000"},
+			{"output_gain", "-6"}};
+	}
+	if (plugin == "stereoenhancer")
+	{
+		return {{"width", "120"}};
+	}
+	if (plugin == "stereomatrix")
+	{
+		return {{"l-l", "0.8"}, {"l-r", "0.2"}, {"r-l", "0.1"}, {"r-r", "0.9"}};
+	}
+	// Slice 7 (task #589) plugins.
+	if (plugin == "frequencyshifter")
+	{
+		return {{"mix", "0.9"}, {"freqShift", "250"}, {"spreadShift", "3"},
+			{"ring", "0.2"}, {"feedback", "0.35"}, {"m_delayLengthLong", "1.5"},
+			{"delayLengthShort", "0.5"}, {"delayDamp", "8000"}, {"delayGlide", "0.2"},
+			{"lfoAmount", "40"}, {"lfoRate", "1.5"}, {"lfoStereoPhase", "0.25"},
+			{"antireflect", "1"}, {"routeMode", "1"}, {"harmonics", "0.4"},
+			{"glide", "0.2"}, {"tone", "12000"}, {"phase", "0.3"}};
+	}
+	if (plugin == "oscilloscope")
+	{
+		return {{"amp", "250"}, {"length", "250"}, {"phase", "0.25"}, {"stereo", "1"}};
+	}
+	if (plugin == "slewdistortion")
+	{
+		return {{"distType1", "1"}, {"distType2", "5"}, {"drive1", "12"}, {"drive2", "-6"},
+			{"slewUp1", "3"}, {"slewUp2", "2"}, {"slewDown1", "0"}, {"slewDown2", "-3"},
+			{"bias1", "0.3"}, {"bias2", "-0.2"}, {"warp1", "0.4"}, {"warp2", "0.1"},
+			{"crush1", "6"}, {"crush2", "3"}, {"outVol1", "3"}, {"outVol2", "-3"},
+			{"attack1", "5"}, {"attack2", "50"}, {"release1", "100"}, {"release2", "200"},
+			{"dynamics1", "0.5"}, {"dynamics2", "0.25"}, {"dynamicSlew1", "2"},
+			{"dynamicSlew2", "-2"}, {"dcRemove", "1"}, {"multiband", "1"},
+			{"oversampling", "2"}, {"split", "800"}, {"mix1", "0.8"}, {"mix2", "0.6"},
+			{"slewLink1", "0"}, {"slewLink2", "1"}};
+	}
 	return {};
 }
 
@@ -158,6 +302,111 @@ inline void applyTestSettings(Effect& fx, const std::string& plugin)
 	for (const auto& o : overridesFor(plugin))
 	{
 		controls.setAttribute(QString::fromStdString(o.name), QString::fromStdString(o.value));
+	}
+
+	// DynamicsProcessor's default wavegraph is the identity curve, which turns
+	// the envelope-follower + curve-lookup path into a linear gain. Replace it
+	// with a hard-knee curve (~9 dB of compression above -10 dBFS) so the
+	// dynamics are actually exercised. Serialised exactly like the plugin does
+	// (200 little-endian floats, base64 in the "waveShape" attribute), so both
+	// the migrated and the reference build load the same curve.
+	if (plugin == "dynamicsprocessor")
+	{
+		std::array<float, 200> shape{};
+		for (int i = 0; i < 200; ++i)
+		{
+			const float x = (i + 1.0f) / 200.0f;
+			shape[i] = x < 0.3f ? x : 0.3f + (x - 0.3f) * 0.35f;
+		}
+		QString encoded;
+		base64::encode(reinterpret_cast<const char*>(shape.data()),
+			static_cast<int>(shape.size() * sizeof(float)), encoded);
+		controls.setAttribute(QStringLiteral("waveShape"), encoded);
+	}
+
+	fx.loadSettings(root);
+}
+
+/*!
+ * Slice 6 (task #589): LADSPA-hosted effects.
+ *
+ * LadspaEffect resolves its DSP from the sub-plugin Key (library file name +
+ * LADSPA label) at construction time, so it cannot be rendered through the
+ * plain entry(nullptr, nullptr) path used for the other effects. The specs
+ * below name deterministic in-tree LADSPA plugins (the SWH builds that ship
+ * with LMMS) plus the control-port values to apply; both the reference
+ * renderer and the test build the same Key and drive the effect through the
+ * same production path (controls save/load round trip + processAudioBuffer).
+ */
+struct LadspaSpec
+{
+	const char* name;   //!< harness name, e.g. "ladspaeffect:amp"
+	const char* file;   //!< LADSPA library file name, as LadspaManager keys it
+	const char* label;  //!< LADSPA label (the key's second half)
+	std::vector<SettingOverride> ports; //!< control-port element -> "data" value
+};
+
+inline auto ladspaSpecs() -> const std::vector<LadspaSpec>&
+{
+	static const std::vector<LadspaSpec> specs{
+		// Mono plugin: LadspaEffect instantiates DEFAULT_CHANNELS/1 = 2
+		// processors, one per channel, so this exercises the multi-processor
+		// path. Port 0 is the gain control (1 = audio in, 2 = audio out).
+		// amp_1181 is mono: LMMS instantiates it as two *linked* channel
+		// processors, and the linked knob models fan out bidirectionally
+		// (AutomatableModel::linkToModel ring). The saved state therefore
+		// carries port00 *and* port10; both must be driven or the later
+		// load of the untouched port10 resets the linked gain back to 0 dB.
+		{"ladspaeffect:amp", "amp_1181.so", "amp",
+			{{"port00", "6.0"}, {"port10", "6.0"}}},
+		// Stereo plugin: a single processor with stereo ports, exercising the
+		// ChannelIn/ChannelOut mapping plus several control ports. Values are
+		// inside the LADSPA port bounds (dj_eq Lo/Mid/Hi gain are [-70,+6] dB
+		// in dj_eq_1901.c) so the knob models do not clamp them and the
+		// saveState() round trip can be asserted exactly.
+		{"ladspaeffect:dj_eq", "dj_eq_1901.so", "dj_eq",
+			{{"port00", "-9.0"}, {"port01", "5.0"}, {"port02", "4.0"}}},
+	};
+	return specs;
+}
+
+//! Builds the sub-plugin Key LadspaEffect expects; the shape matches the
+//! project XML (attributes "file" and "plugin") produced by
+//! ladspaKeyToSubPluginKey().
+inline auto ladspaKeyFor(const Plugin::Descriptor* desc, const LadspaSpec& spec)
+	-> Plugin::Descriptor::SubPluginFeatures::Key
+{
+	Plugin::Descriptor::SubPluginFeatures::Key key{desc, QString::fromUtf8(spec.name)};
+	key.attributes["file"] = QString::fromUtf8(spec.file);
+	key.attributes["plugin"] = QString::fromUtf8(spec.label);
+	return key;
+}
+
+/*!
+ * Same round trip as applyTestSettings(), plus control-port overrides:
+ * LadspaControls serialises one <portNN> child element per control, so the
+ * value goes into that element's "data" attribute (read back by
+ * LadspaControl::loadSettings()).
+ */
+inline void applyLadspaTestSettings(Effect& fx, const LadspaSpec& spec)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", QString::number(WetLevel, 'g', 9));
+	root.setAttribute("autoquit", 0); // keep the effect awake for every buffer
+
+	QDomElement controls = fx.controls()->saveState(doc, root);
+	for (const auto& o : spec.ports)
+	{
+		const QString portName = QString::fromUtf8(o.name);
+		QDomElement port = controls.firstChildElement(portName);
+		if (port.isNull())
+		{
+			port = doc.createElement(portName);
+			controls.appendChild(port);
+		}
+		port.setAttribute(QStringLiteral("data"), QString::fromUtf8(o.value));
 	}
 
 	fx.loadSettings(root);
@@ -294,6 +543,397 @@ inline auto maxAbsDiff(const std::vector<float>& a, const std::vector<float>& b)
 		}
 	}
 	return worst;
+}
+
+/*!
+ * The exact input renderBuffers() feeds an effect, interleaved the same way.
+ * A wet effect must change it; comparing the two proves the effect was not
+ * bypassed (which would otherwise make a sample-exact comparison vacuous).
+ */
+inline auto dryInput(f_cnt_t frames) -> std::vector<float>
+{
+	std::vector<SampleFrame> data(static_cast<std::size_t>(ChannelPairs) * frames);
+	std::vector<float> out;
+	out.reserve(static_cast<std::size_t>(Buffers) * frames * 2);
+	for (int b = 0; b < Buffers; ++b)
+	{
+		fillInput(data, frames, 0x51ed270bu * static_cast<std::uint32_t>(b + 1));
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			out.push_back(data[f].left());
+			out.push_back(data[f].right());
+		}
+	}
+	return out;
+}
+
+// ---------------------------------------------------------------------------
+// Slice 6 (task #589): LADSPA-hosted effects.
+//
+// LadspaEffect resolves its DSP from the sub-plugin Key (LADSPA library file
+// name + label) at construction time, so it cannot be rendered through the
+// plain entry(nullptr, nullptr) path used for the other effects. The helper
+// below loads a LadspaEffect module (migrated or reference), resolves its
+// descriptor + entry point, builds the Key from a LadspaSpec and renders the
+// canonical input through the production controls save/load + AudioBus path.
+// ---------------------------------------------------------------------------
+
+//! Everything a slice-6 LADSPA render reports back to the test.
+struct LadspaRender
+{
+	bool loaded = false;      //!< module loaded, entry point + descriptor found
+	bool effectOkay = false;  //!< LadspaEffect found and instantiated the LADSPA plugin
+	QString error;            //!< first failure, for QVERIFY2 messages
+	QString name;             //!< spec name, e.g. "ladspaeffect:amp"
+	std::vector<float> samples;
+	QString checksum;
+	QStringList savedPorts;   //!< "portNN=<data>" read back after loadSettings()
+};
+
+/*!
+ * Loads `modulePath` (migrated or reference LadspaEffect), resolves
+ * lmms_plugin_main plus the `<plugin>_plugin_descriptor` symbol, instantiates
+ * the effect for `spec`, applies the control-port overrides through the
+ * controls save/load round trip, snapshots the saved state, renders `Buffers`
+ * buffers and deletes the effect. Modules stay loaded for the process
+ * lifetime (the descriptor owns heap objects).
+ */
+inline auto renderLadspa(const char* modulePath, const LadspaSpec& spec, f_cnt_t frames)
+	-> LadspaRender
+{
+	static std::vector<QLibrary*> keepLoaded;
+
+	LadspaRender result;
+	result.name = QString::fromUtf8(spec.name);
+
+	auto* lib = new QLibrary{QString::fromUtf8(modulePath)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	keepLoaded.push_back(lib);
+	if (!lib->load())
+	{
+		result.error = QString{"%1: %2"}.arg(result.name, lib->errorString());
+		return result;
+	}
+
+	using EntryFn = Plugin* (*)(Model*, void*);
+	auto entry = reinterpret_cast<EntryFn>(lib->resolve("lmms_plugin_main"));
+	const QByteArray symbol = QByteArray{spec.name}.split(':').first()
+		+ QByteArray{"_plugin_descriptor"};
+	// Descriptors are exported as *data* symbols (e.g. lb302_plugin_descriptor),
+	// so this is the same reinterpret_cast idiom PluginFactory uses.
+	auto* desc = reinterpret_cast<const Plugin::Descriptor*>(lib->resolve(symbol.constData()));
+	if (entry == nullptr || desc == nullptr)
+	{
+		result.error = QString{"%1: missing lmms_plugin_main or %2 in %3"}
+			.arg(result.name, QString::fromLatin1(symbol), QString::fromUtf8(modulePath));
+		return result;
+	}
+	result.loaded = true;
+
+	auto key = ladspaKeyFor(desc, spec);
+	auto* fx = static_cast<Effect*>(entry(nullptr, &key));
+	if (fx == nullptr)
+	{
+		result.error = result.name + ": entry point returned null";
+		return result;
+	}
+
+	result.effectOkay = fx->isOkay();
+	applyLadspaTestSettings(*fx, spec);
+
+	// State round trip: what loadSettings() applied must come back out of
+	// saveState(), so the port values are visible in the serialised project.
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement("effect");
+		const QDomElement controls = fx->controls()->saveState(doc, root);
+		for (const auto& o : spec.ports)
+		{
+			const QDomElement port = controls.firstChildElement(QString::fromUtf8(o.name));
+			result.savedPorts << QString{"%1=%2"}.arg(QString::fromUtf8(o.name),
+				port.isNull() ? QStringLiteral("<missing>") : port.attribute("data"));
+		}
+	}
+
+	result.samples = renderInFreshThread(*fx, frames);
+	result.checksum = checksum(result.samples);
+	delete fx;
+	return result;
+}
+
+// ---------------------------------------------------------------------------
+// Slice 4 (task #589): instrument plugins.
+//
+// Instruments are driven by NotePlayHandle state instead of a fixed buffer, so
+// the harness reproduces the engine dispatch exactly:
+//   * InstrumentTrack::playNote() is called once per period for every
+//     instrument (that is where playNoteImpl() runs),
+//   * InstrumentPlayHandle::play() is called once per period for
+//     single-streamed instruments (OpulenZ), after the notes are processed,
+//   * settings are applied through the instrument's own saveState() /
+//     restoreState() round trip, which is how InstrumentTrack persists an
+//     instrument.
+// ---------------------------------------------------------------------------
+
+//! Canonical instrument order shared by the reference renderer and the test.
+inline auto instrumentNames() -> const std::array<const char*, 15>&
+{
+	static const std::array<const char*, 15> names{
+		"freeboy", "nes", "sid", "opulenz", "sfxr",
+		"bitinvader", "watsyn", "xpressive", "vibedstrings", "kicker",
+		// Slice 5 (task #589): multi-oscillator and sample-playback instruments.
+		"tripleoscillator", "monstro", "organic", "audiofileprocessor",
+		// Slice 6 (task #589): Lb302 bass synth.
+		"lb302"};
+	return names;
+}
+
+/*!
+ * Instrument control overrides applied on top of each plugin's own defaults.
+ * Attribute names come from the instruments' own saveSettings() output; the
+ * values are deliberately non-default so the DSP is actually exercised.
+ * Expression-driven controls (Xpressive's W* and O* strings) are left at
+ * their defaults so a malformed expression cannot skew the comparison.
+ */
+inline auto instrumentOverridesFor(const std::string& plugin) -> std::vector<SettingOverride>
+{
+	if (plugin == "freeboy")
+	{
+		return {{"ch1vol", "12"}, {"ch2vol", "10"}, {"ch3vol", "14"}, {"ch4vol", "8"},
+			{"ch1wpd", "2"}, {"ch2wpd", "1"}, {"ch1vsd", "1"}, {"ch2vsd", "0"},
+			{"ch1so1", "3"}, {"ch1so2", "5"}, {"ch2so1", "2"}, {"ch3on", "1"},
+			{"ch4so1", "6"}, {"ch4so2", "7"}, {"Treble", "4"}, {"Bass", "-3"},
+			{"st", "2"}, {"sd", "1"}, {"srs", "3"}, {"srw", "2"},
+			{"so1vol", "10"}, {"so2vol", "6"}};
+	}
+	if (plugin == "nes")
+	{
+		return {{"on1", "1"}, {"on2", "1"}, {"on3", "1"}, {"on4", "1"},
+			{"vol", "14"}, {"vol1", "12"}, {"vol2", "12"}, {"vol3", "12"}, {"vol4", "12"},
+			{"dc1", "2"}, {"dc2", "1"}, {"crs1", "1"}, {"crs2", "2"},
+			{"envon1", "1"}, {"envlen1", "4"}, {"envloop1", "1"},
+			{"sweep1", "1"}, {"swamt1", "3"}, {"swrate1", "2"},
+			{"nmode4", "1"}, {"nfreq4", "4"}, {"nq4", "6"}};
+	}
+	if (plugin == "sid")
+	{
+		return {{"pulsewidth0", "0.3"}, {"attack0", "2"}, {"decay0", "4"}, {"sustain0", "8"},
+			{"release0", "6"}, {"waveform0", "1"}, {"coarse0", "1"}, {"sync0", "1"},
+			{"pulsewidth1", "0.6"}, {"attack1", "3"}, {"decay1", "5"}, {"sustain1", "10"},
+			{"release1", "4"}, {"waveform1", "2"}, {"ringmod1", "1"},
+			{"filterFC", "1024"}, {"filterResonance", "6"}, {"filterMode", "1"},
+			{"volume", "12"}};
+	}
+	if (plugin == "opulenz")
+	{
+		return {{"op1_a", "8"}, {"op1_d", "6"}, {"op1_s", "3"}, {"op1_r", "7"},
+			{"op1_lvl", "50"}, {"op1_mul", "2"}, {"op1_waveform", "1"},
+			{"op2_a", "6"}, {"op2_d", "5"}, {"op2_s", "4"}, {"op2_r", "8"},
+			{"op2_lvl", "40"}, {"op2_mul", "4"}, {"op2_waveform", "2"},
+			{"feedback", "3"}, {"fm", "1"}, {"vib_depth", "2"}, {"trem_depth", "2"}};
+	}
+	if (plugin == "sfxr")
+	{
+		return {{"waveForm", "1"}, {"startFreq", "0.4"}, {"minFreq", "0.05"},
+			{"slide", "0.2"}, {"dSlide", "0.1"}, {"vibDepth", "0.2"}, {"vibSpeed", "0.3"},
+			{"changeAmt", "0.3"}, {"changeSpeed", "0.4"}, {"sqrDuty", "0.6"},
+			{"sqrSweep", "0.1"}, {"repeatSpeed", "0.3"}, {"phaserOffset", "0.2"},
+			{"phaserSweep", "0.3"}, {"lpFilCut", "0.7"}, {"lpFilCutSweep", "0.1"},
+			{"lpFilReso", "0.6"}, {"hpFilCut", "0.2"}, {"hpFilCutSweep", "0.1"},
+			{"att", "0.05"}, {"hold", "0.1"}, {"sus", "0.3"}, {"dec", "0.4"}};
+	}
+	if (plugin == "bitinvader")
+	{
+		return {{"sampleLength", "64"}, {"interpolation", "1"}, {"normalize", "1"}};
+	}
+	if (plugin == "watsyn")
+	{
+		return {{"a1_vol", "80"}, {"a2_vol", "60"}, {"b1_vol", "50"}, {"b2_vol", "40"},
+			{"a1_mult", "2"}, {"a2_mult", "3"}, {"b1_mult", "1.5"}, {"b2_mult", "4"},
+			{"a1_ltune", "0.1"}, {"a2_rtune", "-0.2"}, {"b1_ltune", "0.3"},
+			{"b2_rtune", "-0.4"}, {"a1_pan", "0.2"}, {"b2_pan", "-0.3"},
+			{"abmix", "0.7"}, {"envAmt", "0.5"}, {"envAtt", "0.05"},
+			{"envHold", "0.2"}, {"envDec", "0.3"}, {"xtalk", "0.2"}, {"amod", "1.2"}};
+	}
+	if (plugin == "xpressive")
+	{
+		return {{"A1", "0.7"}, {"A2", "0.4"}, {"A3", "0.9"}, {"PAN1", "0.3"},
+			{"PAN2", "-0.4"}, {"RELTRANS", "0.5"}, {"smoothW1", "0.3"},
+			{"smoothW2", "0.2"}, {"smoothW3", "0.4"}, {"interpolateW1", "1"},
+			{"interpolateW2", "1"}, {"interpolateW3", "0"}};
+	}
+	if (plugin == "vibedstrings")
+	{
+		return {{"active0", "1"}, {"volume0", "0.8"}, {"stiffness0", "0.5"}, {"pick0", "0.3"},
+			{"pickup0", "0.4"}, {"octave0", "1"}, {"length0", "0.6"}, {"pan0", "0.2"},
+			{"detune0", "0.1"}, {"slap0", "0.2"}, {"impulse0", "0.3"},
+			{"active1", "1"}, {"volume1", "0.5"}, {"stiffness1", "0.7"}, {"pick1", "0.4"},
+			{"length1", "0.5"}, {"detune1", "-0.1"}};
+	}
+	if (plugin == "kicker")
+	{
+		return {{"startfreq", "120"}, {"endfreq", "40"}, {"decay", "0.4"}, {"dist", "2"},
+			{"distend", "0.5"}, {"gain", "1.2"}, {"env", "0.6"}, {"noise", "0.2"},
+			{"click", "0.3"}, {"slope", "0.7"}, {"startnote", "1"}, {"endnote", "0"}};
+	}
+	// Slice 5 (task #589) instruments.
+	if (plugin == "tripleoscillator")
+	{
+		return {
+			{"vol0", "80"}, {"pan0", "-25"}, {"coarse0", "12"}, {"finel0", "5"}, {"finer0", "-5"},
+			{"phoffset0", "90"}, {"stphdetun0", "30"}, {"wavetype0", "2"}, {"modalgo1", "1"},
+			{"useWaveTable1", "0"},
+			{"vol1", "60"}, {"pan1", "0"}, {"coarse1", "-12"}, {"finel1", "3"}, {"finer1", "3"},
+			{"phoffset1", "180"}, {"stphdetun1", "60"}, {"wavetype1", "3"}, {"modalgo2", "2"},
+			{"useWaveTable2", "0"},
+			{"vol2", "40"}, {"pan2", "25"}, {"coarse2", "7"}, {"finel2", "-7"}, {"finer2", "7"},
+			{"phoffset2", "270"}, {"stphdetun2", "15"}, {"wavetype2", "1"}, {"modalgo3", "3"},
+			{"useWaveTable3", "0"}};
+	}
+	if (plugin == "monstro")
+	{
+		return {
+			{"o1vol", "80"}, {"o1pan", "-20"}, {"o1crs", "12"}, {"o1ftl", "10"}, {"o1ftr", "-10"},
+			{"o1spo", "90"}, {"o1pw", "0.3"}, {"o1ssr", "0"}, {"o1ssf", "0"},
+			{"o2vol", "60"}, {"o2pan", "20"}, {"o2crs", "-12"}, {"o2ftl", "5"}, {"o2ftr", "5"},
+			{"o2spo", "180"}, {"o2wav", "2"}, {"o2syn", "0"}, {"o2synr", "0"},
+			{"o3vol", "40"}, {"o3pan", "0"}, {"o3crs", "7"}, {"o3spo", "270"}, {"o3sub", "0.5"},
+			{"o3wav1", "0"}, {"o3wav2", "3"}, {"o3syn", "0"}, {"o3synr", "0"},
+			{"l1wav", "1"}, {"l1att", "0.1"}, {"l1rat", "5"}, {"l1phs", "0.25"},
+			{"l2wav", "2"}, {"l2att", "0.2"}, {"l2rat", "2"}, {"l2phs", "0.5"},
+			{"e1pre", "0.05"}, {"e1att", "0.05"}, {"e1hol", "0.1"}, {"e1dec", "0.2"},
+			{"e1sus", "0.7"}, {"e1rel", "0.3"}, {"e1slo", "0.5"},
+			{"e2pre", "0.1"}, {"e2att", "0.1"}, {"e2hol", "0.2"}, {"e2dec", "0.3"},
+			{"e2sus", "0.5"}, {"e2rel", "0.4"}, {"e2slo", "0.5"},
+			{"o23mo", "1"},
+			{"v1e1", "1"}, {"v1e2", "0.5"}, {"v1l1", "0.3"}, {"v1l2", "0.2"},
+			{"v2e1", "0.5"}, {"v2e2", "0.3"}, {"v2l1", "0.2"}, {"v2l2", "0.1"},
+			{"v3e1", "0.4"}, {"v3e2", "0.2"}, {"v3l1", "0.1"}, {"v3l2", "0.1"},
+			{"f1e1", "0.2"}, {"f1e2", "0.1"}, {"f2e1", "0.1"}, {"f3e1", "0.1"},
+			{"w1e1", "0.2"}, {"s3e1", "0.3"}};
+	}
+	if (plugin == "organic")
+	{
+		return {
+			{"num_osc", "8"}, {"foldback", "0.2"}, {"vol", "80"},
+			{"vol0", "90"}, {"pan0", "-30"}, {"newharmonic0", "2"}, {"newdetune0", "10"}, {"wavetype0", "1"},
+			{"vol1", "70"}, {"pan1", "30"}, {"newharmonic1", "3"}, {"newdetune1", "-10"}, {"wavetype1", "2"},
+			{"vol2", "60"}, {"pan2", "0"}, {"newharmonic2", "4"}, {"newdetune2", "5"}, {"wavetype2", "3"},
+			{"vol3", "50"}, {"pan3", "10"}, {"newharmonic3", "5"}, {"newdetune3", "-5"}, {"wavetype3", "4"},
+			{"vol4", "40"}, {"pan4", "-10"}, {"newharmonic4", "6"}, {"newdetune4", "3"}, {"wavetype4", "5"},
+			{"vol5", "30"}, {"pan5", "15"}, {"newharmonic5", "7"}, {"newdetune5", "-3"}, {"wavetype5", "1"},
+			{"vol6", "20"}, {"pan6", "-15"}, {"newharmonic6", "8"}, {"newdetune6", "2"}, {"wavetype6", "2"},
+			{"vol7", "10"}, {"pan7", "5"}, {"newharmonic7", "9"}, {"newdetune7", "-2"}, {"wavetype7", "0"}};
+	}
+	if (plugin == "audiofileprocessor")
+	{
+		return {{"amp", "140"}, {"sframe", "0.1"}, {"eframe", "0.9"}, {"lframe", "0.5"},
+			{"looped", "1"}, {"reversed", "0"}, {"stutter", "0"}, {"interp", "2"}};
+	}
+	// Slice 6 (task #589): Lb302 bass synth. Attribute names come from
+	// Lb302Synth::saveSettings(); the knob values are 0..1, "shape" is the
+	// wave-shape combo index and the three toggles are booleans.
+	if (plugin == "lb302")
+	{
+		return {{"vcf_cut", "0.55"}, {"vcf_res", "0.35"}, {"vcf_mod", "0.4"},
+			{"vcf_dec", "0.25"}, {"shape", "1"}, {"dist", "0.3"},
+			{"slide_dec", "0.2"}, {"slide", "1"}, {"dead", "0"}, {"db24", "1"}};
+	}
+	return {};
+}
+
+//! Save/restore round trip, exactly the way InstrumentTrack persists an instrument.
+inline void applyInstrumentTestSettings(Instrument& inst, const std::string& plugin)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement("instrument");
+	// saveState() serialises every model the instrument knows about; the
+	// returned element is the instrument's own element, which restoreState()
+	// reads back.
+	QDomElement saved = inst.saveState(doc, root);
+	for (const auto& o : instrumentOverridesFor(plugin))
+	{
+		saved.setAttribute(QString::fromStdString(o.name), QString::fromStdString(o.value));
+	}
+	// AudioFileProcessor renders a sample: give it a deterministic one through
+	// the same base64 blob the plugin writes for a sample without a file path -
+	// raw SampleFrame bytes, exactly the format SampleBuffer::toBase64() /
+	// fromBase64() round-trip.
+	if (plugin == "audiofileprocessor")
+	{
+		constexpr int SampleFrames = 2048;
+		std::vector<SampleFrame> sample(SampleFrames);
+		for (int f = 0; f < SampleFrames; ++f)
+		{
+			sample[f] = SampleFrame{
+				signalSample(0x5f356495u + 0x9e3779b9u * static_cast<std::uint32_t>(f + 1)),
+				signalSample(0x2c1b3c6du + 0x85ebca6bu * static_cast<std::uint32_t>(f + 1))};
+		}
+		const QByteArray bytes{reinterpret_cast<const char*>(sample.data()),
+			static_cast<int>(sample.size() * sizeof(SampleFrame))};
+		saved.setAttribute(QStringLiteral("sampledata"), QString::fromLatin1(bytes.toBase64()));
+	}
+	inst.restoreState(saved);
+}
+
+/*!
+ * Renders one continuously held note through the instrument and returns the
+ * interleaved float output. The note is never released, so every instrument
+ * sees the same held note; the per-period buffer is cleared first, matching
+ * the mixer's zeroed working buffer.
+ */
+inline auto renderInstrumentBuffers(Instrument& inst, f_cnt_t frames, int key) -> std::vector<float>
+{
+	InstrumentTrack* track = inst.instrumentTrack();
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+
+	const Note note{TimePos{static_cast<tick_t>(frames * Buffers)}, TimePos{0}, key};
+	NotePlayHandle nph{track, 0, frames * Buffers, note, nullptr, -1, NotePlayHandle::Origin::MidiClip};
+
+	if (inst.isSingleStreamed())
+	{
+		// InstrumentPlayHandle only produces sound once a voice is open.
+		inst.handleMidiEvent(MidiEvent{MidiNoteOn, 0, static_cast<std::int16_t>(key), 100}, TimePos{0}, 0);
+	}
+
+	std::vector<float> out;
+	out.reserve(static_cast<std::size_t>(Buffers) * frames * 2);
+
+	for (int b = 0; b < Buffers; ++b)
+	{
+		std::fill(data.begin(), data.end(), SampleFrame{0.0f, 0.0f});
+		const std::span<SampleFrame> span{data};
+
+		// InstrumentTrack::playNote() first, then InstrumentPlayHandle::play().
+		inst.playNote(&nph, span);
+		if (inst.isSingleStreamed())
+		{
+			inst.play(span);
+		}
+
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			out.push_back(data[f].left());
+			out.push_back(data[f].right());
+		}
+	}
+
+	// Hand plugin-owned note data back while the note handle is still alive.
+	if (nph.m_pluginData != nullptr)
+	{
+		inst.deleteNotePluginData(&nph);
+		nph.m_pluginData = nullptr;
+	}
+	return out;
+}
+
+//! Fresh-thread wrapper, for the same RNG-state reason as renderInFreshThread().
+inline auto renderInstrumentInFreshThread(Instrument& inst, f_cnt_t frames, int key) -> std::vector<float>
+{
+	std::vector<float> out;
+	std::thread worker{[&] { out = renderInstrumentBuffers(inst, frames, key); }};
+	worker.join();
+	return out;
 }
 
 } // namespace partc

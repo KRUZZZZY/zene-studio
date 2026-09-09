@@ -123,8 +123,6 @@ public:
 	OrganicInstrument( InstrumentTrack * _instrument_track );
 	~OrganicInstrument() override;
 
-	void playNote( NotePlayHandle * _n,
-						SampleFrame* _working_buffer ) override;
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
 
@@ -140,6 +138,8 @@ public slots:
 
 
 private:
+	void playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out) override;
+
 	float inline waveshape(float in, float amount);
 
 

@@ -30,6 +30,7 @@ SET(LMMS_PLUGIN_LIST
 	CarlaBase
 	CarlaPatchbay
 	CarlaRack
+	ClapEffect
 	Compressor
 	CrossoverEQ
 	Delay
@@ -52,6 +53,7 @@ SET(LMMS_PLUGIN_LIST
 	MultitapEcho
 	Monstro
 	Nes
+	NeuralAmp
 	OpulenZ
 	Organic
 	Oscilloscope
@@ -60,6 +62,7 @@ SET(LMMS_PLUGIN_LIST
 	PeakControllerEffect
 	GigPlayer
 	ReverbSC
+	RnnoiseDenoiser
 	Sf2Player
 	Sfxr
 	Sid
@@ -74,6 +77,7 @@ SET(LMMS_PLUGIN_LIST
 	Vst3Effect
 	Vestige
 	VstEffect
+	WasmEffect
 	Watsyn
 	WaveShaper
 	Vectorscope

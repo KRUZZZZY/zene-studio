@@ -24,6 +24,8 @@
 
 #include "Mixer.h"
 
+#include <algorithm>
+
 #include <QDomElement>
 
 #include "AudioEngine.h"
@@ -41,11 +43,13 @@ namespace lmms
 {
 
 
-MixerRoute::MixerRoute( MixerChannel * from, MixerChannel * to, float amount ) :
+MixerRoute::MixerRoute( MixerChannel * from, MixerChannel * to, float amount,
+			bool preFader ) :
 	m_from( from ),
 	m_to( to ),
 	m_amount(amount, 0, 1, 0.001f, nullptr,
-			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()))
+			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index())),
+	m_preFader( preFader )
 {
 	//qDebug( "created: %d to %d", m_from->m_channelIndex, m_to->m_channelIndex );
 	// create send amount model
@@ -57,6 +61,52 @@ void MixerRoute::updateName()
 	m_amount.setDisplayName(
 			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()));
 }
+
+
+MixerSidechainRoute::MixerSidechainRoute( MixerChannel * from, MixerChannel * to,
+			float amount, SidechainTapPoint mode, bool deferred ) :
+	m_from( from ),
+	m_to( to ),
+	m_amount(amount, 0, 1, 0.001f, nullptr,
+			tr("Sidechain amount from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index())),
+	m_mode( mode ),
+	// one private intermediate buffer per (sender, receiver) pair: the sender
+	// worker writes only this buffer, the receiver worker sums it post-hoc.
+	m_intermediate( Engine::audioEngine()->framesPerPeriod(), 2 ),
+	m_deferred( deferred ),
+	// deferred routes deliver the previous period's tap; the snapshot is
+	// pre-allocated here so the audio path only ever copies into it.
+	m_committed( Engine::audioEngine()->framesPerPeriod(), 2 )
+{
+	m_intermediate.silenceAllChannels();
+	m_committed.silenceAllChannels();
+}
+
+
+void MixerSidechainRoute::clearIntermediate()
+{
+	m_intermediate.silenceAllChannels();
+}
+
+
+void MixerSidechainRoute::commitIntermediate()
+{
+	for( ch_cnt_t ch = 0; ch < 2; ++ch )
+	{
+		auto src = m_intermediate.buffer( ch );
+		auto dst = m_committed.buffer( ch );
+		std::copy( src.begin(), src.end(), dst.begin() );
+	}
+	m_committed.updateSilenceFlags( 0b11 );
+}
+
+
+void MixerSidechainRoute::updateName()
+{
+	m_amount.setDisplayName(
+			tr("Sidechain amount from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()));
+}
+
 
 
 MixerChannel::MixerChannel( int idx, Model * _parent ) :
@@ -73,10 +123,17 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_name(),
 	m_lock(),
 	m_queued( false ),
+	m_sidechainBuffer( Engine::audioEngine()->framesPerPeriod(), 2 ),
+	m_postFaderBuffer( Engine::audioEngine()->framesPerPeriod(), 2 ),
+	m_sidechainSends(),
+	m_sidechainReceives(),
+	m_isBus( false ),
 	m_dependenciesMet(0),
 	m_channelIndex(idx)
 {
 	m_bus.silenceAllChannels();
+	m_sidechainBuffer.silenceAllChannels();
+	m_postFaderBuffer.silenceAllChannels();
 }
 
 
@@ -97,12 +154,41 @@ inline void MixerChannel::processed()
 			receiverRoute->receiver()->incrementDeps();
 		}
 	}
+	// Phase D: a sidechain send is also a scheduling edge. The receiver must
+	// run after the sender has written the sender's private intermediate
+	// buffer, otherwise the post-hoc sum would read a partial or stale tap.
+	// Deferred routes are the exception: they close a cycle through a regular
+	// send, so they must not gate (spec 5.2) and are skipped here.
+	for( const MixerSidechainRoute * receiverRoute : m_sidechainSends )
+	{
+		if( receiverRoute->deferred() )
+		{
+			continue;
+		}
+		if( receiverRoute->receiver()->m_muted == false )
+		{
+			receiverRoute->receiver()->incrementDeps();
+		}
+	}
+}
+
+int MixerChannel::gatingSidechainReceives() const
+{
+	int count = 0;
+	for( const MixerSidechainRoute * route : m_sidechainReceives )
+	{
+		if( ! route->deferred() )
+		{
+			++count;
+		}
+	}
+	return count;
 }
 
 void MixerChannel::incrementDeps()
 {
 	const auto i = m_dependenciesMet++ + 1;
-	if( i >= m_receives.size() && ! m_queued )
+	if( i >= m_receives.size() + gatingSidechainReceives() && ! m_queued )
 	{
 		m_queued = true;
 		AudioEngineWorkerThread::addJob( this );
@@ -164,6 +250,146 @@ void MixerChannel::unmuteReceiverForSolo()
 
 
 
+void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
+{
+	if( m_sidechainReceives.empty() )
+	{
+		return;
+	}
+
+	// Post-hoc sum of the per-sender intermediates (spec 5.4 strategy (a)).
+	// Each intermediate is consumed (cleared) here, so a muted or otherwise
+	// silent sender contributes silence instead of a stale tap from the
+	// previous period. No allocation, no locking: all buffers are
+	// pre-allocated when the route is created on the control thread.
+	float* const dst0 = m_sidechainBuffer.buffer(0).data();
+	float* const dst1 = m_sidechainBuffer.buffer(1).data();
+	for( f_cnt_t f = 0; f < fpp; ++f )
+	{
+		dst0[f] = 0.0f;
+		dst1[f] = 0.0f;
+	}
+
+	for( MixerSidechainRoute * route : m_sidechainReceives )
+	{
+		// Deferred routes do not gate their receiver, so the current
+		// intermediate may not have been written yet this period: read the
+		// snapshot committed in prepareMasterMix() instead (one period late).
+		const AudioBuffer& src = route->deferred()
+			? route->committed()
+			: route->intermediate();
+		const float amount = route->mode() == SidechainTapPoint::PostFaderNoGain
+			? 1.0f
+			: route->amount()->value();
+		const float* const s0 = src.buffer(0).data();
+		const float* const s1 = src.buffer(1).data();
+		if( amount == 1.0f )
+		{
+			for( f_cnt_t f = 0; f < fpp; ++f )
+			{
+				dst0[f] += s0[f];
+				dst1[f] += s1[f];
+			}
+		}
+		else
+		{
+			for( f_cnt_t f = 0; f < fpp; ++f )
+			{
+				dst0[f] += s0[f] * amount;
+				dst1[f] += s1[f] * amount;
+			}
+		}
+		if( ! route->deferred() )
+		{
+			// deferred routes are consumed by the commit instead
+			route->clearIntermediate();
+		}
+	}
+	m_sidechainBuffer.updateSilenceFlags(0b11);
+}
+
+
+
+
+void MixerChannel::updatePostFaderBuffer(const float volume, const f_cnt_t fpp)
+{
+	// D1: the channel volume multiply happens here, after the send loop, and
+	// produces a separate snapshot. m_buffer keeps carrying the post-FX,
+	// pre-fader signal so that pre-fader sends and taps stay independent of
+	// the fader. The per-sample expression is identical to the one the legacy
+	// post-fader receive path applies, so post-fader output is unchanged.
+	float* const dst0 = m_postFaderBuffer.buffer(0).data();
+	float* const dst1 = m_postFaderBuffer.buffer(1).data();
+	ValueBuffer * volBuf = m_volumeModel.valueBuffer();
+	if( volBuf )
+	{
+		const float* const values = volBuf->values();
+		for( f_cnt_t f = 0; f < fpp; ++f )
+		{
+			dst0[f] = m_buffer[f][0] * values[f];
+			dst1[f] = m_buffer[f][1] * values[f];
+		}
+	}
+	else
+	{
+		for( f_cnt_t f = 0; f < fpp; ++f )
+		{
+			dst0[f] = m_buffer[f][0] * volume;
+			dst1[f] = m_buffer[f][1] * volume;
+		}
+	}
+	m_postFaderBuffer.updateSilenceFlags(0b11);
+}
+
+
+
+
+void MixerChannel::writeSidechainTaps(const SidechainTapPoint point,
+					const f_cnt_t fpp)
+{
+	if( m_sidechainSends.empty() )
+	{
+		return;
+	}
+
+	for( MixerSidechainRoute * route : m_sidechainSends )
+	{
+		if( route->mode() != point )
+		{
+			continue;
+		}
+		AudioBuffer& dst = route->intermediate();
+		float* const d0 = dst.buffer(0).data();
+		float* const d1 = dst.buffer(1).data();
+		if( point == SidechainTapPoint::PostFader
+			|| point == SidechainTapPoint::PostFaderNoGain )
+		{
+			const float* const p0 = m_postFaderBuffer.buffer(0).data();
+			const float* const p1 = m_postFaderBuffer.buffer(1).data();
+			for( f_cnt_t f = 0; f < fpp; ++f )
+			{
+				d0[f] = p0[f];
+				d1[f] = p1[f];
+			}
+		}
+		else
+		{
+			// pre-fx and pre-fader both tap the post-FX, pre-volume buffer;
+			// pre-fx is written before the FX chain runs, pre-fader after.
+			for( f_cnt_t f = 0; f < fpp; ++f )
+			{
+				d0[f] = m_buffer[f][0];
+				d1[f] = m_buffer[f][1];
+			}
+		}
+		dst.assumeNonSilent(0);
+		dst.assumeNonSilent(1);
+	}
+}
+
+
+
+
 void MixerChannel::doProcessing()
 {
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
@@ -185,8 +411,23 @@ void MixerChannel::doProcessing()
 				// mix it's output with this one's output
 				SampleFrame* ch_buf = sender->m_buffer;
 
+				if( senderRoute->preFader() )
+				{
+					// Phase D pre-fader send: the sender's post-FX, pre-volume
+					// signal scaled only by the send amount. The sender fader
+					// does not affect a bus's input (spec 5.5).
+					if( ! sendBuf )
+					{
+						const float v = sendModel->value();
+						MixHelpers::addMultiplied( m_buffer, ch_buf, v, fpp );
+					}
+					else
+					{
+						MixHelpers::addMultipliedByBuffer( m_buffer, ch_buf, 1.0f, sendBuf, fpp );
+					}
+				}
 				// use sample-exact mixing if sample-exact values are available
-				if( ! volBuf && ! sendBuf ) // neither volume nor send has sample-exact data...
+				else if( ! volBuf && ! sendBuf ) // neither volume nor send has sample-exact data...
 				{
 					const float v = sender->m_volumeModel.value() * sendModel->value();
 					MixHelpers::addMultiplied( m_buffer, ch_buf, v, fpp );
@@ -210,10 +451,28 @@ void MixerChannel::doProcessing()
 			}
 		}
 
+		// Phase D: pre-FX sidechain tap, taken from the raw channel buffer
+		// before the FX chain runs (spec 4.3).
+		writeSidechainTaps(SidechainTapPoint::PreFx, fpp);
 
+		// Phase D: fold the per-sender sidechain intermediates of this period
+		// into m_sidechainBuffer before our own FX chain reads it.
+		sumSidechainInputs(fpp);
+
+		m_stillRunning = m_sidechainReceives.empty()
+			? m_fxChain.processAudioBuffer(m_bus)
+			: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
+
+		// D1: the volume multiply happens after the send loop, producing the
+		// post-fader snapshot used by post-fader sidechain taps.
 		const float v = m_volumeModel.value();
+		updatePostFaderBuffer(v, fpp);
 
-		m_stillRunning = m_fxChain.processAudioBuffer(m_bus);
+		// Phase D: post-FX sidechain taps (pre-fader = post-FX/pre-volume,
+		// post-fader = post-volume).
+		writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+		writeSidechainTaps(SidechainTapPoint::PostFader, fpp);
+		writeSidechainTaps(SidechainTapPoint::PostFaderNoGain, fpp);
 
 		SampleFrame peakSamples = getAbsPeakValues(m_buffer, fpp);
 		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * v);
@@ -221,6 +480,15 @@ void MixerChannel::doProcessing()
 	}
 	else
 	{
+		// a muted channel contributes silence to its sidechain receivers: the
+		// receiver consumes and clears our intermediates, so clear them here
+		// as well to cover the case where the receiver does not run.
+		for( MixerSidechainRoute * route : m_sidechainSends )
+		{
+			route->clearIntermediate();
+		}
+		m_sidechainBuffer.silenceAllChannels();
+		m_postFaderBuffer.silenceAllChannels();
 		m_peakLeft = m_peakRight = 0.0f;
 	}
 
@@ -244,6 +512,10 @@ Mixer::Mixer() :
 
 Mixer::~Mixer()
 {
+	while (!m_mixerSidechainRoutes.empty())
+	{
+		deleteSidechainSend(m_mixerSidechainRoutes.front());
+	}
 	while (!m_mixerRoutes.empty())
 	{
 		deleteChannelSend(m_mixerRoutes.front());
@@ -389,6 +661,15 @@ void Mixer::deleteChannel( int index )
 	{
 		deleteChannelSend(ch->m_receives.front());
 	}
+	// Phase D: sidechain sends/receives are routes too
+	while (!ch->m_sidechainSends.empty())
+	{
+		deleteSidechainSend(ch->m_sidechainSends.front());
+	}
+	while (!ch->m_sidechainReceives.empty())
+	{
+		deleteSidechainSend(ch->m_sidechainReceives.front());
+	}
 
 	// if m_lastSoloed was our index, reset it
 	if (m_lastSoloed == index) { m_lastSoloed = -1; }
@@ -412,6 +693,14 @@ void Mixer::deleteChannel( int index )
 			r->updateName();
 		}
 		for( MixerRoute * r : m_mixerChannels[i]->m_receives )
+		{
+			r->updateName();
+		}
+		for( MixerSidechainRoute * r : m_mixerChannels[i]->m_sidechainSends )
+		{
+			r->updateName();
+		}
+		for( MixerSidechainRoute * r : m_mixerChannels[i]->m_sidechainReceives )
 		{
 			r->updateName();
 		}
@@ -491,12 +780,16 @@ void Mixer::moveChannelRight( int index )
 
 
 MixerRoute * Mixer::createChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel,
-								float amount )
+								float amount, bool preFader )
 {
 //	qDebug( "requested: %d to %d", fromChannel, toChannel );
 	// find the existing connection
 	MixerChannel * from = m_mixerChannels[fromChannel];
 	MixerChannel * to = m_mixerChannels[toChannel];
+
+	// Phase D: sends to a parallel bus are pre-fader by default, so the
+	// sending channel's fader does not affect the bus input (spec 5.5).
+	const bool routePreFader = preFader || to->isBus();
 
 	for (const auto& send : from->m_sends)
 	{
@@ -504,23 +797,25 @@ MixerRoute * Mixer::createChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel,
 		{
 			// simply adjust the amount
 			send->amount()->setValue(amount);
+			send->setPreFader(routePreFader);
 			return send;
 		}
 	}
 
 	// connection does not exist. create a new one
-	return createRoute( from, to, amount );
+	return createRoute( from, to, amount, routePreFader );
 }
 
 
-MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float amount )
+MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float amount,
+					bool preFader )
 {
 	if( from == to )
 	{
 		return nullptr;
 	}
 	Engine::audioEngine()->requestChangeInModel();
-	auto route = new MixerRoute(from, to, amount);
+	auto route = new MixerRoute(from, to, amount, preFader);
 
 	// add us to from's sends
 	from->m_sends.push_back(route);
@@ -533,6 +828,136 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 	Engine::audioEngine()->doneChangeInModel();
 
 	return route;
+}
+
+
+int Mixer::createBusChannel()
+{
+	const int index = createChannel();
+	m_mixerChannels[index]->setIsBus(true);
+	m_mixerChannels[index]->m_name = tr("Bus %1").arg(index);
+	m_mixerChannels[index]->m_volumeModel.setDisplayName(
+			m_mixerChannels[index]->m_name + ">" + tr("Volume"));
+	m_mixerChannels[index]->m_muteModel.setDisplayName(
+			m_mixerChannels[index]->m_name + ">" + tr("Mute"));
+	m_mixerChannels[index]->m_soloModel.setDisplayName(
+			m_mixerChannels[index]->m_name + ">" + tr("Solo"));
+	return index;
+}
+
+
+bool Mixer::isBusChannel(int channel) const
+{
+	return channel >= 0
+		&& static_cast<std::size_t>(channel) < m_mixerChannels.size()
+		&& m_mixerChannels[channel]->isBus();
+}
+
+
+MixerSidechainRoute * Mixer::createSidechainSend( mix_ch_t fromChannel,
+			mix_ch_t toChannel, float amount, SidechainTapPoint mode )
+{
+	if( fromChannel == toChannel )
+	{
+		return nullptr;
+	}
+	MixerChannel * from = m_mixerChannels[fromChannel];
+	MixerChannel * to = m_mixerChannels[toChannel];
+
+	// update an existing route in place
+	for( MixerSidechainRoute * route : from->m_sidechainSends )
+	{
+		if( route->receiver() == to )
+		{
+			route->amount()->setValue(amount);
+			route->setMode(mode);
+			return route;
+		}
+	}
+
+	// can't send master to anything (legacy rule, kept for sidechain sends)
+	if( from == m_mixerChannels[0] )
+	{
+		return nullptr;
+	}
+
+	// A cycle made of sidechain sends alone has no regular send to anchor
+	// the ordering, so it is refused outright.
+	if( checkSidechainCycle(from, to) )
+	{
+		return nullptr;
+	}
+
+	// A cycle through at least one regular send cannot be ordered either,
+	// but a sidechain send is observation-only (spec 5.2: it never creates a
+	// circular wait), so the route is accepted as deferred: it does not gate
+	// its receiver and the receiver reads the previous period's committed
+	// tap. Refusing it would silently drop the send (see
+	// MixerRoutingBackwardCompatTest::phaseDProjectRoundTripsThroughSaveLoad).
+	const bool deferred = checkInfiniteLoop(from, to);
+
+	Engine::audioEngine()->requestChangeInModel();
+	auto route = new MixerSidechainRoute(from, to, amount, mode, deferred);
+	from->m_sidechainSends.push_back(route);
+	to->m_sidechainReceives.push_back(route);
+	m_mixerSidechainRoutes.push_back(route);
+	Engine::audioEngine()->doneChangeInModel();
+
+	return route;
+}
+
+
+MixerSidechainRoute * Mixer::channelSidechainSend( mix_ch_t fromChannel,
+			mix_ch_t toChannel )
+{
+	if( fromChannel == toChannel )
+	{
+		return nullptr;
+	}
+	MixerChannel * from = m_mixerChannels[fromChannel];
+	MixerChannel * to = m_mixerChannels[toChannel];
+	for( MixerSidechainRoute * route : from->m_sidechainSends )
+	{
+		if( route->receiver() == to )
+		{
+			return route;
+		}
+	}
+	return nullptr;
+}
+
+
+void Mixer::deleteSidechainSend( mix_ch_t fromChannel, mix_ch_t toChannel )
+{
+	MixerChannel * from = m_mixerChannels[fromChannel];
+	MixerChannel * to = m_mixerChannels[toChannel];
+	for( const auto& send : from->m_sidechainSends )
+	{
+		if( send->receiver() == to )
+		{
+			deleteSidechainSend(send);
+			break;
+		}
+	}
+}
+
+
+void Mixer::deleteSidechainSend( MixerSidechainRoute * route )
+{
+	Engine::audioEngine()->requestChangeInModel();
+
+	auto removeFromRouteVector = [route](MixerSidechainRouteVector& routeVec)
+	{
+		auto it = std::find(routeVec.begin(), routeVec.end(), route);
+		if (it != routeVec.end()) { routeVec.erase(it); }
+	};
+
+	removeFromRouteVector(route->sender()->m_sidechainSends);
+	removeFromRouteVector(route->receiver()->m_sidechainReceives);
+	removeFromRouteVector(m_mixerSidechainRoutes);
+
+	delete route;
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 
@@ -604,7 +1029,10 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 	}
 
 	// follow sendTo's outputs recursively looking for something that sends
-	// to sendFrom
+	// to sendFrom. Phase D: gating sidechain edges are traversed as well,
+	// because a non-deferred sidechain send is a scheduling dependency and a
+	// cycle through one would deadlock the dependency counter. Deferred
+	// routes never gate, so they cannot deadlock and are skipped.
 	for (const auto& send : to->m_sends)
 	{
 		if (checkInfiniteLoop(from, send->receiver()))
@@ -612,7 +1040,38 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 			return true;
 		}
 	}
+	for (const auto& send : to->m_sidechainSends)
+	{
+		if (send->deferred())
+		{
+			continue;
+		}
+		if (checkInfiniteLoop(from, send->receiver()))
+		{
+			return true;
+		}
+	}
 
+	return false;
+}
+
+
+bool Mixer::checkSidechainCycle( MixerChannel * from, MixerChannel * to )
+{
+	// would adding from->to close a cycle made of sidechain sends alone?
+	// There is no regular send to anchor the ordering, so such a route is
+	// refused instead of deferred (see createSidechainSend).
+	if( from == to )
+	{
+		return true;
+	}
+	for( const auto& send : to->m_sidechainSends )
+	{
+		if( checkSidechainCycle(from, send->receiver()) )
+		{
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -643,6 +1102,12 @@ FloatModel * Mixer::channelSendModel( mix_ch_t fromChannel, mix_ch_t toChannel )
 void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 {
 	auto mixerChannel = m_mixerChannels[channel];
+	// Phase D: a parallel bus never receives instrument output directly
+	// (spec 5.5) - it is fed exclusively by pre-fader sends.
+	if (mixerChannel->isBus())
+	{
+		return;
+	}
 	if (mixerChannel->m_muteModel.value() == false)
 	{
 		mixerChannel->m_lock.lock();
@@ -661,6 +1126,20 @@ void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 void Mixer::prepareMasterMix()
 {
 	m_mixerChannels[0]->m_bus.silenceAllChannels();
+
+	// Phase D: publish the deferred sidechain taps. A deferred route closes a
+	// cycle through a regular send, so it must not gate its receiver (spec
+	// 5.2); the receiver instead reads the previous period's snapshot. This
+	// runs on the audio render path (AudioEngine::renderStageNoteSetup)
+	// before the period's workers start and only copies between pre-allocated
+	// buffers (no allocation, no locking).
+	for( MixerSidechainRoute * route : m_mixerSidechainRoutes )
+	{
+		if( route->deferred() )
+		{
+			route->commitIntermediate();
+		}
+	}
 }
 
 
@@ -685,7 +1164,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 			ch->processed();
 			ch->done();
 		}
-		else if( ch->m_receives.size() == 0 )
+		else if( ch->m_receives.size() == 0 && ch->gatingSidechainReceives() == 0 )
 		{
 			ch->m_queued = true;
 			AudioEngineWorkerThread::addJob( ch );
@@ -733,6 +1212,10 @@ void Mixer::masterMix( SampleFrame* _buf )
 	for( int i = 0; i < numChannels(); ++i)
 	{
 		m_mixerChannels[i]->m_bus.silenceAllChannels();
+		// Phase D: the sidechain input and the post-fader snapshot are
+		// per-period scratch data
+		m_mixerChannels[i]->m_sidechainBuffer.silenceAllChannels();
+		m_mixerChannels[i]->m_postFaderBuffer.silenceAllChannels();
 		m_mixerChannels[i]->reset();
 		m_mixerChannels[i]->m_queued = false;
 		// also reset hasInput
@@ -768,6 +1251,19 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_muteModel.setDisplayName( ch->m_name + ">" + tr( "Mute" ) );
 	ch->m_soloModel.setDisplayName( ch->m_name + ">" + tr( "Solo" ) );
 	ch->setColor(std::nullopt);
+
+	// Phase D: drop bus flag and any sidechain routing
+	ch->setIsBus(false);
+	while (!ch->m_sidechainSends.empty())
+	{
+		deleteSidechainSend(ch->m_sidechainSends.front());
+	}
+	while (!ch->m_sidechainReceives.empty())
+	{
+		deleteSidechainSend(ch->m_sidechainReceives.front());
+	}
+	ch->m_sidechainBuffer.silenceAllChannels();
+	ch->m_postFaderBuffer.silenceAllChannels();
 
 	// send only to master
 	if( index > 0)
@@ -807,6 +1303,27 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
 
+		// Phase D: parallel bus marker. A legacy LMMS ignores this element
+		// and loads the channel as a regular channel, which is the intended
+		// forward-compatible degradation.
+		if (ch->isBus())
+		{
+			QDomElement busDom = _doc.createElement( QString( "bus" ) );
+			mixch.appendChild( busDom );
+			QStringList sources;
+			for (const MixerChannel * other : m_mixerChannels)
+			{
+				for (const auto& send : other->m_sends)
+				{
+					if (send->receiver() == ch)
+					{
+						sources.append(QString::number(other->index()));
+					}
+				}
+			}
+			busDom.setAttribute("sources", sources.join(','));
+		}
+
 		// add the channel sends
 		for (const auto& send : ch->m_sends)
 		{
@@ -814,7 +1331,20 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			mixch.appendChild( sendsDom );
 
 			sendsDom.setAttribute("channel", send->receiverIndex());
+			if (send->preFader()) { sendsDom.setAttribute("prefader", "1"); }
 			send->amount()->saveSettings(_doc, sendsDom, "amount");
+		}
+
+		// Phase D: sidechain sends. Legacy LMMS ignores these elements, so
+		// the sidechain routing is silently dropped on downgrade.
+		for (const auto& send : ch->m_sidechainSends)
+		{
+			QDomElement scDom = _doc.createElement( QString( "sidechain-send" ) );
+			mixch.appendChild( scDom );
+
+			scDom.setAttribute("channel", send->receiverIndex());
+			scDom.setAttribute("mode", static_cast<int>(send->mode()));
+			send->amount()->saveSettings(_doc, scDom, "amount");
 		}
 	}
 }
@@ -837,6 +1367,22 @@ void Mixer::loadSettings( const QDomElement & _this )
 {
 	clear();
 	QDomNode node = _this.firstChild();
+
+	// Phase D pre-pass: bus flags must be known before sends are loaded,
+	// otherwise a send to a bus that appears later in the document would be
+	// loaded as post-fader. A missing <bus> element leaves the channel a
+	// regular channel, so legacy projects load unchanged.
+	for( QDomNode pre = _this.firstChild(); ! pre.isNull(); pre = pre.nextSibling() )
+	{
+		QDomElement mixch = pre.toElement();
+		if( mixch.nodeName() == QString( "mixerchannel" )
+			&& ! mixch.firstChildElement( QString( "bus" ) ).isNull() )
+		{
+			const int busNum = mixch.attribute( "num" ).toInt();
+			allocateChannelsTo( busNum );
+			m_mixerChannels[busNum]->setIsBus( true );
+		}
+	}
 
 	while( ! node.isNull() )
 	{
@@ -869,7 +1415,22 @@ void Mixer::loadSettings( const QDomElement & _this )
 			{
 				int sendTo = chDataItem.attribute( "channel" ).toInt();
 				allocateChannelsTo( sendTo ) ;
-				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f );
+				const bool preFader =
+					chDataItem.attribute( "prefader" ).toInt() != 0;
+				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
+				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
+			}
+			else if( chDataItem.nodeName() == QString( "sidechain-send" ) )
+			{
+				int sendTo = chDataItem.attribute( "channel" ).toInt();
+				allocateChannelsTo( sendTo );
+				const int mode = chDataItem.attribute( "mode" ).toInt();
+				const SidechainTapPoint tap =
+					( mode >= 0 && mode <= 3 )
+						? static_cast<SidechainTapPoint>( mode )
+						: SidechainTapPoint::PreFader;
+				MixerSidechainRoute * mxr =
+					createSidechainSend( num, sendTo, 1.0f, tap );
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
 			}
 		}
@@ -895,6 +1456,12 @@ bool Mixer::isChannelInUse(int index)
 {
 	// check if the index mixer channel receives audio from any other channel
 	if (!m_mixerChannels[index]->m_receives.empty())
+	{
+		return true;
+	}
+
+	// Phase D: a sidechain receiver is in use as well
+	if (!m_mixerChannels[index]->m_sidechainReceives.empty())
 	{
 		return true;
 	}

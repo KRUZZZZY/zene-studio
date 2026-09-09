@@ -25,19 +25,19 @@
 #ifndef LMMS_OSCILLOSCOPE_H
 #define LMMS_OSCILLOSCOPE_H
 
-#include "Effect.h"
+#include "AudioPlugin.h"
 #include "OscilloscopeControls.h"
 #include "LocklessRingBuffer.h"
 
 namespace lmms
 {
 
-class Oscilloscope : public Effect
+class Oscilloscope : public DefaultEffect
 {
 public:
 	Oscilloscope(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
 
 	EffectControls* controls() override { return &m_controls; }
 
