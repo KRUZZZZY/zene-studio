@@ -12,3 +12,10 @@
 Brewfile.lock.json
 /.cache/
 compile_commands.json
+
+# coverage build tree and gcov/lcov artifacts
+/build-coverage/
+*.gcda
+*.gcno
+*.gcov
+tests/coverage-report/

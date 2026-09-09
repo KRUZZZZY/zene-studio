@@ -1,0 +1,28 @@
+# per-file fork-code line coverage baseline (percentage)
+# maintained by tests/coverage-gate.sh; do not edit by hand
+include/AudioBus.h	88.89
+include/AudioPlugin.h	41.94
+include/AudioPorts.h	25.76
+include/AudioPortsModel.h	96.30
+include/LmmsPolyfill.h	0.00
+include/MultiTrackRecorder.h	100.00
+include/PinConnector.h	0.00
+include/PluginAudioPorts.h	29.73
+include/RecordRingBuffer.h	100.00
+include/RemotePluginAudioPorts.h	0.00
+include/RoutingGraph.h	100.00
+include/RoutingNode.h	75.00
+include/RoutingNodes.h	92.86
+include/ScriptBindings.h	20.51
+include/ScriptEngine.h	100.00
+include/TrackRecorder.h	100.00
+src/core/AudioBus.cpp	76.76
+src/core/AudioPortsModel.cpp	75.58
+src/core/RoutingGraph.cpp	100.00
+src/core/RoutingNode.cpp	100.00
+src/core/RoutingNodes.cpp	96.10
+src/core/ScriptBindings.cpp	58.82
+src/core/ScriptEngine.cpp	79.67
+src/core/audio/MultiTrackRecorder.cpp	75.00
+src/core/audio/TrackRecorder.cpp	87.50
+src/gui/PinConnector.cpp	0.00

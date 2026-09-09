@@ -1,0 +1,48 @@
+# Sources added by this fork on top of upstream master (4e677cb6c).
+# Regenerate with:
+#   git diff --name-only --diff-filter=A origin/master HEAD -- src include plugins \
+#     | grep -E '\.(cpp|c|h)$' | grep -v '^src/3rdparty/'
+# lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
+# resolves this file's directory to the repo root).
+include/AudioBus.h
+include/AudioPlugin.h
+include/AudioPorts.h
+include/AudioPortsModel.h
+include/AudioPortsSettings.h
+include/LmmsPolyfill.h
+include/MultiTrackRecorder.h
+include/PinConnector.h
+include/PluginAudioPorts.h
+include/RecordRingBuffer.h
+include/RemotePluginAudioPorts.h
+include/RoutingGraph.h
+include/RoutingNode.h
+include/RoutingNodes.h
+include/ScriptBindings.h
+include/ScriptEngine.h
+include/TrackRecorder.h
+plugins/Vst3Effect/Vst3BusMap.cpp
+plugins/Vst3Effect/Vst3BusMap.h
+plugins/Vst3Effect/Vst3Effect.cpp
+plugins/Vst3Effect/Vst3Effect.h
+plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+plugins/Vst3Effect/Vst3EffectControlDialog.h
+plugins/Vst3Effect/Vst3EffectControls.cpp
+plugins/Vst3Effect/Vst3EffectControls.h
+plugins/Vst3Effect/Vst3Host.cpp
+plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3ParamDescriptor.h
+plugins/Vst3Effect/Vst3Parameter.cpp
+plugins/Vst3Effect/Vst3Parameter.h
+plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+plugins/Vst3Effect/Vst3SubPluginFeatures.h
+src/core/AudioBus.cpp
+src/core/AudioPortsModel.cpp
+src/core/RoutingGraph.cpp
+src/core/RoutingNode.cpp
+src/core/RoutingNodes.cpp
+src/core/ScriptBindings.cpp
+src/core/ScriptEngine.cpp
+src/core/audio/MultiTrackRecorder.cpp
+src/core/audio/TrackRecorder.cpp
+src/gui/PinConnector.cpp
