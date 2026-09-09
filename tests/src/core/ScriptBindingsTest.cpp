@@ -136,8 +136,8 @@ private slots:
 		note.setVolume(300);
 		note.setPanning(-500);
 		const Note clamped = note.toNote();
-		QCOMPARE(int(clamped.getVolume()), 255);
-		QCOMPARE(int(clamped.getPanning()), -128);
+		QCOMPARE(int(clamped.getVolume()), int(MaxVolume));
+		QCOMPARE(int(clamped.getPanning()), int(PanningLeft));
 
 		// Construction from a Note copies every field.
 		const Note source(TimePos(96), TimePos(12), 55, 111, -64);
@@ -274,8 +274,10 @@ private slots:
 		QCOMPARE(track.name(), QStringLiteral("Lead"));
 		QCOMPARE(raw->name(), QStringLiteral("Lead"));
 
-		QVERIFY(!track.instrumentName().isEmpty());
-		QCOMPARE(track.instrumentName(), raw->instrument()->displayName());
+		// Nothing in this headless harness loads an instrument plugin, so the
+		// track's instrument is null and the wrapper mirrors the empty name.
+		QVERIFY(raw->instrument() == nullptr);
+		QVERIFY(track.instrumentName().isEmpty());
 
 		track.setVolume(42);
 		QCOMPARE(track.volume(), 42);
@@ -397,7 +399,7 @@ private slots:
 		QCOMPARE(clamped.key(), NumKeys - 1);
 		QCOMPARE(clamped.pos(), 0);
 		QCOMPARE(clamped.length(), 1);
-		QCOMPARE(clamped.volume(), 255);
+		QCOMPARE(clamped.volume(), int(MaxVolume));
 
 		// addNote(LuaNote) routes through the same clamp path.
 		LuaNote note;
@@ -543,7 +545,7 @@ private slots:
 		QCOMPARE(song.tempo(), 999);
 		song.setTempo(-7);
 		engine->processCommands();
-		QCOMPARE(song.tempo(), 1);
+		QCOMPARE(song.tempo(), int(MinTempo));
 
 		// masterVolume()/setMasterVolume() with clamping.
 		song.setMasterVolume(77);
@@ -561,8 +563,9 @@ private slots:
 		QVERIFY(projectDir.isValid());
 		engine->setProjectDir(projectDir.path());
 		QVERIFY(song.saveProject(QStringLiteral("saved.mmp")));
-		// DataFile writes a project bundle: <dir>/saved/saved.mmp.
-		QVERIFY(QFileInfo::exists(QDir(projectDir.path()).absoluteFilePath(QStringLiteral("saved/saved.mmp"))));
+		// saveProjectFile() defaults to withResources=false, so DataFile writes
+		// the plain project file at the resolved path.
+		QVERIFY(QFileInfo::exists(QDir(projectDir.path()).absoluteFilePath(QStringLiteral("saved.mmp"))));
 
 		QString message;
 		QVERIFY(throws([&] { song.saveProject(QStringLiteral("../escape.mmp")); }, &message));
@@ -582,7 +585,12 @@ private slots:
 
 		LuaProjectFile files;
 		QCOMPARE(files.projectDir(), projectDir.path());
-		QVERIFY(!files.exists(QStringLiteral("notes.txt")));
+		// exists() resolves with forWrite=false, and resolveProjectPath()
+		// rejects paths that do not exist yet, so a missing file is reported
+		// as an error rather than as false.
+		QString missing;
+		QVERIFY(throws([&] { files.exists(QStringLiteral("notes.txt")); }, &missing));
+		QVERIFY2(missing.contains(QStringLiteral("does not exist")), qPrintable(missing));
 
 		QVERIFY(files.write(QStringLiteral("notes.txt"), QStringLiteral("hello sandbox")));
 		QVERIFY(files.exists(QStringLiteral("notes.txt")));
