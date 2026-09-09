@@ -96,6 +96,13 @@ remain short of 100%; `PinConnector.cpp` stays excluded for the reason above.
 The only other 0% lines in scope are `LmmsPolyfill.h` (2 lines) and
 `PinConnector.h` (5 lines), both header-only GUI/polyfill declarations.
 
+Residual uncovered lines outside the exclusions (95 in total, all in files already
+above the aspiration): `ScriptEngine.cpp` 45, `ScriptBindings.cpp` 14,
+`AudioPorts.h` 12, `AudioPlugin.h` 9 (the `AudioPluginExt` GUI / instrument-scanner
+paths, not exercisable headlessly), `AudioBus.cpp` 6, `TrackRecorder.cpp` 6,
+`ScriptBindings.h` 5, `RoutingNodes.cpp` 3, `AudioPortsModel.cpp` 2. Recorded for
+the next increment; none of them block the gate.
+
 ## Gate 3: No tautological tests (`no-tautology-gate.sh`) — WIRED 2026-09-09
 
 **Command**: `bash tests/no-tautology-gate.sh` (add `--strict` to also require at
