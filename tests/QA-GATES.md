@@ -180,6 +180,28 @@ environment itself has **not** been exercised (this fork has not been pushed), s
 workflow is *syntax-validated and command-verified, not CI-verified* — stated plainly
 rather than assumed green.
 
+## Gate 7: Per-file length (`file-length-gate.sh`) — 2026-09-09
+
+Source: the adopted code-quality ruleset (KB `adopted-code-quality-gates`) requires
+"<= 500 lines default per file (generated tables/fixtures exempt)". QA-GATES.md's original
+six gates did not cover it, so the fork claimed a ruleset item it did not enforce. This
+gate closes that gap using the same ratchet policy — **no retroactive rewrite**:
+
+- a fork-NEW file already over 500 lines is grandfathered in `tests/file-length-baseline.tsv`;
+- a new file over 500 lines fails;
+- a grandfathered file that grows fails;
+- a file that shrinks drops out of the baseline (the ratchet moves one way only);
+- exemptions live in `tests/file-length-exempt.txt` with a stated reason.
+
+**Measured (2026-09-09):** 42 fork sources; 6 grandfathered over 500 lines —
+`ScriptBindings.cpp` 1127, `AudioPorts.h` 992, `ScriptEngine.cpp` 900,
+`Vst3Host.cpp` 714, `AudioPortsModel.cpp` 549, `PinConnector.cpp` 529. No new violations.
+
+```sh
+bash tests/file-length-gate.sh          # ratchet: refresh baseline, fail on regressions
+bash tests/file-length-gate.sh --check  # CI mode: report only
+```
+
 ## Running all gates
 
 ```sh
