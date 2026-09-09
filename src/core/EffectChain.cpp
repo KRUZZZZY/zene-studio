@@ -26,6 +26,7 @@
 #include "EffectChain.h"
 
 #include <QDomElement>
+#include <algorithm>
 #include <cassert>
 
 #include "AudioBus.h"
@@ -42,6 +43,26 @@ EffectChain::EffectChain( Model * _parent ) :
 	SerializingObject(),
 	m_enabledModel( false, nullptr, tr( "Effects enabled" ) )
 {
+	// Disabling the chain takes every effect out of the signal path, so the
+	// cached PDC latency must follow (#605).
+	connect(&m_enabledModel, &BoolModel::dataChanged, [this] { refreshLatency(); });
+}
+
+
+void EffectChain::refreshLatency()
+{
+	int frames = 0;
+	if (m_enabledModel.value())
+	{
+		for (const Effect* effect : m_effects)
+		{
+			if (effect->isEnabled() && effect->isOkay() && !effect->dontRun())
+			{
+				frames += std::max(0, effect->latencyFrames());
+			}
+		}
+	}
+	m_latencyFrames.store(frames, std::memory_order_relaxed);
 }
 
 
@@ -114,6 +135,7 @@ void EffectChain::loadSettings( const QDomElement & _this )
 		node = node.nextSibling();
 	}
 
+	refreshLatency();
 	emit dataChanged();
 }
 
@@ -132,6 +154,7 @@ void EffectChain::appendEffect( Effect * _effect )
 
 	m_enabledModel.setValue( true );
 
+	refreshLatency();
 	emit dataChanged();
 }
 
@@ -157,6 +180,7 @@ void EffectChain::removeEffect( Effect * _effect )
 		m_enabledModel.setValue( false );
 	}
 
+	refreshLatency();
 	emit dataChanged();
 }
 
@@ -257,6 +281,8 @@ void EffectChain::clear()
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( false );
+
+	refreshLatency();
 }
 
 } // namespace lmms

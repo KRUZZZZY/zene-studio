@@ -28,6 +28,7 @@
 
 #include <QDomElement>
 
+#include "AudioBusHandle.h"
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "Mixer.h"
@@ -53,6 +54,8 @@ MixerRoute::MixerRoute( MixerChannel * from, MixerChannel * to, float amount,
 {
 	//qDebug( "created: %d to %d", m_from->m_channelIndex, m_to->m_channelIndex );
 	// create send amount model
+	// PDC (#605): preallocate the per-edge delay history on the control thread.
+	m_compensation.init(Engine::audioEngine()->framesPerPeriod());
 }
 
 
@@ -80,6 +83,21 @@ MixerSidechainRoute::MixerSidechainRoute( MixerChannel * from, MixerChannel * to
 {
 	m_intermediate.silenceAllChannels();
 	m_committed.silenceAllChannels();
+	// PDC (#605): preallocate the tap delay history on the control thread.
+	m_compensation.init(Engine::audioEngine()->framesPerPeriod());
+}
+
+
+void MixerSidechainRoute::compensatedTap(bool deferred, const float** left,
+		const float** right, f_cnt_t frames)
+{
+	AudioBuffer& tap = deferred ? m_committed : m_intermediate;
+	if (m_compensation.delayFrames() > 0)
+	{
+		m_compensation.processPlanar(tap.buffer(0).data(), tap.buffer(1).data(), frames);
+	}
+	*left = tap.buffer(0).data();
+	*right = tap.buffer(1).data();
 }
 
 
@@ -275,14 +293,14 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 		// Deferred routes do not gate their receiver, so the current
 		// intermediate may not have been written yet this period: read the
 		// snapshot committed in prepareMasterMix() instead (one period late).
-		const AudioBuffer& src = route->deferred()
-			? route->committed()
-			: route->intermediate();
 		const float amount = route->mode() == SidechainTapPoint::PostFaderNoGain
 			? 1.0f
 			: route->amount()->value();
-		const float* const s0 = src.buffer(0).data();
-		const float* const s1 = src.buffer(1).data();
+		// PDC (#605): delay the tap to this channel's alignment point. The
+		// route owns the tap buffer, so the delay is applied in place.
+		const float* s0 = nullptr;
+		const float* s1 = nullptr;
+		route->compensatedTap(route->deferred(), &s0, &s1, fpp);
 		if( amount == 1.0f )
 		{
 			for( f_cnt_t f = 0; f < fpp; ++f )
@@ -402,14 +420,20 @@ void MixerChannel::doProcessing()
 			FloatModel * sendModel = senderRoute->amount();
 			if( ! sendModel ) qFatal( "Error: no send model found from %d to %d", senderRoute->senderIndex(), m_channelIndex );
 
-			if( sender->m_hasInput || sender->m_stillRunning )
+			// PDC (#605): a compensated route must deliver its delayed block
+			// even while the sender is momentarily silent, because the delay
+			// line can still hold the tail of the signal.
+			const bool compensate = senderRoute->compensationFrames() > 0;
+			if( sender->m_hasInput || sender->m_stillRunning || compensate )
 			{
 				// figure out if we're getting sample-exact input
 				ValueBuffer * sendBuf = sendModel->valueBuffer();
 				ValueBuffer * volBuf = sender->m_volumeModel.valueBuffer();
 
-				// mix it's output with this one's output
-				SampleFrame* ch_buf = sender->m_buffer;
+				// Delay the sender's block to this channel's alignment point.
+				// A zero delay returns the sender's buffer unchanged.
+				const SampleFrame* ch_buf =
+					senderRoute->compensatedBuffer(sender->m_buffer, fpp);
 
 				if( senderRoute->preFader() )
 				{
@@ -446,7 +470,12 @@ void MixerChannel::doProcessing()
 					const float v = sender->m_volumeModel.value();
 					MixHelpers::addMultipliedByBuffer( m_buffer, ch_buf, v, sendBuf, fpp );
 				}
-				m_bus.quietChannels() &= sender->m_bus.quietChannels(); // mix silence status
+				if( ! compensate )
+				{
+					// A delayed block's silence is not described by the
+					// sender's current flags, so keep this channel awake.
+					m_bus.quietChannels() &= sender->m_bus.quietChannels(); // mix silence status
+				}
 				m_hasInput = true;
 			}
 		}
@@ -480,6 +509,15 @@ void MixerChannel::doProcessing()
 	}
 	else
 	{
+		// PDC (#605): keep the incoming delay lines' timeline aligned.
+		for( MixerRoute * route : m_receives )
+		{
+			route->advanceSilence(fpp);
+		}
+		for( MixerSidechainRoute * route : m_sidechainReceives )
+		{
+			route->advanceSilence(fpp);
+		}
 		// a muted channel contributes silence to its sidechain receivers: the
 		// receiver consumes and clears our intermediates, so clear them here
 		// as well to cover the case where the receiver does not run.
@@ -535,6 +573,8 @@ int Mixer::createChannel()
 	const int index = m_mixerChannels.size();
 	// create new channel
 	m_mixerChannels.push_back( new MixerChannel( index, this ) );
+	// PDC (#605): the latency scratch follows the channel count.
+	resizeLatencyScratch( m_mixerChannels.size() );
 
 	// reset channel state
 	clearChannel( index );
@@ -679,6 +719,7 @@ void Mixer::deleteChannel( int index )
 	// actually delete the channel
 	m_mixerChannels.erase(m_mixerChannels.begin() + index);
 	delete ch;
+	resizeLatencyScratch( m_mixerChannels.size() );
 
 	for (auto i = static_cast<std::size_t>(index); i < m_mixerChannels.size(); ++i)
 	{
@@ -1125,6 +1166,10 @@ void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 
 void Mixer::prepareMasterMix()
 {
+	// PDC (#605): publish this period's compensation delays before any worker
+	// runs. Allocation-free and lock-free; see updateLatencyCompensation().
+	updateLatencyCompensation();
+
 	m_mixerChannels[0]->m_bus.silenceAllChannels();
 
 	// Phase D: publish the deferred sidechain taps. A deferred route closes a
@@ -1140,6 +1185,148 @@ void Mixer::prepareMasterMix()
 			route->commitIntermediate();
 		}
 	}
+}
+
+
+
+void Mixer::resizeLatencyScratch(std::size_t channels)
+{
+	if (m_latencyInputScratch.size() >= channels)
+	{
+		return;
+	}
+	m_latencyInputScratch.resize(channels, 0);
+	m_latencyOutputScratch.resize(channels, 0);
+	m_latencyVisitScratch.resize(channels, 0);
+	m_directSourceLatencyScratch.resize(channels, 0);
+}
+
+
+
+int Mixer::channelInputLatency(mix_ch_t channel) const
+{
+	return channel < m_mixerChannels.size()
+		? m_mixerChannels[channel]->inputLatencyFrames()
+		: 0;
+}
+
+
+
+int Mixer::resolveLatency(std::size_t index)
+{
+	if (m_latencyVisitScratch[index] == 2)
+	{
+		return m_latencyOutputScratch[index];
+	}
+	if (m_latencyVisitScratch[index] == 1)
+	{
+		// Defensive: the regular-send graph is acyclic (checkInfiniteLoop)
+		// and non-deferred sidechain edges are scheduling edges that the same
+		// check traverses. A cycle here would be a scheduling bug, not a
+		// latency source.
+		return 0;
+	}
+	m_latencyVisitScratch[index] = 1;
+
+	const MixerChannel* channel = m_mixerChannels[index];
+	int input = m_directSourceLatencyScratch[index];
+
+	for (const MixerRoute* route : channel->m_receives)
+	{
+		input = std::max(input, resolveLatency(route->senderIndex()));
+	}
+	for (const MixerSidechainRoute* route : channel->m_sidechainReceives)
+	{
+		if (route->deferred())
+		{
+			// Deferred routes read a one-period-old snapshot; that offset is
+			// inherent and cannot be compensated, so they do not raise the
+			// receiver's alignment point.
+			continue;
+		}
+		const std::size_t sender = route->senderIndex();
+		const int senderOut = resolveLatency(sender);
+		const int tap = route->mode() == SidechainTapPoint::PreFx
+			? m_latencyInputScratch[sender]
+			: senderOut;
+		input = std::max(input, tap);
+	}
+
+	m_latencyInputScratch[index] = input;
+	m_latencyOutputScratch[index] =
+		input + std::max(0, channel->m_fxChain.latencyFrames());
+	m_latencyVisitScratch[index] = 2;
+	return m_latencyOutputScratch[index];
+}
+
+
+
+void Mixer::updateLatencyCompensation()
+{
+	const std::size_t count = m_mixerChannels.size();
+	if (count == 0 || m_latencyInputScratch.size() < count)
+	{
+		// Scratch is sized by createChannel() on the control thread; never
+		// allocate here (audio thread).
+		return;
+	}
+
+	std::fill_n(m_directSourceLatencyScratch.begin(), count, 0);
+	std::fill_n(m_latencyVisitScratch.begin(), count, std::uint8_t{0});
+
+	// Direct track inputs: a handle feeding channel c contributes its effect
+	// chain's latency to that channel's input alignment. The handle list is
+	// stable under the change mutex the render period holds.
+	if (Engine::audioEngine() != nullptr)
+	{
+		for (const AudioBusHandle* handle : Engine::audioEngine()->audioBusHandles())
+		{
+			const mix_ch_t channel = handle->nextMixerChannel();
+			// A bus never receives instrument output (mixToChannel refuses),
+			// so a handle pointing at a bus contributes nothing.
+			if (channel < count && !m_mixerChannels[channel]->isBus())
+			{
+				m_directSourceLatencyScratch[channel] =
+					std::max(m_directSourceLatencyScratch[channel],
+						std::max(0, handle->latencyFrames()));
+			}
+		}
+	}
+
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		resolveLatency(i);
+	}
+
+	// Publish the alignment point of every channel.
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		m_mixerChannels[i]->setInputLatencyFrames(m_latencyInputScratch[i]);
+	}
+
+	// Regular sends: delay the sender so it lands on the receiver's point.
+	for (MixerRoute* route : m_mixerRoutes)
+	{
+		const int delay = m_latencyInputScratch[route->receiverIndex()]
+			- m_latencyOutputScratch[route->senderIndex()];
+		route->setCompensationFrames(std::max(delay, 0));
+	}
+
+	// Sidechain sends: the tap point decides the latency the receiver sees.
+	for (MixerSidechainRoute* route : m_mixerSidechainRoutes)
+	{
+		const std::size_t sender = route->senderIndex();
+		const int tap = route->mode() == SidechainTapPoint::PreFx
+			? m_latencyInputScratch[sender]
+			: m_latencyOutputScratch[sender];
+		const int delay = m_latencyInputScratch[route->receiverIndex()] - tap;
+		route->setCompensationFrames(std::max(delay, 0));
+	}
+
+	m_totalLatencyFrames.store(
+		m_latencyInputScratch[0]
+			+ std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames()),
+		std::memory_order_relaxed);
 }
 
 

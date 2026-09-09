@@ -33,6 +33,7 @@
 #include <QMutex>
 
 #include "AudioBus.h"
+#include "LatencyCompensation.h"
 #include "PlayHandle.h"
 
 namespace lmms
@@ -86,6 +87,10 @@ public:
 	//! @returns a span over the mixed buffer of this audio bus handle
 	std::span<SampleFrame> buffer() { return m_buffer; }
 
+	//! Frames of latency this track's effect chain adds to the signal path
+	//! (#605). Read by the mixer's PDC graph on the audio thread.
+	int latencyFrames() const;
+
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 
@@ -113,7 +118,12 @@ private:
 	FloatModel* m_volumeModel;
 	FloatModel* m_panningModel;
 	BoolModel* m_mutedModel;
-	
+
+	//! PDC (#605): delays this track's output to the alignment point of the
+	//! mixer channel it feeds. Preallocated in the constructor; zero delay is
+	//! an exact no-op.
+	LatencyCompensation m_compensation;
+
 	std::atomic<bool> m_corrupted = false;
 
 	friend class AudioEngine;

@@ -29,10 +29,13 @@
 #include "AudioBuffer.h"
 #include "EffectChain.h"
 #include "JournallingObject.h"
+#include "LatencyCompensation.h"
 #include "Model.h"
 #include "ThreadableJob.h"
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <QColor>
 
@@ -135,6 +138,17 @@ public:
 	auto color() const -> const std::optional<QColor>& { return m_color; }
 	void setColor(const std::optional<QColor>& color) { m_color = color; }
 
+	//! PDC (#605): the latency every incoming path is delayed to at this
+	//! channel's summing point. Published once per period by the mixer.
+	int inputLatencyFrames() const
+	{
+		return m_inputLatencyFrames.load(std::memory_order_relaxed);
+	}
+	void setInputLatencyFrames(int frames)
+	{
+		m_inputLatencyFrames.store(frames, std::memory_order_relaxed);
+	}
+
 	std::atomic_size_t m_dependenciesMet;
 	void incrementDeps();
 	void processed();
@@ -143,6 +157,8 @@ private:
 	void doProcessing() override;
 	int m_channelIndex;
 	std::optional<QColor> m_color;
+	//! PDC alignment point; see inputLatencyFrames().
+	std::atomic<int> m_inputLatencyFrames{0};
 };
 
 class MixerRoute : public QObject
@@ -191,6 +207,21 @@ public:
 		m_preFader = preFader;
 	}
 
+	//! PDC (#605): frames of delay this send applies at the receiver so the
+	//! sender's path lands on the receiver's alignment point.
+	void setCompensationFrames(int frames) { m_compensation.setDelayFrames(frames); }
+	int compensationFrames() const { return m_compensation.delayFrames(); }
+
+	//! The sender's block delayed by compensationFrames(). Returns \p in
+	//! unchanged when nothing is compensated (bit-identical bypass).
+	const SampleFrame* compensatedBuffer(const SampleFrame* in, f_cnt_t frames)
+	{
+		return m_compensation.process(in, frames);
+	}
+
+	//! Keep the delay line's timeline aligned for a muted receiver.
+	void advanceSilence(f_cnt_t frames) { m_compensation.advanceSilence(frames); }
+
 	void updateName();
 
 	private:
@@ -198,6 +229,8 @@ public:
 		MixerChannel * m_to;
 		FloatModel m_amount;
 		bool m_preFader;
+		//! PDC delay line (#605); touched only by the receiver's worker.
+		LatencyCompensation m_compensation;
 };
 
 //! A sidechain send (Phase D, task #587). Unlike MixerRoute, sidechain audio
@@ -279,6 +312,19 @@ public:
 	//! workers start; pre-allocated, so no allocation on the audio path.
 	void commitIntermediate();
 
+	//! PDC (#605): frames of delay this tap applies at the receiver so the
+	//! sender's path lands on the receiver's alignment point.
+	void setCompensationFrames(int frames) { m_compensation.setDelayFrames(frames); }
+	int compensationFrames() const { return m_compensation.delayFrames(); }
+
+	//! Hand the receiver the planar tap it must sum, delayed in place by
+	//! compensationFrames(). Selects the committed snapshot for deferred
+	//! routes, like sumSidechainInputs() used to do inline.
+	void compensatedTap(bool deferred, const float** left, const float** right, f_cnt_t frames);
+
+	//! Keep the delay line's timeline aligned for a muted receiver.
+	void advanceSilence(f_cnt_t frames) { m_compensation.advanceSilence(frames); }
+
 	void updateName();
 
 	private:
@@ -289,6 +335,8 @@ public:
 		AudioBuffer m_intermediate;
 		bool m_deferred;
 		AudioBuffer m_committed;
+		//! PDC delay line (#605); touched only by the receiver's worker.
+		LatencyCompensation m_compensation;
 };
 
 
@@ -303,6 +351,17 @@ public:
 
 	void prepareMasterMix();
 	void masterMix( SampleFrame* _buf );
+
+	//! PDC (#605): total latency from a source entering the mixer to the
+	//! master output. A null test shifts its dry reference by this amount.
+	int totalLatencyFrames() const
+	{
+		return m_totalLatencyFrames.load(std::memory_order_relaxed);
+	}
+
+	//! PDC (#605): the alignment point of a channel's input, or 0 when the
+	//! index is out of range.
+	int channelInputLatency(mix_ch_t channel) const;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
@@ -410,6 +469,23 @@ private:
 
 	// make sure we have at least num channels
 	void allocateChannelsTo(int num);
+
+	//! PDC (#605): recompute inLat/outLat for every channel and publish the
+	//! per-edge compensation delays. Runs on the audio thread once per period;
+	//! allocation-free, lock-free, O(channels + edges).
+	void updateLatencyCompensation();
+	//! Memoised longest-path helper for updateLatencyCompensation().
+	int resolveLatency(std::size_t channelIndex);
+	//! Grow the latency scratch (control thread only).
+	void resizeLatencyScratch(std::size_t channels);
+
+	//! Scratch for updateLatencyCompensation(); sized on the control thread.
+	std::vector<int> m_latencyInputScratch;
+	std::vector<int> m_latencyOutputScratch;
+	std::vector<std::uint8_t> m_latencyVisitScratch;
+	std::vector<int> m_directSourceLatencyScratch;
+	//! PDC (#605): published total latency; see totalLatencyFrames().
+	std::atomic<int> m_totalLatencyFrames{0};
 
 	int m_lastSoloed;
 } ;

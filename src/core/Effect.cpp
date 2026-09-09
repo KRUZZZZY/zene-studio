@@ -55,8 +55,27 @@ Effect::Effect( const Plugin::Descriptor * _desc,
 	m_wetDryModel.setCenterValue(0);
 
 	// Call the virtual method onEnabledChanged so that effects can react to changes,
-	// e.g. by resetting state.
-	connect(&m_enabledModel, &BoolModel::dataChanged, [this] { onEnabledChanged(); });
+	// e.g. by resetting state. A bypassed effect contributes no latency, so the
+	// owning chain's PDC graph must be refreshed as well (#605).
+	connect(&m_enabledModel, &BoolModel::dataChanged, [this] {
+		onEnabledChanged();
+		if (m_parent != nullptr) { m_parent->refreshLatency(); }
+	});
+}
+
+void Effect::setDontRun(bool _state)
+{
+	if (m_noRun == _state)
+	{
+		return;
+	}
+	m_noRun = _state;
+	if (m_parent != nullptr)
+	{
+		// Bypassed effects are not in the signal path, so their reported
+		// latency must leave the chain's PDC accounting (#605).
+		m_parent->refreshLatency();
+	}
 }
 
 void Effect::saveSettings( QDomDocument & _doc, QDomElement & _this )

@@ -19,6 +19,7 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RoutingGraphTest.cpp
+	src/core/PdcMixerTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/SlideNotesTest.cpp

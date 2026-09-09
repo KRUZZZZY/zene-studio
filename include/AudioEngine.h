@@ -147,6 +147,11 @@ public:
 
 	void removeAudioBusHandle(AudioBusHandle* busHandle);
 
+	//! Read-only view of the registered handles (#605). The audio thread
+	//! iterates this under m_changeMutex (see renderStageEffects), which is the
+	//! same protection the add/remove path takes.
+	const std::vector<AudioBusHandle*>& audioBusHandles() const { return m_audioBusHandles; }
+
 
 	// MIDI-client-stuff
 	inline const QString & midiClientName() const

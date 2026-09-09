@@ -127,10 +127,9 @@ public:
 		return m_noRun;
 	}
 
-	inline void setDontRun( bool _state )
-	{
-		m_noRun = _state;
-	}
+	//! Mark the effect as not processing (bypass). Defined out of line so the
+	//! owning chain can drop the effect's latency from the PDC graph (#605).
+	void setDontRun( bool _state );
 
 	bool isProcessingAudio() const
 	{

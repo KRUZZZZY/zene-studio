@@ -30,6 +30,8 @@
 #include "SerializingObject.h"
 #include "AutomatableModel.h"
 
+#include <atomic>
+
 namespace lmms
 {
 
@@ -75,6 +77,20 @@ public:
 	//! query this through Effect::sidechainBuffer().
 	auto sidechainBuffer() const -> const AudioBuffer* { return m_sidechainBuffer; }
 
+	//! Frames of latency this chain adds to the signal path: the sum over the
+	//! effects that will actually process audio (enabled, okay, not bypassed),
+	//! or zero when the chain itself is disabled. Cached; refreshed by
+	//! refreshLatency(). Read by the mixer's PDC graph on the audio thread
+	//! (#605), which is why it is an atomic load and never a virtual call.
+	auto latencyFrames() const -> int
+	{
+		return m_latencyFrames.load(std::memory_order_relaxed);
+	}
+
+	//! Control thread: recompute the cached latency after an effect was added,
+	//! removed, bypassed or reported a new latency (#605).
+	void refreshLatency();
+
 	void clear();
 
 
@@ -86,6 +102,9 @@ private:
 
 	//! Non-owning; set by processAudioBuffer() for the duration of the call
 	const AudioBuffer* m_sidechainBuffer = nullptr;
+
+	//! Cached chain latency for the PDC graph (#605); see latencyFrames().
+	std::atomic<int> m_latencyFrames{0};
 
 
 	friend class gui::EffectRackView;

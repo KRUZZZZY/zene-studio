@@ -386,6 +386,121 @@ private:
 	int m_keyedBlocks = 0;
 };
 
+//! Pure integer stereo delay that reports its latency to the host (task #605).
+//! `reportedLatencyFrames` may differ from the true DSP delay: the same effect
+//! then acts as the causal control for PDC, because under-reporting is exactly
+//! the pre-PDC situation (the DSP is late, the host does not know it).
+class LatentDelayEffect : public Effect
+{
+public:
+	LatentDelayEffect(Model* parent, int delayFrames, int reportedLatencyFrames = -1) :
+		Effect{&descriptor(), parent, nullptr},
+		m_delay(delayFrames),
+		m_reported(reportedLatencyFrames >= 0 ? reportedLatencyFrames : delayFrames),
+		m_ring(static_cast<std::size_t>(std::max(delayFrames, 0)) + periodFrames(), SampleFrame{}),
+		m_write(0)
+	{
+	}
+
+	EffectControls* controls() override { return nullptr; }
+
+	int latencyFrames() const override { return m_reported; }
+	int trueDelayFrames() const { return m_delay; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override
+	{
+		if (m_delay <= 0 || m_ring.empty()) { return ProcessStatus::Continue; }
+		const std::size_t capacity = m_ring.size();
+		for (f_cnt_t i = 0; i < frames; ++i)
+		{
+			const std::size_t write = (m_write + i) % capacity;
+			const std::size_t read =
+				(write + capacity - static_cast<std::size_t>(m_delay)) % capacity;
+			const SampleFrame dry = buf[i];
+			buf[i] = m_ring[read];
+			m_ring[write] = dry;
+		}
+		m_write = (m_write + frames) % capacity;
+		return ProcessStatus::Continue;
+	}
+
+private:
+	static const Plugin::Descriptor& descriptor()
+	{
+		static const Plugin::Descriptor d{
+			"pdclatentdelay", "PDC latent delay",
+			"Deterministic delay with a reportable latency for PDC tests",
+			"Zene Studio", 0x0100, Plugin::Type::Effect, nullptr, nullptr, nullptr};
+		return d;
+	}
+
+	int m_delay;
+	int m_reported;
+	std::vector<SampleFrame> m_ring;
+	std::size_t m_write;
+};
+
+//! Records the sample-exact difference between the audio it processes (the
+//! receiver's main input) and the sidechain input the mixer hands it (task #605).
+//! Pass-through: it does not modify the main signal.
+class SidechainDiffProbe : public Effect
+{
+public:
+	explicit SidechainDiffProbe(Model* parent) :
+		Effect{&descriptor(), parent, nullptr}
+	{
+	}
+
+	EffectControls* controls() override { return nullptr; }
+
+	void reset()
+	{
+		m_blocks = 0;
+		m_maxAbs = 0.0;
+		m_sumSq = 0.0;
+		m_frames = 0;
+	}
+
+	int blocks() const { return m_blocks; }
+	double maxAbs() const { return m_maxAbs; }
+	double rms() const { return m_frames > 0 ? std::sqrt(m_sumSq / m_frames) : 0.0; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override
+	{
+		++m_blocks;
+		const AudioBuffer* sc = sidechainBuffer();
+		if (sc == nullptr) { return ProcessStatus::Continue; }
+		const float* const s0 = sc->buffer(0).data();
+		const float* const s1 = sc->buffer(1).data();
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			const double dl = static_cast<double>(buf[f][0]) - static_cast<double>(s0[f]);
+			const double dr = static_cast<double>(buf[f][1]) - static_cast<double>(s1[f]);
+			m_maxAbs = std::max(m_maxAbs, std::max(std::fabs(dl), std::fabs(dr)));
+			m_sumSq += dl * dl + dr * dr;
+			++m_frames;
+		}
+		return ProcessStatus::Continue;
+	}
+
+private:
+	static const Plugin::Descriptor& descriptor()
+	{
+		static const Plugin::Descriptor d{
+			"pdcsidechaindiff", "PDC sidechain diff probe",
+			"Measures main-input minus sidechain-input for PDC tests",
+			"Zene Studio", 0x0100, Plugin::Type::Effect, nullptr, nullptr, nullptr};
+		return d;
+	}
+
+	double m_maxAbs = 0.0;
+	double m_sumSq = 0.0;
+	std::uint64_t m_frames = 0;
+	int m_blocks = 0;
+};
+
 } // namespace partd
 
 #endif // LMMS_TESTS_PHASE_D_MIXER_TEST_SUPPORT_H

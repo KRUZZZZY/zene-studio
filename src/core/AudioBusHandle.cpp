@@ -59,8 +59,17 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	// Mark all track channels as quiet
 	m_bus.quietChannels().set();
 
+	// PDC (#605): preallocate the compensation history on the control thread.
+	m_compensation.init(m_buffer.size());
+
 	Engine::audioEngine()->addAudioBusHandle(this);
 	setExtOutputEnabled(true);
+}
+
+
+int AudioBusHandle::latencyFrames() const
+{
+	return m_effects ? m_effects->latencyFrames() : 0;
 }
 
 
@@ -118,6 +127,8 @@ void AudioBusHandle::doProcessing()
 {
 	if (m_mutedModel && m_mutedModel->value())
 	{
+		// Keep the compensation timeline aligned while muted (#605).
+		m_compensation.advanceSilence(m_buffer.size());
 		return;
 	}
 
@@ -239,7 +250,15 @@ void AudioBusHandle::doProcessing()
 
 	// handle effects
 	const bool anyOutputAfterEffects = processEffects();
-	if (anyOutputAfterEffects || m_bufferUsage)
+
+	// PDC (#605): delay this track's output to the alignment point of the
+	// mixer channel it feeds. A zero delay is an exact no-op, so a track whose
+	// chain reports no latency is bit-identical to the uncompensated path.
+	m_compensation.setDelayFrames(
+		Engine::mixer()->channelInputLatency(m_nextMixerChannel) - latencyFrames());
+	m_compensation.processInPlace(m_buffer.data(), fpp);
+
+	if (anyOutputAfterEffects || m_bufferUsage || m_compensation.delayFrames() > 0)
 	{
 		// TODO: improve the flow here - convert to pull model
 		Engine::mixer()->mixToChannel(m_bus, m_nextMixerChannel); // send output to mixer
