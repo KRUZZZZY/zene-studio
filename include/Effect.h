@@ -152,6 +152,12 @@ public:
 		return m_parent;
 	}
 
+	//! Sidechain input for the current processing block, or nullptr when the
+	//! owning channel has no incoming sidechain sends (Phase D, spec 4.2).
+	//! Delivered through the EffectChain back-pointer so the processImpl()
+	//! signature stays unchanged.
+	const AudioBuffer* sidechainBuffer() const;
+
 	virtual EffectControls * controls() = 0;
 
 	static Effect * instantiate( const QString & _plugin_name,

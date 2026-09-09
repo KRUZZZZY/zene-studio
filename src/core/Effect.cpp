@@ -93,6 +93,14 @@ void Effect::loadSettings( const QDomElement & _this )
 
 
 
+const AudioBuffer* Effect::sidechainBuffer() const
+{
+	return m_parent ? m_parent->sidechainBuffer() : nullptr;
+}
+
+
+
+
 bool Effect::processAudioBuffer(AudioBuffer& inOut)
 {
 	if (!isAwake())
