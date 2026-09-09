@@ -67,15 +67,17 @@ using namespace lmms; // SampleFrame, AudioBus, Effect, f_cnt_t, ch_cnt_t
 //! peakcontrollereffect is migrated but not rendered here: src/core/PeakController.cpp
 //! includes the migrated plugin header, so a pre-migration reference object of the
 //! same class has an incompatible layout (ODR) and crashes in the reference process.
-inline auto pluginNames() -> const std::array<const char*, 20>&
+inline auto pluginNames() -> const std::array<const char*, 23>&
 {
-	static const std::array<const char*, 20> names{
+	static const std::array<const char*, 23> names{
 		"amplifier", "bassbooster", "bitcrush", "dualfilter",
 		"waveshaper", "flanger", "delay",
 		"compressor", "crossovereq", "dynamicsprocessor", "lomm", "multitapecho",
 		"reverbsc", "stereoenhancer", "stereomatrix",
 		// Slice 3 (task #589): analysers, Dispersion, granular shifter and Eq.
-		"dispersion", "vectorscope", "analyzer", "granularpitchshifter", "eq"};
+		"dispersion", "vectorscope", "analyzer", "granularpitchshifter", "eq",
+		// Slice 7 (task #589): the last in-tree legacy-API plugins.
+		"frequencyshifter", "oscilloscope", "slewdistortion"};
 	return names;
 }
 
@@ -226,6 +228,32 @@ inline auto overridesFor(const std::string& plugin) -> std::vector<SettingOverri
 	if (plugin == "stereomatrix")
 	{
 		return {{"l-l", "0.8"}, {"l-r", "0.2"}, {"r-l", "0.1"}, {"r-r", "0.9"}};
+	}
+	// Slice 7 (task #589) plugins.
+	if (plugin == "frequencyshifter")
+	{
+		return {{"mix", "0.9"}, {"freqShift", "250"}, {"spreadShift", "3"},
+			{"ring", "0.2"}, {"feedback", "0.35"}, {"m_delayLengthLong", "1.5"},
+			{"delayLengthShort", "0.5"}, {"delayDamp", "8000"}, {"delayGlide", "0.2"},
+			{"lfoAmount", "40"}, {"lfoRate", "1.5"}, {"lfoStereoPhase", "0.25"},
+			{"antireflect", "1"}, {"routeMode", "1"}, {"harmonics", "0.4"},
+			{"glide", "0.2"}, {"tone", "12000"}, {"phase", "0.3"}};
+	}
+	if (plugin == "oscilloscope")
+	{
+		return {{"amp", "250"}, {"length", "250"}, {"phase", "0.25"}, {"stereo", "1"}};
+	}
+	if (plugin == "slewdistortion")
+	{
+		return {{"distType1", "1"}, {"distType2", "5"}, {"drive1", "12"}, {"drive2", "-6"},
+			{"slewUp1", "3"}, {"slewUp2", "2"}, {"slewDown1", "0"}, {"slewDown2", "-3"},
+			{"bias1", "0.3"}, {"bias2", "-0.2"}, {"warp1", "0.4"}, {"warp2", "0.1"},
+			{"crush1", "6"}, {"crush2", "3"}, {"outVol1", "3"}, {"outVol2", "-3"},
+			{"attack1", "5"}, {"attack2", "50"}, {"release1", "100"}, {"release2", "200"},
+			{"dynamics1", "0.5"}, {"dynamics2", "0.25"}, {"dynamicSlew1", "2"},
+			{"dynamicSlew2", "-2"}, {"dcRemove", "1"}, {"multiband", "1"},
+			{"oversampling", "2"}, {"split", "800"}, {"mix1", "0.8"}, {"mix2", "0.6"},
+			{"slewLink1", "0"}, {"slewLink2", "1"}};
 	}
 	return {};
 }

@@ -53,19 +53,19 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
 
 
 Oscilloscope::Oscilloscope(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	AudioPlugin(&oscilloscope_plugin_descriptor, parent, key),
+	Effect(&oscilloscope_plugin_descriptor, parent, key),
 	m_controls(this),
 	m_inputBuffer(InputBufferSize)
 {
 }
 
 
-ProcessStatus Oscilloscope::processImpl(InterleavedBufferView<float, 2> inOut)
+Effect::ProcessStatus Oscilloscope::processImpl(SampleFrame* buffer, const f_cnt_t frames)
 {
 	if (!m_controls.m_pauseModel.value())
 	{
 		// Send the samples from the audio thread over to the gui via a ring buffer; the gui will do all of the processing.
-		m_inputBuffer.write(reinterpret_cast<const SampleFrame*>(inOut.data()), inOut.frames());
+		m_inputBuffer.write(buffer, frames);
 	}
 	return ProcessStatus::Continue;
 }

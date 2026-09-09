@@ -54,7 +54,7 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
 }// extern "C"
 
 FrequencyShifterEffect::FrequencyShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	AudioPlugin(&frequencyshifter_plugin_descriptor, parent, key),
+	Effect(&frequencyshifter_plugin_descriptor, parent, key),
 	m_controls(this)
 {
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged,
@@ -62,7 +62,7 @@ FrequencyShifterEffect::FrequencyShifterEffect(Model* parent, const Descriptor::
 	updateSampleRate();
 }
 
-ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+Effect::ProcessStatus FrequencyShifterEffect::processImpl(SampleFrame* buf, const f_cnt_t frames)
 {
 	constexpr float twoPi = std::numbers::pi_v<float> * 2.0f;
 
@@ -116,7 +116,7 @@ ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2
 		m_phase[ch] = std::fmod(m_phase[ch], twoPi);
 	}
 
-	for (auto i = std::size_t{0}; i < inOut.frames(); ++i)
+	for (size_t i = 0; i < frames; ++i)
 	{
 		float lfo0;
 		float lfo1;
@@ -149,8 +149,8 @@ ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2
 		if (++m_writeIndex == m_ringBufSize) { m_writeIndex = 0; }
 
 		// routing stuff
-		const float inL = inOut[i][0];
-		const float inR = inOut[i][1];
+		const float inL = buf[i][0];
+		const float inR = buf[i][1];
 		const float fxInL = parallelFB ? (dly[0] * feedback) : (inL + dly[0] * feedback);
 		const float fxInR = parallelFB ? (dly[1] * feedback) : (inR + dly[1] * feedback);
 		
@@ -245,14 +245,14 @@ ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2
 
 		if (routeAdd)
 		{
-			inOut[i][0] = inL + mix * outL;
-			inOut[i][1] = inR + mix * outR;
+			buf[i][0] = inL + mix * outL;
+			buf[i][1] = inR + mix * outR;
 		}
 		else
 		{
 			const float dry = 1.f - mix;
-			inOut[i][0] = dry * inL + mix * outL;
-			inOut[i][1] = dry * inR + mix * outR;
+			buf[i][0] = dry * inL + mix * outL;
+			buf[i][1] = dry * inR + mix * outR;
 		}
 	}
 

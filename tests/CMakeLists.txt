@@ -92,6 +92,10 @@ set(PART_C_REFERENCE_MODULES
 	# Slice 6 (task #589): LADSPA host and the Lb302 bass synth.
 	"lb302|Lb302|Lb302.cpp|Lb302.h"
 	"ladspaeffect|LadspaEffect|LadspaEffect.cpp|LadspaEffect.h|LadspaControls.cpp|LadspaControls.h|LadspaControlDialog.cpp|LadspaControlDialog.h|LadspaMatrixControlDialog.cpp|LadspaMatrixControlDialog.h|LadspaSubPluginFeatures.cpp|LadspaSubPluginFeatures.h|LadspaWidgetFactory.cpp|LadspaWidgetFactory.h"
+	# Slice 7 (task #589): the last in-tree legacy-API plugins.
+	"frequencyshifter|FrequencyShifter|FrequencyShifterEffect.cpp|FrequencyShifterControls.cpp|FrequencyShifterControlDialog.cpp|HilbertTransform.h"
+	"oscilloscope|Oscilloscope|Oscilloscope.cpp|OscilloscopeControls.cpp|OscilloscopeControlDialog.cpp|OscilloscopeGraph.cpp|OscilloscopeGraph.h"
+	"slewdistortion|SlewDistortion|SlewDistortion.cpp|SlewDistortionControls.cpp|SlewDistortionControlDialog.cpp"
 )
 
 set(PART_C_REFERENCE_TARGETS "")
@@ -131,7 +135,11 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	# Slice 4 (task #589): instruments whose plugin CMakeLists.txt links extra
 	# targets or sets extra defines - mirror them so the reference module is
 	# built exactly like the pre-migration plugin was.
-	if(PLUGIN_ID STREQUAL "freeboy")
+	if(PLUGIN_ID STREQUAL "slewdistortion")
+		# The plugin links hiir itself; OversamplingHelpers.h pulls in the
+		# hiir up/down-sampler headers.
+		target_link_libraries(partc_ref_slewdistortion PRIVATE hiir)
+	elseif(PLUGIN_ID STREQUAL "freeboy")
 		target_link_libraries(partc_ref_freeboy PRIVATE gme)
 	elseif(PLUGIN_ID STREQUAL "sid")
 		target_link_libraries(partc_ref_sid PRIVATE resid)

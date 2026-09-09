@@ -127,6 +127,23 @@ extract() { # extract <plugin-dir> <file>
 	         LadspaWidgetFactory.cpp LadspaWidgetFactory.h; do
 		extract LadspaEffect "$f"
 	done
+	# Slice 7 (task #589): the last in-tree legacy-API plugins.
+	for f in FrequencyShifterEffect.cpp FrequencyShifterEffect.h \
+	         FrequencyShifterControls.cpp FrequencyShifterControls.h \
+	         FrequencyShifterControlDialog.cpp FrequencyShifterControlDialog.h \
+	         HilbertTransform.h; do
+		extract FrequencyShifter "$f"
+	done
+	for f in Oscilloscope.cpp Oscilloscope.h OscilloscopeControls.cpp OscilloscopeControls.h \
+	         OscilloscopeControlDialog.cpp OscilloscopeControlDialog.h \
+	         OscilloscopeGraph.cpp OscilloscopeGraph.h; do
+		extract Oscilloscope "$f"
+	done
+	for f in SlewDistortion.cpp SlewDistortion.h SlewDistortionControls.cpp \
+	         SlewDistortionControls.h SlewDistortionControlDialog.cpp \
+	         SlewDistortionControlDialog.h; do
+		extract SlewDistortion "$f"
+	done
 } >> "$HERE/ORIGIN.tsv"
 
 echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"

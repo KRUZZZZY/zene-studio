@@ -69,6 +69,10 @@ auto referenceModules() -> const std::vector<ReferenceModule>&
 		{"analyzer", PART_C_REF_analyzer},
 		{"granularpitchshifter", PART_C_REF_granularpitchshifter},
 		{"eq", PART_C_REF_eq},
+		// Slice 7 (task #589)
+		{"frequencyshifter", PART_C_REF_frequencyshifter},
+		{"oscilloscope", PART_C_REF_oscilloscope},
+		{"slewdistortion", PART_C_REF_slewdistortion},
 	};
 	return modules;
 }

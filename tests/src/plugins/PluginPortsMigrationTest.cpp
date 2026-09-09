@@ -65,6 +65,10 @@ auto migratedModules() -> const std::vector<MigratedModule>&
 		{"analyzer", PART_C_MIGRATED_analyzer},
 		{"granularpitchshifter", PART_C_MIGRATED_granularpitchshifter},
 		{"eq", PART_C_MIGRATED_eq},
+		// Slice 7 (task #589)
+		{"frequencyshifter", PART_C_MIGRATED_frequencyshifter},
+		{"oscilloscope", PART_C_MIGRATED_oscilloscope},
+		{"slewdistortion", PART_C_MIGRATED_slewdistortion},
 	};
 	return modules;
 }
@@ -136,6 +140,7 @@ private slots:
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void slice6PluginsAreLiveAndExact();
+	void slice7PluginsAreLiveAndExact();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -447,6 +452,62 @@ void PluginPortsMigrationTest::slice6PluginsAreLiveAndExact()
 	QVERIFY2(amp->checksum != djEq->checksum,
 		"distinct LADSPA plugins rendered identically");
 	QVERIFY2(worst > 1e-6f, "LADSPA comparison not sensitive");
+}
+
+/*!
+ * Slice 7 (task #589) negative controls for the last in-tree legacy-API
+ * plugins: every one of them must render audio, the two signal shapers must
+ * actually change the signal (a bypassed effect would compare equal to its
+ * reference trivially), and Oscilloscope - a documented pass-through - must
+ * hand the input back bit-for-bit. Two distinct new plugins must not render
+ * identically, so the comparator is live on the new modules as well.
+ */
+void PluginPortsMigrationTest::slice7PluginsAreLiveAndExact()
+{
+	const auto dry = partc::dryInput(lmms::Engine::audioEngine()->framesPerPeriod());
+	for (const char* name : {"frequencyshifter", "oscilloscope", "slewdistortion"})
+	{
+		const auto* render = findRender(m_migrated, name);
+		QVERIFY2(render != nullptr, name);
+		QCOMPARE(render->samples.size(), dry.size());
+
+		float peak = 0.0f;
+		for (const float s : render->samples)
+		{
+			peak = std::max(peak, std::fabs(s));
+		}
+		const float wet = partc::maxAbsDiff(render->samples, dry);
+		qInfo().noquote() << QString{"slice 7 negative control: %1 peak=%2 max|wet-dry|=%3"}
+			.arg(name).arg(peak, 0, 'g', 4).arg(wet, 0, 'g', 4);
+		QVERIFY2(peak > 1e-4f, qPrintable(QString{"%1 rendered silence"}.arg(name)));
+	}
+
+	// The two shapers must not be bypassed.
+	for (const char* name : {"frequencyshifter", "slewdistortion"})
+	{
+		const auto* render = findRender(m_migrated, name);
+		QVERIFY2(render != nullptr, name);
+		const float wet = partc::maxAbsDiff(render->samples, dry);
+		QVERIFY2(wet > 0.05f,
+			qPrintable(QString{"%1 did not change the signal (bypassed?)"}.arg(name)));
+	}
+
+	// Oscilloscope only copies the signal into its GUI ring buffer, so its
+	// render must equal the dry input exactly.
+	const auto* scope = findRender(m_migrated, "oscilloscope");
+	QVERIFY2(scope != nullptr, "oscilloscope render missing");
+	QCOMPARE(scope->checksum, partc::checksum(dry));
+
+	// Two distinct new plugins must differ from each other.
+	const auto* shifter = findRender(m_migrated, "frequencyshifter");
+	const auto* slew = findRender(m_reference, "slewdistortion");
+	QVERIFY(shifter != nullptr && slew != nullptr);
+	const float worst = partc::maxAbsDiff(shifter->samples, slew->samples);
+	qInfo().noquote()
+		<< QString{"slice 7 negative control: frequencyshifter (migrated) vs slewdistortion (reference) max|delta|=%1"}
+			   .arg(worst, 0, 'g', 3);
+	QVERIFY2(shifter->checksum != slew->checksum, "distinct plugins rendered identically");
+	QVERIFY2(worst > 1e-6f, "slice 7 comparison not sensitive");
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

@@ -48,7 +48,7 @@ Plugin::Descriptor PLUGIN_EXPORT slewdistortion_plugin_descriptor =
 
 
 SlewDistortion::SlewDistortion(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	AudioPlugin(&slewdistortion_plugin_descriptor, parent, key),
+	Effect(&slewdistortion_plugin_descriptor, parent, key),
 	m_sampleRate(Engine::audioEngine()->outputSampleRate()),
 	m_lp(m_sampleRate),
 	m_hp(m_sampleRate),
@@ -60,7 +60,7 @@ SlewDistortion::SlewDistortion(Model* parent, const Descriptor::SubPluginFeature
 
 
 #ifdef __SSE2__
-ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
+Effect::ProcessStatus SlewDistortion::processImpl(SampleFrame* buf, const f_cnt_t frames)
 {
 	const float d = dryLevel();
 	const float w = wetLevel();
@@ -136,7 +136,7 @@ ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
 		m_hp.setHighpass(split);
 	}
 
-	for (f_cnt_t f = 0; f < inOut.frames(); ++f)
+	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		// interpolate bias to remove crackling when moving the parameter
 		m_trueBias1 = m_biasInterpCoef * m_trueBias1 + (1.f - m_biasInterpCoef) * bias1;
@@ -145,13 +145,13 @@ ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
 
 		if (oversampleVal > 1)
 		{
-			m_upsampler[0].processSample(m_overOuts[0].data(), inOut[f][0]);
-			m_upsampler[1].processSample(m_overOuts[1].data(), inOut[f][1]);
+			m_upsampler[0].processSample(m_overOuts[0].data(), buf[f][0]);
+			m_upsampler[1].processSample(m_overOuts[1].data(), buf[f][1]);
 		}
 		else
 		{
-			m_overOuts[0][0] = inOut[f][0];
-			m_overOuts[1][0] = inOut[f][1];
+			m_overOuts[0][0] = buf[f][0];
+			m_overOuts[1][0] = buf[f][1];
 		}
 
 		for (int overSamp = 0; overSamp < oversampleVal; ++overSamp)
@@ -429,8 +429,8 @@ ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
 			s[1] = m_overOuts[1][0];
 		}
 
-		inOut[f][0] = d * inOut[f][0] + w * s[0];
-		inOut[f][1] = d * inOut[f][1] + w * s[1];
+		buf[f][0] = d * buf[f][0] + w * s[0];
+		buf[f][1] = d * buf[f][1] + w * s[1];
 	}
 
 	return ProcessStatus::ContinueIfNotQuiet;
@@ -439,7 +439,7 @@ ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
 
 
 #else
-ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
+Effect::ProcessStatus SlewDistortion::processImpl(SampleFrame* buf, const f_cnt_t frames)
 {
 	const float d = dryLevel();
 	const float w = wetLevel();
@@ -512,7 +512,7 @@ ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
 		m_hp.setHighpass(split);
 	}
 	
-	for (f_cnt_t f = 0; f < inOut.frames(); ++f)
+	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		// interpolate bias to remove crackling when moving the parameter
 		m_trueBias1 = m_biasInterpCoef * m_trueBias1 + (1.f - m_biasInterpCoef) * bias1;
@@ -521,13 +521,13 @@ ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
 		
 		if (oversampleVal > 1)
 		{
-			m_upsampler[0].processSample(m_overOuts[0].data(), inOut[f][0]);
-			m_upsampler[1].processSample(m_overOuts[1].data(), inOut[f][1]);
+			m_upsampler[0].processSample(m_overOuts[0].data(), buf[f][0]);
+			m_upsampler[1].processSample(m_overOuts[1].data(), buf[f][1]);
 		}
 		else
 		{
-			m_overOuts[0][0] = inOut[f][0];
-			m_overOuts[1][0] = inOut[f][1];
+			m_overOuts[0][0] = buf[f][0];
+			m_overOuts[1][0] = buf[f][1];
 		}
 		
 		for (int overSamp = 0; overSamp < oversampleVal; ++overSamp)
@@ -668,8 +668,8 @@ ProcessStatus SlewDistortion::processImpl(InterleavedBufferView<float, 2> inOut)
 			s[1] = m_overOuts[1][0];
 		}
 		
-		inOut[f][0] = d * inOut[f][0] + w * s[0];
-		inOut[f][1] = d * inOut[f][1] + w * s[1];
+		buf[f][0] = d * buf[f][0] + w * s[0];
+		buf[f][1] = d * buf[f][1] + w * s[1];
 	}
 
 	return ProcessStatus::ContinueIfNotQuiet;
