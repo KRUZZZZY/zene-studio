@@ -32,6 +32,7 @@
 #include <cmath>
 #include <vector>
 
+#include "AudioBuffer.h"
 #include "AudioBus.h"
 #include "BufferManager.h"
 #include "ClapEffect.h"
@@ -59,6 +60,7 @@ private slots:
 	void testMultiChannelBusPassesThroughExtraChannels();
 	void testStateRoundTripThroughMmp();
 	void testRendersBeforeAfterWav();
+	void testLegacyAudioBufferPathRoutesPlanarPorts();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -307,8 +309,13 @@ void ClapEffectIntegrationTest::testRendersBeforeAfterWav()
 		gain->setValue(gainValue);
 		for (int pos = 0; pos < totalFrames; pos += fpp)
 		{
-			SampleFrame storage[fpp];
-			for (f_cnt_t f = 0; f < fpp; ++f)
+			// The final block is partial: only `blockFrames` frames belong to
+			// the render. Writing past the end of dry/wet would be out of
+			// bounds (and corrupts the heap in Debug builds), so clamp.
+			const auto blockFrames = static_cast<f_cnt_t>(
+				std::min(static_cast<int>(fpp), totalFrames - pos));
+			SampleFrame storage[fpp]{};
+			for (f_cnt_t f = 0; f < blockFrames; ++f)
 			{
 				const auto sample = amplitude * static_cast<float>(std::sin(
 					2.0 * kPi * frequency * static_cast<double>(pos + f) / sampleRate));
@@ -321,7 +328,7 @@ void ClapEffectIntegrationTest::testRendersBeforeAfterWav()
 			AudioBus bus{busData, 1, fpp};
 			QVERIFY(chain.processAudioBuffer(bus));
 
-			for (f_cnt_t f = 0; f < fpp; ++f)
+			for (f_cnt_t f = 0; f < blockFrames; ++f)
 			{
 				wet[static_cast<std::size_t>(pos) + f] = storage[f][0];
 			}
@@ -344,6 +351,56 @@ void ClapEffectIntegrationTest::testRendersBeforeAfterWav()
 		qPrintable(QStringLiteral("unity %1 dry %2").arg(unityRms).arg(dryRms)));
 	QVERIFY2(std::abs(halfRms - 0.5 * dryRms) < 1e-6,
 		qPrintable(QStringLiteral("half %1 dry %2").arg(halfRms).arg(dryRms)));
+}
+
+//! The legacy single-buffer entry point must bridge ClapEffect's planar,
+//! non-in-place port set through the audio ports router. Before task #607 the
+//! bridge only compiled for in-place interleaved effects, so this path did not
+//! exist for CLAP (and VST3) effects at all.
+void ClapEffectIntegrationTest::testLegacyAudioBufferPathRoutesPlanarPorts()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	QVERIFY(!effect->isCorrupted());
+
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.5f);
+
+	AudioBuffer buffer{fpp, DEFAULT_CHANNELS};
+	buffer.allocateInterleavedBuffer();
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		buffer.interleavedBuffer()[f][0] = 0.5f;
+		buffer.interleavedBuffer()[f][1] = -0.25f;
+	}
+	buffer.assumeNonSilent(0);
+	buffer.assumeNonSilent(1);
+
+	// Non-virtual Effect::processAudioBuffer(AudioBuffer&) reaches the legacy
+	// AudioPlugin::processImpl(SampleFrame*, f_cnt_t), which routes the buffer
+	// through the ports router instead of constructing an interleaved view.
+	// Call through the Effect interface: AudioPlugin's AudioBus override hides
+	// the AudioBuffer overload on concrete plugin types.
+	Effect& legacyEntry = *effect;
+	QVERIFY(legacyEntry.processAudioBuffer(buffer));
+
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		QVERIFY2(std::abs(buffer.interleavedBuffer()[f][0] - 0.25f) < 1e-6f,
+			qPrintable(QStringLiteral("legacy left %1").arg(buffer.interleavedBuffer()[f][0])));
+		QVERIFY2(std::abs(buffer.interleavedBuffer()[f][1] + 0.125f) < 1e-6f,
+			qPrintable(QStringLiteral("legacy right %1").arg(buffer.interleavedBuffer()[f][1])));
+	}
+	qInfo("legacy AudioBuffer path: input 0.5/-0.25, gain 0.5 -> measured out[0]=%.9f out[1]=%.9f",
+		buffer.interleavedBuffer()[0][0], buffer.interleavedBuffer()[0][1]);
 }
 
 } // namespace lmms

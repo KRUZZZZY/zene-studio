@@ -468,3 +468,15 @@ skip it. Gate 2 stays opt-in because it rebuilds the whole tree.
   shells (both scripts set it).
 - Tests must run against a real build: "it compiles" never substitutes for a
   passing `ctest`.
+- `include/AudioPlugin.h`'s legacy single-buffer bridge
+  (`AudioPlugin::processImpl(SampleFrame*, f_cnt_t)`) deliberately routes the
+  legacy interleaved buffer through the audio ports router instead of
+  constructing a buffer view directly. A view over the interleaved buffer only
+  exists for in-place interleaved settings, so the view-based bridge could not
+  compile for planar, non-in-place effects (`ClapEffect`, `Vst3Effect`) —
+  task #607. Routing keeps both entry points working for every
+  `AudioPortsSettings`;
+  `ClapEffectIntegrationTest::testLegacyAudioBufferPathRoutesPlanarPorts`
+  holds the planar case and
+  `AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts` holds the in-place
+  case sample-exactly.

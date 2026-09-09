@@ -307,23 +307,40 @@ protected:
 	 * Legacy single-buffer entry point, kept until the AudioBuffer interface is
 	 * removed. Effects migrated to the AudioPorts API implement processImpl with
 	 * a buffer view, while unmigrated effects still implement the SampleFrame
-	 * based overload. Present the legacy interleaved buffer as the in-place view
-	 * the ports implementation expects so both interfaces keep working.
+	 * based overload. Present the legacy interleaved buffer as a one-pair bus
+	 * and route it through the audio ports router, so both interfaces keep
+	 * working for every AudioPortsSettings: interleaved or planar, in-place or
+	 * not. Routing (instead of constructing a buffer view directly) is
+	 * deliberate - a view over the interleaved buffer only exists for in-place
+	 * interleaved effects, while planar effects such as ClapEffect and
+	 * Vst3Effect need the router to deinterleave into their input buffers and
+	 * interleave their output buffers back.
 	 */
 	auto processImpl(SampleFrame* buf, const f_cnt_t frames) -> Effect::ProcessStatus final
 	{
-		static_assert(settings.inplace && settings.interleaved,
-			"The legacy single-buffer interface can only be bridged to in-place, interleaved effects");
-
-		switch (AudioProcessingMethod<Effect, settings>::processImpl(
-			GetAudioBufferViewType<settings, false, false>{buf, frames}))
+		if (!m_audioPorts.active())
 		{
-			case ProcessStatus::Continue:
+			return Effect::ProcessStatus::Continue;
+		}
+
+		SampleFrame* busData[1] = {buf};
+		auto bus = AudioBus{busData, 1, frames};
+
+		auto router = m_audioPorts.getRouter();
+		const auto status = router.process(bus, [this](auto... buffers) {
+			return this->processImpl(buffers...);
+		});
+
+		switch (status)
+		{
+			case lmms::ProcessStatus::Continue:
 				return Effect::ProcessStatus::Continue;
-			case ProcessStatus::ContinueIfNotQuiet:
+			case lmms::ProcessStatus::ContinueIfNotQuiet:
 				return Effect::ProcessStatus::ContinueIfNotQuiet;
-			case ProcessStatus::Sleep:
+			case lmms::ProcessStatus::Sleep:
 				return Effect::ProcessStatus::Sleep;
+			default:
+				break;
 		}
 
 		return Effect::ProcessStatus::Continue;

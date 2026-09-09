@@ -49,6 +49,7 @@
 #include <QTextStream>
 #include <QtTest>
 
+#include "AudioBuffer.h"
 #include "AudioBus.h"
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
@@ -93,6 +94,7 @@ private slots:
 	void lockFailureReturnsTrueWithoutProcessing();
 	void bypassedEffectRunsDefaultBypassImpl();
 	void unknownProcessStatusIsIgnored();
+	void legacyAudioBufferPathRoutesInPlacePorts();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -355,6 +357,40 @@ void AudioPluginTest::unknownProcessStatusIsIgnored()
 	QCOMPARE(processCalls, 1);
 	QCOMPARE(bypassCalls, 0);
 	QCOMPARE(data[0].left(), 0.4f);
+}
+
+//! The legacy single-buffer path must bridge in-place interleaved effects
+//! through the ports router too (#607): the synthetic processImpl halves every
+//! sample, so a routed buffer must yield exactly the direct-view result.
+void AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts()
+{
+	const auto fx = createEffect();
+	QVERIFY(fx != nullptr);
+
+	AudioBuffer buffer{TestFrames, DEFAULT_CHANNELS};
+	buffer.allocateInterleavedBuffer();
+	for (f_cnt_t f = 0; f < TestFrames; ++f)
+	{
+		buffer.interleavedBuffer()[f][0] = 0.8f;
+		buffer.interleavedBuffer()[f][1] = -0.4f;
+	}
+	buffer.assumeNonSilent(0);
+	buffer.assumeNonSilent(1);
+
+	setStatus(StatusContinue);
+	resetCounts();
+	const bool continued = fx->processAudioBuffer(buffer);
+
+	QCOMPARE(continued, true);
+	const auto [lockCalls, processCalls, bypassCalls] = counts();
+	// The legacy AudioBuffer entry point is not wrapped by processLock(); only
+	// the AudioBus override takes the lock.
+	QCOMPARE(lockCalls, 0);
+	QCOMPARE(processCalls, 1);
+	QCOMPARE(bypassCalls, 0);
+	// 0.8f / 2 and -0.4f / 2 are exact in binary floating point.
+	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.4f);
+	QCOMPARE(buffer.interleavedBuffer()[TestFrames - 1][1], -0.2f);
 }
 
 QTEST_MAIN(AudioPluginTest)
