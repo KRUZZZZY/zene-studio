@@ -124,8 +124,8 @@ Helper executables that are registered but are not QTest classes
 out of scope rather than silently skipped.
 
 **Measured (2026-09-09):** 16 registered QTest files, **all PASS** — 0 tautologies;
-the two heaviest are `ScriptBindingsTest.cpp` (267 slots / 246 assertions) and
-`RoutingGraphTest.cpp` (144 / 127). Coverage (Gate 2) is the corroborating signal:
+the two heaviest are `ScriptBindingsTest.cpp` (268 slots / 247 assertions) and
+`RoutingGraphTest.cpp` (172 / 150). Coverage (Gate 2) is the corroborating signal:
 test-unreachable code shows 0%.
 
 ## Gate 4: Per-method complexity (`complexity-gate.sh`) — WIRED 2026-09-09
@@ -180,7 +180,7 @@ bash tests/mutation-gate.sh --list             # print the candidate pool, mutat
 
 **Scope — one TU, stated plainly**: `src/core/RoutingGraph.cpp` (364 lines), the only
 fork-NEW core TU that is both 100% line-covered and has a dedicated test binary
-(`build/tests/RoutingGraphTest`, 16 slots). Whole-project mutation is deliberately not
+(`build/tests/RoutingGraphTest`, 12 QTest functions, `Totals: 16 passed`). Whole-project mutation is deliberately not
 attempted: a scoped, correct gate beats a broad, flaky one. Widening the scope means
 editing the script's `SRC_REL` / `TEST_NAME` / `OBJ_REL` block — the pipeline is generic.
 
@@ -256,8 +256,9 @@ Survivors, each named with why it survives:
 below target. Four survivors were genuine test gaps, not equivalents: negative
 source/dest ports were never rejected, `removeNode()` never checked that connections
 are dropped, and `process()` was never exercised with a buffer larger than the prepared
-window. They were closed with real assertions in `RoutingGraphTest.cpp` (15 -> 16
-slots), and the score above is the re-measured result. The gate did its job: it found
+window. They were closed with real assertions in `RoutingGraphTest.cpp` (one new test
+slot plus assertions in an existing slot; QTest `Totals: 15 -> 16 passed`), and the
+score above is the re-measured result. The gate did its job: it found
 missing tests, and the tests were strengthened rather than the threshold lowered.
 
 ## Gate 6: No behavioural regressions in upstream code (`no-upstream-regression-gate.sh`) — WIRED 2026-09-09
