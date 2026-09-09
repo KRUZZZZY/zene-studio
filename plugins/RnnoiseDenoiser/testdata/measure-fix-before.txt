@@ -1,0 +1,32 @@
+### measure_fix.py -- independent RIFF parse -- before
+files: out_A_denoised.wav out_B_bypassed.wav out_C_nofx.wav (192000 frames @ 48000 Hz, mono mixdown)
+
+file             peak   RMS dBFS
+A            0.307946     -24.84
+B            0.319977     -24.89
+C            0.319977     -24.88
+
+segment                       A dBFS    B dBFS    C dBFS      A-C      A-B
+speech1  0.10-0.70s           -21.59    -22.11    -22.11    +0.52    +0.52
+NOISE-ONLY 0.85-1.15s         -45.02    -45.05    -45.05    +0.03    +0.03
+speech2  1.30-1.90s           -20.39    -20.92    -20.92    +0.53    +0.53
+
+ACCEPTANCE (noise-only A-vs-C delta <= -10 dB):
+  A noise-only=-45.02 dBFS  C noise-only=-45.05 dBFS  delta=+0.03 dB  -> FAIL
+
+B-vs-C regression (bypass must equal no-FX outside the startup window):
+  whole file      max|B-C| = 0.2342834473
+  frames>=3360    max|B-C| = 0.0000000000
+
+A-vs-C delay (normalised xcorr, best lag over 0..1999 samples):
+  speech1  0.10-0.70s        best lag=1435 ( 29.90 ms) corr=+0.9854
+  NOISE-ONLY 0.85-1.15s      best lag=1439 ( 29.98 ms) corr=+0.9978
+  speech2  1.30-1.90s        best lag=1437 ( 29.94 ms) corr=+0.9907
+
+noise-only band levels (dB A/C):
+       0-   200 Hz:    -0.56 dB
+     200-  1000 Hz:    -0.00 dB
+    1000-  4000 Hz:    -0.08 dB
+    4000-  8000 Hz:    -0.08 dB
+    8000- 16000 Hz:    +0.10 dB
+   16000- 24000 Hz:    +0.02 dB

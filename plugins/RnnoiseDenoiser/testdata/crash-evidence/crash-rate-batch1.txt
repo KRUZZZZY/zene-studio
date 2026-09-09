@@ -1,0 +1,13 @@
+Earlier archived batch (logs in /tmp/crashstats, 2026-09-08 20:54; rerun with crash_stats.sh)
+==============================================================================================
+$ for tag in edge edge_nofx A; do n=$(grep -l 'QThread' ${tag}_*.log 2>/dev/null | wc -l); tot=$(ls ${tag}_*.log | wc -l); wavs=$(ls ${tag}_*.wav 2>/dev/null | wc -l); echo "$tag: $n/$tot logs contain 'QThread: Destroyed while thread is still running' | wavs present: $wavs/$tot"; done
+edge: 3/20 logs contain 'QThread: Destroyed while thread is still running' | wavs present: 20/20
+edge_nofx: 2/10 logs contain 'QThread: Destroyed while thread is still running' | wavs present: 10/10
+A: 0/10 logs contain 'QThread: Destroyed while thread is still running' | wavs present: 10/10
+
+$ cat /tmp/crashstats/edge_nofx_4.log
+PERFLOG |       Project Render | 0.03user, 0.05system 0.03elapsed
+QThread: Destroyed while thread is still running
+
+Note: edge_nofx has NO effect plugin in the FX chain at all -- the abort reproduces with
+zero plugins. All renders still produced complete WAVs (1,536,132 bytes each).

@@ -1,0 +1,7 @@
+probe_alignment_vs_prefix.py -- post-fix A vs backed-up pre-fix A
+  post: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_A_denoised.wav
+  pre : /tmp/rnnoise-prefix-wavs/out_A_denoised.wav
+model: post[n] ~= pre[n-L]; report L maximising normalised xcorr
+  speech1 0.10-0.70s: best lag=  +0  normalised corr=+0.9995
+  source  0.07-2.00s: best lag=  +0  normalised corr=+0.8612
+  speech2 1.30-1.90s: best lag=  +0  normalised corr=+0.7152

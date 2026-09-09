@@ -1,0 +1,6 @@
+edge exit codes: 0 0 0 0 0 0 0 0 0 0   (nonzero: 0/10)
+    WAV sizes: 1536132 
+edge_nofx exit codes: 0 0 0 0 0 0 0 0 0 0   (nonzero: 0/10)
+    WAV sizes: 1536132 
+A exit codes: 0 0 0 0 0 0 0 0 0 0   (nonzero: 0/10)
+    WAV sizes: 1536132 
