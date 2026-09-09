@@ -63,6 +63,7 @@
 #include "ProjectRenderer.h"
 #include "RecentProjectsMenu.h"
 #include "RemotePluginBase.h"
+#include "ScriptEngine.h"
 #include "SetupDialog.h"
 #include "SideBar.h"
 #include "SongEditor.h"
@@ -308,6 +309,12 @@ void MainWindow::finalize()
 
 	project_menu->addAction(embed::getIconPixmap("project_import"), tr("Import..."),
 		this, &MainWindow::onImportProject);
+
+	// Lua scripting (spec: specs/SPEC-lua-api-v0.md, G4). The script runs on
+	// the ScriptEngine worker thread; engine mutations are applied on this
+	// (GUI) thread when the run finishes, so nothing touches the audio thread.
+	addAction(project_menu, "tool", tr("Run &Script..."),
+		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_R), &MainWindow::runScript);
 
 	addAction(project_menu, "project_export", tr("E&xport..."),
 		keySequence(Qt::CTRL, Qt::Key_E), &MainWindow::onExportProject);
@@ -761,6 +768,41 @@ void MainWindow::openProject()
 			song->loadProject( ofd.selectedFiles()[0] );
 			setCursor( Qt::ArrowCursor );
 		}
+	}
+}
+
+
+
+
+void MainWindow::runScript()
+{
+	const QString path = FileDialog::getOpenFileName(this, tr("Run Lua Script"),
+		ConfigManager::inst()->workingDir(),
+		tr("Lua scripts (*.lua);;All files (*)"));
+
+	if (path.isEmpty())
+	{
+		return;
+	}
+
+	QString error;
+	const auto result = ScriptEngine::instance()->runFile(path, &error);
+
+	for (const QString& line : ScriptEngine::instance()->takeLogMessages())
+	{
+		qInfo().noquote() << "lua:" << line;
+	}
+
+	if (result != ScriptEngine::RunResult::Ok)
+	{
+		QMessageBox::warning(this, tr("Script failed"),
+			tr("Running \"%1\" failed:\n\n%2")
+				.arg(QFileInfo(path).fileName(), error));
+	}
+	else
+	{
+		TextFloat::displayMessage(tr("Script finished"),
+			QFileInfo(path).fileName(), embed::getIconPixmap("tool"), 2000);
 	}
 }
 

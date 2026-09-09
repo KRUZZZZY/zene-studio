@@ -41,6 +41,7 @@ extern "C"
 #include <lualib.h>
 }
 
+#include "AutomatableModel.h"
 #include "Clip.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -564,6 +565,13 @@ void ScriptEngine::applyCommand(const ScriptCommand& command)
 		if (auto* track = dynamic_cast<InstrumentTrack*>(static_cast<Track*>(command.object0)))
 		{
 			track->setVolume(static_cast<int>(command.f0));
+		}
+		break;
+
+	case ScriptCommand::Type::SetModelValue:
+		if (auto* model = static_cast<AutomatableModel*>(command.object0))
+		{
+			model->setValue(command.f0);
 		}
 		break;
 

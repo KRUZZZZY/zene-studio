@@ -39,6 +39,8 @@ class ScriptEngine;
 class MidiClip;
 class Track;
 class InstrumentTrack;
+class Instrument;
+class AutomatableModel;
 class FloatModel;
 class BoolModel;
 class Song;
@@ -111,12 +113,17 @@ private:
 // BoolModel)
 // ---------------------------------------------------------------------------
 
-//! Lua-facing wrapper for an AutomatableModel (registered as `FloatModel`).
+/*! Lua-facing wrapper for an automatable model (registered as `FloatModel`).
+ *
+ *  The wrapper is deliberately generic: AutomatableModel is the common base of
+ *  FloatModel, IntModel and BoolModel, so one Lua class covers every parameter
+ *  an instrument exposes (spec section 3). \c type() reports the concrete
+ *  model kind. */
 class LuaFloatModel
 {
 public:
 	LuaFloatModel() = default;
-	explicit LuaFloatModel(FloatModel* model) : m_model(model) {}
+	explicit LuaFloatModel(AutomatableModel* model) : m_model(model) {}
 
 	bool isValid() const { return m_model != nullptr; }
 	float value() const;
@@ -124,9 +131,11 @@ public:
 	float minValue() const;
 	float maxValue() const;
 	QString name() const;
+	//! "float", "int", "bool" or "unknown".
+	QString type() const;
 
 private:
-	FloatModel* m_model{nullptr};
+	AutomatableModel* m_model{nullptr};
 };
 
 //! Lua-facing wrapper for a BoolModel (registered as `BoolModel`).
@@ -145,6 +154,24 @@ private:
 	BoolModel* m_model{nullptr};
 };
 
+//! Lua-facing wrapper for an instrument plugin (registered as `Instrument`).
+class LuaInstrument
+{
+public:
+	LuaInstrument() = default;
+	explicit LuaInstrument(Instrument* instrument) : m_instrument(instrument) {}
+
+	bool isValid() const { return m_instrument != nullptr; }
+	QString name() const;
+	int parameterCount() const;
+	QString parameterName(int index) const;
+	//! Parameter model at \a index; an invalid wrapper when out of range.
+	LuaFloatModel& parameterModel(int index) const;
+
+private:
+	Instrument* m_instrument{nullptr};
+};
+
 //! Lua-facing wrapper for an instrument track (registered as `InstrumentTrack`).
 class LuaInstrumentTrack
 {
@@ -156,6 +183,7 @@ public:
 	QString name() const;
 	void setName(const QString& name);
 	QString instrumentName() const;
+	LuaInstrument& instrument() const;
 	int volume() const;
 	void setVolume(int volume);
 	int panning() const;
@@ -366,7 +394,8 @@ LuaNoteBuilder& newNoteBuilder();
 LuaPatternClip& newPatternClip(MidiClip* clip, int patternIndex, int trackIndex);
 LuaTrack& newTrack(Track* track);
 LuaInstrumentTrack& newInstrumentTrack(InstrumentTrack* track);
-LuaFloatModel& newFloatModel(FloatModel* model);
+LuaInstrument& newInstrument(Instrument* instrument);
+LuaFloatModel& newFloatModel(AutomatableModel* model);
 LuaBoolModel& newBoolModel(BoolModel* model);
 LuaMidiEvent& newMidiEvent();
 

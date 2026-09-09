@@ -173,6 +173,12 @@ ViewPool<LuaInstrumentTrack>& instrumentTrackPool()
 	return pool;
 }
 
+ViewPool<LuaInstrument>& instrumentPool()
+{
+	static ViewPool<LuaInstrument> pool;
+	return pool;
+}
+
 ViewPool<LuaFloatModel>& floatModelPool()
 {
 	static ViewPool<LuaFloatModel> pool;
@@ -267,6 +273,7 @@ void beginRun()
 	patternClipPool().clear();
 	trackPool().clear();
 	instrumentTrackPool().clear();
+	instrumentPool().clear();
 	floatModelPool().clear();
 	boolModelPool().clear();
 	midiEventPool().clear();
@@ -297,7 +304,12 @@ LuaInstrumentTrack& newInstrumentTrack(InstrumentTrack* track)
 	return instrumentTrackPool().add(LuaInstrumentTrack(track));
 }
 
-LuaFloatModel& newFloatModel(FloatModel* model)
+LuaInstrument& newInstrument(Instrument* instrument)
+{
+	return instrumentPool().add(LuaInstrument(instrument));
+}
+
+LuaFloatModel& newFloatModel(AutomatableModel* model)
 {
 	return floatModelPool().add(LuaFloatModel(model));
 }
@@ -375,6 +387,7 @@ void registerAll(lua_State* L, ScriptEngine* engine)
 			.addFunction("minValue", &LuaFloatModel::minValue)
 			.addFunction("maxValue", &LuaFloatModel::maxValue)
 			.addFunction("name", &LuaFloatModel::name)
+			.addFunction("type", &LuaFloatModel::type)
 		.endClass()
 		.beginClass<LuaBoolModel>("BoolModel")
 			.addConstructor<void (*)()>()
@@ -383,12 +396,21 @@ void registerAll(lua_State* L, ScriptEngine* engine)
 			.addFunction("setValue", &LuaBoolModel::setValue)
 			.addFunction("name", &LuaBoolModel::name)
 		.endClass()
+		.beginClass<LuaInstrument>("Instrument")
+			.addConstructor<void (*)()>()
+			.addFunction("isValid", &LuaInstrument::isValid)
+			.addFunction("name", &LuaInstrument::name)
+			.addFunction("parameterCount", &LuaInstrument::parameterCount)
+			.addFunction("parameterName", &LuaInstrument::parameterName)
+			.addFunction("parameterModel", &LuaInstrument::parameterModel)
+		.endClass()
 		.beginClass<LuaInstrumentTrack>("InstrumentTrack")
 			.addConstructor<void (*)()>()
 			.addFunction("isValid", &LuaInstrumentTrack::isValid)
 			.addFunction("name", &LuaInstrumentTrack::name)
 			.addFunction("setName", &LuaInstrumentTrack::setName)
 			.addFunction("instrumentName", &LuaInstrumentTrack::instrumentName)
+			.addFunction("instrument", &LuaInstrumentTrack::instrument)
 			.addFunction("volume", &LuaInstrumentTrack::volume)
 			.addFunction("setVolume", &LuaInstrumentTrack::setVolume)
 			.addFunction("panning", &LuaInstrumentTrack::panning)
@@ -568,22 +590,32 @@ void LuaNoteBuilder::addTo(LuaPatternClip& clip) const
 
 float LuaFloatModel::value() const
 {
-	return m_model ? m_model->value() : 0.0f;
+	if (!m_model) { return 0.0f; }
+	// Reads see writes queued earlier in the same script: the apply side
+	// drains pending commands before the value is sampled.
+	ScriptEngine::instance()->flushCommandsForRead();
+	return m_model->value<float>();
 }
 
 void LuaFloatModel::setValue(float value)
 {
-	if (m_model) { m_model->setValue(value); }
+	if (!m_model) { return; }
+	// Model writes are queued, never applied on the worker thread: the apply
+	// side owns the model graph (spec section 4). Read-back flushes the queue.
+	ScriptCommand command = makeCommand(ScriptCommand::Type::SetModelValue);
+	command.object0 = m_model;
+	command.f0 = value;
+	ScriptEngine::instance()->enqueue(command);
 }
 
 float LuaFloatModel::minValue() const
 {
-	return m_model ? m_model->minValue() : 0.0f;
+	return m_model ? m_model->minValue<float>() : 0.0f;
 }
 
 float LuaFloatModel::maxValue() const
 {
-	return m_model ? m_model->maxValue() : 0.0f;
+	return m_model ? m_model->maxValue<float>() : 0.0f;
 }
 
 QString LuaFloatModel::name() const
@@ -591,14 +623,29 @@ QString LuaFloatModel::name() const
 	return m_model ? m_model->displayName() : QString();
 }
 
+QString LuaFloatModel::type() const
+{
+	if (dynamic_cast<IntModel*>(m_model) != nullptr) { return QStringLiteral("int"); }
+	if (dynamic_cast<BoolModel*>(m_model) != nullptr) { return QStringLiteral("bool"); }
+	if (dynamic_cast<FloatModel*>(m_model) != nullptr) { return QStringLiteral("float"); }
+	return QStringLiteral("unknown");
+}
+
 bool LuaBoolModel::value() const
 {
-	return m_model ? m_model->value() : false;
+	if (!m_model) { return false; }
+	ScriptEngine::instance()->flushCommandsForRead();
+	// BoolModel::value() hides the base template, so call the typed overload.
+	return m_model->value();
 }
 
 void LuaBoolModel::setValue(bool value)
 {
-	if (m_model) { m_model->setValue(value); }
+	if (!m_model) { return; }
+	ScriptCommand command = makeCommand(ScriptCommand::Type::SetModelValue);
+	command.object0 = m_model;
+	command.f0 = value ? 1.0f : 0.0f;
+	ScriptEngine::instance()->enqueue(command);
 }
 
 QString LuaBoolModel::name() const
@@ -629,24 +676,42 @@ QString LuaInstrumentTrack::instrumentName() const
 	return m_track->instrument()->displayName();
 }
 
+LuaInstrument& LuaInstrumentTrack::instrument() const
+{
+	return ScriptBindings::newInstrument(m_track ? m_track->instrument() : nullptr);
+}
+
 int LuaInstrumentTrack::volume() const
 {
-	return m_track ? m_track->getVolume() : 0;
+	if (!m_track) { return 0; }
+	ScriptEngine::instance()->flushCommandsForRead();
+	return m_track->getVolume();
 }
 
 void LuaInstrumentTrack::setVolume(int volume)
 {
-	if (m_track) { m_track->setVolume(volume); }
+	if (!m_track) { return; }
+	// Queued, not applied here: the apply side owns the track graph.
+	ScriptCommand command = makeCommand(ScriptCommand::Type::SetTrackVolume);
+	command.object0 = m_track;
+	command.f0 = static_cast<float>(volume);
+	ScriptEngine::instance()->enqueue(command);
 }
 
 int LuaInstrumentTrack::panning() const
 {
-	return m_track ? static_cast<int>(m_track->panningModel()->value()) : 0;
+	if (!m_track) { return 0; }
+	ScriptEngine::instance()->flushCommandsForRead();
+	return static_cast<int>(m_track->panningModel()->value());
 }
 
 void LuaInstrumentTrack::setPanning(int panning)
 {
-	if (m_track) { m_track->panningModel()->setValue(static_cast<float>(panning)); }
+	if (!m_track) { return; }
+	ScriptCommand command = makeCommand(ScriptCommand::Type::SetModelValue);
+	command.object0 = m_track->panningModel();
+	command.f0 = static_cast<float>(panning);
+	ScriptEngine::instance()->enqueue(command);
 }
 
 LuaFloatModel& LuaInstrumentTrack::volumeModel() const
@@ -657,6 +722,30 @@ LuaFloatModel& LuaInstrumentTrack::volumeModel() const
 LuaFloatModel& LuaInstrumentTrack::panningModel() const
 {
 	return ScriptBindings::newFloatModel(m_track ? m_track->panningModel() : nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// LuaInstrument
+// ---------------------------------------------------------------------------
+
+QString LuaInstrument::name() const
+{
+	return m_instrument ? m_instrument->displayName() : QString();
+}
+
+int LuaInstrument::parameterCount() const
+{
+	return m_instrument ? m_instrument->parameterCount() : 0;
+}
+
+QString LuaInstrument::parameterName(int index) const
+{
+	return m_instrument ? m_instrument->parameterName(index) : QString();
+}
+
+LuaFloatModel& LuaInstrument::parameterModel(int index) const
+{
+	return ScriptBindings::newFloatModel(m_instrument ? m_instrument->parameterModel(index) : nullptr);
 }
 
 // ---------------------------------------------------------------------------
