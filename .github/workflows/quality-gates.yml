@@ -1,6 +1,14 @@
 ---
 name: quality-gates
-'on': [push, pull_request]
+'on':
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      capture_baseline:
+        description: "Gate 2 write mode: recapture coverage-baseline.tsv on the runner and upload it"
+        type: boolean
+        default: false
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -73,10 +81,28 @@ jobs:
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
             libsamplerate0-dev libxml2-dev \
             liblist-moreutils-perl libxml-parser-perl
+      # Default mode is the ratchet: the number must not fall. The baseline is
+      # committed, so it must have been captured in the SAME environment the gate
+      # runs in; run this workflow with capture_baseline=true to refresh it here.
       - name: Gate 2 - coverage ratchet, CI mode (baseline never written)
+        if: ${{ !inputs.capture_baseline }}
         run: |
           bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
           bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info --check
+      - name: Gate 2 - capture the baseline on the runner (write mode)
+        if: ${{ inputs.capture_baseline }}
+        run: |
+          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+          bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info || true
+          echo "--- captured baseline ---"
+          cat tests/coverage-baseline.tsv
+      - name: Upload the CI-captured baseline
+        if: ${{ always() && inputs.capture_baseline }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-baseline-ci
+          path: tests/coverage-baseline.tsv
+          if-no-files-found: warn
       - name: Upload the coverage report
         if: always()
         uses: actions/upload-artifact@v4
