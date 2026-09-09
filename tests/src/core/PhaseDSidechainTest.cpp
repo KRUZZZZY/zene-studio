@@ -359,7 +359,13 @@ private slots:
 		const float bass = 0.02f;
 		const float pad = 0.01f;
 		const float kick = 0.5f;
-		const float program = bass + pad;
+		// The native Compressor applies a hard-coded 0.999 output gain
+		// (plugins/Compressor/Compressor.cpp calcOutGain(): "0.999 is
+		// needed to keep the values from crossing the threshold all the
+		// time ... and is kept across all modes for consistency", upstream
+		// 459948f8cd), so an otherwise-transparent pass measures
+		// program * 0.999, not program.
+		const float program = (bass + pad) * 0.999f;
 
 		PeriodHarness harness(mixer);
 
