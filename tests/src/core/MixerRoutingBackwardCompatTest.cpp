@@ -91,7 +91,7 @@ static QStringList routeTable(Mixer* mixer)
 			.arg(effectCountOf(ch->m_fxChain));
 		for (MixerRoute* r : ch->m_sends)
 		{
-			lines << QString("  ch%1 send->%2 amount=%3 prefader=%4")
+			lines << QString("ch%1 send->%2 amount=%3 prefader=%4")
 				.arg(i)
 				.arg(r->receiverIndex())
 				.arg(r->amount()->value())
@@ -99,7 +99,7 @@ static QStringList routeTable(Mixer* mixer)
 		}
 		for (MixerSidechainRoute* r : ch->m_sidechainSends)
 		{
-			lines << QString("  ch%1 sc->%2 amount=%3 mode=%4")
+			lines << QString("ch%1 sc->%2 amount=%3 mode=%4")
 				.arg(i)
 				.arg(r->receiverIndex())
 				.arg(r->amount()->value())
