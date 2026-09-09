@@ -37,6 +37,7 @@
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
+#include "DpiHelper.h"
 #include "Engine.h"
 #include "FadeButton.h"
 #include "StringPairDrag.h"
@@ -81,7 +82,7 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 	layout->addWidget( &m_trackOperationsWidget );
 	layout->addWidget( &m_trackSettingsWidget );
 	layout->addWidget( &m_trackContentWidget, 1 );
-	setFixedHeight( m_track->getHeight() );
+	setFixedHeight(scaledPixels(m_track->getHeight()));
 
 	resizeEvent( nullptr );
 
@@ -200,7 +201,7 @@ void TrackView::modelChanged()
 	m_trackOperationsWidget.m_muteBtn->setModel( &m_track->m_mutedModel );
 	m_trackOperationsWidget.m_soloBtn->setModel( &m_track->m_soloModel );
 	ModelView::modelChanged();
-	setFixedHeight( m_track->getHeight() );
+	setFixedHeight(scaledPixels(m_track->getHeight()));
 }
 
 
@@ -264,11 +265,11 @@ void TrackView::mousePressEvent( QMouseEvent * me )
 	const auto pos = position(me);
 
 	// If previously dragged too small, restore on shift-leftclick
-	if( height() < DEFAULT_TRACK_HEIGHT &&
+	if( height() < scaledPixels(DEFAULT_TRACK_HEIGHT) &&
 		me->modifiers() & Qt::ShiftModifier &&
 		me->button() == Qt::LeftButton )
 	{
-		setFixedHeight( DEFAULT_TRACK_HEIGHT );
+		setFixedHeight(scaledPixels(DEFAULT_TRACK_HEIGHT));
 		m_track->setHeight( DEFAULT_TRACK_HEIGHT );
 	}
 
@@ -358,7 +359,7 @@ void TrackView::mouseMoveEvent( QMouseEvent * me )
 		resizeToHeight(pos.y());
 	}
 
-	if( height() < DEFAULT_TRACK_HEIGHT )
+	if( height() < scaledPixels(DEFAULT_TRACK_HEIGHT) )
 	{
 		setToolTip(m_track->m_name);
 	}
@@ -464,9 +465,9 @@ void TrackView::setIndicatorMute(FadeButton* indicator, bool muted)
 
 void TrackView::resizeToHeight(int h)
 {
-	setFixedHeight(qMax<int>(h, MINIMAL_TRACK_HEIGHT));
+	setFixedHeight(qMax<int>(h, scaledPixels(MINIMAL_TRACK_HEIGHT)));
 	m_trackContainerView->realignTracks();
-	m_track->setHeight(height());
+	m_track->setHeight(unscaledPixels(height()));
 }
 
 
