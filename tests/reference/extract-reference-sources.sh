@@ -103,6 +103,20 @@ extract() { # extract <plugin-dir> <file>
 	for f in Kicker.cpp Kicker.h KickerOsc.h; do
 		extract Kicker "$f"
 	done
+	# Slice 5 (task #589): multi-oscillator and sample-playback instruments.
+	for f in TripleOscillator.cpp TripleOscillator.h; do
+		extract TripleOscillator "$f"
+	done
+	for f in Monstro.cpp Monstro.h; do
+		extract Monstro "$f"
+	done
+	for f in Organic.cpp Organic.h; do
+		extract Organic "$f"
+	done
+	for f in AudioFileProcessor.cpp AudioFileProcessor.h AudioFileProcessorView.cpp \
+	         AudioFileProcessorView.h AudioFileProcessorWaveView.cpp AudioFileProcessorWaveView.h; do
+		extract AudioFileProcessor "$f"
+	done
 } >> "$HERE/ORIGIN.tsv"
 
 echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"
