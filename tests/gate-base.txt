@@ -1,0 +1,6 @@
+# Gate 6 base: the product integration commit at which the gate suite was ported
+# in (2026-09-09). Every commit on top of this is subject to Gate 6 (no
+# behavioural change to upstream-inherited code). The product's earlier feature
+# branches deliberately modify upstream files - that history predates this gate
+# and is out of scope. Update deliberately, with a reason.
+01148947ea4d8bdb05c237942758d61acc867223

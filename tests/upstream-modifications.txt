@@ -1,0 +1,3 @@
+# Upstream-inherited production files the standards workstream is allowed to change,
+# with the reason. Compile-only fixes belong here and MUST ship a regression test.
+# Format: <repo-relative path>	<reason>

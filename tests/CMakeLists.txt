@@ -34,6 +34,21 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
+# gcov coverage instrumentation (see WANT_COVERAGE in the top-level
+# CMakeLists.txt). Applied to the unit-test executables only; the Part C
+# reference/migration targets below keep the plain debug build so behaviour
+# comparisons stay instrumentation-independent.
+set(LMMS_COVERAGE_FLAGS "")
+if(WANT_COVERAGE)
+	set(LMMS_COVERAGE_FLAGS "--coverage")
+endif()
+function(lmms_add_coverage TARGET)
+	if(LMMS_COVERAGE_FLAGS)
+		target_compile_options(${TARGET} PRIVATE ${LMMS_COVERAGE_FLAGS})
+		target_link_options(${TARGET} PRIVATE ${LMMS_COVERAGE_FLAGS})
+	endif()
+endfunction()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -52,6 +67,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
+	lmms_add_coverage(${LMMS_TEST_NAME})
 	# Lua scripting examples live in the source tree; tests run from build/tests.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")
@@ -468,3 +484,14 @@ if(TARGET lmms_clap)
 		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>"
 	)
 endif()
+
+# Instrument the plugin/gate test executables as well - they compile fork
+# sources directly, so their objects carry the coverage the ratchet tracks.
+# PluginPortsMigrationReference is deliberately left un-instrumented: the
+# reference side of the behaviour comparison must stay plain.
+foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapEffectIntegrationTest
+		WasmSandboxTest PluginPortsMigrationTest)
+	if(TARGET ${LMMS_GATE_TEST})
+		lmms_add_coverage(${LMMS_GATE_TEST})
+	endif()
+endforeach()
