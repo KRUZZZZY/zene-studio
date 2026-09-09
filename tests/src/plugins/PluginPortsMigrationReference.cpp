@@ -17,6 +17,7 @@
 #include "PluginPortsHarness.h"
 
 #include <cstdio>
+#include <memory>
 #include <vector>
 
 #include <QCoreApplication>
@@ -24,6 +25,8 @@
 #include <QString>
 
 #include "Engine.h"
+#include "InstrumentTrack.h"
+#include "LmmsTypes.h"
 #include "Plugin.h"
 
 namespace
@@ -70,6 +73,34 @@ auto referenceModules() -> const std::vector<ReferenceModule>&
 	return modules;
 }
 
+struct ReferenceInstrument
+{
+	const char* plugin;
+	const char* path;
+};
+
+/*!
+ * One reference module per migrated instrument (slice 4, task #589). The paths
+ * are injected by tests/CMakeLists.txt via $<TARGET_FILE:...> so they always
+ * point at the freshly built reference modules.
+ */
+auto referenceInstruments() -> const std::vector<ReferenceInstrument>&
+{
+	static const std::vector<ReferenceInstrument> instruments{
+		{"freeboy", PART_C_REF_freeboy},
+		{"nes", PART_C_REF_nes},
+		{"sid", PART_C_REF_sid},
+		{"opulenz", PART_C_REF_opulenz},
+		{"sfxr", PART_C_REF_sfxr},
+		{"bitinvader", PART_C_REF_bitinvader},
+		{"watsyn", PART_C_REF_watsyn},
+		{"xpressive", PART_C_REF_xpressive},
+		{"vibedstrings", PART_C_REF_vibedstrings},
+		{"kicker", PART_C_REF_kicker},
+	};
+	return instruments;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -96,7 +127,7 @@ int main(int argc, char** argv)
 		partc::Buffers);
 
 	std::vector<partc::PluginRender> renders;
-	renders.reserve(referenceModules().size());
+	renders.reserve(referenceModules().size() + referenceInstruments().size());
 
 	for (const auto& m : referenceModules())
 	{
@@ -135,6 +166,49 @@ int main(int argc, char** argv)
 
 		renders.push_back(std::move(render));
 		delete fx;
+	}
+
+	for (const auto& m : referenceInstruments())
+	{
+		QLibrary lib{QString::fromUtf8(m.path)};
+		lib.setLoadHints(QLibrary::PreventUnloadHint);
+		if (!lib.load())
+		{
+			std::fprintf(stderr, "reference: failed to load %s: %s\n", m.path,
+				qPrintable(lib.errorString()));
+			return 2;
+		}
+
+		auto entry = reinterpret_cast<MainFn>(lib.resolve("lmms_plugin_main"));
+		if (entry == nullptr)
+		{
+			std::fprintf(stderr, "reference: %s has no lmms_plugin_main\n", m.path);
+			return 2;
+		}
+
+		// Instruments are parented to an InstrumentTrack, exactly like the
+		// engine creates them (InstrumentTrack's constructor).
+		auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+		auto* inst = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+		if (inst == nullptr)
+		{
+			std::fprintf(stderr, "reference: %s returned no instrument\n", m.plugin);
+			return 2;
+		}
+
+		partc::applyInstrumentTestSettings(*inst, m.plugin);
+
+		partc::PluginRender render;
+		render.name = QString::fromUtf8(m.plugin);
+		render.samples = partc::renderInstrumentInFreshThread(*inst, frames, lmms::DefaultKey);
+		render.checksum = partc::checksum(render.samples);
+
+		std::printf("reference %s: %zu samples, sha256=%s\n", m.plugin, render.samples.size(),
+			qPrintable(render.checksum));
+
+		renders.push_back(std::move(render));
+		delete inst;
+		track.reset();
 	}
 
 	if (!partc::writeRenders(outputPath, renders))

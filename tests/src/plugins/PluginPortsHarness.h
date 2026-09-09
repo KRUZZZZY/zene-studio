@@ -21,10 +21,12 @@
 #ifndef LMMS_TESTS_PLUGIN_PORTS_HARNESS_H
 #define LMMS_TESTS_PLUGIN_PORTS_HARNESS_H
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <string>
 #include <thread>
 #include <utility>
@@ -41,8 +43,17 @@
 #include "AudioBus.h"
 #include "Effect.h"
 #include "EffectControls.h"
+#include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "LmmsTypes.h"
+#include "Midi.h"
+#include "MidiEvent.h"
+#include "Note.h"
+#include "NotePlayHandle.h"
 #include "SampleFrame.h"
+#include "Song.h"
+#include "TimePos.h"
 #include "base64.h"
 
 namespace partc
@@ -417,6 +428,196 @@ inline auto maxAbsDiff(const std::vector<float>& a, const std::vector<float>& b)
 		}
 	}
 	return worst;
+}
+
+// ---------------------------------------------------------------------------
+// Slice 4 (task #589): instrument plugins.
+//
+// Instruments are driven by NotePlayHandle state instead of a fixed buffer, so
+// the harness reproduces the engine dispatch exactly:
+//   * InstrumentTrack::playNote() is called once per period for every
+//     instrument (that is where playNoteImpl() runs),
+//   * InstrumentPlayHandle::play() is called once per period for
+//     single-streamed instruments (OpulenZ), after the notes are processed,
+//   * settings are applied through the instrument's own saveState() /
+//     restoreState() round trip, which is how InstrumentTrack persists an
+//     instrument.
+// ---------------------------------------------------------------------------
+
+//! Canonical instrument order shared by the reference renderer and the test.
+inline auto instrumentNames() -> const std::array<const char*, 10>&
+{
+	static const std::array<const char*, 10> names{
+		"freeboy", "nes", "sid", "opulenz", "sfxr",
+		"bitinvader", "watsyn", "xpressive", "vibedstrings", "kicker"};
+	return names;
+}
+
+/*!
+ * Instrument control overrides applied on top of each plugin's own defaults.
+ * Attribute names come from the instruments' own saveSettings() output; the
+ * values are deliberately non-default so the DSP is actually exercised.
+ * Expression-driven controls (Xpressive's W* and O* strings) are left at
+ * their defaults so a malformed expression cannot skew the comparison.
+ */
+inline auto instrumentOverridesFor(const std::string& plugin) -> std::vector<SettingOverride>
+{
+	if (plugin == "freeboy")
+	{
+		return {{"ch1vol", "12"}, {"ch2vol", "10"}, {"ch3vol", "14"}, {"ch4vol", "8"},
+			{"ch1wpd", "2"}, {"ch2wpd", "1"}, {"ch1vsd", "1"}, {"ch2vsd", "0"},
+			{"ch1so1", "3"}, {"ch1so2", "5"}, {"ch2so1", "2"}, {"ch3on", "1"},
+			{"ch4so1", "6"}, {"ch4so2", "7"}, {"Treble", "4"}, {"Bass", "-3"},
+			{"st", "2"}, {"sd", "1"}, {"srs", "3"}, {"srw", "2"},
+			{"so1vol", "10"}, {"so2vol", "6"}};
+	}
+	if (plugin == "nes")
+	{
+		return {{"on1", "1"}, {"on2", "1"}, {"on3", "1"}, {"on4", "1"},
+			{"vol", "14"}, {"vol1", "12"}, {"vol2", "12"}, {"vol3", "12"}, {"vol4", "12"},
+			{"dc1", "2"}, {"dc2", "1"}, {"crs1", "1"}, {"crs2", "2"},
+			{"envon1", "1"}, {"envlen1", "4"}, {"envloop1", "1"},
+			{"sweep1", "1"}, {"swamt1", "3"}, {"swrate1", "2"},
+			{"nmode4", "1"}, {"nfreq4", "4"}, {"nq4", "6"}};
+	}
+	if (plugin == "sid")
+	{
+		return {{"pulsewidth0", "0.3"}, {"attack0", "2"}, {"decay0", "4"}, {"sustain0", "8"},
+			{"release0", "6"}, {"waveform0", "1"}, {"coarse0", "1"}, {"sync0", "1"},
+			{"pulsewidth1", "0.6"}, {"attack1", "3"}, {"decay1", "5"}, {"sustain1", "10"},
+			{"release1", "4"}, {"waveform1", "2"}, {"ringmod1", "1"},
+			{"filterFC", "1024"}, {"filterResonance", "6"}, {"filterMode", "1"},
+			{"volume", "12"}};
+	}
+	if (plugin == "opulenz")
+	{
+		return {{"op1_a", "8"}, {"op1_d", "6"}, {"op1_s", "3"}, {"op1_r", "7"},
+			{"op1_lvl", "50"}, {"op1_mul", "2"}, {"op1_waveform", "1"},
+			{"op2_a", "6"}, {"op2_d", "5"}, {"op2_s", "4"}, {"op2_r", "8"},
+			{"op2_lvl", "40"}, {"op2_mul", "4"}, {"op2_waveform", "2"},
+			{"feedback", "3"}, {"fm", "1"}, {"vib_depth", "2"}, {"trem_depth", "2"}};
+	}
+	if (plugin == "sfxr")
+	{
+		return {{"waveForm", "1"}, {"startFreq", "0.4"}, {"minFreq", "0.05"},
+			{"slide", "0.2"}, {"dSlide", "0.1"}, {"vibDepth", "0.2"}, {"vibSpeed", "0.3"},
+			{"changeAmt", "0.3"}, {"changeSpeed", "0.4"}, {"sqrDuty", "0.6"},
+			{"sqrSweep", "0.1"}, {"repeatSpeed", "0.3"}, {"phaserOffset", "0.2"},
+			{"phaserSweep", "0.3"}, {"lpFilCut", "0.7"}, {"lpFilCutSweep", "0.1"},
+			{"lpFilReso", "0.6"}, {"hpFilCut", "0.2"}, {"hpFilCutSweep", "0.1"},
+			{"att", "0.05"}, {"hold", "0.1"}, {"sus", "0.3"}, {"dec", "0.4"}};
+	}
+	if (plugin == "bitinvader")
+	{
+		return {{"sampleLength", "64"}, {"interpolation", "1"}, {"normalize", "1"}};
+	}
+	if (plugin == "watsyn")
+	{
+		return {{"a1_vol", "80"}, {"a2_vol", "60"}, {"b1_vol", "50"}, {"b2_vol", "40"},
+			{"a1_mult", "2"}, {"a2_mult", "3"}, {"b1_mult", "1.5"}, {"b2_mult", "4"},
+			{"a1_ltune", "0.1"}, {"a2_rtune", "-0.2"}, {"b1_ltune", "0.3"},
+			{"b2_rtune", "-0.4"}, {"a1_pan", "0.2"}, {"b2_pan", "-0.3"},
+			{"abmix", "0.7"}, {"envAmt", "0.5"}, {"envAtt", "0.05"},
+			{"envHold", "0.2"}, {"envDec", "0.3"}, {"xtalk", "0.2"}, {"amod", "1.2"}};
+	}
+	if (plugin == "xpressive")
+	{
+		return {{"A1", "0.7"}, {"A2", "0.4"}, {"A3", "0.9"}, {"PAN1", "0.3"},
+			{"PAN2", "-0.4"}, {"RELTRANS", "0.5"}, {"smoothW1", "0.3"},
+			{"smoothW2", "0.2"}, {"smoothW3", "0.4"}, {"interpolateW1", "1"},
+			{"interpolateW2", "1"}, {"interpolateW3", "0"}};
+	}
+	if (plugin == "vibedstrings")
+	{
+		return {{"active0", "1"}, {"volume0", "0.8"}, {"stiffness0", "0.5"}, {"pick0", "0.3"},
+			{"pickup0", "0.4"}, {"octave0", "1"}, {"length0", "0.6"}, {"pan0", "0.2"},
+			{"detune0", "0.1"}, {"slap0", "0.2"}, {"impulse0", "0.3"},
+			{"active1", "1"}, {"volume1", "0.5"}, {"stiffness1", "0.7"}, {"pick1", "0.4"},
+			{"length1", "0.5"}, {"detune1", "-0.1"}};
+	}
+	if (plugin == "kicker")
+	{
+		return {{"startfreq", "120"}, {"endfreq", "40"}, {"decay", "0.4"}, {"dist", "2"},
+			{"distend", "0.5"}, {"gain", "1.2"}, {"env", "0.6"}, {"noise", "0.2"},
+			{"click", "0.3"}, {"slope", "0.7"}, {"startnote", "1"}, {"endnote", "0"}};
+	}
+	return {};
+}
+
+//! Save/restore round trip, exactly the way InstrumentTrack persists an instrument.
+inline void applyInstrumentTestSettings(Instrument& inst, const std::string& plugin)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement("instrument");
+	// saveState() serialises every model the instrument knows about; the
+	// returned element is the instrument's own element, which restoreState()
+	// reads back.
+	QDomElement saved = inst.saveState(doc, root);
+	for (const auto& o : instrumentOverridesFor(plugin))
+	{
+		saved.setAttribute(QString::fromStdString(o.name), QString::fromStdString(o.value));
+	}
+	inst.restoreState(saved);
+}
+
+/*!
+ * Renders one continuously held note through the instrument and returns the
+ * interleaved float output. The note is never released, so every instrument
+ * sees the same held note; the per-period buffer is cleared first, matching
+ * the mixer's zeroed working buffer.
+ */
+inline auto renderInstrumentBuffers(Instrument& inst, f_cnt_t frames, int key) -> std::vector<float>
+{
+	InstrumentTrack* track = inst.instrumentTrack();
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+
+	const Note note{TimePos{static_cast<tick_t>(frames * Buffers)}, TimePos{0}, key};
+	NotePlayHandle nph{track, 0, frames * Buffers, note, nullptr, -1, NotePlayHandle::Origin::MidiClip};
+
+	if (inst.isSingleStreamed())
+	{
+		// InstrumentPlayHandle only produces sound once a voice is open.
+		inst.handleMidiEvent(MidiEvent{MidiNoteOn, 0, static_cast<std::int16_t>(key), 100}, TimePos{0}, 0);
+	}
+
+	std::vector<float> out;
+	out.reserve(static_cast<std::size_t>(Buffers) * frames * 2);
+
+	for (int b = 0; b < Buffers; ++b)
+	{
+		std::fill(data.begin(), data.end(), SampleFrame{0.0f, 0.0f});
+		const std::span<SampleFrame> span{data};
+
+		// InstrumentTrack::playNote() first, then InstrumentPlayHandle::play().
+		inst.playNote(&nph, span);
+		if (inst.isSingleStreamed())
+		{
+			inst.play(span);
+		}
+
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			out.push_back(data[f].left());
+			out.push_back(data[f].right());
+		}
+	}
+
+	// Hand plugin-owned note data back while the note handle is still alive.
+	if (nph.m_pluginData != nullptr)
+	{
+		inst.deleteNotePluginData(&nph);
+		nph.m_pluginData = nullptr;
+	}
+	return out;
+}
+
+//! Fresh-thread wrapper, for the same RNG-state reason as renderInFreshThread().
+inline auto renderInstrumentInFreshThread(Instrument& inst, f_cnt_t frames, int key) -> std::vector<float>
+{
+	std::vector<float> out;
+	std::thread worker{[&] { out = renderInstrumentBuffers(inst, frames, key); }};
+	worker.join();
+	return out;
 }
 
 } // namespace partc

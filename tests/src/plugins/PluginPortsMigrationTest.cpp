@@ -19,6 +19,7 @@
 
 #include <QByteArray>
 #include <QLibrary>
+#include <memory>
 #include <QProcess>
 #include <QString>
 #include <QStringList>
@@ -66,6 +67,30 @@ auto migratedModules() -> const std::vector<MigratedModule>&
 		{"eq", PART_C_MIGRATED_eq},
 	};
 	return modules;
+}
+
+struct MigratedInstrument
+{
+	const char* plugin;
+	const char* path;
+};
+
+/*! Instrument paths injected by tests/CMakeLists.txt via $<TARGET_FILE:...>. */
+auto migratedInstruments() -> const std::vector<MigratedInstrument>&
+{
+	static const std::vector<MigratedInstrument> instruments{
+		{"freeboy", PART_C_MIGRATED_freeboy},
+		{"nes", PART_C_MIGRATED_nes},
+		{"sid", PART_C_MIGRATED_sid},
+		{"opulenz", PART_C_MIGRATED_opulenz},
+		{"sfxr", PART_C_MIGRATED_sfxr},
+		{"bitinvader", PART_C_MIGRATED_bitinvader},
+		{"watsyn", PART_C_MIGRATED_watsyn},
+		{"xpressive", PART_C_MIGRATED_xpressive},
+		{"vibedstrings", PART_C_MIGRATED_vibedstrings},
+		{"kicker", PART_C_MIGRATED_kicker},
+	};
+	return instruments;
 }
 
 } // namespace
@@ -133,6 +158,35 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		m_migrated.push_back(std::move(render));
 
 		delete fx;
+	}
+
+	// 1b. Render the migrated instruments through the real plugin entry point.
+	//     Instruments are parented to an InstrumentTrack, exactly like the
+	//     engine creates them, and settings go through the instrument's own
+	//     saveState()/restoreState() round trip.
+	for (const auto& m : migratedInstruments())
+	{
+		auto* lib = new QLibrary{QString::fromUtf8(m.path)};
+		lib->setLoadHints(QLibrary::PreventUnloadHint);
+		QVERIFY2(lib->load(), qPrintable(QString{"%1: %2"}.arg(m.plugin, lib->errorString())));
+		m_libraries.push_back(lib);
+
+		auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+		QVERIFY2(entry != nullptr, m.plugin);
+
+		auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+		auto* inst = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+		QVERIFY2(inst != nullptr, m.plugin);
+
+		partc::applyInstrumentTestSettings(*inst, m.plugin);
+
+		partc::PluginRender render;
+		render.name = QString::fromUtf8(m.plugin);
+		render.samples = partc::renderInstrumentInFreshThread(*inst, frames, lmms::DefaultKey);
+		render.checksum = partc::checksum(render.samples);
+		m_migrated.push_back(std::move(render));
+
+		delete inst;
 	}
 
 	// 2. Render the pre-migration reference sources in a separate process.
