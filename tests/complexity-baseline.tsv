@@ -1,0 +1,15 @@
+# per-method CCN baseline for fork-NEW code (functions over the target only)
+# maintained by tests/complexity-gate.sh; do not edit by hand
+lmms::ScriptEngine::applyCommand@484-593@src/core/ScriptEngine.cpp	27	94	110
+lmms::vst3::HostedPlugin::load@250-381@plugins/Vst3Effect/Vst3Host.cpp	25	122	132
+lmms::AudioPortsModel::updateDirectRouting@247-337@src/core/AudioPortsModel.cpp	23	64	91
+lmms::vst3::HostedPlugin::loadState@471-506@plugins/Vst3Effect/Vst3Host.cpp	18	36	36
+lmms::AudioBus::update@195-279@src/core/AudioBus.cpp	17	80	85
+lmms::AudioBus::sanitize@96-175@src/core/AudioBus.cpp	15	64	80
+lmms::RoutingGraph::connect@90-127@src/core/RoutingGraph.cpp	15	35	38
+lmms::RoutingGraph::rebuildPlan@310-362@src/core/RoutingGraph.cpp	15	42	53
+lmms::gui::PinConnector::paintEvent@184-313@src/gui/PinConnector.cpp	14	96	130
+lmms::ScriptEngine::resolveProjectPath@734-781@src/core/ScriptEngine.cpp	14	44	48
+lmms::vst3::HostedPlugin::prepare@508-594@plugins/Vst3Effect/Vst3Host.cpp	13	75	87
+lmms::vst3::HostedPlugin::process@639-699@plugins/Vst3Effect/Vst3Host.cpp	12	53	61
+lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp	11	35	41

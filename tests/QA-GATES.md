@@ -85,19 +85,36 @@ The two test files added with this gate (`AudioBusTest.cpp` — 13 slots,
 produced by the SUT, which the coverage numbers above confirm (unreachable-by-test
 code would show 0%).
 
-## Gate 4: Per-method complexity (advisory)
+## Gate 4: Per-method complexity (`complexity-gate.sh`) — WIRED 2026-09-09
 
-Target: cyclomatic complexity <= 10 and nesting depth <= 3 per method, as a
-**report first** — no rewrite of existing code. `cppcheck` is not installed on
-the build host at gate-introduction time, so the mechanical check is deferred;
-when available, wire:
+Target: **cyclomatic complexity (CCN) <= 10** and **nesting depth (ND) <= 3** per method.
+This gate is now mechanical. `cppcheck` 2.13 does **not** emit complexity for this
+codebase (verified: zero matches with `--enable=all` / `--enable=style`), so the tool
+is **lizard** (`pip install lizard`, reports CCN and ND for C/C++).
+
+**Command**:
 
 ```sh
-cppcheck --enable=all --std=c++20 --check-level=exhaustive src/core \
-  2>&1 | grep -E "normalCheckLevelMaxNodes|cyclomatic"
+bash tests/complexity-gate.sh            # ratchet: refresh baseline, fail on regressions
+bash tests/complexity-gate.sh --check    # CI: report only, never writes the baseline
+bash tests/complexity-gate.sh --strict   # fail if ANY function is over the target
 ```
 
-until then, complexity is reviewed manually on fork-NEW code only.
+**Policy — a ratchet, never a rewrite order** (matching Gate 6's no-refactor rule):
+functions already over the target are grandfathered in `tests/complexity-baseline.tsv`
+at their measured CCN; a **new** function over the target, or an existing one whose CCN
+**rises**, fails the gate. Existing over-target functions are reported, not rewritten.
+
+**Honest limitation, stated not hidden:** lizard exposes thresholds for
+`nloc`, `cyclomatic_complexity`, `token_count`, `parameter_count`, `length` — **not for
+nesting depth**. ND is therefore *reported* alongside each over-target function and
+reviewed manually; it is not enforced mechanically.
+
+**Measured baseline (2026-09-09, gcc 13):** 13 of the fork's 514 functions exceed CCN 10.
+Highest: `ScriptEngine::applyCommand` 27, `HostedPlugin::load` 25,
+`AudioPortsModel::updateDirectRouting` 23, `HostedPlugin::loadState` 18,
+`AudioBus::update` 17. **All 12 have ND 0**, i.e. nesting is within target everywhere;
+the overage is branch count, not depth.
 
 ## Gate 5: Mutation testing (advisory / deferred)
 
