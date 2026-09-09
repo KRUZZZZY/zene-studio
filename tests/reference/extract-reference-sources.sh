@@ -45,6 +45,32 @@ extract() { # extract <plugin-dir> <file>
 	for f in base.c base.h dcblock.c dcblock.h revsc.c revsc.h; do
 		extract ReverbSC "$f"
 	done
+	# Slice 3 (task #589): analysers, Dispersion, GranularPitchShifter, Eq.
+	for f in Dispersion.cpp Dispersion.h DispersionControls.cpp DispersionControls.h \
+	         DispersionControlDialog.cpp DispersionControlDialog.h; do
+		extract Dispersion "$f"
+	done
+	for f in Vectorscope.cpp Vectorscope.h VecControls.cpp VecControls.h \
+	         VecControlsDialog.cpp VecControlsDialog.h VectorView.cpp VectorView.h; do
+		extract Vectorscope "$f"
+	done
+	for f in Analyzer.cpp Analyzer.h SaControls.cpp SaControls.h \
+	         SaControlsDialog.cpp SaControlsDialog.h SaProcessor.cpp SaProcessor.h \
+	         SaSpectrumView.cpp SaSpectrumView.h SaWaterfallView.cpp SaWaterfallView.h \
+	         DataprocLauncher.h; do
+		extract SpectrumAnalyzer "$f"
+	done
+	for f in GranularPitchShifterEffect.cpp GranularPitchShifterEffect.h \
+	         GranularPitchShifterControls.cpp GranularPitchShifterControls.h \
+	         GranularPitchShifterControlDialog.cpp GranularPitchShifterControlDialog.h; do
+		extract GranularPitchShifter "$f"
+	done
+	for f in EqEffect.cpp EqEffect.h EqControls.cpp EqControls.h \
+	         EqControlsDialog.cpp EqControlsDialog.h EqCurve.cpp EqCurve.h \
+	         EqFilter.h EqParameterWidget.cpp EqParameterWidget.h \
+	         EqSpectrumView.cpp EqSpectrumView.h; do
+		extract Eq "$f"
+	done
 } >> "$HERE/ORIGIN.tsv"
 
 echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"

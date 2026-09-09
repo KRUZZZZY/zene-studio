@@ -60,6 +60,12 @@ auto referenceModules() -> const std::vector<ReferenceModule>&
 		{"reverbsc", PART_C_REF_reverbsc},
 		{"stereoenhancer", PART_C_REF_stereoenhancer},
 		{"stereomatrix", PART_C_REF_stereomatrix},
+		// Slice 3 (task #589)
+		{"dispersion", PART_C_REF_dispersion},
+		{"vectorscope", PART_C_REF_vectorscope},
+		{"analyzer", PART_C_REF_analyzer},
+		{"granularpitchshifter", PART_C_REF_granularpitchshifter},
+		{"eq", PART_C_REF_eq},
 	};
 	return modules;
 }

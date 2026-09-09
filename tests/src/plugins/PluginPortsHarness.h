@@ -54,13 +54,15 @@ using namespace lmms; // SampleFrame, AudioBus, Effect, f_cnt_t, ch_cnt_t
 //! peakcontrollereffect is migrated but not rendered here: src/core/PeakController.cpp
 //! includes the migrated plugin header, so a pre-migration reference object of the
 //! same class has an incompatible layout (ODR) and crashes in the reference process.
-inline auto pluginNames() -> const std::array<const char*, 15>&
+inline auto pluginNames() -> const std::array<const char*, 20>&
 {
-	static const std::array<const char*, 15> names{
+	static const std::array<const char*, 20> names{
 		"amplifier", "bassbooster", "bitcrush", "dualfilter",
 		"waveshaper", "flanger", "delay",
 		"compressor", "crossovereq", "dynamicsprocessor", "lomm", "multitapecho",
-		"reverbsc", "stereoenhancer", "stereomatrix"};
+		"reverbsc", "stereoenhancer", "stereomatrix",
+		// Slice 3 (task #589): analysers, Dispersion, granular shifter and Eq.
+		"dispersion", "vectorscope", "analyzer", "granularpitchshifter", "eq"};
 	return names;
 }
 
@@ -150,6 +152,47 @@ inline auto overridesFor(const std::string& plugin) -> std::vector<SettingOverri
 	{
 		return {{"steps", "8"}, {"steplength", "250"}, {"drygain", "6"},
 			{"swapinputs", "1"}, {"stages", "2"}};
+	}
+	// Slice 3 (task #589) plugins.
+	if (plugin == "dispersion")
+	{
+		return {{"amount", "12"}, {"freq", "440"}, {"reso", "2.0"},
+			{"feedback", "0.7"}, {"dc", "1"}};
+	}
+	if (plugin == "vectorscope")
+	{
+		return {{"Logarithmic", "1"}, {"LinesMode", "0"}};
+	}
+	if (plugin == "analyzer")
+	{
+		return {{"Waterfall", "1"}, {"Smooth", "1"}, {"Stereo", "1"}, {"PeakHold", "1"},
+			{"LogX", "0"}, {"LogY", "0"}, {"RangeX", "1"}, {"RangeY", "2"},
+			{"BlockSize", "3"}, {"WindowType", "1"}, {"EnvelopeRes", "0.5"},
+			{"SpectrumRes", "2.0"}, {"PeakDecayFactor", "0.995"}, {"AverageWeight", "0.3"},
+			{"WaterfallHeight", "400"}, {"WaterfallGamma", "0.5"}, {"WindowOverlap", "4"},
+			{"ZeroPadding", "2"}};
+	}
+	if (plugin == "granularpitchshifter")
+	{
+		return {{"pitch", "7"}, {"size", "50"}, {"spray", "0.01"}, {"jitter", "0.3"},
+			{"twitch", "0.2"}, {"pitchSpread", "5"}, {"spraySpread", "0.5"},
+			{"shape", "1.5"}, {"fadeLength", "0.5"}, {"feedback", "0.4"},
+			{"minLatency", "0.05"}, {"prefilter", "0"}, {"density", "4"}, {"glide", "0.2"}};
+	}
+	if (plugin == "eq")
+	{
+		return {{"Inputgain", "3"}, {"Outputgain", "-3"}, {"Lowshelfgain", "6"},
+			{"Peak1gain", "4"}, {"Peak2gain", "-5"}, {"Peak3gain", "2"}, {"Peak4gain", "-2"},
+			{"HighShelfgain", "4"}, {"HPres", "0.8"}, {"LowShelfres", "0.8"},
+			{"Peak1bw", "1.5"}, {"Peak2bw", "1.0"}, {"Peak3bw", "2.0"}, {"Peak4bw", "1.2"},
+			{"HighShelfres", "0.9"}, {"LPres", "0.8"}, {"HPfreq", "80"},
+			{"LowShelffreq", "120"}, {"Peak1freq", "250"}, {"Peak2freq", "800"},
+			{"Peak3freq", "3000"}, {"Peak4freq", "8000"}, {"Highshelffreq", "12000"},
+			{"LPfreq", "16000"}, {"HPactive", "1"}, {"Lowshelfactive", "1"},
+			{"Peak1active", "1"}, {"Peak2active", "1"}, {"Peak3active", "1"},
+			{"Peak4active", "1"}, {"Highshelfactive", "1"}, {"LPactive", "0"},
+			{"LP12", "1"}, {"LP24", "0"}, {"LP48", "0"}, {"HP12", "1"}, {"HP24", "0"},
+			{"HP48", "0"}, {"LP", "0"}, {"HP", "0"}, {"AnalyseIn", "1"}, {"AnalyseOut", "1"}};
 	}
 	// Not rendered by this harness (see pluginNames() note) — kept so the settings
 	// are ready if the reference module becomes loadable in a later slice.

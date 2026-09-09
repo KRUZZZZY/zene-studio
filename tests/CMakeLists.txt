@@ -66,6 +66,12 @@ set(PART_C_REFERENCE_MODULES
 	"reverbsc|ReverbSC|ReverbSC.cpp|ReverbSCControls.cpp|ReverbSCControlDialog.cpp|base.c|revsc.c|dcblock.c"
 	"stereoenhancer|StereoEnhancer|StereoEnhancer.cpp|StereoEnhancerControls.cpp|StereoEnhancerControlDialog.cpp"
 	"stereomatrix|StereoMatrix|StereoMatrix.cpp|StereoMatrixControls.cpp|StereoMatrixControlDialog.cpp"
+	# Slice 3 (task #589): analysers, Dispersion, granular shifter and Eq.
+	"dispersion|Dispersion|Dispersion.cpp|DispersionControls.cpp|DispersionControlDialog.cpp"
+	"vectorscope|Vectorscope|Vectorscope.cpp|VecControls.cpp|VecControlsDialog.cpp|VectorView.cpp"
+	"analyzer|SpectrumAnalyzer|Analyzer.cpp|SaControls.cpp|SaControlsDialog.cpp|SaProcessor.cpp|SaSpectrumView.cpp|SaWaterfallView.cpp"
+	"granularpitchshifter|GranularPitchShifter|GranularPitchShifterEffect.cpp|GranularPitchShifterControls.cpp|GranularPitchShifterControlDialog.cpp"
+	"eq|Eq|EqEffect.cpp|EqControls.cpp|EqControlsDialog.cpp|EqCurve.cpp|EqParameterWidget.cpp|EqSpectrumView.cpp"
 )
 
 set(PART_C_REFERENCE_TARGETS "")
@@ -83,7 +89,7 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	foreach(SRC IN LISTS FIELDS)
 		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/${PLUGIN_DIR}/${SRC}")
 	endforeach()
-	if(PLUGIN_ID STREQUAL "delay" OR PLUGIN_ID STREQUAL "compressor")
+	if(PLUGIN_ID STREQUAL "delay" OR PLUGIN_ID STREQUAL "compressor" OR PLUGIN_ID STREQUAL "eq")
 		# EqFader is header-only; AUTOMOC needs the header to emit its
 		# metaobject and vtable, which DelayControlsDialog.cpp and
 		# CompressorControlDialog.cpp reference.
