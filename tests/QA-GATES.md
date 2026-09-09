@@ -219,6 +219,37 @@ bash tests/duplication-gate.sh
 
 Requires `npx`; if Node is absent the gate reports **SKIP** rather than a false PASS.
 
+## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
+
+The adopted ruleset requires "dead code: zero (ruff/vulture)". The C++ equivalent is
+cppcheck's `unusedFunction`, and this fork has a `compile_commands.json`, so the check is
+runnable. **It is not a usable gate for this codebase**, and the evidence is why:
+
+```sh
+cppcheck --project=build/compile_commands.json --enable=unusedFunction \
+  --quiet --template='{file}|{line}|{id}'
+# -> 689 unusedFunction hits project-wide
+```
+
+689 is dominated by vendored/3rdparty headers (`plugins/LadspaEffect/swh/**`,
+`ladspa-util.h`, …). Scoped to `tests/fork-sources.txt` the number is **11**, and every one
+of the 11 is an accessor or a small API method, not dead code:
+
+| file | line | symbol |
+|---|---|---|
+| `include/RoutingNodes.h` | 75, 98, 99 | `alpha()`, `gain()`, `setGain()` |
+| `include/RoutingGraph.h` | 93, 96, 100 | `connections()`, `processingOrder()`, `outputNodeId()` |
+| `src/core/RoutingGraph.cpp` | 75 | `RoutingGraph::removeNode()` |
+| `include/TrackRecorder.h` | 90 | `isWriterRunning()` |
+| `src/core/audio/TrackRecorder.cpp` | 64 | `inputChannel()` |
+| `src/core/audio/MultiTrackRecorder.cpp` | 90 | `totalOverflowCount()` |
+| `include/RecordRingBuffer.h` | 91 | `writeBlock()` |
+
+cppcheck cannot see callers in other translation units or in the test binaries, so it flags
+public API surface. Wiring this would force either a fake baseline or the deletion of used
+methods — both worse than an honest "not gated". The ruleset item is therefore **closed by
+evidence, not by a script**, and the distinction is recorded here deliberately.
+
 ## Running all gates
 
 ```sh
