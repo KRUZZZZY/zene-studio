@@ -177,6 +177,14 @@ if(LMMS_HAVE_LV2)
 	list(APPEND EXTRA_LIBRARIES Lilv::lilv)
 endif()
 
+if(LMMS_HAVE_STEM_SPLIT)
+	# Dev builds: default location of the reference separation CLI. Installed
+	# packages must install tools/stem_split_cli.py; the runtime environment
+	# variable LMMS_STEM_CLI overrides this path.
+	target_compile_definitions(lmmsobjs PRIVATE
+		LMMS_STEM_CLI_DEFAULT="${CMAKE_SOURCE_DIR}/tools/stem_split_cli.py")
+endif()
+
 SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 	${CMAKE_THREAD_LIBS_INIT}
 	${QT_LIBRARIES}
@@ -197,6 +205,14 @@ SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 target_link_libraries(lmmsobjs
 	${LMMS_REQUIRED_LIBS}
 )
+
+# Optional ONNX Runtime dependency of the stem-separation feature. The imported
+# target only exists when find_package(ONNXRuntime) succeeded at configure time.
+IF(LMMS_HAVE_ONNXRUNTIME)
+	TARGET_LINK_LIBRARIES(lmmsobjs ONNXRuntime::ONNXRuntime)
+	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${ONNXRuntime_INCLUDE_DIRS})
+ENDIF()
+
 target_static_libraries(lmmsobjs ringbuffer lua luabridge)
 
 set_target_properties(lmms PROPERTIES

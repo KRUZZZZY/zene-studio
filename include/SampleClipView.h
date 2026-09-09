@@ -50,6 +50,9 @@ public slots:
 	void updateSample();
 	void reverseSample();
 	void setAutomationGhost();
+#ifdef LMMS_HAVE_STEM_SPLIT
+	void splitToStems();
+#endif
 
 
 

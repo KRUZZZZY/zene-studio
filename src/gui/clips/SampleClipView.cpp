@@ -33,9 +33,13 @@
 #include "AutomationEditor.h"
 #include "embed.h"
 #include "PathUtil.h"
+#include "lmmsconfig.h"
 #include "SampleClip.h"
 #include "SampleThumbnail.h"
 #include "Song.h"
+#ifdef LMMS_HAVE_STEM_SPLIT
+#include "StemSplitController.h"
+#endif
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
 #include "TrackView.h"
@@ -101,7 +105,25 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 		SLOT(setAutomationGhost())
 	);
 
+#ifdef LMMS_HAVE_STEM_SPLIT
+	cm->addAction(
+		tr("Split to stems"),
+		this,
+		SLOT(splitToStems())
+	);
+#endif
+
 }
+
+
+
+
+#ifdef LMMS_HAVE_STEM_SPLIT
+void SampleClipView::splitToStems()
+{
+	StemSplitController::instance()->splitClipToStems(m_clip);
+}
+#endif
 
 
 
