@@ -52,6 +52,7 @@ SET(LMMS_PLUGIN_LIST
 	MultitapEcho
 	Monstro
 	Nes
+	NeuralAmp
 	OpulenZ
 	Organic
 	Oscilloscope

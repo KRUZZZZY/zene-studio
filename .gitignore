@@ -1,4 +1,5 @@
 /build/
+/build-rel/
 /target/
 .*.sw?
 .DS_Store
