@@ -123,6 +123,10 @@ void EffectChain::loadSettings( const QDomElement & _this )
 void EffectChain::appendEffect( Effect * _effect )
 {
 	Engine::audioEngine()->requestChangeInModel();
+	// Phase D: the chain is the effect's parent for sidechain delivery. The
+	// factory path sets this in Effect::instantiate(), but effects built
+	// directly (tests, native plugins) only pass through here.
+	_effect->setEffectChain( this );
 	m_effects.push_back(_effect);
 	Engine::audioEngine()->doneChangeInModel();
 
