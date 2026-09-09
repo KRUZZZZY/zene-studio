@@ -7,6 +7,7 @@ set(LMMS_TESTS
 	src/core/ArrayVectorTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
+	src/core/AudioBusTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
@@ -20,6 +21,15 @@ set(LMMS_TESTS
 	src/core/TwoTrackRecordingHarness.cpp
 	src/tracks/AutomationTrackTest.cpp
 )
+
+# gcov coverage instrumentation (see WANT_COVERAGE in the top-level
+# CMakeLists.txt). Applied to the unit-test executables only; the Part C
+# reference/migration targets below keep the plain debug build so behaviour
+# comparisons stay instrumentation-independent.
+set(LMMS_COVERAGE_FLAGS "")
+if(WANT_COVERAGE)
+	set(LMMS_COVERAGE_FLAGS "--coverage")
+endif()
 
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
@@ -39,6 +49,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
+	target_compile_options(${LMMS_TEST_NAME} PRIVATE ${LMMS_COVERAGE_FLAGS})
+	target_link_options(${LMMS_TEST_NAME} PRIVATE ${LMMS_COVERAGE_FLAGS})
 	# Lua scripting examples live in the source tree; tests run from build/tests.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")

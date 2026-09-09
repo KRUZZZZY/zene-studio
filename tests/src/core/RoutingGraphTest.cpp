@@ -114,6 +114,10 @@ private slots:
 	void RoundTripsSaveLoad();
 	void ProcessingDoesNotAllocate();
 	void RejectsUnknownNodeType();
+	void NodeTopologyEdgeCases();
+	void LoadMalformedDocuments();
+	void SinkNodeSumsInputs();
+	void ClearAndMoveSemantics();
 };
 
 void RoutingGraphTest::ProcessesKnownBlock_data()
@@ -349,6 +353,195 @@ void RoutingGraphTest::RejectsUnknownNodeType()
 	QDomElement emptyRoot = document.createElement(QStringLiteral("empty"));
 	document.appendChild(emptyRoot);
 	QVERIFY(!graph.load(emptyRoot));
+}
+
+void RoutingGraphTest::NodeTopologyEdgeCases()
+{
+	RoutingGraph graph;
+
+	// a null node is rejected
+	QCOMPARE(graph.addNode(nullptr), -1);
+
+	// out-of-range ids resolve to nullptr nodes
+	QVERIFY(graph.node(-1) == nullptr);
+	QVERIFY(graph.node(0) == nullptr);
+	QVERIFY(graph.node(42) == nullptr);
+
+	// the const overload behaves identically for edge cases: negative and
+	// out-of-range ids return nullptr there too
+	const RoutingGraph& view = graph;
+	QVERIFY(view.node(-1) == nullptr);
+	QVERIFY(view.node(42) == nullptr);
+
+	// removing a node that was never added fails
+	QVERIFY(!graph.removeNode(0));
+
+	// setting the output node to an unknown id fails
+	QVERIFY(!graph.setOutputNode(3));
+	QCOMPARE(graph.outputNodeId(), -1);
+
+	// add/remove/add reuses the id of the removed node
+	const int first = graph.addNode(std::make_unique<GainNode>(1.f));
+	QVERIFY(first >= 0);
+	QCOMPARE(graph.nodeCount(), 1);
+	QVERIFY(graph.removeNode(first));
+	QCOMPARE(graph.nodeCount(), 0);
+	const int reused = graph.addNode(std::make_unique<GainNode>(0.5f));
+	QCOMPARE(reused, first);
+	const auto* reusedGain = dynamic_cast<GainNode*>(graph.node(first));
+	QVERIFY(reusedGain != nullptr);
+	QCOMPARE(reusedGain->gain(), 0.5f);
+
+	// the const overload also resolves a valid id to the same node
+	QVERIFY(view.node(first) != nullptr);
+	QCOMPARE(view.node(first)->typeName(), QStringLiteral("gain"));
+
+	// disconnect() of an existing and of a non-existent connection
+	const int other = graph.addNode(std::make_unique<GainNode>(2.f));
+	QVERIFY(other >= 0);
+	QVERIFY(graph.connect(first, other));
+	QCOMPARE(graph.connections().size(), std::size_t(1));
+	QVERIFY(graph.disconnect(first, other));
+	QVERIFY(!graph.disconnect(first, other));
+	QVERIFY(graph.connections().empty());
+
+	// disconnect() with the wrong ports does not remove the connection
+	QVERIFY(graph.connect(first, other, 0, 0));
+	QVERIFY(!graph.disconnect(first, other, 0, 1));
+	QCOMPARE(graph.connections().size(), std::size_t(1));
+
+	// connects that reference non-existent nodes and ports fail
+	QString error;
+	QVERIFY(!graph.connect(-1, other, 0, 0, &error));
+	QCOMPARE(error, QStringLiteral("node does not exist"));
+	error.clear();
+	QVERIFY(!graph.connect(first, 99, 0, 0, &error));
+	QCOMPARE(error, QStringLiteral("node does not exist"));
+	error.clear();
+	QVERIFY(!graph.connect(first, other, 5, 0, &error));
+	QCOMPARE(error, QStringLiteral("source port out of range"));
+	error.clear();
+	QVERIFY(!graph.connect(first, other, 0, 7, &error));
+	QCOMPARE(error, QStringLiteral("destination port out of range"));
+	error.clear();
+	QVERIFY(!graph.connect(first, other, 0, 0, &error));
+	QCOMPARE(error, QStringLiteral("connection already exists"));
+
+	// the output node is remembered and cleared with the node again
+	QVERIFY(graph.setOutputNode(other));
+	QCOMPARE(graph.outputNodeId(), other);
+	QVERIFY(graph.removeNode(other));
+	QCOMPARE(graph.outputNodeId(), -1);
+}
+
+void RoutingGraphTest::LoadMalformedDocuments()
+{
+	// an XML document with a routinggraph element whose nodes and
+	// connections do not form a valid graph must be rejected without
+	// changing the target graph
+	const QByteArray documents[] = {
+		// a connection referencing an unknown file id
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"0\" to=\"7\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		// the output node id does not exist
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"9\">"
+			"<node id=\"0\" type=\"gain\"/>"
+			"</routinggraph></test>"),
+		// a connection whose source port does not exist on the source node
+		// (GainNode has a single output port; fromport=4 is out of range)
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"4\" to=\"1\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+	};
+
+	for (const QByteArray& xml : documents)
+	{
+		QDomDocument document;
+		QVERIFY(document.setContent(xml));
+		RoutingGraph graph;
+		QVERIFY(!graph.load(document.documentElement()));
+		QCOMPARE(graph.nodeCount(), 0);
+		QVERIFY(graph.connections().empty());
+		QCOMPARE(graph.outputNodeId(), -1);
+	}
+}
+
+void RoutingGraphTest::SinkNodeSumsInputs()
+{
+	constexpr f_cnt_t Frames = 32;
+
+	RoutingGraph graph;
+	const int left = graph.addNode(std::make_unique<ConstantSourceNode>(0.5f));
+	const int right = graph.addNode(std::make_unique<ConstantSourceNode>(0.25f));
+	const int sink = graph.addNode(std::make_unique<SinkNode>());
+	QVERIFY(left >= 0);
+	QVERIFY(right >= 0);
+	QVERIFY(sink >= 0);
+
+	// both sources sum into the sink; the sink is the graph output
+	QVERIFY(graph.connect(left, sink));
+	QVERIFY(graph.connect(right, sink));
+	QVERIFY(graph.setOutputNode(sink));
+
+	// three independent nodes keep their ascending ids in the plan
+	const std::vector<int>& order = graph.processingOrder();
+	QCOMPARE(order.size(), std::size_t(3));
+	QCOMPARE(order[0], left);
+	QCOMPARE(order[1], right);
+	QCOMPARE(order[2], sink);
+
+	graph.prepare(Frames, 1);
+	AudioBuffer channel(Frames, 1);
+	graph.process(channel);
+
+	// the sink output is the sum of both constants
+	QCOMPARE(channel.buffer(0)[0], 0.75f);
+	QCOMPARE(channel.buffer(0)[Frames - 1], 0.75f);
+}
+
+void RoutingGraphTest::ClearAndMoveSemantics()
+{
+	constexpr f_cnt_t Frames = 16;
+
+	RoutingGraph original;
+	const int sourceId = original.addNode(std::make_unique<ConstantSourceNode>(0.25f));
+	const int sinkId = original.addNode(std::make_unique<SinkNode>());
+	QVERIFY(sourceId >= 0);
+	QVERIFY(sinkId >= 0);
+	QVERIFY(original.connect(sourceId, sinkId));
+	QVERIFY(original.setOutputNode(sinkId));
+	original.prepare(Frames, 1);
+
+	// move construction preserves the whole graph state
+	RoutingGraph moved{std::move(original)};
+	QCOMPARE(moved.nodeCount(), 2);
+	QCOMPARE(moved.connections().size(), std::size_t(1));
+	QCOMPARE(moved.outputNodeId(), sinkId);
+	QVERIFY(moved.isPrepared());
+	QCOMPARE(moved.frames(), Frames);
+	QCOMPARE(moved.channels(), ch_cnt_t(1));
+	QVERIFY(moved.processingOrder().size() == std::size_t(2));
+
+	AudioBuffer channel(Frames, 1);
+	moved.process(channel);
+	QCOMPARE(channel.buffer(0)[0], 0.25f);
+
+	// clear() empties everything
+	moved.clear();
+	QCOMPARE(moved.nodeCount(), 0);
+	QVERIFY(moved.connections().empty());
+	QVERIFY(moved.processingOrder().empty());
+	QCOMPARE(moved.outputNodeId(), -1);
+
+	// a cleared graph does not process
+	moved.process(channel);
+	QCOMPARE(channel.buffer(0)[0], 0.25f);
 }
 
 QTEST_GUILESS_MAIN(RoutingGraphTest)
