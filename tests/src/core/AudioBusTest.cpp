@@ -408,6 +408,159 @@ private slots:
 		model.setChannelCounts(4, 0);
 		QCOMPARE(model.getChannelCountText(), QStringLiteral("4 in 0 out"));
 	}
+
+	//! sanitize() on a model whose only used track channel is the right one
+	//! (0b01) must sanitize channel 1, and the clamp branch of
+	//! sanitizeChannel() must clamp rather than clear finite over-range data.
+	void SanitizeRightChannelOnly()
+	{
+		auto model = std::make_unique<TestAudioPortsModel>(0, 2, false);
+		model->out().setPin(0, 0, false);
+		QVERIFY(!model->out().usedTrackChannels()[0]);
+		QVERIFY(model->out().usedTrackChannels()[1]);
+
+		const float Inf = std::numeric_limits<float>::infinity();
+
+		// Inf in the used right channel: cleared and marked quiet.
+		{
+			TestBus t{8};
+			t.setSample(1, 0, Inf);
+			t.setSample(0, 0, 1234.f);
+			t.bus().sanitize(*model);
+			QCOMPARE(t.sample(1, 0), 0.f);
+			QVERIFY(t.bus().quietChannels()[1]);
+			// the unused left channel is neither clamped nor marked quiet
+			QCOMPARE(t.sample(0, 0), 1234.f);
+			QVERIFY(!t.bus().quietChannels()[0]);
+		}
+
+		// Finite over-range data in the used right channel: clamped, not
+		// cleared, and not marked quiet (sanitizeChannel returns false).
+		{
+			TestBus t{8};
+			t.setSample(1, 0, -5000.f);
+			t.bus().sanitize(*model);
+			QCOMPARE(t.sample(1, 0), -1000.f);
+			QVERIFY(!t.bus().quietChannels()[1]);
+		}
+	}
+
+	//! sanitize() on a model with no used track channels (0b00) leaves the
+	//! buffer untouched.
+	void SanitizeNoUsedChannels()
+	{
+		auto model = std::make_unique<TestAudioPortsModel>(0, 2, false);
+		model->out().setPin(0, 0, false);
+		model->out().setPin(1, 1, false);
+		QVERIFY(!model->out().usedTrackChannels().any());
+
+		TestBus t{8};
+		const float NaN = std::numeric_limits<float>::quiet_NaN();
+		t.setSample(0, 0, NaN);
+		t.setSample(1, 0, NaN);
+
+		t.bus().sanitize(*model);
+
+		QVERIFY(std::isnan(t.sample(0, 0)));
+		QVERIFY(std::isnan(t.sample(1, 0)));
+		QVERIFY(!t.bus().quietChannels()[0]);
+		QVERIFY(!t.bus().quietChannels()[1]);
+	}
+
+	//! update() on a model whose only used track channel is the right one
+	//! (0b01) must judge quietness from channel 1 alone.
+	void UpdateRightChannelOnly()
+	{
+		auto model = std::make_unique<TestAudioPortsModel>(0, 2, false);
+		model->out().setPin(0, 0, false);
+		QVERIFY(!model->out().usedTrackChannels()[0]);
+
+		TestBus t{32};
+		t.setSample(1, 3, 0.5f);
+		QVERIFY(!t.bus().update(*model));
+		QVERIFY(!t.bus().quietChannels()[1]);
+
+		t.setSample(1, 3, 0.f);
+		QVERIFY(t.bus().update(*model));
+		QVERIFY(t.bus().quietChannels()[1]);
+		// the unused left channel was never examined
+		QVERIFY(!t.bus().quietChannels()[0]);
+	}
+
+	//! update() must find a loud left sample that appears after a loud right
+	//! sample (the right-channel scan must not give up on the left one).
+	void UpdateLeftLoudAfterRight()
+	{
+		TestBus t{32};
+		auto model = makeAllPinsModel();
+
+		t.setSample(1, 0, 0.5f);
+		t.setSample(0, 2, 0.5f);
+
+		QVERIFY(!t.bus().update(*model));
+		QVERIFY(!t.bus().quietChannels()[0]);
+		QVERIFY(!t.bus().quietChannels()[1]);
+	}
+
+	//! update() on a model with no used track channels (0b00) reports every
+	//! examined channel as quiet and leaves the flags untouched.
+	void UpdateNoUsedChannels()
+	{
+		auto model = std::make_unique<TestAudioPortsModel>(0, 2, false);
+		model->out().setPin(0, 0, false);
+		model->out().setPin(1, 1, false);
+
+		TestBus t{16};
+		t.setSample(0, 1, 1.f);
+
+		QVERIFY(t.bus().update(*model));
+		QVERIFY(!t.bus().quietChannels()[0]);
+		QVERIFY(!t.bus().quietChannels()[1]);
+	}
+
+	//! silenceChannels() with both used channels needing silence (0b11) and
+	//! with only the left used channel needing it (0b10).
+	void SilenceChannelsBothAndLeftOnly()
+	{
+		// 0b11: both used channels are silenced.
+		{
+			TestBus t{8};
+			auto model = makeAllPinsModel();
+			for (f_cnt_t f = 0; f < 8; ++f)
+			{
+				t.setSample(0, f, 1.f);
+				t.setSample(1, f, 1.f);
+			}
+
+			t.bus().silenceChannels(*model);
+
+			QCOMPARE(t.sample(0, 0), 0.f);
+			QCOMPARE(t.sample(1, 7), 0.f);
+			QVERIFY(t.bus().quietChannels()[0]);
+			QVERIFY(t.bus().quietChannels()[1]);
+			// track channels above the upper bound are never touched
+			QVERIFY(!t.bus().quietChannels()[2]);
+			QVERIFY(!t.bus().quietChannels()[3]);
+		}
+
+		// 0b10: only the left used channel needs silencing.
+		{
+			TestBus t{8};
+			auto model = makeAllPinsModel();
+			for (f_cnt_t f = 0; f < 8; ++f)
+			{
+				t.setSample(0, f, 1.f);
+				t.setSample(1, f, 1.f);
+			}
+			t.bus().quietChannels().set(1);
+
+			t.bus().silenceChannels(*model);
+
+			QCOMPARE(t.sample(0, 3), 0.f);
+			QCOMPARE(t.sample(1, 3), 1.f);
+			QVERIFY(t.bus().quietChannels()[0]);
+		}
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioBusTest)
