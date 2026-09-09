@@ -42,6 +42,7 @@
 #include "AudioBuffer.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AutomatableModel.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -111,6 +112,7 @@ public:
 		m_out(m_fpp)
 	{
 		m_busData[0] = m_in.data();
+		settleValueRamps();
 	}
 
 	f_cnt_t fpp() const { return m_fpp; }
@@ -136,7 +138,37 @@ public:
 		m_mixer->prepareMasterMix();
 		zeroSampleFrames(m_out.data(), m_fpp);
 		m_mixer->masterMix(m_out.data());
+		// AudioEngine::renderStageMix() advances the automation period
+		// counter at the end of every real period. Synchronous renders must
+		// do the same, otherwise a value changed before the render stays
+		// "pending" and its ramp from the default value is replayed in
+		// every measured period.
+		AutomatableModel::incrementPeriodCounter();
 		return m_out;
+	}
+
+private:
+	//! Consume pending automation ramps for the routing models and close the
+	//! period, mirroring the one real period the engine renders between a
+	//! model change and the next query. Without this the first measured
+	//! period ramps every freshly-set value from its default (volume 1.0,
+	//! send amount 1.0), which silently breaks exact level assertions.
+	void settleValueRamps()
+	{
+		for (int i = 0; i < m_mixer->numChannels(); ++i)
+		{
+			MixerChannel* ch = m_mixer->mixerChannel(i);
+			ch->m_volumeModel.valueBuffer();
+			for (MixerRoute* route : ch->m_sends)
+			{
+				route->amount()->valueBuffer();
+			}
+			for (MixerSidechainRoute* route : ch->m_sidechainSends)
+			{
+				route->amount()->valueBuffer();
+			}
+		}
+		AutomatableModel::incrementPeriodCounter();
 	}
 
 private:
