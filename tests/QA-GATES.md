@@ -159,13 +159,106 @@ Highest: `ScriptEngine::applyCommand` 27, `HostedPlugin::load` 25,
 `AudioBus::update` 17. **All 12 have ND 0**, i.e. nesting is within target everywhere;
 the overage is branch count, not depth.
 
-## Gate 5: Mutation testing (advisory / deferred)
+## Gate 5: Mutation testing (`mutation-gate.sh`) — WIRED 2026-09-09
 
-The adopted quality-gates KB article calls for mutation testing; for C++ the
-tooling (mull, CCmutator) is immature for a Qt codebase of this size (LLVM
-version pinning, long runtimes, no gcc-13 support). **Marked advisory/deferred
-rather than pretended**: the coverage ratchet (Gate 2) plus real-value
-assertions (Gate 3) are the pragmatic substitutes until tooling matures.
+The ruleset target is **>= 80% kill score on core modules**. No packaged C++
+mutation tool exists in this environment (verified: `apt-cache search --names-only
+'mull|mutation'` returns nothing relevant; LLVM 18 is installed but `mull` is not
+packaged; `mutmut` is absent), so the fork uses a **small, self-written harness
+scoped to one translation unit** rather than pretending a tool exists.
+
+**Command**:
+
+```sh
+bash tests/mutation-gate.sh                    # default: 30 mutants, seed 0
+bash tests/mutation-gate.sh --max-mutants N    # smaller sweep
+bash tests/mutation-gate.sh --seed S           # different deterministic sample
+bash tests/mutation-gate.sh --all              # every generated candidate (~15-20 min)
+bash tests/mutation-gate.sh --self-test-only   # prove INVALID/KILLED/SURVIVED (~30 s)
+bash tests/mutation-gate.sh --list             # print the candidate pool, mutate nothing
+```
+
+**Scope — one TU, stated plainly**: `src/core/RoutingGraph.cpp` (364 lines), the only
+fork-NEW core TU that is both 100% line-covered and has a dedicated test binary
+(`build/tests/RoutingGraphTest`, 16 slots). Whole-project mutation is deliberately not
+attempted: a scoped, correct gate beats a broad, flaky one. Widening the scope means
+editing the script's `SRC_REL` / `TEST_NAME` / `OBJ_REL` block — the pipeline is generic.
+
+**What the script actually does** (per mutant, every step verified by execution, no
+claim without proof):
+
+1. generates candidates from the pristine file with an embedded Python scanner that
+   **masks comments and string/char literals first**, so a mutation never lands inside
+   a comment or a literal;
+2. applies the mutation at an exact character position and **proves it landed**:
+   sha256 of the written file against the in-memory expected content, plus
+   `git status --porcelain` on the TU;
+3. rebuilds only that TU and relinks the test binary, and **proves the rebuild
+   happened**: the build log contains `Building CXX object ...RoutingGraph.cpp.o`,
+   the object mtime advanced and the test binary mtime advanced;
+4. runs the binary headless (`QT_QPA_PLATFORM=offscreen`, 10 s timeout): **KILLED**
+   iff exit != 0 or crash/timeout, **SURVIVED** iff it still exits 0;
+5. restores the pristine file and verifies the restore by sha256;
+6. a **control** runs before (3 clean runs) and after (1 clean run) the sweep. A flaky
+   control aborts with exit 2 and **no score** — a flaky harness produces no number
+   rather than a wrong one.
+
+Mutants that fail to compile are **INVALID**: counted, listed separately and excluded
+from the score (they are not evidence of test strength).
+
+**Score**: `killed / (killed + survived)`; exit 0 iff `>= --threshold` (default 80%),
+1 if below, 2 if the harness itself cannot be trusted (build/control/restore failure).
+Machine-readable outputs: `build/mutation-gate/{plan.tsv,results.tsv,summary.txt,logs/}`.
+
+**Self-test (`--self-test-only`)**: proves the classifier is not blind. It applies a
+known-lethal mutant (flip the channel-loop bound in `process()`) and requires KILLED, a
+known-equivalent mutant (delete `plan.reserve(count);`) and requires SURVIVED, and a
+deliberately uncompilable mutant and requires INVALID.
+
+**Measured (2026-09-09, gcc 13, seed 0, 30 of 170 candidates): 27 killed, 3 survived,
+0 invalid → kill score 27/30 = 90.0%** (threshold 80%).
+
+Survivors, each named with why it survives:
+
+| site | mutation | why it survives |
+|---|---|---|
+| `RoutingGraph.cpp:44` | `GRAPH_VERSION 1 -> 0` | the version is written by `save()` but never read by `load()`; no public-API behaviour depends on it (observable only in the raw XML text) |
+| `RoutingGraph.cpp:226` | delete `setAttribute("frames", ...)` | same class: `load()` ignores the `frames` attribute entirely, so the graph behaves identically (observable only in the raw XML text) |
+| `RoutingGraph.cpp:53` | `++i -> --i` in the free-slot scan | undefined-behaviour mutant: the decrement walks `m_nodes[-1]`, `[-2]`; in this allocator layout the out-of-bounds word reads as null, so the loop breaks and `id < 0` takes the same fallback path as the pristine scan. Not killable by any well-defined test. |
+
+**Limitations, stated not hidden:**
+
+- **Scope is one TU.** The 80% target is met for `src/core/RoutingGraph.cpp`, not for
+  the fork as a whole; the ruleset's "core modules" (plural) is not yet covered.
+- **Sampling.** The default 30-mutant sample is a deterministic stratified draw (one
+  per rule class per round, sha256-ordered within a class, seed 0). A different seed
+  selects different mutants and can produce a different score; only `--all` (170
+  mutants) is exhaustive.
+- **Equivalent mutants survive by construction.** Two of the three survivors are
+  equivalent-in-practice (write-only data with no reader). There is no automatic
+  equivalent-mutant detector; they are named here instead of being hidden.
+- **UB mutants can flip.** The `++i -> --i` survivor depends on heap layout; an
+  unrelated test change can turn it into a crash (KILLED) or back. Its classification
+  is not a reliable signal.
+- **Small, regex-based operator set**: comparison-operator flips, `++`/`--` and
+  `std::min`/`std::max` swaps, integer-constant changes, condition negation, `return`
+  value flips, and single-statement deletion. It does not do block deletion or
+  loop-boundary analysis, so a survivor can mean "no test catches this" *or* "this
+  operator set did not generate the interesting mutant".
+- **Serial and slow-ish**: ~5-6 s per mutant (one TU rebuild + link + test); the
+  default run is ~3 min, `--all` ~15-20 min.
+- **Build-layout coupling**: the harness assumes `build/` is configured (Debug,
+  `WANT_QT6=ON`), the object path
+  `build/src/CMakeFiles/lmmsobjs.dir/core/RoutingGraph.cpp.o`, and a headless Qt
+  platform plugin. A layout change breaks it loudly (exit 2), not silently.
+
+**What the gate found (2026-09-09).** The first full run scored **23/30 = 76.7%**,
+below target. Four survivors were genuine test gaps, not equivalents: negative
+source/dest ports were never rejected, `removeNode()` never checked that connections
+are dropped, and `process()` was never exercised with a buffer larger than the prepared
+window. They were closed with real assertions in `RoutingGraphTest.cpp` (15 -> 16
+slots), and the score above is the re-measured result. The gate did its job: it found
+missing tests, and the tests were strengthened rather than the threshold lowered.
 
 ## Gate 6: No behavioural regressions in upstream code (`no-upstream-regression-gate.sh`) — WIRED 2026-09-09
 
@@ -202,6 +295,11 @@ someone remembers:
 - **unit-tests** — Gate 1: Debug + Qt6 configure, build, then ctest from `build/tests`.
 - **coverage** — Gate 2 in `--check` mode (the baseline is never written in CI), with the
   HTML report uploaded as an artifact.
+
+Gate 5 is deliberately **not** in CI: a 30-mutant sweep is ~3 min of serial
+rebuild+test cycles, and a mutation score is a periodic quality signal, not a
+per-push gate. It is enforced by `tests/run-all-gates.sh` (which CI does not run);
+the distinction is stated here rather than implied.
 
 Every command in the workflow is one that has been executed locally; the GitHub runner
 environment itself has **not** been exercised (this fork has not been pushed), so the
@@ -281,11 +379,13 @@ evidence, not by a script**, and the distinction is recorded here deliberately.
 ## Running all gates
 
 ```sh
-bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 6 (fast)
+bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8 (Gate 5 ≈3 min)
+bash tests/run-all-gates.sh --no-mutation    # skip the Gate 5 sweep
 bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
 ```
 
-Gate 5 remains advisory/deferred; the runner reports it as SKIP rather than pretending.
+Gate 5 runs by default and reports a real score; `--no-mutation` is the only way to
+skip it. Gate 2 stays opt-in because it rebuilds the whole tree.
 
 ## Notes
 

@@ -2,12 +2,13 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # fast gates (1, 3, 4, 6)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
+#   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
 #
 # Exit 0 only if every gate that ran passed. Each gate's own output is printed.
-# Gate 5 (mutation testing) is advisory/deferred by design — see tests/QA-GATES.md.
+# Gate 5 (mutation testing) is enforced by tests/mutation-gate.sh — see tests/QA-GATES.md.
 
 set -uo pipefail
 
@@ -16,10 +17,12 @@ ROOT="$(cd "$HERE/.." && pwd)"
 cd "$ROOT" || exit 2
 
 WITH_COVERAGE=0
+SKIP_MUTATION=0
 STRICT=""
 for arg in "$@"; do
 	case "$arg" in
 		--with-coverage) WITH_COVERAGE=1 ;;
+		--no-mutation) SKIP_MUTATION=1 ;;
 		--strict) STRICT="--strict" ;;
 	esac
 done
@@ -32,7 +35,7 @@ banner() { printf '\n================ Gate %s: %s ================\n' "$1" "$2";
 # so a non-zero return from the PASS branch would fall through and record FAIL as well.
 record() {
 	RESULTS+=("$1|$2|$3")
-	# SKIP is not a failure: gate 2 needs --with-coverage, gate 5 is advisory.
+	# SKIP is not a failure: gate 2 needs --with-coverage, gate 5 needs --no-mutation to skip.
 	if [[ "$3" == "FAIL" ]]; then fail=1; fi
 	return 0
 }
@@ -76,10 +79,15 @@ banner 4 "per-method complexity"
 bash tests/complexity-gate.sh --check
 [[ $? -eq 0 ]] && record 4 "complexity" "PASS" || record 4 "complexity" "FAIL"
 
-# ---- Gate 5: mutation testing (advisory, not run) ---------------------------
-banner 5 "mutation testing (advisory/deferred)"
-echo "not run — tooling immature for Qt/C++ (QA-GATES.md Gate 5); coverage ratchet + real assertions are the substitutes"
-record 5 "mutation" "SKIP"
+# ---- Gate 5: mutation testing (scoped harness, enforced) --------------------
+banner 5 "mutation testing (src/core/RoutingGraph.cpp)"
+if [[ $SKIP_MUTATION -eq 1 ]]; then
+	echo "skipped (--no-mutation)"
+	record 5 "mutation" "SKIP"
+else
+	bash tests/mutation-gate.sh
+	[[ $? -eq 0 ]] && record 5 "mutation" "PASS" || record 5 "mutation" "FAIL"
+fi
 
 # ---- Gate 6: no upstream behavioural regressions ----------------------------
 banner 6 "no upstream behavioural regressions"
