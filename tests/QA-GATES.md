@@ -57,10 +57,10 @@ plus a `genhtml` report under `build-coverage/coverage/html/`.
 | Directory            | Lines | Hit  | Rate   |
 |----------------------|-------|------|--------|
 | `src/core` (fork)    | 1730  | 1660 | 95.95% |
-| `src/core/audio`     | 88    | 74   | 84.09% |
-| `include` (fork)     | 469   | 381  | 81.24% |
+| `src/core/audio`     | 88    | 82   | 93.18% |
+| `include` (fork)     | 474   | 441  | 93.04% |
 | `src/gui` (fork)     | 269   | 0    | 0.00%  |
-| **Total fork code**  | 2556  | 2115 | **82.75%** |
+| **Total fork code**  | 2561  | 2183 | **85.24%** |
 
 The headline is line-weighted (hit lines / instrumented lines). **Correction:**
 until 2026-09-09 `coverage-gate.sh` printed an unweighted mean of per-file
@@ -71,11 +71,15 @@ prints the weighted figure and both numbers in the pair `(hit/total lines)`.
 Per-module highlights: `RoutingGraph.cpp` 100%, `RoutingNode.cpp` 100%,
 `AudioBus.h` 100%, `AudioPortsModel.h` 100%, `AudioPortsModel.cpp` 99.22%,
 `ScriptBindings.cpp` 97.65%, `RoutingNodes.cpp` 96.10%, `AudioBus.cpp` 95.77%,
-`AudioPorts.h` 91.43%, `ScriptEngine.cpp` 89.36%, `ScriptBindings.h` 87.18%,
-`PluginAudioPorts.h` 76.54%.
+`AudioPorts.h` 91.43%, `ScriptEngine.cpp` 89.36%, `ScriptBindings.h` 87.18%.
+Fourteen fork files are at **100%**: `RoutingGraph.cpp`, `RoutingNode.cpp`,
+`MultiTrackRecorder.cpp`, `RoutingGraph.h`, `RoutingNode.h`, `RoutingNodes.h`,
+`AudioBus.h`, `AudioPortsModel.h`, `PluginAudioPorts.h`,
+`RemotePluginAudioPorts.h`, `MultiTrackRecorder.h`, `RecordRingBuffer.h`,
+`ScriptEngine.h`, `TrackRecorder.h`.
 
 Journey: **63.0%** (gate introduction) -> **66.17%** (pre-push baseline) ->
-**82.75%** (2026-09-09). Every step is held by the ratchet.
+**82.75%** -> **85.24%** (2026-09-09). Every step is held by the ratchet.
 
 Still at 0%: `src/gui/PinConnector.cpp` (269 lines), plus three headers with no
 line reached (`LmmsPolyfill.h` 2, `PinConnector.h` 5, `RemotePluginAudioPorts.h`
@@ -86,11 +90,11 @@ unit-test binaries run offscreen with no event-loop interaction. This is an
 `PinConnector` (the only hits in `tests/` are the gate metadata files
 `fork-sources.txt`, `QA-GATES.md` and the three baselines).
 
-Gate 2 **partially met**: the ratchet is live and green at 82.75%, which is
-within 2.25 points of the adopted ruleset's 85% aspiration but still below it.
-"100% on core logic modules" now holds for the routing core and both
-`AudioPortsModel` translation units; `AudioBus.cpp` (95.77%) and
-`ScriptEngine.cpp` (89.36%) remain short of 100%.
+Gate 2 **met**: the ratchet is live and green at **85.24%**, clearing the adopted
+ruleset's 85% aspiration. `AudioBus.cpp` (95.77%) and `ScriptEngine.cpp` (89.36%)
+remain short of 100%; `PinConnector.cpp` stays excluded for the reason above.
+The only other 0% lines in scope are `LmmsPolyfill.h` (2 lines) and
+`PinConnector.h` (5 lines), both header-only GUI/polyfill declarations.
 
 ## Gate 3: No tautological tests (`no-tautology-gate.sh`) — WIRED 2026-09-09
 
