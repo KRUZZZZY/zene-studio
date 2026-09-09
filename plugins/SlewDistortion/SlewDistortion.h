@@ -25,7 +25,7 @@
 #ifndef LMMS_SLEW_DISTORTION_H
 #define LMMS_SLEW_DISTORTION_H
 
-#include "Effect.h"
+#include "AudioPlugin.h"
 #include "SlewDistortionControls.h"
 
 #include "BasicFilters.h"
@@ -37,13 +37,13 @@ namespace lmms
 constexpr inline float SLEW_DISTORTION_MIN_FLOOR = 0.0012589f;// -72 dBFS
 constexpr inline float SLEW_DISTORTION_DC_FREQ = 7.f;
 
-class SlewDistortion : public Effect
+class SlewDistortion : public DefaultEffect
 {
 	Q_OBJECT
 public:
 	SlewDistortion(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~SlewDistortion() override = default;
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
 
 	EffectControls* controls() override
 	{

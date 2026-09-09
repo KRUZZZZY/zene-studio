@@ -96,6 +96,32 @@ private slots:
 			QCOMPARE(single[0][f][1], 0.0f);
 		}
 	}
+
+	//! Single-pair control: the simple case has always worked and must keep
+	//! working after the pair-iteration fix.
+	void SilenceAllChannelsSinglePair()
+	{
+		constexpr f_cnt_t frames = 16;
+
+		SampleFrame storage[frames];
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			storage[f][0] = 0.5f;
+			storage[f][1] = -0.25f;
+		}
+		SampleFrame* busData[1] = { storage };
+
+		AudioBus bus{busData, 1, frames};
+		bus.silenceAllChannels();
+
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			QCOMPARE(storage[f][0], 0.0f);
+			QCOMPARE(storage[f][1], 0.0f);
+		}
+		QVERIFY(bus.quietChannels()[0]);
+		QVERIFY(bus.quietChannels()[1]);
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioBusTest)

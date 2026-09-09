@@ -67,7 +67,7 @@ Plugin::Descriptor PLUGIN_EXPORT ladspaeffect_plugin_descriptor =
 }
 
 LadspaEffect::LadspaEffect(Model* _parent, const Descriptor::SubPluginFeatures::Key* _key)
-	: Effect(&ladspaeffect_plugin_descriptor, _parent, _key)
+	: DefaultEffect(&ladspaeffect_plugin_descriptor, _parent, _key)
 	, m_controls(nullptr)
 	, m_key(LadspaSubPluginFeatures::subPluginKeyToLadspaKey(_key))
 {
@@ -125,14 +125,9 @@ void LadspaEffect::changeSampleRate()
 
 
 
-Effect::ProcessStatus LadspaEffect::processImpl(SampleFrame* buf, const f_cnt_t frames)
+ProcessStatus LadspaEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
-	m_pluginMutex.lock();
-	if (!isProcessingAudio())
-	{
-		m_pluginMutex.unlock();
-		return ProcessStatus::Sleep;
-	}
+	const auto frames = inOut.frames();
 
 	// Copy the LMMS audio buffer to the LADSPA input buffer and initialize
 	// the control ports.
@@ -147,7 +142,7 @@ Effect::ProcessStatus LadspaEffect::processImpl(SampleFrame* buf, const f_cnt_t 
 				case BufferRate::ChannelIn:
 					for (f_cnt_t frame = 0; frame < frames; ++frame)
 					{
-						pp->buffer[frame] = buf[frame][channel];
+						pp->buffer[frame] = inOut[frame][channel];
 					}
 					++channel;
 					break;
@@ -217,7 +212,7 @@ Effect::ProcessStatus LadspaEffect::processImpl(SampleFrame* buf, const f_cnt_t 
 				case BufferRate::ChannelOut:
 					for (f_cnt_t frame = 0; frame < frames; ++frame)
 					{
-						buf[frame][channel] = d * buf[frame][channel] + w * pp->buffer[frame];
+						inOut[frame][channel] = d * inOut[frame][channel] + w * pp->buffer[frame];
 					}
 					++channel;
 					break;
@@ -230,9 +225,23 @@ Effect::ProcessStatus LadspaEffect::processImpl(SampleFrame* buf, const f_cnt_t 
 		}
 	}
 
-	m_pluginMutex.unlock();
-
 	return ProcessStatus::ContinueIfNotQuiet;
+}
+
+
+
+
+auto LadspaEffect::processLock() -> bool
+{
+	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
+}
+
+
+
+
+void LadspaEffect::processUnlock()
+{
+	m_pluginMutex.unlock();
 }
 
 

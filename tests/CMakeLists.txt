@@ -96,6 +96,43 @@ set(PART_C_REFERENCE_MODULES
 	"waveshaper|WaveShaper|WaveShaper.cpp|WaveShaperControls.cpp|WaveShaperControlDialog.cpp"
 	"flanger|Flanger|FlangerEffect.cpp|FlangerControls.cpp|FlangerControlsDialog.cpp|MonoDelay.cpp"
 	"delay|Delay|DelayEffect.cpp|DelayControls.cpp|DelayControlsDialog.cpp|Lfo.cpp|StereoDelay.cpp"
+	"compressor|Compressor|Compressor.cpp|CompressorControls.cpp|CompressorControlDialog.cpp"
+	"crossovereq|CrossoverEQ|CrossoverEQ.cpp|CrossoverEQControls.cpp|CrossoverEQControlDialog.cpp"
+	"dynamicsprocessor|DynamicsProcessor|DynamicsProcessor.cpp|DynamicsProcessorControls.cpp|DynamicsProcessorControlDialog.cpp"
+	"lomm|LOMM|LOMM.cpp|LOMMControls.cpp|LOMMControlDialog.cpp"
+	"multitapecho|MultitapEcho|MultitapEcho.cpp|MultitapEchoControls.cpp|MultitapEchoControlDialog.cpp"
+	"reverbsc|ReverbSC|ReverbSC.cpp|ReverbSCControls.cpp|ReverbSCControlDialog.cpp|base.c|revsc.c|dcblock.c"
+	"stereoenhancer|StereoEnhancer|StereoEnhancer.cpp|StereoEnhancerControls.cpp|StereoEnhancerControlDialog.cpp"
+	"stereomatrix|StereoMatrix|StereoMatrix.cpp|StereoMatrixControls.cpp|StereoMatrixControlDialog.cpp"
+	# Slice 3 (task #589): analysers, Dispersion, granular shifter and Eq.
+	"dispersion|Dispersion|Dispersion.cpp|DispersionControls.cpp|DispersionControlDialog.cpp"
+	"vectorscope|Vectorscope|Vectorscope.cpp|VecControls.cpp|VecControlsDialog.cpp|VectorView.cpp"
+	"analyzer|SpectrumAnalyzer|Analyzer.cpp|SaControls.cpp|SaControlsDialog.cpp|SaProcessor.cpp|SaSpectrumView.cpp|SaWaterfallView.cpp"
+	"granularpitchshifter|GranularPitchShifter|GranularPitchShifterEffect.cpp|GranularPitchShifterControls.cpp|GranularPitchShifterControlDialog.cpp"
+	"eq|Eq|EqEffect.cpp|EqControls.cpp|EqControlsDialog.cpp|EqCurve.cpp|EqParameterWidget.cpp|EqSpectrumView.cpp"
+	# Slice 4 (task #589): synth instruments.
+	"freeboy|FreeBoy|FreeBoy.cpp|FreeBoy.h|GbApuWrapper.cpp|GbApuWrapper.h"
+	"nes|Nes|Nes.cpp|Nes.h"
+	"sid|Sid|SidInstrument.cpp|SidInstrument.h"
+	"opulenz|OpulenZ|OpulenZ.cpp|OpulenZ.h"
+	"sfxr|Sfxr|Sfxr.cpp|Sfxr.h"
+	"bitinvader|BitInvader|BitInvader.cpp|BitInvader.h"
+	"watsyn|Watsyn|Watsyn.cpp|Watsyn.h"
+	"xpressive|Xpressive|Xpressive.cpp|Xpressive.h|ExprSynth.cpp|ExprSynth.h"
+	"vibedstrings|Vibed|Vibed.cpp|Vibed.h|NineButtonSelector.cpp|NineButtonSelector.h|VibratingString.cpp|VibratingString.h"
+	"kicker|Kicker|Kicker.cpp|Kicker.h|KickerOsc.h"
+	# Slice 5 (task #589): multi-oscillator and sample-playback instruments.
+	"tripleoscillator|TripleOscillator|TripleOscillator.cpp|TripleOscillator.h"
+	"monstro|Monstro|Monstro.cpp|Monstro.h"
+	"organic|Organic|Organic.cpp|Organic.h"
+	"audiofileprocessor|AudioFileProcessor|AudioFileProcessor.cpp|AudioFileProcessor.h|AudioFileProcessorView.cpp|AudioFileProcessorView.h|AudioFileProcessorWaveView.cpp|AudioFileProcessorWaveView.h"
+	# Slice 6 (task #589): LADSPA host and the Lb302 bass synth.
+	"lb302|Lb302|Lb302.cpp|Lb302.h"
+	"ladspaeffect|LadspaEffect|LadspaEffect.cpp|LadspaEffect.h|LadspaControls.cpp|LadspaControls.h|LadspaControlDialog.cpp|LadspaControlDialog.h|LadspaMatrixControlDialog.cpp|LadspaMatrixControlDialog.h|LadspaSubPluginFeatures.cpp|LadspaSubPluginFeatures.h|LadspaWidgetFactory.cpp|LadspaWidgetFactory.h"
+	# Slice 7 (task #589): the last in-tree legacy-API plugins.
+	"frequencyshifter|FrequencyShifter|FrequencyShifterEffect.cpp|FrequencyShifterControls.cpp|FrequencyShifterControlDialog.cpp|HilbertTransform.h"
+	"oscilloscope|Oscilloscope|Oscilloscope.cpp|OscilloscopeControls.cpp|OscilloscopeControlDialog.cpp|OscilloscopeGraph.cpp|OscilloscopeGraph.h"
+	"slewdistortion|SlewDistortion|SlewDistortion.cpp|SlewDistortionControls.cpp|SlewDistortionControlDialog.cpp"
 )
 
 set(PART_C_REFERENCE_TARGETS "")
@@ -113,9 +150,10 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	foreach(SRC IN LISTS FIELDS)
 		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/${PLUGIN_DIR}/${SRC}")
 	endforeach()
-	if(PLUGIN_ID STREQUAL "delay")
+	if(PLUGIN_ID STREQUAL "delay" OR PLUGIN_ID STREQUAL "compressor" OR PLUGIN_ID STREQUAL "eq")
 		# EqFader is header-only; AUTOMOC needs the header to emit its
-		# metaobject and vtable, which DelayControlsDialog.cpp references.
+		# metaobject and vtable, which DelayControlsDialog.cpp and
+		# CompressorControlDialog.cpp reference.
 		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/Eq/EqFader.h")
 	endif()
 
@@ -131,6 +169,33 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE ${QT_LIBRARIES})
 	set_target_properties(partc_ref_${PLUGIN_ID} PROPERTIES PREFIX "" OUTPUT_NAME "partc_ref_${PLUGIN_ID}")
 
+	# Slice 4 (task #589): instruments whose plugin CMakeLists.txt links extra
+	# targets or sets extra defines - mirror them so the reference module is
+	# built exactly like the pre-migration plugin was.
+	if(PLUGIN_ID STREQUAL "slewdistortion")
+		# The plugin links hiir itself; OversamplingHelpers.h pulls in the
+		# hiir up/down-sampler headers.
+		target_link_libraries(partc_ref_slewdistortion PRIVATE hiir)
+	elseif(PLUGIN_ID STREQUAL "freeboy")
+		target_link_libraries(partc_ref_freeboy PRIVATE gme)
+	elseif(PLUGIN_ID STREQUAL "sid")
+		target_link_libraries(partc_ref_sid PRIVATE resid)
+	elseif(PLUGIN_ID STREQUAL "opulenz")
+		target_link_libraries(partc_ref_opulenz PRIVATE adplug)
+	elseif(PLUGIN_ID STREQUAL "watsyn")
+		target_link_libraries(partc_ref_watsyn PRIVATE SampleRate::samplerate)
+	elseif(PLUGIN_ID STREQUAL "xpressive")
+		target_link_libraries(partc_ref_xpressive PRIVATE exprtk)
+		target_compile_definitions(partc_ref_xpressive PRIVATE
+			exprtk_disable_sc_andor
+			exprtk_disable_return_statement
+			exprtk_disable_break_continue
+			exprtk_disable_comments
+			exprtk_disable_string_capabilities
+			exprtk_disable_rtl_io_file
+			exprtk_disable_rtl_vecops)
+	endif()
+
 	list(APPEND PART_C_REFERENCE_TARGETS partc_ref_${PLUGIN_ID})
 	list(APPEND PART_C_MIGRATED_TARGETS ${PLUGIN_ID})
 	list(APPEND PART_C_REFERENCE_DEFINITIONS
@@ -138,6 +203,20 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	list(APPEND PART_C_MIGRATED_DEFINITIONS
 		"PART_C_MIGRATED_${PLUGIN_ID}=\"$<TARGET_FILE:${PLUGIN_ID}>\"")
 endforeach()
+
+# Slice 6 (task #589): LadspaEffect resolves its LADSPA libraries through
+# LADSPA_PATH at runtime, and both the test and the reference renderer have to
+# point at the in-tree SWH builds. The dir is taken from the plugin targets so
+# no path is hardcoded; the two plugins the harness uses are also added as
+# build dependencies of the test so they exist before ctest runs.
+set(PART_C_LADSPA_TARGETS "")
+if(TARGET amp_1181 AND TARGET dj_eq_1901)
+	list(APPEND PART_C_REFERENCE_DEFINITIONS
+		"PART_C_LADSPA_DIR=\"$<TARGET_FILE_DIR:amp_1181>\"")
+	list(APPEND PART_C_MIGRATED_DEFINITIONS
+		"PART_C_LADSPA_DIR=\"$<TARGET_FILE_DIR:amp_1181>\"")
+	list(APPEND PART_C_LADSPA_TARGETS amp_1181 dj_eq_1901)
+endif()
 
 add_executable(PluginPortsMigrationReference
 	src/plugins/PluginPortsMigrationReference.cpp
@@ -179,6 +258,7 @@ set_target_properties(PluginPortsMigrationTest PROPERTIES ENABLE_EXPORTS ON)
 add_dependencies(PluginPortsMigrationTest
 	PluginPortsMigrationReference
 	${PART_C_MIGRATED_TARGETS}
+	${PART_C_LADSPA_TARGETS}
 )
 
 if(WANT_WASM)

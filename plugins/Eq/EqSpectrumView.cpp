@@ -76,7 +76,7 @@ EqAnalyser::~EqAnalyser()
 
 
 
-void EqAnalyser::analyze( SampleFrame* buf, const f_cnt_t frames )
+void EqAnalyser::analyze(InterleavedBufferView<const float, 2> buf)
 {
 	//only analyse if the view is visible
 	if ( m_active )
@@ -84,16 +84,15 @@ void EqAnalyser::analyze( SampleFrame* buf, const f_cnt_t frames )
 		m_inProgress=true;
 		const int FFT_BUFFER_SIZE = 2048;
 		f_cnt_t f = 0;
-		if( frames > FFT_BUFFER_SIZE )
+		if (buf.frames() > FFT_BUFFER_SIZE)
 		{
 			m_framesFilledUp = 0;
-			f = frames - FFT_BUFFER_SIZE;
+			f = buf.frames() - FFT_BUFFER_SIZE;
 		}
-		// meger channels
-		for( ; f < frames; ++f )
+		// merge channels
+		for (; f < buf.frames(); ++f)
 		{
-			m_buffer[m_framesFilledUp] =
-					( buf[f][0] + buf[f][1] ) * 0.5;
+			m_buffer[m_framesFilledUp] = (buf[f][0] + buf[f][1]) * 0.5f;
 			++m_framesFilledUp;
 		}
 

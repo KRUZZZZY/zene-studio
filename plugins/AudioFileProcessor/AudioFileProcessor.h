@@ -44,8 +44,6 @@ class AudioFileProcessor : public Instrument
 public:
 	AudioFileProcessor( InstrumentTrack * _instrument_track );
 
-	void playNote( NotePlayHandle * _n,
-						SampleFrame* _working_buffer ) override;
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
 	//! Slide (portamento) notes are meaningless on a raw sample player: opt
@@ -98,6 +96,8 @@ signals:
 	void sampleUpdated();
 
 private:
+	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+
 	Sample m_sample;
 
 	FloatModel m_ampModel;
