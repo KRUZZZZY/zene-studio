@@ -24,6 +24,7 @@
 #define LMMS_WASM_EFFECT_H
 
 #include "Effect.h"
+#include "WasmEffectControls.h"
 #include "WasmWorker.h"
 
 #include <atomic>
@@ -32,8 +33,6 @@
 
 namespace lmms
 {
-
-class WasmEffectControls;
 
 //! LMMS effect that hosts a WASM DSP module in the crash-isolated sandbox.
 /*!
@@ -51,7 +50,12 @@ public:
 	WasmEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~WasmEffect() override;
 
-	EffectControls* controls() override;
+	//! Covariant return: callers holding a WasmEffect get the concrete controls
+	//! (parameter models, module path) without casting.
+	WasmEffectControls* controls() override;
+
+	//! Path of the loaded module (empty when none); persisted in the project.
+	QString modulePath() const;
 
 	//! Control thread: load (or replace) the sandboxed module. The module is
 	//! compiled and instantiated on the worker thread; this blocks until it is
@@ -62,7 +66,10 @@ public:
 	bool isModuleCorrupted() const { return m_worker.isCorrupted(); }
 	QString lastError() const { return QString::fromStdString(m_worker.lastError()); }
 
-	//! Control thread: drive a module parameter (exposed via host_get_param()).
+	//! Control thread: push a parameter value straight to the module (exposed
+	//! via host_get_param()). Does not touch the parameter models, so it is
+	//! not saved with the project - use controls()->paramModel(i)->setValue()
+	//! for a change that must persist.
 	void setModuleParam(std::uint32_t index, float value) { m_worker.setParam(index, value); }
 
 	//! Frames of latency the loaded module reports (0 when it reports none).

@@ -74,9 +74,14 @@ WasmEffect::~WasmEffect()
 	delete m_controls;
 }
 
-EffectControls* WasmEffect::controls()
+WasmEffectControls* WasmEffect::controls()
 {
 	return m_controls;
+}
+
+QString WasmEffect::modulePath() const
+{
+	return m_controls->modulePath();
 }
 
 bool WasmEffect::loadModule(const QString& path, QString* error)
@@ -85,6 +90,7 @@ bool WasmEffect::loadModule(const QString& path, QString* error)
 	{
 		m_worker.stop();
 		m_loaded = false;
+		m_controls->setModulePath(QString());
 		return false;
 	}
 
@@ -100,6 +106,7 @@ bool WasmEffect::loadModule(const QString& path, QString* error)
 	}
 
 	m_loaded = true;
+	m_controls->setModulePath(path);
 	if (error != nullptr)
 	{
 		error->clear();

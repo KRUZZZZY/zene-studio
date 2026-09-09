@@ -37,7 +37,9 @@ WasmEffectControls::WasmEffectControls(WasmEffect* effect) :
 {
 	for (int i = 0; i < paramCount; ++i)
 	{
-		m_params[i] = new FloatModel(0.0f, 0.0f, 1.0f, 0.001f, this,
+		// Neutral default: a fresh instance leaves every parameter at 0.5,
+		// which loadSettings() relies on for elements that predate the plugin.
+		m_params[i] = new FloatModel(0.5f, 0.0f, 1.0f, 0.001f, this,
 			tr("Param %1").arg(i + 1));
 		connect(m_params[i], &FloatModel::dataChanged, this, [this, i]() {
 			m_effect->setModuleParam(static_cast<std::uint32_t>(i), m_params[i]->value());
@@ -143,12 +145,8 @@ void WasmEffectControls::loadSettings(const QDomElement& element)
 	// Backward compatible by construction: projects saved before the plugin
 	// existed have no <wasmeffectcontrols> element at all, and projects with
 	// an element but no "module" attribute simply keep their defaults (no
-	// module, dry passthrough). Unknown <param> indices are ignored.
-	for (int i = 0; i < paramCount; ++i)
-	{
-		m_params[i]->setValue(0.0f);
-	}
-
+	// module, dry passthrough). Parameters the element does not mention keep
+	// their constructor defaults; unknown <param> indices are ignored.
 	for (QDomElement param = element.firstChildElement("param");
 			!param.isNull(); param = param.nextSiblingElement("param"))
 	{

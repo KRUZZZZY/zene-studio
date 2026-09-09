@@ -90,6 +90,12 @@ public:
 	//! Control thread: load \p path and remember it for save/load.
 	bool loadModule(const QString& path);
 
+	//! Control thread: record the path of the module that is actually loaded.
+	void setModulePath(const QString& path)
+	{
+		m_modulePath = path;
+	}
+
 private:
 	WasmEffect* m_effect;
 	std::array<FloatModel*, paramCount> m_params{};

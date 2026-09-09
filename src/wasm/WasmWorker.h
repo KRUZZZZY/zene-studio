@@ -28,6 +28,7 @@
 #include "WasmSpscRingBuffer.h"
 
 #include "SampleFrame.h"
+#include "lmms_export.h"
 
 #include <array>
 #include <atomic>
@@ -46,7 +47,9 @@ namespace lmms::wasm
 //! touch pre-allocated slot memory and lock-free SPSC queues - no allocation,
 //! no locks, no syscalls. The worker thread owns the sandbox and does all
 //! module loading, memory copying and instantiation work.
-class WasmWorker
+// Exported from the host: the WasmEffect plugin (a separate .so) resolves
+// these symbols at load time, exactly like Effect/PluginFactory.
+class LMMS_EXPORT WasmWorker
 {
 public:
 	//! Maximum block size the pre-allocated slots can carry.

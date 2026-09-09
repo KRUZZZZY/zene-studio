@@ -23,6 +23,8 @@
 #ifndef LMMS_WASM_SANDBOX_H
 #define LMMS_WASM_SANDBOX_H
 
+#include "lmms_export.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -58,7 +60,9 @@ struct CallResult
 //! The sandbox is deliberately single-threaded: it must only be used by the
 //! thread that owns it (the WasmWorker thread). The audio thread never touches
 //! it; it communicates through WasmWorker's lock-free queues.
-class WasmSandbox
+// Exported from the host: the WasmEffect plugin (a separate .so) resolves
+// these symbols at load time, exactly like Effect/PluginFactory.
+class LMMS_EXPORT WasmSandbox
 {
 public:
 	WasmSandbox();

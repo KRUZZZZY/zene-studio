@@ -63,6 +63,11 @@ if(WANT_WASM)
 		${QT_LIBRARIES}
 		${QT_QTTEST_LIBRARY}
 	)
+	# The plugin .so resolves LMMS core symbols from the host process, exactly
+	# like the real lmms binary (src/CMakeLists.txt sets ENABLE_EXPORTS ON).
+	# Without it p5's PluginFactory load would fail on the first core symbol.
+	set_target_properties(WasmSandboxTest PROPERTIES ENABLE_EXPORTS ON)
+
 	target_compile_features(WasmSandboxTest PRIVATE cxx_std_20)
 	target_compile_definitions(WasmSandboxTest PRIVATE
 		LMMS_TESTING

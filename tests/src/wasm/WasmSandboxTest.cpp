@@ -29,10 +29,15 @@
 #include "AudioBuffer.h"
 #include "Engine.h"
 #include "Plugin.h"
+#include "PluginFactory.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QDomDocument>
+#include <QFile>
 #include <QFileInfo>
+#include <QLibrary>
+#include <QTemporaryDir>
 #include <QTest>
 
 // The gate tests assert on the runtime's own trap-code constants so the
@@ -172,6 +177,7 @@ private slots:
 	void p2_effectSavesAndReloadsModuleAndParameters();
 	void p3_moduleLatencyIsApplied();
 	void p4_sampleRateChangeReinstantiatesModule();
+	void p5_pluginFactoryDiscoversPlugin();
 
 private:
 };
@@ -340,7 +346,7 @@ void WasmSandboxTest::g2_wasmEffectProcesses48FrameBlock()
 	QVERIFY2(effect.loadModule(modulePath("gain"), &error), qPrintable(error));
 	effect.setModuleParam(0, 0.5f);
 
-	AudioBuffer buffer{frames, 0};
+	AudioBuffer buffer{frames, DEFAULT_CHANNELS};
 	buffer.allocateInterleavedBuffer();
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
@@ -442,7 +448,7 @@ void WasmSandboxTest::g3_effectQuarantinesTrappingModule()
 	QString error;
 	QVERIFY2(effect.loadModule(modulePath("abort"), &error), qPrintable(error));
 
-	AudioBuffer buffer{frames, 0};
+	AudioBuffer buffer{frames, DEFAULT_CHANNELS};
 	buffer.allocateInterleavedBuffer();
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
@@ -632,9 +638,11 @@ void WasmSandboxTest::p2_effectSavesAndReloadsModuleAndParameters()
 	QString error;
 	QVERIFY2(saved.loadModule(module, &error), qPrintable(error));
 	QVERIFY(saved.worker().isReady());
-	saved.setModuleParam(0, 0.125f);
-	saved.setModuleParam(3, 0.75f);
-	saved.setModuleParam(7, 0.25f);
+	// Drive the parameters the way the UI does: through the model, which is
+	// what saveSettings() serialises (setModuleParam() only pushes to the DSP).
+	saved.controls()->paramModel(0)->setValue(0.125f);
+	saved.controls()->paramModel(3)->setValue(0.75f);
+	saved.controls()->paramModel(7)->setValue(0.25f);
 
 	// Save exactly like EffectChain::saveSettings does: Effect::saveSettings
 	// writes the effect's own attributes and appends
@@ -662,7 +670,7 @@ void WasmSandboxTest::p2_effectSavesAndReloadsModuleAndParameters()
 
 	// The reloaded instance really runs the restored module with the restored
 	// parameter: block 2 carries the previous block scaled by 0.125.
-	AudioBuffer buffer(48, 0);
+	AudioBuffer buffer(48, DEFAULT_CHANNELS);
 	buffer.allocateInterleavedBuffer();
 	for (f_cnt_t f = 0; f < 48; ++f)
 	{
@@ -738,7 +746,7 @@ void WasmSandboxTest::p3_moduleLatencyIsApplied()
 
 		std::vector<float> out;
 		out.reserve(kBlocks * kFrames);
-		AudioBuffer buffer(kFrames, 0);
+		AudioBuffer buffer(kFrames, DEFAULT_CHANNELS);
 		buffer.allocateInterleavedBuffer();
 		for (int b = 0; b < kBlocks; ++b)
 		{
@@ -785,7 +793,7 @@ void WasmSandboxTest::p3_moduleLatencyIsApplied()
 
 		std::vector<float> out;
 		out.reserve(kBlocks * kFrames);
-		AudioBuffer buffer(kFrames, 0);
+		AudioBuffer buffer(kFrames, DEFAULT_CHANNELS);
 		buffer.allocateInterleavedBuffer();
 		for (int b = 0; b < kBlocks; ++b)
 		{
@@ -879,10 +887,58 @@ void WasmSandboxTest::p4_sampleRateChangeReinstantiatesModule()
 	QVERIFY(worker.waitForIdle(5000));
 	QVERIFY(worker.collect(out.data(), kFrames));
 	QCOMPARE(worker.reinstantiatedModules(), std::uint64_t{1});
-	QCOMPARE(worker.processedBlocks(), std::uint64_t{5});
+	QCOMPARE(worker.processedBlocks(), std::uint64_t{4});
 	qInfo("P4 sample rate: 44100 -> 44100 (0 reloads) -> 48000 (1 reload, "
 		"ring cleared) -> 48000 (still 1 reload); processed=%llu",
 		static_cast<unsigned long long>(worker.processedBlocks()));
+}
+
+// ---------------------------------------------------------------------------
+// Task #591: headless plugin discovery - the plugin must be found and loaded
+// through PluginFactory/Plugin::instantiate, exactly as a user's LMMS does at
+// startup, not merely by directly constructing the C++ class.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p5_pluginFactoryDiscoversPlugin()
+{
+	// libwasm_effect.so is the real plugin module the build produces. This test
+	// binary does not link it (the plugin sources are compiled in directly), so
+	// discovery here exercises the loader path a shipped LMMS would take.
+	const QDir pluginDir(QCoreApplication::applicationDirPath() + "/../plugins");
+	const QString moduleFile = pluginDir.absoluteFilePath("libwasm_effect.so");
+	QVERIFY2(QFileInfo::exists(moduleFile), qPrintable(moduleFile));
+
+	// Search a directory that holds only our module: the build tree contains
+	// every other LMMS plugin too, which discovery would otherwise dlopen.
+	QTemporaryDir isolatedDir;
+	QVERIFY(isolatedDir.isValid());
+	QVERIFY(QFile::link(moduleFile, isolatedDir.filePath("libwasm_effect.so")));
+
+	PluginFactory* factory = getPluginFactory();
+	QDir::setSearchPaths("plugins", QStringList{isolatedDir.path()});
+	factory->discoverPlugins();
+
+	const PluginFactory::PluginInfo info = factory->pluginInfo("wasm_effect");
+	QVERIFY2(!info.isNull(), qPrintable(factory->errorString("wasm_effect")));
+	QVERIFY(info.library->isLoaded());
+	QVERIFY(info.descriptor != nullptr);
+	QCOMPARE(QString::fromUtf8(info.descriptor->name), QStringLiteral("wasm_effect"));
+	QVERIFY(info.descriptor->type == Plugin::Type::Effect);
+
+	// Plugin::instantiate() is what the engine calls when a project references
+	// the plugin: it resolves lmms_plugin_main from the loaded .so.
+	Plugin* plugin = Plugin::instantiate("wasm_effect", nullptr, nullptr);
+	auto* effect = dynamic_cast<WasmEffect*>(plugin);
+	QVERIFY2(effect != nullptr,
+		"Plugin::instantiate() did not return a WasmEffect - no plugin was loaded");
+	QCOMPARE(effect->controls()->nodeName(), QStringLiteral("wasmeffectcontrols"));
+	QCOMPARE(effect->controls()->controlCount(), 8);
+	qInfo("P5 discovery: PluginFactory found \"%s\" in %s (library loaded=%d), "
+		"descriptor \"%s\" type=Effect; Plugin::instantiate -> %s with %d params",
+		qPrintable(info.name()), qPrintable(info.file.absoluteFilePath()),
+		info.library->isLoaded() ? 1 : 0, info.descriptor->name,
+		qPrintable(effect->nodeName()), effect->controls()->controlCount());
+	delete plugin;
 }
 
 } // namespace lmms::wasm
