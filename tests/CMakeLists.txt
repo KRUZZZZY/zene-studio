@@ -303,6 +303,7 @@ if(WANT_WASM)
 		WASM_WAT_SOURCE_DIR="${CMAKE_SOURCE_DIR}/modules/wasm"
 	)
 	add_dependencies(WasmSandboxTest wasm-modules)
+endif()
 
 # Native CLAP hosting tests. They only exist when the MIT licensed CLAP headers
 # (>= 1.2.10) are available; see cmake/modules/ClapHeaders.cmake. The port map

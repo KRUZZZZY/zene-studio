@@ -123,6 +123,10 @@ void EffectChain::loadSettings( const QDomElement & _this )
 void EffectChain::appendEffect( Effect * _effect )
 {
 	Engine::audioEngine()->requestChangeInModel();
+	// Phase D: the chain is the effect's parent for sidechain delivery. The
+	// factory path sets this in Effect::instantiate(), but effects built
+	// directly (tests, native plugins) only pass through here.
+	_effect->setEffectChain( this );
 	m_effects.push_back(_effect);
 	Engine::audioEngine()->doneChangeInModel();
 
@@ -185,12 +189,18 @@ void EffectChain::moveUp( Effect * _effect )
 
 
 
-bool EffectChain::processAudioBuffer(AudioBuffer& buffer)
+bool EffectChain::processAudioBuffer(AudioBuffer& buffer, const AudioBuffer* sidechainBuffer)
 {
 	if( m_enabledModel.value() == false )
 	{
 		return false;
 	}
+
+	// Publish the sidechain input for the duration of this block so effects
+	// can query it via Effect::sidechainBuffer() without changing the
+	// processImpl() signature (Phase D, spec 4.2).
+	const AudioBuffer* const previousSidechain = m_sidechainBuffer;
+	m_sidechainBuffer = sidechainBuffer;
 
 	bool moreEffects = false;
 	for (Effect* effect : m_effects)
@@ -198,24 +208,32 @@ bool EffectChain::processAudioBuffer(AudioBuffer& buffer)
 		moreEffects |= effect->processAudioBuffer(buffer);
 	}
 
+	m_sidechainBuffer = previousSidechain;
+
 	return moreEffects;
 }
 
 
 
 
-bool EffectChain::processAudioBuffer(AudioBus& bus)
+bool EffectChain::processAudioBuffer(AudioBus& bus, const AudioBuffer* sidechainBuffer)
 {
 	if( m_enabledModel.value() == false )
 	{
 		return false;
 	}
 
+	// See the AudioBuffer overload above.
+	const AudioBuffer* const previousSidechain = m_sidechainBuffer;
+	m_sidechainBuffer = sidechainBuffer;
+
 	bool moreEffects = false;
 	for (Effect* effect : m_effects)
 	{
 		moreEffects |= effect->processAudioBuffer(bus);
 	}
+
+	m_sidechainBuffer = previousSidechain;
 
 	return moreEffects;
 }

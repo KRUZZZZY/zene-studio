@@ -27,6 +27,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "AudioBuffer.h"
 #include "embed.h"
 #include "lmms_math.h"
 #include "plugin_export.h"
@@ -261,6 +262,17 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 	const bool feedback = m_compressorControls.m_feedbackModel.value();
 	const bool lookahead = m_compressorControls.m_lookaheadModel.value();
 
+	// Phase D (task #587): native external sidechain. When the mixer delivers
+	// a sidechain signal to this channel, the detector listens to that signal
+	// instead of the channel signal, so this compressor can duck the channel
+	// from another source without a Peak Controller workaround. The audio
+	// path below is unchanged; only the detector input is replaced.
+	const AudioBuffer* scBuffer = sidechainBuffer();
+	const float* sc0 = scBuffer ? scBuffer->buffer(0).data() : nullptr;
+	const float* sc1 = scBuffer ? scBuffer->buffer(1).data() : nullptr;
+
+	// Frame index alongside the range-for so the sidechain key can be read.
+	f_cnt_t f = 0;
 	for (float* frame : inOut.framesView())
 	{
 		auto drySignal = std::array{frame[0], frame[1]};
@@ -288,7 +300,16 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 
 		for (int i = 0; i < 2; i++)
 		{
-			float inputValue = (feedback && !lookahead) ? m_prevOut[i] : s[i];
+			float inputValue;
+			if (scBuffer)
+			{
+				// external sidechain key input
+				inputValue = (i == 0) ? sc0[f] : sc1[f];
+			}
+			else
+			{
+				inputValue = (feedback && !lookahead) ? m_prevOut[i] : s[i];
+			}
 
 			// Calculate the crest factor of the audio by diving the peak by the RMS
 			m_crestPeakVal[i] = qMax(qMax(COMP_NOISE_FLOOR, inputValue * inputValue), m_crestTimeConst * m_crestPeakVal[i] + (1 - m_crestTimeConst) * (inputValue * inputValue));
@@ -504,6 +525,7 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 		rInPeak = drySignal[1] > rInPeak ? drySignal[1] : rInPeak;
 		lOutPeak = s[0] > lOutPeak ? s[0] : lOutPeak;
 		rOutPeak = s[1] > rOutPeak ? s[1] : rOutPeak;
+		++f;
 	}
 
 	m_compressorControls.m_outPeakL = lOutPeak;
