@@ -12,6 +12,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsModelTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
+	src/core/MultiTrackRecorderTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordRingBufferTest.cpp
