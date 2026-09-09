@@ -25,6 +25,23 @@
 	</p>
 </div>
 
+> ### This branch is a standards fork
+>
+> `standards/quality-gates` carries fork-new code on top of upstream master
+> `4e677cb6c6ab` together with **executable** quality gates. The governing rule
+> is: *if it is not checked by a script, it is not a gate.* Run them with:
+>
+> ```sh
+> bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 6, 7, 8 (fast)
+> bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
+> ```
+>
+> Every gate, its measured numbers, and the two ruleset items closed by
+> evidence (mutation testing, dead-code detection) are documented in
+> [`tests/QA-GATES.md`](tests/QA-GATES.md). Upstream LMMS code is never
+> refactored by these gates; their scope is `tests/fork-sources.txt`.
+> Nothing on this branch has been pushed upstream.
+
 What is LMMS?
 --------------
 
