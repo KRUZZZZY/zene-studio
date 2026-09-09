@@ -26,7 +26,7 @@ BUILD_PLUGIN(neuralamp
 		NeuralAmpControlDialog.h
 )
 
-TARGET_LINK_LIBRARIES(neuralamp m)
+TARGET_LINK_LIBRARIES(neuralamp m ${CMAKE_DL_LIBS})
 
 # The inference loops are the hot path; make sure they are optimised even if the
 # host build type is not Release.

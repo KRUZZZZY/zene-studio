@@ -41,6 +41,7 @@
 #include <cstring>
 
 #include "NamProfile.h"
+#include "NamTanh.h"
 
 namespace lmms::nam
 {
@@ -52,12 +53,9 @@ double g_namProfUs[NAM_PROF_SLOT_COUNT] = {};
 void NamModel::applyTanh(Eigen::MatrixXf& m, int numFrames) noexcept
 {
 	// Column-major storage: the first numFrames columns are contiguous.
-	float* p = m.data();
-	const int total = static_cast<int>(m.rows()) * numFrames;
-	for (int i = 0; i < total; ++i)
-	{
-		p[i] = std::tanh(p[i]);
-	}
+	// The element order matches the scalar loop this replaces; the libmvec
+	// kernels are the ones the reference implementation is compiled against.
+	tanhInPlace(m.data(), static_cast<int>(m.rows()) * numFrames);
 }
 
 

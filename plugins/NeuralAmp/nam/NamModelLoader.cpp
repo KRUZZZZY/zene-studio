@@ -42,6 +42,8 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "NamTanh.h"
+
 namespace lmms::nam
 {
 
@@ -419,6 +421,9 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 		model->m_prewarmBuffer.assign(kMaxBlock, 0.0f);
 		model->reset();
 		model->m_ready = true;
+		// Resolve the libmvec tanh kernels here, on the loader thread, so the
+		// audio thread never triggers a dlopen().
+		tanhdetail::warmUp();
 		model->prewarm();
 		return model;
 	}
