@@ -57,7 +57,7 @@ AudioPortsModel::AudioPortsModel(ch_cnt_t channelCountIn, ch_cnt_t channelCountO
 	m_in.updateAllUsedChannels();
 	m_out.updateAllUsedChannels();
 
-	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, [this]() {
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this]() {
 		bufferPropertiesChanging(in().channelCount(), out().channelCount(), Engine::audioEngine()->framesPerPeriod());
 	});
 }
