@@ -32,7 +32,8 @@ banner() { printf '\n================ Gate %s: %s ================\n' "$1" "$2";
 # so a non-zero return from the PASS branch would fall through and record FAIL as well.
 record() {
 	RESULTS+=("$1|$2|$3")
-	if [[ "$3" != "PASS" ]]; then fail=1; fi
+	# SKIP is not a failure: gate 2 needs --with-coverage, gate 5 is advisory.
+	if [[ "$3" == "FAIL" ]]; then fail=1; fi
 	return 0
 }
 
