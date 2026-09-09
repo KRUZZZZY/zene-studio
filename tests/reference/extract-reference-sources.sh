@@ -117,6 +117,16 @@ extract() { # extract <plugin-dir> <file>
 	         AudioFileProcessorView.h AudioFileProcessorWaveView.cpp AudioFileProcessorWaveView.h; do
 		extract AudioFileProcessor "$f"
 	done
+	# Slice 6 (task #589): LADSPA host and the Lb302 bass synth.
+	for f in Lb302.cpp Lb302.h; do
+		extract Lb302 "$f"
+	done
+	for f in LadspaEffect.cpp LadspaEffect.h LadspaControls.cpp LadspaControls.h \
+	         LadspaControlDialog.cpp LadspaControlDialog.h LadspaMatrixControlDialog.cpp \
+	         LadspaMatrixControlDialog.h LadspaSubPluginFeatures.cpp LadspaSubPluginFeatures.h \
+	         LadspaWidgetFactory.cpp LadspaWidgetFactory.h; do
+		extract LadspaEffect "$f"
+	done
 } >> "$HERE/ORIGIN.tsv"
 
 echo "extracted $(wc -l < "$HERE/ORIGIN.tsv") files from $BASE_COMMIT"
