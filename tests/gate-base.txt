@@ -1,0 +1,4 @@
+# Gate 6 base: the integration commit the standards workstream started from.
+# Every commit on top of this is subject to Gate 6 (no behavioural change to
+# upstream-inherited code). Update deliberately, with a reason.
+0cea9b0b6

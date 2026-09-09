@@ -139,14 +139,40 @@ version pinning, long runtimes, no gcc-13 support). **Marked advisory/deferred
 rather than pretended**: the coverage ratchet (Gate 2) plus real-value
 assertions (Gate 3) are the pragmatic substitutes until tooling matures.
 
-## Gate 6: No behavioural regressions in upstream code
+## Gate 6: No behavioural regressions in upstream code (`no-upstream-regression-gate.sh`) — WIRED 2026-09-09
 
-Behavioural changes to code inherited from upstream `origin/master` are
-forbidden in this fork. Fixes to fork-NEW code are allowed and require a
-regression test in the same change. The only production-file change shipped
-with this gate is the gcc-13 fix in `src/core/AudioBus.cpp`
-(`#include <iostream>` for `std::cout` under `LMMS_DEBUG` — compile fix,
-no behaviour change).
+**Command**: `bash tests/no-upstream-regression-gate.sh [base]` (default base from
+`tests/gate-base.txt`).
+
+Rule: behavioural changes to code INHERITED from upstream `origin/master` are
+forbidden in this fork; fixes to fork-NEW code are allowed and must ship a
+regression test in the same change.
+
+The fork's feature branches deliberately modify upstream files (that is their
+purpose), so the gate is scoped to the **standards workstream** — the commits on top
+of the integration base recorded in `tests/gate-base.txt`. For every changed file it
+requires the file to be: under `tests/`, a build/config file (`CMakeLists.txt`,
+`.gitignore`, `*.cmake`), documentation, a **fork-NEW** source
+(`tests/fork-sources.txt`), or an explicitly allowlisted upstream fix in
+`tests/upstream-modifications.txt` (which must state the reason). Anything else is a
+violation.
+
+The gcc-13 fix shipped with this gate is in `src/core/AudioBus.cpp`
+(`#include <iostream>` for `std::cout` under `LMMS_DEBUG` — compile-only, no
+behaviour change) — and `AudioBus.cpp` is fork-NEW, so it is allowed by the rule
+rather than by an exception.
+
+**Measured (2026-09-09):** PASS — every file changed since `0cea9b0b6` is tests/,
+build-config, docs, or fork-NEW.
+
+## Running all gates
+
+```sh
+bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 6 (fast)
+bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
+```
+
+Gate 5 remains advisory/deferred; the runner reports it as SKIP rather than pretending.
 
 ## Notes
 
