@@ -14,6 +14,7 @@ set(LMMS_TESTS
 	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerRoutingBackwardCompatTest.cpp
 	src/core/PhaseDSidechainTest.cpp
+	src/core/PhaseFChannelScaleTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/TimelineTest.cpp
