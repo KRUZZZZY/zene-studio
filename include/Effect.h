@@ -154,6 +154,14 @@ public:
 
 	virtual EffectControls * controls() = 0;
 
+	//! Frames of latency this effect adds to the signal path.
+	//! Latency-compensating hosts (see mixer/SPEC-dynamic-routing.md) query
+	//! this to align parallel paths. Defaults to 0 for zero-latency effects.
+	virtual int latencyFrames() const
+	{
+		return 0;
+	}
+
 	static Effect * instantiate( const QString & _plugin_name,
 				Model * _parent,
 				Descriptor::SubPluginFeatures::Key * _key );

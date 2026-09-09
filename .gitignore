@@ -14,3 +14,4 @@ __pycache__/
 Brewfile.lock.json
 /.cache/
 compile_commands.json
+/third_party/
