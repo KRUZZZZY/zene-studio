@@ -107,6 +107,14 @@ ADD_LIBRARY(lmmsobjs OBJECT
 	${LMMS_RCC_OUT}
 )
 
+IF(NOT LMMS_HAVE_STEM_SPLIT)
+	# include/*.h is globbed into lmmsobjs for AUTOMOC. The stem separation
+	# header is feature-gated: with the feature off its .cpp is not built, so
+	# moc'ing it here would leave undefined references in mocs_compilation.
+	SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/StemSplitController.h"
+		PROPERTIES SKIP_AUTOMOC ON)
+ENDIF()
+
 GENERATE_EXPORT_HEADER(lmmsobjs
 	BASE_NAME lmms
 )
