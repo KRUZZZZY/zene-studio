@@ -165,6 +165,21 @@ rather than by an exception.
 **Measured (2026-09-09):** PASS — every file changed since `0cea9b0b6` is tests/,
 build-config, docs, or fork-NEW.
 
+## CI enforcement (`.github/workflows/quality-gates.yml`) — 2026-09-09
+
+The gates are now wired into CI, so they run on every push/PR rather than only when
+someone remembers:
+
+- **static-gates** — Gates 3, 4 and 6 (no build needed; `fetch-depth: 0` for Gate 6).
+- **unit-tests** — Gate 1: Debug + Qt6 configure, build, then ctest from `build/tests`.
+- **coverage** — Gate 2 in `--check` mode (the baseline is never written in CI), with the
+  HTML report uploaded as an artifact.
+
+Every command in the workflow is one that has been executed locally; the GitHub runner
+environment itself has **not** been exercised (this fork has not been pushed), so the
+workflow is *syntax-validated and command-verified, not CI-verified* — stated plainly
+rather than assumed green.
+
 ## Running all gates
 
 ```sh

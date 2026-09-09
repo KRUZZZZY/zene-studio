@@ -1,0 +1,75 @@
+---
+name: quality-gates
+'on': [push, pull_request]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  # Gates 3, 4 and 6 need no build: they read the sources and the git history.
+  static-gates:
+    name: static gates (3, 4, 6)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out (full history - Gate 6 needs it)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install lizard
+        run: pip install lizard
+      - name: Gate 3 - no tautological tests
+        run: bash tests/no-tautology-gate.sh
+      - name: Gate 4 - per-method complexity (CC <= 10 ratchet)
+        run: bash tests/complexity-gate.sh --check
+      - name: Gate 6 - no upstream behavioural regressions
+        run: bash tests/no-upstream-regression-gate.sh
+
+  # Gate 1 needs a real build: "it compiles" never substitutes for a passing ctest.
+  unit-tests:
+    name: gate 1 - unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies (Qt6, mirrors the locally verified build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev
+      - name: Configure (Debug, Qt6)
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+      - name: Build
+        run: cmake --build build -j4
+      - name: Gate 1 - ctest (must run from build/tests)
+        run: cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
+
+  # Gate 2 is the ratchet: the number must not fall, and the gate must PASS.
+  coverage:
+    name: gate 2 - coverage ratchet
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build and coverage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ lcov \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev
+      - name: Gate 2 - coverage ratchet, CI mode (baseline never written)
+        run: |
+          bash tests/run-coverage.sh build-coverage
+          bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info --check
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: build-coverage/coverage/html
+          if-no-files-found: warn
