@@ -116,6 +116,9 @@ auto referenceInstruments() -> const std::vector<ReferenceInstrument>&
 #ifdef PART_C_REF_malletsstk
 		{"malletsstk", PART_C_REF_malletsstk},
 #endif
+#ifdef PART_C_REF_gigplayer
+		{"gigplayer", PART_C_REF_gigplayer},
+#endif
 	};
 	return instruments;
 }

@@ -851,6 +851,14 @@ inline auto instrumentOverridesFor(const std::string& plugin) -> std::vector<Set
 		return {{"src", PART_C_SF2_FILE}, {"patch", "0"}, {"bank", "0"}};
 	}
 #endif
+#ifdef PART_C_GIG_FILE
+	if (plugin == "gigplayer")
+	{
+		// GigInstrument::loadSettings() opens the file named by "src" and then
+		// selects patch/bank, exactly like the soundfont host above.
+		return {{"src", PART_C_GIG_FILE}, {"patch", "0"}, {"bank", "0"}};
+	}
+#endif
 	if (plugin == "malletsstk")
 	{
 		return {{"hardness", "80"}, {"position", "32"}, {"vib_gain", "16"},
@@ -925,8 +933,33 @@ struct UnprovenPlugin
 inline auto unprovenGaps() -> const std::vector<UnprovenPlugin>&
 {
 	static const std::vector<UnprovenPlugin> gaps{
-		{"gigplayer", "no .gig instrument file is packaged on this system, so neither "
-			"the pre-migration nor the migrated host has anything to load; build-proved only"},
+		// The conditional entries are keyed to the test's module-definition
+		// macros, which exist exactly when CMake added that harness module. An
+		// asset-driven module is refused rather than rendered into silence, so
+		// a missing asset must still be reported - otherwise deleting the asset
+		// would silently shrink the proof instead of failing it.
+#ifndef PART_C_MIGRATED_sf2player
+		{"sf2player", "no soundfont was found at configure time (PART_C_SF2_FILE), so the harness "
+			"refused the module: the host has nothing to load and a silence render would prove nothing"},
+#endif
+#ifndef PART_C_MIGRATED_malletsstk
+		{"malletsstk", "no STK rawwave directory was found at configure time (PART_C_STK_DIR); the "
+			"instrument latches m_filesMissing in its constructor and would render silence"},
+#endif
+#ifndef PART_C_MIGRATED_gigplayer
+		{"gigplayer", "no .gig instrument file was found at configure time (PART_C_GIG_FILE), so the "
+			"harness refused the module: the host has nothing to load and a silence render would "
+			"prove nothing. tests/data/gigproof/ vendors a generated test instrument"},
+#endif
+		// Migrated in slice 2, but its pre-migration reference sources cannot be
+		// linked into the reference process: src/core/PeakController.cpp includes
+		// the migrated plugin header, so the same class has two incompatible
+		// layouts in one process (ODR) and the reference renderer crashes. The
+		// suite therefore does not prove it sample-exact - reported here so the
+		// gap is visible at suite level, not only in a code comment.
+		{"peakcontrollereffect", "migrated in slice 2, but the reference module cannot be built "
+			"alongside the in-tree src/core/PeakController.cpp (duplicate/ODR symbols); see the "
+			"plugin-order comment in this header and the slice-2 report"},
 	};
 	return gaps;
 }
