@@ -1,0 +1,61 @@
+render rnnoise_test_A run 1 -> /tmp/rnnoise_repeat/A_1.wav  EXIT=0  size=1536132
+render rnnoise_test_A run 2 -> /tmp/rnnoise_repeat/A_2.wav  EXIT=0  size=1536132
+render rnnoise_test_A run 3 -> /tmp/rnnoise_repeat/A_3.wav  EXIT=0  size=1536132
+render rnnoise_test_C run 1 -> /tmp/rnnoise_repeat/C_1.wav  EXIT=0  size=1536132
+render rnnoise_test_C run 2 -> /tmp/rnnoise_repeat/C_2.wav  EXIT=0  size=1536132
+render rnnoise_test_C run 3 -> /tmp/rnnoise_repeat/C_3.wav  EXIT=0  size=1536132
+render rnnoise_test_D_float_nofx run 1 -> /tmp/rnnoise_repeat/D_1.wav  EXIT=0  size=1536132
+render rnnoise_test_D_float_nofx run 2 -> /tmp/rnnoise_repeat/D_2.wav  EXIT=0  size=1536132
+render rnnoise_test_D_float_nofx run 3 -> /tmp/rnnoise_repeat/D_3.wav  EXIT=0  size=1536132
+render rnnoise_test_E_float_denoise run 1 -> /tmp/rnnoise_repeat/E_1.wav  EXIT=0  size=1536132
+render rnnoise_test_E_float_denoise run 2 -> /tmp/rnnoise_repeat/E_2.wav  EXIT=0  size=1536132
+render rnnoise_test_E_float_denoise run 3 -> /tmp/rnnoise_repeat/E_3.wav  EXIT=0  size=1536132
+
+=== final_probe.py (RNNOISE_REPEAT_DIR=/tmp/rnnoise_repeat) ===
+=== 1. where is the A-vs-C difference? ===
+max|diff| = 0.473392 at frame 15602 (0.325042 s)
+  startup 0-70ms        : max|diff|=0.460208  mean|diff|=0.09845295  frac>0.01=78.333%
+  source 70ms-2.0s      : max|diff|=0.473392  mean|diff|=0.09393941  frac>0.01=81.264%
+  after 2.0s            : max|diff|=0.299250  mean|diff|=0.00171389  frac>0.01=1.842%
+
+=== 2. tail burst stability across A runs ===
+  A_1: noise-only rms=0.0056 (-45.02 dB) | 2.00-2.02s rms=0.127065 | 2.02-2.04s rms=0.104229 | 2.05-2.07s rms=0.002232 | 2.10-2.12s rms=0.000014 | 2.15-2.17s rms=0.000000
+  A_2: noise-only rms=0.0056 (-45.02 dB) | 2.00-2.02s rms=0.127065 | 2.02-2.04s rms=0.104229 | 2.05-2.07s rms=0.002232 | 2.10-2.12s rms=0.000014 | 2.15-2.17s rms=0.000000
+  A_3: noise-only rms=0.0056 (-45.02 dB) | 2.00-2.02s rms=0.127065 | 2.02-2.04s rms=0.104229 | 2.05-2.07s rms=0.002232 | 2.10-2.12s rms=0.000014 | 2.15-2.17s rms=0.000000
+
+=== 3. noise-only passage: is A a delayed copy of C? (normalised xcorr) ===
+  speech1 0.10-0.70s  : best lag=1435 corr=+0.9854  (lag 480: -0.2970, lag 960: +0.1050)
+  noise 0.85-1.15s    : best lag=1439 corr=+0.9978  (lag 480: +0.0045, lag 960: +0.0065)
+
+=== 4. band levels A vs C (noise-only passage, dB A/C) ===
+      0-  200 Hz:   -0.56 dB
+    200- 1000 Hz:   -0.00 dB
+   1000- 4000 Hz:   -0.08 dB
+   4000- 8000 Hz:   -0.08 dB
+   8000-16000 Hz:   +0.10 dB
+  16000-24000 Hz:   +0.02 dB
+
+=== probe_bypass_and_delay.py (RNNOISE_REPEAT_DIR=/tmp/rnnoise_repeat) ===
+=== B vs C: outside the 70ms startup window ===
+  frames >=3360: max|diff|=0.0000000000  (whole file max 0.234283)
+=== F vs C: outside startup ===
+  frames >=3360: max|diff|=0.0000000000  (whole file max 0.234283)
+=== C_1 vs C_3 (same project, two renders) ===
+  whole file max|diff|=0.260376   frames>=3360 max|diff|=0.0000000000
+
+=== A vs C: delayed-copy residual (A[n] vs C[n-1439]) ===
+  speech1    : signal rms= -21.59 dB, residual rms= -35.19 dB, residual rel signal=-13.60 dB, max|res|=0.048475
+  noise-only : signal rms= -45.02 dB, residual rms= -67.07 dB, residual rel signal=-22.04 dB, max|res|=0.001713
+  speech2    : signal rms= -20.39 dB, residual rms= -35.98 dB, residual rel signal=-15.59 dB, max|res|=0.045435
+
+=== E spread (float-scale denoiser runs) ===
+  E suite: noise-only rms= 11.4944 ( 21.21 dB)
+  E_1: noise-only rms= 11.4944 ( 21.21 dB)
+  E_2: noise-only rms= 11.4944 ( 21.21 dB)
+  E_3: noise-only rms= 11.4944 ( 21.21 dB)
+
+=== render determinism (sha256 of the WAV data chunk, first 16 hex) ===
+  A_1=c097a7a86a79a1b2  A_2=c097a7a86a79a1b2  A_3=c097a7a86a79a1b2
+  C_1=4dd5fa9f9a65858a  C_2=4dd5fa9f9a65858a  C_3=82321df67217a6d2
+  D_1=9cef43d36c5f8235  D_2=9cef43d36c5f8235  D_3=e8985470ba0043a7
+  E_1=6f8c3dd9571d436c  E_2=6f8c3dd9571d436c  E_3=6f8c3dd9571d436c

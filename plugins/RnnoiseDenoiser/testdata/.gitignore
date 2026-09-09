@@ -1,0 +1,7 @@
+# Regenerable render output (~15.4 MB of WAV/F32) - not committed.
+# Rebuild from the committed scripts:
+#   python3 make_test_signal.py          # speechlike_noise_2s_48k.wav
+#   bash run_renders.sh                  # out_*.wav
+#   bash run_harness.sh && python3 run_harness.py   # harness_out_*.f32
+*.wav
+*.f32

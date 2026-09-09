@@ -1,0 +1,80 @@
+=== RENDER A  plugin active  (int16 sample, +/-1.0 scale) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_test_A.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_A_denoised.wav
+PERFLOG |       Project Render | 0.33user, 0.26system 0.18elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_A_denoised.wav
+
+=== RENDER B  plugin bypassed on=0 (int16 sample) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_test_B.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_B_bypassed.wav
+PERFLOG |       Project Render | 0.06user, 0.15system 0.03elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_B_bypassed.wav
+
+=== RENDER C  no FX (int16 sample) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_test_C.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_C_nofx.wav
+PERFLOG |       Project Render | 0.04user, 0.17system 0.03elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_C_nofx.wav
+
+=== RENDER D  no FX (float sample x32768) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_test_D_float_nofx.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_D_float_nofx.wav
+PERFLOG |       Project Render | 0.06user, 0.16system 0.04elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_D_float_nofx.wav
+
+=== RENDER E  plugin active (float sample x32768) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_test_E_float_denoise.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_E_float_denoised.wav
+PERFLOG |       Project Render | 0.31user, 0.26system 0.18elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_E_float_denoised.wav
+
+=== RENDER EDGE plugin active (96100-frame clip) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_edge.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_edge_denoised.wav
+PERFLOG |       Project Render | 0.35user, 0.21system 0.21elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_edge_denoised.wav
+
+=== RENDER EDGE no FX (96100-frame clip) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_edge_nofx.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_edge_nofx.wav
+PERFLOG |       Project Render | 0.06user, 0.14system 0.04elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_edge_nofx.wav
+
+=== RENDER F  bogus plugin name (DummyEffect control) ===
+$ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/../../../build
+$ QT_QPA_PLATFORM=offscreen ./lmms render ../plugins/RnnoiseDenoiser/testdata/rnnoise_test_F_bogus.mmp -f wav -s 48000 -a -o ../plugins/RnnoiseDenoiser/testdata/out_F_bogus.wav
+PERFLOG |       Project Render | 0.05user, 0.15system 0.03elapsed
+Loading project...
+Done
+
+EXIT=0
+-rw-rw-r-- 1 kruzzzzy kruzzzzy 1536132 Sep  8 21:17 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-rnnoise/plugins/RnnoiseDenoiser/testdata/out_F_bogus.wav
+

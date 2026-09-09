@@ -1,0 +1,14 @@
+out_A_denoised.wav: fmt_tag=3 bits=32 sr=48000 len=192000 (4.0000 s)
+out_B_bypassed.wav: fmt_tag=3 bits=32 sr=48000 len=192000 (4.0000 s)
+out_C_nofx.wav: fmt_tag=3 bits=32 sr=48000 len=192000 (4.0000 s)
+
+segment 0.85-1.15 s (noise-only) and 0.10-0.70 s (speech):
+  A_denoised  noise RMS=3.507814384e-04 (  -69.10 dBFS)   speech RMS=8.185212221e-02 (  -21.74 dBFS)
+  B_bypassed  noise RMS=5.589792721e-03 (  -45.05 dBFS)   speech RMS=7.841465894e-02 (  -22.11 dBFS)
+  C_nofx      noise RMS=5.589792721e-03 (  -45.05 dBFS)   speech RMS=7.841465894e-02 (  -22.11 dBFS)
+
+  A_denoised vs C_nofx: noise-only delta=-24.0472 dB   speech delta=+0.3727 dB
+  B_bypassed vs C_nofx: noise-only delta=+0.0000 dB   speech delta=+0.0000 dB
+
+ACCEPTANCE (noise-only A-vs-C <= -10 dB): PASS
+regression max|B-C| outside 0.05 s startup = 0.000000000000

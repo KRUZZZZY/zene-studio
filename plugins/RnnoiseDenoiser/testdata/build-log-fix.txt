@@ -1,0 +1,21 @@
+[  0%] Built target ringbuffer
+[  0%] Built target lmmsobjs_autogen_timestamp_deps
+[  0%] Built target lmmsobjs_autogen
+[ 88%] Built target lmmsobjs
+[ 88%] Built target lmms_autogen_timestamp_deps
+[ 88%] Built target lmms_autogen
+[ 91%] Built target lmms
+[ 91%] Generating moc_RnnoiseDenoiserEffect.cpp
+[ 94%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/RnnoiseDenoiserEffect.cpp.o
+[ 94%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/RnnoiseDenoiserControlDialog.cpp.o
+[ 94%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/RnnoiseDenoiserControls.cpp.o
+[ 94%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/moc_RnnoiseDenoiserEffect.cpp.o
+[ 94%] Linking CXX shared module ../librnnoisedenoiser.so
+[100%] Built target rnnoisedenoiser
+[  0%] Built target ringbuffer
+[  0%] Built target lmmsobjs_autogen_timestamp_deps
+[  0%] Built target lmmsobjs_autogen
+[ 96%] Built target lmmsobjs
+[ 96%] Built target lmms_autogen_timestamp_deps
+[ 96%] Built target lmms_autogen
+[100%] Built target lmms
