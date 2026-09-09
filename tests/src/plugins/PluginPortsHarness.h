@@ -445,11 +445,13 @@ inline auto maxAbsDiff(const std::vector<float>& a, const std::vector<float>& b)
 // ---------------------------------------------------------------------------
 
 //! Canonical instrument order shared by the reference renderer and the test.
-inline auto instrumentNames() -> const std::array<const char*, 10>&
+inline auto instrumentNames() -> const std::array<const char*, 14>&
 {
-	static const std::array<const char*, 10> names{
+	static const std::array<const char*, 14> names{
 		"freeboy", "nes", "sid", "opulenz", "sfxr",
-		"bitinvader", "watsyn", "xpressive", "vibedstrings", "kicker"};
+		"bitinvader", "watsyn", "xpressive", "vibedstrings", "kicker",
+		// Slice 5 (task #589): multi-oscillator and sample-playback instruments.
+		"tripleoscillator", "monstro", "organic", "audiofileprocessor"};
 	return names;
 }
 
@@ -541,6 +543,60 @@ inline auto instrumentOverridesFor(const std::string& plugin) -> std::vector<Set
 			{"distend", "0.5"}, {"gain", "1.2"}, {"env", "0.6"}, {"noise", "0.2"},
 			{"click", "0.3"}, {"slope", "0.7"}, {"startnote", "1"}, {"endnote", "0"}};
 	}
+	// Slice 5 (task #589) instruments.
+	if (plugin == "tripleoscillator")
+	{
+		return {
+			{"vol0", "80"}, {"pan0", "-25"}, {"coarse0", "12"}, {"finel0", "5"}, {"finer0", "-5"},
+			{"phoffset0", "90"}, {"stphdetun0", "30"}, {"wavetype0", "2"}, {"modalgo1", "1"},
+			{"useWaveTable1", "0"},
+			{"vol1", "60"}, {"pan1", "0"}, {"coarse1", "-12"}, {"finel1", "3"}, {"finer1", "3"},
+			{"phoffset1", "180"}, {"stphdetun1", "60"}, {"wavetype1", "3"}, {"modalgo2", "2"},
+			{"useWaveTable2", "0"},
+			{"vol2", "40"}, {"pan2", "25"}, {"coarse2", "7"}, {"finel2", "-7"}, {"finer2", "7"},
+			{"phoffset2", "270"}, {"stphdetun2", "15"}, {"wavetype2", "1"}, {"modalgo3", "3"},
+			{"useWaveTable3", "0"}};
+	}
+	if (plugin == "monstro")
+	{
+		return {
+			{"o1vol", "80"}, {"o1pan", "-20"}, {"o1crs", "12"}, {"o1ftl", "10"}, {"o1ftr", "-10"},
+			{"o1spo", "90"}, {"o1pw", "0.3"}, {"o1ssr", "0"}, {"o1ssf", "0"},
+			{"o2vol", "60"}, {"o2pan", "20"}, {"o2crs", "-12"}, {"o2ftl", "5"}, {"o2ftr", "5"},
+			{"o2spo", "180"}, {"o2wav", "2"}, {"o2syn", "0"}, {"o2synr", "0"},
+			{"o3vol", "40"}, {"o3pan", "0"}, {"o3crs", "7"}, {"o3spo", "270"}, {"o3sub", "0.5"},
+			{"o3wav1", "0"}, {"o3wav2", "3"}, {"o3syn", "0"}, {"o3synr", "0"},
+			{"l1wav", "1"}, {"l1att", "0.1"}, {"l1rat", "5"}, {"l1phs", "0.25"},
+			{"l2wav", "2"}, {"l2att", "0.2"}, {"l2rat", "2"}, {"l2phs", "0.5"},
+			{"e1pre", "0.05"}, {"e1att", "0.05"}, {"e1hol", "0.1"}, {"e1dec", "0.2"},
+			{"e1sus", "0.7"}, {"e1rel", "0.3"}, {"e1slo", "0.5"},
+			{"e2pre", "0.1"}, {"e2att", "0.1"}, {"e2hol", "0.2"}, {"e2dec", "0.3"},
+			{"e2sus", "0.5"}, {"e2rel", "0.4"}, {"e2slo", "0.5"},
+			{"o23mo", "1"},
+			{"v1e1", "1"}, {"v1e2", "0.5"}, {"v1l1", "0.3"}, {"v1l2", "0.2"},
+			{"v2e1", "0.5"}, {"v2e2", "0.3"}, {"v2l1", "0.2"}, {"v2l2", "0.1"},
+			{"v3e1", "0.4"}, {"v3e2", "0.2"}, {"v3l1", "0.1"}, {"v3l2", "0.1"},
+			{"f1e1", "0.2"}, {"f1e2", "0.1"}, {"f2e1", "0.1"}, {"f3e1", "0.1"},
+			{"w1e1", "0.2"}, {"s3e1", "0.3"}};
+	}
+	if (plugin == "organic")
+	{
+		return {
+			{"num_osc", "8"}, {"foldback", "0.2"}, {"vol", "80"},
+			{"vol0", "90"}, {"pan0", "-30"}, {"newharmonic0", "2"}, {"newdetune0", "10"}, {"wavetype0", "1"},
+			{"vol1", "70"}, {"pan1", "30"}, {"newharmonic1", "3"}, {"newdetune1", "-10"}, {"wavetype1", "2"},
+			{"vol2", "60"}, {"pan2", "0"}, {"newharmonic2", "4"}, {"newdetune2", "5"}, {"wavetype2", "3"},
+			{"vol3", "50"}, {"pan3", "10"}, {"newharmonic3", "5"}, {"newdetune3", "-5"}, {"wavetype3", "4"},
+			{"vol4", "40"}, {"pan4", "-10"}, {"newharmonic4", "6"}, {"newdetune4", "3"}, {"wavetype4", "5"},
+			{"vol5", "30"}, {"pan5", "15"}, {"newharmonic5", "7"}, {"newdetune5", "-3"}, {"wavetype5", "1"},
+			{"vol6", "20"}, {"pan6", "-15"}, {"newharmonic6", "8"}, {"newdetune6", "2"}, {"wavetype6", "2"},
+			{"vol7", "10"}, {"pan7", "5"}, {"newharmonic7", "9"}, {"newdetune7", "-2"}, {"wavetype7", "0"}};
+	}
+	if (plugin == "audiofileprocessor")
+	{
+		return {{"amp", "140"}, {"sframe", "0.1"}, {"eframe", "0.9"}, {"lframe", "0.5"},
+			{"looped", "1"}, {"reversed", "0"}, {"stutter", "0"}, {"interp", "2"}};
+	}
 	return {};
 }
 
@@ -556,6 +612,24 @@ inline void applyInstrumentTestSettings(Instrument& inst, const std::string& plu
 	for (const auto& o : instrumentOverridesFor(plugin))
 	{
 		saved.setAttribute(QString::fromStdString(o.name), QString::fromStdString(o.value));
+	}
+	// AudioFileProcessor renders a sample: give it a deterministic one through
+	// the same base64 blob the plugin writes for a sample without a file path -
+	// raw SampleFrame bytes, exactly the format SampleBuffer::toBase64() /
+	// fromBase64() round-trip.
+	if (plugin == "audiofileprocessor")
+	{
+		constexpr int SampleFrames = 2048;
+		std::vector<SampleFrame> sample(SampleFrames);
+		for (int f = 0; f < SampleFrames; ++f)
+		{
+			sample[f] = SampleFrame{
+				signalSample(0x5f356495u + 0x9e3779b9u * static_cast<std::uint32_t>(f + 1)),
+				signalSample(0x2c1b3c6du + 0x85ebca6bu * static_cast<std::uint32_t>(f + 1))};
+		}
+		const QByteArray bytes{reinterpret_cast<const char*>(sample.data()),
+			static_cast<int>(sample.size() * sizeof(SampleFrame))};
+		saved.setAttribute(QStringLiteral("sampledata"), QString::fromLatin1(bytes.toBase64()));
 	}
 	inst.restoreState(saved);
 }

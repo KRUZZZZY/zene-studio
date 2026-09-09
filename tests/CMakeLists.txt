@@ -83,6 +83,11 @@ set(PART_C_REFERENCE_MODULES
 	"xpressive|Xpressive|Xpressive.cpp|Xpressive.h|ExprSynth.cpp|ExprSynth.h"
 	"vibedstrings|Vibed|Vibed.cpp|Vibed.h|NineButtonSelector.cpp|NineButtonSelector.h|VibratingString.cpp|VibratingString.h"
 	"kicker|Kicker|Kicker.cpp|Kicker.h|KickerOsc.h"
+	# Slice 5 (task #589): multi-oscillator and sample-playback instruments.
+	"tripleoscillator|TripleOscillator|TripleOscillator.cpp|TripleOscillator.h"
+	"monstro|Monstro|Monstro.cpp|Monstro.h"
+	"organic|Organic|Organic.cpp|Organic.h"
+	"audiofileprocessor|AudioFileProcessor|AudioFileProcessor.cpp|AudioFileProcessor.h|AudioFileProcessorView.cpp|AudioFileProcessorView.h|AudioFileProcessorWaveView.cpp|AudioFileProcessorWaveView.h"
 )
 
 set(PART_C_REFERENCE_TARGETS "")

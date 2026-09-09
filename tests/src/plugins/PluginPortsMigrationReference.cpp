@@ -97,6 +97,11 @@ auto referenceInstruments() -> const std::vector<ReferenceInstrument>&
 		{"xpressive", PART_C_REF_xpressive},
 		{"vibedstrings", PART_C_REF_vibedstrings},
 		{"kicker", PART_C_REF_kicker},
+		// Slice 5 (task #589)
+		{"tripleoscillator", PART_C_REF_tripleoscillator},
+		{"monstro", PART_C_REF_monstro},
+		{"organic", PART_C_REF_organic},
+		{"audiofileprocessor", PART_C_REF_audiofileprocessor},
 	};
 	return instruments;
 }

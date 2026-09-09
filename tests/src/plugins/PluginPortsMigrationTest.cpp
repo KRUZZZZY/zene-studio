@@ -89,8 +89,28 @@ auto migratedInstruments() -> const std::vector<MigratedInstrument>&
 		{"xpressive", PART_C_MIGRATED_xpressive},
 		{"vibedstrings", PART_C_MIGRATED_vibedstrings},
 		{"kicker", PART_C_MIGRATED_kicker},
+		// Slice 5 (task #589)
+		{"tripleoscillator", PART_C_MIGRATED_tripleoscillator},
+		{"monstro", PART_C_MIGRATED_monstro},
+		{"organic", PART_C_MIGRATED_organic},
+		{"audiofileprocessor", PART_C_MIGRATED_audiofileprocessor},
 	};
 	return instruments;
+}
+
+//! Finds a render by plugin name (the migrated and reference lists are
+//! index-aligned, but the negative control looks modules up by name).
+auto findRender(const std::vector<partc::PluginRender>& renders, const char* name)
+	-> const partc::PluginRender*
+{
+	for (const auto& r : renders)
+	{
+		if (r.name == name)
+		{
+			return &r;
+		}
+	}
+	return nullptr;
 }
 
 } // namespace
@@ -112,6 +132,7 @@ private slots:
 	void initTestCase();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
+	void slice5InstrumentsAreLiveAndDistinct();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -267,6 +288,55 @@ void PluginPortsMigrationTest::comparisonIsSensitive()
 
 	QVERIFY2(a.checksum != b.checksum, "distinct plugins rendered identically");
 	QVERIFY2(worst > 1e-6f, "comparison is not sensitive to real differences");
+}
+
+/*!
+ * Slice 5 (task #589) negative control: the four newly migrated instruments
+ * must each render audible, pairwise-distinct output, so the sample-exact
+ * comparison above is demonstrably comparing real DSP and not silence.
+ */
+void PluginPortsMigrationTest::slice5InstrumentsAreLiveAndDistinct()
+{
+	static const std::array<const char*, 4> slice5{
+		"tripleoscillator", "monstro", "organic", "audiofileprocessor"};
+
+	for (const char* name : slice5)
+	{
+		const auto* migrated = findRender(m_migrated, name);
+		QVERIFY2(migrated != nullptr, name);
+
+		float peak = 0.0f;
+		for (const float s : migrated->samples)
+		{
+			peak = std::max(peak, std::fabs(s));
+		}
+		qInfo().noquote() << QString{"slice 5 negative control: %1 peak=%2 (audible)"}
+			.arg(name).arg(peak, 0, 'g', 4);
+		QVERIFY2(peak > 1e-4f, qPrintable(QString{"%1 rendered silence"}.arg(name)));
+	}
+
+	// Pairwise distinctness: every pair of the four new instruments must
+	// differ, so the comparator is live on the new modules too.
+	for (std::size_t i = 0; i < slice5.size(); ++i)
+	{
+		for (std::size_t j = i + 1; j < slice5.size(); ++j)
+		{
+			const auto* a = findRender(m_migrated, slice5[i]);
+			const auto* b = findRender(m_reference, slice5[j]);
+			QVERIFY(a != nullptr && b != nullptr);
+			const float worst = partc::maxAbsDiff(a->samples, b->samples);
+			qInfo().noquote()
+				<< QString{"slice 5 negative control: %1 (migrated) vs %2 (reference) max|delta|=%3"}
+					   .arg(QString::fromUtf8(slice5[i]), QString::fromUtf8(slice5[j]))
+					   .arg(worst, 0, 'g', 3);
+			QVERIFY2(a->checksum != b->checksum,
+				qPrintable(QString{"%1 and %2 rendered identically"}
+					.arg(QString::fromUtf8(slice5[i]), QString::fromUtf8(slice5[j]))));
+			QVERIFY2(worst > 1e-6f,
+				qPrintable(QString{"%1 vs %2: comparison not sensitive"}
+					.arg(QString::fromUtf8(slice5[i]), QString::fromUtf8(slice5[j]))));
+		}
+	}
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)
