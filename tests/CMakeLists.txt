@@ -167,3 +167,43 @@ add_dependencies(PluginPortsMigrationTest
 	PluginPortsMigrationReference
 	${PART_C_MIGRATED_TARGETS}
 )
+
+# ---------------------------------------------------------------------------
+# AudioPlugin.h coverage: a synthetic plugin module and its test.
+#
+# The module subclasses the Effect specialization of AudioPlugin and, like
+# the migrated plugins, is deliberately NOT linked against lmmsobjs: it
+# resolves LMMS symbols from the test executable, which is built with
+# ENABLE_EXPORTS ON. It *is* instrumented because its translation unit is
+# where the plugin-side AudioPlugin paths get recorded.
+# ---------------------------------------------------------------------------
+add_library(synthetic_audio_plugin MODULE src/plugins/SyntheticAudioPlugin.cpp)
+target_include_directories(synthetic_audio_plugin PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(synthetic_audio_plugin PRIVATE PLUGIN_NAME=synthetic)
+target_compile_features(synthetic_audio_plugin PRIVATE cxx_std_20)
+target_link_libraries(synthetic_audio_plugin PRIVATE ${QT_LIBRARIES})
+target_compile_options(synthetic_audio_plugin PRIVATE ${LMMS_COVERAGE_FLAGS})
+target_link_options(synthetic_audio_plugin PRIVATE ${LMMS_COVERAGE_FLAGS})
+set_target_properties(synthetic_audio_plugin PROPERTIES PREFIX "")
+
+add_executable(AudioPluginTest src/plugins/AudioPluginTest.cpp)
+add_test(NAME AudioPluginTest COMMAND AudioPluginTest)
+target_include_directories(AudioPluginTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_static_libraries(AudioPluginTest PRIVATE lmmsobjs)
+target_link_libraries(AudioPluginTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(AudioPluginTest PRIVATE cxx_std_20)
+target_compile_definitions(AudioPluginTest PRIVATE
+	LMMS_TESTING
+	SYNTHETIC_PLUGIN_PATH="$<TARGET_FILE:synthetic_audio_plugin>"
+)
+target_compile_options(AudioPluginTest PRIVATE ${LMMS_COVERAGE_FLAGS})
+target_link_options(AudioPluginTest PRIVATE ${LMMS_COVERAGE_FLAGS})
+set_target_properties(AudioPluginTest PROPERTIES ENABLE_EXPORTS ON)
+add_dependencies(AudioPluginTest synthetic_audio_plugin)
