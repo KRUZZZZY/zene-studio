@@ -124,8 +124,13 @@ for path in removed:
 	print(f"removed     {path}")
 
 # --- report ------------------------------------------------------------------
-total_pct = sum(now.values()) / len(now) if now else 0.0
-print(f"\nfiles: {len(now)}  fork-code line coverage: {total_pct:.2f}%")
+# Headline is LINE-WEIGHTED (sum of hit lines / sum of instrumented lines), which is
+# the standard definition of line coverage. An unweighted mean of per-file percentages
+# would let a 2-line 0% file drag the headline as hard as a 269-line one.
+total_lines = sum(t for t, _ in coverage.values())
+total_hit = sum(h for _, h in coverage.values())
+total_pct = (100.0 * total_hit / total_lines) if total_lines else 0.0
+print(f"\nfiles: {len(now)}  fork-code line coverage: {total_pct:.2f}%  ({total_hit}/{total_lines} lines)")
 
 if regressions:
 	print("\nFAIL: coverage regressed; add or fix tests before merging.", file=sys.stderr)

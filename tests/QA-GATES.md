@@ -52,28 +52,45 @@ plus a `genhtml` report under `build-coverage/coverage/html/`.
 
 `--check` runs in CI mode: report only, baseline never written.
 
-**Measured numbers** (first full run, gcc 13 / lcov 2.0):
+**Measured numbers** (2026-09-09, gcc 13 / lcov 2.0, after the coverage push):
 
 | Directory            | Lines | Hit  | Rate   |
 |----------------------|-------|------|--------|
-| `src/core` (fork)    | 1730  | 1296 | 74.91% |
+| `src/core` (fork)    | 1730  | 1660 | 95.95% |
 | `src/core/audio`     | 88    | 74   | 84.09% |
-| `include` (fork)     | 417   | 207  | 49.64% |
+| `include` (fork)     | 469   | 381  | 81.24% |
 | `src/gui` (fork)     | 269   | 0    | 0.00%  |
-| **Total fork code**  | 2504  | 1577 | **63.0%** |
+| **Total fork code**  | 2556  | 2115 | **82.75%** |
+
+The headline is line-weighted (hit lines / instrumented lines). **Correction:**
+until 2026-09-09 `coverage-gate.sh` printed an unweighted mean of per-file
+percentages (77.14% on this same run), which let a 2-line 0% file weigh as much
+as a 269-line one and disagreed with this table's own definition. The script now
+prints the weighted figure and both numbers in the pair `(hit/total lines)`.
 
 Per-module highlights: `RoutingGraph.cpp` 100%, `RoutingNode.cpp` 100%,
-`RoutingNodes.cpp` 96.1%, `AudioBus.cpp` 76.8%, `AudioPortsModel.cpp` 75.6%,
-`ScriptEngine.cpp` 79.7%. The 0% areas are GUI-only (`PinConnector.cpp`) and
-hosting glue exercised only through the plugin/RemotePlugin binaries, which
-the unit-test coverage run does not load.
+`AudioBus.h` 100%, `AudioPortsModel.h` 100%, `AudioPortsModel.cpp` 99.22%,
+`ScriptBindings.cpp` 97.65%, `RoutingNodes.cpp` 96.10%, `AudioBus.cpp` 95.77%,
+`AudioPorts.h` 91.43%, `ScriptEngine.cpp` 89.36%, `ScriptBindings.h` 87.18%,
+`PluginAudioPorts.h` 76.54%.
 
-Gate 2 **partially met**: the ratchet mechanism is live and green, but the
-fork's overall line coverage (63%) is below the 85% aspiration from the
-adopted quality-gates KB article, and the "100% on core logic modules" goal
-is met for the routing core (`RoutingGraph.cpp`, `RoutingNode.cpp`) but not
-yet for `AudioBus.cpp`/`AudioPortsModel.cpp`. The ratchet makes every future
-improvement permanent.
+Journey: **63.0%** (gate introduction) -> **66.17%** (pre-push baseline) ->
+**82.75%** (2026-09-09). Every step is held by the ratchet.
+
+Still at 0%: `src/gui/PinConnector.cpp` (269 lines), plus three headers with no
+line reached (`LmmsPolyfill.h` 2, `PinConnector.h` 5, `RemotePluginAudioPorts.h`
+6). `PinConnector` is a `QWidget` whose behaviour is the GUI event loop and the
+`AudioPortsModel` it renders (`paintEvent` at `PinConnector.cpp:184`); the
+unit-test binaries run offscreen with no event-loop interaction. This is an
+**evidenced exclusion, not an oversight**: no file under `tests/src/` references
+`PinConnector` (the only hits in `tests/` are the gate metadata files
+`fork-sources.txt`, `QA-GATES.md` and the three baselines).
+
+Gate 2 **partially met**: the ratchet is live and green at 82.75%, which is
+within 2.25 points of the adopted ruleset's 85% aspiration but still below it.
+"100% on core logic modules" now holds for the routing core and both
+`AudioPortsModel` translation units; `AudioBus.cpp` (95.77%) and
+`ScriptEngine.cpp` (89.36%) remain short of 100%.
 
 ## Gate 3: No tautological tests (`no-tautology-gate.sh`) — WIRED 2026-09-09
 
