@@ -49,6 +49,9 @@ jobs:
         run: cmake --build build -j4
       - name: Gate 1 - ctest (must run from build/tests)
         run: cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
+      # Gate 5 reuses the build above; the sweep is ~3 min (30 mutants, one TU).
+      - name: Gate 5 - mutation testing (scoped harness, src/core/RoutingGraph.cpp)
+        run: bash tests/mutation-gate.sh
 
   # Gate 2 is the ratchet: the number must not fall, and the gate must PASS.
   coverage:

@@ -293,14 +293,18 @@ The gates are now wired into CI, so they run on every push/PR rather than only w
 someone remembers:
 
 - **static-gates** — Gates 3, 4 and 6 (no build needed; `fetch-depth: 0` for Gate 6).
-- **unit-tests** — Gate 1: Debug + Qt6 configure, build, then ctest from `build/tests`.
+- **unit-tests** — Gate 1: Debug + Qt6 configure, build, then ctest from `build/tests`;
+  Gate 5 then reuses that same build for the ~3 min mutation sweep.
 - **coverage** — Gate 2 in `--check` mode (the baseline is never written in CI), with the
   HTML report uploaded as an artifact.
 
-Gate 5 is deliberately **not** in CI: a 30-mutant sweep is ~3 min of serial
-rebuild+test cycles, and a mutation score is a periodic quality signal, not a
-per-push gate. It is enforced by `tests/run-all-gates.sh` (which CI does not run);
-the distinction is stated here rather than implied.
+All eight gates are wired. Gate 5 lives in the `unit-tests` job because it needs the built
+test binary; it costs ~3 min there, which is acceptable for a per-push gate when it reuses
+the build. Locally it runs by default in `tests/run-all-gates.sh` (`--no-mutation` skips
+it). An earlier revision of this document said Gate 5 was deliberately excluded from CI —
+that was superseded on 2026-09-09 when the harness was added to the build job, because a
+workflow that runs seven of eight gates while looking complete is worse than one that says
+which gate is missing.
 
 Every command in the workflow is one that has been executed locally; the GitHub runner
 environment itself has **not** been exercised (this fork has not been pushed), so the
