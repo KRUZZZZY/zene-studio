@@ -495,11 +495,11 @@ void CarlaInstrument::loadSettings(const QDomElement& elem)
 #endif
 }
 
-void CarlaInstrument::play(SampleFrame* workingBuffer)
+void CarlaInstrument::playImpl(std::span<SampleFrame> out)
 {
-    const uint bufsize = Engine::audioEngine()->framesPerPeriod();
+    const auto bufsize = static_cast<std::uint32_t>(out.size());
 
-	zeroSampleFrames(workingBuffer, bufsize);
+	zeroSampleFrames(out.data(), bufsize);
 
     if (fHandle == nullptr)
     {
@@ -547,8 +547,8 @@ void CarlaInstrument::play(SampleFrame* workingBuffer)
 
     for (uint i=0; i < bufsize; ++i)
     {
-        workingBuffer[i][0] = buf1[i];
-        workingBuffer[i][1] = buf2[i];
+        out[i][0] = buf1[i];
+        out[i][1] = buf2[i];
     }
 }
 

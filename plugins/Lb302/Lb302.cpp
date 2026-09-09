@@ -495,7 +495,7 @@ void Lb302Synth::process(SampleFrame* outbuf, const f_cnt_t size)
 }
 
 
-void Lb302Synth::playNote(NotePlayHandle* nph, SampleFrame*)
+void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 {
 	if (nph->isMasterNote() || (nph->hasParent() && nph->isReleased())) { return; }
 
@@ -571,7 +571,7 @@ void Lb302Synth::processNote(NotePlayHandle* nph)
 }
 
 
-void Lb302Synth::play(SampleFrame* working_buffer)
+void Lb302Synth::playImpl(std::span<SampleFrame> out)
 {
 	const auto readIdx = m_notesReadSeq.load(std::memory_order_relaxed);
 	const auto writeCommitted = m_notesWriteCommitted.load(std::memory_order_acquire);
@@ -591,7 +591,7 @@ void Lb302Synth::play(SampleFrame* working_buffer)
 	// Mark the processed notes as having been read so that playNote() calls can overwrite them
 	m_notesReadSeq.fetch_add(writeCommitted - readIdx, std::memory_order_release);
 
-	process(working_buffer, Engine::audioEngine()->framesPerPeriod());
+	process(out.data(), out.size());
 }
 
 

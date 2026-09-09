@@ -298,6 +298,82 @@ inline void applyTestSettings(Effect& fx, const std::string& plugin)
 }
 
 /*!
+ * Slice 6 (task #589): LADSPA-hosted effects.
+ *
+ * LadspaEffect resolves its DSP from the sub-plugin Key (library file name +
+ * LADSPA label) at construction time, so it cannot be rendered through the
+ * plain entry(nullptr, nullptr) path used for the other effects. The specs
+ * below name deterministic in-tree LADSPA plugins (the SWH builds that ship
+ * with LMMS) plus the control-port values to apply; both the reference
+ * renderer and the test build the same Key and drive the effect through the
+ * same production path (controls save/load round trip + processAudioBuffer).
+ */
+struct LadspaSpec
+{
+	const char* name;   //!< harness name, e.g. "ladspaeffect:amp"
+	const char* file;   //!< LADSPA library file name, as LadspaManager keys it
+	const char* label;  //!< LADSPA label (the key's second half)
+	std::vector<SettingOverride> ports; //!< control-port element -> "data" value
+};
+
+inline auto ladspaSpecs() -> const std::vector<LadspaSpec>&
+{
+	static const std::vector<LadspaSpec> specs{
+		// Mono plugin: LadspaEffect instantiates DEFAULT_CHANNELS/1 = 2
+		// processors, one per channel, so this exercises the multi-processor
+		// path. Port 0 is the gain control (1 = audio in, 2 = audio out).
+		{"ladspaeffect:amp", "amp_1181.so", "amp", {{"port00", "6.0"}}},
+		// Stereo plugin: a single processor with stereo ports, exercising the
+		// ChannelIn/ChannelOut mapping plus several control ports.
+		{"ladspaeffect:dj_eq", "dj_eq_1901.so", "dj_eq",
+			{{"port00", "-9.0"}, {"port01", "5.0"}, {"port02", "7.0"}}},
+	};
+	return specs;
+}
+
+//! Builds the sub-plugin Key LadspaEffect expects; the shape matches the
+//! project XML (attributes "file" and "plugin") produced by
+//! ladspaKeyToSubPluginKey().
+inline auto ladspaKeyFor(const Plugin::Descriptor* desc, const LadspaSpec& spec)
+	-> Plugin::Descriptor::SubPluginFeatures::Key
+{
+	Plugin::Descriptor::SubPluginFeatures::Key key{desc, QString::fromUtf8(spec.name)};
+	key.attributes["file"] = QString::fromUtf8(spec.file);
+	key.attributes["plugin"] = QString::fromUtf8(spec.label);
+	return key;
+}
+
+/*!
+ * Same round trip as applyTestSettings(), plus control-port overrides:
+ * LadspaControls serialises one <portNN> child element per control, so the
+ * value goes into that element's "data" attribute (read back by
+ * LadspaControl::loadSettings()).
+ */
+inline void applyLadspaTestSettings(Effect& fx, const LadspaSpec& spec)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", QString::number(WetLevel, 'g', 9));
+	root.setAttribute("autoquit", 0); // keep the effect awake for every buffer
+
+	QDomElement controls = fx.controls()->saveState(doc, root);
+	for (const auto& o : spec.ports)
+	{
+		const QString portName = QString::fromUtf8(o.name);
+		QDomElement port = controls.firstChildElement(portName);
+		if (port.isNull())
+		{
+			port = doc.createElement(portName);
+			controls.appendChild(port);
+		}
+		port.setAttribute(QStringLiteral("data"), QString::fromUtf8(o.value));
+	}
+
+	fx.loadSettings(root);
+}
+
+/*!
  * Renders `Buffers` consecutive buffers through the effect's AudioBus entry
  * point - the production path, which dispatches either to the migrated
  * AudioPorts router (AudioPlugin) or to the legacy processImpl(SampleFrame*)
