@@ -52,6 +52,10 @@ target_compile_definitions(PhaseDSidechainTest PRIVATE
 	PART_D_COMPRESSOR_LIBRARY="$<TARGET_FILE:compressor>"
 )
 add_dependencies(PhaseDSidechainTest compressor)
+# The compressor is a MODULE dlopened into this test process; the test binary
+# must export the lmmsobjs symbols the plugin references, exactly like the
+# lmms host (src/CMakeLists.txt) and the Part C plugin tests below.
+set_target_properties(PhaseDSidechainTest PROPERTIES ENABLE_EXPORTS ON)
 
 # ---------------------------------------------------------------------------
 # Part C (task #585) - behaviour-preservation harness for the AudioPorts
