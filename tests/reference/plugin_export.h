@@ -7,22 +7,28 @@
 #  define PLUGIN_NO_EXPORT
 #else
 #  ifndef PLUGIN_EXPORT
-#    ifdef amplifier_EXPORTS
-        /* We are building this library */
-#      define PLUGIN_EXPORT __attribute__((visibility("default")))
+#    if defined(_MSC_VER)
+#      define PLUGIN_EXPORT __declspec(dllexport)
 #    else
-        /* We are using this library */
 #      define PLUGIN_EXPORT __attribute__((visibility("default")))
 #    endif
 #  endif
 
 #  ifndef PLUGIN_NO_EXPORT
-#    define PLUGIN_NO_EXPORT __attribute__((visibility("hidden")))
+#    if defined(_MSC_VER)
+#      define PLUGIN_NO_EXPORT
+#    else
+#      define PLUGIN_NO_EXPORT __attribute__((visibility("hidden")))
+#    endif
 #  endif
 #endif
 
 #ifndef PLUGIN_DEPRECATED
-#  define PLUGIN_DEPRECATED __attribute__ ((__deprecated__))
+#  if defined(_MSC_VER)
+#    define PLUGIN_DEPRECATED __declspec(deprecated)
+#  else
+#    define PLUGIN_DEPRECATED __attribute__ ((__deprecated__))
+#  endif
 #endif
 
 #ifndef PLUGIN_DEPRECATED_EXPORT

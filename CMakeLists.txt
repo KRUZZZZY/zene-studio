@@ -19,6 +19,9 @@ endfunction()
 enable_policy_if_exists(CMP0092) # MSVC warning flags are not in CMAKE_<LANG>_FLAGS by default.
 # Needed for ccache support with MSVC
 enable_policy_if_exists(CMP0141) # MSVC debug information format flags are selected by an abstraction.
+# Needed so `-Werror=dev` CI runners (CMake >= 3.31) do not turn the install()
+# DESTINATION normalization warning into a configure error (InstallHelpers.cmake).
+enable_policy_if_exists(CMP0177) # install() DESTINATION paths are normalized.
 
 PROJECT(lmms)
 
