@@ -41,6 +41,13 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
+# Session View data layer tests (opt-in, see include/SessionModel.h).
+IF(LMMS_HAVE_SESSION_VIEW)
+	LIST(APPEND LMMS_TESTS
+		src/core/SessionModelTest.cpp
+	)
+ENDIF()
+
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
 # CMakeLists.txt). Applied to the unit-test executables only; the Part C
 # reference/migration targets below keep the plain debug build so behaviour

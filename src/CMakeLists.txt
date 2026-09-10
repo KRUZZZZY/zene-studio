@@ -118,6 +118,15 @@ IF(NOT LMMS_HAVE_STEM_SPLIT)
 		PROPERTIES SKIP_AUTOMOC ON)
 ENDIF()
 
+IF(NOT LMMS_HAVE_SESSION_VIEW)
+	# Same AUTOMOC trap for the gated Session View header. SessionModel has no
+	# Q_OBJECT today (it is a plain data model), so this guard is a no-op now;
+	# it keeps the WANT_SESSION_VIEW=OFF build clean if a Q_OBJECT is ever
+	# added to the header.
+	SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/SessionModel.h"
+		PROPERTIES SKIP_AUTOMOC ON)
+ENDIF()
+
 IF(WANT_WASM)
 	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${WASMTIME_INCLUDE_DIRS})
 	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE LMMS_HAVE_WASM=1)

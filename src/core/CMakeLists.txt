@@ -16,6 +16,15 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
+# Session View data layer (opt-in, see include/SessionModel.h). Pure Qt: the
+# model, the clip slots and scenes, and the versioned <session> block.
+IF(LMMS_HAVE_SESSION_VIEW)
+	SET(LMMS_SESSION_SRCS
+		core/SessionClip.cpp
+		core/SessionModel.cpp
+	)
+ENDIF()
+
 set(LMMS_SRCS
 	${LMMS_SRCS}
 
@@ -161,6 +170,7 @@ set(LMMS_SRCS
 	core/midi/MidiWinMM.cpp
 
 	${LMMS_STEM_SRCS}
+	${LMMS_SESSION_SRCS}
 
 	PARENT_SCOPE
 )

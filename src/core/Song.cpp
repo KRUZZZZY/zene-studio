@@ -917,6 +917,10 @@ void Song::clearProject()
 
 	removeAllControllers();
 
+#ifdef LMMS_HAVE_SESSION_VIEW
+	m_sessionModel.clear();
+#endif
+
 	emit dataChanged();
 
 	Engine::projectJournal()->clearJournal();
@@ -1133,6 +1137,14 @@ void Song::loadProject( const QString & fileName )
 			{
 				restoreKeymapStates(node.toElement());
 			}
+#ifdef LMMS_HAVE_SESSION_VIEW
+			else if( node.nodeName() == "session" )
+			{
+				// Versioned <session> block (SPEC-zene-studio A1). Unknown or
+				// future versions are ignored and preserved by the model.
+				m_sessionModel.restoreState( node.toElement() );
+			}
+#endif
 			else if( getGUI() != nullptr )
 			{
 				if( node.nodeName() == getGUI()->getControllerRackView()->nodeName() )
@@ -1240,6 +1252,15 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 
 	saveScaleStates(dataFile, dataFile.content());
 	saveKeymapStates(dataFile, dataFile.content());
+
+#ifdef LMMS_HAVE_SESSION_VIEW
+	// Only projects that use the session view carry a <session> block; a
+	// pre-session project re-saves without one (see SessionModel::shouldPersist).
+	if( m_sessionModel.shouldPersist() )
+	{
+		m_sessionModel.saveState( dataFile, dataFile.content() );
+	}
+#endif
 
 	m_savingProject = false;
 
