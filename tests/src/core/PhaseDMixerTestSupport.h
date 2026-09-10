@@ -223,10 +223,21 @@ inline QByteArray sha256(const std::vector<SampleFrame>& buf)
 }
 
 //! Unconditional, flushed evidence line for the PART-D-SIDECHAIN.md paste.
+//! The format string is a literal at every call site, but the compiler cannot
+//! see through the variadic indirection, so -Wformat-security / -Wformat-nonliteral
+//! fire here and the CI builds pass -DUSE_WERROR=ON. Suppress them locally.
 template <typename... Args>
 void evidence(const char* fmt, Args... args)
 {
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wformat-security"
+#endif
 	std::fprintf(stdout, fmt, args...);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 	std::fputc('\n', stdout);
 	std::fflush(stdout);
 }

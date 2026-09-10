@@ -15,6 +15,10 @@ if (LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)
 	else()
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wa,-mbig-obj -Dexprtk_disable_enhanced_features")
 	endif()
+elseif (MSVC)
+	# exprtk.hpp blows past the default section limit wherever it is compiled
+	# with MSVC, not only on the Windows targets (CI msvc-x64: fatal error C1128).
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
 endif()
 
 add_library(exprtk INTERFACE)

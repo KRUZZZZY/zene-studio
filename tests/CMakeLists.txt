@@ -230,7 +230,7 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	)
 	target_compile_definitions(partc_ref_${PLUGIN_ID} PRIVATE PLUGIN_NAME=${PLUGIN_ID})
 	target_compile_features(partc_ref_${PLUGIN_ID} PRIVATE cxx_std_20)
-	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE ${QT_LIBRARIES})
+	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE lmms ${QT_LIBRARIES})
 	set_target_properties(partc_ref_${PLUGIN_ID} PROPERTIES PREFIX "" OUTPUT_NAME "partc_ref_${PLUGIN_ID}")
 
 	# Slice 4 (task #589): instruments whose plugin CMakeLists.txt links extra
@@ -267,7 +267,7 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 		# Mirror plugins/GigPlayer/CMakeLists.txt: libgig include dirs, the
 		# forced exceptions libgig needs to not crash, samplerate link.
 		set_target_properties(partc_ref_gigplayer PROPERTIES AUTOUIC ON)
-		target_include_directories(partc_ref_gigplayer PRIVATE ${GIG_INCLUDE_DIRS})
+		target_include_directories(partc_ref_gigplayer SYSTEM PRIVATE ${GIG_INCLUDE_DIRS})
 		target_compile_options(partc_ref_gigplayer PRIVATE -fexceptions)
 		target_link_libraries(partc_ref_gigplayer PRIVATE
 			SampleRate::samplerate ${GIG_LIBRARIES})

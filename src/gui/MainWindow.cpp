@@ -1125,6 +1125,21 @@ void MainWindow::updateViewMenu()
 
 	m_viewMenu->addSeparator();
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 3, 0))
+	// Qt 6.3 deprecated addAction(icon, text, receiver, slot, shortcut) in favour
+	// of this argument order; the old order trips -Wdeprecated-declarations,
+	// which CI's -DUSE_WERROR turns into a hard error.
+	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
+		tr("Detach all subwindows"),
+		QKeySequence{Qt::CTRL | Qt::SHIFT | Qt::Key_D},
+		this, [this](){ setAllSubWindowsDetached(true); }
+	);
+	auto attachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
+		tr("Attach all subwindows"),
+		QKeySequence{Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_D},
+		this, [this](){ setAllSubWindowsDetached(false); }
+	);
+#else
 	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Detach all subwindows"),
 		this, [this](){ setAllSubWindowsDetached(true); },
@@ -1135,6 +1150,7 @@ void MainWindow::updateViewMenu()
 		this, [this](){ setAllSubWindowsDetached(false); },
 		QKeySequence{Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_D}
 	);
+#endif
 
 	detachAllAction->setShortcutContext(Qt::ApplicationShortcut);
 	attachAllAction->setShortcutContext(Qt::ApplicationShortcut);

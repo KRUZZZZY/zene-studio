@@ -100,7 +100,7 @@ public:
 	{
 		const auto writePos = m_writePos.load(std::memory_order_relaxed);
 		const auto readPos = m_readPos.load(std::memory_order_acquire);
-		const auto freeFrames = m_capacity - (writePos - readPos);
+		const auto freeFrames = m_capacity - static_cast<std::size_t>(writePos - readPos);
 		const auto toWrite = std::min(frames, freeFrames);
 		for (std::size_t i = 0; i < toWrite; ++i)
 		{

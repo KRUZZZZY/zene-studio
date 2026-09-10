@@ -585,7 +585,13 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 #ifdef PART_C_MIGRATED_lv2instrument
 	names.push_back(QStringLiteral("lv2instrument:dx10"));
 #endif
-	QVERIFY2(!names.empty(), "no slice-8 plugin is built into this configuration");
+	// The slice-8 plugins need optional third-party deps (libgig, STK, lilv,
+	// fluidsynth). A CI runner without them builds none of these, so an empty
+	// list is a skip, not a failure (it failed the whole ctest suite on CI).
+	if (names.empty())
+	{
+		QSKIP("no slice-8 plugin is built into this configuration");
+	}
 
 	for (const auto& name : names)
 	{
