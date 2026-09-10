@@ -23,8 +23,11 @@ include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensatio
 include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
 include/Effect.h	#605 PDC: latency accessor on the effect interface
 include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+include/Song.h	#594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off
 src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment point (9e12a68f5)
 src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
 src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
 src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged)
+src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
 src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)

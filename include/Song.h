@@ -35,10 +35,15 @@
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
+#include "lmmsconfig.h"
 #include "MeterModel.h"
 #include "Timeline.h"
 #include "TrackContainer.h"
 #include "VstSyncController.h"
+
+#ifdef LMMS_HAVE_SESSION_VIEW
+#include "SessionModel.h"
+#endif
 
 namespace lmms
 {
@@ -326,6 +331,13 @@ public:
 
 	Metronome& metronome() { return m_metronome; }
 
+#ifdef LMMS_HAVE_SESSION_VIEW
+	//! Session View data layer (SPEC-zene-studio A1). Compiled only with
+	//! WANT_SESSION_VIEW; persisted as the versioned <session> block.
+	SessionModel& sessionModel() { return m_sessionModel; }
+	const SessionModel& sessionModel() const { return m_sessionModel; }
+#endif
+
 public slots:
 	void playSong();
 	void record();
@@ -458,6 +470,10 @@ private:
 	AutomatedValueMap m_oldAutomatedValues;
 
 	Metronome m_metronome;
+
+#ifdef LMMS_HAVE_SESSION_VIEW
+	SessionModel m_sessionModel;
+#endif
 
 	friend class Engine;
 	friend class gui::SongEditor;
