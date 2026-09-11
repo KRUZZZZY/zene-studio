@@ -442,6 +442,30 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+        env:
+          # QtTest on Windows writes to the debug log instead of the pipe when stderr has no
+          # console attached (qplaintestlogger.cpp: stream == stdout && !shouldLogToStderr()
+          # -> OutputDebugStringA), so ctest captured an EMPTY Output section for every one of
+          # the 24 tests - passing and failing alike. Verified by fetching this job's own
+          # artifact from run 34607374243. Without this line no assertion text can ever be read
+          # from a Windows run, which makes any fix unfalsifiable.
+          QT_FORCE_STDERR_LOGGING: "1"
+      - name: Prove the plugin modules' lmms.exe import binding (diagnostic, non-fatal)
+        # The three failing tests are exactly the three that load plugin MODULE libraries at
+        # runtime. Those modules link the lmms executable, so on Windows their import tables
+        # name lmms.exe; a test host cannot satisfy that. This turns the inference into evidence
+        # (an import descriptor reading lmms.exe, and the exe really exporting the core symbols)
+        # and is deliberately non-fatal: it is proof, not a gate.
+        continue-on-error: true
+        shell: cmd
+        run: |
+          echo === synthetic_audio_plugin.dll: dependency/import tables ===
+          dumpbin /dependents build\tests\synthetic_audio_plugin.dll
+          dumpbin /imports build\tests\synthetic_audio_plugin.dll | findstr /i "lmms.exe" || echo "(no lmms.exe import descriptor found)"
+          echo === migrated plugin module (same question) ===
+          dumpbin /imports build\plugins\amplifier.dll | findstr /i "lmms.exe" || echo "(no lmms.exe import descriptor found)"
+          echo === does the executable export the core symbols? ===
+          dumpbin /exports build\lmms.exe | findstr /i "AudioPortsModel" || echo "(AudioPortsModel not among lmms.exe exports)"
       - name: Upload the ctest log on failure
         if: failure()
         uses: actions/upload-artifact@v7
