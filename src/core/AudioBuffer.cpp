@@ -55,13 +55,32 @@ auto createMask(ch_cnt_t pos) noexcept -> AudioBuffer::ChannelFlags
 	return mask;
 }
 
+//! @returns the memory resource that the channel access buffer should use.
+//!
+//! The access buffer is a table of raw pointers into the source buffer, and raw
+//! pointers are only meaningful in the address space that created them. If the
+//! table lived in shared memory, a process that maps that shared memory at a
+//! different address would read pointers that are invalid to it - and any process
+//! that rebuilt the table would silently invalidate the pointers every other
+//! process is using. Therefore the table is always process-local: only the audio
+//! data buffers may use a shared memory resource. @see AudioBuffer::addGroup
+auto accessBufferResource(std::pmr::memory_resource* bufferResource) -> std::pmr::memory_resource*
+{
+	if (dynamic_cast<SharedMemoryResource*>(bufferResource) != nullptr)
+	{
+		return std::pmr::get_default_resource();
+	}
+
+	return bufferResource;
+}
+
 } // namespace
 
 
 AudioBuffer::AudioBuffer(f_cnt_t frames, ch_cnt_t channels,
 	std::pmr::memory_resource* bufferResource)
 	: m_sourceBuffer{bufferResource}
-	, m_accessBuffer{bufferResource}
+	, m_accessBuffer{accessBufferResource(bufferResource)}
 	, m_interleavedBuffer{bufferResource}
 	, m_frames{frames}
 	, m_silenceTrackingEnabled{ConfigManager::inst()->value("ui", "disableautoquit", "1").toInt() == 0}
@@ -85,8 +104,7 @@ void AudioBuffer::allocateInterleavedBuffer()
 
 auto AudioBuffer::allocationSize(f_cnt_t frames, ch_cnt_t channels, bool withInterleavedBuffer) -> std::size_t
 {
-	auto bytes = frames * channels * sizeof(float) // for m_sourceBuffer
-		+ channels * sizeof(float*); // for m_accessBuffer
+	auto bytes = frames * channels * sizeof(float); // for m_sourceBuffer
 
 	if (withInterleavedBuffer)
 	{
@@ -121,23 +139,23 @@ auto AudioBuffer::addGroup(ch_cnt_t channels) -> ChannelGroup*
 	// Check if using a shared memory resource since its semantics are
 	// more restrictive than the default memory resource
 	const auto usesSharedMemory = dynamic_cast<SharedMemoryResource*>(
-		m_accessBuffer.get_allocator().resource()) != nullptr;
+		m_sourceBuffer.get_allocator().resource()) != nullptr;
 
 	const auto usesInterleavedBuffer = hasInterleavedBuffer();
 
 	if (usesSharedMemory)
 	{
 		// Shared memory must be reallocated without any over-allocations,
-		// since it only has a fixed amount of space
-		m_accessBuffer.clear();
+		// since it only has a fixed amount of space. The access buffer is
+		// process-local (see accessBufferResource above), so it is unaffected.
 		m_sourceBuffer.clear();
 		m_interleavedBuffer.clear();
 	}
 
-	// Next, resize the buffers. The order here is important so no padding bytes
-	// are needed when allocating using a shared memory resource. The buffer
-	// with stricter padding requirements (m_accessBuffer) gets allocated first.
-	static_assert(alignof(float*) >= alignof(float));
+	// Next, resize the buffers. The order of the buffers using the memory resource is
+	// important so no padding bytes are needed when allocating using a shared memory
+	// resource, and so every process mapping that shared memory lays out the audio
+	// data identically: m_sourceBuffer comes first, then m_interleavedBuffer.
 	m_accessBuffer.resize(newTotalChannels);
 	m_sourceBuffer.resize(newTotalChannels * m_frames);
 	if (usesInterleavedBuffer)

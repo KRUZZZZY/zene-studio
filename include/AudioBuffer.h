@@ -61,6 +61,10 @@ namespace lmms
  * - A separate vector of non-owning pointers to channel buffers is also maintained. In this vector, each index
  *       corresponds to a channel, providing a mapping from the channel index to a pointer to the start of that
  *       channel's buffer within the source buffer. This is called the access buffer (m_accessBuffer).
+ * - The access buffer is process-local and is never allocated from a shared memory resource. Raw pointers are
+ *       only valid in the address space that created them, so a pointer table stored in shared memory would be
+ *       meaningless to every other process that maps it. Each process that constructs an AudioBuffer over the
+ *       same shared memory builds its own access buffer pointing into its own mapping of that memory.
  * - The purpose of the access buffer is to provide channel-wise access to buffers within the source buffer, so
  *       it's `m_accessBuffer[channelIdx][frameIdx]` instead of `m_sourceBuffer[channelIdx * frames + frameIdx]`.
  *       This is very important since many APIs dealing with planar audio expect it in this `float**` 2D array form.
@@ -137,7 +141,9 @@ public:
 	 *
 	 * @param frames frame count for each channel
 	 * @param channels channel count for the 1st group, or zero to skip adding the 1st group
-	 * @param resource memory resource for all buffers
+	 * @param resource memory resource for the audio data buffers; the access buffer
+	 *                 (the channel pointer table) is always process-local and is
+	 *                 allocated from the default resource instead
 	 */
 	explicit AudioBuffer(f_cnt_t frames, ch_cnt_t channels = DEFAULT_CHANNELS,
 		std::pmr::memory_resource* resource = std::pmr::get_default_resource());
@@ -150,7 +156,9 @@ public:
 	 * @param frames frame count for each channel
 	 * @param channels total channel count
 	 * @param groups group count
-	 * @param resource memory resource for all buffers
+	 * @param resource memory resource for the audio data buffers; the access buffer
+	 *                 (the channel pointer table) is always process-local and is
+	 *                 allocated from the default resource instead
 	 * @param groupVisitor see @ref setGroups
 	 */
 	template<class F>
@@ -167,8 +175,9 @@ public:
 	auto hasInterleavedBuffer() const -> bool { return !m_interleavedBuffer.empty(); }
 
 	/**
-	 * @returns the number of bytes needed to allocate buffers with given frame and channel counts.
-	 *          Useful for preallocating a buffer for a shared memory resource.
+	 * @returns the number of bytes the audio data buffers need for the given frame and
+	 *          channel counts. Useful for preallocating a buffer for a shared memory resource.
+	 *          The access buffer is always process-local and is not included.
 	 */
 	static auto allocationSize(f_cnt_t frames, ch_cnt_t channels,
 		bool withInterleavedBuffer = false) -> std::size_t;
@@ -242,9 +251,11 @@ public:
 	/**
 	 * @brief Adds a new channel group at the end of the list.
 	 *
-	 * If the memory resource is `SharedMemoryResource`, all buffers (source, channels,
+	 * If the memory resource is `SharedMemoryResource`, the audio data buffers (source
 	 * and interleaved) will be reallocated. The number of bytes allocated will be
 	 * `allocationSize(frames(), totalChannels() + channels, hasInterleavedBuffer())`.
+	 * The access buffer is always process-local, so the caller's mapping of the shared
+	 * memory is the only one that can be affected.
 	 *
 	 * @param channels how many channels the new group should have
 	 * @returns the newly created group, or nullptr upon failure

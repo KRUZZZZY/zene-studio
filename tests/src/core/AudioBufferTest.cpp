@@ -30,7 +30,96 @@
 #include "MixHelpers.h"
 #include "SharedMemory.h"
 
+#ifdef Q_OS_UNIX
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#endif
+
 using lmms::AudioBuffer;
+
+#ifdef Q_OS_UNIX
+
+namespace
+{
+
+//! @returns true if `ptr` points into the shared memory region of `sm`
+auto isInsideSharedMemory(const void* ptr, const lmms::SharedMemory<std::byte[]>& sm) -> bool
+{
+	const auto value = reinterpret_cast<std::uintptr_t>(ptr);
+	const auto base = reinterpret_cast<std::uintptr_t>(sm.get());
+	return value >= base && value < base + sm.size_bytes();
+}
+
+//! The child half of the cross-process test: a second process that maps the same shared
+//! memory at a different address and constructs its own `AudioBuffer` over it.
+//!
+//! This runs in a forked child process, so it cannot use QtTest's assertion macros -
+//! everything is reported through the exit code instead:
+//!   0 - success
+//!   1 - failed to attach to the shared memory or to construct the `AudioBuffer`
+//!   2 - the second mapping did not receive a different address
+//!   3 - the access buffer (the channel pointer table) lives inside the shared region
+//!   4 - an access buffer entry points outside this process's own mapping
+//!   5 - could not read back what was just written
+auto crossProcessChild(const std::string& key, const void* parentRegion) -> int
+{
+	using namespace lmms;
+
+	constexpr f_cnt_t frames = 7;
+	constexpr ch_cnt_t channels = 5;
+
+	try
+	{
+		// Map the same shared memory as a second process
+		SharedMemory<std::byte[]> sm;
+		sm.attach(key);
+
+		// Premise of the test: this process maps the region at a different address
+		if (sm.get() == parentRegion) { return 2; }
+
+		// Construct this process's own AudioBuffer over the shared memory
+		auto ab = AudioBuffer{frames, channels, 2, sm.resource(),
+			[](group_cnt_t idx, AudioBuffer::ChannelGroup&) {
+				switch (idx)
+				{
+					case 0: return 2; // 1st group has 2 channels
+					case 1: return 3; // 2nd group has 3 channels
+					default: return 0;
+				}
+			}};
+		ab.allocateInterleavedBuffer();
+
+		// The access buffer must be process-local and its entries must point into
+		// this process's own mapping of the shared memory
+		if (isInsideSharedMemory(ab.allBuffers().data(), sm)) { return 3; }
+
+		for (ch_cnt_t ch = 0; ch < ab.totalChannels(); ++ch)
+		{
+			if (!isInsideSharedMemory(ab.allBuffers().data()[ch], sm)) { return 4; }
+		}
+
+		// Leave a pattern for the parent process to find
+		ab.group(1).buffer(2)[5] = 456.f; // 3rd channel of the 2nd group, 6th frame
+		ab.buffer(3)[4] = 789.f;          // 4th channel, 5th frame
+
+		if (ab.group(1).buffer(2)[5] != 456.f || ab.buffer(3)[4] != 789.f) { return 5; }
+	}
+	catch (...)
+	{
+		return 1;
+	}
+
+	return 0;
+}
+
+} // namespace
+
+#endif // Q_OS_UNIX
 
 class AudioBufferTest : public QObject
 {
@@ -284,6 +373,96 @@ private slots:
 		// Can write data on the client side and read it from the server side
 		abClient.group(1).buffer(2)[5] = 456.f; // 3rd channel of 2nd group, 6th frame
 		QCOMPARE(abServer.group(1).buffer(2)[5], 456.f);
+	}
+
+	//! Verifies that an `AudioBuffer` created over shared memory is safe to use from a
+	//! second process that maps the same shared memory at a different address, where the
+	//! first process's pointers would be meaningless. The access buffer (the channel
+	//! pointer table) must stay process-local: a second process that constructs its own
+	//! `AudioBuffer` over the same region must neither read nor overwrite this process's
+	//! pointers. @see TwoAudioBuffersWithSameSharedMemory for the single-process case.
+	void CrossProcess_TwoProcessesWithSameSharedMemory()
+	{
+#ifdef Q_OS_UNIX
+		using namespace lmms;
+
+		constexpr f_cnt_t frames = 7;
+		constexpr ch_cnt_t channels = 5;
+
+		// Use enough shared memory for 5 channels with 7 frames each + interleaved buffer
+		SharedMemory<std::byte[]> sm;
+		sm.create(AudioBuffer::allocationSize(frames, channels, true));
+
+		// Split the 5 channels into 2 groups
+		auto groupVisitor = [](group_cnt_t idx, AudioBuffer::ChannelGroup&) {
+			switch (idx)
+			{
+				case 0: return 2; // 1st group has 2 channels
+				case 1: return 3; // 2nd group has 3 channels
+				default: return 0;
+			}
+		};
+
+		// Create this process's AudioBuffer over the shared memory
+		auto ab = AudioBuffer{frames, channels, 2, sm.resource(), groupVisitor};
+		ab.allocateInterleavedBuffer();
+
+		// Its access buffer entries point into this process's mapping of the region
+		for (ch_cnt_t ch = 0; ch < ab.totalChannels(); ++ch)
+		{
+			QVERIFY(isInsideSharedMemory(ab.allBuffers().data()[ch], sm));
+		}
+
+		// Remember the pointer table so the child's construction can be shown not to change it
+		const auto tableBefore = std::vector<float*>{ab.allBuffers().data(),
+			ab.allBuffers().data() + ab.totalChannels()};
+
+		// Fork a second process, which maps the same shared memory at a different address
+		// and constructs and uses its own AudioBuffer over it
+		std::fflush(nullptr);
+		const auto pid = ::fork();
+		if (pid == 0)
+		{
+			std::_Exit(crossProcessChild(sm.key(), sm.get()));
+		}
+		QVERIFY2(pid > 0, "fork() failed");
+
+		auto status = 0;
+		QCOMPARE(::waitpid(pid, &status, 0), pid);
+		const auto childCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+
+		// The child's construction must not have changed this process's pointer table...
+		auto changedEntries = 0;
+		auto foreignEntries = 0;
+		const auto tableAfter = ab.allBuffers().data();
+		for (ch_cnt_t ch = 0; ch < ab.totalChannels(); ++ch)
+		{
+			if (tableAfter[ch] != tableBefore[ch]) { ++changedEntries; }
+			if (!isInsideSharedMemory(tableAfter[ch], sm)) { ++foreignEntries; }
+		}
+
+		qInfo().nospace() << "cross-process child: exit code " << childCode
+			<< ", changed table entries " << changedEntries
+			<< ", foreign table entries " << foreignEntries
+			<< ", signal " << (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+
+		// ...so every entry must still point into this process's own mapping
+		QVERIFY2(foreignEntries == 0,
+			"the second process captured the shared pointer table: entries no longer point into this mapping");
+
+		// The child's own checks must have passed
+		QCOMPARE(childCode, 0);
+
+		// Audio data written by the child is visible through this process's own table
+		QCOMPARE(ab.buffer(3)[4], 789.f);
+		QCOMPARE(ab.group(1).buffer(2)[5], 456.f);
+
+		// The access buffer itself must never be stored in the shared region
+		QVERIFY(!isInsideSharedMemory(ab.allBuffers().data(), sm));
+		QCOMPARE(changedEntries, 0);
+#else
+		QSKIP("the cross-process test requires fork() and POSIX shared memory objects");
+#endif
 	}
 
 	//! Verifies all silence flag bits are set when there are no channels
