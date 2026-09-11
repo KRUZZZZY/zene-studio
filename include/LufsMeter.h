@@ -42,9 +42,11 @@ namespace lmms
  * What is measured, and where each piece comes from:
  *  - K-weighting: the two published biquads of Recommendation ITU-R BS.1770-4
  *    Annex 1 - a high-shelf pre-filter and the RLB high-pass - applied to every
- *    channel. The 48 kHz coefficient table of the recommendation is reproduced
- *    by designBiquads() from the Annex 1 analogue prototypes (see LufsMeter.cpp)
- *    and re-derived for other sample rates.
+ *    channel. The recommendation publishes the coefficient rows for 48 kHz only
+ *    and asks implementations at other rates for the same frequency response, so
+ *    designBiquads() derives the two sections from the equivalent analogue
+ *    prototype parameters (see LufsMeter.cpp): at 48 kHz that derivation
+ *    reproduces the published rows, which the unit test asserts.
  *  - 400 ms loudness blocks with a 100 ms hop (75 % overlap). A block's
  *    loudness is -0.691 + 10*log10(sum_i G_i * z_i), where z_i is the mean
  *    square of the K-weighted channel i over the block and G_i the channel
@@ -154,8 +156,10 @@ public:
 	/**
 	 * K-weighting filter coefficients for \p sampleRate: the pre-filter (stage 1
 	 * high shelf) and the RLB high-pass (stage 2). At 48000 Hz the two rows are
-	 * the published BS.1770-4 Table 1 values; other rates are derived from the
-	 * same Annex 1 analogue prototypes by bilinear transform.
+	 * the published BS.1770-4 Table 1 values (15 digits, asserted by the test);
+	 * other rates are derived from the same equivalent analogue prototype
+	 * parameters by bilinear transform, which is what the recommendation asks
+	 * for when it says other rates must reproduce the same frequency response.
 	 * Exposed for tests and for components that want to reproduce the weighting.
 	 */
 	static void kWeightingCoefficients(sample_rate_t sampleRate, Biquad& preFilter, Biquad& rlbHighPass);

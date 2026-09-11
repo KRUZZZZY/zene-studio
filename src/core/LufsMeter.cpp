@@ -59,14 +59,20 @@ constexpr double TruePeakCoefficients[12][4] = {
 	{ -0.0083007812500, -0.0189208984375, -0.0291748046875, 0.0017089843750 },
 };
 
-//! BS.1770-4 Annex 1, stage 1 (high-shelf pre-filter) analogue prototype.
+//! BS.1770-4 Annex 1: the equivalent analogue prototypes of the two published
+//! 48 kHz coefficient rows. The recommendation prints those rows for 48 kHz only
+//! and asks implementations at other rates to reproduce the same frequency
+//! response; the unit test asserts that the bilinear transform of these
+//! parameters reproduces the printed rows at 48 kHz (to 1e-16).
+//! Stage 1: high-shelf pre-filter.
 constexpr double PreFilterFrequencyHz = 1681.974450955533;
 constexpr double PreFilterGainDb = 3.999843853973347;
 constexpr double PreFilterQ = 0.7071752369554196;
-//! BS.1770-4 Annex 1, stage 2 (RLB high-pass) analogue prototype.
+//! Stage 2: RLB high-pass.
 constexpr double RlbFrequencyHz = 38.13547087602444;
 constexpr double RlbQ = 0.5003270373238773;
-//! The exponent in the pre-filter's Vb term, as published in Annex 1.
+//! The exponent of the Vb term in the pre-filter design, as the reference
+//! implementations of the recommendation use it.
 constexpr double PreFilterVbExponent = 0.4996667741545416;
 
 //! Bin 0 of the gating histogram collects everything at or below the absolute
