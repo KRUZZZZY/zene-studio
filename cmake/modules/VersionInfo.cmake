@@ -25,7 +25,7 @@ IF(Git_FOUND AND NOT FORCE_VERSION)
 	# Look for git tag information (e.g. Tagged: "v1.0.0", Untagged: "v1.0.0-123-a1b2c3d")
 	# Untagged format: [latest tag]-[number of commits]-[latest commit hash]
 	EXECUTE_PROCESS(
-		COMMAND "${GIT_EXECUTABLE}" describe --tags --match v[0-9].[0-9].[0-9]*
+		COMMAND "${GIT_EXECUTABLE}" describe --tags --match v[0-9]*.[0-9]*.[0-9]*
 		OUTPUT_VARIABLE GIT_TAG
 		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 		TIMEOUT 10

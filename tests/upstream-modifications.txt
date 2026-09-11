@@ -19,6 +19,7 @@
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
 Brewfile	#609 CI: brew "mda-lv2" so the macOS runners have the LV2 bundle PluginPortsMigrationTest renders by URI (3d87d33ca)
+cmake/modules/VersionInfo.cmake	#615 release correctness: the release-tag glob accepts multi-digit version components (v0.10.0 was silently ignored, so the build reported the /CMakeLists.txt fallback version); upstream's single-digit glob would be restored silently by a rebase
 include/AudioBuffer.h	#608 memory correctness: the channel access buffer (pointer table) is process-local, never allocated from a shared memory resource (746f6bd0e)
 include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's compensation graph
 include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
