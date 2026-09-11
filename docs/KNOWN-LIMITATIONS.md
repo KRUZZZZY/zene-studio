@@ -58,6 +58,13 @@ you, that is this page's fault: report it and it gets added.
   blacklist UI, no rescan button, and a plugin that fails to load does not tell you why.
 - **VST3 and CLAP are effects only.** No instrument in either format can load. VST2 instruments
   still work through Vestige.
+- **Only ZynAddSubFx can be chosen to run in its own process.** The ZynAddSubFx instrument has a
+  "Run in a separate process" switch (saved with the project): with it on, the synth runs in a
+  separate `RemoteZynAddSubFx` process, so a crash there silences that instrument instead of
+  taking the project down. It is off by default, and it is the only plugin family with that
+  choice — VST2 already always runs out of process, and VST3, CLAP, LV2, LADSPA and the built-in
+  instruments run inside the app with no isolation. See `docs/OOP-HOSTING.md` for what was
+  measured and what was not.
 - **No crash reporter, but autosave recovery exists.** A crash sends no report anywhere. Autosave
   writes the project to `recover.mmp` in your working folder (by default about every two minutes,
   while not playing), and the next start offers to recover it. Recovery is only as fresh as the
@@ -87,7 +94,8 @@ you, that is this page's fault: report it and it gets added.
 - **No multicore graph scheduling.** Expect real-time performance to be limited on large sessions.
 - **PDC scope.** Plugin delay compensation covers in-process chains and the mixer graph, based on
   the latency each effect reports. Remote (out-of-process) plugins do not report their own
-  latency, so a VST2 or ZynAddSubFx plugin that delays its output is not compensated.
+  latency, so a VST2 plugin, or a ZynAddSubFx instrument with the separate-process switch on,
+  that delays its output is not compensated.
 
 ## Scripting and AI DSP
 
