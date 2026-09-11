@@ -8,3 +8,4 @@ plugins/Vst3Effect/Vst3Host.cpp	714
 src/wasm/WasmSandbox.cpp	597
 src/core/AudioPortsModel.cpp	549
 src/gui/PinConnector.cpp	529
+src/core/CrashReporter.cpp	526

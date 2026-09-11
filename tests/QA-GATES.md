@@ -529,6 +529,17 @@ bash tests/file-length-gate.sh --check            # CI: never writes the baselin
 bash tests/file-length-gate.sh --reanchor "why"   # deliberate, recorded baseline refresh
 ```
 
+**Measured (2026-09-11, 115-file scope — post-alpha/integration):** 115 fork sources measured,
+**9 over 500 lines**. The ninth is `src/core/CrashReporter.cpp` (526), added by
+`post-alpha/crash-report` and exposed to this ratchet for the first time when integration
+registered it in `tests/fork-sources.txt`. It is one self-contained offline crash reporter —
+the async-signal-safe formatting primitives, the handler, the install/teardown path and the
+report writer — plus the Windows no-op stub, deliberately one unit. `docs/CONVENTIONS.md`
+rule 4 forbids trimming code to satisfy a metric, so the baseline was **re-anchored
+deliberately** for that one file (26 lines over) with the reason recorded by `--reanchor` and
+in the merge commit, following the same trade the 2026-09-11 re-anchor made. The eight
+pre-existing entries were unchanged; the ratchet still fails any *other* new file over 500.
+
 ## Gate 8: Token duplication (`duplication-gate.sh`) — 2026-09-09
 
 Source: the adopted code-quality ruleset requires "token duplication < 5% (jscpd)". The
