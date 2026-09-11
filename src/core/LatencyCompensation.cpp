@@ -80,6 +80,20 @@ int LatencyCompensation::effectiveDelay(f_cnt_t frames) const
 }
 
 
+const SampleFrame* LatencyCompensation::readWrapped(f_cnt_t read, f_cnt_t frames)
+{
+	const f_cnt_t capacity = m_ring.size();
+	const f_cnt_t readFirst = std::min(frames, capacity - read);
+	std::copy(m_ring.data() + read, m_ring.data() + read + readFirst, m_scratch.data());
+	if (frames > readFirst)
+	{
+		std::copy(m_ring.data(), m_ring.data() + (frames - readFirst),
+			m_scratch.data() + readFirst);
+	}
+	return m_scratch.data();
+}
+
+
 const SampleFrame* LatencyCompensation::process(const SampleFrame* in, f_cnt_t frames)
 {
 	if (in == nullptr || frames == 0)
@@ -116,14 +130,7 @@ const SampleFrame* LatencyCompensation::process(const SampleFrame* in, f_cnt_t f
 		return in;
 	}
 
-	const f_cnt_t readFirst = std::min(frames, capacity - read);
-	std::copy(m_ring.data() + read, m_ring.data() + read + readFirst, m_scratch.data());
-	if (frames > readFirst)
-	{
-		std::copy(m_ring.data(), m_ring.data() + (frames - readFirst),
-			m_scratch.data() + readFirst);
-	}
-	return m_scratch.data();
+	return readWrapped(read, frames);
 }
 
 
@@ -168,17 +175,11 @@ void LatencyCompensation::processPlanar(float* left, float* right, f_cnt_t frame
 		return;
 	}
 
-	const f_cnt_t readFirst = std::min(frames, capacity - read);
-	std::copy(m_ring.data() + read, m_ring.data() + read + readFirst, m_scratch.data());
-	if (frames > readFirst)
-	{
-		std::copy(m_ring.data(), m_ring.data() + (frames - readFirst),
-			m_scratch.data() + readFirst);
-	}
+	const SampleFrame* out = readWrapped(read, frames);
 	for (f_cnt_t i = 0; i < frames; ++i)
 	{
-		left[i] = m_scratch[i].left();
-		right[i] = m_scratch[i].right();
+		left[i] = out[i].left();
+		right[i] = out[i].right();
 	}
 }
 

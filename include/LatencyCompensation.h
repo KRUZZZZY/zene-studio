@@ -87,6 +87,12 @@ private:
 	//! Effective delay, clamped so that read + write fit the ring.
 	int effectiveDelay(f_cnt_t frames) const;
 
+	//! Copy the \p frames-frame window starting at ring offset \p read into
+	//! m_scratch, wrapping past the ring end; returns m_scratch.data().
+	//! Callers guarantee m_ring.size() >= \p frames and
+	//! m_scratch.size() >= \p frames. Audio thread only; never allocates.
+	const SampleFrame* readWrapped(f_cnt_t read, f_cnt_t frames);
+
 	std::vector<SampleFrame> m_ring;
 	std::vector<SampleFrame> m_scratch;
 	f_cnt_t m_write = 0;
