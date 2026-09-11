@@ -13,15 +13,15 @@
     <string>APPL</string>
 
     <key>CFBundleGetInfoString</key>
-    <string>@CPACK_PROJECT_NAME_UCASE@ @CPACK_PROJECT_VERSION@</string>
+    <string>Zene Studio @CPACK_PROJECT_VERSION@</string>
 
 <!--
     #############################################################
     #    Apple Creator Code Registered Application Signatures   #
     #############################################################
-    #    Company:       LMMS Foundation                         #
+    #    Company:       Zene Studio                             #
     #    Registrant:    tres.finocchiaro@gmail.com              #
-    #    ASCII Code:    LMMS                                    #
+    #    ASCII Code:    ZENE                                    #
     #    HEX:           4C4D4D53                                #
     #############################################################
     #    Contact Apple Developer Support at cfreg@apple.com     #
@@ -41,7 +41,7 @@
     <string>@VERSIONCPACK_PROJECT_VERSION@</string>
 
     <key>CFBundleName</key>
-    <string>@CPACK_PROJECT_NAME_UCASE@</string>
+    <string>Zene Studio</string>
 
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>

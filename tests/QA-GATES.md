@@ -575,16 +575,16 @@ skip it. Gate 2 stays opt-in because it rebuilds the whole tree.
 - **Windows test-host limitation — three suites skip (2026-09-11).** `AudioPluginTest`,
   `PluginPortsMigrationTest` (all six slots) and `ScriptEngineTest::testInstrumentParameterReadWrite`
   load plugin MODULE libraries at runtime, and a Windows test host cannot: every plugin module
-  links the `lmms` executable, so an MSVC module's import descriptor names `lmms.exe` and the
+  links the `zene` executable, so an MSVC module's import descriptor names `zene.exe` and the
   Windows loader fails with `ERROR_MOD_NOT_FOUND` (126) — CI msvc-x64, with
   `QT_FORCE_STDERR_LOGGING=1`, prints it verbatim (*"Cannot load library
   …\plugins\tripleoscillator.dll: The specified module could not be found."*). On Linux/macOS the
   same tests run unchanged: a module's undefined lmms symbols bind from the loading process's
   exported symbol table (the test targets set `ENABLE_EXPORTS`). This is a **test-host limitation,
-  not a masked product defect** — the product loads the same modules inside `lmms.exe`, where the
+  not a masked product defect** — the product loads the same modules inside `zene.exe`, where the
   import resolves by construction. **Boarded follow-up (not landed):** a coverage-preserving
   Windows test that drives the real host instead of a test host — a ctest that runs the built
-  `lmms.exe` headless (`QT_QPA_PLATFORM=offscreen lmms render <fixture>`) and asserts exit 0 plus
+  `zene.exe` headless (`QT_QPA_PLATFORM=offscreen zene render <fixture>`) and asserts exit 0 plus
   non-silent output on a project using `tripleoscillator` and one migrated effect. Until it lands,
   **Windows has no coverage of**: loading a migrated module at all, the sample-exact migration
   comparison, the legacy single-buffer `AudioPlugin` bridge, and the Lua instrument-parameter

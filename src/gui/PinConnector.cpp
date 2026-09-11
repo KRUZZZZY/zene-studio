@@ -492,7 +492,7 @@ void PinConnector::MatrixView::updateProperties(const PinConnector* view)
 
 	// Update tooltip
 	const Model* parentModel = view->model() ? view->model()->parentModel() : nullptr;
-	const auto formatText = m_matrix->isOutput() ? tr("%1 output(s) to LMMS") : tr("LMMS to %1 input(s)");
+	const auto formatText = m_matrix->isOutput() ? tr("%1 output(s) to Zene Studio") : tr("Zene Studio to %1 input(s)");
 	const auto processorName = parentModel ? parentModel->fullDisplayName() : tr("processor");
 	setToolTip(formatText.arg(processorName));
 }

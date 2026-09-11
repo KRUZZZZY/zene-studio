@@ -87,7 +87,7 @@ ConfigManager::ConfigManager() :
 #ifdef LMMS_BUILD_WIN32
 	QDir::addSearchPath("data", qApp->applicationDirPath() + "/data/");
 #else
-	QDir::addSearchPath("data", qApp->applicationDirPath().section('/', 0, -2) + "/share/lmms/");
+	QDir::addSearchPath("data", qApp->applicationDirPath().section('/', 0, -2) + "/share/zene/");
 #endif
 
 }
@@ -728,19 +728,21 @@ void ConfigManager::initDevelopmentWorkingDir()
 		cmakeCache.open(QFile::ReadOnly);
 		QTextStream stream(&cmakeCache);
 
-		// Find the lines containing something like lmms_SOURCE_DIR:static=<dir>
-		// and lmms_BINARY_DIR:static=<dir>
+		// Find the lines containing something like zene_SOURCE_DIR:static=<dir>
+		// and zene_BINARY_DIR:static=<dir>. The wave-R rename changed the CMake project
+		// name and therefore these cache-entry names; the old lmms_ spelling is still
+		// accepted so a build directory configured before the rename keeps working.
 		int done = 0;
 		while(! stream.atEnd())
 		{
 			QString line = stream.readLine();
 
-			if (line.startsWith("lmms_SOURCE_DIR:")) {
+			if (line.startsWith("zene_SOURCE_DIR:") || line.startsWith("lmms_SOURCE_DIR:")) {
 				QString srcDir = line.section('=', -1).trimmed();
 				QDir::addSearchPath("data", srcDir + "/data/");
 				done++;
 			}
-			if (line.startsWith("lmms_BINARY_DIR:")) {
+			if (line.startsWith("zene_BINARY_DIR:") || line.startsWith("lmms_BINARY_DIR:")) {
 				m_lmmsRcFile = line.section('=', -1).trimmed() +  QDir::separator() +
 							   ".lmmsrc.xml";
 				done++;

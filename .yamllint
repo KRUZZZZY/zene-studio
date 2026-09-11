@@ -1,3 +1,3 @@
 rules:
   line-length:
-    max: 120  # be conforming to LMMS coding rules
+    max: 120  # be conforming to Zene Studio coding rules

@@ -29,7 +29,7 @@ jobs:
         run: |
           shellcheck \
             $(find "./cmake/" -type f -name '*.sh' -o -name "*.sh.in") \
-            doc/bash-completion/lmms \
+            doc/bash-completion/zene \
             buildtools/update_locales
   yamllint:
     runs-on: ubuntu-latest

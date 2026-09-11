@@ -11,12 +11,12 @@ endif()
 SET(CPACK_PACKAGE_ICON                  "${CMAKE_SOURCE_DIR}/cmake/nsis\\\\nsis_branding.bmp")
 SET(CPACK_NSIS_MUI_ICON                 "${CMAKE_SOURCE_DIR}/cmake/nsis/icon.ico")
 SET(CPACK_NSIS_INSTALLED_ICON_NAME      "${CMAKE_PROJECT_NAME}.exe" PARENT_SCOPE)
-SET(CPACK_NSIS_DISPLAY_NAME             "${PROJECT_NAME_UCASE} ${VERSION}" PARENT_SCOPE)
+SET(CPACK_NSIS_DISPLAY_NAME             "Zene Studio ${VERSION}" PARENT_SCOPE)
 SET(CPACK_NSIS_HELP_LINK                "${PROJECT_URL}" PARENT_SCOPE)
 SET(CPACK_NSIS_URL_INFO_ABOUT           "${PROJECT_URL}" PARENT_SCOPE)
 SET(CPACK_NSIS_CONTACT                  "${PROJECT_EMAIL}" PARENT_SCOPE)
-SET(CPACK_PACKAGE_EXECUTABLES           "${CMAKE_PROJECT_NAME}.exe;${PROJECT_NAME_UCASE}" PARENT_SCOPE)
-SET(CPACK_NSIS_MENU_LINKS               "${CMAKE_PROJECT_NAME}.exe;${PROJECT_NAME_UCASE}" PARENT_SCOPE)
+SET(CPACK_PACKAGE_EXECUTABLES           "${CMAKE_PROJECT_NAME}.exe;Zene Studio" PARENT_SCOPE)
+SET(CPACK_NSIS_MENU_LINKS               "${CMAKE_PROJECT_NAME}.exe;Zene Studio" PARENT_SCOPE)
 SET(CPACK_NSIS_DEFINES                  "
   !addincludedir ${CMAKE_SOURCE_DIR}/cmake/nsis
   !include FileAssociation.nsh
@@ -24,17 +24,17 @@ SET(CPACK_NSIS_DEFINES                  "
   !include WinVer.nsh")
 SET(CPACK_PACKAGE_FILE_NAME             "${CMAKE_PROJECT_NAME}-${VERSION}-${WIN_PLATFORM}-win32")
 SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS   "
-  \\\${registerExtension} \\\"$INSTDIR\\\\${CMAKE_PROJECT_NAME}.exe\\\" \\\".mmp\\\" \\\"${PROJECT_NAME_UCASE} Project\\\"
-  \\\${registerExtension} \\\"$INSTDIR\\\\${CMAKE_PROJECT_NAME}.exe\\\" \\\".mmpz\\\" \\\"${PROJECT_NAME_UCASE} Project (compressed)\\\"
+  \\\${registerExtension} \\\"$INSTDIR\\\\${CMAKE_PROJECT_NAME}.exe\\\" \\\".mmp\\\" \\\"Zene Studio Project\\\"
+  \\\${registerExtension} \\\"$INSTDIR\\\\${CMAKE_PROJECT_NAME}.exe\\\" \\\".mmpz\\\" \\\"Zene Studio Project (compressed)\\\"
   \\\${IfNot} \\\${AtMostWin7}
     WriteRegDWORD HKLM \\\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\SideBySide\\\" \\\"PreferExternalManifest\\\" \\\"1\\\"
   \\\${EndIf}
   " PARENT_SCOPE)
 SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "
-  \\\${unregisterExtension} \\\".mmp\\\" \\\"${PROJECT_NAME_UCASE} Project\\\"
-  \\\${unregisterExtension} \\\".mmpz\\\" \\\"${PROJECT_NAME_UCASE} Project (compressed)\\\"
-  DeleteRegKey HKCR \\\"${PROJECT_NAME_UCASE} Project\\\"
-  DeleteRegKey HKCR \\\"${PROJECT_NAME_UCASE} Project (compressed)\\\"
+  \\\${unregisterExtension} \\\".mmp\\\" \\\"Zene Studio Project\\\"
+  \\\${unregisterExtension} \\\".mmpz\\\" \\\"Zene Studio Project (compressed)\\\"
+  DeleteRegKey HKCR \\\"Zene Studio Project\\\"
+  DeleteRegKey HKCR \\\"Zene Studio Project (compressed)\\\"
   " PARENT_SCOPE)
 
 IF(WIN64)
@@ -66,9 +66,9 @@ if(CPACK_DEBUG)
 endif()
 
 # Windows resource compilers
-CONFIGURE_FILE("lmms.rc.in"             "${CMAKE_BINARY_DIR}/lmms.rc")
+CONFIGURE_FILE("zene.rc.in"             "${CMAKE_BINARY_DIR}/zene.rc")
 CONFIGURE_FILE("zynaddsubfx.rc.in"      "${CMAKE_BINARY_DIR}/plugins/ZynAddSubFx/zynaddsubfx.rc")
 
-INSTALL(FILES "lmms.exe.manifest" DESTINATION .)
-INSTALL(FILES "lmms.VisualElementsManifest.xml" DESTINATION .)
+INSTALL(FILES "zene.exe.manifest" DESTINATION .)
+INSTALL(FILES "zene.VisualElementsManifest.xml" DESTINATION .)
 INSTALL(DIRECTORY "assets" DESTINATION .)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# lmms(1) completion                                       -*- shell-script -*-
+# zene(1) completion                                       -*- shell-script -*-
 
-_lmms_array_contains ()
+_zene_array_contains ()
 {
     local e match="$1"
     shift
@@ -9,7 +9,7 @@ _lmms_array_contains ()
     return 1
 }
 
-_lmms_long_param_of()
+_zene_long_param_of()
 {
     case "$1" in
         -a)
@@ -51,7 +51,7 @@ _lmms_long_param_of()
     esac
 }
 
-_lmms_conv_old_action ()
+_zene_conv_old_action ()
 {
     case "$1" in
         -d|--dump)
@@ -72,7 +72,7 @@ _lmms_conv_old_action ()
     esac
 }
 
-_lmms()
+_zene()
 {
     local cword=$COMP_CWORD
     local cur="${COMP_WORDS[COMP_CWORD]}"
@@ -105,7 +105,7 @@ _lmms()
     # don't show shortargs, but complete them when entered
     if [[ $cur =~ ^-[^-]$ ]]
     then
-        if _lmms_array_contains "$cur" "${shortargs[@]}"
+        if _zene_array_contains "$cur" "${shortargs[@]}"
         then
             COMPREPLY=( "$cur" )
         fi
@@ -189,17 +189,17 @@ _lmms()
                 for wrd in "${COMP_WORDS[@]}"
                 do
                     # action named explicitly?
-                    if _lmms_array_contains "$wrd" "${actions[@]}"
+                    if _zene_array_contains "$wrd" "${actions[@]}"
                     then
                         action_found=$wrd
                         break
                     # deprecated action name?
-                    elif _lmms_array_contains "$wrd" "${actions_old[@]}"
+                    elif _zene_array_contains "$wrd" "${actions_old[@]}"
                     then
-                        action_found="$(_lmms_conv_old_action "$wrd")"
+                        action_found="$(_zene_conv_old_action "$wrd")"
                         break
                     # no-action params found?
-                    elif _lmms_array_contains "$wrd" "${pars_noaction[@]}"
+                    elif _zene_array_contains "$wrd" "${pars_noaction[@]}"
                     then
                         action_found=none
                         break
@@ -285,7 +285,7 @@ _lmms()
                         then
                             do_append=
                         # disallow double short parameters
-                        elif [ "--$(_lmms_long_param_of "${COMP_WORDS[$i]}")" == "$param" ]
+                        elif [ "--$(_zene_long_param_of "${COMP_WORDS[$i]}")" == "$param" ]
                         then
                             do_append=
                         # --help or --version must be the first parameters
@@ -342,4 +342,4 @@ _lmms()
     fi
 }
 
-complete -F _lmms lmms
+complete -F _zene zene

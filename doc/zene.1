@@ -2,7 +2,7 @@
 .\" First parameter, NAME, should be all caps
 .\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
 .\" other parameters are allowed: see man(7), man(1)
-.TH LMMS 1 "September 10, 2018"
+.TH ZENE 1 "September 10, 2018"
 .\" Please adjust this date whenever revising the manpage.
 .\"
 .\" Some roff macros, for reference:
@@ -16,9 +16,9 @@
 .\" .sp <n>    insert n+1 empty lines
 .\" for manpage-specific macros, see man(7)
 .SH NAME
-lmms \- software for easy music production
+zene \- software for easy music production
 .SH SYNOPSIS
-.B lmms
+.B zene
 .RB "[\fBglobal options...\fP] [\fBaction\fP [\fBaction parameters\fP...]]
 .br
 .SH DESCRIPTION
@@ -26,15 +26,15 @@ lmms \- software for easy music production
 .\" TeX users may be more comfortable with the \fB<whatever>\fP and
 .\" \fI<whatever>\fP escape sequences to invode bold face and italics, 
 .\" respectively.
-.B LMMS
+.B Zene Studio
 is a free cross-platform alternative to commercial programs like FL Studio®, which allow you to produce music with your computer. This includes the creation of melodies and beats, the synthesis and mixing of sounds, and arranging of samples. You can have fun with your MIDI-keyboard and much more; all in a user-friendly and modern interface.
 
-LMMS features components such as a Song Editor, a Beat+Bassline Editor, a Piano Roll, a Mixer as well as many powerful instruments and effects.
+Zene Studio features components such as a Song Editor, a Beat+Bassline Editor, a Piano Roll, a Mixer as well as many powerful instruments and effects.
 
 .SH ACTIONS
 
 .IP "<no action> [\fIoptions\fP...] [\fIproject\fP]
-Start LMMS in normal GUI mode.
+Start Zene Studio in normal GUI mode.
 .IP "\fBdump\fP \fIin\fP
 Dump XML of compressed (MMPZ) file \fIin\fP.
 .IP "\fBrender\fP \fIproject\fP [\fIoptions\fP...]
@@ -78,7 +78,7 @@ Specify format of render-output where \fIformat\fP is either 'wav', 'flac', 'ogg
 .IP "\fB\-i, --interpolation\fP \fImethod\fP
 Specify interpolation method - possible values are \fIlinear\fP, \fIsincfastest\fP (default), \fIsincmedium\fP, \fIsincbest\fP.
 
-If -e is specified lmms exits after importing the file.
+If -e is specified zene exits after importing the file.
 .IP "\fB\-l, --loop
 Render the given file as a loop, i.e. stop rendering at exactly the end of the song. Additional silence or reverb tails at the end of the song are not rendered.
 .IP "\fB\-m, --mode\fP \fIstereomode\fP
@@ -97,6 +97,9 @@ Specify output samplerate in Hz - range is 44100 (default) to 192000.
 Specify oversampling, possible values: 1, 2 (default), 4, 8.
 
 .SH SEE ALSO
+.BR https://github.com/KRUZZZZY/zene-studio
+.br
+Upstream LMMS, the project this is derived from:
 .BR https://lmms.io/
 .BR https://lmms.io/documentation/
 .BR https://github.com/LMMS/lmms

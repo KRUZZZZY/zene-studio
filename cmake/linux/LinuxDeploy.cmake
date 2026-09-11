@@ -1,5 +1,5 @@
 # Create a Linux desktop installer using linuxdeploy
-#  * Creates a relocatable LMMS.AppDir installation in build/_CPack_Packages using linuxdeploy
+#  * Creates a relocatable Zene Studio.AppDir installation in build/_CPack_Packages using linuxdeploy
 #    * If CPACK_TOOL=appimagetool or is not set, bundles AppDir into redistributable ".AppImage" file
 #    * If CPACK_TOOL=makeself is provided, bundles into a redistributable ".run" file
 #
@@ -94,9 +94,9 @@ list(APPEND DEPLOY_DEPS
 	--deploy-deps-only "${APP}/usr/lib/${lmms}/ladspa/"
 )
 
-# If usr/bin/lmms is hard-linked to libjack, copy it to a new location
+# If usr/bin/zene is hard-linked to libjack, copy it to a new location
 # See https://github.com/LMMS/lmms/issues/7689
-copy_dependency("${APP}/usr/bin/lmms" "libjack.so" "${APP}/usr/lib/jack" JACK_LIB_RELOC)
+copy_dependency("${APP}/usr/bin/${lmms}" "libjack.so" "${APP}/usr/lib/jack" JACK_LIB_RELOC)
 if(JACK_LIB_RELOC)
 	list(APPEND DEPLOY_DEPS --deploy-deps-only "${JACK_LIB_RELOC}")
 endif()
@@ -138,7 +138,7 @@ set(ENV{DISABLE_COPYRIGHT_FILES_DEPLOYMENT} 1)
 # Patch desktop file
 file(APPEND "${DESKTOP_FILE}" "X-AppImage-Version=${CPACK_PROJECT_VERSION}\n")
 
-# Custom scripts to run immediately before lmms is executed
+# Custom scripts to run immediately before zene is started
 file(COPY "${CPACK_SOURCE_DIR}/cmake/linux/apprun-hooks" DESTINATION "${APP}")
 file(REMOVE "${APP}/apprun-hooks/README.md")
 
@@ -225,7 +225,7 @@ elseif(CPACK_TOOL STREQUAL "makeself")
 		${MAKESELF_QUIET}
 		"${APP}"
 		"${RUN_FILE}"
-		"${LMMS} Installer"
+		"Zene Studio Installer"
 		"./setup.sh"
 		${OUTPUT_QUIET}
 		COMMAND_ECHO ${COMMAND_ECHO}

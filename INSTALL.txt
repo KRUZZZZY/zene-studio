@@ -33,7 +33,7 @@ If you want to use custom compiler flags simply set the environment variables
 CFLAGS and CXXFLAGS.
 
 After running cmake (the 3rd command above) you can see a summary of things
-that are going to be built into LMMS or built as plugins. Install the
+that are going to be built into Zene Studio or built as plugins. Install the
 according libraries and development files if a certain feature is not enabled.
 Then remove CMakeCache.txt and run cmake again.
 

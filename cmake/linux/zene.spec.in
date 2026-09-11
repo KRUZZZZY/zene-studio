@@ -1,5 +1,5 @@
 # Configuration variables
-%define name            lmms
+%define name            zene
 %define version         ${LMMS_VERSION}
 %define rel             1
 %define release         %{rel}%{?disttag}%{?repotag}
@@ -26,9 +26,9 @@ Release:	%{release}
 Summary:	powerful sequencer-, synthesizer- and sample-studio for Linux
 Summary(de):	Leistungsfaehiges Sequenzer-, Synthesizer- und Sample-Studio fuer Linux
 License:	GPL
-URL:		https://lmms.io/
+URL:		https://github.com/KRUZZZZY/zene-studio
 Group:		Applications/Multimedia
-Provides:	lmms = %{version}-%{release}
+Provides:	zene = %{version}-%{release}
 BuildRequires:	gcc gcc-c++ libstdc++-devel autoconf automake libtool make
 BuildRequires:	alsa-lib-devel
 BuildRequires:	qt-devel > 3.0
@@ -72,7 +72,7 @@ Requires:	flac
 Requires:	SDL_sound
 %endif
 
-Requires:	lmms-data
+Requires:	zene-data
 Source:		%{name}-%{version}.tar.bz2
 Patch1:		%{name}-%{version}-patch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-buildroot
@@ -80,48 +80,48 @@ Prefix:		%{_prefix}
 
 
 %description
-LMMS aims to be a free alternative to popular (but commercial and closed-
+Zene Studio aims to be a free alternative to popular (but commercial and closed-
 source) programs like FruityLoops, Cubase and Logic giving you the ability of
 producing music with your computer by creating/synthesizing sounds, arranging
 samples, playing live with keyboard and much more...
 
-LMMS combines the features of a tracker-/sequencer-program (pattern-/channel-/
+Zene Studio combines the features of a tracker-/sequencer-program (pattern-/channel-/
 sample-/song-/effect-management) and those of powerful synthesizers and
 samplers in a modern, user-friendly and easy to use graphical user-interface.
 
-LMMS is still in heavy development, so with this version please don't expect a
+Zene Studio is still in heavy development, so with this version please don't expect a
 complete, ready and bugfree program!!
 
 
 %description -l de
-LMMS ist eine freie Alternative zu bekannten (aber kommerziellen und
+Zene Studio ist eine freie Alternative zu bekannten (aber kommerziellen und
 Closed-Source-) Programmen wie FruityLoops, Cubase und Logic, die Ihnen die
 Moeglichkeit geben, mit Ihrem Computer Musik zu produzieren, indem Sie
 Klaenge kreieren/synthetisieren, Samples anordnen, mit dem Keyboard live
 spielen usw....
 
-LMMS kombiniert die Funktionen eines Tracker-/Sequenzer-Programms (Pattern-/
+Zene Studio kombiniert die Funktionen eines Tracker-/Sequenzer-Programms (Pattern-/
 Kanal-/Sample-/Song-/Effekt-Management) und die von leistungsfaehigen
 Synthesizern und Samplern in einer modernen, benutzerfreundlichen und einfach zu
 benutzenden grafischen Oberflaeche.
 
-Derzeit befindet sich LMMS komplett in Entwicklung. Also erwarten Sie bitte mit
+Derzeit befindet sich Zene Studio komplett in Entwicklung. Also erwarten Sie bitte mit
 dieser Version nicht ein vollstaendiges, fertiges und fehlerfreies Programm!!
 
 
 %package data
-Summary:	samples, presets, demo-projects and localization-files for LMMS
-Summary(de):	Samples, Presets, Demo-Projekte und Lokalisierungsdateien fuer LMMS
+Summary:	samples, presets, demo-projects and localization-files for Zene Studio
+Summary(de):	Samples, Presets, Demo-Projekte und Lokalisierungsdateien fuer Zene Studio
 Group:		Applications/Multimedia
-Provides:	lmms-data = %{version}-%{release}
+Provides:	zene-data = %{version}-%{release}
 
 %description data
-This package contains platform-independent data and resources for LMMS, e.g.
+This package contains platform-independent data and resources for Zene Studio, e.g.
 samples, presets and demo-projects.
 
 
 %description data -l de
-Dieses Paket beinhaltet plattform-unabhaengige Daten und Resourcen fuer LMMS,
+Dieses Paket beinhaltet plattform-unabhaengige Daten und Resourcen fuer Zene Studio,
 wie z.B. Samples, Presets und Demo-Projekte.
 
 
@@ -156,9 +156,9 @@ wie z.B. Samples, Presets und Demo-Projekte.
 # Create a desktop menu entry
 %{__cat} > %{name}.desktop << EOF
 [Desktop Entry]
-Name=LMMS
+Name=Zene Studio
 Comment=Powerful sequencer-, synthesizer- and sample-studio for Linux
-Exec=lmms
+Exec=zene
 Icon=%{_datadir}/%{name}/themes/default/icon.png
 Terminal=false
 Type=Application
@@ -183,18 +183,18 @@ desktop-file-install \
 %files
 %defattr(-, root, root, 0755)
 %doc AUTHORS ChangeLog COPYING README TODO
-%{_bindir}/lmms
-%dir %{_libdir}/lmms
-%{_libdir}/lmms/*
-%{_mandir}/man*/lmms.*
+%{_bindir}/zene
+%dir %{_libdir}/zene
+%{_libdir}/zene/*
+%{_mandir}/man*/zene.*
 %{_datadir}/applications/%{desktop_vendor}-%{name}.desktop
 
 %files data
 %defattr(-,root,root)
-%dir %{_datadir}/lmms
-%{_datadir}/lmms/*
+%dir %{_datadir}/zene
+%{_datadir}/zene/*
 
 -%changelog
 -* Please see release notes (viewable online):
--- https://github.com/LMMS/lmms/releases/tag/v${LMMS_VERSION}
+-- https://github.com/KRUZZZZY/zene-studio/releases/tag/v${LMMS_VERSION}
 -

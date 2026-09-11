@@ -45,10 +45,12 @@ you, that is this page's fault: report it and it gets added.
 
 ## First five minutes
 
-- **The app is called `lmms`.** The executable, the desktop entry and the window title use LMMS
-  names; the Zene Studio rename is a later wave. This build also shares LMMS's config file
-  (`~/.lmmsrc.xml`) and working folder (`~/Documents/lmms/`) with any LMMS you have installed, so
-  settings you change here change there too.
+- **The app is called Zene Studio.** The executable (`zene`), the desktop entry and the window
+  title all carry the product name — the deferred wave-R rename landed on this tree. It still
+  shares LMMS's config file (`~/.lmmsrc.xml`) and working folder (`~/Documents/lmms/`) with any
+  LMMS you have installed, so settings you change here change there too. That sharing is
+  deliberate: renaming either the config file or the working folder would orphan the settings and
+  projects of an existing install.
 - **The first launch prints a line about Carla.** Started from a terminal, the Linux AppImage may
   print `[AppRun] Carla does not appear to be installed, we'll remove it from the plugin listing.`
   That means the Carla plugin (and the patchbay and rack built on it) is hidden from the plugin
@@ -138,8 +140,9 @@ you, that is this page's fault: report it and it gets added.
   **System Settings > Privacy & Security > Open Anyway**. The per-platform steps are in
   [Getting it running](#getting-it-running).
 - If the release is not published yet, the only builds in existence are CI packages from earlier
-  runs; those report `LMMS 1.3.0-alpha`, while a build from the release tag reports
-  `LMMS 0.1.0-alpha`. The string is build provenance, not a second product name.
+  runs; those report `Zene Studio 1.3.0-alpha`, while a build from the release tag reports
+  `Zene Studio 0.1.0-alpha`. The string is build provenance, not a second product name.
+  (Packages built before the wave-R rename still print the old `LMMS …` string.)
 
 ## Not planned for the final product
 

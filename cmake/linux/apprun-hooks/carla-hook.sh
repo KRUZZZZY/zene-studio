@@ -34,7 +34,7 @@ if [ -n "$CARLA_LIB_FILE" ]; then
 		if [ -e "$APPDIR/usr/lib/$conflict" ]; then
 			conflict_sys="$(ldd "$CARLA_LIB_FILE" | grep "$conflict" | awk '{print $3}')"
 			if [ -e "$conflict_sys" ]; then
-				# Add library to LD_PRELOAD so lmms can find it over its bundled version
+				# Add library to LD_PRELOAD so zene can find it over its bundled version
 				echo "[${0##*/}] Preferring the system's \"$conflict\" over the version bundled." >&2
 				export LD_PRELOAD="$conflict_sys:$LD_PRELOAD"
 			fi

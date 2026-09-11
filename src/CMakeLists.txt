@@ -53,15 +53,15 @@ INCLUDE_DIRECTORIES(
 )
 
 IF(WIN32 AND MSVC)
-	SET(WINRC "${CMAKE_BINARY_DIR}/lmms.rc")
+	SET(WINRC "${CMAKE_BINARY_DIR}/zene.rc")
 ELSEIF(WIN32)
-	SET(WINRC "${CMAKE_BINARY_DIR}/lmmsrc.obj")
+	SET(WINRC "${CMAKE_BINARY_DIR}/zenec.obj")
 	ADD_CUSTOM_COMMAND(OUTPUT "${WINRC}"
 				COMMAND "${CMAKE_RC_COMPILER}"
 					"-I\"${CMAKE_SOURCE_DIR}\""
-					"-o\"${CMAKE_BINARY_DIR}/lmmsrc.obj\""
-					"-i\"${CMAKE_BINARY_DIR}/lmms.rc\""
-				DEPENDS "${CMAKE_BINARY_DIR}/lmms.rc")
+					"-o\"${CMAKE_BINARY_DIR}/zenec.obj\""
+					"-i\"${CMAKE_BINARY_DIR}/zene.rc\""
+				DEPENDS "${CMAKE_BINARY_DIR}/zene.rc")
 ENDIF()
 
 INCLUDE(GenQrc)
@@ -71,7 +71,7 @@ ADD_GEN_QRC(LMMS_RCC_OUT lmms.qrc
 	"${CONTRIBUTORS}"
 )
 
-# Paths relative to lmms executable
+# Paths relative to the zene executable
 FILE(RELATIVE_PATH LIB_DIR_RELATIVE "/${BIN_DIR}" "/${LIB_DIR}")
 FILE(RELATIVE_PATH PLUGIN_DIR_RELATIVE "/${BIN_DIR}" "/${PLUGIN_DIR}")
 ADD_DEFINITIONS(-DLIB_DIR="${LIB_DIR_RELATIVE}" -DPLUGIN_DIR="${PLUGIN_DIR_RELATIVE}" ${PULSEAUDIO_DEFINITIONS})
@@ -129,14 +129,14 @@ GENERATE_EXPORT_HEADER(lmmsobjs
 	BASE_NAME lmms
 )
 
-ADD_EXECUTABLE(lmms
+ADD_EXECUTABLE(zene
 	core/main.cpp
 	"${WINRC}"
 )
-TARGET_INCLUDE_DIRECTORIES(lmms
+TARGET_INCLUDE_DIRECTORIES(zene
 	PUBLIC ${CMAKE_CURRENT_BINARY_DIR}
 )
-target_static_libraries(lmms PUBLIC lmmsobjs)
+target_static_libraries(zene PUBLIC lmmsobjs)
 
 # Enable updated C++ language standards
 IF(MSVC)
@@ -151,10 +151,10 @@ TARGET_COMPILE_DEFINITIONS(lmmsobjs
 )
 target_static_definitions(lmmsobjs LMMS_STATIC_DEFINE)
 
-# Set Visual Studio startup project to lmms
+# Set Visual Studio startup project to zene
 # https://stackoverflow.com/a/37994396/8166701
 IF(NOT CMAKE_VERSION VERSION_LESS 3.6)
-	SET_PROPERTY(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT lmms)
+	SET_PROPERTY(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT zene)
 ENDIF()
 
 SET_DIRECTORY_PROPERTIES(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${LMMS_RCC_OUT} lmmsconfig.h")
@@ -233,7 +233,7 @@ ENDIF()
 
 target_static_libraries(lmmsobjs ringbuffer lua luabridge)
 
-set_target_properties(lmms PROPERTIES
+set_target_properties(zene PROPERTIES
 	ENABLE_EXPORTS ON
 	WIN32_EXECUTABLE $<NOT:$<CONFIG:DEBUG>>
 )
@@ -246,9 +246,9 @@ IF(NOT WIN32 AND NOT LMMS_BUILD_APPLE)
 	ELSE(CMAKE_INSTALL_MANDIR)
 		SET(INSTALL_MANDIR share/man)
 	ENDIF(CMAKE_INSTALL_MANDIR)
-	INSTALL(FILES "${CMAKE_SOURCE_DIR}/doc/lmms.1"
+	INSTALL(FILES "${CMAKE_SOURCE_DIR}/doc/zene.1"
 			DESTINATION "${INSTALL_MANDIR}/man1/"
 			PERMISSIONS OWNER_READ GROUP_READ WORLD_READ)
 ENDIF()
 
-INSTALL(TARGETS lmms RUNTIME DESTINATION "${BIN_DIR}")
+INSTALL(TARGETS zene RUNTIME DESTINATION "${BIN_DIR}")

@@ -60,7 +60,7 @@ public:
 	static QString locatePython(QString* error = nullptr);
 
 	// Discovery order: LMMS_STEM_CLI, the build-time source path, then
-	// <appdir>/tools/ and <appdir>/../share/lmms/tools/.
+	// <appdir>/tools/ and <appdir>/../share/zene/tools/.
 	static QString locateCli(QString* error = nullptr);
 
 	// LMMS_STEM_MODEL, else <AppDataLocation>/models/stems/htdemucs-fp16.onnx.

@@ -105,7 +105,7 @@ jobs:
         with:
           archive: false
           retention-days: 14
-          path: build/lmms-*.AppImage
+          path: build/zene-*.AppImage
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -194,7 +194,7 @@ jobs:
         with:
           archive: false
           retention-days: 14
-          path: build/lmms-*.AppImage
+          path: build/zene-*.AppImage
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -294,7 +294,7 @@ jobs:
         with:
           archive: false
           retention-days: 14
-          path: build/lmms-*.dmg
+          path: build/zene-*.dmg
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -381,7 +381,7 @@ jobs:
         with:
           archive: false
           retention-days: 14
-          path: build/lmms-*.exe
+          path: build/zene-*.exe
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -473,26 +473,26 @@ jobs:
           # artifact from run 34607374243. Without this line no assertion text can ever be read
           # from a Windows run, which makes any fix unfalsifiable.
           QT_FORCE_STDERR_LOGGING: "1"
-      - name: Prove the plugin modules' lmms.exe import binding (diagnostic, non-fatal)
+      - name: Prove the plugin modules' zene.exe import binding (diagnostic, non-fatal)
         # if: always() matters: without it this step is SKIPPED whenever Run tests fails, which
         # is exactly the case it exists to explain - the first run carrying it produced no
         # dumpbin output at all for that reason (the QWARN lines still proved the mechanism).
         if: always()
         # The three failing tests are exactly the three that load plugin MODULE libraries at
-        # runtime. Those modules link the lmms executable, so on Windows their import tables
-        # name lmms.exe; a test host cannot satisfy that. This turns the inference into evidence
-        # (an import descriptor reading lmms.exe, and the exe really exporting the core symbols)
+        # runtime. Those modules link the zene executable, so on Windows their import tables
+        # name zene.exe; a test host cannot satisfy that. This turns the inference into evidence
+        # (an import descriptor reading zene.exe, and the exe really exporting the core symbols)
         # and is deliberately non-fatal: it is proof, not a gate.
         continue-on-error: true
         shell: cmd
         run: |
           echo === synthetic_audio_plugin.dll: import tables ===
           dumpbin /dependents build\tests\synthetic_audio_plugin.dll
-          dumpbin /imports build\tests\synthetic_audio_plugin.dll | findstr /i "lmms.exe"
+          dumpbin /imports build\tests\synthetic_audio_plugin.dll | findstr /i "zene.exe"
           echo === migrated plugin module (same question) ===
-          dumpbin /imports build\plugins\amplifier.dll | findstr /i "lmms.exe"
+          dumpbin /imports build\plugins\amplifier.dll | findstr /i "zene.exe"
           echo === does the executable export the core symbols? ===
-          dumpbin /exports build\lmms.exe | findstr /i "AudioPortsModel"
+          dumpbin /exports build\zene.exe | findstr /i "AudioPortsModel"
       - name: Upload the ctest log on failure
         if: failure()
         uses: actions/upload-artifact@v7
@@ -510,7 +510,7 @@ jobs:
         with:
           archive: false
           retention-days: 14
-          path: build\lmms-*.exe
+          path: build\zene-*.exe
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -580,7 +580,7 @@ jobs:
         with:
           archive: false
           retention-days: 14
-          path: build\lmms-*.exe
+          path: build\zene-*.exe
       - name: Trim ccache and print statistics
         run: |
           /clang64/bin/ccache.exe --cleanup
