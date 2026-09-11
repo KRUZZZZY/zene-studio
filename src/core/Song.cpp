@@ -206,6 +206,24 @@ void Song::savePlayStartPosition()
 
 void Song::processNextBuffer()
 {
+#ifdef LMMS_HAVE_SESSION_VIEW
+	// Session View launch scheduling (task #595, SPEC-zene-studio A2/A3). The
+	// session has its own clock domain, so this runs every audio period -
+	// before the transport gate below - and launches can be scheduled while
+	// the song is stopped. It is lock- and allocation-free: one bounded drain
+	// of a fixed-size command queue and one pass over fixed slot storage (see
+	// SessionSchedulerTest::audioThreadPathDoesNotAllocate).
+	{
+		SessionClockContext sessionClock;
+		sessionClock.positionTicks = getPlayPos(PlayMode::Song).getTicks();
+		sessionClock.ticksPerBar = ticksPerBar();
+		sessionClock.framesPerTick = Engine::framesPerTick();
+		sessionClock.transportRunning = m_playing && m_playMode == PlayMode::Song;
+		m_sessionScheduler.processAudio(sessionClock,
+			Engine::audioEngine()->framesPerPeriod());
+	}
+#endif
+
 	// If nothing is playing, there is nothing to do
 	if (!m_playing) { return; }
 
@@ -335,8 +353,26 @@ void Song::processNextBuffer()
 			processAutomations(trackList, getPlayPos(), framesToPlay);
 			processMetronome(frameOffsetInPeriod);
 
+#ifdef LMMS_HAVE_SESSION_VIEW
+			// Column index of the next track in the song's own track list;
+			// only meaningful in PlayMode::Song, which is the only mode this
+			// test is applied in.
+			int sessionTrackIndex = 0;
+#endif
 			for (const auto track : trackList)
 			{
+#ifdef LMMS_HAVE_SESSION_VIEW
+				// SPEC-zene-studio A1: a track's session and arrangement
+				// content are mutually exclusive. While a session clip on this
+				// column is playing, the track is taken over and its
+				// arrangement content must not play.
+				const int trackIndex = sessionTrackIndex++;
+				if (m_playMode == PlayMode::Song
+					&& m_sessionScheduler.trackIsSessionActive(trackIndex))
+				{
+					continue;
+				}
+#endif
 				track->play(getPlayPos(), framesToPlay, frameOffsetInPeriod, clipNum);
 			}
 		}
@@ -919,6 +955,7 @@ void Song::clearProject()
 
 #ifdef LMMS_HAVE_SESSION_VIEW
 	m_sessionModel.clear();
+	m_sessionScheduler.reset();
 #endif
 
 	emit dataChanged();

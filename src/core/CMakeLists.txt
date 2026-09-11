@@ -22,6 +22,7 @@ IF(LMMS_HAVE_SESSION_VIEW)
 	SET(LMMS_SESSION_SRCS
 		core/SessionClip.cpp
 		core/SessionModel.cpp
+		core/SessionScheduler.cpp
 	)
 ENDIF()
 

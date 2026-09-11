@@ -1086,6 +1086,9 @@ tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp
+tests/src/core/SessionModelTest.cpp
+tests/src/core/SessionSchedulerRenderTest.cpp
+tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SlideNotesTest.cpp
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
