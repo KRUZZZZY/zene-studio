@@ -1,0 +1,73 @@
+name: Alpha feedback (v0.1.0-alpha)
+description: Report a bug, a crash, or something confusing in the v0.1.0-alpha build
+title: "[alpha] "
+labels: ["alpha-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying the alpha. This form asks for the four things that make a report
+        actionable; without them we usually cannot reproduce the problem.
+
+        **Check the known-limitations page first**:
+        https://github.com/KRUZZZZY/zene-studio/blob/main/docs/KNOWN-LIMITATIONS.md
+        if it is on that page, it is a known gap and does not need an issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Build
+      description: |
+        Which file did you install, and what does Help > About say? A package from the release
+        tag reports 0.1.0-alpha; an earlier CI snapshot reports 1.3.0-alpha.
+      placeholder: "e.g. Linux AppImage x86_64, 0.1.0-alpha"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: "e.g. Ubuntu 24.04, Windows 11 23H2, macOS 15.1"
+    validations:
+      required: true
+
+  - type: input
+    id: audio
+    attributes:
+      label: Audio backend and device
+      description: Settings > Audio. The backend, the device, the buffer size and the sample rate.
+      placeholder: "e.g. ALSA, hw:1,0, 512 frames, 48000 Hz"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Steps to reproduce if you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: console-output
+    attributes:
+      label: Terminal output
+      description: |
+        This build writes no log file. Start the app from a terminal and paste the console text
+        here: run the AppImage on Linux, the app from Terminal on macOS, or lmms.exe from a
+        Command Prompt on Windows. If you cannot start it from a terminal, say so and describe
+        what you saw on screen instead.
+    validations:
+      required: false
+
+  - type: textarea
+    id: project
+    attributes:
+      label: Project file (optional)
+      description: |
+        If the problem is reproducible with a project, attach a minimal one. Please do not attach
+        anything you would not share publicly, and note that projects are not covered by a format
+        stability promise yet, so keep your own backups.
+    validations:
+      required: false
