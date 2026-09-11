@@ -75,6 +75,17 @@ IF(VERSION_BUILD)
 	SET(VERSION     "${VERSION}-${VERSION_BUILD}")
 ENDIF()
 
+# Lua scripting API version (spec: specs/SPEC-lua-api-v0.md, policy:
+# docs/LUA-COMPATIBILITY-POLICY.md). This is the single source of truth for the
+# version the engine reports to scripts (lmms.version(), lmms.apiVersion()) and
+# enforces when a script declares `--! lmms-api <major>.<minor>`. Bump MINOR for
+# an additive change, MAJOR for a breaking one, PATCH for a documentation-only
+# release. Explicitly NOT LMMS's own ${VERSION}: the API can move without the
+# application, and a script cares only about the API.
+SET(ZENE_LUA_API_VERSION_MAJOR "0")
+SET(ZENE_LUA_API_VERSION_MINOR "1")
+SET(ZENE_LUA_API_VERSION_PATCH "0")
+
 # Override version information for non-base builds
 INCLUDE(VersionInfo)
 INCLUDE(DetectMachine)

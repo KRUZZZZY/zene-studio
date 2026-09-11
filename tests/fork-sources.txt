@@ -27,8 +27,12 @@ include/RemotePluginAudioPorts.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
+include/ScriptApiVersion.h
 include/ScriptBindings.h
+include/ScriptConsole.h
 include/ScriptEngine.h
+include/ScriptLuaQtTypes.h
+include/ScriptPackage.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
 include/StemSeparation/StemJobManager.h
@@ -97,8 +101,12 @@ src/core/OnnxRuntimeStemSeparator.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
+src/core/ScriptApiVersion.cpp
 src/core/ScriptBindings.cpp
+src/core/ScriptCommandQueue.cpp
+src/core/ScriptConsole.cpp
 src/core/ScriptEngine.cpp
+src/core/ScriptPackage.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp

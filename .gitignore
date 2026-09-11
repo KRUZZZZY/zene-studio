@@ -1,5 +1,6 @@
 /build*/
 /build*.log
+/logs/
 __pycache__/
 *.pyc
 /target/

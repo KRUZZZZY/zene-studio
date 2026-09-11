@@ -50,7 +50,9 @@ extern "C"
 #include "Note.h"
 #include "PatternStore.h"
 #include "ProjectJournal.h"
+#include "ScriptApiVersion.h"
 #include "ScriptBindings.h"
+#include "ScriptConsole.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -72,56 +74,6 @@ struct ScriptRunState
 	quint64 budget{0};
 	quint64 hookStep{ScriptHookStep};
 };
-
-
-ScriptCommandQueue::ScriptCommandQueue(std::size_t capacity) :
-	m_buffer(capacity),
-	m_reader(m_buffer)
-{
-}
-
-
-bool ScriptCommandQueue::push(const ScriptCommand& command)
-{
-	if (m_buffer.write(&command, 1) == 1)
-	{
-		return true;
-	}
-	// Realtime violation (spec section 4): overflow never blocks the producer,
-	// the command is dropped and counted.
-	m_dropped.fetch_add(1, std::memory_order_relaxed);
-	return false;
-}
-
-
-std::size_t ScriptCommandQueue::drain(const std::function<void(const ScriptCommand&)>& fn,
-					std::size_t max)
-{
-	std::size_t applied = 0;
-	while (applied < max)
-	{
-		auto sequence = m_reader.read_max(1);
-		if (sequence.size() == 0)
-		{
-			break;
-		}
-		fn(sequence[0]);
-		++applied;
-	}
-	return applied;
-}
-
-
-std::size_t ScriptCommandQueue::pending() const
-{
-	return m_reader.read_space();
-}
-
-
-std::uint64_t ScriptCommandQueue::dropped() const
-{
-	return m_dropped.load(std::memory_order_relaxed);
-}
 
 
 /*! \brief Runs Lua on the dedicated script worker thread.
@@ -450,6 +402,14 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 		QMutexLocker locker(&m_stateMutex);
 		m_lastError = message;
 	}
+	if (result != RunResult::Ok && !message.isEmpty())
+	{
+		// A script that died must say so on the console as well as in the
+		// returned error: an author debugging by prints would otherwise see the
+		// output stop with no reason. Console only - m_lastError already carries
+		// the verdict for programmatic callers.
+		logMessage(message);
+	}
 	m_running.store(false);
 
 	if (error != nullptr)
@@ -738,6 +698,9 @@ void ScriptEngine::logMessage(const QString& message)
 		m_logMessages.append(message);
 	}
 	emit logged(message);
+	// The console is the part a script author sees while debugging: without it
+	// a print() only lands in the capture buffer above, which nothing renders.
+	ScriptConsole::streamLine(message);
 }
 
 
@@ -886,21 +849,21 @@ bool ScriptEngine::isCompatibleVersion(const QString& version, QString* reason)
 		}
 		return false;
 	}
-	if (major != 0)
+	if (major != ScriptApi::major())
 	{
 		if (reason != nullptr)
 		{
 			*reason = QStringLiteral("API major version %1 is not supported by this build"
-						" (implements 0.1)").arg(major);
+					" (implements %2)").arg(major).arg(ScriptApi::version());
 		}
 		return false;
 	}
-	if (minor > 1)
+	if (minor > ScriptApi::minor())
 	{
 		if (reason != nullptr)
 		{
-			*reason = QStringLiteral("API version 0.%1 is newer than this build supports (0.1)")
-					.arg(minor);
+			*reason = QStringLiteral("API version %1.%2 is newer than this build supports"
+					" (%3)").arg(major).arg(minor).arg(ScriptApi::version());
 		}
 		return false;
 	}
