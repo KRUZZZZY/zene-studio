@@ -1,5 +1,10 @@
 # Phase F — SPEC §8.2 criteria mapped to evidence (board task #592)
 
+> **Historical program artifact.** Written inside the FL-program worktree `lmms-partd`
+> (branch `part-d-sidechain`); it references local paths and `/tmp` logs from that
+> clone and its "PR mergable" verdicts were owner-gated before the upstream track
+> closed. Kept for provenance — not a product document.
+
 Clone: `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms-partd`,
 branch `part-d-sidechain`. Build: `-DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON`
 (Qt 6.4.2, Ubuntu 24.04). Every command below was executed in this clone; `ctest` runs from

@@ -6,7 +6,10 @@ this directory; nothing in this document is aspirational — if it is not checke
 by a script, it is not a gate.
 
 Scope: the sources this product adds on top of upstream master `4e677cb6c6ab`,
-listed in `tests/fork-sources.txt` (**97 files**). Vendored third-party trees are
+listed in `tests/fork-sources.txt` (**99 files** — 97 at the 2026-09-09 port, plus
+`include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp`, added
+2026-09-11 because the #605 PDC work was shipping outside every gate's scope; see the
+Gate 2 scope note). Vendored third-party trees are
 excluded on purpose — 524 files under `src/3rdparty` (lua, luabridge),
 `plugins/NeuralAmp/rtneural`, `plugins/NeuralAmp/nam`, `plugins/NeuralAmp/tests`
 and `plugins/RnnoiseDenoiser/rnnoise`; they are not this repo's code and these
@@ -114,7 +117,7 @@ structural rather than untested paths: `src/gui/PinConnector.cpp` (269 lines,
 a QWidget whose behaviour is the GUI event loop) and the two unbuilt plugin
 hosts account for all of it.
 
-**50 of the 97 in-scope files have no coverage records at all** in this
+**50 of the 97 files in the 2026-09-09 scope have no coverage records at all** in this
 configuration and are therefore outside the denominator above:
 `plugins/Vst3Effect` (15, VST3 SDK absent), `plugins/ClapEffect` (15, CLAP
 headers absent — see below), `src/wasm` plus its `include` counterparts (13),
@@ -137,8 +140,18 @@ unit-test binaries run offscreen with no event-loop interaction. This is an
 
 Gate 2 **met on the standards fork**: the ratchet is live and green there at
 **85.24%**, clearing the adopted ruleset's 85% aspiration. **The product's own
-measured figure is 76.07%** (2661/3498 lines, 47 of 97 in-scope files), still
-short of that aspiration for the structural reasons above. `AudioBus.cpp`
+measured figure is 76.07%** (2661/3498 lines, 47 of the 97 files in the 2026-09-09
+scope), still short of that aspiration for the structural reasons above.
+
+**Scope note (2026-09-11).** `tests/fork-sources.txt` grew from 97 to 99 files when
+`include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp` were added: #605 PDC
+had landed (2026-09-10) without appearing in the scope file, so no gate — coverage included —
+was watching it. No coverage run has been taken on the new scope, so those two files have no
+coverage record at all and are absent from the figures above. The ratchet will admit them at
+their measured coverage on the next `run-coverage.sh`, and Gate 2 has no entry floor, so a new
+file **cannot** fail on entry — that is one of this suite's open defects, recorded as such.
+**Gate 2 is not green on the product:** the measured 76.07% is below the adopted 85%
+aspiration, and the criteria above only test that coverage does not *fall*. `AudioBus.cpp`
 (95.77%) and `ScriptEngine.cpp` (89.36%) remain short of 100%;
 `PinConnector.cpp` stays excluded for the reason above.
 The only other 0% lines in scope are `LmmsPolyfill.h` (2 lines) and
@@ -350,32 +363,68 @@ The gcc-13 fix shipped with this gate is in `src/core/AudioBus.cpp`
 behaviour change) — and `AudioBus.cpp` is fork-NEW, so it is allowed by the rule
 rather than by an exception.
 
-**Measured (2026-09-09):** PASS — every file changed since `0cea9b0b6` is tests/,
-build-config, docs, or fork-NEW.
+**Measured (2026-09-11, product `main` = `b61e14c75`):** **FAIL — exit 1, 12 violations.**
+Running the gate in a clean worktree of `main` (`bash tests/no-upstream-regression-gate.sh`,
+base `01148947e` from `tests/gate-base.txt`) reports:
 
-## CI enforcement (`.github/workflows/quality-gates.yml`) — 2026-09-09
+```
+include/AudioBusHandle.h          VIOLATION: upstream-inherited production file changed
+include/AudioEngine.h             VIOLATION
+include/Effect.h                  VIOLATION
+include/EffectChain.h             VIOLATION
+include/LatencyCompensation.h     VIOLATION (fork-NEW, but absent from fork-sources.txt)
+include/Mixer.h                   VIOLATION
+src/core/AudioBusHandle.cpp       VIOLATION
+src/core/Effect.cpp               VIOLATION
+src/core/EffectChain.cpp          VIOLATION
+src/core/LatencyCompensation.cpp  VIOLATION (fork-NEW, but absent from fork-sources.txt)
+src/core/Mixer.cpp                VIOLATION
+src/gui/MainWindow.cpp            VIOLATION
+```
 
-The gates are now wired into CI, so they run on every push/PR rather than only when
-someone remembers:
+The ten upstream-inherited files are #605 PDC (mixer latency alignment) plus the hygiene
+fixes — real behavioural changes to inherited code, which this rule forbids. **The rule and
+the product's development model are now in conflict: the resolution (allowlist them in
+`tests/upstream-modifications.txt` with reasons, or re-scope Gate 6 to the product's own
+baseline commit) is an owner decision, not a test fix.** The two `LatencyCompensation.*`
+files were added to `tests/fork-sources.txt` on 2026-09-11, which reclassifies them as
+fork-NEW and leaves the ten above. The PASS previously recorded here was measured against the
+standards workstream, before either landed — do not read it as the product's state.
 
-- **static-gates** — Gates 3, 4 and 6 (no build needed; `fetch-depth: 0` for Gate 6).
+**Window size, stated plainly:** the gate examines `01148947e..HEAD`, which on `main` is **11
+of the product's 133 commits** over upstream master (`git rev-list --count origin/master..HEAD`
+= 133). Earlier prose in this document cited `0cea9b0b6`, which is 93 commits behind `HEAD`;
+the file is authoritative.
+
+## CI enforcement (`.github/workflows/quality-gates.yml`) — 2026-09-09, trigger policy corrected 2026-09-11
+
+The gates are wired into CI as a **workflow_dispatch-only** job. They do **not** run on
+push or on pull requests — that is the workflow's deliberate trigger policy (Actions
+minutes are metered on this repo), and it means a green PR check here proves nothing about
+gate state. Run the suite locally or dispatch the workflow:
+
+- **static-gates** — Gates 3, 4, 6, 7 and 8 (no build needed; `fetch-depth: 0` for Gate 6).
 - **unit-tests** — Gate 1: Debug + Qt6 configure, build, then ctest from `build/tests`;
   Gate 5 then reuses that same build for the ~3 min mutation sweep.
 - **coverage** — Gate 2 in `--check` mode (the baseline is never written in CI), with the
   HTML report uploaded as an artifact.
 
-All eight gates are wired. Gate 5 lives in the `unit-tests` job because it needs the built
-test binary; it costs ~3 min there, which is acceptable for a per-push gate when it reuses
-the build. Locally it runs by default in `tests/run-all-gates.sh` (`--no-mutation` skips
-it). An earlier revision of this document said Gate 5 was deliberately excluded from CI —
-that was superseded on 2026-09-09 when the harness was added to the build job, because a
-workflow that runs seven of eight gates while looking complete is worse than one that says
-which gate is missing.
+To restore per-push enforcement, add the `push:` trigger back to the `on:` block; the
+workflow itself needs no other change.
 
-Every command in the workflow is one that has been executed locally; the GitHub runner
-environment itself has **not** been exercised (this fork has not been pushed), so the
-workflow is *syntax-validated and command-verified, not CI-verified* — stated plainly
-rather than assumed green.
+All eight gates are wired. Gate 5 lives in the `unit-tests` job because it needs the built
+test binary; it costs ~3 min there, which is acceptable when it reuses the build. Locally it
+runs by default in `tests/run-all-gates.sh` (`--no-mutation` skips it). An earlier revision of
+this document said Gate 5 was deliberately excluded from CI — that was superseded on
+2026-09-09 when the harness was added to the build job, because a workflow that runs seven of
+eight gates while looking complete is worse than one that says which gate is missing.
+
+**Runner status (2026-09-11).** The workflow *has* now run on a GitHub runner: the
+standards-fork run `34413527781` (`standards/quality-gates`) succeeded, and the product's own
+dispatch run #2 (`main`, 2026-09-10T00:20Z) **failed**. An earlier revision of this section
+said the runner environment had never been exercised because the fork had not been pushed;
+both halves of that are now false (pushed and public since 2026-09-09). CI state is a moving
+target — read it from `gh run list --repo KRUZZZZY/zene-studio` rather than from this page.
 
 ## Gate 7: Per-file length (`file-length-gate.sh`) — 2026-09-09
 

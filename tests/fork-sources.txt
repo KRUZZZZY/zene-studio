@@ -17,6 +17,7 @@ include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
 include/DpiHelper.h
+include/LatencyCompensation.h
 include/LmmsPolyfill.h
 include/MultiTrackRecorder.h
 include/PinConnector.h
@@ -91,6 +92,7 @@ src/core/audio/MultiTrackRecorder.cpp
 src/core/AudioPortsModel.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/ExternalProcessStemSeparator.cpp
+src/core/LatencyCompensation.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp

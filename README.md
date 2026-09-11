@@ -13,9 +13,12 @@ Zene Studio is an LMMS-derived digital audio workstation that combines:
 
 - **A modern multi-channel engine** — dynamic routing, sidechain sends, and
   parallel buses on an unbounded mixer.
-- **Native VST3 + CLAP hosting** — run modern instrument and effect plugins
-  alongside the built-in devices.
-- **Two-track recording** — capture two input channels into separate tracks.
+- **Native VST3 + CLAP effect hosting** — run modern VST3 and CLAP effects
+  alongside the built-in devices. Instrument hosting is **not** implemented yet:
+  the hosts are `Vst3Effect` and `ClapEffect`, effects only.
+- **Two-track recording** (prototype) — capture two input channels into separate
+  tracks. The capture path is hardware-verified; the surrounding workflow is not
+  finished, so treat this as a prototype rather than a shipped feature.
 - **Lua + WASM scripting** — automate the DAW with Lua or run sandboxed DSP in
   WebAssembly.
 - **AI DSP** — RNNoise noise suppression, NAM neural amp modelling, and offline
@@ -51,6 +54,18 @@ Separately from the waves above, the **Patcher node-graph engine**
 (`RoutingGraph` plus a small set of built-in node types) is in the tree and
 unit-tested, but no GUI or audio-path code instantiates it yet — node-graph
 patching is **not available in the current build**.
+
+## Build status
+
+`main` does **not** currently build on CI. The `build` workflow's runs 8-10
+(2026-09-10) all failed; `checks` and `doxygen` pass. Local fixes for six of the
+failures are committed on `fix/ci-matrix` (`2dcec93b3`) and are not pushed yet.
+The `quality-gates` workflow is dispatch-only and its last run failed as well.
+
+Do not read the feature list above as a statement that the tree builds today, and
+do not read a green PR check in this repository as evidence that it does — the
+quality gates do not run on push. See [`docs/STATUS.md`](docs/STATUS.md) for the
+current, dated status of every feature below.
 
 ## Building
 

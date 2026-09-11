@@ -1,5 +1,9 @@
 # Release note — mixer v2 project format (dynamic routing)
 
+> **Historical program artifact.** Written inside the FL-program worktree
+> `lmms-partd` (branch `part-d-sidechain`) and kept for provenance. It is not a
+> product document; treat the branch names as history.
+
 Status: implemented in `part-d-sidechain` (Phase D, task #587) and hardened in Phase F (task #592).
 Audience: LMMS users, packagers, and downstream readers of `.mmp` / `.mmpz` project files.
 
@@ -10,6 +14,26 @@ Audience: LMMS users, packagers, and downstream readers of `.mmp` / `.mmpz` proj
   loads byte-for-byte the same routing it always had, and a new file still loads in old LMMS builds.
 - Old LMMS builds **silently drop** the new routing when they open a new file. If you re-save in an
   old build, that routing is gone permanently — keep a copy or stay on the new build for v2 projects.
+
+## Related: plugin delay compensation (#605, landed 2026-09-10)
+
+The mixer now compensates for plugin latency, so a latent effect chain sums in
+phase instead of smearing against its parallel paths:
+
+- `EffectChain::refreshLatency()` caches chain latency; the mixer's
+  `updateLatencyCompensation()` recomputes every channel's input/output latency and the
+  per-edge compensation delays once per audio period (audio thread, allocation-free,
+  lock-free, O(channels + edges)). Scratch storage is sized on the control thread.
+- Every incoming path is delayed to its receiver's alignment point; the compensation
+  delay lines are touched only by the receiving worker.
+- A zero-latency graph is **bit-identical** to the pre-PDC path
+  (`PdcMixerTest::zeroLatencyGraphIsBitIdentical`), and the compensated null shows
+  dry + inverted wet cancelling only when latency is reported
+  (`PdcMixerTest::parallelNullCancelsOnlyWhenLatencyIsReported`; it emits `PDC_NULL`
+  evidence with the residual dBFS). Above the delay-line cap the compensation is clamped
+  and diagnosed rather than silently dropped (`latencyAboveTheCapIsClampedAndDiagnosed`).
+- **No project-format change**: PDC is a runtime behaviour, so `.mmp`/`.mmpz` files are
+  unaffected and no version bump is required.
 
 ## 1. What changes in the XML
 

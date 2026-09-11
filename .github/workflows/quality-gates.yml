@@ -2,8 +2,8 @@
 name: quality-gates
 # Ported from the LMMS standards fork (2026-09-09).
 #
-# Trigger policy: DISPATCH ONLY. This is a private repo and its Actions quota is
-# reserved, so nothing here runs on push. To run the gates on every push, add
+# Trigger policy: DISPATCH ONLY. Actions minutes on this repo are metered, so nothing
+# here runs on push or pull request. To run the gates on every push, add
 # the `push:` trigger back to the `on:` block below (the workflow itself needs
 # no other change).
 'on':

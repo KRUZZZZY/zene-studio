@@ -1,5 +1,10 @@
 # Stem separation — offline job manager (task #578)
 
+> **Historical program artifact.** Written inside the FL-program worktree `lmms-stems/`
+> (branch `feat/stem-split`), which is not part of this product repo. The feature is in
+> `main` (`src/core/StemJobManager.cpp` and friends); this note is the original
+> task-level evidence, kept for provenance — not a product document.
+
 Branch `feat/stem-split`, worktree `lmms-stems/`. Inherited WIP: `c70f83c35`.
 
 **Every number below was produced by the command shown next to it. Nothing is

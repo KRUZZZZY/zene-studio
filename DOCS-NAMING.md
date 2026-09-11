@@ -5,8 +5,8 @@
 ## Decision
 
 - The product name is **Zene Studio**.
-- The product repository is **`KRUZZZZY/zene-studio`** (private, standalone,
-  default branch `main`; renamed 2026-09-09).
+- The product repository is **`KRUZZZZY/zene-studio`** (public since 2026-09-09,
+  standalone, default branch `main`; renamed 2026-09-09).
 - The upstream-PR fork (formerly `KRUZZZZY/lmms`) was **deleted 2026-09-09**;
   its unique refs live on in the product repo as branches `standards/quality-gates`
   and `archive/fork-readme`, and upstream PR #8548 (HiDPI) was closed as a

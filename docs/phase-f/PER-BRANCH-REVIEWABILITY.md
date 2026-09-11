@@ -1,5 +1,10 @@
 # Phase F — per-branch reviewability (board task #592)
 
+> **Historical program artifact.** Written inside the FL-program worktree `lmms-partd`
+> against the pre-product branch stack (`part-a-core-abstractions` … `part-d-sidechain`);
+> the `feat/*` branches it references live in local worktrees and the deleted upstream
+> fork, not in this product repo. Kept for provenance — not a product document.
+
 Clone: `lmms-partd` (independent clone), branch `part-d-sidechain`.
 Baseline for every figure below: **`7edfbbe45`** (tip of the Phase D branch *before* the Phase F
 hardening commit; Phase F adds docs + tests only — see §5).
