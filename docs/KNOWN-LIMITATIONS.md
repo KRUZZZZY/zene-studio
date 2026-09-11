@@ -1,7 +1,47 @@
-# Zene Studio v0.1.0-alpha known limitations
+# Zene Studio 0.1.0-alpha: known limitations
 
-What this alpha does **not** do, in the order a new user is likely to hit it. If something here
-surprises you, that is this page's fault: report it and it gets added.
+What this alpha does **not** do, in the order you are likely to hit it. If something here surprises
+you, that is this page's fault: report it and it gets added.
+
+## Before you download
+
+- **This is an alpha.** Some areas are unfinished and crashes are possible.
+- **Keep backups.** Files saved by this build may not open in a later build, in an older build, or
+  in LMMS. Copy the project folder or use File > Save As before you open anything here, and keep
+  the original. See [Your projects](#your-projects).
+- **The builds are unsigned.** Windows SmartScreen and macOS Gatekeeper warn about an unknown
+  developer. The one-time steps are in [Getting it running](#getting-it-running). Do not answer
+  either warning by turning protection off. The release page shows a SHA-256 digest next to each
+  file; check your download before you run it.
+- **Packages come from the release page, and only from there.** Build jobs upload packages for a
+  tag build or a manual CI run, never for an ordinary push, and only the platforms whose build job
+  is green have packages. Check the release page for the current set.
+
+## Getting it running
+
+### Linux
+
+- **The AppImage needs FUSE 2.** On a distribution without it the file does not start, and
+  double-clicking it may do nothing. Install the FUSE 2 library and try again:
+  `sudo apt install libfuse2` (on Ubuntu 24.04 the package is named `libfuse2t64`).
+- **Still not starting? Run it unpacked:** `--appimage-extract-and-run`. Treat this as a fallback:
+  it unpacks the app on every start, so it is slower.
+- **There is no menu entry.** AppImages do not add themselves to the applications menu, so the app
+  appears there only if you install a desktop-integration helper. Start it from the file or from a
+  terminal.
+
+### Windows
+
+- **SmartScreen blocks the first run of the unsigned installer.** Click *More info*, then *Run
+  anyway*; the installer runs normally after that. Do not turn SmartScreen off.
+
+### macOS
+
+- **Gatekeeper refuses the first launch.** The app is ad-hoc signed only (no Developer ID, no
+  notarisation), so macOS cannot verify the developer. Click **Done** on the warning, then open
+  **System Settings > Privacy & Security**, scroll to **Security**, click **Open Anyway**, and
+  confirm. On macOS 15 (Sequoia) and later the old "right-click, then Open" shortcut does not
+  work. Do not turn Gatekeeper off.
 
 ## First five minutes
 
@@ -49,6 +89,14 @@ surprises you, that is this page's fault: report it and it gets added.
   the latency each effect reports. Remote (out-of-process) plugins do not report their own
   latency, so a VST2 or ZynAddSubFx plugin that delays its output is not compensated.
 
+## Scripting and AI DSP
+
+- **WASM scripting is compiled out of these builds.** The sandbox needs the wasmtime C API at
+  configure time; without it the effect is skipped entirely, and the binary reports
+  `WANT_WASM=OFF`. Lua 5.4 scripting is in.
+- **Offline stem separation is compiled out of these builds.** It is opt-in at configure time
+  (`-DWANT_STEM_SPLIT=ON`) and no CI job sets it, so the binary reports `WANT_STEM_SPLIT=OFF`.
+
 ## Workflow
 
 - **No Session View.** The clip launcher is in development and not in this build.
@@ -76,23 +124,22 @@ surprises you, that is this page's fault: report it and it gets added.
 
 ## Your projects
 
-- **No project-format stability promise yet.** A project saved by v0.1 may not open in an older
+- **No project-format stability promise yet.** A project saved by this alpha may not open in an
+  older build, in LMMS, or in a previous alpha. Do not try to open a v0.1 project in an older
   build. That commitment arrives with v1.0.
 - **LMMS projects open, but no migration guarantee is offered** for this alpha.
 - **Keep copies of anything you care about.**
 
 ## Platforms
 
-- **Packages come from the release page, and only from there.** Build jobs upload packages for a
-  tag build or a manual CI run, never for an ordinary push. If the release is not published yet,
-  the only builds in existence are CI packages from earlier runs; those report
-  `LMMS 1.3.0-alpha`, while a build from the release tag reports `LMMS 0.1.0-alpha`.
 - **Linux ships as an AppImage**, one file per architecture. There is no tarball and no `.deb`.
 - **Windows and macOS builds are not signed for distribution.** Windows warns through SmartScreen;
-  macOS carries an ad-hoc signature only, so Gatekeeper refuses the first launch until you
-  right-click *Open*.
-- **Only the platforms whose build job is green have packages.** Check the release page for the
-  current set.
+  macOS carries an ad-hoc signature only, so Gatekeeper refuses the first launch until you use
+  **System Settings > Privacy & Security > Open Anyway**. The per-platform steps are in
+  [Getting it running](#getting-it-running).
+- If the release is not published yet, the only builds in existence are CI packages from earlier
+  runs; those report `LMMS 1.3.0-alpha`, while a build from the release tag reports
+  `LMMS 0.1.0-alpha`. The string is build provenance, not a second product name.
 
 ## Not planned for the final product
 
