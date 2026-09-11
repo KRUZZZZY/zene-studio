@@ -22,7 +22,7 @@ measurement wins — re-run it. Gate definitions and their numbers live in
 | Scripting | Lua 5.4 with instruction budget; wasmtime DSP sandbox | `src/core/ScriptEngine.cpp`, `src/wasm/`, `plugins/WasmEffect/` |
 | Editing / UI | Slide notes; HiDPI scaling | `tests/src/core/SlideNotesTest.cpp`, `include/DpiHelper.h` |
 | Tooling | `mmpz-git` (filters, semantic diff, merge driver); 8-gate suite incl. mutation harness | `tools/mmpz-git/`, `tests/` |
-| Part C migration | 90/93 plugin files across 43 dirs; 40 plugins proven sample-exact (program measurement, 2026-09-09) | `projects/lmms-fl-research/PART-C-MIGRATION.md` |
+| Part C migration | **complete 2026-09-11**: Vestige, ZynAddSubFx, VstBase and VstEffect migrated onto the planar ports path. 92 of the 93 Part C files differ from the pre-migration base — the exception, `VstEffectControlDialog.cpp`, was deliberately skipped as cosmetic churn — and 44 plugin names carry sample-exact reference renders. The remote-plugin families are proven at build + unit-test level only: no reference harness for a child-process plugin exists yet | `projects/lmms-fl-research/PART-C-MIGRATION.md` |
 | Inherited from LMMS | Piano Roll, Song Editor, Beat/Bassline, mixer, 15+ synths, SF2, VST2 (Vestige), LADSPA, LV2, MIDI I/O | — |
 
 ## Started, not landed
@@ -107,7 +107,7 @@ sequence — see the structural point at the end.
 ### Bar 1 — v0.1, an alpha people can actually install (six items)
 
 `40` an installable release · `41` local reproduction of the CI matrix · `42` the `#589` Part C decision
-(four plugin dirs unmigrated, so the sample-exact guarantee has holes) · `13` a green build matrix
+(the four remote-plugin families are proven at build + unit-test level, not sample-exact) · `13` a green build matrix
 (`#609`) · `608` the `AudioBuffer` SharedMemory pointer defect — memory-correctness in the audio path,
 fixed before anything ships rather than after · arguably `44` the gates actually enforcing on push.
 
@@ -251,7 +251,7 @@ golden-audio integration tests; soak testing; keyboard navigation and accessibil
 
 **Two claims in the critique that did not survive checking**: `LatencyCompensation.{h,cpp}` *are* in
 `tests/fork-sources.txt` (registered 2026-09-11), and Part C is **90/93** in three documents here
-(`PROGRAM-STATUS.md` ×2, `ableton-gap/SPEC-zene-studio.md`) — the 89/93 figure is unreconciled and needs a
+(`PROGRAM-STATUS.md` ×2, `ableton-gap/SPEC-zene-studio.md`) — the 89/93 figure was unreconciled; recounted 2026-09-11 as 92 of 93 files differing from base, so ignore the
 recount before either number is quoted.
 
 ## Where the documents are
