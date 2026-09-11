@@ -1068,6 +1068,8 @@ tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/MathTest.cpp
+tests/src/core/MidiLearnTest.cpp
+tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
@@ -1093,6 +1095,7 @@ tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
+tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp

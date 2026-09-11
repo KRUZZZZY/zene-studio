@@ -13,6 +13,7 @@ set(LMMS_TESTS
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
+	src/core/MidiLearnThreadTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/ProjectVersionTest.cpp
@@ -27,6 +28,7 @@ set(LMMS_TESTS
 	src/core/SlideNotesTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
+	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 )
 

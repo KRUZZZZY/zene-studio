@@ -27,6 +27,9 @@
 #ifndef LMMS_MIDI_LEARN_H
 #define LMMS_MIDI_LEARN_H
 
+#include <QPointer>
+#include <QtGlobal>
+
 #include <atomic>
 
 namespace lmms
@@ -44,31 +47,65 @@ class MidiEvent;
 // serialises with the project through the existing ControllerConnection
 // conventions and reloads identically. Learn mode disarms itself once it binds.
 //
-// Threads: setEnabled()/setFocusTarget() are called from the GUI thread (the
-// MIDI Learn menu action and the GUI focus filter). handleMidiEvent() is called
-// from the MIDI *input* thread - MidiAlsaSeq::run() for the sequencer client and
-// MidiClientRaw::processParsedEvent() for the raw clients - and is never called
-// from the audio render thread. The state is lock-free atomics and, with learn
-// mode off, handleMidiEvent() does nothing but one relaxed load: no mutex, no
-// allocation. A binding is only ever built when the user armed learn mode and a
-// MIDI control-change actually arrived.
+// Threads. This object is touched from two threads and the split is deliberate:
+//
+//   GUI thread - setEnabled(), setFocusTarget(), focusTarget(),
+//                applyPendingBinding() and the bind itself. The target model,
+//                the MidiController and the ControllerConnection are all owned
+//                by this thread, and AutomatableModel::setControllerConnection()
+//                - which writes the pointer the GUI renders from - runs here.
+//
+//   MIDI input thread - handleMidiEvent() (MidiAlsaSeq::run() for the sequencer
+//                client, MidiClientRaw::processParsedEvent() for the raw
+//                clients). It does one atomic load per event while disarmed and,
+//                when armed and a control is focused, records the control-change
+//                in a lock-free slot. It allocates nothing, takes no lock, never
+//                waits, and never touches a model, a Song or a MidiPort.
+//
+// The hand-off carries plain integers (channel, controller number), never a
+// pointer to a model, so there is no object whose lifetime must be kept alive
+// across the hand-off. applyPendingBinding() runs on the GUI thread, resolves
+// the focused control there (a QPointer, so a model that died in the meantime
+// reads as "no target"), and is driven by MidiLearnGui's bind timer.
 class MidiLearn
 {
 public:
 	static MidiLearn* instance();
 
+	//! Arm/disarm learn mode. GUI thread.
 	void setEnabled(bool enabled);
 	bool isEnabled() const;
 
+	//! Register the control the user just focused. GUI thread only: the pointer
+	//! is kept as a QPointer, so it is nulled by the model's own destruction
+	//! instead of going stale while a binding is in flight.
 	void setFocusTarget(AutomatableModel* model);
 	AutomatableModel* focusTarget() const;
 
-	//! The single entry point every MIDI input path feeds.
-	//! Returns true when this event completed a learn and a binding was created.
+	//! The single entry point every MIDI input path feeds. Called from the MIDI
+	//! input thread and from the GUI thread.
+	//!
+	//! On the GUI thread it builds the binding immediately and returns true when
+	//! one was created. On any other thread it records the request in the
+	//! lock-free pending slot (no allocation) and returns false - the binding is
+	//! created later, on the GUI thread, by applyPendingBinding().
 	bool handleMidiEvent(const MidiEvent& event);
+
+	//! Apply a binding the MIDI input thread requested. GUI thread only.
+	//! Returns true when this call created a binding.
+	bool applyPendingBinding();
+
+	//! True while a control-change from the MIDI input thread is waiting for the
+	//! GUI thread to build its binding (tests / diagnostics).
+	bool hasPendingBinding() const;
 
 	//! Number of bindings created since process start (tests / diagnostics).
 	unsigned int bindingCount() const;
+
+	//! Identity of the thread that created the most recent binding - the seam a
+	//! test asserts on to prove the write is not on the MIDI input thread. Null
+	//! until the first binding. (tests / diagnostics)
+	Qt::HANDLE lastBindingThreadId() const;
 
 private:
 	MidiLearn() = default;
@@ -76,9 +113,32 @@ private:
 	MidiLearn(const MidiLearn&) = delete;
 	MidiLearn& operator=(const MidiLearn&) = delete;
 
+	//! GUI thread only: build the MidiController/ControllerConnection for the
+	//! focused control and install it. This is the deferred write.
+	bool bindFocusedControl(int channel, int controllerNum);
+
+	//! MIDI input thread: record the request. No allocation, no lock.
+	void requestBinding(int channel, int controllerNum);
+
+	//! True when the calling thread is the application (GUI) thread.
+	static bool onGuiThread();
+
 	std::atomic<bool> m_enabled{false};
-	std::atomic<AutomatableModel*> m_focusTarget{nullptr};
+
+	//! The MIDI input thread cannot look at m_focusTarget (a QPointer owned by
+	//! the GUI thread); it reads this flag instead.
+	std::atomic<bool> m_focusTargetSet{false};
+	QPointer<AutomatableModel> m_focusTarget;
+
+	//! Lock-free single slot: payload first, then m_pendingBinding with release
+	//! ordering. One outstanding request at a time, by construction - the first
+	//! control-change of an armed learn claims the slot and spends the learn.
+	std::atomic<bool> m_pendingBinding{false};
+	std::atomic<int> m_pendingChannel{0};
+	std::atomic<int> m_pendingController{0};
+
 	std::atomic<unsigned int> m_bindingCount{0};
+	std::atomic<Qt::HANDLE> m_lastBindingThreadId{nullptr};
 };
 
 } // namespace lmms

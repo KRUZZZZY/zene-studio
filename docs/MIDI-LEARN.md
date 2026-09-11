@@ -103,7 +103,7 @@ untouched.
 | Step | Thread |
 | --- | --- |
 | Arming/disarming learn, setting the focused control | GUI thread (`MainWindow::toggleMidiLearn`, `MidiLearnGui::eventFilter`) |
-| `MidiLearn::handleMidiEvent()` | MIDI **input** thread — `MidiAlsaSeq::run()` (an `QThread`) or the `QThread`-owned raw clients' read loop, replayed in tests on the main thread |
+| `MidiLearn::handleMidiEvent()` | MIDI **input** thread — `MidiAlsaSeq::run()` (an `QThread`) or the `QThread`-owned raw clients' read loop, replayed in tests on the main thread. It only *records* the control-change there; the binding itself is built on the GUI thread (`post-alpha/midi-race`, see `MIDI-LEARN-RACE.md`) |
 | Reading the bound value while playing | audio render thread, unchanged: `AutomatableModel::value()` → `ControllerConnection::currentValue()` → `MidiController` (`src/core/AutomatableModel.cpp:506`) |
 
 - The **audio callback has no call site into `MidiLearn`**. `AudioEngine::renderNextPeriod()`
@@ -114,8 +114,10 @@ untouched.
   `std::atomic<AutomatableModel*>` / `std::atomic<unsigned int>`; with learn off,
   `handleMidiEvent()` is one atomic load and an early return.
 - Allocation only happens when a learn actually completes (one `MidiController` +
-  one `ControllerConnection`), and it happens on the MIDI input thread — never in
-  the audio callback. The learned controller is deliberately **parentless** so that
+  one `ControllerConnection`), and it happens on the **GUI thread** — never in
+  the audio callback, and no longer on a MIDI input thread (`post-alpha/midi-race`:
+  the input thread leaves the channel and controller number in a lock-free slot).
+  The learned controller is deliberately **parentless** so that
   no thread splices a new `QObject` into the `Song`'s child graph; lifetime is
   covered by `ControllerConnection` owning MIDI controllers
   (`src/core/ControllerConnection.cpp:129-130`) and by the target model deleting the
@@ -260,19 +262,11 @@ per-period work and the buffer code never mention `MidiLearn`.
   which forces `MidiDummy`. The raw-client call site is likewise compiled, not driven.
 - **Learn on a control that is already bound** replaces the old connection's
   controller; the old `MidiController` is deleted. Not covered by a test.
-- **The `Song::setModified()` / signal emission happens from the MIDI input thread.**
-  Qt delivers it queued to the GUI-thread receiver (that is how the existing
-  MIDI→GUI `valueChanged` path already behaves), but this is reasoned, not asserted.
-- **The Edit-menu check state lags** until the menu is next opened: the menu action
-  is re-synced in `updateMidiLearnAction()` (`aboutToShow`), so after a successful
-  learn the tick stays visible until you reopen the Edit menu.
-- **Residual data race, inherited in kind from upstream:** `target->setControllerConnection()`
-  writes `AutomatableModel::m_controllerConnection` from the MIDI input thread while
-  the audio thread may read it. Upstream already writes that pointer from the GUI
-  thread with no synchronisation, so this is the same unsynchronised pointer write
-  with a different writer, not a new class of race — but it is a real one, and a
-  follow-up could defer the whole binding to the GUI thread (record the detected
-  CC in the atomics, apply on the next GUI event) to remove it.
+- **Superseded by `post-alpha/midi-race`** (see `MIDI-LEARN-RACE.md`): the binding
+  is no longer built on the MIDI input thread, so `Song::setModified()` and the
+  model's `dataChanged` emission now happen on the GUI thread, and the Edit-menu
+  tick is reconciled by `MidiLearnGui`'s bind timer instead of waiting for
+  `aboutToShow`. Both are asserted in `MidiLearnThreadTest`.
 
 ---
 
@@ -286,7 +280,9 @@ include/MidiLearnGui.h
 src/core/MidiLearn.cpp
 src/gui/MidiLearnGui.cpp
 tests/src/core/MidiLearnTest.cpp
+tests/src/core/MidiLearnThreadTest.cpp
 docs/MIDI-LEARN.md
+docs/MIDI-LEARN-RACE.md
 ```
 
 Changed:
