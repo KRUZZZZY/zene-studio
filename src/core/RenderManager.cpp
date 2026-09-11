@@ -147,6 +147,18 @@ void RenderManager::render(QString outputPath)
 		connect( m_activeRenderer.get(), SIGNAL(finished()),
 				this, SLOT(renderNextTrack()));
 
+		// Keep the loudness report alive past the renderer: the renderer is
+		// destroyed on finish(), and the report has to outlive it to be shown
+		// (the slot runs in this object's thread, i.e. after run() returned).
+		connect( m_activeRenderer.get(), &ProjectRenderer::loudnessReportReady, this,
+			[this](const QString& report)
+			{
+				m_loudnessReportText = report;
+				m_loudnessReportPath = m_activeRenderer->loudnessReportPath();
+				m_loudnessReportError = m_activeRenderer->loudnessReportError();
+				emit loudnessReportReady( report );
+			} );
+
 		m_activeRenderer->startProcessing();
 	}
 	else

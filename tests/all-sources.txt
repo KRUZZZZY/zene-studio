@@ -1067,6 +1067,7 @@ tests/src/core/AudioBusTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
+tests/src/core/LoudnessReportTest.cpp
 tests/src/core/MathTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp

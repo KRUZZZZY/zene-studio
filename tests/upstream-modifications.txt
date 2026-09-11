@@ -25,7 +25,11 @@ include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's
 include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
 include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
 include/Effect.h	#605 PDC: latency accessor on the effect interface
+include/ExportProjectDialog.h	#618 loudness wiring: the export dialog's "Loudness report (EBU R128)" checkbox and the result label that shows the report before the dialog closes
 include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+include/OutputSettings.h	#618 loudness wiring: the "produce an EBU R128 loudness report" request carried by the render's output settings; defaults to false, so every pre-existing caller renders exactly as before
+include/ProjectRenderer.h	#618 loudness wiring: optional LoudnessReport on the render path (unique_ptr member + report accessors + loudnessReportReady signal); null and inert unless OutputSettings::loudnessReport()
+include/RenderManager.h	#618 loudness wiring: forwards the finished report out of the renderer so the export dialog can show it; empty QString when no report was requested
 include/Song.h	#594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 src/core/AudioBuffer.cpp	#608 memory correctness: access buffer always from the default resource; allocationSize() no longer reserves it in the shared region (746f6bd0e)
@@ -33,10 +37,14 @@ src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment p
 src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
 src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
 src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/core/ProjectRenderer.cpp	#618 loudness wiring: the passive tap (measure each rendered block immediately before writeBuffer()), the sidecar write and the console line; the audio path is untouched and the tap does not exist unless the render asked for a report
+src/core/RenderManager.cpp	#618 loudness wiring: keep the report alive past the renderer (which is destroyed on finish()) so the export dialog can show it
 src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged)
+src/core/main.cpp	#618 loudness wiring: the CLI's --loudness-report option for `lmms render`, so a headless render can ask for the report (and its sidecar) as well
 src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
 src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)
 src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+src/gui/modals/ExportProjectDialog.cpp	#618 loudness wiring: the checkbox that asks for the report and the result label that shows the measured values when the render finishes (the dialog stays open instead of closing on a report)
 include/RemotePlugin.h	#589 planar-ports migration: sole ports-taking ctor, no-arg process(), planar updateAudioBuffer() layout contract
 include/RemotePluginBase.h	#589 planar-ports migration: single-channel count ids retired in place (kept numeric to refuse a stale pre-#589 client loudly)
 include/RemotePluginClient.h	#589 planar-ports migration: client process() over the host's planar shared block (const float* / float*)

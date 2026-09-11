@@ -52,9 +52,21 @@ public:
 
 	void abortProcessing();
 
+	/// The loudness report of the last finished render, as text; empty when the
+	/// render asked for none (OutputSettings::loudnessReport()). Same content as
+	/// the ".loudness.txt" sidecar written beside the render.
+	QString loudnessReportText() const { return m_loudnessReportText; }
+	/// Path of the sidecar the report was written to; empty when there is none.
+	QString loudnessReportPath() const { return m_loudnessReportPath; }
+	/// Why the report could not be written; empty when it was written, or when
+	/// none was requested.
+	QString loudnessReportError() const { return m_loudnessReportError; }
+
 signals:
 	void progressChanged( int );
 	void finished();
+	/// Forwarded from the active renderer: the report, as text.
+	void loudnessReportReady( const QString& report );
 
 private slots:
 	void renderNextTrack();
@@ -69,6 +81,10 @@ private:
 	const OutputSettings m_outputSettings;
 	ProjectRenderer::ExportFileFormat m_format;
 	QString m_outputPath;
+
+	QString m_loudnessReportText;
+	QString m_loudnessReportPath;
+	QString m_loudnessReportError;
 
 	std::unique_ptr<ProjectRenderer> m_activeRenderer;
 

@@ -25,6 +25,8 @@
 #ifndef LMMS_PROJECT_RENDERER_H
 #define LMMS_PROJECT_RENDERER_H
 
+#include <memory>
+
 #include "AudioFileDevice.h"
 #include "AudioEngine.h"
 #include "OutputSettings.h"
@@ -33,6 +35,8 @@
 
 namespace lmms
 {
+
+class LoudnessReport;
 
 
 class LMMS_EXPORT ProjectRenderer : public QThread
@@ -60,7 +64,9 @@ public:
 	} ;
 
 	ProjectRenderer(const OutputSettings& _os, ExportFileFormat _file_format, const QString& _out_file);
-	~ProjectRenderer() override = default;
+	//! Out of line: the unique_ptr<LoudnessReport> member needs the complete type
+	//! when it is destroyed, and moc would instantiate the deleter from here.
+	~ProjectRenderer() override;
 
 	bool isReady() const
 	{
@@ -74,6 +80,18 @@ public:
 
 	static const std::array<FileEncodeDevice, 5> fileEncodeDevices;
 
+	/**
+	 * The loudness report of this render, when the OutputSettings asked for one
+	 * (OutputSettings::loudnessReport()); null otherwise. Measure-only: the
+	 * report taps the rendered blocks, it never alters them, so the file is
+	 * byte-identical whether or not a report was requested.
+	 */
+	const LoudnessReport* loudnessReport() const { return m_loudnessReport.get(); }
+	//! Where the report was written (sidecarPathFor(outputFile)); empty when none.
+	QString loudnessReportPath() const { return m_loudnessReportPath; }
+	//! Why the report could not be written, empty when it was (or none was asked).
+	QString loudnessReportError() const { return m_loudnessReportError; }
+
 public slots:
 	void startProcessing();
 	void abortProcessing();
@@ -84,11 +102,22 @@ public slots:
 signals:
 	void progressChanged( int );
 
+	//! The finished report, as text: emitted from the render thread once the
+	//! render is complete and the sidecar has been written (never on abort).
+	void loudnessReportReady( const QString& report );
+
 
 private:
 	void run() override;
 
+	//! Writes the sidecar, tells the console and emits loudnessReportReady().
+	void reportLoudness( const QString& renderedFile );
+
 	AudioFileDevice * m_fileDev;
+
+	std::unique_ptr<LoudnessReport> m_loudnessReport;
+	QString m_loudnessReportPath;
+	QString m_loudnessReportError;
 
 	volatile int m_progress;
 	volatile bool m_abort;

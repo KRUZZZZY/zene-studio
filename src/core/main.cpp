@@ -191,6 +191,10 @@ void printHelp()
 		"  -f, --format <format>         Specify format of render-output where\n"
 		"          Format is either 'wav', 'flac', 'ogg' or 'mp3'.\n"
 		"  -l, --loop                     Render as a loop\n"
+		"      --loudness-report          Also measure the render and write an\n"
+		"          EBU R128 loudness report beside it\n"
+		"          (<output>.loudness.txt); measure-only, the audio is\n"
+		"          byte-identical to a render without this option\n"
 		"  -m, --mode                     Stereo mode used for MP3 export\n"
 		"          Possible values: s, j, m\n"
 		"            s: Stereo\n"
@@ -618,6 +622,13 @@ int main( int argc, char * * argv )
 		else if( arg =="--float" || arg == "-a" )
 		{
 			os.setBitDepth(OutputSettings::BitDepth::Depth32Bit);
+		}
+		else if( arg == "--loudness-report" )
+		{
+			// Ask the render for an EBU R128 loudness report: the measured
+			// values are printed to stdout and written beside the render as
+			// <output>.loudness.txt. Measure-only; the audio is unchanged.
+			os.setLoudnessReport(true);
 		}
 		else if( arg == "--import" )
 		{
