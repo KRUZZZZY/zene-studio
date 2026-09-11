@@ -77,8 +77,8 @@ Plugin::Descriptor PLUGIN_EXPORT zynaddsubfx_plugin_descriptor =
 
 
 
-ZynAddSubFxRemotePlugin::ZynAddSubFxRemotePlugin() :
-	RemotePlugin()
+ZynAddSubFxRemotePlugin::ZynAddSubFxRemotePlugin(RemotePluginAudioPortsController& audioPorts) :
+	RemotePlugin(audioPorts)
 {
 	init( "RemoteZynAddSubFx", false );
 }
@@ -105,9 +105,10 @@ bool ZynAddSubFxRemotePlugin::processMessage( const message & _m )
 
 ZynAddSubFxInstrument::ZynAddSubFxInstrument(
 									InstrumentTrack * _instrumentTrack ) :
-	Instrument(_instrumentTrack, &zynaddsubfx_plugin_descriptor, nullptr, Flag::IsSingleStreamed | Flag::IsMidiBased),
+	AudioPlugin(&zynaddsubfx_plugin_descriptor, _instrumentTrack, nullptr,
+		Flag::IsSingleStreamed | Flag::IsMidiBased, /* beginAsRemote */ false),
 	m_hasGUI( false ),
-	m_plugin( nullptr ),
+	m_localPlugin( nullptr ),
 	m_remotePlugin( nullptr ),
 	m_portamentoModel( 0, 0, 127, 1, this, tr( "Portamento" ) ),
 	m_filterFreqModel( 64, 0, 127, 1, this, tr( "Filter frequency" ) ),
@@ -156,9 +157,9 @@ ZynAddSubFxInstrument::~ZynAddSubFxInstrument()
 				| PlayHandle::Type::InstrumentPlayHandle );
 
 	m_pluginMutex.lock();
-	delete m_plugin;
+	delete m_localPlugin;
 	delete m_remotePlugin;
-	m_plugin = nullptr;
+	m_localPlugin = nullptr;
 	m_remotePlugin = nullptr;
 	m_pluginMutex.unlock();
 }
@@ -205,7 +206,7 @@ void ZynAddSubFxInstrument::saveSettings( QDomDocument & _doc,
 		}
 		else
 		{
-			m_plugin->saveXML( fn );
+			m_localPlugin->saveXML( fn );
 		}
 		m_pluginMutex.unlock();
 		QByteArray a = tf.readAll();
@@ -263,7 +264,7 @@ void ZynAddSubFxInstrument::loadSettings( const QDomElement & _this )
 		}
 		else
 		{
-			m_plugin->loadXML( fn );
+			m_localPlugin->loadXML( fn );
 		}
 		m_pluginMutex.unlock();
 
@@ -308,7 +309,7 @@ void ZynAddSubFxInstrument::loadFile( const QString & _file )
 	else
 	{
 		m_pluginMutex.lock();
-		m_plugin->loadPreset( fn );
+		m_localPlugin->loadPreset( fn );
 		m_pluginMutex.unlock();
 	}
 
@@ -330,17 +331,37 @@ QString ZynAddSubFxInstrument::nodeName() const
 
 
 
-void ZynAddSubFxInstrument::play( SampleFrame* _buf )
+auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, PlanarBufferView<float, 2> out)
+	-> ProcessStatus
 {
-	if (!m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0)) {return;}
-	if( m_remotePlugin )
+	if (m_remotePlugin)
 	{
-		m_remotePlugin->process( nullptr, _buf );
+		// The remote client fills the shared block the ports expose; with no
+		// inputs its content is already this instrument's output.
+		m_remotePlugin->process();
 	}
 	else
 	{
-		m_plugin->processAudio( _buf );
+		m_localPlugin->process(out);
 	}
+
+	(void)in;
+	return ProcessStatus::Continue;
+}
+
+
+
+
+auto ZynAddSubFxInstrument::processLock() -> bool
+{
+	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
+}
+
+
+
+
+void ZynAddSubFxInstrument::processUnlock()
+{
 	m_pluginMutex.unlock();
 }
 
@@ -367,7 +388,7 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 	}
 	else
 	{
-		m_plugin->processMidiEvent( localEvent );
+		m_localPlugin->processMidiEvent( localEvent );
 	}
 	m_pluginMutex.unlock();
 
@@ -402,7 +423,7 @@ void ZynAddSubFxInstrument::updatePitchRange()
 	}
 	else
 	{
-		m_plugin->setPitchWheelBendRange( instrumentTrack()->midiPitchRange() );
+		m_localPlugin->setPitchWheelBendRange( instrumentTrack()->midiPitchRange() );
 	}
 	m_pluginMutex.unlock();
 }
@@ -430,14 +451,16 @@ GEN_CC_SLOT(updateResBandwidth,C_resonance_bandwidth,m_resBandwidthModel);
 void ZynAddSubFxInstrument::initPlugin()
 {
 	m_pluginMutex.lock();
-	delete m_plugin;
+	delete m_localPlugin;
 	delete m_remotePlugin;
-	m_plugin = nullptr;
+	m_localPlugin = nullptr;
 	m_remotePlugin = nullptr;
 
 	if( m_hasGUI )
 	{
-		m_remotePlugin = new ZynAddSubFxRemotePlugin();
+		audioPorts().setBufferType(true);
+
+		m_remotePlugin = new ZynAddSubFxRemotePlugin(audioPorts().controller());
 		m_remotePlugin->lock();
 		m_remotePlugin->waitForInitDone( false );
 
@@ -464,9 +487,14 @@ void ZynAddSubFxInstrument::initPlugin()
 	}
 	else
 	{
-		m_plugin = new LocalZynAddSubFx;
-		m_plugin->setSampleRate( Engine::audioEngine()->outputSampleRate() );
-		m_plugin->setBufferSize( Engine::audioEngine()->framesPerPeriod() );
+		audioPorts().setBufferType(false);
+
+		m_localPlugin = new LocalZynAddSubFx;
+		m_localPlugin->setSampleRate( Engine::audioEngine()->outputSampleRate() );
+		m_localPlugin->setBufferSize( Engine::audioEngine()->framesPerPeriod() );
+
+		// There is no remote client to activate the ports for the local synth
+		audioPorts().activate(Engine::audioEngine()->framesPerPeriod());
 	}
 
 	m_pluginMutex.unlock();
