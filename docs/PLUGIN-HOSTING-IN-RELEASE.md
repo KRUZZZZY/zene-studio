@@ -241,12 +241,17 @@ runner omits `Makefile` churn, so treat these as the right order of magnitude):
 So the cache step does remove the re-clone: a restore is the 0.12 s path plus
 whatever the runner spends unpacking ~45 MB, and the clone happens once per
 operating system (the key carries `runner.os`) per pin change — not once per run,
-and not seven times per run. The compile cost is bounded and small next to the
-tree: the SDK adds 31 translation units to `lmms_vst3_sdk` (an 8.9 MB static
-library) and each host adds 7 files plus moc, against ~1,100 first-party files in
-the product. It is the *first* run after a pin bump that pays the clone. On a
-tagged release run the cache will usually be warm from the pushes that preceded
-the tag.
+and not seven times per run.
+
+**What the SDK costs the compile.** The targets the two hosts add are 62 translation
+units — `lmms_vst3_sdk` 31, `vst3effect` 12, `clapeffect` 11 (each host's count includes
+its own moc) plus 8 first-party units swept in by the regeneration — against ~1,100
+first-party files in the product. Rebuilding exactly those from scratch objects at `-j4`
+on this box took **2 m 08 s** with a warm ccache (52 of the 62 compiles served from it),
+module link steps included. That is the direct measurement available here: it answers
+"is it meaningful" with "a few percent of a 23-47 minute job, and a compile that any
+warm ccache largely absorbs", not with an end-to-end per-job delta (§6). A cold ccache
+pays the full compilation of those 62 units.
 
 ## 5. Local proof
 
@@ -365,6 +370,11 @@ GUARD_EXIT=0
 All 83 `WANT_*`/`LMMS_HAVE_*` tokens in `build/lmmsversion.h` appear verbatim in that
 binary's `Build options:` line (checked token by token), which is the claim that judging
 the header is judging the binary.
+
+The green run was then repeated after the objects of `lmms_vst3_sdk`, `vst3effect` and
+`clapeffect` were deleted and rebuilt from scratch (the §4 timing run): both modules are
+back at their previous byte sizes and the guard still exits 0, so a from-scratch build of
+exactly those targets produces the same verdict.
 
 **Control — the artifact leg is load-bearing.** The green header with `--artifacts` pointed
 at an empty directory must fail even though the options say `ON`, and does:
