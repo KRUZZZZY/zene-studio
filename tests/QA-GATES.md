@@ -184,9 +184,8 @@ Helper executables that are registered but are not QTest classes
 `PluginPortsMigrationReference.cpp`) are listed by the script as explicitly
 out of scope rather than silently skipped.
 
-**Measured (2026-09-09):** 20 registered QTest files, **all PASS** — 0 tautologies
-(1,597 slots, 1,408 assertions); the two heaviest are `ScriptBindingsTest.cpp`
-(268 slots / 247 assertions) and `RoutingGraphTest.cpp` (172 / 150). Coverage (Gate 2) is the corroborating signal:
+**Measured (2026-09-11):** 21 registered QTest files, **all PASS** — 0 tautologies
+(1,744 slots, 1,477 assertions; 2026-09-09: 20 files, 1,597 / 1,408). Coverage (Gate 2) is the corroborating signal:
 test-unreachable code shows 0%.
 
 ## Gate 4: Per-method complexity (`complexity-gate.sh`) — WIRED 2026-09-09
@@ -214,11 +213,30 @@ at their measured CCN; a **new** function over the target, or an existing one wh
 nesting depth**. ND is therefore *reported* alongside each over-target function and
 reviewed manually; it is not enforced mechanically.
 
-**Measured baseline (2026-09-09, gcc 13):** 13 of the fork's 514 functions exceed CCN 10.
-Highest: `ScriptEngine::applyCommand` 27, `HostedPlugin::load` 25,
-`AudioPortsModel::updateDirectRouting` 23, `HostedPlugin::loadState` 18,
-`AudioBus::update` 17. **All 12 have ND 0**, i.e. nesting is within target everywhere;
-the overage is branch count, not depth.
+**Measured (2026-09-11, gcc 13, 99-file scope):** `complexity-gate.sh` scans **807 functions**;
+**24 exceed CCN 10**, and the ratchet is **RED — exit 1, 3 regressions, baseline unchanged**:
+
+```
+REGRESSION: new function over target: lmms::ScriptEngine::applyCommand@485-603@src/core/ScriptEngine.cpp (CCN 29)
+REGRESSION: new function over target: lmms::ScriptEngine::resolveProjectPath@744-791@src/core/ScriptEngine.cpp (CCN 14)
+REGRESSION: new function over target: lmms::LatencyCompensation::processPlanar@140-183@src/core/LatencyCompensation.cpp (CCN 11)
+```
+
+Two root causes, and only one of them is about code quality:
+
+- **The baseline is keyed by function line span.** `complexity-baseline.tsv` records
+  `applyCommand@485-601`; the function now spans `485-603`, so a two-line change in
+  `ScriptEngine.cpp` orphaned its own baseline entry and it (and `resolveProjectPath`)
+  re-report as "new". That is a gate-script defect: a *growing* function is reported as a
+  *new* one, and the fix belongs in the script, not in a rewrite.
+- **Scope entry is not free.** `LatencyCompensation::processPlanar` (CCN 11) became visible
+  only when the 2026-09-11 scope change added its file — #605 PDC had shipped both *outside*
+  the gates and *above* the complexity target.
+
+The figures this section previously carried (13 of 514 functions, highest CCN 27) were measured
+on the standards fork's 42-file scope and no longer describe the product; the highest CCN is now
+29. **In CI this gate runs with `--check`, which exits 0 unconditionally, so the red ratchet
+cannot fail there** — see the CI-enforcement section below.
 
 ## Gate 5: Mutation testing (`mutation-gate.sh`) — WIRED 2026-09-09
 
@@ -391,9 +409,10 @@ files were added to `tests/fork-sources.txt` on 2026-09-11, which reclassifies t
 fork-NEW and leaves the ten above. The PASS previously recorded here was measured against the
 standards workstream, before either landed — do not read it as the product's state.
 
-**Window size, stated plainly:** the gate examines `01148947e..HEAD`, which on `main` is **11
-of the product's 133 commits** over upstream master (`git rev-list --count origin/master..HEAD`
-= 133). Earlier prose in this document cited `0cea9b0b6`, which is 93 commits behind `HEAD`;
+**Window size, stated plainly:** the gate examines `01148947e..HEAD`, which on `main` is **12
+of the product's 134 commits** over upstream master (`git rev-list --count origin/master..HEAD`
+= 134 at `4f1acd5e6`; both counts were 11 and 133 at `b61e14c75`, where the paragraph above was
+measured — they advance with every commit, so re-measure rather than quote). Earlier prose in this document cited `0cea9b0b6`, which is 93 commits behind `HEAD`;
 the file is authoritative.
 
 ## CI enforcement (`.github/workflows/quality-gates.yml`) — 2026-09-09, trigger policy corrected 2026-09-11
@@ -404,6 +423,10 @@ minutes are metered on this repo), and it means a green PR check here proves not
 gate state. Run the suite locally or dispatch the workflow:
 
 - **static-gates** — Gates 3, 4, 6, 7 and 8 (no build needed; `fetch-depth: 0` for Gate 6).
+  **Gates 4 and 7 are invoked with `--check`, and `--check` exits 0 unconditionally** — so the two
+  ratchets *cannot fail in CI* even while they are RED locally, which both are (see Gates 4 and 7).
+  Gates 3, 6 and 8 run in failing mode. "All eight gates are wired" therefore means all eight are
+  *invoked*; three of them can actually stop a build, one of those (Gate 6) is currently red.
 - **unit-tests** — Gate 1: Debug + Qt6 configure, build, then ctest from `build/tests`;
   Gate 5 then reuses that same build for the ~3 min mutation sweep.
 - **coverage** — Gate 2 in `--check` mode (the baseline is never written in CI), with the
@@ -443,6 +466,21 @@ gate closes that gap using the same ratchet policy — **no retroactive rewrite*
 `ScriptBindings.cpp` 1127, `AudioPorts.h` 992, `ScriptEngine.cpp` 900,
 `Vst3Host.cpp` 714, `AudioPortsModel.cpp` 549, `PinConnector.cpp` 529. No new violations.
 
+**Measured (2026-09-11, 99-file scope): the ratchet is RED — exit 1, 2 regressions:**
+
+```
+REGRESSION: src/core/ScriptBindings.cpp grew 1216 -> 1217 lines
+REGRESSION: src/core/ScriptEngine.cpp grew 908 -> 910 lines
+```
+
+Both predate the scope change (identical at `b61e14c75`): these grandfathered files have grown
+by one and two lines since the baseline was last written, and the ratchet does not allow that.
+The report now measures **99 fork sources, 8 of them over 500 lines** (`ScriptBindings.cpp`
+1217, `AudioPorts.h` 992, `ScriptEngine.cpp` 910, `ClapEffect/ClapHost.cpp` 875,
+`Vst3Host.cpp` 714, `WasmSandbox.cpp` 597, `AudioPortsModel.cpp` 549, `PinConnector.cpp` 529).
+**In CI this gate runs with `--check`, which exits 0 unconditionally, so neither regression can
+fail there.**
+
 ```sh
 bash tests/file-length-gate.sh          # ratchet: refresh baseline, fail on regressions
 bash tests/file-length-gate.sh --check  # CI mode: report only
@@ -458,6 +496,9 @@ header-to-header clones are invisible (verified: a `.h`-only scan reported 0 fil
 **Measured (2026-09-09):** 42 fork sources, 10,658 lines, 4 clones, **0.99% duplicated lines**
 (2.85% of tokens) against a 5% budget. All four clones are the shared license header — counted,
 not suppressed, so the number stays honest.
+
+**Measured (2026-09-11, 99-file scope):** 99 fork sources, **1.09% duplicated lines** — still a
+PASS against the 5% budget, and the only gate that both grew its scope and stayed green.
 
 ```sh
 bash tests/duplication-gate.sh

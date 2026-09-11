@@ -1,6 +1,8 @@
 # Zene Studio — status
 
-**Verified 2026-09-11** against `main` @ `b61e14c75`. Every line is traceable: code facts
+**Verified 2026-09-11** against `main` @ `b61e14c75` for the measurements, and `4f1acd5e6` (the
+docs commit that carries this text) for the tree; counts that advance with history are given at
+both. Every line is traceable: code facts
 cite a path, measurements cite the command and the date they were taken, and CI state cites
 `gh run list --repo KRUZZZZY/zene-studio`. Where this file and a measurement disagree, the
 measurement wins — re-run it. Gate definitions and their numbers live in
@@ -48,6 +50,13 @@ measurement wins — re-run it. Gate definitions and their numbers live in
   the product's development model are in conflict; resolving it is an owner decision.
 - **Gate 2 (coverage ratchet)** — no entry floor: a zero-line file is banked at 100.00%, and a
   new file enters the baseline at its measured coverage, including 0%.
+- **Gate 4 (complexity ratchet)** — **RED**: 3 regressions (807 functions scanned, 24 over CCN 10).
+  One is new *because this change brought `LatencyCompensation.cpp` into scope*
+  (`processPlanar` CCN 11 — so #605 PDC shipped outside the gates **and** above the target); the
+  other two are baseline-orphans from the gate keying its baseline by function line span. In CI
+  this gate runs `--check`, which exits 0 unconditionally, so it cannot fail there.
+- **Gate 7 (file-length ratchet)** — **RED**: 2 regressions (`ScriptBindings.cpp` 1216 → 1217,
+  `ScriptEngine.cpp` 908 → 910), both pre-existing. Also `--check` in CI, also invisible there.
 - **Gate 5 (mutation)** — scoped to one translation unit, `src/core/RoutingGraph.cpp` — a file
   the application never calls.
 - **Patcher** — the node-graph engine is in the tree and unit-tested, but no GUI or audio-path
