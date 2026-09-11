@@ -127,6 +127,12 @@ CI `linux-x86_64` flags plus the printed deviation `-DWANT_QT6=ON` (no Qt5 dev f
 | ctest EXIT | `0` | `0` |
 | ctest totals | `100% tests passed, 0 tests failed out of 25` | `100% tests passed, 0 tests failed out of 28` |
 
+The pre-change column is the base-commit build measured before any edit; the branch column is the
+final commit's `local-ci.sh` run. (Mid-lane the `build/` directory was deleted by something outside
+this lane — disk pressure on a box running five sibling lanes — and rebuilt from scratch; the
+numbers above are from the final, complete run, and the render claims in §3.2 were re-measured on
+the final binary and reproduce the same `max|delta|` to the last digit.)
+
 Three new QtTest suites (28 = 25 + 3), all passing, empty failure lists:
 
 | Suite | Slots | What it asserts |
@@ -190,23 +196,49 @@ project rather than edited, so `baseline.mmp == data/projects/tutorials/editing_
 ### 3.3 Gate registries
 
 - `tests/fork-sources.txt` — `include/NoteRandom.h`, `include/NoteTransform.h`,
-  `src/core/NoteRandom.cpp`, `src/core/NoteTransform.cpp` (sorted into place; 99 → 103 files).
+  `src/core/NoteRandom.cpp`, `src/core/NoteTransform.cpp` (sorted into place; the file held 100
+  entries before this lane and 104 after — 104 is what the duplication gate reports, and it is one
+  more than `tests/QA-GATES.md`'s stale "99 files" note claims).
 - `tests/upstream-modifications.txt` — the five inherited files this branch changes, each with a
   reason read off its own diff: `include/Note.h`, `include/Song.h`, `src/core/Note.cpp`,
   `src/core/Song.cpp`, `src/tracks/InstrumentTrack.cpp`.
-- Gate commands and their exit codes are recorded in §6 (appended by the lane after the commit, since
-  Gate 6 diffs `<base>..HEAD`).
+
+Gate exit codes, measured unpiped from the committed tree (`cmd > log 2>&1; echo EXIT=$?`):
+
+| Gate | Command | Exit |
+| --- | --- | --- |
+| 6 — no undeclared divergence in upstream code | `bash tests/no-upstream-regression-gate.sh` | `0` |
+| 7 — per-file length ratchet | `bash tests/file-length-gate.sh --check` | `0` |
+| 4 — per-method complexity ratchet | `bash tests/complexity-gate.sh --check` | `0` (see below) |
+| 8 — token duplication | `bash tests/duplication-gate.sh` | `0` (1.05% against a 5% budget) |
+| 3 — no tautological tests | `bash tests/no-tautology-gate.sh` | `0` |
+
+**Gate 4 did real work on this lane.** Its first run on the committed feature reported
+`REGRESSION: new function over target: lmms::NoteTransform::matches (CCN 16)` and
+`snapToScale (CCN 12)` — my own new code, over the CCN 10 target. It was fixed by extracting
+`rangeAccepts()` / `scaleAccepts()` / `nearestInScaleKey()` (which also removed a per-note
+`std::vector` allocation from `matches()`), **not** by re-anchoring the baseline. All five gates are
+green on the final commit; the exit codes above are from that run.
+
+Gate 6 covers the five `upstream-modifications.txt` entries but also honours unrelated declared
+divergences that predate this lane (`Brewfile`, `cmake/modules/InstallHelpers.cmake`, the docs), so
+the pass is "no *undeclared* change since `tests/gate-base.txt`", not "this lane touched nothing
+inherited".
 
 ---
 
 ## 4. Commit list
 
-See the branch log for the exact split; the shape is
+```
+12b3cacd5 feat(midi-depth): seeded note probability and velocity jitter, and a note search/transform API
+43bd26845 test(midi-depth): render fixtures and the headless render proof harness
+ea1645914 docs(midi-depth): what already existed, what was added, the measured proofs
+<fix>     refactor(midi-depth): keep NoteTransform::matches and snapToScale under the CCN target
+```
 
-1. `feat(midi-depth)`: the seeded probability / velocity-jitter feature, its two test suites and the
-   registry entries for every file it touches.
-2. `test(midi-depth)`: the render fixtures and the proof harness.
-3. `docs(midi-depth)`: this report.
+The fourth commit is the Gate 4 fix described in §3.3 — a pure extraction inside
+`src/core/NoteTransform.cpp` with no behaviour change (the render proof's `max|delta|` values are
+identical before and after it).
 
 ---
 

@@ -47,6 +47,58 @@ inline bool isInScale( const std::vector<int>& classes, int key ) noexcept
 	return std::binary_search( classes.begin(), classes.end(), pitchClassOf( key ) );
 }
 
+/*! Whether `key`'s pitch class is in the scale, without building the sorted
+ *  pitch-class list: matches() is called once per note, so it must not
+ *  allocate. A degree outside 0..11 is taken modulo 12. */
+inline bool degreeInScale( const std::vector<int>& degrees, int key ) noexcept
+{
+	const int pc = pitchClassOf( key );
+	for( int degree : degrees )
+	{
+		if( pitchClassOf( degree ) == pc ) { return true; }
+	}
+	return false;
+}
+
+//! The key, velocity and position clauses of `f`.
+inline bool rangeAccepts( const Note& note, const Filter& f )
+{
+	if( f.useKeyRange && ( note.key() < f.minKey || note.key() > f.maxKey ) ) { return false; }
+	if( f.useVelocityRange
+		&& ( note.getVolume() < f.minVelocity || note.getVolume() > f.maxVelocity ) )
+	{
+		return false;
+	}
+	if( f.usePositionRange && ( note.pos() < f.minPos || note.pos() > f.maxPos ) ) { return false; }
+	return true;
+}
+
+/*! The pitch-class clause of `f`. An inactive clause accepts everything; an
+ *  empty scale has no members and so accepts nothing in either direction. */
+inline bool scaleAccepts( const Note& note, const Filter& f )
+{
+	if( f.scaleMatch == ScaleMatch::Ignore ) { return true; }
+	if( f.scaleDegrees.empty() ) { return false; }
+	const bool inScale = degreeInScale( f.scaleDegrees, note.key() );
+	return f.scaleMatch == ScaleMatch::InScale ? inScale : !inScale;
+}
+
+/*! The nearest in-scale pitch to `key`, with a tie resolving downward. Returns
+ *  `key` unchanged when it is already in the scale (or is unreachable, which a
+ *  non-empty scale cannot make it). */
+int nearestInScaleKey( int key, const std::vector<int>& classes )
+{
+	if( isInScale( classes, key ) ) { return key; }
+	for( int distance = 1; distance <= KeysPerOctave / 2; ++distance )
+	{
+		const int down = key - distance;
+		if( down >= 0 && isInScale( classes, down ) ) { return down; }
+		const int up = key + distance;
+		if( up <= NumKeys - 1 && isInScale( classes, up ) ) { return up; }
+	}
+	return key;
+}
+
 } // namespace
 
 
@@ -66,31 +118,7 @@ std::vector<int> pitchClasses( const std::vector<int>& scaleDegrees )
 
 bool matches( const Note& note, const Filter& f )
 {
-	if( f.useKeyRange && ( note.key() < f.minKey || note.key() > f.maxKey ) ) { return false; }
-
-	if( f.useVelocityRange
-		&& ( note.getVolume() < f.minVelocity || note.getVolume() > f.maxVelocity ) )
-	{
-		return false;
-	}
-
-	if( f.usePositionRange && ( note.pos() < f.minPos || note.pos() > f.maxPos ) )
-	{
-		return false;
-	}
-
-	if( f.scaleMatch != ScaleMatch::Ignore )
-	{
-		const std::vector<int> classes = pitchClasses( f.scaleDegrees );
-		// An empty scale has no members: it can satisfy neither "in scale"
-		// nor (deliberately) "outside the scale", so the clause fails.
-		if( classes.empty() ) { return false; }
-		const bool inScale = isInScale( classes, note.key() );
-		if( f.scaleMatch == ScaleMatch::InScale && !inScale ) { return false; }
-		if( f.scaleMatch == ScaleMatch::OutOfScale && inScale ) { return false; }
-	}
-
-	return true;
+	return rangeAccepts( note, f ) && scaleAccepts( note, f );
 }
 
 
@@ -204,24 +232,7 @@ int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees )
 	{
 		if( note == nullptr ) { continue; }
 		const int key = note->key();
-		if( isInScale( classes, key ) ) { continue; }
-
-		// Nearest in-scale pitch, at most six semitones away (any key is
-		// within six of some member of any non-empty pitch-class set).
-		int best = key;
-		for( int distance = 1; distance <= 6; ++distance )
-		{
-			const int down = key - distance;
-			const int up = key + distance;
-			const bool downFits = down >= 0 && isInScale( classes, down );
-			const bool upFits = up <= NumKeys - 1 && isInScale( classes, up );
-			if( downFits || upFits )
-			{
-				// Tie resolves downward: the lower of the two candidate keys.
-				best = downFits ? down : up;
-				break;
-			}
-		}
+		const int best = nearestInScaleKey( key, classes );
 		if( best != key )
 		{
 			note->setKey( best );
