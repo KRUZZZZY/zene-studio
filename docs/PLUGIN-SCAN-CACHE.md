@@ -268,6 +268,12 @@ codes).
   that dependency later than before.
 * **Only one finding per file is remembered for a *changed* file's old state**: the cache keeps one
   record per path (the latest scan), by design; a stale record is replaced, not kept for rollback.
+* **A rescan frees the previously rebuilt descriptors.** `PluginFactory::discoverPlugins()` replaces
+  the whole cached-descriptor store, exactly as it replaces `m_pluginInfos`, so a caller that kept a
+  `Descriptor*` from an earlier scan would hold a dangling pointer after a rescan. Nothing in the
+  product re-runs the scan (the only trigger is the first `getPluginFactory()`), and the tests always
+  build fresh factories, so this is a hazard for a future "Rescan plugins" button, not for today's
+  code — noted here so that button is written with it in mind.
 * The scan logs one `qInfo` line per scan (`plugin-scan: ...`). On a cold run that is one new line
   in the log; on a warm run the per-file `QLibrary` warnings for known-bad files are *not* repeated
   (the failure text is restored into `PluginFactory::errorString()` instead, so
