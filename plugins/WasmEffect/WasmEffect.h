@@ -115,9 +115,6 @@ private:
 	//! Absolute write position, primed to the capacity so the zero-filled
 	//! history can be read back without underflow before any audio arrives.
 	std::uint64_t m_delayWrite = delayLineCapacity;
-	//! Frames of the last block seen by the audio thread; the pipeline delay is
-	//! one such block. Atomic because latencyFrames() is read from the GUI.
-	std::atomic<int> m_lastBlockFrames{0};
 };
 
 } // namespace lmms

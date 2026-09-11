@@ -23,6 +23,7 @@
 #include "WasmEffect.h"
 
 #include "AudioEngine.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "WasmEffectControls.h"
 #include "embed.h"
@@ -86,11 +87,23 @@ QString WasmEffect::modulePath() const
 
 bool WasmEffect::loadModule(const QString& path, QString* error)
 {
+	// A module's declared latency enters the PDC graph through the owning
+	// chain's cache, so every path out of here must refresh it: waiting for the
+	// next unrelated refresh left the graph misaligned by one host period
+	// (#605 audit C1b). Control thread only.
+	const auto refreshChainLatency = [this] {
+		if (EffectChain* chain = effectChain())
+		{
+			chain->refreshLatency();
+		}
+	};
+
 	if (path.isEmpty())
 	{
 		m_worker.stop();
 		m_loaded = false;
 		m_controls->setModulePath(QString());
+		refreshChainLatency();
 		return false;
 	}
 
@@ -102,6 +115,7 @@ bool WasmEffect::loadModule(const QString& path, QString* error)
 		{
 			*error = QString::fromStdString(err);
 		}
+		refreshChainLatency();
 		return false;
 	}
 
@@ -111,6 +125,7 @@ bool WasmEffect::loadModule(const QString& path, QString* error)
 	{
 		error->clear();
 	}
+	refreshChainLatency();
 	return true;
 }
 
@@ -123,7 +138,15 @@ int WasmEffect::latencyFrames() const
 	}
 	// The audio thread submits block N and collects block N-1, so the host adds
 	// exactly one block of pipeline delay on top of whatever the module reports.
-	return moduleFrames + std::max(0, m_lastBlockFrames.load(std::memory_order_relaxed));
+	// That block is the engine's period: it is fixed when the engine is built,
+	// so this report is correct before the first processImpl() runs and never
+	// depends on how many blocks the audio thread has seen. Reading the last
+	// block's size instead made the PDC graph stale by exactly one period until
+	// an unrelated refresh (#605 audit C1b).
+	const int blockFrames = Engine::audioEngine() != nullptr
+		? static_cast<int>(Engine::audioEngine()->framesPerPeriod())
+		: 0;
+	return moduleFrames + std::max(0, blockFrames);
 }
 
 Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t frames)
@@ -133,7 +156,6 @@ Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t fr
 		return ProcessStatus::Continue;
 	}
 	const auto frameCount = static_cast<std::uint32_t>(frames);
-	m_lastBlockFrames.store(static_cast<int>(frameCount), std::memory_order_relaxed);
 
 	// The module's declared latency, clamped to what the dry path compensates.
 	// A reload keeps the last value and a trap keeps it too, so the dry path

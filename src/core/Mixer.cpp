@@ -472,9 +472,20 @@ void MixerChannel::doProcessing()
 				}
 				if( ! compensate )
 				{
-					// A delayed block's silence is not described by the
-					// sender's current flags, so keep this channel awake.
 					m_bus.quietChannels() &= sender->m_bus.quietChannels(); // mix silence status
+				}
+				else
+				{
+					// A delayed block's silence is not described by the
+					// sender's current flags, so keep this channel awake: the
+					// delay line may be handing us the tail of a signal the
+					// sender has already stopped reporting, and a sleeping
+					// effect downstream would discard it as "no input" if the
+					// flags still said quiet (1 = quiet, so clear this bus's
+					// pair). Inverting this - skipping the merge without
+					// clearing - silences the channel (#605 audit C2).
+					m_bus.quietChannels().reset(0);
+					m_bus.quietChannels().reset(1);
 				}
 				m_hasInput = true;
 			}
@@ -507,28 +518,10 @@ void MixerChannel::doProcessing()
 		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * v);
 		m_peakRight = std::max(m_peakRight, peakSamples[1] * v);
 	}
-	else
-	{
-		// PDC (#605): keep the incoming delay lines' timeline aligned.
-		for( MixerRoute * route : m_receives )
-		{
-			route->advanceSilence(fpp);
-		}
-		for( MixerSidechainRoute * route : m_sidechainReceives )
-		{
-			route->advanceSilence(fpp);
-		}
-		// a muted channel contributes silence to its sidechain receivers: the
-		// receiver consumes and clears our intermediates, so clear them here
-		// as well to cover the case where the receiver does not run.
-		for( MixerSidechainRoute * route : m_sidechainSends )
-		{
-			route->clearIntermediate();
-		}
-		m_sidechainBuffer.silenceAllChannels();
-		m_postFaderBuffer.silenceAllChannels();
-		m_peakLeft = m_peakRight = 0.0f;
-	}
+	// A muted channel never reaches this function: Mixer::masterMix handles
+	// muted channels directly (dependency bookkeeping plus the incoming delay
+	// lines' silence advance, #605 audit C7). The guard above stays as the
+	// invariant; the silence branch that used to live here was unreachable.
 
 	// increment dependency counter of all receivers
 	processed();
@@ -1380,6 +1373,18 @@ void Mixer::masterMix( SampleFrame* _buf )
 		ch->m_muted = ch->m_muteModel.value();
 		if( ch->m_muted ) // instantly "process" muted channels
 		{
+			// PDC (#605 audit C7): a muted channel never runs doProcessing(),
+			// so the incoming delay lines would freeze for the whole mute and
+			// replay pre-mute history on unmute. Advance their timelines with
+			// silence here, where muted channels are actually handled.
+			for( MixerRoute * route : ch->m_receives )
+			{
+				route->advanceSilence(fpp);
+			}
+			for( MixerSidechainRoute * route : ch->m_sidechainReceives )
+			{
+				route->advanceSilence(fpp);
+			}
 			ch->processed();
 			ch->done();
 		}

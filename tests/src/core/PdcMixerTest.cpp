@@ -631,6 +631,154 @@ private slots:
 		QVERIFY2(sha256(compensated) != sha256(control),
 			"the compensated and under-reported handle renders are identical");
 	}
+
+	//! C2 (mixer audit): on a compensated send the receive loop skips the
+	//! quiet-bit merge, so the receiver keeps the all-quiet flags it was given
+	//! at the start of the period even though the delayed block was just added.
+	//! A sleeping effect on that channel reads those flags as "no input" and
+	//! zeroes the bus, discarding the audio that was just correctly delayed and
+	//! summed - a hard "no sound" bug.
+	//!
+	//! Topology from the audit: ch1 carries a latent chain that has not
+	//! produced a sample yet (its reported latency still raises ch3's alignment
+	//! point), ch2 is the dry source, both send to ch3, which runs a gain
+	//! stage. Only ch2 is fed, and only ch3 sends to the master, so the master
+	//! output is exactly ch3's bus.
+	void compensatedSendKeepsTheReceiverAwake()
+	{
+		auto mixer = Engine::mixer();
+		const int from = windowStart();
+		const int to = kPeriods * static_cast<int>(periodFrames());
+
+		mixer->clear();
+		while (mixer->numChannels() < 4) { mixer->createChannel(); }
+		EffectChain* latent = chainOf(mixer, 1);
+		latent->appendEffect(new LatentDelayEffect(latent, kLatency));
+		EffectChain* receiver = chainOf(mixer, 3);
+		receiver->appendEffect(new FixedGainEffect(receiver, 1.0f, 1.0f));
+		QVERIFY2(mixer->createChannelSend(1, 3, 1.0f) != nullptr, "the latent send was not created");
+		QVERIFY2(mixer->createChannelSend(2, 3, 1.0f) != nullptr, "the dry send was not created");
+		// Feed the master only through ch3: a direct dry send would mask the
+		// receiver's own output.
+		mixer->deleteChannelSend(1, 0);
+		mixer->deleteChannelSend(2, 0);
+
+		const auto rendered = renderSignal(mixer, {2}, kPeriods);
+		// The alignment points are published by prepareMasterMix(), i.e. after
+		// the first rendered period.
+		const int receiverLatency = mixer->channelInputLatency(3);
+		const int masterLatency = mixer->channelInputLatency(0);
+		const double levelDb = rmsDb(rendered, from, to);
+		const double renderedRms = rmsLinear(rendered, from, to);
+		const double delayedResidualDb = residualDb(rendered, from, to, kLatency, 1.0);
+
+		evidence("PDC_C2 latency=%d receiver_input_latency=%d master_input_latency=%d "
+			"level_dbfs=%.2f rendered_rms=%.9g delayed_residual_dbfs=%.2f",
+			kLatency, receiverLatency, masterLatency,
+			levelDb, renderedRms, delayedResidualDb);
+
+		QVERIFY2(renderedRms > 1.0e-9,
+			"the receiver's bus rendered digital silence: the delayed audio was discarded");
+		QCOMPARE(receiverLatency, kLatency);
+		QCOMPARE(masterLatency, kLatency);
+		QVERIFY2(levelDb > -20.0,
+			"the receiver's bus is silent although a compensated send delivered audio");
+		QVERIFY2(delayedResidualDb <= -60.0,
+			qPrintable(QString("the receiver's bus deviates from the delayed dry signal by %1 dB")
+				.arg(delayedResidualDb)));
+	}
+
+	//! C7 (mixer audit): a muted channel never runs doProcessing(), so the PDC
+	//! advance of the incoming delay lines never happens and the rings freeze
+	//! for the whole mute; on unmute the receiver replays pre-mute history - a
+	//! burst of stale audio as long as the route's compensation.
+	//!
+	//! ch2 sends a constant signal to ch3 through a send compensated by
+	//! kLatency frames (ch1's latent chain raises ch3's alignment point); ch3
+	//! is muted for several periods and then unmuted. Only ch3 sends to the
+	//! master, so the master output is exactly ch3's bus.
+	void unmuteDoesNotReplayFrozenDelayHistory()
+	{
+		auto mixer = Engine::mixer();
+		const f_cnt_t fpp = periodFrames();
+		const float level = 0.25f;
+		const int mutedPeriods = 4;
+
+		mixer->clear();
+		while (mixer->numChannels() < 4) { mixer->createChannel(); }
+		EffectChain* latent = chainOf(mixer, 1);
+		latent->appendEffect(new LatentDelayEffect(latent, kLatency));
+		QVERIFY2(mixer->createChannelSend(1, 3, 1.0f) != nullptr, "the latent send was not created");
+		QVERIFY2(mixer->createChannelSend(2, 3, 1.0f) != nullptr, "the dry send was not created");
+		mixer->deleteChannelSend(1, 0);
+		mixer->deleteChannelSend(2, 0);
+
+		PeriodHarness harness(mixer);
+		const auto feed = [&harness, fpp, level] {
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				harness.in()[f] = SampleFrame{level, level};
+			}
+			harness.feed(2);
+		};
+		const auto levelDb = [fpp](const std::vector<SampleFrame>& buf) {
+			return toDb(meanAbs(buf, 0, static_cast<int>(fpp)));
+		};
+		const auto nonSilentFrames = [fpp](const std::vector<SampleFrame>& buf) {
+			int count = 0;
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				if (std::fabs(buf[f][0]) > 1.0e-9f || std::fabs(buf[f][1]) > 1.0e-9f)
+				{
+					++count;
+				}
+			}
+			return count;
+		};
+
+		std::vector<SampleFrame> preMute;
+		for (int p = 0; p < 6; ++p)
+		{
+			feed();
+			preMute = harness.render();
+		}
+		// Published by prepareMasterMix(); the ch2 -> ch3 send is compensated
+		// by exactly the route's delay because ch3's alignment point is 257.
+		const int receiverLatency = mixer->channelInputLatency(3);
+
+		mixer->mixerChannel(3)->m_muteModel.setValue(true);
+		std::vector<SampleFrame> lastMuted;
+		for (int p = 0; p < mutedPeriods; ++p)
+		{
+			feed();
+			lastMuted = harness.render();
+		}
+
+		mixer->mixerChannel(3)->m_muteModel.setValue(false);
+		feed();
+		const std::vector<SampleFrame> firstAfterUnmute = harness.render();
+		feed();
+		const std::vector<SampleFrame> secondAfterUnmute = harness.render();
+
+		evidence("PDC_C7 latency=%d receiver_input_latency=%d muted_periods=%d "
+			"pre_mute_dbfs=%.2f muted_dbfs=%.2f "
+			"first_after_unmute_dbfs=%.2f stale_frames=%d second_after_unmute_dbfs=%.2f",
+			kLatency, receiverLatency, mutedPeriods, levelDb(preMute), levelDb(lastMuted),
+			levelDb(firstAfterUnmute), nonSilentFrames(firstAfterUnmute),
+			levelDb(secondAfterUnmute));
+
+		QCOMPARE(receiverLatency, kLatency);
+		QVERIFY2(levelDb(preMute) > -20.0,
+			"the pre-mute reference is silent; the compensated send never ran");
+		QVERIFY2(levelDb(lastMuted) <= -120.0,
+			"a muted receiver still contributed audio to the master");
+		QVERIFY2(nonSilentFrames(firstAfterUnmute) == 0,
+			qPrintable(QString("the first period after unmute replays %1 stale frames: the "
+				"muted channel's delay rings were not advanced while muted")
+				.arg(nonSilentFrames(firstAfterUnmute))));
+		QVERIFY2(levelDb(secondAfterUnmute) > -20.0,
+			"the compensated send did not resume after the mute");
+	}
 };
 
 QTEST_GUILESS_MAIN(PdcMixerTest)

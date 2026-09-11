@@ -27,6 +27,7 @@
 #include "WasmWorker.h"
 
 #include "AudioBuffer.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
@@ -178,6 +179,9 @@ private slots:
 	void p3_moduleLatencyIsApplied();
 	void p4_sampleRateChangeReinstantiatesModule();
 	void p5_pluginFactoryDiscoversPlugin();
+
+	// ---- mixer audit C1b: the PDC chain cache follows a module load ----
+	void p6_moduleLoadRefreshesTheChainLatencyCache();
 
 private:
 };
@@ -735,6 +739,13 @@ void WasmSandboxTest::p3_moduleLatencyIsApplied()
 	constexpr int kTotalLatency = kModuleLatency + static_cast<int>(kFrames);
 	constexpr int kBlocks = 8;
 
+	// The effect's *reported* latency is expressed in host periods - the engine
+	// hands effects exactly framesPerPeriod() frames - while this test drives
+	// 48-frame blocks by hand so the impulse arithmetic stays exact. The two
+	// figures therefore differ here; in the engine they are the same number.
+	const int kReportedLatency =
+		kModuleLatency + static_cast<int>(Engine::audioEngine()->framesPerPeriod());
+
 	// Phase 1: the module keeps running. An impulse fed in block 0 must come
 	// out exactly kModuleLatency + one pipeline block later.
 	{
@@ -773,11 +784,14 @@ void WasmSandboxTest::p3_moduleLatencyIsApplied()
 			if (std::fabs(out[i]) > 0.5f) { impulseAt = static_cast<int>(i); break; }
 		}
 		qInfo("P3 latency: module declares %d frames; impulse at input frame 0 "
-			"appears at output frame %d (expected %d = latency + 1 block of %u)",
-			kModuleLatency, impulseAt, kTotalLatency, kFrames);
+			"appears at output frame %d (expected %d = latency + 1 block of %u); "
+			"reported effect latency %d frames (%d + one host period of %d)",
+			kModuleLatency, impulseAt, kTotalLatency, kFrames,
+			effect.latencyFrames(), kModuleLatency,
+			static_cast<int>(Engine::audioEngine()->framesPerPeriod()));
 		QCOMPARE(impulseAt, kTotalLatency);
 		for (int i = 0; i < impulseAt; ++i) { QCOMPARE(out[i], 0.0f); }
-		QCOMPARE(effect.latencyFrames(), kTotalLatency);
+		QCOMPARE(effect.latencyFrames(), kReportedLatency);
 		QVERIFY(!effect.isModuleCorrupted());
 	}
 
@@ -834,7 +848,7 @@ void WasmSandboxTest::p3_moduleLatencyIsApplied()
 			static_cast<unsigned long long>(effect.worker().trappedBlocks()));
 		QCOMPARE(firstImpulse, kTotalLatency);
 		QCOMPARE(secondImpulse, static_cast<int>(5 * kFrames) + kTotalLatency);
-		QCOMPARE(effect.latencyFrames(), kTotalLatency);
+		QCOMPARE(effect.latencyFrames(), kReportedLatency);
 	}
 }
 
@@ -939,6 +953,66 @@ void WasmSandboxTest::p5_pluginFactoryDiscoversPlugin()
 		info.library->isLoaded() ? 1 : 0, info.descriptor->name,
 		qPrintable(effect->nodeName()), effect->controls()->controlCount());
 	delete plugin;
+}
+
+// ---------------------------------------------------------------------------
+// Mixer audit C1b (#605): the PDC graph reads EffectChain::latencyFrames(),
+// the cache refreshed by EffectChain::refreshLatency(). WasmEffect reported
+// its pipeline delay as "module latency + the last block processImpl() saw",
+// which is 0 until the audio thread has run a block, and nothing refreshed
+// the cache when a module was loaded. A graph aligned against a Wasm effect
+// was therefore off by exactly one host period until some unrelated change
+// refreshed the cache - a comb whose first notch sits near fs / (2 * fpp).
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p6_moduleLoadRefreshesTheChainLatencyCache()
+{
+	constexpr int kModuleLatency = 64;
+	const int periodFrames = static_cast<int>(Engine::audioEngine()->framesPerPeriod());
+	const int kTrueLatency = kModuleLatency + periodFrames;
+
+	EffectChain chain{nullptr};
+	auto* effect = new WasmEffect(&chain, nullptr);
+	chain.appendEffect(effect);
+	QCOMPARE(chain.latencyFrames(), 0); // no module loaded yet
+
+	QString error;
+	QVERIFY2(effect->loadModule(modulePath("latency"), &error), qPrintable(error));
+	QVERIFY(effect->worker().isReady());
+	QCOMPARE(effect->worker().declaredLatency(), kModuleLatency);
+
+	// The PDC graph reads the cache before any audio has run; the load must
+	// have refreshed it already, and the effect's own report must not depend
+	// on whether processImpl() has seen a block yet.
+	const int reportedAfterLoad = effect->latencyFrames();
+	const int cachedAfterLoad = chain.latencyFrames();
+
+	// One processed block: a host period is a property of the engine, not of
+	// how many blocks the audio thread has rendered, so neither figure may
+	// move.
+	AudioBuffer buffer(periodFrames, DEFAULT_CHANNELS);
+	buffer.allocateInterleavedBuffer();
+	for (f_cnt_t f = 0; f < static_cast<f_cnt_t>(periodFrames); ++f)
+	{
+		buffer.interleavedBuffer()[f][0] = 1.0f;
+		buffer.interleavedBuffer()[f][1] = 1.0f;
+	}
+	buffer.assumeNonSilent(0);
+	buffer.assumeNonSilent(1);
+	QVERIFY(effect->processAudioBuffer(buffer));
+
+	const int reportedAfterBlock = effect->latencyFrames();
+	const int cachedAfterBlock = chain.latencyFrames();
+
+	qInfo("C1b latency: module=%d host_period=%d true=%d | after load: effect=%d chain=%d | "
+		"after one processed block: effect=%d chain=%d",
+		kModuleLatency, periodFrames, kTrueLatency,
+		reportedAfterLoad, cachedAfterLoad, reportedAfterBlock, cachedAfterBlock);
+
+	QCOMPARE(reportedAfterLoad, kTrueLatency);
+	QCOMPARE(cachedAfterLoad, kTrueLatency);
+	QCOMPARE(reportedAfterBlock, kTrueLatency);
+	QCOMPARE(cachedAfterBlock, kTrueLatency);
 }
 
 } // namespace lmms::wasm
