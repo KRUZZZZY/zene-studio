@@ -25,7 +25,16 @@
 #
 # Usage:
 #   tests/automation-modes-render-check.sh --baseline <lmms-binary> [options]
-#     --baseline <path>   binary built from the base commit (required)
+#     --baseline <path>   binary built from the base commit (required, unless
+#                         --baseline-hash is given)
+#     --baseline-hash <sha256>
+#                         the reference data-chunk sha256 of the Read render,
+#                         recorded from a base-commit binary built with the same
+#                         flags (USE_WERROR=ON, RelWithDebInfo,
+#                         TARGET_UARCH=official, WANT_QT6=ON). Use it when the
+#                         baseline binary is not at hand; the value this check
+#                         was last run against is in
+#                         docs/AUTOMATION-MODES.md, with its provenance.
 #     --candidate <path>  binary to test (default: build/lmms)
 #     --work <dir>        scratch dir for fixtures and renders
 #                         (default: build/automation-modes-render)
@@ -39,6 +48,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
 BASELINE=""
+BASELINE_HASH=""
 CANDIDATE="$ROOT/build/lmms"
 WORK="$ROOT/build/automation-modes-render"
 
@@ -46,16 +56,23 @@ usage() { sed -n '2,45p' "$HERE/$(basename "${BASH_SOURCE[0]}")" | sed 's/^# \{0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
-		--baseline)  BASELINE="${2:?--baseline needs a path}"; shift 2 ;;
-		--candidate) CANDIDATE="${2:?--candidate needs a path}"; shift 2 ;;
-		--work)      WORK="${2:?--work needs a dir}"; shift 2 ;;
-		-h|--help)   usage; exit 0 ;;
+		--baseline)      BASELINE="${2:?--baseline needs a path}"; shift 2 ;;
+		--baseline-hash) BASELINE_HASH="${2:?--baseline-hash needs a sha256}"; shift 2 ;;
+		--candidate)     CANDIDATE="${2:?--candidate needs a path}"; shift 2 ;;
+		--work)          WORK="${2:?--work needs a dir}"; shift 2 ;;
+		-h|--help)       usage; exit 0 ;;
 		*) echo "automation-modes-render-check: unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
 
-[ -n "$BASELINE" ] || { echo "automation-modes-render-check: --baseline <lmms-binary> is required" >&2; exit 2; }
-[ -x "$BASELINE" ] || { echo "automation-modes-render-check: not executable: $BASELINE" >&2; exit 2; }
+if [ -n "$BASELINE" ] && [ -n "$BASELINE_HASH" ]; then
+	echo "automation-modes-render-check: give --baseline or --baseline-hash, not both" >&2; exit 2
+fi
+[ -n "$BASELINE" ] || [ -n "$BASELINE_HASH" ] || {
+	echo "automation-modes-render-check: --baseline <lmms-binary> (or --baseline-hash <sha256>) is required" >&2; exit 2; }
+if [ -n "$BASELINE" ]; then
+	[ -x "$BASELINE" ] || { echo "automation-modes-render-check: not executable: $BASELINE" >&2; exit 2; }
+fi
 [ -x "$CANDIDATE" ] || { echo "automation-modes-render-check: not executable: $CANDIDATE" >&2; exit 2; }
 
 DEMO="$ROOT/data/projects/shorties/Crunk(Demo).mmp"
@@ -191,14 +208,24 @@ run_leg() { # run_leg <label> <binary> <project> <tag>
 
 echo
 echo "--- leg 1+2: byte-identity of the Read render, and render determinism ---"
-run_leg "baseline  fader-down "  "$BASELINE"  "$WORK/fader-down.mmp"    "base-down-1" || true
-base_down="$LAST_HASH"
+if [ -n "$BASELINE" ]; then
+	run_leg "baseline  fader-down " "$BASELINE" "$WORK/fader-down.mmp" "base-down-1" || true
+	base_down="$LAST_HASH"
+	echo "           baseline binary: $BASELINE"
+else
+	base_down="$BASELINE_HASH"
+	ref_hash="$base_down"
+	echo "baseline  fader-down : ${base_down} (recorded reference, base commit + CI flags)"
+	echo "           no baseline binary given: legs 1 and 2 below are measured against"
+	echo "           that recorded reference, and leg 2 (determinism) is what makes a"
+	echo "           difference meaningful."
+fi
 run_leg "candidate fader-down "  "$CANDIDATE" "$WORK/fader-down.mmp"    "cand-down-1" || true
 cand_down="$LAST_HASH"
 run_leg "candidate fader-down2"  "$CANDIDATE" "$WORK/fader-down.mmp"    "cand-down-2" || true
 cand_down2="$LAST_HASH"
 
-if [ "$base_down" = "$cand_down" ]; then
+if [ -n "$base_down" ] && [ "$base_down" = "$cand_down" ]; then
 	echo "PASS: Read render byte-identical baseline -> candidate"
 else
 	echo "FAIL: Read render differs baseline=$base_down candidate=$cand_down"; FAIL=1

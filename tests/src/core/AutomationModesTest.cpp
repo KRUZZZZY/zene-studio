@@ -91,6 +91,22 @@ QString timeMapBits(const AutomationClip& clip)
 	return out;
 }
 
+//! Bit-exact fingerprint of a single node (its in/out value bits), so a claim
+//! about one node is not satisfied by "the map still has the same size".
+QString nodeBitsAt(const AutomationClip& clip, int pos)
+{
+	const auto it = clip.getTimeMap().constFind(pos);
+	if (it == clip.getTimeMap().end())
+	{
+		return QStringLiteral("<absent>");
+	}
+	const auto hex = [](float value)
+	{
+		return QString::number(std::bit_cast<std::uint32_t>(value), 16);
+	};
+	return hex(INVAL(it)) + QLatin1Char('/') + hex(OUTVAL(it));
+}
+
 //! One automatable control plus the automation clip that drives it, wired the
 //! way a mixer channel is wired: a model whose range is [0, 2] (the shape of
 //! `MixerChannel::m_volumeModel`) and a clip on an automation track that is part
@@ -458,7 +474,10 @@ private slots:
 
 	//! A mode change - in any direction, in any order, while the transport runs
 	//! or not - must never silently drop recorded data. Changing the mode of a
-	//! control is not an edit to its automation.
+	//! control is not an edit to its automation. (A *writing pass* in Touch,
+	//! Latch or Write is an edit - that is what those modes are for - and the
+	//! pass is asserted separately below and in
+	//! testSwitchingOutOfAWriteModeKeepsTheRecordedData.)
 	void testAModeChangeNeverDropsRecordedData()
 	{
 		auto* song = Engine::getSong();
@@ -470,24 +489,49 @@ private slots:
 			AutomationMode::Read, AutomationMode::Touch,
 			AutomationMode::Latch, AutomationMode::Write,
 		};
-		for (const auto mode : modes)
+
+		// 1. Stopped: cycling every mode, twice, cannot touch the clip.
+		for (int round = 0; round < 2; ++round)
 		{
-			rig.volume.setAutomationMode(mode);
-			QCOMPARE(static_cast<int>(rig.volume.automationMode()), static_cast<int>(mode));
-			QCOMPARE(timeMapBits(rig.clip), before);
+			for (const auto mode : modes)
+			{
+				rig.volume.setAutomationMode(mode);
+				QCOMPARE(static_cast<int>(rig.volume.automationMode()), static_cast<int>(mode));
+				QCOMPARE(timeMapBits(rig.clip), before);
+			}
 		}
 
-		// The same while the transport plays over the clip, ending in Read.
+		// 2. Playing, through the modes that have no gesture to write with
+		//    (Touch and Latch un-gestured, Read always): still bit-identical.
+		//    This is the leg that fails if a mode change drops data.
 		song->playSong();
 		song->getTimeline().setTicks(0);
-		for (const auto mode : modes)
+		for (int i = 0; i < 4; ++i)
 		{
-			rig.volume.setAutomationMode(mode);
-			song->processNextBuffer();
+			rig.volume.noteAutomationTouchEnd();
+			for (const auto mode : modes)
+			{
+				if (mode == AutomationMode::Write) { continue; }
+				rig.volume.setAutomationMode(mode);
+				song->processNextBuffer();
+			}
 		}
 		rig.volume.setAutomationMode(AutomationMode::Read);
-		for (int i = 0; i < 6; ++i) { song->processNextBuffer(); }
+		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
 		QCOMPARE(timeMapBits(rig.clip), before);
+
+		// 3. A Write pass overwrites only where the playhead reaches: the far
+		//    end of the clip is untouched, so a pass that is stopped early
+		//    cannot silently erase the automation it never passed over.
+		const QString tailBefore = nodeBitsAt(rig.clip, 192);
+		rig.volume.setAutomationMode(AutomationMode::Write);
+		rig.volume.setValue(0.7f);
+		song->getTimeline().setTicks(0);
+		for (int i = 0; i < 3; ++i) { song->processNextBuffer(); }
+		QVERIFY2(rig.clip.getTimeMap().contains(192),
+			"the Write pass erased a node it never reached");
+		QCOMPARE(nodeBitsAt(rig.clip, 192), tailBefore);
+		QVERIFY2(timeMapBits(rig.clip) != before, "the Write pass wrote nothing at all");
 	}
 
 	//! Switching *out* of a writing mode keeps what that pass recorded: leaving
