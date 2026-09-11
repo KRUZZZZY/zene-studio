@@ -13,6 +13,7 @@ set(LMMS_TESTS
 	src/core/AutomatableModelTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MathTest.cpp
+	src/core/MidiLearnTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/ProjectVersionTest.cpp

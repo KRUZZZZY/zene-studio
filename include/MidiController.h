@@ -68,6 +68,18 @@ public:
 	// Used by controllerConnectionDialog to copy
 	void subscribeReadablePorts( const MidiPort::Map & _map );
 
+	// The port this controller listens on. Public so MIDI learn can configure a
+	// fresh binding, and so the binding can be read back (channel, controller
+	// number, subscribed ports) by the UI and the tests.
+	MidiPort & midiPort()
+	{
+		return m_midiPort;
+	}
+	const MidiPort & midiPort() const
+	{
+		return m_midiPort;
+	}
+
 
 public slots:
 	gui::ControllerDialog* createDialog( QWidget * _parent ) override;

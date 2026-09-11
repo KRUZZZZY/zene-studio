@@ -6,10 +6,12 @@ this directory; nothing in this document is aspirational — if it is not checke
 by a script, it is not a gate.
 
 Scope: the sources this product adds on top of upstream master `4e677cb6c6ab`,
-listed in `tests/fork-sources.txt` (**99 files** — 97 at the 2026-09-09 port, plus
+listed in `tests/fork-sources.txt` (**103 files** — 97 at the 2026-09-09 port, plus
 `include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp`, added
 2026-09-11 because the #605 PDC work was shipping outside every gate's scope; see the
-Gate 2 scope note).
+Gate 2 scope note; plus the four MIDI-learn files
+`include/MidiLearn.h`, `include/MidiLearnGui.h`, `src/core/MidiLearn.cpp` and
+`src/gui/MidiLearnGui.cpp`, added 2026-09-11 with the MIDI-learn lane).
 
 **Whole-tree scope (added 2026-09-11).** Gates 4, 7 and 8 also accept `--scope all`, which points
 them at `tests/all-sources.txt` — **1,095 first-party files**, i.e. upstream-inherited code plus

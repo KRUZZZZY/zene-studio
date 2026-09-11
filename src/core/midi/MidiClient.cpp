@@ -27,6 +27,7 @@
 
 #include <array>
 
+#include "MidiLearn.h"
 #include "MidiPort.h"
 
 namespace lmms
@@ -238,6 +239,10 @@ void MidiClientRaw::parseData( const unsigned char c )
 
 void MidiClientRaw::processParsedEvent()
 {
+	// Global MIDI learn sees the event before the ports do, so an armed learn can
+	// bind a control that no MidiPort is listening to yet. No-op when unarmed.
+	MidiLearn::instance()->handleMidiEvent(m_midiParseData.m_midiEvent);
+
 	for (const auto& midiPort : m_midiPorts)
 	{
 		midiPort->processInEvent(m_midiParseData.m_midiEvent);

@@ -26,6 +26,7 @@
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "Song.h"
+#include "MidiLearn.h"
 #include "MidiPort.h"
 
 
@@ -557,13 +558,19 @@ void MidiAlsaSeq::run()
 					break;
 
 				case SND_SEQ_EVENT_CONTROLLER:
-					dest->processInEvent( MidiEvent(
-							MidiControlChange,
-							ev->data.control.channel,
-							ev->data.control.param,
-							ev->data.control.value, source ),
-									TimePos() );
+				{
+					// Global MIDI learn gets the control-change before the port
+					// mask is applied, so a control can be bound while nothing is
+					// listening on this channel yet. No-op when unarmed.
+					const MidiEvent ccEvent(
+						MidiControlChange,
+						ev->data.control.channel,
+						ev->data.control.param,
+						ev->data.control.value, source );
+					MidiLearn::instance()->handleMidiEvent( ccEvent );
+					dest->processInEvent( ccEvent, TimePos() );
 					break;
+				}
 
 				case SND_SEQ_EVENT_PGMCHANGE:
 					dest->processInEvent( MidiEvent(
