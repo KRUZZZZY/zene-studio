@@ -25,6 +25,7 @@
 #include "LocalZynAddSubFx.h"
 
 #include <cassert>
+#include <algorithm>
 #include <ctime>
 
 #include "lmmsconfig.h"
@@ -268,7 +269,18 @@ void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event )
 
 void LocalZynAddSubFx::process(PlanarBufferView<float, 2> out)
 {
-	assert(out.frames() == static_cast<f_cnt_t>(synth->buffersize));
+	// The synth writes exactly buffersize samples per channel straight into the caller's
+	// planes, so a frame-count mismatch would write past them. The shipped configuration
+	// defines NDEBUG (RelWithDebInfo), so the assert alone is not a guard: this makes a
+	// mismatch render silence instead of overrunning the plane.
+	if (out.frames() != static_cast<f_cnt_t>(synth->buffersize))
+	{
+		assert(out.frames() == static_cast<f_cnt_t>(synth->buffersize));
+		std::fill_n(out.bufferPtr<0>(), out.frames(), 0.f);
+		std::fill_n(out.bufferPtr<1>(), out.frames(), 0.f);
+		return;
+	}
+
 	m_master->GetAudioOutSamples( synth->buffersize, synth->samplerate, out.bufferPtr<0>(), out.bufferPtr<1>() );
 }
 

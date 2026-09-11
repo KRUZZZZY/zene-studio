@@ -340,7 +340,16 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 
 void RemotePlugin::waitForInitDone(bool busyWaiting)
 {
-	m_failed = waitForMessage(IdInitDone, busyWaiting).id != IdInitDone;
+	// waitForMessage() processes every pending message before it returns, and one of
+	// those messages may already have failed this plugin: a client built against the
+	// pre-#589 interleaved protocol announces its channel counts with the retired
+	// IdChangeInputCount id, which the handler refuses and marks failed. That verdict
+	// has to be sticky - assigning the wait's own result directly erases it, and the
+	// failure path then degrades into the silent wrong audio it exists to prevent
+	// (measured with a pre-#589 client: the refusal was logged, the plugin stayed
+	// unfailed, and the client's interleaved writes were consumed as planar planes).
+	const auto initDone = waitForMessage(IdInitDone, busyWaiting).id == IdInitDone;
+	m_failed = m_failed || !initDone;
 
 	if (!m_failed)
 	{
@@ -379,10 +388,21 @@ bool RemotePlugin::process()
 	}
 
 	lock();
+	// Zero the output planes before asking the client for this period. The client
+	// writes them itself, but it returns early when it cannot lock the shared memory
+	// or finds it invalid, and it can die mid-period; the pre-#589 host memset the
+	// whole shared block every period, so silence was guaranteed on those paths and
+	// the router could never read a stale period. Remote plugin output is mixed
+	// additively, so stale planes are rendered as audio.
+	std::ranges::fill(m_audioOutputs, 0.f);
 	sendMessage(IdStartProcessing);
 
 	if (m_failed || m_audioOutputs.empty())
 	{
+		// Failed while processing (or the buffer went away): leave silence behind for
+		// the same reason - a false return must not be able to leak this period's
+		// partial or stale planes into the mix.
+		std::ranges::fill(m_audioOutputs, 0.f);
 		unlock();
 		return false;
 	}
