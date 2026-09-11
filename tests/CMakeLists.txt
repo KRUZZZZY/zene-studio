@@ -14,6 +14,7 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/PluginAudioPortsTest.cpp
+	src/core/PluginScanCacheTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
@@ -90,10 +91,23 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# build tree to prove the Lua Instrument binding (spec G4). Plugin modules
 	# resolve LMMS core symbols from the host process at load time, so the test
 	# binary must export its symbols exactly like the lmms executable does.
-	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest")
+	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
+
+	# PluginScanCacheTest drives the scan cache and the quarantine list through
+	# the real PluginFactory, against a copy of the built tripleoscillator
+	# module (the enumeration path, not a stub): the module has to exist before
+	# ctest runs. It also constructs the plugin browser, so it needs a Qt
+	# platform plugin even on a headless machine.
+	if(LMMS_TEST_NAME STREQUAL "PluginScanCacheTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
 

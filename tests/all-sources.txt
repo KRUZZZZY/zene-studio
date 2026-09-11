@@ -255,6 +255,7 @@ include/PluginBrowser.h
 include/PluginFactory.h
 include/Plugin.h
 include/PluginIssue.h
+include/PluginScanCache.h
 include/PluginView.h
 include/PositionLine.h
 include/PresetPreviewPlayHandle.h
@@ -886,6 +887,7 @@ src/core/PlayHandle.cpp
 src/core/Plugin.cpp
 src/core/PluginFactory.cpp
 src/core/PluginIssue.cpp
+src/core/PluginScanCache.cpp
 src/core/PresetPreviewPlayHandle.cpp
 src/core/ProjectJournal.cpp
 src/core/ProjectRenderer.cpp
@@ -1078,6 +1080,7 @@ tests/src/core/PhaseDPerfBench.cpp
 tests/src/core/PhaseDSidechainTest.cpp
 tests/src/core/PhaseFChannelScaleTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
+tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RelativePathsTest.cpp
