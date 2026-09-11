@@ -34,5 +34,10 @@ TARGET_LINK_LIBRARIES(rnnoisedenoiser m)
 # this repo does not modify, and under -DUSE_WERROR it becomes an error that fails the
 # whole linux-x86_64 build. Keep the warning, drop its error status for this target's C
 # sources only (gcc/clang spell it -Werror=cpp).
+#
+# MSVC arm, same reasoning: vendored denoise.c initialises a `const float` from a double
+# literal (C4305) and /WX promotes it (CI msvc-x64). /wd4305 keeps the warning visible and
+# leaves /WX in force for this plugin's own C++ sources.
 TARGET_COMPILE_OPTIONS(rnnoisedenoiser PRIVATE
-	"$<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-Wno-error=cpp>")
+	"$<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-Wno-error=cpp>"
+	"$<$<COMPILE_LANG_AND_ID:C,MSVC>:/wd4305>")
