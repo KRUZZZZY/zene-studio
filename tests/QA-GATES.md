@@ -225,11 +225,12 @@ reviewed manually; it is not enforced mechanically.
 - **`--check` exited 0 unconditionally**, so the ratchet could not fail in CI. `--check` now means
   "never write the baseline" and still exits 1 on a regression.
 
-**State after those fixes: one genuine regression — `LatencyCompensation::processPlanar`
-(CCN 11)**, newly visible because the 2026-09-11 scope change added its file. #605 PDC had
-shipped both *outside* the gates and *above* the target. It is being refactored on branch
-`fix/latency-complexity` (extracting the ring wrap-around read that `process()` and
-`processPlanar()` both implement); the gate goes green when that lands, not before.
+**State after those fixes: gate 4 is GREEN.** The one genuine regression,
+`LatencyCompensation::processPlanar` (CCN 11), was refactored in `d9d5deee2`: the wrap-around ring
+read that `process()` and `processPlanar()` duplicated verbatim is now the private helper
+`readWrapped()`, which takes the function to CCN 10. Verified by a real Debug build (exit 0) and
+the full suite from `build/tests` (100% tests passed, 24/24, `PdcMixerTest` included). The gate
+now scans **808 functions with 23 over target, all grandfathered**, and `--check` exits 0.
 
 The figures this section previously carried (13 of 514 functions, highest CCN 27) were measured
 on the standards fork's 42-file scope and no longer describe the product; the highest CCN is now

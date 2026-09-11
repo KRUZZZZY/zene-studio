@@ -52,11 +52,12 @@ measurement wins — re-run it. Gate definitions and their numbers live in
   from the first behavioural change — i.e. not a gate — and outlawed exactly the mixer work PDC needs.
 - **Gate 2 (coverage ratchet)** — no entry floor: a zero-line file is banked at 100.00%, and a
   new file enters the baseline at its measured coverage, including 0%.
-- **Gate 4 (complexity ratchet)** — **one genuine regression**: `LatencyCompensation::processPlanar`
-  (CCN 11) — #605 PDC shipped both outside the gates *and* above the CCN 10 target; being refactored
-  on `fix/latency-complexity`. Two gate defects found and fixed on 2026-09-11: the baseline was keyed
-  by function line span (a *growing* function re-reported as a *new* one), and `--check` exited 0
-  unconditionally. 807 functions scanned, 24 over target.
+- **Gate 4 (complexity ratchet)** — **green since 2026-09-11**: `LatencyCompensation::processPlanar`
+  (CCN 11, #605 PDC) was refactored to CCN 10 in `d9d5deee2` — the duplicated ring wrap-around read
+  became the private helper `readWrapped()`, verified by a Debug build plus 24/24 `ctest`. Two gate
+  defects were fixed the same day: the baseline was keyed by function line span (a *growing* function
+  re-reported as a *new* one) and `--check` exited 0 unconditionally. 808 functions scanned, 23 over
+  target, all grandfathered.
 - **Gate 7 (file-length ratchet)** — **green after a recorded re-anchor** (2026-09-11): two
   grandfathered files had grown (`ScriptBindings.cpp` 1216 → 1217, `ScriptEngine.cpp` 908 → 910)
   before the ratchet could fail anywhere; `--reanchor "reason"` is now the only way to move a
