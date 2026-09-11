@@ -47,3 +47,27 @@ TARGET_COMPILE_OPTIONS(neuralamp PRIVATE
 
 # Headless verification/benchmark binaries (EXCLUDE_FROM_ALL, see tests/).
 ADD_SUBDIRECTORY(tests)
+
+# --- MSVC: multiply-defined STL members against the executable's import library ---------
+# CI msvc-x64 (run #22) links plugins\neuralamp.dll against src\lmms.lib — the *executable's*
+# import library, which exports STL instantiations because LMMS's own exported classes use
+# std::vector<float> in their inline members. This plugin's vendored NAM TUs instantiate the
+# same members (??1?$vector@M…, data(), _Tidy, _Getal), and the link fails:
+#
+#   lmms.lib(lmms.exe) : error LNK2005: std::vector<float>::~vector(...) already defined in
+#                        NamModelLoader.cpp.obj
+#
+# The two definitions are the same STL implementation from the same toolchain, so collapsing
+# them changes nothing at runtime; /FORCE:MULTIPLE is scoped to this one target so it cannot
+# hide a duplicate in anything else. 94 other plugin DLLs link the same import library without
+# this collision, which is why the workaround is scoped rather than global.
+#
+# HONEST LIMIT: this is a workaround, not the root cause. The dialog is an MSVC export
+# interaction that cannot be reproduced on the Linux dev box (the flags for the failing TUs
+# are byte-identical to the plugin's other TUs, so it is not a flag mismatch). The clean fix,
+# for whoever has a Windows CI loop: keep the STL type off the exported class surface — pimpl
+# the buffer (NamModel.h:163 m_prewarmBuffer) or define the plugin class's destructor
+# out-of-line in the .cpp so the inline template chain is not exported with it.
+IF(MSVC)
+	TARGET_LINK_OPTIONS(neuralamp PRIVATE /FORCE:MULTIPLE)
+ENDIF()
