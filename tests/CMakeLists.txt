@@ -241,7 +241,7 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	# there). The deprecation is not actionable in frozen evidence, so the
 	# reference targets - and only they - opt out of it.
 	target_compile_options(partc_ref_${PLUGIN_ID} PRIVATE
-		$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wno-deprecated-declarations>)
+		$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-deprecated-declarations>)
 	set_target_properties(partc_ref_${PLUGIN_ID} PROPERTIES PREFIX "" OUTPUT_NAME "partc_ref_${PLUGIN_ID}")
 
 	# Slice 4 (task #589): instruments whose plugin CMakeLists.txt links extra
@@ -288,7 +288,11 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 		# forced exceptions libgig needs to not crash, samplerate link.
 		set_target_properties(partc_ref_gigplayer PROPERTIES AUTOUIC ON)
 		target_include_directories(partc_ref_gigplayer SYSTEM PRIVATE ${GIG_INCLUDE_DIRS})
-		target_compile_options(partc_ref_gigplayer PRIVATE -fexceptions)
+		if(NOT MSVC)
+			# -fexceptions is GNU-style: MSVC ignores it and enables C++
+			# exceptions by default, so the guard mirrors plugins/GigPlayer/CMakeLists.txt.
+			target_compile_options(partc_ref_gigplayer PRIVATE -fexceptions)
+		endif()
 		# The plugin does link_directories(${GIG_LIBRARY_DIRS}) before linking
 		# ${GIG_LIBRARIES}; without the directory the reference target's link fails on
 		# systems where libgig lives outside the default search path

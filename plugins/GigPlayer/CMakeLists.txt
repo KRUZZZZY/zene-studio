@@ -3,8 +3,12 @@ if(LMMS_HAVE_GIG)
 	include_directories(SYSTEM ${GIG_INCLUDE_DIRS})
 	SET(CMAKE_AUTOUIC ON)
 
-	# Required for not crashing loading files with libgig
-	add_compile_options("-fexceptions")
+	if(NOT MSVC)
+		# Required for not crashing loading files with libgig.
+		# -fexceptions is GNU-style: MSVC ignores it and has exceptions on by
+		# default, so the same guard as the reference target applies here.
+		add_compile_options("-fexceptions")
+	endif()
 
 	link_directories(${GIG_LIBRARY_DIRS})
 	link_libraries(${GIG_LIBRARIES})
