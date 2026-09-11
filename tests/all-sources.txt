@@ -1063,6 +1063,7 @@ src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tests/data/clap-test-plugin/clap-test-gain.c
 tests/data/gigproof/make_gig.cpp
+tests/data/vst3-test-instrument/vst3-test-instrument.cpp
 tests/src/core/AllocationProbe.h
 tests/src/core/ArrayVectorTest.cpp
 tests/src/core/AudioBufferTest.cpp
@@ -1112,6 +1113,7 @@ tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
 tests/src/plugins/Vst3HostTest.cpp
+tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
