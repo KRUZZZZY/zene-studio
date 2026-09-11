@@ -42,14 +42,16 @@ measurement wins — re-run it. Gate definitions and their numbers live in
 ## Have, but disarmed
 
 - **`RoutingGraph`** — tested, but no GUI or audio-path code includes it.
-- **Quality gates** — `.github/workflows/quality-gates.yml` is **dispatch-only**: nothing runs
-  on push or PR, so a green check here proves nothing about gate state. Last dispatch run
+- **Quality gates** — `.github/workflows/quality-gates.yml` runs its **static gates (3, 4, 6, 7, 8)
+  on push and PR** since 2026-09-11; the two build-backed jobs (unit tests + mutation, coverage)
+  stay dispatch-only, so a green check covers the static gates only. Last dispatch run
   (#2, `main`) **failed**.
 - **Gate 6 (upstream divergence)** — **PASSES since 2026-09-11, under a rewritten rule**: divergence
   in inherited code is allowed when it is *declared* with a reason in `tests/upstream-modifications.txt`
-  (the divergence ledger) and is a violation when it is not. The ledger declares 10 files (#605 PDC
-  plus two compile-only CI fixes); a blank reason is refused with exit 2. The old blanket ban was red
-  from the first behavioural change — i.e. not a gate — and outlawed exactly the mixer work PDC needs.
+  (the divergence ledger) and is a violation when it is not. The ledger declares 15 files (#605 PDC,
+  #608's access buffer, three compile-only Qt6 fix files and the LV2 CI install); a blank reason
+  is refused with exit 2. The old blanket ban was red from the first behavioural change — i.e. not
+  a gate — and outlawed exactly the mixer work PDC needs.
 - **Gate 2 (coverage ratchet)** — no entry floor: a zero-line file is banked at 100.00%, and a
   new file enters the baseline at its measured coverage, including 0%.
 - **Gate 4 (complexity ratchet)** — **green since 2026-09-11**: `LatencyCompensation::processPlanar`

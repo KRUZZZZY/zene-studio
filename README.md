@@ -69,13 +69,14 @@ patching is **not available in the current build**.
 - the run containing `bd1d95de6` is the verification. Check
   `gh run list --repo KRUZZZZY/zene-studio` for the current state.
 
-`checks` and `doxygen` pass. The `quality-gates` workflow is dispatch-only, so no gate runs on push
-here — a green check in this repository is not evidence that the gates pass.
+`checks` and `doxygen` pass. Since 2026-09-11, the `quality-gates` workflow runs its static gates
+(3, 4, 6, 7 and 8) on every push and pull request; the two build-backed jobs (unit tests +
+mutation, coverage) stay dispatch-only, so a green check here covers the static gates only.
 
 Do not read the feature list above as a statement that the tree builds today, and
 do not read a green PR check in this repository as evidence that it does — the
-quality gates do not run on push. See [`docs/STATUS.md`](docs/STATUS.md) for the
-current, dated status of every feature below.
+quality-gates workflow builds nothing; `build.yml` is what compiles the tree. See
+[`docs/STATUS.md`](docs/STATUS.md) for the current, dated status of every feature below.
 
 ## Building
 

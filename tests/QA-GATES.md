@@ -430,10 +430,14 @@ the file is authoritative.
 
 ## CI enforcement (`.github/workflows/quality-gates.yml`) — 2026-09-09, trigger policy corrected 2026-09-11
 
-The gates are wired into CI as a **workflow_dispatch-only** job. They do **not** run on
-push or on pull requests — that is the workflow's deliberate trigger policy (Actions
-minutes are metered on this repo), and it means a green PR check here proves nothing about
-gate state. Run the suite locally or dispatch the workflow:
+The gates are wired into CI in two tiers. **static-gates** — Gates 3, 4, 6, 7 and 8, no build
+needed — runs on every **push and pull request**: 0.2-0.4 min of runner time measured, roughly
+0.1-0.2% of the minutes `build.yml` already spends per push. **unit-tests** (Gates 1 and 5) and
+**coverage** (Gate 2) stay **workflow_dispatch-only** behind their own
+`if: github.event_name == 'workflow_dispatch'` guards: 14-24.5 min measured in CI, `build.yml`
+already builds and ctest-runs this tree on every push, and a coverage-baseline capture must stay
+a deliberate act. A green check here therefore covers the static gates and nothing else. Run the
+rest locally or dispatch the workflow:
 
 - **static-gates** — Gates 3, 4, 6, 7 and 8 (no build needed; `fetch-depth: 0` for Gate 6).
   All five can now **fail** the job. That was not true before 2026-09-11: Gates 4 and 7 were
@@ -445,8 +449,11 @@ gate state. Run the suite locally or dispatch the workflow:
 - **coverage** — Gate 2 in `--check` mode (the baseline is never written in CI), with the
   HTML report uploaded as an artifact.
 
-To restore per-push enforcement, add the `push:` trigger back to the `on:` block; the
-workflow itself needs no other change.
+Trigger scope is not just an `on:` edit: a job that must stay dispatch-only needs its own `if:`
+guard, and **unit-tests** and **coverage** each carry
+`if: ${{ github.event_name == 'workflow_dispatch' }}` — so restoring (or widening) per-push
+enforcement means enabling the trigger **and** keeping those guards on the jobs that must not run
+on push.
 
 All eight gates are wired. Gate 5 lives in the `unit-tests` job because it needs the built
 test binary; it costs ~3 min there, which is acceptable when it reuses the build. Locally it
