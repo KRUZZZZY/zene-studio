@@ -44,8 +44,8 @@ plugins/VstEffect/VstEffect.h	#589 planar-ports migration: VstEffect is an Audio
 plugins/VstEffect/VstEffect.cpp	#589 planar-ports migration: no-arg process(), planar wet/dry mixing, lock moved to processLock/processUnlock
 plugins/Vestige/Vestige.h	#589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports
 plugins/Vestige/Vestige.cpp	#589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin
-plugins/ZynAddSubFx/ZynAddSubFx.h	#589 planar-ports migration: instrument is a ConfigurableAudioPorts AudioPlugin (remote/local buffer switch)
-plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> processImpl(); setBufferType()/activate() on the local path; ports controller passed to the remote plugin
+plugins/ZynAddSubFx/ZynAddSubFx.h	#589 planar-ports migration: instrument is a ConfigurableAudioPorts AudioPlugin (remote/local buffer switch); post-alpha/oop-hosting: per-instance `separateprocess` BoolModel + hostingState() for the run-in-a-separate-process toggle
+plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> processImpl(); setBufferType()/activate() on the local path; ports controller passed to the remote plugin; post-alpha/oop-hosting: the persisted toggle selects the client process or the in-process synth, and the Zyn window is only requested when the user asked for it
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes

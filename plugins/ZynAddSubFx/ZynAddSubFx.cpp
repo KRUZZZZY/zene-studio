@@ -117,7 +117,8 @@ ZynAddSubFxInstrument::ZynAddSubFxInstrument(
 	m_fmGainModel( 127, 0, 127, 1, this, tr( "FM gain" ) ),
 	m_resCenterFreqModel( 64, 0, 127, 1, this, tr( "Resonance center frequency" ) ),
 	m_resBandwidthModel( 64, 0, 127, 1, this, tr( "Resonance bandwidth" ) ),
-	m_forwardMidiCcModel( true, this, tr( "Forward MIDI control change events" ) )
+	m_forwardMidiCcModel( true, this, tr( "Forward MIDI control change events" ) ),
+	m_separateProcessModel( false, this, tr( "Run in a separate process" ) )
 {
 	initPlugin();
 
@@ -190,6 +191,7 @@ void ZynAddSubFxInstrument::saveSettings( QDomDocument & _doc,
 	_this.setAttribute( "modifiedcontrollers", modifiedControllers );
 
 	m_forwardMidiCcModel.saveSettings( _doc, _this, "forwardmidicc" );
+	m_separateProcessModel.saveSettings( _doc, _this, "separateprocess" );
 
 	QTemporaryFile tf;
 	if( tf.open() )
@@ -224,6 +226,19 @@ void ZynAddSubFxInstrument::saveSettings( QDomDocument & _doc,
 
 void ZynAddSubFxInstrument::loadSettings( const QDomElement & _this )
 {
+	// The hosting choice is a plain attribute of this element and it decides
+	// which implementation has to exist before the patch data is loaded, so it
+	// is read first - and before the early return below, because a project may
+	// carry the choice with no saved Zyn patch data at all. The constructor has
+	// already instantiated the default (in-process) synth; when the stored
+	// choice differs from what is running, re-instantiate here. reloadPlugin()
+	// would re-enter this function.
+	m_separateProcessModel.loadSettings( _this, "separateprocess" );
+	if( ( m_separateProcessModel.value() || m_hasGUI ) != ( m_remotePlugin != nullptr ) )
+	{
+		initPlugin();
+	}
+
 	if( !_this.hasChildNodes() )
 	{
 		return;
@@ -398,6 +413,20 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 
 
 
+QString ZynAddSubFxInstrument::hostingState() const
+{
+	if( m_remotePlugin == nullptr )
+	{
+		return QStringLiteral( "in-process" );
+	}
+	return m_remotePlugin->isRunning() && !m_remotePlugin->failed()
+		? QStringLiteral( "separate-process" )
+		: QStringLiteral( "separate-process-exited" );
+}
+
+
+
+
 void ZynAddSubFxInstrument::reloadPlugin()
 {
 	// save state of current plugin instance
@@ -456,7 +485,11 @@ void ZynAddSubFxInstrument::initPlugin()
 	m_localPlugin = nullptr;
 	m_remotePlugin = nullptr;
 
-	if( m_hasGUI )
+	// The separate-process path is opt-in per instance; the Zyn GUI always
+	// needs it, because the GUI is the client's own window (the Show-GUI
+	// button below). With neither set, the in-process synth runs - exactly the
+	// behaviour every existing project has today.
+	if( m_separateProcessModel.value() || m_hasGUI )
 	{
 		audioPorts().setBufferType(true);
 
@@ -482,7 +515,13 @@ void ZynAddSubFxInstrument::initPlugin()
 		// causing not to send buffer size information requests
 		m_remotePlugin->sendMessage( RemotePlugin::message( IdBufferSizeInformation ).addInt( Engine::audioEngine()->framesPerPeriod() ) );
 
-		m_remotePlugin->showUI();
+		// Only when the user asked for the Zyn window: a headless render
+		// (`lmms render`) or the toggle on its own hosts the client without
+		// asking it to open a window it has no display for.
+		if( m_hasGUI )
+		{
+			m_remotePlugin->showUI();
+		}
 		m_remotePlugin->unlock();
 	}
 	else
@@ -559,6 +598,11 @@ ZynAddSubFxView::ZynAddSubFxView( Instrument * _instrument, QWidget * _parent ) 
 
 	m_forwardMidiCC = new LedCheckBox( tr( "Forward MIDI control changes" ), this );
 
+	m_separateProcess = new LedCheckBox( tr( "Run in a separate process" ), this );
+	m_separateProcess->setToolTip( tr( "Host this instrument in its own process "
+		"(RemoteZynAddSubFx) instead of inside the DAW, so a crash in it cannot take "
+		"the project down. Saved with the project; switching it reloads the Zyn patch." ) );
+
 	m_toggleUIButton = new QPushButton( tr( "Show GUI" ), this );
 	m_toggleUIButton->setCheckable( true );
 	m_toggleUIButton->setChecked( false );
@@ -568,6 +612,8 @@ ZynAddSubFxView::ZynAddSubFxView( Instrument * _instrument, QWidget * _parent ) 
 
 	connect( m_toggleUIButton, SIGNAL( toggled( bool ) ), this,
 							SLOT( toggleUI() ) );
+	connect( m_separateProcess, SIGNAL( toggled( bool ) ), this,
+							SLOT( separateProcessToggled() ) );
 
 	l->addWidget( m_toggleUIButton, 0, 0, 1, 4 );
 	l->setRowStretch( 1, 5 );
@@ -579,8 +625,9 @@ ZynAddSubFxView::ZynAddSubFxView( Instrument * _instrument, QWidget * _parent ) 
 	l->addWidget( m_resCenterFreq, 3, 1 );
 	l->addWidget( m_resBandwidth, 3, 2 );
 	l->addWidget( m_forwardMidiCC, 4, 0, 1, 4 );
+	l->addWidget( m_separateProcess, 5, 0, 1, 4 );
 
-	l->setRowStretch( 5, 10 );
+	l->setRowStretch( 6, 10 );
 	l->setColumnStretch( 4, 10 );
 
 	setAcceptDrops( true );
@@ -648,6 +695,7 @@ void ZynAddSubFxView::modelChanged()
 	m_forwardMidiCC->setModel( &m->m_forwardMidiCcModel );
 
 	m_toggleUIButton->setChecked( m->m_hasGUI );
+	m_separateProcess->setChecked( m->m_separateProcessModel.value() );
 }
 
 
@@ -668,6 +716,25 @@ void ZynAddSubFxView::toggleUI()
 		}
 	}
 }
+
+void ZynAddSubFxView::separateProcessToggled()
+{
+	auto model = castModel<ZynAddSubFxInstrument>();
+	// The button is an AutomatableButton, whose isChecked() is private: its
+	// own small BoolModel is the state the user sees.
+	const bool checked = m_separateProcess->model()->value();
+	if( model->m_separateProcessModel.value() != checked )
+	{
+		model->m_separateProcessModel.setValue( checked );
+		// Switching implementation re-instantiates the instrument (the route
+		// the Show-GUI button takes); reloadPlugin() carries the patch over.
+		// Not done live: the shared audio block and the synth state do not
+		// survive a switch mid-render.
+		model->reloadPlugin();
+	}
+}
+
+
 
 
 } // namespace gui

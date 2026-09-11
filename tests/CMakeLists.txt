@@ -570,6 +570,43 @@ foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapEffectIntegrationTest
 	endif()
 endforeach()
 
+# ---------------------------------------------------------------------------
+# The per-plugin "run in a separate process" toggle (post-alpha/oop-hosting).
+#
+# ZynAddSubFx is the one plugin family in this tree that ships both an
+# in-process implementation (LocalZynAddSubFx) and a client that runs as a
+# separate process (RemoteZynAddSubFx), so the opt-in toggle lives there. The
+# test loads the real plugin module and drives the setting the project file
+# carries: the default (no attribute) must stay in-process, the stored choice
+# must bring the client up as a child process of the host, the choice must
+# round-trip through the plugin's own saveSettings/loadSettings, and killing
+# the client must not take the host down.
+# ---------------------------------------------------------------------------
+if(TARGET zynaddsubfx AND TARGET RemoteZynAddSubFx)
+	add_executable(ZynSeparateProcessTest src/plugins/ZynSeparateProcessTest.cpp)
+	add_test(NAME ZynSeparateProcessTest COMMAND ZynSeparateProcessTest)
+	target_include_directories(ZynSeparateProcessTest PRIVATE
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	)
+	target_static_libraries(ZynSeparateProcessTest PRIVATE lmmsobjs)
+	target_link_libraries(ZynSeparateProcessTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+	)
+	target_compile_features(ZynSeparateProcessTest PRIVATE cxx_std_20)
+	target_compile_definitions(ZynSeparateProcessTest PRIVATE
+		LMMS_TESTING
+		ZYN_PLUGIN_PATH="$<TARGET_FILE:zynaddsubfx>"
+		ZYN_REMOTE_CLIENT_PATH="$<TARGET_FILE:RemoteZynAddSubFx>"
+	)
+	# The plugin module's unresolved lmms symbols are bound from the loading
+	# process, which is why the host has to export them (same as AudioPluginTest).
+	set_target_properties(ZynSeparateProcessTest PROPERTIES ENABLE_EXPORTS ON)
+	add_dependencies(ZynSeparateProcessTest zynaddsubfx RemoteZynAddSubFx)
+	set_tests_properties(ZynSeparateProcessTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Synthetic plug-in host test (ported from the standards fork): builds a MODULE
 # plug-in from src/plugins/SyntheticAudioPlugin.cpp and drives it through the
 # AudioPlugin host path, so the host code is exercised for real.
