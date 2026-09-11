@@ -134,6 +134,15 @@ IF(WANT_WASM)
 	target_static_libraries(lmmsobjs ${WASMTIME_LIBRARIES})
 ENDIF()
 
+# Lua scripting API version: the numbers come from the top-level CMakeLists.txt
+# so the engine and the version tests are compiled from the same source of
+# truth (include/ScriptApiVersion.h explains why that matters).
+TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE
+	ZENE_LUA_API_VERSION_MAJOR=${ZENE_LUA_API_VERSION_MAJOR}
+	ZENE_LUA_API_VERSION_MINOR=${ZENE_LUA_API_VERSION_MINOR}
+	ZENE_LUA_API_VERSION_PATCH=${ZENE_LUA_API_VERSION_PATCH}
+)
+
 GENERATE_EXPORT_HEADER(lmmsobjs
 	BASE_NAME lmms
 )

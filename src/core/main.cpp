@@ -73,6 +73,7 @@
 #include "ProjectRenderer.h"
 #include "RenderManager.h"
 #include "Song.h"
+#include "ScriptConsole.h"
 #include "ScriptEngine.h"
 
 #ifdef LMMS_DEBUG_FPE
@@ -816,6 +817,10 @@ int main( int argc, char * * argv )
 		}
 
 		QString error;
+		// This action's contract is the script's LuaLog output on stdout (see
+		// printHelp). The engine's console streams the same lines onto Qt's
+		// message log, so leaving it on would emit every line twice.
+		ScriptConsole::setEnabled( false );
 		const auto result = ScriptEngine::instance()->runFile( scriptFile, &error );
 		ScriptEngine::instance()->processCommands();
 

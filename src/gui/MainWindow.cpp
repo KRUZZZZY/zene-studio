@@ -790,12 +790,9 @@ void MainWindow::runScript()
 	}
 
 	QString error;
+	// The engine streams script output onto the DAW's log itself (ScriptConsole),
+	// so this action does not print the captured lines a second time.
 	const auto result = ScriptEngine::instance()->runFile(path, &error);
-
-	for (const QString& line : ScriptEngine::instance()->takeLogMessages())
-	{
-		qInfo().noquote() << "lua:" << line;
-	}
 
 	if (result != ScriptEngine::RunResult::Ok)
 	{

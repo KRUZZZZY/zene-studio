@@ -232,6 +232,15 @@ private:
 	void applyCommands(std::size_t max);
 	void resetRunState();
 
+	/*! Report a finished run to the console.
+	 *
+	 *  Only a failure says anything: a script that died must explain itself
+	 *  where its prints went. Kept out of runOnWorker() so the error check does
+	 *  not add decision points to the run path (the complexity ratchet measures
+	 *  runOnWorker, and this is the branch that used to live inside it).
+	 */
+	void reportRunResult(RunResult result, const QString& message);
+
 	class ScriptWorker;
 	ScriptWorker* m_worker{nullptr};
 	QThread* m_workerThread{nullptr};

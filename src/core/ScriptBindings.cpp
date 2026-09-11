@@ -30,7 +30,9 @@
 #include "MidiClip.h"
 #include "PatternStore.h"
 #include "Plugin.h"
+#include "ScriptApiVersion.h"
 #include "ScriptEngine.h"
+#include "ScriptLuaQtTypes.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -55,63 +57,9 @@ extern "C"
 #include <string>
 
 // ---------------------------------------------------------------------------
-// luabridge::Stack specialisations for Qt value types
+// luabridge::Stack specialisations for Qt value types live in
+// include/ScriptLuaQtTypes.h (split out of this file; see that header).
 // ---------------------------------------------------------------------------
-
-namespace luabridge
-{
-
-template<>
-struct Stack<QString>
-{
-	static void push(lua_State* L, const QString& value)
-	{
-		const QByteArray utf8 = value.toUtf8();
-		lua_pushlstring(L, utf8.constData(), static_cast<std::size_t>(utf8.size()));
-	}
-
-	static QString get(lua_State* L, int index)
-	{
-		std::size_t length = 0;
-		const char* text = luaL_checklstring(L, index, &length);
-		return QString::fromUtf8(text, static_cast<int>(length));
-	}
-
-	static bool isInstance(lua_State* L, int index) { return lua_type(L, index) == LUA_TSTRING; }
-};
-
-template<>
-struct Stack<QStringList>
-{
-	static void push(lua_State* L, const QStringList& value)
-	{
-		lua_createtable(L, static_cast<int>(value.size()), 0);
-		int index = 1;
-		for (const QString& entry : value)
-		{
-			Stack<QString>::push(L, entry);
-			lua_rawseti(L, -2, index++);
-		}
-	}
-
-	static QStringList get(lua_State* L, int index)
-	{
-		QStringList result;
-		if (!lua_istable(L, index)) { return result; }
-		const int length = static_cast<int>(lua_rawlen(L, index));
-		for (int i = 1; i <= length; ++i)
-		{
-			lua_rawgeti(L, index, i);
-			result << Stack<QString>::get(L, -1);
-			lua_pop(L, 1);
-		}
-		return result;
-	}
-
-	static bool isInstance(lua_State* L, int index) { return lua_istable(L, index); }
-};
-
-} // namespace luabridge
 
 namespace lmms
 {
@@ -331,7 +279,11 @@ void registerAll(lua_State* L, ScriptEngine* engine)
 
 	luabridge::getGlobalNamespace(L)
 		.beginNamespace("lmms")
-			.addFunction("version", +[]() -> std::string { return std::string("0.1"); })
+			.addFunction("version", +[]() -> QString { return ScriptApi::version(); })
+			.addFunction("apiVersion", +[]() -> QString { return ScriptApi::fullVersion(); })
+			.addFunction("apiVersionMajor", +[]() -> int { return ScriptApi::major(); })
+			.addFunction("apiVersionMinor", +[]() -> int { return ScriptApi::minor(); })
+			.addFunction("apiStability", +[]() -> QString { return ScriptApi::stability(); })
 			.addFunction("ticksPerBar", +[]() -> int { return TimePos::ticksPerBar(); })
 			.addFunction("stepsPerBar", +[]() -> int { return TimePos::stepsPerBar(); })
 			.addFunction("song", +[]() -> LuaSong& { return songView(); })

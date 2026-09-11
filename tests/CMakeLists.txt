@@ -27,6 +27,7 @@ set(LMMS_TESTS
 	src/core/PdcMixerTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
+	src/core/ScriptStabilisationTest.cpp
 	src/core/SlideNotesTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
@@ -89,6 +90,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Lua scripting examples live in the source tree; tests run from build/tests.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LUA_SCRIPT_DIR="${CMAKE_SOURCE_DIR}/data/scripts")
+	# Lua scripting API version, from the same top-level CMakeLists.txt variables
+	# src/CMakeLists.txt passes to lmmsobjs. Deliberate duplication of the
+	# definition, not of the value: ScriptStabilisationTest compares what the
+	# engine reports (compiled in lmmsobjs) against what this test binary was
+	# compiled with, so a version hardcoded in either translation unit fails.
+	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+		ZENE_LUA_API_VERSION_MAJOR=${ZENE_LUA_API_VERSION_MAJOR}
+		ZENE_LUA_API_VERSION_MINOR=${ZENE_LUA_API_VERSION_MINOR}
+		ZENE_LUA_API_VERSION_PATCH=${ZENE_LUA_API_VERSION_PATCH})
 	# Test fixtures (stub ONNX model) and the reference CLI path.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LMMS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
