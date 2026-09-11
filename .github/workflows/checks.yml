@@ -19,6 +19,11 @@ jobs:
         run: tests/scripted/check-strings
       - name: Run check-namespace
         run: tests/scripted/check-namespace
+      - name: Verify the package-upload guard
+        # A package upload whose glob matches no file must fail its job, not warn:
+        # tests/test-package-upload-guard.sh checks every upload step in build.yml and
+        # exercises the glob decision both ways. Rationale: docs/PIPELINE-HARDENING.md.
+        run: bash tests/test-package-upload-guard.sh
   shellcheck:
     runs-on: ubuntu-latest
     container: koalaman/shellcheck-alpine:v0.9.0

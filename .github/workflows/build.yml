@@ -106,6 +106,12 @@ jobs:
           archive: false
           retention-days: 14
           path: build/lmms-*.AppImage
+          # A package-producing job must FAIL if its package glob matches nothing.
+          # upload-artifact defaults to `warn`, which lets a release go green having
+          # uploaded zero assets for this platform. `error` fails this step with
+          # "No files were found with the provided path: <glob>" — the glob and the
+          # directory it searched. Verified against the pinned v7 action source.
+          if-no-files-found: error
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -195,6 +201,12 @@ jobs:
           archive: false
           retention-days: 14
           path: build/lmms-*.AppImage
+          # A package-producing job must FAIL if its package glob matches nothing.
+          # upload-artifact defaults to `warn`, which lets a release go green having
+          # uploaded zero assets for this platform. `error` fails this step with
+          # "No files were found with the provided path: <glob>" — the glob and the
+          # directory it searched. Verified against the pinned v7 action source.
+          if-no-files-found: error
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -295,6 +307,8 @@ jobs:
           archive: false
           retention-days: 14
           path: build/lmms-*.dmg
+          # A missing package must fail this job, not warn (see the linux-x86_64 step).
+          if-no-files-found: error
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -382,6 +396,8 @@ jobs:
           archive: false
           retention-days: 14
           path: build/lmms-*.exe
+          # A missing package must fail this job, not warn (see the linux-x86_64 step).
+          if-no-files-found: error
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -499,6 +515,9 @@ jobs:
         with:
           name: ctest-log-msvc-x64
           path: build/tests/Testing/Temporary/LastTest.log
+          # Deliberately exempt from the package guard: this is evidence, not a package.
+          # The step runs on failure() and ctest may not have written the log, so a
+          # missing file must not fail the job (that would hide the real failure).
           if-no-files-found: warn
       - name: Package
         run: cmake --build build --target package
@@ -511,6 +530,8 @@ jobs:
           archive: false
           retention-days: 14
           path: build\lmms-*.exe
+          # A missing package must fail this job, not warn (see the linux-x86_64 step).
+          if-no-files-found: error
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -581,6 +602,8 @@ jobs:
           archive: false
           retention-days: 14
           path: build\lmms-*.exe
+          # A missing package must fail this job, not warn (see the linux-x86_64 step).
+          if-no-files-found: error
       - name: Trim ccache and print statistics
         run: |
           /clang64/bin/ccache.exe --cleanup
