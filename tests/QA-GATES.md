@@ -614,10 +614,11 @@ are reported too.
 **What this gate caught on `post-alpha/integration` (2026-09-11).** Three fork-authored test files
 were in no scope list at all — `tests/src/core/LufsMeterTest.cpp`, `tests/src/core/MidiLearnTest.cpp`
 and `tests/src/core/SessionModelTest.cpp` (Gate 9 exit 1). They are registered in
-`tests/all-sources.txt` — the whole-tree scope — which is where **every** test file in this repo
-lives, fork-authored ones included (48 of the 50 `tests/src/**` entries there are fork code); the
-fork ratchets and Gate 2's per-file baseline deliberately measure product sources, not test
-harnesses. That is the convention this gate is here to make visible.
+`tests/all-sources.txt` — the whole-tree scope — which is where **every** fork-authored test in
+this repo is registered (43 of the 51 `tests/src/**` entries there are absent at the fork point,
+i.e. fork code; the other 8 are upstream's own tests); the fork ratchets and Gate 2's per-file
+baseline deliberately measure product sources, not test harnesses. That is the convention this gate
+is here to make visible.
 
 **Why (2026-09-11).** `include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp` shipped
 on 2026-09-10 in no scope list. The only gate that reacted was Gate 6, which reported them as an
