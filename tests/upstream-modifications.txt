@@ -49,3 +49,7 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> proce
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+include/AutomatableModel.h	post-alpha/automation-modes: additive Read/Touch/Latch/Write state, touch-gesture timeout and trim offset on the model; all state is relaxed atomics so the render thread never locks on a mode change (new API in its own banner-marked block, no existing member or method touched)
+src/core/AutomatableModel.cpp	post-alpha/automation-modes: the mode state machine, the transport run token, the monotone clock and the trim offset; appended in its own banner-marked block at the end of the file
+src/core/Song.cpp	post-alpha/automation-modes: publish the transport run once per rendered period (processNextBuffer), let a Touch/Latch/Write control record its moves (processAutomations), and apply the trim offset where the automation is read out
+src/gui/widgets/Fader.cpp	post-alpha/automation-modes: the mixer fader opens, refreshes and closes a touch gesture so Touch/Latch are reachable from the control a mixing engineer actually rides

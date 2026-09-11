@@ -206,6 +206,13 @@ void Song::savePlayStartPosition()
 
 void Song::processNextBuffer()
 {
+	// Automation modes (post-alpha/automation-modes): this is where the render
+	// thread observes the transport's own start and stop edges. Both the mode
+	// state machine (AutomatableModel) and the pass it arms are driven from the
+	// token published here; an offline render reports "not running", so an
+	// export can never write automation into a project.
+	AutomatableModel::observeAutomationTransport( m_playing && !m_exporting );
+
 	// If nothing is playing, there is nothing to do
 	if (!m_playing) { return; }
 
@@ -390,23 +397,47 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	}
 
 	// Process recording
+	//
+	// Automation modes (post-alpha/automation-modes): a control in Touch, Latch
+	// or Write mode writes its own moves while the transport runs, whether or
+	// not the clip's recording flag is set. This runs on the render thread: the
+	// decision is a read of relaxed atomics (AutomatableModel::automationWantsWrite),
+	// the clock is read at most once per tick and only when some control is
+	// actually in a writing mode, so a session that never leaves Read pays
+	// nothing here.
+	const quint64 automationRun = AutomatableModel::automationTransportRun();
+	qint64 automationNowNs = 0;
+	bool automationClockRead = false;
 	for (Clip* clip : clips)
 	{
 		auto p = dynamic_cast<AutomationClip *>(clip);
 		TimePos relTime = timeStart - p->startPosition();
-		if (p->isRecording() && relTime >= 0 && relTime < p->length())
+		if (relTime >= 0 && relTime < p->length())
 		{
 			const AutomatableModel* recordedModel = p->firstObject();
-			// The automation system really needs to be reworked.
-			// For whatever reason, the values in an automation clip are stored in un-un-scaled format, so if you
-			// are automating a log knob, when you draw an curve, the values being stored are not the actual values the
-			// knob will take, but instead the unscaled version of the unscaled numbers. The tooltip shows the number you expect, but if you double-click,
-			// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
-			// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
-			// and store that so that when playing it back, it scales the value correctly.
-			p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
+			bool writes = p->isRecording();
+			if( !writes && recordedModel
+				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
+			{
+				if( !automationClockRead )
+				{
+					automationNowNs = AutomatableModel::automationClockNs();
+					automationClockRead = true;
+				}
+				writes = recordedModel->automationWantsWrite( automationRun, automationNowNs );
+			}
+			if( writes )
+			{
+				// The values in an automation clip are stored in un-un-scaled format, so if you
+				// are automating a log knob, when you draw an curve, the values being stored are not the actual values the
+				// knob will take, but instead the unscaled version of the unscaled numbers. The tooltip shows the number you expect, but if you double-click,
+				// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
+				// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
+				// and store that so that when playing it back, it scales the value correctly.
+				p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
 
-			recordedModels << recordedModel;
+				recordedModels << recordedModel;
+			}
 		}
 	}
 
@@ -436,7 +467,11 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 			 * Y axis can be set to logarithmic, and automation clips store
 			 * the actual values, and not the invertedScaledValue.
 			 */
-			model->setValue(model->scaledValue(it.value()), true);
+			// Automation modes (post-alpha/automation-modes): the trim offset is
+			// applied here, where the written automation is read out to the
+			// control, and is never written back into the clip - which is what
+			// makes it non-destructive.
+			model->setValue(model->effectiveAutomationValue(model->scaledValue(it.value())), true);
 		}
 	}
 }

@@ -24,6 +24,8 @@
 
 #include "AutomatableModel.h"
 
+#include <chrono>
+
 #include <QRegularExpression>
 
 #include "lmms_math.h"
@@ -755,6 +757,189 @@ QString IntModel::displayValue( const float val ) const
 QString BoolModel::displayValue( const float val ) const
 {
 	return QString::number( castValue<bool>( scaledValue( val ) ) );
+}
+
+
+// ---------------------------------------------------------------------------
+// Automation modes (post-alpha/automation-modes).
+//
+// The state this block publishes is what the write decision in
+// automationWantsWrite() reads on the audio thread. See the declaration block in
+// include/AutomatableModel.h for the semantics of each mode and the thread
+// contract; this is the implementation of the state machine only.
+// ---------------------------------------------------------------------------
+
+std::atomic<quint64> AutomatableModel::s_transportRun{ 0 };
+std::atomic<quint64> AutomatableModel::s_transportRunsStarted{ 0 };
+std::atomic<bool> AutomatableModel::s_transportActive{ false };
+std::atomic<qint64> AutomatableModel::s_touchTimeoutNs{ 1000 * 1000 * 1000 }; // 1 s
+
+
+
+
+AutomatableModel::AutomationMode AutomatableModel::automationMode() const
+{
+	return m_automationMode.load( std::memory_order_relaxed );
+}
+
+
+
+
+void AutomatableModel::setAutomationMode( AutomationMode mode )
+{
+	m_automationMode.store( mode, std::memory_order_relaxed );
+}
+
+
+
+
+void AutomatableModel::observeAutomationTransport( bool active )
+{
+	// Called once per rendered period, from the render thread. Only the
+	// transport's *edges* change anything, so one run keeps one token for its
+	// whole length and a Latch survives it.
+	if( active == s_transportActive.load( std::memory_order_relaxed ) )
+	{
+		return;
+	}
+	s_transportActive.store( active, std::memory_order_relaxed );
+	if( active )
+	{
+		// A fresh run: every Latch armed under the previous token is over,
+		// because its token can no longer match.
+		const quint64 run = s_transportRunsStarted.fetch_add( 1, std::memory_order_relaxed ) + 1;
+		s_transportRun.store( run, std::memory_order_relaxed );
+	}
+	else
+	{
+		// Run 0 matches no Latch engagement, so stopping the transport ends
+		// every latch without sweeping the models. An offline render reports
+		// here too, which is why an export can never modify automation.
+		s_transportRun.store( 0, std::memory_order_relaxed );
+	}
+}
+
+
+
+
+quint64 AutomatableModel::automationTransportRun()
+{
+	return s_transportRun.load( std::memory_order_relaxed );
+}
+
+
+
+
+qint64 AutomatableModel::automationClockNs()
+{
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now().time_since_epoch() ).count();
+}
+
+
+
+
+qint64 AutomatableModel::automationTouchTimeoutNs()
+{
+	return s_touchTimeoutNs.load( std::memory_order_relaxed );
+}
+
+
+
+
+void AutomatableModel::setAutomationTouchTimeoutNs( qint64 ns )
+{
+	s_touchTimeoutNs.store( ns < 0 ? 0 : ns, std::memory_order_relaxed );
+}
+
+
+
+
+void AutomatableModel::noteAutomationTouchStart( qint64 nowNs, quint64 transportRun )
+{
+	m_touchStampNs.store( nowNs, std::memory_order_relaxed );
+	m_touching.store( true, std::memory_order_relaxed );
+	// Arm the latch against the run the engagement was made in. Storing the run
+	// (rather than setting a flag) is what stops a latch from a previous run
+	// writing into the next one.
+	m_latchRun.store( transportRun, std::memory_order_relaxed );
+}
+
+
+
+
+void AutomatableModel::noteAutomationTouchEnd()
+{
+	m_touching.store( false, std::memory_order_relaxed );
+}
+
+
+
+
+bool AutomatableModel::automationWantsWrite( quint64 transportRun, qint64 nowNs ) const
+{
+	if( transportRun == 0 )
+	{
+		// Nothing writes while the transport is not running - not even Write,
+		// and not during an offline render, which reports no run.
+		return false;
+	}
+
+	switch( automationMode() )
+	{
+	case AutomationMode::Read:
+		// The status quo: follow the automation, never write it.
+		return false;
+	case AutomationMode::Touch:
+	{
+		if( !m_touching.load( std::memory_order_relaxed ) )
+		{
+			return false;
+		}
+		const qint64 elapsed = nowNs - m_touchStampNs.load( std::memory_order_relaxed );
+		// The timeout bounds the window, so a release the widget never saw
+		// (mouse-up outside the window, a dropped event) cannot leave a control
+		// writing into its automation forever.
+		return elapsed <= s_touchTimeoutNs.load( std::memory_order_relaxed );
+	}
+	case AutomationMode::Latch:
+		// Held from the first touch until the run it was armed under ends:
+		// releasing the control does not stop it, and a later run does not
+		// match it.
+		return m_latchRun.load( std::memory_order_relaxed ) == transportRun;
+	case AutomationMode::Write:
+		// Overwrites the pass for as long as the transport runs.
+		return true;
+	}
+	return false;
+}
+
+
+
+
+void AutomatableModel::setTrimOffset( float offset )
+{
+	m_trimOffset.store( offset, std::memory_order_relaxed );
+}
+
+
+
+
+float AutomatableModel::trimOffset() const
+{
+	return m_trimOffset.load( std::memory_order_relaxed );
+}
+
+
+
+
+float AutomatableModel::effectiveAutomationValue( float writtenValue ) const
+{
+	const float offset = m_trimOffset.load( std::memory_order_relaxed );
+	// Deliberately no arithmetic at all when the offset is zero: a zero trim
+	// has to be a bit-exact no-op, including for negative zero and subnormals,
+	// because the Read render of an untrimmed project must stay byte-identical.
+	return offset != 0.0f ? writtenValue + offset : writtenValue;
 }
 
 

@@ -25,6 +25,7 @@
 #ifndef LMMS_AUTOMATABLE_MODEL_H
 #define LMMS_AUTOMATABLE_MODEL_H
 
+#include <atomic>
 #include <cmath>
 #include <QMap>
 #include <QMutex>
@@ -318,6 +319,90 @@ public:
 
 	static bool mustQuoteName(const QString &name);
 
+	// -----------------------------------------------------------------------
+	// Automation modes (post-alpha/automation-modes).
+	//
+	// Read is the status quo: the control follows its written automation and
+	// never writes it. Touch writes while the control is held and returns to
+	// reading when it is released. Latch writes from the first touch until the
+	// transport run it was made in ends. Write overwrites the pass for as long
+	// as the transport runs, with no touch needed. Read is the default because
+	// it is what every existing project does and what an engineer expects of a
+	// control they have not armed - the alpha behaves as Read today.
+	//
+	// THREAD OWNERSHIP. setAutomationMode(), noteAutomationTouchStart()/End()
+	// and setTrimOffset() are called from the GUI thread. The audio thread only
+	// reads the relaxed atomics they publish and makes the write decision itself
+	// in automationWantsWrite(); nothing on that path allocates, locks or grows,
+	// and AutomationModesTest asserts the atomics are lock-free, so a mode
+	// change can never make the audio thread block. The transport run token is
+	// published by the transport observer (Song::processNextBuffer, which runs
+	// on the render thread).
+	// -----------------------------------------------------------------------
+	enum class AutomationMode
+	{
+		Read,   //!< follow written automation, never write (default)
+		Touch,  //!< write while touched, then return to reading
+		Latch,  //!< write from the first touch until the transport run ends
+		Write   //!< overwrite the pass while the transport runs
+	};
+
+	static_assert(std::atomic<AutomationMode>::is_always_lock_free,
+		"the audio thread reads the automation mode without a lock; a locked "
+		"atomic would let a GUI mode change block the render thread");
+
+	AutomationMode automationMode() const;
+	void setAutomationMode( AutomationMode mode );
+
+	//! The transport was observed running (@p active) or not. Called once per
+	//! rendered period from Song::processNextBuffer(); a false -> true edge
+	//! hands out a new run token, which is what ends every Latch engagement
+	//! from the previous run. Idempotent for an unchanged state, so a run keeps
+	//! one token for its whole length.
+	static void observeAutomationTransport( bool active );
+	//! Token of the transport run being rendered; 0 while the transport is not
+	//! running. A Latch engagement is bound to the token it was made under.
+	static quint64 automationTransportRun();
+
+	//! Monotone wall clock in nanoseconds (std::chrono::steady_clock): ~25 ns
+	//! and lock-free. Call it once per Song::processAutomations(), not once per
+	//! model.
+	static qint64 automationClockNs();
+
+	//! GUI thread: the control was grabbed or moved. @p nowNs must come from
+	//! automationClockNs() unless the caller has its own monotone clock, and
+	//! @p transportRun is the run the engagement is armed against.
+	void noteAutomationTouchStart( qint64 nowNs, quint64 transportRun );
+	void noteAutomationTouchStart( qint64 nowNs )
+	{
+		noteAutomationTouchStart( nowNs, automationTransportRun() );
+	}
+	void noteAutomationTouchStart() { noteAutomationTouchStart( automationClockNs() ); }
+	//! GUI thread: the control was released. This ends a Touch gesture
+	//! immediately; a Latch engagement survives it - that difference is what
+	//! Latch is for.
+	void noteAutomationTouchEnd();
+
+	//! THE decision, made on the audio thread: may this control write into its
+	//! automation clip at this instant? @p transportRun is the run token of the
+	//! period being rendered (0 = not running, which includes an offline render)
+	//! and @p nowNs a monotone timestamp. Pure - no allocation, no locking, no
+	//! mutation - so it is safe to call per model per tick.
+	bool automationWantsWrite( quint64 transportRun, qint64 nowNs ) const;
+
+	//! How long a gesture keeps its write authority after its last touch event.
+	static qint64 automationTouchTimeoutNs();
+	static void setAutomationTouchTimeoutNs( qint64 ns );
+
+	//! A non-destructive offset applied on top of the written automation. It is
+	//! applied where the automation is *read out* to the control (Song's apply
+	//! pass) and is never written back into the clip, so it can be changed or
+	//! removed without touching the recorded data. It applies to automated
+	//! controls: a control with no automation has nothing to trim.
+	void setTrimOffset( float offset );
+	float trimOffset() const;
+	float effectiveAutomationValue( float writtenValue ) const;
+
 public slots:
 	virtual void reset();
 	void unlink();
@@ -420,6 +505,30 @@ private:
 	QMutex m_valueBufferMutex;
 
 	bool m_useControllerValue;
+
+	// -----------------------------------------------------------------------
+	// Automation mode state (post-alpha/automation-modes). Written by the GUI
+	// thread, read by the audio thread; relaxed atomics throughout, never a
+	// mutex, so the render thread cannot be made to wait on a mode change.
+	// -----------------------------------------------------------------------
+	std::atomic<AutomationMode> m_automationMode{ AutomationMode::Read };
+	//! Timestamp of the last touch event, in automationClockNs() units.
+	std::atomic<qint64> m_touchStampNs{ 0 };
+	std::atomic<bool> m_touching{ false };
+	//! The transport run this control's Latch was armed under (0 = not armed).
+	//! Storing the run rather than a flag is what makes a latch self-clearing:
+	//! no later run can ever match it, so nothing has to sweep the models when
+	//! the transport stops.
+	std::atomic<quint64> m_latchRun{ 0 };
+	std::atomic<float> m_trimOffset{ 0.0f };
+
+	//! Automation-mode statics. s_transportRun is the token of the run being
+	//! rendered (0 = not running) and s_transportActive the state it was handed
+	//! out for, so only the transport's edges change anything.
+	static std::atomic<quint64> s_transportRun;
+	static std::atomic<quint64> s_transportRunsStarted;
+	static std::atomic<bool> s_transportActive;
+	static std::atomic<qint64> s_touchTimeoutNs;
 
 signals:
 	void initValueChanged( float val );
