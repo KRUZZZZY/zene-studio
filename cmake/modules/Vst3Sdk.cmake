@@ -123,7 +123,21 @@ LIST(TRANSFORM LMMS_VST3_SDK_SOURCES PREPEND "${LMMS_VST3_SDK_PATH}/")
 ADD_LIBRARY(lmms_vst3_sdk STATIC ${LMMS_VST3_SDK_SOURCES})
 TARGET_INCLUDE_DIRECTORIES(lmms_vst3_sdk PUBLIC "${LMMS_VST3_SDK_PATH}")
 TARGET_COMPILE_FEATURES(lmms_vst3_sdk PUBLIC cxx_std_17)
-SET_TARGET_PROPERTIES(lmms_vst3_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# The SDK is third-party source compiled into this tree, exactly like gme,
+# adplug, exprtk and zynaddsubfx. Marking it SYSTEM is what tells
+# cmake/modules/ErrorFlags.cmake to compile it with the third-party flag set
+# (-w) instead of -Wall -Werror. Without this, -DUSE_WERROR=ON (the CI's
+# linux-x86_64 job) cannot build this target at all:
+#   pluginterfaces/base/ustring.cpp:228:41: error: format '%lld' expects
+#   argument of type 'long long int*', but argument 3 has type
+#   'Steinberg::int64*' {aka 'long int*'} [-Werror=format=]
+# That diagnostic is a real LP64 int64-vs-long-long mismatch in the SDK,
+# which the SDK's own build does not treat as an error. We do not patch
+# non-vendored SDK sources; we compile them the way the other third-party
+# trees in this repository are compiled.
+SET_TARGET_PROPERTIES(lmms_vst3_sdk PROPERTIES
+	POSITION_INDEPENDENT_CODE ON
+	SYSTEM ON)
 TARGET_COMPILE_DEFINITIONS(lmms_vst3_sdk PUBLIC
 	"$<$<CONFIG:Debug>:DEVELOPMENT=1>"
 	"$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>")

@@ -610,3 +610,40 @@ set_tests_properties(AudioPluginTest PROPERTIES
 )
 lmms_add_coverage(synthetic_audio_plugin)
 lmms_add_coverage(AudioPluginTest)
+
+# Native VST3 instrument fixture and its probe.
+#
+# Opt-in on purpose: cmake/modules/Vst3Sdk.cmake builds lmms_vst3_sdk whenever
+# the SDK checkout exists, but an ordinary build has no business gaining a test
+# instrument, so it is behind WANT_VST3_TEST_INSTRUMENT (default OFF) and is
+# never installed. See tests/data/vst3-test-instrument/CMakeLists.txt and
+# docs/VST3-INSTRUMENT-FIXTURE.md (which records why the fixture exists at all).
+if(TARGET lmms_vst3_sdk)
+	option(WANT_VST3_TEST_INSTRUMENT
+		"Build the VST3 instrument test fixture and its probe (test subject only)" OFF)
+	if(WANT_VST3_TEST_INSTRUMENT)
+		add_subdirectory(data/vst3-test-instrument)
+
+		# A probe, not a QTest class: it is the independent check that the
+		# fixture really reads ProcessData::inputEvents and renders audio in
+		# response. Helper executables are explicitly out of scope for Gate 3
+		# (see the note at the bottom of tests/no-tautology-gate.sh); this one
+		# still exits non-zero on a failed check, so ctest enforces it.
+		add_executable(Vst3InstrumentFixtureProbe
+			src/plugins/Vst3InstrumentFixtureProbe.cpp
+		)
+		target_include_directories(Vst3InstrumentFixtureProbe PRIVATE
+			${CMAKE_SOURCE_DIR}/include
+		)
+		target_compile_features(Vst3InstrumentFixtureProbe PRIVATE cxx_std_17)
+		target_link_libraries(Vst3InstrumentFixtureProbe PRIVATE
+			lmms_vst3_sdk
+			${CMAKE_DL_LIBS}
+		)
+		target_compile_definitions(Vst3InstrumentFixtureProbe PRIVATE
+			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}"
+		)
+		add_dependencies(Vst3InstrumentFixtureProbe vst3-test-instrument)
+		add_test(NAME Vst3InstrumentFixtureProbe COMMAND Vst3InstrumentFixtureProbe)
+	endif()
+endif()
