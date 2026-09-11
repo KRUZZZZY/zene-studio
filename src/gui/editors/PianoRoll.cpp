@@ -2861,9 +2861,13 @@ void PianoRoll::updateParameterEditPos(QMouseEvent* me, Note::ParameterType para
 
 	if (!m_parameterEditClickedNote) { return; }
 
-	// Calculate the key and time of the mouse cursor in the piano roll
-	int keyNum = getKey(me->y());
-	int posTicks = (me->x() - m_whiteKeyWidth) *
+	// Calculate the key and time of the mouse cursor in the piano roll.
+	// lmms::position() is the Qt5/Qt6 adapter: QMouseEvent::x()/y() are
+	// deprecated in Qt 6 in favour of position(), and -Werror turns that
+	// deprecation into a build failure on a Qt6 + USE_WERROR build.
+	const auto mousePos = lmms::position(me);
+	int keyNum = getKey(mousePos.y());
+	int posTicks = (mousePos.x() - m_whiteKeyWidth) *
 			TimePos::ticksPerBar() / m_ppb + m_currentPosition;
 
 	// Calculate the relative position of the mouse with respect to the note.

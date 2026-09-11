@@ -231,6 +231,17 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	target_compile_definitions(partc_ref_${PLUGIN_ID} PRIVATE PLUGIN_NAME=${PLUGIN_ID})
 	target_compile_features(partc_ref_${PLUGIN_ID} PRIVATE cxx_std_20)
 	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE lmms ${QT_LIBRARIES})
+	# The reference sources are verbatim copies of the pre-migration plugin
+	# (git blob ids in tests/reference/ORIGIN.tsv), so they cannot be edited the
+	# way the migrated plugin was: rewriting one would destroy the evidence the
+	# harness compares against. Under Qt 6 the frozen GUI code calls
+	# QMouseEvent::x()/y(), which Qt 6 deprecates, and USE_WERROR promotes that
+	# deprecation to an error on any compiler that does not treat Qt's
+	# angle-bracket headers as external (MSVC's /external:anglebrackets hides it
+	# there). The deprecation is not actionable in frozen evidence, so the
+	# reference targets - and only they - opt out of it.
+	target_compile_options(partc_ref_${PLUGIN_ID} PRIVATE
+		$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wno-deprecated-declarations>)
 	set_target_properties(partc_ref_${PLUGIN_ID} PROPERTIES PREFIX "" OUTPUT_NAME "partc_ref_${PLUGIN_ID}")
 
 	# Slice 4 (task #589): instruments whose plugin CMakeLists.txt links extra

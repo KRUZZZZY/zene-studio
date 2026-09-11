@@ -24,6 +24,7 @@
 #include "OscilloscopeGraph.h"
 #include "OscilloscopeControls.h"
 #include "Oscilloscope.h"
+#include "DeprecationHelper.h"
 #include "embed.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -164,13 +165,13 @@ void OscilloscopeGraph::wheelEvent(QWheelEvent* we)
 	m_controls->m_phaseModel.setValue(std::clamp(newPhase, newWindowSizeMilliseconds / m_controls->m_lengthModel.maxValue(), 1.0f));
 }
 
-void OscilloscopeGraph::mousePressEvent(QMouseEvent* me) { m_mousePos = me->x(); }
+void OscilloscopeGraph::mousePressEvent(QMouseEvent* me) { m_mousePos = lmms::position(me).x(); }
 
 void OscilloscopeGraph::mouseMoveEvent(QMouseEvent* me)
 {
-	float newPhase = m_controls->m_phaseModel.value() + static_cast<float>(m_mousePos - me->x()) / width() * (m_controls->m_lengthModel.value() / m_controls->m_lengthModel.maxValue());
+	float newPhase = m_controls->m_phaseModel.value() + static_cast<float>(m_mousePos - lmms::position(me).x()) / width() * (m_controls->m_lengthModel.value() / m_controls->m_lengthModel.maxValue());
 	m_controls->m_phaseModel.setValue(newPhase - std::floor(newPhase));
-	m_mousePos = me->x();
+	m_mousePos = lmms::position(me).x();
 }
 
 } // namespace lmms::gui
