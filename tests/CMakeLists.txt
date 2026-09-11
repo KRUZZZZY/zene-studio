@@ -19,6 +19,7 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
+	src/core/RoutingGraphLiveTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
 	src/core/ScriptBindingsTest.cpp
@@ -96,6 +97,18 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 	endif()
 endforeach()
+
+# ---------------------------------------------------------------------------
+# RoutingGraph on the mixer channel's effect chain (docs/ROUTING-GRAPH-LIVE.md).
+#
+# RoutingGraphLiveTest renders a channel whose chain is processed through a
+# RoutingGraph and compares it byte-for-byte against a reference render captured
+# before the graph was put on the path, then re-directs a connection and shows
+# the render changes. The reference lives in tests/reference/.
+# ---------------------------------------------------------------------------
+target_compile_definitions(RoutingGraphLiveTest PRIVATE
+	ROUTING_GRAPH_LIVE_REFERENCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/reference/routing-graph-live-render.raw"
+)
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.
