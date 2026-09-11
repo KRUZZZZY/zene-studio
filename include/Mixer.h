@@ -49,6 +49,9 @@ using MixerRouteVector = std::vector<MixerRoute*>;
 class MixerSidechainRoute;
 using MixerSidechainRouteVector = std::vector<MixerSidechainRoute*>;
 
+//! VCA / mix-and-edit group (task #622); defined in VcaGroup.h.
+class VcaGroup;
+
 //! Tap point for a sidechain send (Phase D, spec 4.3; Reaper I_SENDMODE 0-3).
 enum class SidechainTapPoint : int
 {
@@ -148,6 +151,15 @@ public:
 	{
 		m_inputLatencyFrames.store(frames, std::memory_order_relaxed);
 	}
+
+	//! VCA / mix group (#622): the gain the channel's group publishes, applied
+	//! as one extra multiply to the post-FX buffer. 1.0f when the channel is in
+	//! no group (and when its group is at unity). Written on the control thread
+	//! by Mixer::refreshGroups(); read once per block by the audio thread with
+	//! a relaxed load, which cannot block and cannot allocate.
+	std::atomic<float> m_vcaGain{1.0f};
+	float vcaGain() const { return m_vcaGain.load(std::memory_order_relaxed); }
+	void setVcaGain(float gain) { m_vcaGain.store(gain, std::memory_order_relaxed); }
 
 	std::atomic_size_t m_dependenciesMet;
 	void incrementDeps();
@@ -461,6 +473,35 @@ public:
 	void activateSolo();
 	void deactivateSolo();
 
+	// ---- VCA / mix-and-edit groups (#622) ----
+
+	//! Create a group. `id` < 0 picks the lowest unused id (the normal path);
+	//! a project load passes the id the file recorded.
+	VcaGroup* createVcaGroup(const QString& name = QString(), int id = -1);
+	//! The group with this id, or nullptr.
+	VcaGroup* vcaGroup(int id) const;
+	//! The group this channel is a member of, or nullptr.
+	VcaGroup* vcaGroupForChannel(mix_ch_t channel) const;
+	//! Every group, in creation order.
+	const std::vector<VcaGroup*>& vcaGroups() const { return m_vcaGroups; }
+	//! Delete a group by id. Its members play at unity again. False if the id
+	//! is unknown.
+	bool deleteVcaGroup(int id);
+	//! Delete every group (and reset every channel to unity gain).
+	void clearVcaGroups();
+
+	//! Publish each group's gain into its members' m_vcaGain. Control thread
+	//! only: O(channels + members), allocation-free, and the only thing the
+	//! audio thread ever observes is the resulting float. Ungrouped channels
+	//! are reset to unity here, which is what makes leaving a group and loading
+	//! a group-less project playback-neutral.
+	void refreshGroups();
+
+	//! Apply a group's solo flag (#622). Soloing a group makes exactly its
+	//! members audible; clearing the flag restores the pre-solo mute state.
+	//! Called for the AudioEngine-less case too, so it is safe on a bare Mixer.
+	void applyGroupSolo(VcaGroup* group, bool soloed);
+
 	inline mix_ch_t numChannels() const
 	{
 		return m_mixerChannels.size();
@@ -492,6 +533,9 @@ private:
 	std::vector<int> m_directSourceLatencyScratch;
 	//! PDC (#605): published total latency; see totalLatencyFrames().
 	std::atomic<int> m_totalLatencyFrames{0};
+
+	//! VCA / mix groups (#622); control thread only.
+	std::vector<VcaGroup*> m_vcaGroups;
 
 	int m_lastSoloed;
 } ;

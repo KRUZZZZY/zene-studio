@@ -46,6 +46,7 @@ set(LMMS_SRCS
 	core/EnvelopeAndLfoParameters.cpp
 	core/fft_helpers.cpp
 	core/Mixer.cpp
+	core/VcaGroup.cpp
 	core/ImportFilter.cpp
 	core/InlineAutomation.cpp
 	core/Instrument.cpp

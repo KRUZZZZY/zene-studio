@@ -33,6 +33,7 @@
 #include "AudioEngineWorkerThread.h"
 #include "Mixer.h"
 #include "Song.h"
+#include "VcaGroup.h"
 
 #include "InstrumentTrack.h"
 #include "MixHelpers.h"
@@ -135,6 +136,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_buffer( new SampleFrame[Engine::audioEngine()->framesPerPeriod()] ),
 	m_bus( &m_buffer, 1, Engine::audioEngine()->framesPerPeriod() ),
 	m_hasInput( false ),
+	m_muteBeforeSolo( false ),
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
@@ -503,6 +505,31 @@ void MixerChannel::doProcessing()
 			? m_fxChain.processAudioBuffer(m_bus)
 			: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
 
+		// VCA / mix group (#622). The group gain is applied here, as one extra
+		// factor on the post-FX buffer, and nowhere else: m_buffer is what the
+		// fader snapshot, the peak meter, the post-/pre-fader sidechain taps
+		// and every receiving channel all read, so a single multiply scales the
+		// whole of the member's output while the member's own volume model is
+		// never written. That is what makes "move the VCA back" restore the
+		// members bit-exactly.
+		//
+		// The guard is not only an optimisation: with gain == 1.0f (no group, or
+		// a group at unity) a channel takes the pre-#622 arithmetic path
+		// unchanged, so an ungrouped project renders byte-identically.
+		const float vcaGain = m_vcaGain.load(std::memory_order_relaxed);
+		if (vcaGain != 1.0f)
+		{
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				m_buffer[f][0] *= vcaGain;
+				m_buffer[f][1] *= vcaGain;
+			}
+			// Deliberately no quiet-flag update: the bus flags are an
+			// optimisation the DSP trusts, and claiming silence we do not have
+			// loses audio, while claiming audio we do not have only wastes
+			// work. A silent group is silent either way.
+		}
+
 		// D1: the volume multiply happens after the send loop, producing the
 		// post-fader snapshot used by post-fader sidechain taps.
 		const float v = m_volumeModel.value();
@@ -543,6 +570,13 @@ Mixer::Mixer() :
 
 Mixer::~Mixer()
 {
+	// VCA groups (#622) reference channel indices; drop them first.
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		group->detach();
+		delete group;
+	}
+	m_vcaGroups.clear();
 	while (!m_mixerSidechainRoutes.empty())
 	{
 		deleteSidechainSend(m_mixerSidechainRoutes.front());
@@ -625,7 +659,23 @@ void Mixer::toggledSolo()
 			activateSolo();
 		}
 		// unmute the soloed chan and every channel it sends to/receives from
-		m_mixerChannels[soloedChan]->unmuteForSolo();
+		// #622: soloing a member soloes its whole VCA group, so the group is
+		// audible as a unit (the member -> group half of the solo link).
+		VcaGroup* group = vcaGroupForChannel( static_cast<mix_ch_t>(soloedChan) );
+		if (group != nullptr)
+		{
+			for (mix_ch_t member : group->members())
+			{
+				if (member < m_mixerChannels.size())
+				{
+					m_mixerChannels[member]->unmuteForSolo();
+				}
+			}
+		}
+		else
+		{
+			m_mixerChannels[soloedChan]->unmuteForSolo();
+		}
 	} else {
 		deactivateSolo();
 	}
@@ -634,10 +684,170 @@ void Mixer::toggledSolo()
 
 
 
+// ---- VCA / mix-and-edit groups (#622) --------------------------------------
+
+VcaGroup* Mixer::createVcaGroup(const QString& name, int id)
+{
+	if (id < 0)
+	{
+		// Lowest unused id, so ids stay small and a round trip through the
+		// project file re-creates the same ones.
+		id = 0;
+		while (vcaGroup(id) != nullptr)
+		{
+			++id;
+		}
+	}
+	if (vcaGroup(id) != nullptr)
+	{
+		return nullptr;
+	}
+
+	auto group = new VcaGroup(this, id, name.isEmpty() ? tr("VCA %1").arg(id) : name);
+	m_vcaGroups.push_back(group);
+	return group;
+}
+
+
+
+VcaGroup* Mixer::vcaGroup(int id) const
+{
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		if (group->id() == id)
+		{
+			return group;
+		}
+	}
+	return nullptr;
+}
+
+
+
+VcaGroup* Mixer::vcaGroupForChannel(mix_ch_t channel) const
+{
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		if (group->contains(channel))
+		{
+			return group;
+		}
+	}
+	return nullptr;
+}
+
+
+
+bool Mixer::deleteVcaGroup(int id)
+{
+	for (auto it = m_vcaGroups.begin(); it != m_vcaGroups.end(); ++it)
+	{
+		VcaGroup* group = *it;
+		if (group->id() != id)
+		{
+			continue;
+		}
+		m_vcaGroups.erase(it);
+		group->detach();
+		delete group;
+		// The members are no longer grouped, so they play at unity again.
+		refreshGroups();
+		return true;
+	}
+	return false;
+}
+
+
+
+void Mixer::clearVcaGroups()
+{
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		group->detach();
+		delete group;
+	}
+	m_vcaGroups.clear();
+	refreshGroups();
+}
+
+
+
+void Mixer::refreshGroups()
+{
+	// Reset first, then apply: a channel that is in no group, or that has just
+	// left one, must publish unity. This is also what makes an old project
+	// (no groups at all) load into exactly the pre-#622 playback state.
+	for (MixerChannel* channel : m_mixerChannels)
+	{
+		channel->setVcaGain(1.0f);
+	}
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		const float gain = group->gain();
+		for (mix_ch_t member : group->members())
+		{
+			if (member < m_mixerChannels.size())
+			{
+				m_mixerChannels[member]->setVcaGain(gain);
+			}
+		}
+	}
+}
+
+
+
+void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
+{
+	if (group == nullptr)
+	{
+		return;
+	}
+	if (!soloed)
+	{
+		deactivateSolo();
+		m_lastSoloed = -1;
+		return;
+	}
+
+	// Exclusive, exactly like the channel solo: soloing one group clears any
+	// other group's flag (its handler deactivates first), so the pre-solo mute
+	// state that deactivateSolo() restores is never overwritten before it is
+	// read back.
+	for (VcaGroup* other : m_vcaGroups)
+	{
+		if (other != group && other->soloModel()->value())
+		{
+			other->soloModel()->setValue(false);
+		}
+	}
+
+	activateSolo();
+	for (mix_ch_t member : group->members())
+	{
+		if (member < m_mixerChannels.size())
+		{
+			m_mixerChannels[member]->unmuteForSolo();
+		}
+	}
+	// No channel's own solo flag drove this, so toggledSolo() has nothing to
+	// untoggle later.
+	m_lastSoloed = -1;
+}
+
+
+
 void Mixer::deleteChannel( int index )
 {
 	// channel deletion is performed between mixer rounds
 	Engine::audioEngine()->requestChangeInModel();
+
+	// VCA groups (#622): drop the deleted channel and shift the members whose
+	// index moves down, the same bookkeeping the tracks below get. Done before
+	// the erase so the group members still describe the pre-deletion layout.
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		group->channelDeleted( static_cast<mix_ch_t>(index) );
+	}
 
 	// go through every instrument and adjust for the channel index change
 	TrackContainer::TrackList tracks;
@@ -713,6 +923,8 @@ void Mixer::deleteChannel( int index )
 	m_mixerChannels.erase(m_mixerChannels.begin() + index);
 	delete ch;
 	resizeLatencyScratch( m_mixerChannels.size() );
+	// #622: the surviving members' indices changed; republish the gains.
+	refreshGroups();
 
 	for (auto i = static_cast<std::size_t>(index); i < m_mixerChannels.size(); ++i)
 	{
@@ -802,6 +1014,13 @@ void Mixer::moveChannelLeft( int index )
 	// Update m_channelIndex of both channels
 	m_mixerChannels[index]->setIndex(index);
 	m_mixerChannels[index - 1]->setIndex(index - 1);
+
+	// #622: group membership follows the channels, not the slots.
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		group->channelsSwapped( static_cast<mix_ch_t>(a), static_cast<mix_ch_t>(b) );
+	}
+	refreshGroups();
 }
 
 
@@ -1453,6 +1672,10 @@ void Mixer::masterMix( SampleFrame* _buf )
 
 void Mixer::clear()
 {
+	// VCA groups (#622) name channel indices; drop them before the channels so
+	// the index bookkeeping has nothing left to chase.
+	clearVcaGroups();
+
 	while( m_mixerChannels.size() > 1 )
 	{
 		deleteChannel(1);
@@ -1571,6 +1794,30 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			send->amount()->saveSettings(_doc, scDom, "amount");
 		}
 	}
+
+	// VCA / mix-and-edit groups (#622). One element per group, beside the
+	// channels. A legacy LMMS skips these children (Mixer::loadSettings in a
+	// pre-#622 build reads only <mixerchannel> elements by name), so the
+	// grouping degrades to "no groups" and every member plays at its own
+	// volume -- the same forward-compatible degradation as the <bus> marker.
+	for (VcaGroup* group : m_vcaGroups)
+	{
+		QDomElement groupDom = _doc.createElement( QString( "vcagroup" ) );
+		_this.appendChild( groupDom );
+
+		groupDom.setAttribute("id", group->id());
+		groupDom.setAttribute("name", group->name());
+		group->vcaModel()->saveSettings(_doc, groupDom, "vca");
+		group->muteModel()->saveSettings(_doc, groupDom, "muted");
+		group->soloModel()->saveSettings(_doc, groupDom, "soloed");
+
+		for (mix_ch_t member : group->members())
+		{
+			QDomElement memberDom = _doc.createElement( QString( "member" ) );
+			groupDom.appendChild( memberDom );
+			memberDom.setAttribute("channel", member);
+		}
+	}
 }
 
 // make sure we have at least num channels
@@ -1611,6 +1858,15 @@ void Mixer::loadSettings( const QDomElement & _this )
 	while( ! node.isNull() )
 	{
 		QDomElement mixch = node.toElement();
+
+		// #622: <vcagroup> elements live beside the channels. A pre-#622
+		// project has none; this build must not mistake one for a channel
+		// (that would load master's name and volume from a foreign element).
+		if( mixch.nodeName() != QString( "mixerchannel" ) )
+		{
+			node = node.nextSibling();
+			continue;
+		}
 
 		// index of the channel we are about to load
 		int num = mixch.attribute( "num" ).toInt();
@@ -1663,6 +1919,49 @@ void Mixer::loadSettings( const QDomElement & _this )
 
 		node = node.nextSibling();
 	}
+
+	// VCA / mix-and-edit groups (#622). Absent from a pre-#622 project, in
+	// which case no group exists, every channel keeps publishing unity gain,
+	// and the project plays exactly as it did before this feature existed.
+	for( QDomNode groupNode = _this.firstChild(); ! groupNode.isNull();
+			groupNode = groupNode.nextSibling() )
+	{
+		QDomElement groupDom = groupNode.toElement();
+		if( groupDom.nodeName() != QString( "vcagroup" ) )
+		{
+			continue;
+		}
+
+		// An id the file recorded is preserved (so a group keeps its identity
+		// across a round trip); a file without one gets the lowest free id.
+		const QString idAttr = groupDom.attribute( "id" );
+		VcaGroup* group = createVcaGroup( groupDom.attribute( "name" ),
+			idAttr.isEmpty() ? -1 : idAttr.toInt() );
+		if( group == nullptr )
+		{
+			continue;
+		}
+
+		group->vcaModel()->loadSettings( groupDom, "vca" );
+		group->muteModel()->loadSettings( groupDom, "muted" );
+		group->soloModel()->loadSettings( groupDom, "soloed" );
+
+		for( QDomNode memberNode = groupDom.firstChild(); ! memberNode.isNull();
+				memberNode = memberNode.nextSibling() )
+		{
+			QDomElement memberDom = memberNode.toElement();
+			if( memberDom.nodeName() != QString( "member" ) )
+			{
+				continue;
+			}
+			const int channel = memberDom.attribute( "channel" ).toInt();
+			allocateChannelsTo( channel );
+			group->addMember( static_cast<mix_ch_t>( channel ) );
+		}
+	}
+
+	// Publish the loaded gains (and reset every ungrouped channel to unity).
+	refreshGroups();
 
 	emit dataChanged();
 }
