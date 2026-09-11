@@ -12,6 +12,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/ClipSerialisationTest.cpp
+	src/core/ClipWarpPersistenceTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp

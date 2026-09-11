@@ -176,7 +176,24 @@ float SamplePlayHandle::warpRatio() const
 	const auto frame = std::clamp(static_cast<f_cnt_t>(std::max(0, m_state.frameIndex())),
 		m_window.sourceIn, m_window.sourceOut);
 	const auto rate = m_warp.framesPerTickAt(frame, m_baseFramesPerTick);
-	return rate > 0.0f ? rate / m_naturalFramesPerTick : 1.0f;
+	if (rate <= 0.0f) { return 1.0f; }
+
+	/*! The reciprocal is deliberate and it is MEASURED, not assumed.
+	 *
+	 *  `Sample::play`'s `ratio` is documented as "output sample rate divided by
+	 *  input sample rate", but the resampler it drives - `AudioResampler` ->
+	 *  libsamplerate `SRC_LINEAR` (`src/core/AudioResampler.cpp:40-41`, `:78`) -
+	 *  treats it as input/output, the converter's long-standing inversion. So a
+	 *  ratio of 2.0 makes the source advance at HALF a frame per output frame.
+	 *  Measured on this build by tests/src/tracks/SampleClipWarpTest.cpp
+	 *  `theResamplerRatioConventionIsPinned` and by
+	 *  tests/data/warp/render-proof.sh (a source whose bursts are at 0/1/2/3 s
+	 *  comes out at 0/2/4/6 s with ratio 2.0).
+	 *
+	 *  A warp wants `rate / natural` source frames per output frame, so the
+	 *  argument is the reciprocal of that. When the inversion is fixed, that
+	 *  test goes red and this line goes back to the direct ratio. */
+	return m_naturalFramesPerTick / rate;
 }
 
 

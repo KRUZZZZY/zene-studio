@@ -128,5 +128,6 @@ tools/local-ci.sh
 # sources, so these belong here rather than in tests/all-sources.txt).
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp

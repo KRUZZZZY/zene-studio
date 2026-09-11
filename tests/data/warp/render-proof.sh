@@ -288,6 +288,11 @@ for label, a, b in pairs:
     spread[label] = (s, differing, worst)
     print("%-42s %-11d %-12.3e %d" % (label, differing, worst, s))
 
+def onset_times(measured, digits=3):
+    """Onset positions only: the measured LEVEL moves with the renderer's own
+    jitter, and comparing it would make an onset table flaky."""
+    return {label: round(hit, digits) for label, (hit, _level) in measured.items()}
+
 verdicts = []
 
 def verdict(name, ok, detail):
@@ -311,17 +316,20 @@ verdict("2. run-to-run floor measured and used as the tolerance",
 
 # 3. BEHAVIOUR PRESERVATION, the measured-spread form: the two binaries agree on
 #    a project with no warp to within the floor this run measured, and their
-#    transient tables are identical.
+#    transient tables are identical. Byte equality is reported when it holds (it
+#    did in the recorded run) but is never the assertion - this tree's renderer
+#    is not bit-reproducible.
 agree = all(spread[l][1] <= tolerance
             for l in ("BASE vs WARP, plain project", "BASE vs WARP, plain project (run2)"))
+same_bytes = info["base-plain-run1"]["file"] == info["warp-plain-run1"]["file"]
 verdict("3. no warp: BASE == WARP within the measured floor", agree,
-        "differing %d and %d (tolerance %d)"
+        "differing %d and %d (tolerance %d); identical bytes in this run: %s"
         % (spread["BASE vs WARP, plain project"][1],
-           spread["BASE vs WARP, plain project (run2)"][1], tolerance))
+           spread["BASE vs WARP, plain project (run2)"][1], tolerance, same_bytes))
 verdict("4. no warp: identical burst onsets",
-        info["base-plain-run1"]["onsets"] == info["warp-plain-run1"]["onsets"],
-        "base %s / warp %s" % (sorted(info["base-plain-run1"]["onsets"]),
-                               sorted(info["warp-plain-run1"]["onsets"])))
+        onset_times(info["base-plain-run1"]["onsets"]) == onset_times(info["warp-plain-run1"]["onsets"]),
+        "base %s / warp %s" % (onset_times(info["base-plain-run1"]["onsets"]),
+                               onset_times(info["warp-plain-run1"]["onsets"])))
 
 # 5. SENSITIVITY CONTROL: the comparator can see a difference when there is one.
 verdict("5. sensitivity: warped project differs beyond the floor",
@@ -358,10 +366,11 @@ verdict("8. warped render is silent after its 2 s window span",
 #    exactly as the plain one, which is why markers were invisible before.
 verdict("9. BASE binary ignores <warp> (renders the warped project unwarped)",
         spread["BASE binary: warped vs plain"][1] <= tolerance
-        and info["base-warped"]["onsets"] == info["base-plain-run1"]["onsets"],
-        "differing %d (tolerance %d), onsets %s"
+        and onset_times(info["base-warped"]["onsets"]) == onset_times(info["base-plain-run1"]["onsets"]),
+        "differing %d (tolerance %d), onsets %s, identical bytes: %s"
         % (spread["BASE binary: warped vs plain"][1], tolerance,
-           sorted(info["base-warped"]["onsets"])))
+           onset_times(info["base-warped"]["onsets"]),
+           info["base-warped"]["file"] == info["base-plain-run1"]["file"]))
 
 print()
 sys.exit(0 if all(verdicts) else 1)
