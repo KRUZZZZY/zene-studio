@@ -70,6 +70,7 @@
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
+#include "TelemetryConsentDialog.h"
 #include "TextFloat.h"
 #include "ToolButton.h"
 #include "ToolPlugin.h"
@@ -395,6 +396,19 @@ void MainWindow::finalize()
 	help_menu->addSeparator();
 	help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
 				  this, SLOT(aboutLMMS()));
+
+#ifdef ZENE_TELEMETRY_ENABLED
+	// Opt-in telemetry: default off, and this screen is where a user turns it
+	// on, sees the exact payload, and turns it off again. See
+	// docs/TELEMETRY-V1.md.
+	help_menu->addSeparator();
+	QAction * telemetryAction = help_menu->addAction( embed::getIconPixmap( "setup" ),
+				  tr( "Telemetry - what we send..." ) );
+	connect( telemetryAction, &QAction::triggered, this, [this] {
+		TelemetryConsentDialog dialog( this );
+		dialog.exec();
+	} );
+#endif
 
 	// create tool-buttons
 	auto project_new = new ToolButton(

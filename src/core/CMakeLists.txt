@@ -16,6 +16,17 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
+# Opt-in telemetry (see docs/TELEMETRY-V1.md). The consent model, the payload
+# allowlist and the "what we send" builder are pure Qt and always compiled so
+# callers need no #ifdef and the feature can be tested directly; the networking
+# transport exists only when the packager left the kill switch on.
+SET(LMMS_TELEMETRY_SRCS
+	core/Telemetry.cpp
+)
+IF(ZENE_TELEMETRY_ENABLED)
+	LIST(APPEND LMMS_TELEMETRY_SRCS core/TelemetryNetworkTransport.cpp)
+ENDIF()
+
 set(LMMS_SRCS
 	${LMMS_SRCS}
 
@@ -161,6 +172,8 @@ set(LMMS_SRCS
 	core/midi/MidiWinMM.cpp
 
 	${LMMS_STEM_SRCS}
+
+	${LMMS_TELEMETRY_SRCS}
 
 	PARENT_SCOPE
 )

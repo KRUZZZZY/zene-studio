@@ -120,6 +120,16 @@ option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an insta
 option(WANT_QT6 "Build with experimental Qt6 support" OFF)
 option(WANT_WASM "Include the WASM DSP sandbox (requires the wasmtime C API)" ON)
 
+# Opt-in telemetry client (anonymous platform statistics, default off at
+# runtime). This option is the packager kill switch: -DZENE_TELEMETRY=OFF
+# removes the client, its "what we send" screen and its networking code from
+# the build entirely, so a distribution can ship a binary in which no send
+# path exists. See docs/TELEMETRY-V1.md.
+option(ZENE_TELEMETRY "Compile the opt-in telemetry client (OFF removes it and its networking code entirely)" ON)
+IF(ZENE_TELEMETRY)
+	SET(ZENE_TELEMETRY_ENABLED 1)
+ENDIF()
+
 
 # Offline stem separation (HTDemucs). Opt-in, background-only: the model needs
 # ~7.8 s of lookahead, so it can never run on the audio thread (see
@@ -338,6 +348,14 @@ ENDIF()
 IF(LMMS_HAVE_STEM_SPLIT)
 	# Only the optional model downloader needs Qt Network; the feature stays
 	# usable without a network connection.
+	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
+	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
+ENDIF()
+
+IF(ZENE_TELEMETRY_ENABLED)
+	# The telemetry transport is the only other Qt Network user. With the kill
+	# switch off this package is not required and no networking code from the
+	# telemetry client is compiled.
 	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
 	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
 ENDIF()

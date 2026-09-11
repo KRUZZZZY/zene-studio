@@ -1090,6 +1090,7 @@ tests/src/core/SlideNotesTest.cpp
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
+tests/src/core/TelemetryTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp

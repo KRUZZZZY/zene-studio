@@ -37,6 +37,9 @@ include/StemSeparation/StemSeparator.h
 include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
+include/Telemetry.h
+include/TelemetryConsentDialog.h
+include/TelemetryNetworkTransport.h
 include/TrackRecorder.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
@@ -102,8 +105,11 @@ src/core/ScriptEngine.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
+src/core/Telemetry.cpp
+src/core/TelemetryNetworkTransport.cpp
 src/gui/PinConnector.cpp
 src/gui/StemSplitController.cpp
+src/gui/TelemetryConsentDialog.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
