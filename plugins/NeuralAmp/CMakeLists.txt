@@ -26,7 +26,13 @@ BUILD_PLUGIN(neuralamp
 		NeuralAmpControlDialog.h
 )
 
-TARGET_LINK_LIBRARIES(neuralamp m ${CMAKE_DL_LIBS})
+# libm is a Unix convention: on MSVC the math routines live in the CRT, and asking for
+# m.lib fails the link outright (CI msvc-x64: "LNK1104: cannot open file 'm.lib'").
+# Upstream guards its own 'm' links the same way — plugins/LadspaEffect/{swh,tap}.
+TARGET_LINK_LIBRARIES(neuralamp ${CMAKE_DL_LIBS})
+IF(NOT MSVC)
+	TARGET_LINK_LIBRARIES(neuralamp m)
+ENDIF()
 
 # The inference loops are the hot path; make sure they are optimised even if the
 # host build type is not Release.

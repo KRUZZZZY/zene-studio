@@ -34,10 +34,17 @@ ADD_EXECUTABLE(nam_harness EXCLUDE_FROM_ALL
 	nam_harness.cpp
 	${NEURALAMP_ENGINE_SOURCES}
 )
+# libm is a Unix convention — MSVC keeps the math routines in the CRT, so asking for m.lib
+# fails the link (see ../CMakeLists.txt). Undefined variables expand to nothing in CMake, so
+# this keeps the three harness targets identical on Unix and correct on MSVC.
+IF(NOT MSVC)
+	SET(NEURALAMP_M_LIB m)
+ENDIF()
+
 TARGET_INCLUDE_DIRECTORIES(nam_harness PRIVATE ${NEURALAMP_TEST_INCLUDES})
 TARGET_COMPILE_FEATURES(nam_harness PRIVATE cxx_std_20)
 TARGET_COMPILE_OPTIONS(nam_harness PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
-TARGET_LINK_LIBRARIES(nam_harness PRIVATE m ${CMAKE_DL_LIBS})
+TARGET_LINK_LIBRARIES(nam_harness PRIVATE ${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS})
 
 # Stage-level CPU profile of the engine. NAM_PROFILE_LAYERS is defined for this
 # target only: it turns the NAM_PROF_* hooks in NamModel.cpp into per-stage
@@ -51,7 +58,7 @@ TARGET_INCLUDE_DIRECTORIES(nam_profile PRIVATE ${NEURALAMP_TEST_INCLUDES})
 TARGET_COMPILE_FEATURES(nam_profile PRIVATE cxx_std_20)
 TARGET_COMPILE_OPTIONS(nam_profile PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
 TARGET_COMPILE_DEFINITIONS(nam_profile PRIVATE NAM_PROFILE_LAYERS)
-TARGET_LINK_LIBRARIES(nam_profile PRIVATE m ${CMAKE_DL_LIBS})
+TARGET_LINK_LIBRARIES(nam_profile PRIVATE ${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS})
 
 IF(UNIX AND NOT APPLE)
 	ADD_EXECUTABLE(rt_alloc_probe EXCLUDE_FROM_ALL
@@ -61,7 +68,7 @@ IF(UNIX AND NOT APPLE)
 	TARGET_INCLUDE_DIRECTORIES(rt_alloc_probe PRIVATE ${NEURALAMP_TEST_INCLUDES})
 	TARGET_COMPILE_FEATURES(rt_alloc_probe PRIVATE cxx_std_20)
 	TARGET_COMPILE_OPTIONS(rt_alloc_probe PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
-	TARGET_LINK_LIBRARIES(rt_alloc_probe PRIVATE m ${CMAKE_DL_LIBS})
+	TARGET_LINK_LIBRARIES(rt_alloc_probe PRIVATE ${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS})
 	TARGET_LINK_OPTIONS(rt_alloc_probe PRIVATE
 		"-Wl,--wrap=malloc"
 		"-Wl,--wrap=calloc"

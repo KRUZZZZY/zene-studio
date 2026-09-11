@@ -47,4 +47,9 @@ BUILD_PLUGIN(rnnoisedenoiser
 # (the same reason the libgig includes are SYSTEM in the GigPlayer targets).
 TARGET_INCLUDE_DIRECTORIES(rnnoisedenoiser SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/rnnoise")
 
-TARGET_LINK_LIBRARIES(rnnoisedenoiser rnnoise_vendored m)
+TARGET_LINK_LIBRARIES(rnnoisedenoiser rnnoise_vendored ${CMAKE_DL_LIBS})
+# Same libm guard as the other plugins: Unix-only, and MSVC keeps the math routines in
+# the CRT (asking for m.lib fails the link).
+IF(NOT MSVC)
+	TARGET_LINK_LIBRARIES(rnnoisedenoiser m)
+ENDIF()
