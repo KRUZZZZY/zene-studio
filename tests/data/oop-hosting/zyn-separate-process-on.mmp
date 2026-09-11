@@ -1,0 +1,318 @@
+<?xml version="1.0"?>
+<!DOCTYPE lmms-project>
+<lmms-project creator="LMMS" version="1.0" type="song" creatorversion="1.2.0">
+<head timesig_numerator="4" masterpitch="0" timesig_denominator="4" bpm="140" mastervol="100"/>
+  <song>
+    <trackcontainer visible="1" maximized="0" x="2" minimized="0" y="1" width="963" height="925" type="song">
+<track name="Pad" solo="0" muted="0" type="0">
+        <instrumenttrack pan="0" fxch="0" basenote="57" vol="100" pitchrange="1" usemasterpitch="1" pitch="0">
+          <instrument name="zynaddsubfx">
+            <zynaddsubfx separateprocess="1"/>
+          </instrument>
+          <eldata fres="0.5" fcut="14000" ftype="0" fwet="0">
+            <elvol syncmode="0" ctlenvamt="0" lspd_numerator="4" lspd="0.1" pdel="0" hold="0.5" lspd_denominator="4" rel="0.1" userwavefile="" sustain="0.5" latt="0" dec="0.5" att="0" lamt="0" amt="0" lpdel="0" lshp="0" x100="0"/>
+            <elcut syncmode="0" ctlenvamt="0" lspd_numerator="4" lspd="0.1" pdel="0" hold="0.5" lspd_denominator="4" rel="0.1" userwavefile="" sustain="0.5" latt="0" dec="0.5" att="0" lamt="0" amt="0" lpdel="0" lshp="0" x100="0"/>
+            <elres syncmode="0" ctlenvamt="0" lspd_numerator="4" lspd="0.1" pdel="0" hold="0.5" lspd_denominator="4" rel="0.1" userwavefile="" sustain="0.5" latt="0" dec="0.5" att="0" lamt="0" amt="0" lpdel="0" lshp="0" x100="0"/>
+          </eldata>
+          <chordcreator chord-enabled="0" chord="0" chordrange="1"/>
+          <arpeggiator arptime_denominator="4" syncmode="0" arpgate="100" arp="0" arprange="1" arp-enabled="0" arpmode="0" arptime_numerator="4" arpdir="0" arptime="100"/>
+          <midiport outputchannel="1" readable="0" outputprogram="1" writable="0" fixedoutputnote="-1" basevelocity="127" fixedoutputvelocity="-1" outputcontroller="0" inputcontroller="0" inputchannel="0" fixedinputvelocity="-1"/>
+          <fxchain numofeffects="0" enabled="0"/>
+        </instrumenttrack>
+        <pattern steps="16" len="768" name="I" pos="0" muted="0" type="1">
+          <note pan="0" len="192" key="56" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="0"/>
+          <note pan="0" len="192" key="65" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="192"/>
+          <note pan="0" len="192" key="58" vol="100" pos="192"/>
+          <note pan="0" len="192" key="63" vol="100" pos="192"/>
+          <note pan="0" len="192" key="68" vol="100" pos="384"/>
+          <note pan="0" len="192" key="63" vol="100" pos="384"/>
+          <note pan="0" len="192" key="61" vol="100" pos="384"/>
+          <note pan="0" len="192" key="65" vol="100" pos="576"/>
+          <note pan="0" len="192" key="61" vol="100" pos="576"/>
+          <note pan="0" len="192" key="58" vol="100" pos="576"/>
+        </pattern>
+        <pattern steps="16" len="1536" name="II" pos="3840" muted="0" type="1">
+          <note pan="0" len="192" key="49" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="0"/>
+          <note pan="0" len="192" key="65" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="192"/>
+          <note pan="0" len="192" key="61" vol="106" pos="192"/>
+          <note pan="0" len="192" key="46" vol="106" pos="192"/>
+          <note pan="0" len="192" key="63" vol="106" pos="384"/>
+          <note pan="0" len="192" key="44" vol="106" pos="384"/>
+          <note pan="0" len="192" key="51" vol="106" pos="384"/>
+          <note pan="0" len="192" key="49" vol="106" pos="576"/>
+          <note pan="0" len="192" key="56" vol="106" pos="576"/>
+          <note pan="0" len="192" key="68" vol="106" pos="576"/>
+          <note pan="0" len="192" key="46" vol="106" pos="768"/>
+          <note pan="0" len="192" key="61" vol="106" pos="768"/>
+          <note pan="0" len="192" key="70" vol="106" pos="768"/>
+          <note pan="0" len="192" key="65" vol="106" pos="960"/>
+          <note pan="0" len="192" key="44" vol="106" pos="960"/>
+          <note pan="0" len="192" key="58" vol="106" pos="960"/>
+          <note pan="0" len="192" key="68" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="46" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="61" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="41" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="56" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="63" vol="106" pos="1344"/>
+        </pattern>
+        <pattern steps="16" len="768" name="I" pos="768" muted="0" type="1">
+          <note pan="0" len="192" key="56" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="0"/>
+          <note pan="0" len="192" key="65" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="192"/>
+          <note pan="0" len="192" key="58" vol="100" pos="192"/>
+          <note pan="0" len="192" key="63" vol="100" pos="192"/>
+          <note pan="0" len="192" key="68" vol="100" pos="384"/>
+          <note pan="0" len="192" key="63" vol="100" pos="384"/>
+          <note pan="0" len="192" key="61" vol="100" pos="384"/>
+          <note pan="0" len="192" key="65" vol="100" pos="576"/>
+          <note pan="0" len="192" key="61" vol="100" pos="576"/>
+          <note pan="0" len="192" key="58" vol="100" pos="576"/>
+        </pattern>
+        <pattern steps="16" len="768" name="I" pos="1536" muted="0" type="1">
+          <note pan="0" len="192" key="56" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="0"/>
+          <note pan="0" len="192" key="65" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="192"/>
+          <note pan="0" len="192" key="58" vol="100" pos="192"/>
+          <note pan="0" len="192" key="63" vol="100" pos="192"/>
+          <note pan="0" len="192" key="68" vol="100" pos="384"/>
+          <note pan="0" len="192" key="63" vol="100" pos="384"/>
+          <note pan="0" len="192" key="61" vol="100" pos="384"/>
+          <note pan="0" len="192" key="65" vol="100" pos="576"/>
+          <note pan="0" len="192" key="61" vol="100" pos="576"/>
+          <note pan="0" len="192" key="58" vol="100" pos="576"/>
+        </pattern>
+        <pattern steps="16" len="768" name="I" pos="2304" muted="0" type="1">
+          <note pan="0" len="192" key="56" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="0"/>
+          <note pan="0" len="192" key="65" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="192"/>
+          <note pan="0" len="192" key="58" vol="100" pos="192"/>
+          <note pan="0" len="192" key="63" vol="100" pos="192"/>
+          <note pan="0" len="192" key="68" vol="100" pos="384"/>
+          <note pan="0" len="192" key="63" vol="100" pos="384"/>
+          <note pan="0" len="192" key="61" vol="100" pos="384"/>
+          <note pan="0" len="192" key="65" vol="100" pos="576"/>
+          <note pan="0" len="192" key="61" vol="100" pos="576"/>
+          <note pan="0" len="192" key="58" vol="100" pos="576"/>
+        </pattern>
+        <pattern steps="16" len="768" name="I" pos="3072" muted="0" type="1">
+          <note pan="0" len="192" key="56" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="0"/>
+          <note pan="0" len="192" key="65" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="192"/>
+          <note pan="0" len="192" key="58" vol="100" pos="192"/>
+          <note pan="0" len="192" key="63" vol="100" pos="192"/>
+          <note pan="0" len="192" key="68" vol="100" pos="384"/>
+          <note pan="0" len="192" key="63" vol="100" pos="384"/>
+          <note pan="0" len="192" key="61" vol="100" pos="384"/>
+          <note pan="0" len="192" key="65" vol="100" pos="576"/>
+          <note pan="0" len="192" key="61" vol="100" pos="576"/>
+          <note pan="0" len="192" key="58" vol="100" pos="576"/>
+        </pattern>
+        <pattern steps="16" len="768" name="I" pos="11520" muted="0" type="1">
+          <note pan="0" len="192" key="56" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="0"/>
+          <note pan="0" len="192" key="65" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="192"/>
+          <note pan="0" len="192" key="58" vol="100" pos="192"/>
+          <note pan="0" len="192" key="63" vol="100" pos="192"/>
+          <note pan="0" len="192" key="68" vol="100" pos="384"/>
+          <note pan="0" len="192" key="63" vol="100" pos="384"/>
+          <note pan="0" len="192" key="61" vol="100" pos="384"/>
+          <note pan="0" len="192" key="65" vol="100" pos="576"/>
+          <note pan="0" len="192" key="61" vol="100" pos="576"/>
+          <note pan="0" len="192" key="58" vol="100" pos="576"/>
+        </pattern>
+        <pattern steps="16" len="768" name="I" pos="12288" muted="0" type="1">
+          <note pan="0" len="192" key="56" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="0"/>
+          <note pan="0" len="192" key="65" vol="100" pos="0"/>
+          <note pan="0" len="192" key="61" vol="100" pos="192"/>
+          <note pan="0" len="192" key="58" vol="100" pos="192"/>
+          <note pan="0" len="192" key="63" vol="100" pos="192"/>
+          <note pan="0" len="192" key="68" vol="100" pos="384"/>
+          <note pan="0" len="192" key="63" vol="100" pos="384"/>
+          <note pan="0" len="192" key="61" vol="100" pos="384"/>
+          <note pan="0" len="192" key="65" vol="100" pos="576"/>
+          <note pan="0" len="192" key="61" vol="100" pos="576"/>
+          <note pan="0" len="192" key="58" vol="100" pos="576"/>
+        </pattern>
+        <pattern steps="16" len="1536" name="II" pos="5376" muted="0" type="1">
+          <note pan="0" len="192" key="49" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="0"/>
+          <note pan="0" len="192" key="65" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="192"/>
+          <note pan="0" len="192" key="61" vol="106" pos="192"/>
+          <note pan="0" len="192" key="46" vol="106" pos="192"/>
+          <note pan="0" len="192" key="63" vol="106" pos="384"/>
+          <note pan="0" len="192" key="44" vol="106" pos="384"/>
+          <note pan="0" len="192" key="51" vol="106" pos="384"/>
+          <note pan="0" len="192" key="49" vol="106" pos="576"/>
+          <note pan="0" len="192" key="56" vol="106" pos="576"/>
+          <note pan="0" len="192" key="68" vol="106" pos="576"/>
+          <note pan="0" len="192" key="46" vol="106" pos="768"/>
+          <note pan="0" len="192" key="61" vol="106" pos="768"/>
+          <note pan="0" len="192" key="70" vol="106" pos="768"/>
+          <note pan="0" len="192" key="65" vol="106" pos="960"/>
+          <note pan="0" len="192" key="44" vol="106" pos="960"/>
+          <note pan="0" len="192" key="58" vol="106" pos="960"/>
+          <note pan="0" len="192" key="68" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="46" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="61" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="41" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="56" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="63" vol="106" pos="1344"/>
+        </pattern>
+        <pattern steps="16" len="1536" name="II" pos="6912" muted="0" type="1">
+          <note pan="0" len="192" key="49" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="0"/>
+          <note pan="0" len="192" key="65" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="192"/>
+          <note pan="0" len="192" key="61" vol="106" pos="192"/>
+          <note pan="0" len="192" key="46" vol="106" pos="192"/>
+          <note pan="0" len="192" key="63" vol="106" pos="384"/>
+          <note pan="0" len="192" key="44" vol="106" pos="384"/>
+          <note pan="0" len="192" key="51" vol="106" pos="384"/>
+          <note pan="0" len="192" key="49" vol="106" pos="576"/>
+          <note pan="0" len="192" key="56" vol="106" pos="576"/>
+          <note pan="0" len="192" key="68" vol="106" pos="576"/>
+          <note pan="0" len="192" key="46" vol="106" pos="768"/>
+          <note pan="0" len="192" key="61" vol="106" pos="768"/>
+          <note pan="0" len="192" key="70" vol="106" pos="768"/>
+          <note pan="0" len="192" key="65" vol="106" pos="960"/>
+          <note pan="0" len="192" key="44" vol="106" pos="960"/>
+          <note pan="0" len="192" key="58" vol="106" pos="960"/>
+          <note pan="0" len="192" key="68" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="46" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="61" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="41" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="56" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="63" vol="106" pos="1344"/>
+        </pattern>
+        <pattern steps="16" len="1536" name="II" pos="8448" muted="0" type="1">
+          <note pan="0" len="192" key="49" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="0"/>
+          <note pan="0" len="192" key="65" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="192"/>
+          <note pan="0" len="192" key="61" vol="106" pos="192"/>
+          <note pan="0" len="192" key="46" vol="106" pos="192"/>
+          <note pan="0" len="192" key="63" vol="106" pos="384"/>
+          <note pan="0" len="192" key="44" vol="106" pos="384"/>
+          <note pan="0" len="192" key="51" vol="106" pos="384"/>
+          <note pan="0" len="192" key="49" vol="106" pos="576"/>
+          <note pan="0" len="192" key="56" vol="106" pos="576"/>
+          <note pan="0" len="192" key="68" vol="106" pos="576"/>
+          <note pan="0" len="192" key="46" vol="106" pos="768"/>
+          <note pan="0" len="192" key="61" vol="106" pos="768"/>
+          <note pan="0" len="192" key="70" vol="106" pos="768"/>
+          <note pan="0" len="192" key="65" vol="106" pos="960"/>
+          <note pan="0" len="192" key="44" vol="106" pos="960"/>
+          <note pan="0" len="192" key="58" vol="106" pos="960"/>
+          <note pan="0" len="192" key="68" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="46" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="61" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="41" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="56" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="63" vol="106" pos="1344"/>
+        </pattern>
+        <pattern steps="16" len="1536" name="II" pos="9984" muted="0" type="1">
+          <note pan="0" len="192" key="49" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="0"/>
+          <note pan="0" len="192" key="65" vol="106" pos="0"/>
+          <note pan="0" len="192" key="56" vol="106" pos="192"/>
+          <note pan="0" len="192" key="61" vol="106" pos="192"/>
+          <note pan="0" len="192" key="46" vol="106" pos="192"/>
+          <note pan="0" len="192" key="63" vol="106" pos="384"/>
+          <note pan="0" len="192" key="44" vol="106" pos="384"/>
+          <note pan="0" len="192" key="51" vol="106" pos="384"/>
+          <note pan="0" len="192" key="49" vol="106" pos="576"/>
+          <note pan="0" len="192" key="56" vol="106" pos="576"/>
+          <note pan="0" len="192" key="68" vol="106" pos="576"/>
+          <note pan="0" len="192" key="46" vol="106" pos="768"/>
+          <note pan="0" len="192" key="61" vol="106" pos="768"/>
+          <note pan="0" len="192" key="70" vol="106" pos="768"/>
+          <note pan="0" len="192" key="65" vol="106" pos="960"/>
+          <note pan="0" len="192" key="44" vol="106" pos="960"/>
+          <note pan="0" len="192" key="58" vol="106" pos="960"/>
+          <note pan="0" len="192" key="68" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="46" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="61" vol="106" pos="1152"/>
+          <note pan="0" len="192" key="41" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="56" vol="106" pos="1344"/>
+          <note pan="0" len="192" key="63" vol="106" pos="1344"/>
+        </pattern>
+      </track>
+    </trackcontainer>
+<fxmixer visible="1" maximized="0" x="972" minimized="0" y="21" width="795" height="332">
+      <fxchannel name="Master" soloed="0" num="0" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <volume id="5556034" value="0.45" scale_type="linear"/>
+      </fxchannel>
+      <fxchannel name="Kick" soloed="0" num="1" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <volume id="1948282" value="1.03" scale_type="linear"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Clap" soloed="0" num="2" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Snare" soloed="0" num="3" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="HiHat" soloed="0" num="4" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Crash" soloed="0" num="5" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Arp" soloed="0" num="6" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Arp Bass" soloed="0" num="7" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Pad" soloed="0" num="8" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Lead" soloed="0" num="9" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Arp II" soloed="0" num="10" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Pad II" soloed="0" num="11" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Bassliner" soloed="0" num="12" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Waves" soloed="0" num="13" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+      <fxchannel volume="1" name="Bubbles" soloed="0" num="14" muted="0">
+        <fxchain numofeffects="0" enabled="0"/>
+        <send channel="0" amount="1"/>
+      </fxchannel>
+    </fxmixer>
+<timeline lp0pos="0" lp1pos="768" lpstate="0"/>
+    <controllers/>
+  </song>
+</lmms-project>

@@ -1111,6 +1111,7 @@ tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
 tests/src/plugins/Vst3HostTest.cpp
+tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tools/mmpz-git/scratch/qtesc.cpp
