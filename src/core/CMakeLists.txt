@@ -57,6 +57,7 @@ set(LMMS_SRCS
 	core/Ladspa2LMMS.cpp
 	core/LadspaControl.cpp
 	core/LatencyCompensation.cpp
+	core/LufsMeter.cpp
 	core/LadspaManager.cpp
 	core/LfoController.cpp
 	core/LinkedModelGroups.cpp
