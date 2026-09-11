@@ -11,6 +11,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
+	src/core/ControlRegistryTest.cpp
 	src/core/MathTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/PluginAudioPortsTest.cpp
@@ -610,3 +611,26 @@ set_tests_properties(AudioPluginTest PROPERTIES
 )
 lmms_add_coverage(synthetic_audio_plugin)
 lmms_add_coverage(AudioPluginTest)
+
+# ---------------------------------------------------------------------------
+# Agent control surface (SPEC A12/A16). The ControlRegistryTest unit test runs
+# in the LMMS_TESTS loop above; this one starts the real binary with
+# --control-socket under QT_QPA_PLATFORM=offscreen and drives it from an
+# EXTERNAL Python client over the AF_UNIX socket, so the socket, the wire
+# framing and the command groups are exercised end to end.
+# ---------------------------------------------------------------------------
+find_program(PYTHON3_EXECUTABLE NAMES python3)
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlSocketIntegration
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-integration.py
+			$<TARGET_FILE:lmms>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+	)
+	set_tests_properties(ControlSocketIntegration PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+else()
+	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
+endif()

@@ -71,6 +71,10 @@
 #include "RenderManager.h"
 #include "Song.h"
 #include "ScriptEngine.h"
+#include "ControlRegistry.h"
+#include "ControlServer.h"
+
+#include <memory>
 
 #ifdef LMMS_DEBUG_FPE
 #include <fenv.h> // For feenableexcept
@@ -205,6 +209,8 @@ void printHelp()
 		"  -p, --profile <out>            Dump profiling information to file <out>\n"
 		"      --run-script <file>        Run the Lua script <file> headless and exit\n"
 		"          Prints the script's LuaLog output to stdout\n"
+		"      --control-socket <path>    Listen for agent JSON-RPC commands on the\n"
+		"          AF_UNIX socket <path>. Opt-in; off unless given.\n"
 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
 		"          Range: 44100 (default) to 192000\n"
 		"          Possible values: 1, 2, 4, 8\n"
@@ -258,7 +264,7 @@ int main( int argc, char * * argv )
 	bool renderTracks = false;
 	int scriptExitCode = EXIT_SUCCESS;
 	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile,
-			scriptFile;
+			scriptFile, controlSocket;
 
 	// first of two command-line parsing stages
 	for (int i = 1; i < argc; ++i)
@@ -671,6 +677,19 @@ int main( int argc, char * * argv )
 
 			scriptFile = QString::fromLocal8Bit( argv[i] );
 		}
+		else if( arg == "--control-socket" )
+		{
+			// Opt-in agent control socket (SPEC-zene-studio.md A12). Off unless
+			// this flag is given; the socket is AF_UNIX, mode 0600, local only.
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No control socket path specified" );
+			}
+
+			controlSocket = QString::fromLocal8Bit( argv[i] );
+		}
 		else
 		{
 			if( argv[i][0] == '-' )
@@ -726,6 +745,25 @@ int main( int argc, char * * argv )
 #endif
 
 	bool destroyEngine = false;
+
+	// Opt-in agent control surface (SPEC A12). The socket is started before the
+	// engine so that a client can connect and probe (control.ping) while the
+	// instance is still initialising; commands that need the model return the
+	// typed 'busy' refusal until Engine::init() has run.
+	std::unique_ptr<ControlServer> controlServer;
+	if( !controlSocket.isEmpty() )
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		controlServer = std::make_unique<ControlServer>( registry );
+		QString controlError;
+		if( !controlServer->listen( controlSocket, &controlError ) )
+		{
+			fprintf( stderr, "control socket: %s\n", controlError.toUtf8().constData() );
+			return EXIT_FAILURE;
+		}
+		printf( "control socket listening on %s\n", controlSocket.toUtf8().constData() );
+		fflush( stdout );
+	}
 
 	// if we have an output file for rendering, just render the song
 	// without starting the GUI
@@ -958,6 +996,14 @@ int main( int argc, char * * argv )
 		{
 			gui::getGUI()->mainWindow()->autoSaveTimerReset();
 		}
+	}
+
+	// The application is fully constructed and the initial project exists: from
+	// here the agent surface may drive the model (before this point every
+	// command returns the typed 'busy' refusal).
+	if( controlServer )
+	{
+		controlServer->registry()->setReady( true );
 	}
 
 	const int ret = app->exec();

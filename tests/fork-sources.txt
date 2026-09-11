@@ -111,3 +111,17 @@ src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tools/local-ci.sh
+
+# ---- Agent control surface (SPEC A11-A16, lane post-alpha/agent-control-surface) ----
+# The in-app command registry, the opt-in JSON-RPC control socket and the
+# first command groups (control.*, transport.*, track.*, mixer.*, project.*,
+# render.render). Registered as fork-NEW so the fork-scoped ratchets measure them.
+include/ControlRegistry.h
+include/ControlServer.h
+src/core/ControlCommandsControl.cpp
+src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsProject.cpp
+src/core/ControlCommandsTransport.cpp
+src/core/ControlRegistry.cpp
+src/core/ControlServer.cpp
+tests/src/core/ControlRegistryTest.cpp
