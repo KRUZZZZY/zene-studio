@@ -71,10 +71,14 @@ measurement wins — re-run it. Gate definitions and their numbers live in
 
 **Blocking**
 
-- A `main` that builds — the `build` workflow's runs 8-10 (2026-09-10) all failed; runs 11 and 12
-  were superseded (cancelled) by the next push before finishing. The fixes for six of the failures
-  are now **pushed** as `7f08809e4` (2026-09-11, rebased from `2dcec93b3` on `fix/ci-matrix`), and
-  build run #13 is the first run that contains them. `checks` and `doxygen` pass.
+- A `main` that builds — runs 8-10 (2026-09-10) failed; runs 11-13 were cancelled by the per-ref
+  concurrency group; run #14 was the first to contain the earlier fixes and **all seven jobs still
+  failed**, for four distinct reasons read from its job logs (macos x86_64/arm64, mingw64 and
+  windows-arm64: `synthetic_audio_plugin` linked only Qt and could not resolve lmms symbols;
+  msvc-x64: a bare `__attribute__` under MSVC; linux-x86_64: vendored RNNoise `#warning` promoted to
+  an error by `-DUSE_WERROR`; linux-arm64: vendored Eigen deprecation, same cause). All four are
+  fixed in `bd1d95de6`; the run containing that commit is the verification. `checks` and `doxygen`
+  pass.
 - Local reproduction of the CI matrix.
 - Any installable release (no GitHub releases exist).
 

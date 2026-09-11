@@ -57,11 +57,20 @@ patching is **not available in the current build**.
 
 ## Build status
 
-`main` did **not** build on CI on 2026-09-10: the `build` workflow's runs 8-10 all failed, while
-`checks` and `doxygen` passed. The fixes for six of those failures were pushed on 2026-09-11
-(`7f08809e4`), so build run #13 is the first run containing them — read the current state from
-`gh run list --repo KRUZZZZY/zene-studio` rather than from this page. The `quality-gates` workflow
-is dispatch-only, so no gate runs on push here.
+`main` does not build on CI yet. All of this comes from `gh run list`:
+
+- runs 8-10 (2026-09-10) failed; runs 11-13 were **cancelled** by the per-ref concurrency group as
+  further pushes landed, so no completed run had contained the fixes;
+- run #14 (`0b5294140`) was the first run that did, and **all seven jobs still failed** — the six
+  earlier fixes were incomplete. Four further causes were read out of that run's job logs
+  (`synthetic_audio_plugin` linked only Qt, so macOS/mingw/windows-arm64 could not resolve lmms
+  symbols; `PLUGIN_EXPORT` used a bare GCC attribute under MSVC; two vendored-code warnings —
+  RNNoise and Eigen — were promoted to errors by `-DUSE_WERROR`) and are fixed in `bd1d95de6`;
+- the run containing `bd1d95de6` is the verification. Check
+  `gh run list --repo KRUZZZZY/zene-studio` for the current state.
+
+`checks` and `doxygen` pass. The `quality-gates` workflow is dispatch-only, so no gate runs on push
+here — a green check in this repository is not evidence that the gates pass.
 
 Do not read the feature list above as a statement that the tree builds today, and
 do not read a green PR check in this repository as evidence that it does — the
