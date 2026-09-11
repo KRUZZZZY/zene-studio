@@ -45,6 +45,7 @@
 #include "InstrumentTrack.h"
 #include "Keymap.h"
 #include "NotePlayHandle.h"
+#include "NoteRandom.h"
 #include "MidiClip.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
@@ -972,6 +973,7 @@ void Song::createNewProject()
 	m_timeSigModel.reset();
 	m_masterVolumeModel.setInitValue( 100 );
 	m_masterPitchModel.setInitValue( 0 );
+	m_midiSeed = 0;
 
 	QCoreApplication::instance()->processEvents();
 
@@ -1073,6 +1075,9 @@ void Song::loadProject( const QString & fileName )
 	m_timeSigModel.loadSettings( dataFile.head(), "timesig" );
 	m_masterVolumeModel.loadSettings( dataFile.head(), "mastervol" );
 	m_masterPitchModel.loadSettings( dataFile.head(), "masterpitch" );
+	// MIDI depth: the seed the note probability / velocity jitter rolls use.
+	// Absent (every project saved before this existed) reads as 0.
+	m_midiSeed = NoteRandom::readProjectSeed( dataFile.head() );
 
 	getTimeline(PlayMode::Song).setLoopEnabled(false);
 
@@ -1223,6 +1228,9 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	m_timeSigModel.saveSettings( dataFile, dataFile.head(), "timesig" );
 	m_masterVolumeModel.saveSettings( dataFile, dataFile.head(), "mastervol" );
 	m_masterPitchModel.saveSettings( dataFile, dataFile.head(), "masterpitch" );
+	// Written only when it is not the default, so a project that does not use
+	// MIDI depth keeps the header it has always had.
+	NoteRandom::writeProjectSeed( dataFile.head(), m_midiSeed );
 
 	saveState( dataFile, dataFile.content() );
 

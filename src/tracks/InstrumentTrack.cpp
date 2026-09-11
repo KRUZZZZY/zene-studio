@@ -36,6 +36,7 @@
 #include "MidiClient.h"
 #include "MidiClip.h"
 #include "MixHelpers.h"
+#include "NoteRandom.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "PianoRoll.h"
@@ -789,8 +790,40 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				? 0
 				: (currentNote->endPos() - cur_start - noteOverlap) * frames_per_tick;
 
+			// MIDI depth: note probability. The decision is taken here, once
+			// per note trigger at scheduling time - never in the per-frame
+			// loop - and it is a pure function of the project seed and the
+			// note's identity, so it neither allocates nor locks on the audio
+			// thread. A note that keeps the default probability of 1 returns
+			// before the roll is even computed, which is what keeps a project
+			// that does not use this feature bit-identical to before.
+			//
+			// Consequence of the stateless roll, stated deliberately: the
+			// result is stable across passes, so a 50% note either plays in
+			// every repeat of the clip or in none of them; the seed is what
+			// re-rolls the take.
+			const uint32_t midiSeed = Engine::getSong()->midiSeed();
+			if( !NoteRandom::passesProbability( currentNote->probability(), midiSeed,
+					currentNote->key(), currentNote->pos(), currentNote->length() ) )
+			{
+				++nit;
+				continue;
+			}
+
 			NotePlayHandle* notePlayHandle = NotePlayHandleManager::acquire(this, _offset, noteFrames, *currentNote);
 			notePlayHandle->setPatternTrack(pattern_track);
+
+			// MIDI depth: velocity jitter. Applied to the play handle's own
+			// copy of the note, never to the persisted one, and only when the
+			// note asks for it.
+			if( currentNote->velocityJitter() > 0.f )
+			{
+				const float factor = NoteRandom::velocityFactor( currentNote->velocityJitter(), midiSeed,
+						currentNote->key(), currentNote->pos(), currentNote->length() );
+				notePlayHandle->setVolume( static_cast<volume_t>( std::clamp(
+					currentNote->getVolume() * factor,
+					static_cast<float>( MinVolume ), static_cast<float>( MaxVolume ) ) ) );
+			}
 			// Slide notes glide from the nearest preceding note in this clip
 			// (SPEC-slide-notes D-2; no preceding note -> no glide)
 			if( currentNote->slide() && nit != notes.begin() )

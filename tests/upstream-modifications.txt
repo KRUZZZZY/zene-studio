@@ -49,3 +49,10 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> proce
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+
+# --- post-alpha/midi-depth (2026-09-11) ------------------------------------
+include/Note.h	post-alpha/midi-depth: note probability and velocity jitter (prob/veljit) on the note model, per the roadmap-gap register's shortest honest version of General MIDI depth
+include/Song.h	post-alpha/midi-depth: midiSeed()/setMidiSeed() and m_midiSeed - the project seed the note probability and velocity jitter rolls use
+src/core/Note.cpp	post-alpha/midi-depth: serialise/parse prob and veljit as optional attributes written only when set, and carry both through the copy constructor and operator=
+src/core/Song.cpp	post-alpha/midi-depth: read and write the midiseed header attribute (only when non-zero) and reset it for a new project
+src/tracks/InstrumentTrack.cpp	post-alpha/midi-depth: skip a note that loses the seeded probability roll, and apply the seeded velocity jitter to the NotePlayHandle, at scheduling time in play()

@@ -132,6 +132,20 @@ public:
 	bool slide() const { return m_slide; }
 	void setSlide( bool slide ) { m_slide = slide; }
 
+	/*! The chance, in [0, 1], that this note is played at all in a take.
+	 *  1 - the default, and what every project saved before note probability
+	 *  existed loads as - means "always". Serialized as the optional "prob"
+	 *  attribute, written only when it is not 1. */
+	float probability() const { return m_probability; }
+	void setProbability( float probability );
+
+	/*! Multiplicative velocity jitter, in [0, 1]. 0 - the default - leaves
+	 *  the note's velocity exactly alone; a value j multiplies it by a factor
+	 *  in [1-j, 1+j] drawn from the seeded roll. Serialized as the optional
+	 *  "veljit" attribute, written only when it is not 0. */
+	float velocityJitter() const { return m_velocityJitter; }
+	void setVelocityJitter( float jitter );
+
 	//! Types of per-note automation. Currently only detuning/pitch bending is supported.
 	enum class ParameterType
 	{
@@ -286,6 +300,11 @@ private:
 
 	Type m_type = Type::Regular;
 	bool m_slide = false;
+
+	// MIDI depth. Both default to the behaviour of every project saved before
+	// these existed: always play, velocity untouched.
+	float m_probability = 1.f;
+	float m_velocityJitter = 0.f;
 };
 
 using NoteVector = std::vector<Note*>;

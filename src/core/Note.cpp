@@ -68,7 +68,9 @@ Note::Note( const Note & note ) :
 	m_pos( note.m_pos ),
 	m_detuning(note.m_detuning),
 	m_type(note.m_type),
-	m_slide(note.m_slide)
+	m_slide(note.m_slide),
+	m_probability(note.m_probability),
+	m_velocityJitter(note.m_velocityJitter)
 {
 }
 
@@ -86,6 +88,8 @@ Note& Note::operator=(const Note& note)
 	m_pos = note.m_pos;
 	m_type = note.m_type;
 	m_slide = note.m_slide;
+	m_probability = note.m_probability;
+	m_velocityJitter = note.m_velocityJitter;
 	m_detuning = note.m_detuning;
 
 	return *this;
@@ -140,6 +144,18 @@ void Note::setVolume( volume_t volume )
 {
 	const volume_t v = std::clamp(volume, MinVolume, MaxVolume);
 	m_volume = v;
+}
+
+
+void Note::setProbability( float probability )
+{
+	m_probability = std::clamp( probability, 0.f, 1.f );
+}
+
+
+void Note::setVelocityJitter( float jitter )
+{
+	m_velocityJitter = std::clamp( jitter, 0.f, 1.f );
 }
 
 
@@ -204,6 +220,18 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 		parent.setAttribute( "slide", "1" );
 	}
 
+	// MIDI depth: note probability and velocity jitter. Written only when set,
+	// exactly like "slide" above, so a note - and a whole project - that does
+	// not use them serializes byte-identically to before this existed.
+	if( m_probability != 1.f )
+	{
+		parent.setAttribute( "prob", QString::number( m_probability, 'g', 9 ) );
+	}
+	if( m_velocityJitter != 0.f )
+	{
+		parent.setAttribute( "veljit", QString::number( m_velocityJitter, 'g', 9 ) );
+	}
+
 	if( m_detuning && m_length )
 	{
 		m_detuning->saveSettings( doc, parent );
@@ -226,6 +254,12 @@ void Note::loadSettings( const QDomElement & _this )
 	m_type = static_cast<Type>(_this.attribute("type", "0").toInt());
 	// Absent attribute means a regular note (all projects predating slide notes)
 	m_slide = _this.attribute( "slide" ).toInt();
+
+	// Absent attributes mean the neutral MIDI-depth values: the note always
+	// plays and its velocity is untouched, which is what every project saved
+	// before this existed expects.
+	m_probability = std::clamp( _this.attribute( "prob", "1" ).toFloat(), 0.f, 1.f );
+	m_velocityJitter = std::clamp( _this.attribute( "veljit", "0" ).toFloat(), 0.f, 1.f );
 
 	if( _this.hasChildNodes() )
 	{

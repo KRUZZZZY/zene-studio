@@ -26,6 +26,7 @@
 #define LMMS_SONG_H
 
 #include <array>
+#include <cstdint>
 #include <memory>
 
 #include <QString>
@@ -244,6 +245,23 @@ public:
 	//TODO: Add Q_DECL_OVERRIDE when Qt4 is dropped
 	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const override;
 
+	/*! The seed MIDI depth randomisation rolls from. It lives in the project
+	 *  header ("midiseed") and is written only when it is not the default 0,
+	 *  so a project that does not use it serialises byte-identically. */
+	uint32_t midiSeed() const
+	{
+		return m_midiSeed;
+	}
+
+	void setMidiSeed( uint32_t seed )
+	{
+		if( m_midiSeed != seed )
+		{
+			m_midiSeed = seed;
+			setModified();
+		}
+	}
+
 	// file management
 	void createNewProject();
 	void createNewProjectFromTemplate( const QString & templ );
@@ -409,6 +427,8 @@ private:
 	int m_oldTicksPerBar;
 	IntModel m_masterVolumeModel;
 	IntModel m_masterPitchModel;
+
+	uint32_t m_midiSeed = 0;
 
 	ControllerVector m_controllers;
 
