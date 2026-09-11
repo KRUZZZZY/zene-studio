@@ -30,6 +30,7 @@ include/RoutingNode.h
 include/RoutingNodes.h
 include/ScriptBindings.h
 include/ScriptEngine.h
+include/SessionModel.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
 include/StemSeparation/StemJobManager.h
@@ -101,6 +102,9 @@ src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
 src/core/ScriptBindings.cpp
 src/core/ScriptEngine.cpp
+src/core/SessionClip.cpp
+src/core/SessionModel.cpp
+src/core/SessionModelPrivate.h
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
