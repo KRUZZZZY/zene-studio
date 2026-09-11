@@ -43,16 +43,28 @@ $ grep -rn -E "softprops/action-gh-release|gh release|releases/create" .github/
 NO MATCHES
 ```
 
-So a tag build produces artifacts, and publishing them is a **manual step**. Until it runs, the
-release page is empty — verified at the time of writing:
+So a tag build produces artifacts, and publishing them is a **manual step**.
+
+**Correction (2026-09-11, after this document was written and merged):** the release is no longer
+absent — `v0.1.0-alpha` went out and this section's original text ("the release page is empty") was
+true only at the moment it was drafted. The live state, which is the state a publisher should start
+from:
 
 ```
 $ gh release list --repo KRUZZZZY/zene-studio
-(no output)
+Zene Studio v0.1.0-alpha   Pre-release   v0.1.0-alpha   2026-09-11T20:27:22Z
 
-$ gh api repos/KRUZZZZY/zene-studio/releases
-[]
+$ gh release view v0.1.0-alpha --repo KRUZZZZY/zene-studio --json assets --jq '.assets | length'
+7
 ```
+
+Two facts that follow from it, both verified after the publish: every asset was downloaded back from
+the release and its SHA-256 compared with an independent pre-publish baseline — **all seven
+byte-identical** — and GitHub exposes `digest: sha256:…` per asset, so the release notes' promise
+(verify your download against the digest shown on the release page) holds without pasting a digest
+block into the body. A second release should therefore start from
+`gh release view v0.1.0-alpha --json isDraft,isPrerelease,assets` rather than from an assumed-empty
+release page, and must not re-publish the same tag.
 
 ## The publish sequence
 
