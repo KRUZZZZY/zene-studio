@@ -1,6 +1,13 @@
 ---
 name: build
-'on': [push, pull_request]
+# Packages are only uploaded for a tag or a deliberate dispatch (see the upload steps):
+# every push used to publish ~700 MB, which exhausted the account's artifact storage and
+# made the upload itself fail with a 403. The ctest log stays unconditional - it is tiny
+# and it is how a Windows failure becomes readable.
+'on':
+  push:
+  pull_request:
+  workflow_dispatch:
 # NOTE (2026-09-11): the deps-*.txt files under this directory are consumed with
 # `xargs` in the install steps, so they must contain package names only. A comment
 # line there is handed to apt as a package name and the step dies with
@@ -91,9 +98,13 @@ jobs:
         run: |
           cmake --build build --target package
       - name: Upload artifacts
+        # Only a tag (the release path) or a deliberate dispatch publishes a package:
+        # per-push uploads of ~700 MB exhausted the artifact storage quota.
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           archive: false
+          retention-days: 14
           path: build/lmms-*.AppImage
       - name: Trim ccache and print statistics
         run: |
@@ -176,9 +187,13 @@ jobs:
         run: |
           cmake --build build --target package
       - name: Upload artifacts
+        # Only a tag (the release path) or a deliberate dispatch publishes a package:
+        # per-push uploads of ~700 MB exhausted the artifact storage quota.
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           archive: false
+          retention-days: 14
           path: build/lmms-*.AppImage
       - name: Trim ccache and print statistics
         run: |
@@ -272,9 +287,13 @@ jobs:
         run: |
           cmake --build build --target package
       - name: Upload artifacts
+        # Only a tag (the release path) or a deliberate dispatch publishes a package:
+        # per-push uploads of ~700 MB exhausted the artifact storage quota.
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           archive: false
+          retention-days: 14
           path: build/lmms-*.dmg
       - name: Trim ccache and print statistics
         run: |
@@ -355,9 +374,13 @@ jobs:
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
+        # Only a tag (the release path) or a deliberate dispatch publishes a package:
+        # per-push uploads of ~700 MB exhausted the artifact storage quota.
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           archive: false
+          retention-days: 14
           path: build/lmms-*.exe
       - name: Trim ccache and print statistics
         run: |
@@ -476,9 +499,13 @@ jobs:
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
+        # Only a tag (the release path) or a deliberate dispatch publishes a package:
+        # per-push uploads of ~700 MB exhausted the artifact storage quota.
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           archive: false
+          retention-days: 14
           path: build\lmms-*.exe
       - name: Trim ccache and print statistics
         run: |
@@ -542,9 +569,13 @@ jobs:
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
+        # Only a tag (the release path) or a deliberate dispatch publishes a package:
+        # per-push uploads of ~700 MB exhausted the artifact storage quota.
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           archive: false
+          retention-days: 14
           path: build\lmms-*.exe
       - name: Trim ccache and print statistics
         run: |
