@@ -28,6 +28,15 @@ MACRO(INSTALL_DATA_SUBDIRS _subdir _wildcards)
 
 		FOREACH(_item ${files})
 			GET_FILENAME_COMPONENT(_file "${_item}" PATH)
+			# Normalise separators BEFORE stripping the source-dir prefix. On Windows
+			# generators CMAKE_CURRENT_SOURCE_DIR is written with forward slashes while
+			# GET_FILENAME_COMPONENT returns backslashes, so the strip silently failed,
+			# _item stayed an ABSOLUTE path, and the install destination became
+			# <data-dir>/<subdir>/C:/…/data/<subdir> — which CPack cannot create
+			# (CI windows-arm64: NSIS "file cannot create directory … Maybe need
+			# administrative privileges"). Same class of bug upstream hits with
+			# mixed-separator toolchains.
+			STRING(REPLACE "\\" "/" _file "${_file}")
 			STRING(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/" "" _file "${_file}")
 			LIST_CONTAINS(contains _file ${SUBDIRS})
 			IF(NOT contains)

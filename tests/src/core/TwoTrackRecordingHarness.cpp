@@ -39,6 +39,9 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#if defined(__APPLE__)
+#include <sys/stat.h> // ::mkdir — see the macOS branch in main()
+#endif
 #include <string>
 #include <thread>
 #include <vector>
@@ -218,8 +221,16 @@ TrackReport verifyTrack(int index, const std::string& path, int inputChannel,
 int main(int argc, char** argv)
 {
 	const std::string outDir = argc > 1 ? argv[1] : "/tmp/lmms-recording-harness";
+#if defined(__APPLE__)
+	// std::filesystem is only available from macOS 10.15, and the CI runner builds
+	// against an older deployment floor ("error: 'create_directories' is unavailable:
+	// introduced in macOS 10.15"). The harness needs the directory to exist; the POSIX
+	// call does that without pulling in the versioned header.
+	::mkdir(outDir.c_str(), 0755);
+#else
 	std::error_code ec;
 	std::filesystem::create_directories(outDir, ec);
+#endif
 
 	std::printf("=============================================================\n");
 	std::printf("  SYNTHETIC TWO-TRACK RECORDING HARNESS (task #556)\n");

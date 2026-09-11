@@ -250,6 +250,15 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 		target_link_libraries(partc_ref_watsyn PRIVATE SampleRate::samplerate)
 	elseif(PLUGIN_ID STREQUAL "xpressive")
 		target_link_libraries(partc_ref_xpressive PRIVATE exprtk)
+		# exprtk.hpp blows past the object-file section limit; the reference target
+		# compiles the same header as the plugin, so it needs the same escape hatch
+		# (CI mingw64: "/tmp/cc….s: Fatal error: … ExprSynth.cpp.obj: 'file too big'").
+		# MSVC wants /bigobj, mingw wants the assembler-level flag.
+		if(MSVC)
+			target_compile_options(partc_ref_xpressive PRIVATE /bigobj)
+		elseif(LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)
+			target_compile_options(partc_ref_xpressive PRIVATE -Wa,-mbig-obj)
+		endif()
 		target_compile_definitions(partc_ref_xpressive PRIVATE
 			exprtk_disable_sc_andor
 			exprtk_disable_return_statement
@@ -269,6 +278,13 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 		set_target_properties(partc_ref_gigplayer PROPERTIES AUTOUIC ON)
 		target_include_directories(partc_ref_gigplayer SYSTEM PRIVATE ${GIG_INCLUDE_DIRS})
 		target_compile_options(partc_ref_gigplayer PRIVATE -fexceptions)
+		# The plugin does link_directories(${GIG_LIBRARY_DIRS}) before linking
+		# ${GIG_LIBRARIES}; without the directory the reference target's link fails on
+		# systems where libgig lives outside the default search path
+		# (CI macos-arm64: "ld: library 'gig' not found").
+		if(GIG_LIBRARY_DIRS)
+			target_link_directories(partc_ref_gigplayer PRIVATE ${GIG_LIBRARY_DIRS})
+		endif()
 		target_link_libraries(partc_ref_gigplayer PRIVATE
 			SampleRate::samplerate ${GIG_LIBRARIES})
 	elseif(PLUGIN_ID STREQUAL "malletsstk")
