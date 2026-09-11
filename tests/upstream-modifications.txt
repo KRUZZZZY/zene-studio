@@ -37,6 +37,10 @@ src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #
 src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
 src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)
 src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+include/MainWindow.h	#607 MIDI learn: toggleMidiLearn()/updateMidiLearnAction() public slots and the m_midiLearnAction member; the Edit-menu action is the only new surface, held by tests/src/core/MidiLearnTest.cpp (5d6ccdf1f)
+include/MidiController.h	#607 MIDI learn: midiPort() accessors so a learn binding can be configured and read back by the UI and the tests, held by tests/src/core/MidiLearnTest.cpp (5d6ccdf1f)
+src/core/midi/MidiAlsaSeq.cpp	#607 MIDI learn: the SND_SEQ_EVENT_CONTROLLER case feeds MidiLearn::handleMidiEvent() before the port mask is applied — one atomic load and an early return when learn is unarmed (5d6ccdf1f)
+src/core/midi/MidiClient.cpp	#607 MIDI learn: MidiClientRaw::processParsedEvent() feeds the same single learn entry point before the port mask; no-op when unarmed (5d6ccdf1f)
 include/RemotePlugin.h	#589 planar-ports migration: sole ports-taking ctor, no-arg process(), planar updateAudioBuffer() layout contract
 include/RemotePluginBase.h	#589 planar-ports migration: single-channel count ids retired in place (kept numeric to refuse a stale pre-#589 client loudly)
 include/RemotePluginClient.h	#589 planar-ports migration: client process() over the host's planar shared block (const float* / float*)
