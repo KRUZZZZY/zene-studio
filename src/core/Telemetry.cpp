@@ -36,6 +36,8 @@
 namespace lmms
 {
 
+#ifdef ZENE_TELEMETRY_ENABLED
+
 // --- the allowlist ---------------------------------------------------------
 //
 // Grouped exactly as the design groups them. A key that is not in one of
@@ -303,5 +305,18 @@ TelemetryHardware TelemetryHardware::collect()
 	hw.ramBucket = memoryBucket();
 	return hw;
 }
+
+#else // !ZENE_TELEMETRY_ENABLED
+
+// The packager kill switch. With -DZENE_TELEMETRY=OFF this translation unit
+// defines exactly one symbol: the query callers use to ask whether the feature
+// is present. There is no payload builder, no consent store, no submit() and
+// no send path in the object file (checked with nm in docs/TELEMETRY-V1.md).
+bool Telemetry::isCompiledIn()
+{
+	return false;
+}
+
+#endif // ZENE_TELEMETRY_ENABLED
 
 } // namespace lmms

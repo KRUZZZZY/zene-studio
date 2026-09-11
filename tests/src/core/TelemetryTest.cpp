@@ -25,14 +25,22 @@
 // Every test here works against a fake transport. No test opens a socket, and
 // no test can: the client only ever hands bytes to whatever TelemetryTransport
 // it was given, and every test gives it a recorder.
+//
+// The client is compiled out entirely with -DZENE_TELEMETRY=OFF, so the tests
+// that exercise it are compiled out with it. What remains in that build is the
+// kill-switch assertion: the feature is not present, so nothing can send.
 
 #include "Telemetry.h"
 
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QtTest>
 
 using lmms::Telemetry;
+
+#ifdef ZENE_TELEMETRY_ENABLED
+
+#include <QJsonDocument>
+#include <QJsonObject>
+
 using lmms::TelemetryConsent;
 using lmms::TelemetryHardware;
 using lmms::TelemetryPayload;
@@ -126,11 +134,14 @@ bool everyKeyAllowlisted(const QByteArray & json)
 
 } // namespace
 
+#endif // ZENE_TELEMETRY_ENABLED
+
 class TelemetryTest : public QObject
 {
 	Q_OBJECT
 
 private slots:
+#ifdef ZENE_TELEMETRY_ENABLED
 	// --- 1. default-off consent --------------------------------------------
 	void defaultConsentIsOff()
 	{
@@ -259,22 +270,23 @@ private slots:
 		QVERIFY(!Telemetry::loadConsent().enabled);
 	}
 
-	// --- 8. the packager kill switch --------------------------------------
+	// --- 8. the packager kill switch (enabled build) -----------------------
 	void killSwitchStateMatchesTheBuild()
 	{
-#ifdef ZENE_TELEMETRY_ENABLED
 		QVERIFY(Telemetry::isCompiledIn());
 		RecordingTransport recording;
 		Telemetry client(fullyConsented(), &recording, fixedHardware());
 		QVERIFY(client.submit() == Telemetry::SubmitResult::Sent);
-#else
-		QVERIFY(!Telemetry::isCompiledIn());
-		RecordingTransport recording;
-		Telemetry client(fullyConsented(), &recording, fixedHardware());
-		QVERIFY(client.submit() == Telemetry::SubmitResult::CompiledOut);
-		QCOMPARE(recording.sendCount(), 0);
-#endif
 	}
+#else
+	// --- the packager kill switch (compiled-out build) ---------------------
+	// This is the whole suite in a -DZENE_TELEMETRY=OFF build: the client does
+	// not exist, so there is nothing to send with and nothing to test.
+	void killSwitchStateMatchesTheBuild()
+	{
+		QVERIFY(!Telemetry::isCompiledIn());
+	}
+#endif
 };
 
 QTEST_GUILESS_MAIN(TelemetryTest)

@@ -70,7 +70,12 @@
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
-#include "TelemetryConsentDialog.h"
+#ifdef ZENE_TELEMETRY_ENABLED
+	// Only included when the dialog is compiled. An unconditional include makes
+	// AUTOMOC emit moc for a Q_OBJECT whose .cpp the kill switch removed, and
+	// the link then fails on the moc'd slots (found by the OFF configure).
+	#include "TelemetryConsentDialog.h"
+#endif
 #include "TextFloat.h"
 #include "ToolButton.h"
 #include "ToolPlugin.h"

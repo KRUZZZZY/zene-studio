@@ -39,18 +39,21 @@ namespace lmms::gui
 //! Renders the exact payload the client would send, live, from the same
 //! builder submit() uses. There is no second list here that could drift: the
 //! text in the preview is Telemetry::previewJson().
+//!
+//! Deliberately has no Q_OBJECT: every connection below is a pointer-to-member
+//! connect, so no moc is needed. That matters for the packager kill switch -
+//! AUTOMOC scans #include lines without evaluating the preprocessor, so a
+//! Q_OBJECT header included under an #ifdef is still moc'd and its slots then
+//! fail to link when the kill switch removes this dialog's .cpp.
 class TelemetryConsentDialog : public QDialog
 {
-	Q_OBJECT
-
 public:
 	explicit TelemetryConsentDialog(QWidget * parent = nullptr);
 
-private slots:
+private:
 	void refreshPreview();
 	void save();
 
-private:
 	TelemetryConsent currentConsent() const;
 
 	QCheckBox * m_enabledBox = nullptr;
