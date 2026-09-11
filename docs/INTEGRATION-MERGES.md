@@ -254,7 +254,7 @@ cd build && cmake --build . -j4                   -> EXIT=0   (100% built, no wa
 cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
                                                   -> EXIT=0   100% tests passed, 0 tests failed out of 31
 bash tests/fork-sources-gate.sh                   -> EXIT=0   125 fork-NEW, 996 inherited, 0 stale
-bash tests/no-upstream-regression-gate.sh         -> EXIT=0   112 files in the ledger
+bash tests/no-upstream-regression-gate.sh         -> EXIT=0   88 changed files declared (112 ledger entries)
 bash tests/run-all-gates.sh                       -> EXIT=3   PASS-WITH-SKIPS (gate 2 coverage skipped)
 ```
 
