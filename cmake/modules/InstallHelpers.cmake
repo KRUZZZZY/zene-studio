@@ -27,30 +27,33 @@ MACRO(INSTALL_DATA_SUBDIRS _subdir _wildcards)
 		SET(SUBDIRS)
 
 		FOREACH(_item ${files})
-			GET_FILENAME_COMPONENT(_file "${_item}" PATH)
-			# Normalise separators BEFORE stripping the source-dir prefix. On Windows
-			# generators CMAKE_CURRENT_SOURCE_DIR is written with forward slashes while
-			# GET_FILENAME_COMPONENT returns backslashes, so the strip silently failed,
-			# _item stayed an ABSOLUTE path, and the install destination became
-			# <data-dir>/<subdir>/C:/…/data/<subdir> — which CPack cannot create
-			# (CI windows-arm64: NSIS "file cannot create directory … Maybe need
-			# administrative privileges"). Same class of bug upstream hits with
-			# mixed-separator toolchains.
-			STRING(REPLACE "\\" "/" _file "${_file}")
-			STRING(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/" "" _file "${_file}")
-			LIST_CONTAINS(contains _file ${SUBDIRS})
+			GET_FILENAME_COMPONENT(_dir "${_item}" PATH)
+			LIST_CONTAINS(contains _dir ${SUBDIRS})
 			IF(NOT contains)
-				LIST(APPEND SUBDIRS "${_file}")
+				LIST(APPEND SUBDIRS "${_dir}")
 			ENDIF(NOT contains)
 		ENDFOREACH(_item ${files})
 
-		FOREACH(_item ${SUBDIRS})
-			FILE(GLOB files "${_item}/${_wildcard}")
+		FOREACH(_dir ${SUBDIRS})
+			FILE(GLOB files "${_dir}/${_wildcard}")
 			LIST(SORT files)
+			# Path arithmetic, not string surgery. The previous code stripped
+			# "${CMAKE_CURRENT_SOURCE_DIR}/" — with a trailing slash — from a directory
+			# path that GET_FILENAME_COMPONENT returns WITHOUT one. For any file sitting
+			# directly in this CMakeLists' directory the strip therefore never matched,
+			# _dir stayed ABSOLUTE, and the destination became
+			#   <data-dir>/<subdir>/home/user/…/data/<subdir>
+			# On Linux that quietly installs a junk tree under the prefix; CPack cannot
+			# create "C:/…" beneath the package root and fails outright (CI windows-arm64,
+			# NSIS: "file cannot create directory … Maybe need administrative privileges").
+			FILE(RELATIVE_PATH _rel "${CMAKE_CURRENT_SOURCE_DIR}" "${_dir}")
+			IF(_rel STREQUAL ".")
+				SET(_rel "")
+			ENDIF()
 			FOREACH(_file ${files})
-				INSTALL(FILES "${_file}" DESTINATION "${LMMS_DATA_DIR}/${_subdir}/${_item}/")
+				INSTALL(FILES "${_file}" DESTINATION "${LMMS_DATA_DIR}/${_subdir}/${_rel}/")
 			ENDFOREACH(_file ${files})
-		ENDFOREACH(_item ${SUBDIRS})
+		ENDFOREACH(_dir ${SUBDIRS})
 	ENDFOREACH(_wildcard ${_wildcards})
 ENDMACRO(INSTALL_DATA_SUBDIRS)
 

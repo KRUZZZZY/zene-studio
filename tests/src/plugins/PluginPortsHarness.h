@@ -36,6 +36,7 @@
 #include <QByteArray>
 #include <QCryptographicHash>
 #include <QDataStream>
+#include <QDir>
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
@@ -1050,6 +1051,45 @@ inline auto lv2Specs() -> const std::vector<Lv2Spec>&
 		{"lv2instrument:dx10", "lv2instrument", "http://drobilla.net/plugins/mda/DX10"},
 	};
 	return specs;
+}
+
+//! Is the LV2 bundle providing \a uri installed on this machine?
+//!
+//! The specs above are URIs from the optional **mda-lv2** bundle (Ubuntu: `mda-lv2`,
+//! Homebrew: `mda-lv2`). A machine without it cannot instantiate them. That is a missing
+//! test fixture, not a migration defect, so both the test and the reference renderer ask
+//! this question and skip the SAME specs — keeping their render lists aligned, which the
+//! suite compares by size and by name. (Failing instead of skipping here is what made
+//! three CI jobs red while every dev box with the bundle installed passed.)
+inline auto lv2BundleProvides(const char* uri) -> bool
+{
+	QByteArray paths = qgetenv("LV2_PATH");
+	if (paths.isEmpty())
+	{
+		paths = "/usr/lib/lv2:/usr/local/lib/lv2:/opt/homebrew/lib/lv2:/opt/local/lib/lv2";
+	}
+	paths += ':' + QDir::homePath().toUtf8() + "/Library/Audio/Plug-Ins/LV2";
+
+	const QByteArray needle{uri};
+	const auto dirs = paths.split(':');
+	for (const QByteArray& dir : dirs)
+	{
+		QDir root{QString::fromUtf8(dir)};
+		if (!root.exists())
+		{
+			continue;
+		}
+		const auto bundles = root.entryList({QStringLiteral("*.lv2")}, QDir::Dirs);
+		for (const QString& bundle : bundles)
+		{
+			QFile manifest{root.filePath(bundle + QStringLiteral("/manifest.ttl"))};
+			if (manifest.open(QIODevice::ReadOnly) && manifest.readAll().contains(needle))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 inline auto lv2KeyFor(const Plugin::Descriptor* desc, const Lv2Spec& spec)

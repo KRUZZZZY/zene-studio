@@ -1,6 +1,11 @@
 ---
 name: build
 'on': [push, pull_request]
+# NOTE (2026-09-11): the deps-*.txt files under this directory are consumed with
+# `xargs` in the install steps, so they must contain package names only. A comment
+# line there is handed to apt as a package name and the step dies with
+# 'E: Unable to locate package #' (cost one CI cycle). Put the rationale here, not
+# in the list. The same applies to deps-ubuntu-24.04-fltk.txt.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

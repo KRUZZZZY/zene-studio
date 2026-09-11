@@ -263,6 +263,13 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 #ifdef PART_C_MIGRATED_lv2effect
 	for (const auto& spec : partc::lv2Specs())
 	{
+		if (!partc::lv2BundleProvides(spec.uri))
+		{
+			// Optional fixture (mda-lv2) not installed here: skip it on BOTH sides —
+			// the reference renderer asks the same question — so the two render lists
+			// stay comparable instead of failing on a missing package.
+			continue;
+		}
 		if (QString::fromUtf8(spec.plugin) == QLatin1String("lv2effect"))
 		{
 			auto result = partc::renderKeyedEffect(PART_C_MIGRATED_lv2effect, spec, frames);
@@ -580,10 +587,22 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 	names.push_back(QStringLiteral("gigplayer"));
 #endif
 #ifdef PART_C_MIGRATED_lv2effect
-	names.push_back(QStringLiteral("lv2effect:ambience"));
+	for (const auto& spec : partc::lv2Specs())
+	{
+		if (QString::fromUtf8(spec.plugin) == QLatin1String("lv2effect") && partc::lv2BundleProvides(spec.uri))
+		{
+			names.push_back(QString::fromUtf8(spec.name));
+		}
+	}
 #endif
 #ifdef PART_C_MIGRATED_lv2instrument
-	names.push_back(QStringLiteral("lv2instrument:dx10"));
+	for (const auto& spec : partc::lv2Specs())
+	{
+		if (QString::fromUtf8(spec.plugin) == QLatin1String("lv2instrument") && partc::lv2BundleProvides(spec.uri))
+		{
+			names.push_back(QString::fromUtf8(spec.name));
+		}
+	}
 #endif
 	// The slice-8 plugins need optional third-party deps (libgig, STK, lilv,
 	// fluidsynth). A CI runner without them builds none of these, so an empty

@@ -37,17 +37,7 @@ libxml2-utils
 libxml-perl
 lsb-release
 lv2-dev
-# Plugin bundles the PluginPortsMigrationTest suite loads through the host
-# plugins (slice 8 and the LV2 part of migratedPluginsPreserveBehaviour). Without
-# them the suite fails hard on the runner while passing on any dev box that has
-# them installed: "Lv2Effect did not instantiate
-# http://drobilla.net/plugins/mda/Ambience".
 mda-lv2
-# LADSPA bundles the slice-6 reference renders drive through LadspaEffect.
-swh-plugins
-caps
-cmt
-tap-plugins
 make
 perl
 portaudio19-dev

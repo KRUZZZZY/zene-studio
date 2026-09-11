@@ -272,6 +272,13 @@ int main(int argc, char** argv)
 #ifdef PART_C_REF_lv2effect
 	for (const auto& spec : partc::lv2Specs())
 	{
+		if (!partc::lv2BundleProvides(spec.uri))
+		{
+			// Same skip as the test side, so both render lists stay aligned when the
+			// optional mda-lv2 bundle is absent. See partc::lv2BundleProvides().
+			std::printf("reference %s: skipped (LV2 bundle not installed)\n", spec.name);
+			continue;
+		}
 		if (QString::fromUtf8(spec.plugin) == QLatin1String("lv2effect"))
 		{
 			auto result = partc::renderKeyedEffect(PART_C_REF_lv2effect, spec, frames);
