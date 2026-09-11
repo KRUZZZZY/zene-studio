@@ -11,6 +11,7 @@
 #
 # lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
 # resolves this file's directory to the repo root).
+
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
@@ -120,4 +121,7 @@ src/wasm/WasmSandbox.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
+tests/src/core/LufsMeterTest.cpp
+tests/src/core/MidiLearnTest.cpp
+tests/src/core/SessionModelTest.cpp
 tools/local-ci.sh
