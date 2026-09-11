@@ -19,6 +19,8 @@ include/AudioPortsSettings.h
 include/DpiHelper.h
 include/LatencyCompensation.h
 include/LmmsPolyfill.h
+include/MidiLearn.h
+include/MidiLearnGui.h
 include/MultiTrackRecorder.h
 include/PinConnector.h
 include/PluginAudioPorts.h
@@ -93,6 +95,7 @@ src/core/AudioPortsModel.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
+src/core/MidiLearn.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
@@ -102,6 +105,7 @@ src/core/ScriptEngine.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
+src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
 src/gui/StemSplitController.cpp
 src/wasm/WasmAbi.h
