@@ -120,6 +120,18 @@ ENDIF()
 
 LIST(TRANSFORM LMMS_VST3_SDK_SOURCES PREPEND "${LMMS_VST3_SDK_PATH}/")
 
+IF(APPLE)
+	# module_mac.mm, systemclipboard_mac.mm and threadchecker_mac.mm are
+	# Objective-C++ and this project enables no other .mm source anywhere, so
+	# CMake cannot pick a compiler (or a link language) for the target without
+	# this line. plugins/Vst3Effect is the highest directory common to every
+	# target that compiles them (the plugin itself and, via lmms_vst3_sdk, the
+	# VST3 test fixture), which is where enable_language belongs.
+	IF(NOT CMAKE_OBJCXX_COMPILER)
+		ENABLE_LANGUAGE(OBJCXX)
+	ENDIF()
+ENDIF()
+
 ADD_LIBRARY(lmms_vst3_sdk STATIC ${LMMS_VST3_SDK_SOURCES})
 TARGET_INCLUDE_DIRECTORIES(lmms_vst3_sdk PUBLIC "${LMMS_VST3_SDK_PATH}")
 TARGET_COMPILE_FEATURES(lmms_vst3_sdk PUBLIC cxx_std_17)
@@ -143,4 +155,17 @@ TARGET_COMPILE_DEFINITIONS(lmms_vst3_sdk PUBLIC
 	"$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>")
 IF(UNIX AND NOT APPLE)
 	TARGET_LINK_LIBRARIES(lmms_vst3_sdk PUBLIC dl)
+ELSEIF(APPLE)
+	# The three Objective-C++ translation units above call CoreFoundation
+	# (CFBundle*, in module_mac.mm) and, from systemclipboard_mac.mm,
+	# NSPasteboard through Cocoa/Foundation. Windows needs nothing added here:
+	# ole32 (OleInitialize, CoCreateInstance) and shell32
+	# (SHGetKnownFolderPath) used by module_win32.cpp are already in
+	# CMAKE_CXX_STANDARD_LIBRARIES for both MSVC and MinGW.
+	# UNVERIFIED ON macOS: this box cannot build Darwin targets, so CI is the
+	# verifier for these three frameworks (see docs/PLUGIN-HOSTING-IN-RELEASE.md).
+	TARGET_LINK_LIBRARIES(lmms_vst3_sdk PUBLIC
+		"-framework CoreFoundation"
+		"-framework Foundation"
+		"-framework Cocoa")
 ENDIF()

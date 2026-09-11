@@ -1,0 +1,31 @@
+# advertised-features.tsv — the ONE list of features this product's releases
+# document as present, and the build options that must hold for that claim to be
+# true. tests/release-honesty-gate.sh reads this file and nothing else: the gate
+# carries no feature list of its own, so there is no second copy to drift from
+# the release notes.
+#
+# The defect this file exists to prevent: the published v0.1.0-alpha advertised
+# "VST3 and CLAP hosting, effects only" while all seven jobs of its release run
+# printed
+#   -- VST3 hosting skipped: no SDK at '<runner>/build/vst3sdk'
+#   -- CLAP hosting skipped: no headers at '<runner>/build/clap/include/clap'
+# and shipped neither. Both options default to AUTO, and AUTO with the
+# dependency absent is a skip with a STATUS line — a silent compile-out that no
+# test and no log reader noticed.
+#
+# Columns (TAB separated):
+#   1 feature   stable id, printed by the gate
+#   2 option    the WANT_* option the binary reports in its "Build options:" dump
+#   3 required  the value that must hold: ON, OFF, or an exact string
+#   4 module    plugin module basename to find in the build tree ('-' for none)
+#   5 claim     the sentence this row keeps true, quoted when the gate fails
+#
+# A feature documented as ABSENT is a row too (required OFF). If a build turns
+# one on, the documents understate that build and the release is dishonest in the
+# other direction, so the gate fails on it as well.
+# Column legend (a real row, unlike this line, is tab separated and has no '#'):
+#feature	option	required	module	claim
+vst3-hosting	WANT_VST3	ON	vst3effect	VST3 hosting (effects) is in the release
+clap-hosting	WANT_CLAP	ON	clapeffect	CLAP hosting (effects) is in the release
+wasm-sandbox	WANT_WASM	OFF	-	The WASM DSP sandbox is documented as absent from these builds
+stem-separation	WANT_STEM_SPLIT	OFF	-	Offline stem separation is documented as absent from these builds
