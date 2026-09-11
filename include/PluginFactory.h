@@ -32,7 +32,9 @@
 #include <QFileInfo>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
+#include "PluginScanCache.h"
 #include "lmms_export.h"
 #include "Plugin.h"
 
@@ -56,8 +58,26 @@ public:
 	using PluginInfoList = QList<PluginInfo>;
 	using DescriptorMap = QMultiMap<Plugin::Type, Plugin::Descriptor*>;
 
+	/*!
+	 * What the last discoverPlugins() run did. This is the scan's own report:
+	 * how many files were found, how many the quarantine list hid, how many
+	 * were answered from the cache without touching the library, and how many
+	 * were actually loaded.
+	 */
+	struct ScanStats
+	{
+		int candidateFiles = 0;    //!< files in the search paths, after the env filter
+		int quarantined = 0;       //!< skipped because the quarantine list names them
+		int servedFromCache = 0;   //!< descriptor from the cache; library not loaded yet
+		int negativeFromCache = 0; //!< remembered as "no plugin" / "fails to load"
+		int scanned = 0;           //!< libraries loaded and resolved in this run
+		int descriptors = 0;       //!< PluginInfos emitted (cached + scanned)
+		QStringList quarantinedPaths;
+		QStringList quarantinedReasons;
+	};
+
 	PluginFactory();
-	~PluginFactory() = default;
+	~PluginFactory();
 
 	static void setupSearchPaths();
 	static QList<QRegularExpression> getExcludePatterns(const char* envVar);
@@ -91,6 +111,22 @@ public:
 	/// It can be retrieved by calling this function.
 	QString errorString(QString pluginName) const;
 
+	/// The scan cache this factory reads and writes. Exposed so the UI (and the
+	/// tests) can quarantine a plugin; see docs/PLUGIN-SCAN-CACHE.md.
+	PluginScanCache& scanCache() { return m_scanCache; }
+
+	/// What the last discoverPlugins() run did (see ScanStats).
+	const ScanStats& scanStats() const { return m_scanStats; }
+
+	/// One line describing the last scan, for the log and for bug reports.
+	QString scanReport() const;
+
+#ifdef LMMS_TESTING
+	/// Test hook: has the singleton been constructed at all? Used to prove that
+	/// GUI startup does not trigger plugin discovery.
+	static bool instanceExists() { return s_instance != nullptr; }
+#endif
+
 public slots:
 	void discoverPlugins();
 
@@ -102,6 +138,20 @@ private:
 	std::vector<std::string> m_garbage; //!< cleaned up at destruction
 
 	QHash<QString, QString> m_errors;
+
+	PluginScanCache m_scanCache;
+	ScanStats m_scanStats;
+
+	/*!
+	 * Host-owned copies of the descriptors rebuilt from cache records: the
+	 * strings and the pixmap loader such a descriptor points at live here, so
+	 * the rebuilt descriptor stays valid after the cache is gone.
+	 */
+	class CachedDescriptorStore;
+	std::unique_ptr<CachedDescriptorStore> m_cachedDescriptors;
+
+	//! Rebuild a descriptor from a cache record (declared here, defined in the .cpp).
+	Plugin::Descriptor* descriptorFromCacheRecord(const PluginScanRecord& record);
 
 	static std::unique_ptr<PluginFactory> s_instance;
 

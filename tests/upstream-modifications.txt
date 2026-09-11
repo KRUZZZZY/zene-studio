@@ -26,13 +26,16 @@ include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's
 include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
 include/Effect.h	#605 PDC: latency accessor on the effect interface
 include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
-include/MainWindow.h	# MIDI learn: declares the Edit > MIDI Learn action, its toggle slot and updateMidiLearnAction() -- the feature's only user entry point
+include/MainWindow.h	# MIDI learn: declares the Edit > MIDI Learn action, its toggle slot and updateMidiLearnAction() -- the feature's only user entry point; plugin-scan: updateToolsMenu() slot + populated flag, for building the Tools menu on first open instead of at start-up (023770f7b)
 include/MidiController.h	# MIDI learn: a public midiPort() accessor so an armed learn can configure a fresh binding and the UI/tests can read it back (channel, controller, ports)
 include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+include/PluginBrowser.h	plugin-scan: showEvent() declaration, for populating the plugin tree on first show instead of at construction (023770f7b)
+include/PluginFactory.h	plugin-scan: scan-cache/quarantine surface (ScanStats, scanCache(), scanReport()), a declared destructor for the host-owned cached-descriptor store, and the LMMS_TESTING instanceExists() hook (023770f7b)
 include/RemotePlugin.h	#589 planar-ports migration: sole ports-taking ctor, no-arg process(), planar updateAudioBuffer() layout contract
 include/RemotePluginBase.h	#589 planar-ports migration: single-channel count ids retired in place (kept numeric to refuse a stale pre-#589 client loudly)
 include/RemotePluginClient.h	#589 planar-ports migration: client process() over the host's planar shared block (const float* / float*)
 include/Song.h	#594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off
+include/embed.h	plugin-scan: PixmapLoader::xpm() accessor, so a cached descriptor's logo is only rebuilt when it is a pixmap name and not a compiled-in XPM (023770f7b)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 plugins/Vestige/Vestige.cpp	#589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin
 plugins/Vestige/Vestige.h	#589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports
@@ -51,11 +54,13 @@ src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment p
 src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
 src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
 src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/core/PluginFactory.cpp	plugin-scan: fingerprint-keyed scan cache, quarantine filtering, and cache-served (lazily loaded) plugin entries in discoverPlugins() (023770f7b)
 src/core/RemotePlugin.cpp	#589 planar-ports migration: ports allocate the shared block; counts owned by the ports model; removed count ids refused loudly
 src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged)
 src/core/main.cpp	crash reporter: install()/beginSession()/endSession() around the process lifetime and setProjectPath() on every project load (start-up, render, --run-script, clean exit), plus the one-off pending-report offer (QMessageBox in GUI mode, stderr when core-only) and the Song::projectFileNameChanged follow (98a706dbe)
 src/core/midi/MidiAlsaSeq.cpp	# MIDI learn: the ALSA control-change dispatch is restructured to route the CC event through the learn path
 src/core/midi/MidiClient.cpp	# MIDI learn: the parse path forwards each event to MidiLearn::handleMidiEvent() before the ports see it, so a learn can bind a control nothing is listening to yet (a no-op when unarmed)
-src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)
+src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4); plugin-scan: build the Tools menu on first open, so start-up never scans plugins (023770f7b)
+src/gui/PluginBrowser.cpp	plugin-scan: populate the plugin tree on first show, so start-up never scans plugins (023770f7b)
 src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)

@@ -239,6 +239,7 @@ private:
 	QAction * m_redoAction;
 	QAction * m_midiLearnAction;
 	QList<PluginView *> m_tools;
+	bool m_toolsMenuPopulated = false;
 
 	QBasicTimer m_updateTimer;
 	QTimer m_autoSaveTimer;
@@ -259,6 +260,7 @@ private slots:
 	void showTool( QAction * _idx );
 	void runScript();
 	void updateViewMenu();
+	void updateToolsMenu();
 	void updateConfig( QAction * _who );
 	void onToggleMetronome();
 	void onExportProject();

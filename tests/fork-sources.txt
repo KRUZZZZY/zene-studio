@@ -27,6 +27,7 @@ include/MidiLearnGui.h
 include/MultiTrackRecorder.h
 include/PinConnector.h
 include/PluginAudioPorts.h
+include/PluginScanCache.h
 include/RecordRingBuffer.h
 include/RemotePluginAudioPorts.h
 include/RoutingGraph.h
@@ -101,6 +102,7 @@ src/core/LatencyCompensation.cpp
 src/core/LufsMeter.cpp
 src/core/MidiLearn.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/PluginScanCache.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp

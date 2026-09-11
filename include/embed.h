@@ -88,6 +88,9 @@ public:
 
 	auto pixmapName() const -> const std::string& { return m_name; }
 
+	/*! The compiled-in XPM data, when this loader carries any. */
+	auto xpm() const -> const char* const* { return m_xpm; }
+
 private:
 	std::string m_name;
 	const char* const* m_xpm = nullptr;
