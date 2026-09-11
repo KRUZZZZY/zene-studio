@@ -65,6 +65,7 @@ set(LMMS_SRCS
 	core/Metronome.cpp
 	core/MicroTimer.cpp
 	core/Microtuner.cpp
+	core/MidiLearn.cpp
 	core/MixHelpers.cpp
 	core/Model.cpp
 	core/ModelVisitor.cpp

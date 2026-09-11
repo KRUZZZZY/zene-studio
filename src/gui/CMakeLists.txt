@@ -39,6 +39,7 @@ SET(LMMS_SRCS
 	gui/MainWindow.cpp
 	gui/MicrotunerConfig.cpp
 	gui/MidiCCRackView.cpp
+	gui/MidiLearnGui.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MixerChannelView.cpp
 	gui/MixerView.cpp

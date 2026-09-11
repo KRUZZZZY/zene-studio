@@ -172,6 +172,9 @@ public slots:
 	void undo();
 	void redo();
 
+	void toggleMidiLearn();
+	void updateMidiLearnAction();
+
 	void autoSave();
 
 private slots:
@@ -234,6 +237,7 @@ private:
 	QMenu * m_toolsMenu;
 	QAction * m_undoAction;
 	QAction * m_redoAction;
+	QAction * m_midiLearnAction;
 	QList<PluginView *> m_tools;
 
 	QBasicTimer m_updateTimer;

@@ -53,6 +53,7 @@
 #include "InstrumentTrackView.h"
 #include "InstrumentTrackWindow.h"
 #include "MicrotunerConfig.h"
+#include "MidiLearnGui.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "PianoView.h"
@@ -348,6 +349,14 @@ void MainWindow::finalize()
 		this, SLOT(toggleMicrotunerWin()));
 	edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Settings"),
 		this, SLOT(showSettingsDialog()));
+
+	// Global MIDI learn: arm this, touch a control, move a hardware knob.
+	m_midiLearnAction = edit_menu->addAction(embed::getIconPixmap("setup_midi"), tr("MIDI Learn"),
+		this, SLOT(toggleMidiLearn()));
+	m_midiLearnAction->setCheckable(true);
+	m_midiLearnAction->setToolTip(tr("Arm MIDI learn, then touch a control and move a hardware knob"));
+	MidiLearnGui::instance()->setAction(m_midiLearnAction);
+	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateMidiLearnAction()));
 
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateUndoRedoButtons()));
 
@@ -1274,6 +1283,25 @@ void MainWindow::updateUndoRedoButtons()
 	// else, un-grey them
 	m_undoAction->setEnabled(Engine::projectJournal()->canUndo());
 	m_redoAction->setEnabled(Engine::projectJournal()->canRedo());
+}
+
+
+
+
+void MainWindow::toggleMidiLearn()
+{
+	// Armed state lives in MidiLearn; the action is the GUI handle for it.
+	MidiLearnGui::instance()->setArmed(m_midiLearnAction->isChecked());
+}
+
+
+
+
+void MainWindow::updateMidiLearnAction()
+{
+	// A successful learn disarms MidiLearn from the MIDI input thread, so the
+	// action re-reads the real state whenever the edit menu is opened.
+	m_midiLearnAction->setChecked(MidiLearnGui::instance()->isArmed());
 }
 
 
