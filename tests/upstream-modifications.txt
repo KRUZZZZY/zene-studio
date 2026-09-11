@@ -49,3 +49,43 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> proce
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+
+# --- wave R rename divergence (declared retroactively; Gate 6 was red on this branch) ---
+.yamllint	wave R rename: yamllint ignore path follows the renamed desktop file (no runtime effect)
+INSTALL.txt	wave R rename: install instructions name the renamed executable and packages
+cmake/apple/zene.plist.in	wave R rename: macOS bundle identifier and CFBundle name/exe follow the renamed product
+cmake/linux/apprun-hooks/carla-hook.sh	wave R rename: AppRun hook resolves the renamed plugin directory
+cmake/linux/apprun-hooks/jack-hook.sh	wave R rename: AppRun hook resolves the renamed binary/data paths
+cmake/linux/icons/128x128/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/128x128@2/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/16x16/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/16x16@2/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/24x24/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/24x24@2/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/256x256/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/32x32/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/32x32@2/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/48x48/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/48x48@2/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/64x64/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/64x64@2/apps/zene.png	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/icons/scalable/apps/zene.svg	wave R rename: application icon set renamed with the product (pixels unchanged)
+cmake/linux/lmms	wave R rename: AppImage launcher script renamed cmake/linux/lmms -> cmake/linux/zene
+cmake/linux/zene	wave R rename: AppImage launcher script renamed cmake/linux/lmms -> cmake/linux/zene
+cmake/linux/zene.spec.in	wave R rename: legacy RPM template name/PROJECT_NAME follow the rename (body not repaired, pre-existing)
+cmake/nsis/zene.VisualElementsManifest.xml	wave R rename: Windows VisualElements manifest renamed with the package
+cmake/nsis/zene.exe.manifest	wave R rename: Windows application manifest renamed with the executable
+cmake/nsis/zene.rc.in	wave R rename: Windows resource FileDescription/ProductName name the renamed product
+doc/Doxyfile.in	wave R rename: generated documentation project name follows the rename
+doc/bash-completion/zene	wave R rename: bash completion renamed with the executable
+doc/zene.1	wave R rename: man page renamed with the executable; NAME/SYNOPSIS follow
+src/core/ConfigManager.cpp	wave R rename: runtime data/working paths derive from the renamed install layout
+src/core/ImportFilter.cpp	wave R rename: user-visible import error text names the renamed product
+src/core/PluginFactory.cpp	wave R rename: plugin search path and warning text follow the renamed install layout
+src/core/main.cpp	wave R rename: --version banner, --help usage and root-user notice name the renamed product
+src/gui/GuiApplication.cpp	wave R rename: working-directory prompt text names the renamed product
+src/gui/LmmsStyle.cpp	wave R rename: theme-reload notice text names the renamed product
+src/gui/modals/SetupDialog.cpp	wave R rename: settings path labels follow the renamed product
+src/gui/modals/about_dialog.ui	wave R rename: About dialog title/body/link name the renamed product
+tools/mmpz-git/run-demo.sh	wave R rename: demo script invokes the renamed binary
+vcpkg.json	wave R rename: vcpkg manifest name follows the CMake project rename
