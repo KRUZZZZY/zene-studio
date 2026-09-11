@@ -110,7 +110,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# ScriptEngineTest loads a real instrument plugin (tripleoscillator) from the
 	# build tree to prove the Lua Instrument binding (spec G4). Plugin modules
 	# resolve LMMS core symbols from the host process at load time, so the test
-	# binary must export its symbols exactly like the lmms executable does.
+	# binary must export its symbols exactly like the zene executable does.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -300,7 +300,7 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	)
 	target_compile_definitions(partc_ref_${PLUGIN_ID} PRIVATE PLUGIN_NAME=${PLUGIN_ID})
 	target_compile_features(partc_ref_${PLUGIN_ID} PRIVATE cxx_std_20)
-	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE lmms ${QT_LIBRARIES})
+	target_link_libraries(partc_ref_${PLUGIN_ID} PRIVATE zene ${QT_LIBRARIES})
 	# The reference sources are verbatim copies of the pre-migration plugin
 	# (git blob ids in tests/reference/ORIGIN.tsv), so they cannot be edited the
 	# way the migrated plugin was: rewriting one would destroy the evidence the
@@ -498,7 +498,7 @@ if(WANT_WASM)
 		${QT_QTTEST_LIBRARY}
 	)
 	# The plugin .so resolves LMMS core symbols from the host process, exactly
-	# like the real lmms binary (src/CMakeLists.txt sets ENABLE_EXPORTS ON).
+	# like the real zene binary (src/CMakeLists.txt sets ENABLE_EXPORTS ON).
 	# Without it p5's PluginFactory load would fail on the first core symbol.
 	set_target_properties(WasmSandboxTest PROPERTIES ENABLE_EXPORTS ON)
 
@@ -653,10 +653,10 @@ target_compile_features(synthetic_audio_plugin PRIVATE cxx_std_20)
 # The test double subclasses lmms::AudioPlugin, so its object code references lmms
 # symbols (AudioPortsModel's moc, Model's vtable, JournallingObject's dtor ...).
 # Unix shared modules tolerate unresolved symbols; macOS, mingw and MSVC do not, so
-# this target failed to link there while linking only Qt. Real plugins link the lmms
+# this target failed to link there while linking only Qt. Real plugins link the zene
 # target (cmake/modules/BuildPlugin.cmake), and the partc_ref_* harnesses above were
 # fixed the same way — this target was the one left behind.
-target_link_libraries(synthetic_audio_plugin PRIVATE lmms ${QT_LIBRARIES})
+target_link_libraries(synthetic_audio_plugin PRIVATE zene ${QT_LIBRARIES})
 set_target_properties(synthetic_audio_plugin PROPERTIES PREFIX "")
 
 add_executable(AudioPluginTest src/plugins/AudioPluginTest.cpp)

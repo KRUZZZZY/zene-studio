@@ -30,6 +30,11 @@ set(CPACK_PROJECT_NAME "${PROJECT_NAME}" PARENT_SCOPE)
 set(CPACK_PROJECT_VERSION "${VERSION}" PARENT_SCOPE)
 set(CPACK_PROJECT_NAME_UCASE "${PROJECT_NAME_UCASE}" PARENT_SCOPE)
 set(CPACK_PROJECT_URL "${PROJECT_URL}" PARENT_SCOPE)
+# The bundle identifier used to be derived from PROJECT_URL by reversing it into a
+# domain (https://lmms.io -> io.lmms). PROJECT_URL is now a GitHub repository URL, so
+# that derivation produced "comKRUZZZZYzene-studio.github"; state the identifier
+# explicitly instead (reverse-DNS of the hosting account, as GitHub Pages does).
+set(CPACK_MACOS_BUNDLE_ID "io.github.kruzzzzy.zene-studio" PARENT_SCOPE)
 set(CPACK_SUIL_MODULES "${Suil_MODULES}" PARENT_SCOPE)
 set(CPACK_SUIL_MODULES_PREFIX "${Suil_MODULES_PREFIX}" PARENT_SCOPE)
 

@@ -144,7 +144,7 @@ inline void loadTranslation( const QString & tname,
 
 void printVersion( char *executableName )
 {
-	printf("LMMS %s\n(%s %s, Qt %s, %s)\n\n"
+	printf("Zene Studio %s\n(%s %s, Qt %s, %s)\n\n"
 		"Build options:\n%s\n\n"
 		"Copyright (c) %s\n\n"
 		"This program is free software; you can redistribute it and/or\n"
@@ -161,11 +161,11 @@ void printVersion( char *executableName )
 
 void printHelp()
 {
-	printf( "LMMS %s\n"
+	printf( "Zene Studio %s\n"
 		"Copyright (c) %s\n\n"
-		"Usage: lmms [global options...] [<action> [action parameters...]]\n\n"
+		"Usage: zene [global options...] [<action> [action parameters...]]\n\n"
 		"Actions:\n"
-		"  <no action> [options...] [<project>]  Start LMMS in normal GUI mode\n"
+		"  <no action> [options...] [<project>]  Start Zene Studio in normal GUI mode\n"
 		"  dump <in>                             Dump XML of compressed file <in>\n"
 		"  compress <in>                         Compress file <in>\n"
 		"  render <project> [options...]         Render given project file\n"
@@ -187,7 +187,7 @@ void printHelp()
 		"          the main window\n"
 		"          geometry is <xsizexysize+xoffset+yoffsety>.\n"
 		"      --import <in> [-e]         Import MIDI or Hydrogen file <in>.\n"
-		"          If -e is specified lmms exits after importing the file.\n"
+		"          If -e is specified zene exits after importing the file.\n"
 		"\nOptions for \"render\" and \"rendertracks\":\n"
 		"  -a, --float                    Use 32bit float bit depth\n"
 		"  -b, --bitrate <bitrate>        Specify output bitrate in KBit/s\n"
@@ -370,7 +370,7 @@ int main( int argc, char * * argv )
 #if !defined(LMMS_BUILD_WIN32) && !defined(LMMS_BUILD_HAIKU)
 	if ( ( getuid() == 0 || geteuid() == 0 ) && !allowRoot )
 	{
-		printf( "LMMS cannot be run as root.\nUse \"--allowroot\" to override.\n\n" );
+		printf( "Zene Studio cannot be run as root.\nUse \"--allowroot\" to override.\n\n" );
 		return EXIT_FAILURE;
 	}
 #endif
@@ -921,12 +921,12 @@ int main( int argc, char * * argv )
 				"</html>" ).arg(
 				MainWindow::tr( "There is a recovery file present. "
 					"It looks like the last session did not end "
-					"properly or another instance of LMMS is "
+					"properly or another instance of Zene Studio is "
 					"already running. Do you want to recover the "
 					"project of this session?" ),
 				MainWindow::tr( "Recover" ),
 				MainWindow::tr( "Recover the file. Please don't run "
-					"multiple instances of LMMS when you do this." ),
+					"multiple instances of Zene Studio when you do this." ),
 				MainWindow::tr( "Discard" ),
 				MainWindow::tr( "Launch a default session and delete "
 					"the restored files. This is not reversible." )

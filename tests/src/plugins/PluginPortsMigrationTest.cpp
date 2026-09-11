@@ -9,7 +9,7 @@
  * only come from the migration.
  *
  * Windows: no test host can load the migrated modules (an MSVC module's
- * import descriptor names lmms.exe - see the note on
+ * import descriptor names zene.exe - see the note on
  * testHostCanLoadPluginModules()), so every slot in this file skips there
  * rather than failing at the load. Linux/macOS run every assertion below
  * unchanged.
@@ -140,16 +140,16 @@ auto findRender(const std::vector<partc::PluginRender>& renders, const char* nam
 /*!
  * Windows: a test host cannot load a plugin MODULE library at runtime.
  *
- * Every plugin module links the lmms executable, so an MSVC module's import
- * descriptor names lmms.exe; the Windows loader then fails with
- * ERROR_MOD_NOT_FOUND (126) because the test host is not lmms.exe. CI
+ * Every plugin module links the zene executable, so an MSVC module's import
+ * descriptor names zene.exe; the Windows loader then fails with
+ * ERROR_MOD_NOT_FOUND (126) because the test host is not zene.exe. CI
  * (msvc-x64, QT_FORCE_STDERR_LOGGING=1) shows the loader error verbatim:
  *   QWARN : ... Cannot load library ...\plugins\tripleoscillator.dll:
  *           The specified module could not be found.
  * On Linux/macOS the module's undefined lmms symbols are bound from the
  * loading process's exported symbol table (the test target sets
  * ENABLE_EXPORTS), so the same load succeeds there. The product loads these
- * modules inside lmms.exe, where the import resolves by construction: this
+ * modules inside zene.exe, where the import resolves by construction: this
  * is a test-host limitation, not a product defect.
  */
 constexpr auto testHostCanLoadPluginModules() -> bool
@@ -164,8 +164,8 @@ constexpr auto testHostCanLoadPluginModules() -> bool
 //! What every Windows skip in this suite says: the proven mechanism, named once.
 constexpr const char* PluginModuleHostSkipMessage =
 	"a Windows test host cannot load the migrated plugin modules: plugin modules link the "
-	"lmms executable, so on Windows their import descriptor names lmms.exe and a test host "
-	"cannot satisfy it; the product loads them inside lmms.exe where that resolves by "
+	"zene executable, so on Windows their import descriptor names zene.exe and a test host "
+	"cannot satisfy it; the product loads them inside zene.exe where that resolves by "
 	"construction (CI msvc-x64: QLibrary::load -> ERROR_MOD_NOT_FOUND, 126)";
 
 } // namespace

@@ -1,7 +1,7 @@
 # AppRun Hooks
 
 Scripts placed in this directory will automatically be bundled into linuxdeploy AppImages
-(e.g. `LMMS.AppDir/apprun-hooks`) and executed immediately before lmms.
+(e.g. `Zene Studio.AppDir/apprun-hooks`) and executed immediately before zene.
 
 Quoting:
 

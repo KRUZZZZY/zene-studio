@@ -493,7 +493,7 @@ void MainWindow::finalize()
 		ConfigManager::inst()->value( "audioengine", "audiodev" ) ) )
 	{
 		QMessageBox::critical(nullptr, "Audio device setup failed",
-			tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart LMMS."));
+			tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart Zene Studio."));
 
 		// if so, offer the audio settings section of the setup dialog
 		SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
@@ -601,7 +601,7 @@ void MainWindow::resetWindowTitle()
 		title += " - " + tr( "Recover session. Please save your work!" );
 	}
 
-	setWindowTitle( title + " - " + tr( "LMMS %1" ).arg( LMMS_VERSION ) );
+	setWindowTitle( title + " - " + tr( "Zene Studio %1" ).arg( LMMS_VERSION ) );
 }
 
 
@@ -949,10 +949,10 @@ void MainWindow::help()
 {
 	QMessageBox::information( this, tr( "Help not available" ),
 				  tr( "Currently there's no help "
-						  "available in LMMS.\n"
+						  "available in Zene Studio.\n"
 						  "Please visit "
-						  "http://lmms.sf.net/wiki "
-						  "for documentation on LMMS." ),
+						  "https://github.com/KRUZZZZY/zene-studio "
+						  "for documentation." ),
 				  QMessageBox::Ok );
 }
 

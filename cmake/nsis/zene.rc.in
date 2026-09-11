@@ -1,5 +1,5 @@
-lmmsicon ICON cmake/nsis/icon.ico
-lmmsprojecticon ICON cmake/nsis/project.ico
+zeneicon ICON cmake/nsis/icon.ico
+zeneprojecticon ICON cmake/nsis/project.ico
 #include <windows.h>
 
 VS_VERSION_INFO VERSIONINFO
@@ -15,11 +15,11 @@ BEGIN
     BEGIN
       VALUE "Comments",         "${PROJECT_URL}\0"
       VALUE "CompanyName",      "${PROJECT_AUTHOR}\0"
-      VALUE "FileDescription",  "${PROJECT_NAME_UCASE}\0"
+      VALUE "FileDescription",  "Zene Studio\0"
       VALUE "FileVersion",      "@VERSION@\0"
       VALUE "LegalCopyright",   "Copyright (c) ${PROJECT_COPYRIGHT}\0"
       VALUE "OriginalFilename", "${CMAKE_PROJECT_NAME}.exe\0"
-      VALUE "ProductName",      "${PROJECT_NAME_UCASE}\0"
+      VALUE "ProductName",      "Zene Studio\0"
       VALUE "ProductVersion",   "@VERSION@\0"
     END
   END

@@ -23,7 +23,7 @@ enable_policy_if_exists(CMP0141) # MSVC debug information format flags are selec
 # DESTINATION normalization warning into a configure error (InstallHelpers.cmake).
 enable_policy_if_exists(CMP0177) # install() DESTINATION paths are normalized.
 
-PROJECT(lmms)
+PROJECT(zene)
 
 SET(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules" ${CMAKE_MODULE_PATH})
 SET(LMMS_BINARY_DIR ${CMAKE_BINARY_DIR})
@@ -57,11 +57,11 @@ STRING(TOUPPER          "${CMAKE_PROJECT_NAME}" PROJECT_NAME_UCASE)
 
 SET(PROJECT_YEAR 2026)
 
-SET(PROJECT_AUTHOR      "LMMS Developers")
-SET(PROJECT_URL         "https://lmms.io")
+SET(PROJECT_AUTHOR      "Zene Studio Developers")
+SET(PROJECT_URL         "https://github.com/KRUZZZZY/zene-studio")
 SET(PROJECT_EMAIL       "lmms-devel@lists.sourceforge.net")
-SET(PROJECT_DESCRIPTION "${PROJECT_NAME_UCASE} - Free music production software")
-SET(PROJECT_COPYRIGHT   "2008-${PROJECT_YEAR} ${PROJECT_AUTHOR}")
+SET(PROJECT_DESCRIPTION "Zene Studio - free and open-source digital audio workstation")
+SET(PROJECT_COPYRIGHT   "2008-${PROJECT_YEAR} LMMS Developers, ${PROJECT_YEAR} Zene Studio contributors")
 SET(VERSION_MAJOR       "0")
 SET(VERSION_MINOR       "1")
 SET(VERSION_RELEASE     "0")

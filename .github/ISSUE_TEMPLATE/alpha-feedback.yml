@@ -67,7 +67,7 @@ body:
       label: Terminal output and the exact command you ran
       description: |
         This build writes no log file, so the terminal is the only record. Start the app from a
-        terminal (the AppImage on Linux, the app from Terminal on macOS, lmms.exe from a Command
+        terminal (the AppImage on Linux, the app from Terminal on macOS, zene.exe from a Command
         Prompt on Windows), paste the exact command and everything the app printed: stdout and
         stderr. If you cannot start it from a terminal, say so and describe what you saw on
         screen instead.

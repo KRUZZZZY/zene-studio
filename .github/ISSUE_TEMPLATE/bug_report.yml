@@ -9,7 +9,7 @@ body:
     attributes:
       label: System Information
       description: |
-        - The operating system you use to run LMMS.
+        - The operating system you use to run Zene Studio.
         - When relevant, also include your hardware information.
       placeholder: ex. Fedora Linux 39, KDE Plasma 5.27.10 - 13th Gen Intel® Core™ i9-13950HX, 32GB RAM
     validations:
@@ -17,9 +17,9 @@ body:
   - type: input
     id: affected-version
     attributes:
-      label: LMMS Version(s)
+      label: Zene Studio Version(s)
       description: |
-        - The version of LMMS affected by the bug.
+        - The version of Zene Studio affected by the bug.
         - Can be an official version number, nightly release identifier, or commit hash.
         - The version number can be found under the Help > About menu.
       placeholder: ex. 1.2.2, 1.3.0-alpha.1.518+gdd53bec31, 2d185df
@@ -30,7 +30,7 @@ body:
     attributes:
       label: Most Recent Working Version
       description: |
-        - If there is a previous version of LMMS that did not exhibit the bug, include it here.
+        - If there is a previous version of Zene Studio that did not exhibit the bug, include it here.
       placeholder: ex. 1.2.2, 1.3.0-alpha.1.518+gdd53bec31, 2d185df
     validations:
       required: false

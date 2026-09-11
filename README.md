@@ -89,7 +89,7 @@ above.
 
 ## Building
 
-Configure, build, and test from the repository root:
+Configure, build, and test from the repository root (the executable is `build/zene`):
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWANT_QT6=ON
@@ -135,6 +135,15 @@ Zene Studio is built on LMMS (https://github.com/LMMS/lmms), licensed GNU GPL v2
 
 ## Naming
 
-The product name is **Zene Studio**. The repository was renamed to
-`zene-studio` on 2026-09-09; the remaining code/branding items (wave R) and the
-checklist live in [DOCS-NAMING.md](DOCS-NAMING.md).
+The product name is **Zene Studio**. The repository was renamed to `zene-studio` on
+2026-09-09, and the deferred code/branding items (wave R of
+[DOCS-NAMING.md](DOCS-NAMING.md)) landed on top of the v0.1.0-alpha release: the CMake project
+is `zene`, the built executable is `zene`, the desktop entry, the window title and `--version`
+all say Zene Studio, and the release packages are named `zene-*` (the release workflow's upload
+globs were updated in the same commit).
+
+Two things are kept from LMMS on purpose: the `lmms::` C++ namespace and the `.mmp`/`.mmpz`
+project format, plus the licence headers, the `~/.lmmsrc.xml` config file and the
+`~/Documents/lmms/` working folder. Renaming the last two would orphan the settings and projects
+of an existing install. The full list of deliberate residuals is in
+[docs/WAVE-R-RENAME.md](docs/WAVE-R-RENAME.md).

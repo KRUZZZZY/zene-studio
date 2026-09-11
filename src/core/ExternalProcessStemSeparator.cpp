@@ -176,7 +176,7 @@ QString ExternalProcessStemSeparator::locateCli(QString* error)
 #endif
 	const auto appDir = QCoreApplication::applicationDirPath();
 	candidates << appDir + QStringLiteral("/tools/stem_split_cli.py")
-		<< appDir + QStringLiteral("/../share/lmms/tools/stem_split_cli.py");
+		<< appDir + QStringLiteral("/../share/zene/tools/stem_split_cli.py");
 
 	for (const auto& candidate : candidates)
 	{

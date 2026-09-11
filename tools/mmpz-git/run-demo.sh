@@ -20,7 +20,7 @@ ATTR="$HERE/gitattributes.sample"
 BED="$HERE/testbed"
 BASE_REPO=/tmp/mmpz-baseline-repo
 SRC="$ROOT/data/projects/shorties/sv-DnB-Startup.mmpz"
-LMMS="$ROOT/build/lmms"
+ZENE="$ROOT/build/zene"
 QT="env QT_QPA_PLATFORM=offscreen"
 
 say() { printf '\n\n################################################################\n# %s\n################################################################\n' "$*"; }
@@ -95,12 +95,12 @@ else
   echo "ROUND-TRIP: FAILED"
 fi
 run file project.mmpz
-show "# cross-check our stdlib codec against the real LMMS binary"
+show "# cross-check our stdlib codec against the built zene binary"
 run $PY "$TOOL" dump project.mmpz -o /tmp/py_dump.xml
-$QT "$LMMS" compress /tmp/py_dump.xml > /tmp/lmms_comp.mmpz 2>/dev/null
+$QT "$ZENE" compress /tmp/py_dump.xml > /tmp/zene_comp.mmpz 2>/dev/null
 $PY "$TOOL" compress /tmp/py_dump.xml -o /tmp/py_comp.mmpz
-show "cmp /tmp/lmms_comp.mmpz /tmp/py_comp.mmpz"
-cmp /tmp/lmms_comp.mmpz /tmp/py_comp.mmpz && echo "IDENTICAL: real lmms and our helper agree byte-for-byte"
+show "cmp /tmp/zene_comp.mmpz /tmp/py_comp.mmpz"
+cmp /tmp/zene_comp.mmpz /tmp/py_comp.mmpz && echo "IDENTICAL: zene and our helper agree byte-for-byte"
 
 # ---------------------------------------------------------- 3 small diff
 say "3. a small edit produces a small, readable diff (not a whole-file rewrite)"
@@ -197,15 +197,15 @@ run git show --stat --format="%h %s" HEAD
 run $PY "$TOOL" info project.mmpz
 
 # --------------------------------------------------- 8 the project opens
-say "7. the merged project still opens in real LMMS"
+say "7. the merged project still opens in the built app"
 run file project.mmpz
 run $PY "$TOOL" info project.mmpz
-show "QT_QPA_PLATFORM=offscreen $LMMS dump project.mmpz"
-$QT "$LMMS" dump project.mmpz > /tmp/merged_dump.xml 2>/dev/null
+show "QT_QPA_PLATFORM=offscreen $ZENE dump project.mmpz"
+$QT "$ZENE" dump project.mmpz > /tmp/merged_dump.xml 2>/dev/null
 printf '[dump exit %d]\n' "$?"
 sed -n '1,4p' /tmp/merged_dump.xml
-show "QT_QPA_PLATFORM=offscreen $LMMS render project.mmpz -o /tmp/merged.wav -f wav"
-$QT "$LMMS" render project.mmpz -o /tmp/merged.wav -f wav 2>&1 | tail -3
+show "QT_QPA_PLATFORM=offscreen $ZENE render project.mmpz -o /tmp/merged.wav -f wav"
+$QT "$ZENE" render project.mmpz -o /tmp/merged.wav -f wav 2>&1 | tail -3
 printf '[render exit %d]\n' "${PIPESTATUS[0]}"
 run file /tmp/merged.wav
 run ls -la /tmp/merged.wav

@@ -49,7 +49,8 @@ TARGET_COMPILE_OPTIONS(neuralamp PRIVATE
 ADD_SUBDIRECTORY(tests)
 
 # --- MSVC: multiply-defined STL members against the executable's import library ---------
-# CI msvc-x64 (run #22) links plugins\neuralamp.dll against src\lmms.lib — the *executable's*
+# CI msvc-x64 (run #22) links plugins\neuralamp.dll against the executable's import library
+# (src\zene.lib since the wave-R rename, src\lmms.lib before it) — the *executable's*
 # import library, which exports STL instantiations because LMMS's own exported classes use
 # std::vector<float> in their inline members. This plugin's vendored NAM TUs instantiate the
 # same members (??1?$vector@M…, data(), _Tidy, _Getal), and the link fails:

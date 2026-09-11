@@ -1,0 +1,4 @@
+?package(zene):needs="X11" section="Apps/Sound" \
+  title="Zene Studio" hints="Audio" command="/usr/bin/zene" \
+  longtitle="Zene Studio" \
+  icon="/usr/share/icons/hicolor/scalable/apps/zene.svg"

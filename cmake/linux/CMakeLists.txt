@@ -1,6 +1,6 @@
 install(DIRECTORY icons/ DESTINATION "${DATA_DIR}/icons/hicolor")
-install(FILES lmms.desktop DESTINATION "${DATA_DIR}/applications")
-install(FILES lmms.xml DESTINATION "${DATA_DIR}/mime/packages")
+install(FILES zene.desktop DESTINATION "${DATA_DIR}/applications")
+install(FILES zene.xml DESTINATION "${DATA_DIR}/mime/packages")
 
 # Preserve old CPack behavior
 if(WANT_CPACK_TARBALL)
