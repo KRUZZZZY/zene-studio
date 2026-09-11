@@ -16,6 +16,12 @@
 # an error, never a pass (workspace rule 7). Logs land in <build-dir>/*.log and
 # the exit code of each step is printed unpiped (workspace rule 6).
 #
+# Step 0 (2026-09-12) provisions the pinned plugin-hosting dependencies, the same
+# step the release jobs run: the shipped v0.1.0-alpha configured on all seven
+# jobs with "VST3 hosting skipped" / "CLAP hosting skipped" and shipped neither
+# host, so the release configuration now asks for both explicitly
+# (-DWANT_VST3=ON -DWANT_CLAP=ON) and the fetch happens up front.
+#
 # Exactness notes:
 #   * CI_CMAKE_OPTS below is the linux-x86_64 job's CMAKE_OPTS, byte for byte.
 #   * The CI runner installs qtbase5-dev, so the CI job configures against Qt5.
@@ -40,6 +46,8 @@ CI_CMAKE_OPTS=(
 	-DTARGET_UARCH=official
 	-DUSE_COMPILE_CACHE=ON
 	-DWANT_DEBUG_CPACK=ON
+	-DWANT_VST3=ON
+	-DWANT_CLAP=ON
 )
 
 usage() {
@@ -56,10 +64,15 @@ Usage:
 
 Runs cmake with the linux-x86_64 job's exact CMAKE_OPTS:
   -DUSE_WERROR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official
-  -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON
-then builds with a capped job count and runs ctest from <build>/tests (24 tests;
-0 tests is treated as an error). Every job of the workflow matrix gets a summary
-line: REPRODUCED or NOT-REPRODUCIBLE-HERE (<reason>).
+  -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON -DWANT_VST3=ON -DWANT_CLAP=ON
+Before that it runs the same provisioning step the workflow runs
+(.github/workflows/provision-plugin-hosting-deps.sh) so the pinned VST3 SDK and
+CLAP headers are in <build>/vst3sdk and <build>/clap; -DWANT_VST3=ON on a tree
+without them is a configure FAILURE, not a silent skip (that silent skip is what
+the published v0.1.0-alpha shipped on all seven jobs). It then builds with a
+capped job count and runs ctest from <build>/tests; 0 tests is an error. Every
+job of the workflow matrix gets a summary line: REPRODUCED or
+NOT-REPRODUCIBLE-HERE (<reason>).
 EOF
 }
 
@@ -139,7 +152,32 @@ RC_CTEST="not run"
 CTEST_TOTALS=""
 OVERALL=0
 
+# --- step 0: the pinned plugin-hosting dependencies -------------------------
+# The workflow runs this as its own step (plus two actions/cache steps) before
+# Configure. It is not optional here: the release configuration asks for
+# -DWANT_VST3=ON -DWANT_CLAP=ON, and with the checkout absent that is a
+# configure FATAL_ERROR rather than the silent STATUS-line skip the published
+# alpha shipped. Reproducing that skipped configuration on purpose means
+# configuring a scratch tree without these flags (see
+# docs/PLUGIN-HOSTING-IN-RELEASE.md).
+echo "--- [0/3] provision the pinned VST3 SDK and CLAP headers (the CI step) ---"
+if [ -f "$BUILD_DIR/vst3sdk/LICENSE.txt" ] && [ -f "$BUILD_DIR/clap/include/clap/clap.h" ]; then
+	echo "  both checkouts already present in $BUILD_DIR; verifying they are the pins"
+fi
+bash .github/workflows/provision-plugin-hosting-deps.sh "$BUILD_DIR" > "$BUILD_DIR/provision.log" 2>&1
+RC_PROVISION=$?
+echo "provision EXIT=$RC_PROVISION   (log: $BUILD_DIR/provision.log)"
+grep -E "^(VST3 SDK|CLAP|plugin-hosting deps|  VST3 SDK|  CLAP)" "$BUILD_DIR/provision.log" | sed 's/^/  /'
+if [ "$RC_PROVISION" -ne 0 ]; then
+	echo "--- provisioning failed; last 30 lines: ---"
+	tail_log "$BUILD_DIR/provision.log" 30
+	echo "local-ci: the release configuration (-DWANT_VST3=ON -DWANT_CLAP=ON) cannot be"
+	echo "          configured without these checkouts; this run stops here."
+	OVERALL=1
+fi
+
 # --- step 1: configure ------------------------------------------------------
+if [ "$OVERALL" -eq 0 ]; then
 echo "--- [1/3] configure (cmake -S . -B $BUILD_DIR ...) ---"
 cmake -S . -B "$BUILD_DIR" "${CI_CMAKE_OPTS[@]}" ${QT_FLAGS[@]+"${QT_FLAGS[@]}"} \
 	> "$BUILD_DIR/configure.log" 2>&1
@@ -150,6 +188,7 @@ if [ "$RC_CONFIGURE" -ne 0 ]; then
 	tail_log "$BUILD_DIR/configure.log" 30
 	OVERALL=1
 fi
+fi   # end: step 1 (skipped when provisioning failed)
 
 # --- step 2: build ----------------------------------------------------------
 if [ "$OVERALL" -eq 0 ] && [ "$MODE" != "configure-only" ] && [ "$MODE" != "no-build" ]; then

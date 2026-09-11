@@ -553,6 +553,36 @@ public API surface. Wiring this would force either a fake baseline or the deleti
 methods — both worse than an honest "not gated". The ruleset item is therefore **closed by
 evidence, not by a script**, and the distinction is recorded here deliberately.
 
+## Release-honesty guard (`release-honesty-gate.sh`) — 2026-09-12, release path
+
+**Command** (as `build.yml` runs it, after the tests and before `Package`, on every job):
+
+```sh
+bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
+```
+
+**Pass criterion**: exit 0. For every feature in `tests/advertised-features.tsv` — the
+single home for "what this release documents", which the gate reads and no list of its own
+— the build's own reported option must hold the documented value, and (when `--artifacts`
+is given) the plugin module that option implies must exist in the build tree. An option
+that is *missing* from the report is a failure, not a pass: that is the shape a skipped
+host takes (`plugins/Vst3Effect/CMakeLists.txt` returns before its `SET(... CACHE ...)`
+runs, so `WANT_VST3` never reaches `lmmsversion.h`). A feature documented as absent must
+report itself as off.
+
+**Why it is not a numbered gate in `run-all-gates.sh`**: it needs a built tree and a
+packaged job's build directory, so it is wired into `build.yml` on the release path rather
+than into the gate runner, and it is deliberately unnumbered — the Gate 9 slot
+(`fork-sources-gate.sh`) belongs to the gate-debt lane and does not exist on every branch.
+`--dump <lmms --version output>` judges the same text from the binary instead of the
+header; the local proof for the guard compares the two.
+
+**Why it exists**: the published `v0.1.0-alpha` advertised VST3 and CLAP hosting while all
+seven jobs of its release run printed `VST3 hosting skipped` / `CLAP hosting skipped` and
+shipped neither. Nothing failed and every test passed, because a host whose dependency is
+absent is compiled out with a `STATUS` line rather than an error. See
+[`docs/PLUGIN-HOSTING-IN-RELEASE.md`](../docs/PLUGIN-HOSTING-IN-RELEASE.md).
+
 ## Running all gates
 
 ```sh

@@ -13,6 +13,14 @@ name: build
 # line there is handed to apt as a package name and the step dies with
 # 'E: Unable to locate package #' (cost one CI cycle). Put the rationale here, not
 # in the list. The same applies to deps-ubuntu-24.04-fltk.txt.
+#
+# NOTE (plugin hosting, 2026-09-12): every job provisions the pinned VST3 SDK and
+# CLAP headers before Configure and passes -DWANT_VST3=ON -DWANT_CLAP=ON, so a
+# missing checkout is a configure FAILURE instead of the STATUS-line skip the
+# published v0.1.0-alpha shipped to users on all seven jobs ("VST3 hosting
+# skipped" / "CLAP hosting skipped") while its release notes advertised both
+# hosts. The two cache steps hash the pin-bearing cmake modules, and the
+# Release-honesty guard step fails the job if a documented feature is compiled out.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -27,6 +35,8 @@ jobs:
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
         -DWANT_DEBUG_CPACK=ON
+        -DWANT_VST3=ON
+        -DWANT_CLAP=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
@@ -77,6 +87,26 @@ jobs:
         run: |
           cmake --build fltk/build
           sudo cmake --install fltk/build --prefix /usr
+      - name: Cache the pinned VST3 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/vst3sdk
+          key: "vst3sdk-${{ runner.os }}-${{ hashFiles('cmake/modules/Vst3Sdk.cmake') }}"
+      - name: Cache the pinned CLAP headers
+        uses: actions/cache@v4
+        with:
+          path: build/clap
+          key: "clap-${{ runner.os }}-${{ hashFiles('cmake/modules/ClapHeaders.cmake') }}"
+      - name: Provision the pinned VST3 SDK and CLAP headers
+        # Runs on every job that packages a release. Without it each configure
+        # prints "VST3 hosting skipped" and "CLAP hosting skipped" and the release
+        # ships neither host. The pins are read out of
+        # cmake/modules/{Vst3Sdk,ClapHeaders}.cmake by the script (which carries
+        # no copy), and the two cache keys above hash those same files, so bumping
+        # a pin in a module invalidates the cache by itself. A full run clones
+        # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
+        # later runs restore both from the cache and clone nothing.
+        run: bash .github/workflows/provision-plugin-hosting-deps.sh build
       - name: Configure
         run: |
           ccache --zero-stats
@@ -94,6 +124,14 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Release-honesty guard (a documented feature must be in this build)
+        # Fails when a feature the release documents as present has been compiled
+        # out. The list of documented features has ONE home --
+        # tests/advertised-features.tsv -- which this gate reads; the build's own
+        # report is the generated header its "Build options:" line is printed
+        # from, and the plugin module the option implies is looked up in the build
+        # tree. v0.1.0-alpha passed every other step with both hosts skipped.
+        run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Package
         run: |
           cmake --build build --target package
@@ -125,6 +163,8 @@ jobs:
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
         -DWANT_DEBUG_CPACK=ON
+        -DWANT_VST3=ON
+        -DWANT_CLAP=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
@@ -167,6 +207,26 @@ jobs:
         run: |
           cmake --build fltk/build
           sudo cmake --install fltk/build --prefix /usr
+      - name: Cache the pinned VST3 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/vst3sdk
+          key: "vst3sdk-${{ runner.os }}-${{ hashFiles('cmake/modules/Vst3Sdk.cmake') }}"
+      - name: Cache the pinned CLAP headers
+        uses: actions/cache@v4
+        with:
+          path: build/clap
+          key: "clap-${{ runner.os }}-${{ hashFiles('cmake/modules/ClapHeaders.cmake') }}"
+      - name: Provision the pinned VST3 SDK and CLAP headers
+        # Runs on every job that packages a release. Without it each configure
+        # prints "VST3 hosting skipped" and "CLAP hosting skipped" and the release
+        # ships neither host. The pins are read out of
+        # cmake/modules/{Vst3Sdk,ClapHeaders}.cmake by the script (which carries
+        # no copy), and the two cache keys above hash those same files, so bumping
+        # a pin in a module invalidates the cache by itself. A full run clones
+        # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
+        # later runs restore both from the cache and clone nothing.
+        run: bash .github/workflows/provision-plugin-hosting-deps.sh build
       - name: Configure
         run: |
           ccache --zero-stats
@@ -183,6 +243,14 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Release-honesty guard (a documented feature must be in this build)
+        # Fails when a feature the release documents as present has been compiled
+        # out. The list of documented features has ONE home --
+        # tests/advertised-features.tsv -- which this gate reads; the build's own
+        # report is the generated header its "Build options:" line is printed
+        # from, and the plugin module the option implies is looked up in the build
+        # tree. v0.1.0-alpha passed every other step with both hosts skipped.
+        run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Package
         run: |
           cmake --build build --target package
@@ -225,6 +293,8 @@ jobs:
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
+        -DWANT_VST3=ON
+        -DWANT_CLAP=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j3
@@ -263,11 +333,31 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      - name: Cache the pinned VST3 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/vst3sdk
+          key: "vst3sdk-${{ runner.os }}-${{ hashFiles('cmake/modules/Vst3Sdk.cmake') }}"
+      - name: Cache the pinned CLAP headers
+        uses: actions/cache@v4
+        with:
+          path: build/clap
+          key: "clap-${{ runner.os }}-${{ hashFiles('cmake/modules/ClapHeaders.cmake') }}"
+      - name: Provision the pinned VST3 SDK and CLAP headers
+        # Runs on every job that packages a release. Without it each configure
+        # prints "VST3 hosting skipped" and "CLAP hosting skipped" and the release
+        # ships neither host. The pins are read out of
+        # cmake/modules/{Vst3Sdk,ClapHeaders}.cmake by the script (which carries
+        # no copy), and the two cache keys above hash those same files, so bumping
+        # a pin in a module invalidates the cache by itself. A full run clones
+        # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
+        # later runs restore both from the cache and clone nothing.
+        run: bash .github/workflows/provision-plugin-hosting-deps.sh build
       - name: Configure
         run: |
           ccache --zero-stats
           source .github/workflows/macos-env.sh
-          mkdir build
+          mkdir -p build
           cmake -S . \
                 -B build \
                 -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
@@ -283,6 +373,14 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Release-honesty guard (a documented feature must be in this build)
+        # Fails when a feature the release documents as present has been compiled
+        # out. The list of documented features has ONE home --
+        # tests/advertised-features.tsv -- which this gate reads; the build's own
+        # report is the generated header its "Build options:" line is printed
+        # from, and the plugin module the option implies is looked up in the build
+        # tree. v0.1.0-alpha passed every other step with both hosts skipped.
+        run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Package
         run: |
           cmake --build build --target package
@@ -323,6 +421,8 @@ jobs:
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
+        -DWANT_VST3=ON
+        -DWANT_CLAP=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
@@ -356,6 +456,26 @@ jobs:
           sudo .github/workflows/setup-mingw-packages.sh
           sudo apt-get install -y --no-install-recommends \
             $(xargs < .github/workflows/deps-ubuntu-24.04-mingw.txt)
+      - name: Cache the pinned VST3 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/vst3sdk
+          key: "vst3sdk-${{ runner.os }}-${{ hashFiles('cmake/modules/Vst3Sdk.cmake') }}"
+      - name: Cache the pinned CLAP headers
+        uses: actions/cache@v4
+        with:
+          path: build/clap
+          key: "clap-${{ runner.os }}-${{ hashFiles('cmake/modules/ClapHeaders.cmake') }}"
+      - name: Provision the pinned VST3 SDK and CLAP headers
+        # Runs on every job that packages a release. Without it each configure
+        # prints "VST3 hosting skipped" and "CLAP hosting skipped" and the release
+        # ships neither host. The pins are read out of
+        # cmake/modules/{Vst3Sdk,ClapHeaders}.cmake by the script (which carries
+        # no copy), and the two cache keys above hash those same files, so bumping
+        # a pin in a module invalidates the cache by itself. A full run clones
+        # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
+        # later runs restore both from the cache and clone nothing.
+        run: bash .github/workflows/provision-plugin-hosting-deps.sh build
       - name: Configure
         run: |
           export VCPKG_ROOT=${VCPKG_INSTALLATION_ROOT}
@@ -371,6 +491,14 @@ jobs:
             ${{ steps.cache-deps.outputs.cache-hit == 'true' && 'NO' || 'YES' }}
       - name: Build
         run: cmake --build build
+      - name: Release-honesty guard (a documented feature must be in this build)
+        # Fails when a feature the release documents as present has been compiled
+        # out. The list of documented features has ONE home --
+        # tests/advertised-features.tsv -- which this gate reads; the build's own
+        # report is the generated header its "Build options:" line is printed
+        # from, and the plugin module the option implies is looked up in the build
+        # tree. v0.1.0-alpha passed every other step with both hosts skipped.
+        run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
@@ -435,6 +563,26 @@ jobs:
         uses: ilammy/msvc-dev-cmd@cec98b9d092141f74527d0afa6feb2af698cfe89
         with:
           arch: x64
+      - name: Cache the pinned VST3 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/vst3sdk
+          key: "vst3sdk-${{ runner.os }}-${{ hashFiles('cmake/modules/Vst3Sdk.cmake') }}"
+      - name: Cache the pinned CLAP headers
+        uses: actions/cache@v4
+        with:
+          path: build/clap
+          key: "clap-${{ runner.os }}-${{ hashFiles('cmake/modules/ClapHeaders.cmake') }}"
+      - name: Provision the pinned VST3 SDK and CLAP headers
+        # Runs on every job that packages a release. Without it each configure
+        # prints "VST3 hosting skipped" and "CLAP hosting skipped" and the release
+        # ships neither host. The pins are read out of
+        # cmake/modules/{Vst3Sdk,ClapHeaders}.cmake by the script (which carries
+        # no copy), and the two cache keys above hash those same files, so bumping
+        # a pin in a module invalidates the cache by itself. A full run clones
+        # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
+        # later runs restore both from the cache and clone nothing.
+        run: bash .github/workflows/provision-plugin-hosting-deps.sh build
       - name: Configure
         run: |
           ccache --zero-stats
@@ -449,6 +597,8 @@ jobs:
             -DWANT_QT6=ON `
             -DUSE_COMPILE_CACHE=ON `
             -DUSE_WERROR=ON `
+            -DWANT_VST3=ON `
+            -DWANT_CLAP=ON `
             -DVCPKG_TARGET_TRIPLET="x64-windows" `
             -DVCPKG_HOST_TRIPLET="x64-windows" `
             -DVCPKG_MANIFEST_INSTALL="${{ env.should_install_manifest }}"
@@ -500,6 +650,15 @@ jobs:
           name: ctest-log-msvc-x64
           path: build/tests/Testing/Temporary/LastTest.log
           if-no-files-found: warn
+      - name: Release-honesty guard (a documented feature must be in this build)
+        # Fails when a feature the release documents as present has been compiled
+        # out. The list of documented features has ONE home --
+        # tests/advertised-features.tsv -- which this gate reads; the build's own
+        # report is the generated header its "Build options:" line is printed
+        # from, and the plugin module the option implies is looked up in the build
+        # tree. v0.1.0-alpha passed every other step with both hosts skipped.
+        shell: bash
+        run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
@@ -531,6 +690,8 @@ jobs:
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
+        -DWANT_VST3=ON
+        -DWANT_CLAP=ON
         -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
@@ -564,12 +725,40 @@ jobs:
             ccache-${{ github.job }}-${{ github.ref }}-
             ccache-${{ github.job }}-
           path: ~\AppData\Local\ccache
+      - name: Cache the pinned VST3 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/vst3sdk
+          key: "vst3sdk-${{ runner.os }}-${{ hashFiles('cmake/modules/Vst3Sdk.cmake') }}"
+      - name: Cache the pinned CLAP headers
+        uses: actions/cache@v4
+        with:
+          path: build/clap
+          key: "clap-${{ runner.os }}-${{ hashFiles('cmake/modules/ClapHeaders.cmake') }}"
+      - name: Provision the pinned VST3 SDK and CLAP headers
+        # Runs on every job that packages a release. Without it each configure
+        # prints "VST3 hosting skipped" and "CLAP hosting skipped" and the release
+        # ships neither host. The pins are read out of
+        # cmake/modules/{Vst3Sdk,ClapHeaders}.cmake by the script (which carries
+        # no copy), and the two cache keys above hash those same files, so bumping
+        # a pin in a module invalidates the cache by itself. A full run clones
+        # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
+        # later runs restore both from the cache and clone nothing.
+        run: bash .github/workflows/provision-plugin-hosting-deps.sh build
       - name: Configure
         run: |
           /clang64/bin/ccache.exe --zero-stats
           cmake -B build $CMAKE_OPTS
       - name: Build
         run: cmake --build build
+      - name: Release-honesty guard (a documented feature must be in this build)
+        # Fails when a feature the release documents as present has been compiled
+        # out. The list of documented features has ONE home --
+        # tests/advertised-features.tsv -- which this gate reads; the build's own
+        # report is the generated header its "Build options:" line is printed
+        # from, and the plugin module the option implies is looked up in the build
+        # tree. v0.1.0-alpha passed every other step with both hosts skipped.
+        run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
