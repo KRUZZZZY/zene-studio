@@ -421,6 +421,40 @@ private slots:
 		QCOMPARE(asNumber(static_cast<f_cnt_t>(clip->sample().endFrame())), asNumber(out));
 	}
 
+	//! Behaviour preservation, exactly. For a clip whose window is the whole buffer,
+	//! the window a pass derives is the arithmetic the pre-Slice-0 code performed
+	//! (SampleTrack.cpp:117-122, before it also wrote it back), bit for bit - a
+	//! deterministic proof that does not depend on how the renderer schedules.
+	void untrimmedPassWindowMatchesThePreSliceArithmetic()
+	{
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		const auto framesPerTick = Engine::framesPerTick(rate);
+
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		const auto bufferFrames = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		const auto lengthTicks = static_cast<int>(bufferFrames / framesPerTick);
+		clip->changeLength(TimePos(lengthTicks));
+
+		for (const int clipPos : { 0, 96 })
+		{
+			clip->movePosition(TimePos(clipPos));
+			for (const int transport : { clipPos, clipPos + 1, clipPos + 48, clipPos + lengthTicks - 1 })
+			{
+				// the pre-Slice-0 arithmetic, verbatim from SampleTrack.cpp:117-122
+				const auto oldStart = static_cast<f_cnt_t>(
+					framesPerTick * (transport - clip->startPosition() - clip->startTimeOffset()));
+				const auto oldClipFrames = static_cast<f_cnt_t>(framesPerTick
+					* (clip->endPosition() - clip->startPosition() - clip->startTimeOffset()));
+				const auto oldLength = oldClipFrames > bufferFrames ? bufferFrames : oldClipFrames;
+
+				// what the pass derives now
+				QCOMPARE(asNumber(clip->sourceFrameAt(TimePos(transport))), asNumber(oldStart));
+				QCOMPARE(asNumber(clip->sourceFrameAt(clip->endPosition())), asNumber(oldLength));
+			}
+		}
+	}
+
 	//! I8: the read path's own arithmetic allocates nothing (probe pattern from
 	//! tests/src/core/RecordRingBufferTest.cpp:238, tests/src/core/AllocationProbe.h).
 	void readPathArithmeticDoesNotAllocate()
