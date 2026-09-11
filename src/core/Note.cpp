@@ -68,7 +68,11 @@ Note::Note( const Note & note ) :
 	m_pos( note.m_pos ),
 	m_detuning(note.m_detuning),
 	m_type(note.m_type),
-	m_slide(note.m_slide)
+	m_slide(note.m_slide),
+	m_mpeCaptured(note.m_mpeCaptured),
+	m_mpePitchCents(note.m_mpePitchCents),
+	m_mpePressure(note.m_mpePressure),
+	m_mpeTimbre(note.m_mpeTimbre)
 {
 }
 
@@ -87,6 +91,10 @@ Note& Note::operator=(const Note& note)
 	m_type = note.m_type;
 	m_slide = note.m_slide;
 	m_detuning = note.m_detuning;
+	m_mpeCaptured = note.m_mpeCaptured;
+	m_mpePitchCents = note.m_mpePitchCents;
+	m_mpePressure = note.m_mpePressure;
+	m_mpeTimbre = note.m_mpeTimbre;
 
 	return *this;
 }
@@ -154,6 +162,54 @@ void Note::setPanning( panning_t panning )
 
 
 
+void Note::setMpeExpression( const MpeNoteExpression& expression )
+{
+	setMpePitchCents( expression.pitchCents );
+	setMpePressure( expression.pressure );
+	setMpeTimbre( expression.timbre );
+}
+
+
+
+
+void Note::setMpePitchCents( int cents )
+{
+	m_mpePitchCents = MpeNoteExpression::clampPitchCents( cents );
+	m_mpeCaptured = true;
+}
+
+
+
+
+void Note::setMpePressure( int pressure )
+{
+	m_mpePressure = MpeNoteExpression::clamp7Bit( pressure );
+	m_mpeCaptured = true;
+}
+
+
+
+
+void Note::setMpeTimbre( int timbre )
+{
+	m_mpeTimbre = MpeNoteExpression::clamp7Bit( timbre );
+	m_mpeCaptured = true;
+}
+
+
+
+
+void Note::clearMpeExpression()
+{
+	m_mpeCaptured = false;
+	m_mpePitchCents = 0;
+	m_mpePressure = 0;
+	m_mpeTimbre = 0;
+}
+
+
+
+
 TimePos Note::quantized( const TimePos & m, const int qGrid )
 {
 	float p = ( (float) m / qGrid );
@@ -204,6 +260,17 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 		parent.setAttribute( "slide", "1" );
 	}
 
+	// MPE per-note expression (task #601) - likewise optional, so a note with
+	// no expression serializes exactly as it did before the feature existed,
+	// and an older build reads the project back with the expression absent
+	// (it ignores attributes it does not know).
+	if( m_mpeCaptured )
+	{
+		parent.setAttribute( "mpepitch", m_mpePitchCents );
+		parent.setAttribute( "mpepressure", m_mpePressure );
+		parent.setAttribute( "mpetimbre", m_mpeTimbre );
+	}
+
 	if( m_detuning && m_length )
 	{
 		m_detuning->saveSettings( doc, parent );
@@ -226,6 +293,20 @@ void Note::loadSettings( const QDomElement & _this )
 	m_type = static_cast<Type>(_this.attribute("type", "0").toInt());
 	// Absent attribute means a regular note (all projects predating slide notes)
 	m_slide = _this.attribute( "slide" ).toInt();
+
+	// MPE per-note expression (task #601): an old project has none of these, and
+	// then the note carries no expression at all. Presence of any one attribute
+	// means expression was captured (even an all-zero capture, which is exactly
+	// why the presence of the attributes, not their values, is the flag).
+	m_mpeCaptured = _this.hasAttribute( "mpepitch" )
+		|| _this.hasAttribute( "mpepressure" )
+		|| _this.hasAttribute( "mpetimbre" );
+	if( m_mpeCaptured )
+	{
+		m_mpePitchCents = MpeNoteExpression::clampPitchCents( _this.attribute( "mpepitch" ).toInt() );
+		m_mpePressure = MpeNoteExpression::clamp7Bit( _this.attribute( "mpepressure" ).toInt() );
+		m_mpeTimbre = MpeNoteExpression::clamp7Bit( _this.attribute( "mpetimbre" ).toInt() );
+	}
 
 	if( _this.hasChildNodes() )
 	{

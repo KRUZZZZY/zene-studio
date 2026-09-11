@@ -319,9 +319,90 @@ void InstrumentTrack::processCCEvent(int controller)
 
 
 
+bool InstrumentTrack::trackMpeInputEvent( const MidiEvent& event )
+{
+	if( !MpeExpression::isEnabled() )
+	{
+		return false;
+	}
+
+	switch( event.type() )
+	{
+		case MidiNoteOn:
+			// A note-on with velocity 0 is a note-off (MidiClientRaw parses it
+			// that way and the switch below falls through for the same reason).
+			if( event.velocity() > 0 )
+			{
+				m_mpeExpression.noteOn( event.channel(), event.key() );
+			}
+			else
+			{
+				m_mpeExpression.noteOff( event.channel(), event.key() );
+			}
+			return false;
+
+		case MidiNoteOff:
+			m_mpeExpression.noteOff( event.channel(), event.key() );
+			return false;
+
+		default:
+			break;
+	}
+
+	if( !m_mpeExpression.handleExpressionEvent( event ) )
+	{
+		return false;
+	}
+
+	loadMpeExpressionOntoChannelNotes( event.channel() );
+	return true;
+}
+
+
+
+
+void InstrumentTrack::loadMpeExpressionOntoChannelNotes( int channel )
+{
+	const MpeNoteExpression expression = m_mpeExpression.current( channel );
+	const int count = m_mpeExpression.activeNoteCount( channel );
+
+	for( int i = 0; i < count; ++i )
+	{
+		const int key = m_mpeExpression.activeNote( channel, i );
+		if( key < 0 || key >= NumKeys )
+		{
+			continue;
+		}
+
+		NotePlayHandle* note = m_notes[key];
+		if( note == nullptr )
+		{
+			// Released (or never started) between the event and this lookup -
+			// the same window MidiKeyPressure below already lives with.
+			continue;
+		}
+
+		note->setMpeExpression( expression );
+		note->setFrequencyUpdate();
+	}
+}
+
+
+
+
 void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
 	if (Engine::getSong()->isExporting() && event.source() == MidiEvent::Source::External)
+	{
+		return;
+	}
+
+	// MPE per-note expression (task #601). Off unless MpeExpression::isEnabled();
+	// when it is on, a bend / channel pressure / CC74 arriving on the note's own
+	// member channel is the note's expression, so it is consumed here and never
+	// reaches the channel-wide handlers below (which would bend every note of
+	// the instrument at once).
+	if (trackMpeInputEvent(event))
 	{
 		return;
 	}
@@ -348,6 +429,16 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 								nullptr, event.channel(),
 								NotePlayHandle::Origin::MidiInput);
 					m_notes[event.key()] = nph;
+					// MPE (task #601): the note is born with whatever
+					// expression its own channel already holds; later bend /
+					// pressure / CC74 on that channel update it in place.
+					// setFrequencyUpdate() because the handle computed its
+					// frequency before we could stamp this on it.
+					if( MpeExpression::isEnabled() && m_mpeExpression.isMemberChannel( event.channel() ) )
+					{
+						nph->setMpeExpression( m_mpeExpression.current( event.channel() ) );
+						nph->setFrequencyUpdate();
+					}
 					if( ! Engine::audioEngine()->addPlayHandle( nph ) )
 					{
 						m_notes[event.key()] = nullptr;

@@ -32,6 +32,7 @@
 
 #include "volume.h"
 #include "panning.h"
+#include "MpeExpression.h"
 #include "SerializingObject.h"
 #include "TimePos.h"
 
@@ -131,6 +132,38 @@ public:
 	 *  saved before slide notes existed) load as regular notes. */
 	bool slide() const { return m_slide; }
 	void setSlide( bool slide ) { m_slide = slide; }
+
+	/*! MPE per-note expression (task #601): the pitch bend / channel pressure /
+	 *  CC74 an MPE controller sent on *this note's own* MIDI channel.
+	 *
+	 *  Not the slide note above (that is a portamento the piano roll draws and
+	 *  the note glides along); not Note::detuning() (a per-note pitch
+	 *  automation curve); and not the channel-wide bend in
+	 *  MidiEvent::pitchBend(), which bends every note of the channel. Storing
+	 *  it here is what makes it per-note.
+	 *
+	 *  Serialized as the optional "mpepitch"/"mpepressure"/"mpetimbre"
+	 *  attributes, written only when expression was captured: notes (and whole
+	 *  projects) saved with no expression serialize byte-identically to before,
+	 *  and a build without this feature simply ignores the attributes. */
+	bool hasMpeExpression() const { return m_mpeCaptured; }
+	MpeNoteExpression mpeExpression() const { return { m_mpePitchCents, m_mpePressure, m_mpeTimbre }; }
+	//! Bend offset in 1/100 semitone, clamped to +-MpeNoteExpression::MaxPitchCents
+	int mpePitchCents() const { return m_mpePitchCents; }
+	//! Channel pressure 0..127
+	int mpePressure() const { return m_mpePressure; }
+	//! CC74 (timbre) 0..127
+	int mpeTimbre() const { return m_mpeTimbre; }
+
+	//! The piano roll's (future) editing entry point: sets all three axes and
+	//! marks the note as carrying expression. Individual setters only touch
+	//! their own axis, and any of them marks the note as carrying expression.
+	void setMpeExpression( const MpeNoteExpression& expression );
+	void setMpePitchCents( int cents );
+	void setMpePressure( int pressure );
+	void setMpeTimbre( int timbre );
+	//! Drops the expression entirely (and the serialized attributes with it).
+	void clearMpeExpression();
 
 	//! Types of per-note automation. Currently only detuning/pitch bending is supported.
 	enum class ParameterType
@@ -286,6 +319,14 @@ private:
 
 	Type m_type = Type::Regular;
 	bool m_slide = false;
+
+	// MPE per-note expression (task #601). m_mpeCaptured distinguishes "no
+	// expression" (nothing is written to the project file) from a captured
+	// expression that happens to be all zeros.
+	bool m_mpeCaptured = false;
+	int m_mpePitchCents = 0;
+	int m_mpePressure = 0;
+	int m_mpeTimbre = 0;
 };
 
 using NoteVector = std::vector<Note*>;

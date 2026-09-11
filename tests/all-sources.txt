@@ -1068,6 +1068,9 @@ tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/MathTest.cpp
+tests/src/core/MpeExpressionTest.cpp
+tests/src/core/MpeInputPathTest.cpp
+tests/src/core/MpeNoteStorageTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp

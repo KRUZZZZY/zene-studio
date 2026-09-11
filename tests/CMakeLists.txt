@@ -12,6 +12,9 @@ set(LMMS_TESTS
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/MathTest.cpp
+	src/core/MpeExpressionTest.cpp
+	src/core/MpeInputPathTest.cpp
+	src/core/MpeNoteStorageTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/ProjectVersionTest.cpp

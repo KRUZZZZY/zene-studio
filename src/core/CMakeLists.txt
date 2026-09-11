@@ -158,6 +158,7 @@ set(LMMS_SRCS
 	core/midi/MidiSndio.cpp
 	core/midi/MidiApple.cpp
 	core/midi/MidiPort.cpp
+	core/midi/MpeExpression.cpp
 	core/midi/MidiWinMM.cpp
 
 	${LMMS_STEM_SRCS}
