@@ -64,3 +64,15 @@ src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (
 src/gui/PluginBrowser.cpp	plugin-scan: populate the plugin tree on first show, so start-up never scans plugins (023770f7b)
 src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
+tools/mmpz-git/demo_check.py	#612 mmpz-git depth. New fork-new helper that asserts musical facts about a project with an exit code, used by tools/mmpz-git/depth-demo.sh. Same reasoning as mmpz_git.py.
+tools/mmpz-git/demo_edits.py	#612 mmpz-git depth. Fork-new demo helper; gained remove-track and rename-track. Same reasoning as mmpz_git.py.
+tools/mmpz-git/depth-demo.sh	#612 mmpz-git depth. New fork-new transcript that runs the three-way-merge proof, the conflict negative control and the silent-loss case in a throwaway git repo, with every exit code printed unpiped.
+# --- fork-new developer tooling under tools/ (task #612, 2026-09-11) ---------------------------
+# These are this repo's own tools, not upstream-inherited production files: upstream master has no tools/
+# directory. They are declared here only because Gate 6 has no fork-NEW category for paths outside the
+# C/C++ scope of tests/fork-sources.txt, and registering them there was measured to break the file-length
+# and complexity ratchets. A future gate-config change should give tools/ its own category; until then this
+# is the honest place to record them. Reasons are factual descriptions, not justifications of divergence.
+tools/mmpz-git/mmpz_git.py	#612 mmpz-git depth. NOT upstream-inherited and NOT in tests/fork-sources.txt: it is fork-new developer tooling (upstream has no tools/ directory at all) and it is out of scope for the C/C++ gates that consume fork-sources.txt -- registering it there was measured to turn tests/file-length-gate.sh red (1892 lines vs the 500 limit) and tests/complexity-gate.sh red (9 functions over CCN 10, e.g. diff_dom CCN 34, serialize CCN 28). Declared here instead because Gate 6 otherwise classifies any changed path that is not tests/, build config, CI config or markdown as an undeclared upstream divergence. Regression tests: tools/mmpz-git/tests/test_mmpz_git.py (MergeDepth, BinarySafety). See docs/MMPZ-GIT-DEPTH.md.
+tools/mmpz-git/render-recipe.sh	#612 mmpz-git depth. New fork-new headless render recipe (render / rendertracks) used by the audible-diff workflow and by tests/mmpz_git test_render_recipe_script_runs.
+tools/mmpz-git/tests/test_mmpz_git.py	#612 mmpz-git depth. Fork-new test suite for the tool above, same reasoning; not upstream-inherited, and 843 lines against the C/C++ length ratchet's 500. Regression tests: the suite is itself the regression test.

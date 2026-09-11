@@ -11,6 +11,8 @@ Usage:
   demo_edits.py add-note     FILE --track T --pattern P --key K --pos N [--vol V] [--len L]
   demo_edits.py set-note-vol FILE --track T --pattern P --pos N --key K --vol V
   demo_edits.py add-track    FILE --name NAME [--type 0]
+  demo_edits.py remove-track FILE --track T
+  demo_edits.py rename-track FILE --track T --name NAME
   demo_edits.py set-track-attr FILE --track T --attr A --value V
   demo_edits.py remove-note  FILE --track T --pattern P --pos N --key K
   demo_edits.py move-note    FILE --track T --pattern P --pos N --key K --to-pos M [--to-key K2]
@@ -66,6 +68,10 @@ def main():
     c.add_argument("--vol", required=True)
     d = sub.add_parser("add-track"); d.add_argument("file")
     d.add_argument("--name", required=True); d.add_argument("--type", default="0")
+    dt = sub.add_parser("remove-track"); dt.add_argument("file")
+    dt.add_argument("--track", required=True)
+    rt = sub.add_parser("rename-track"); rt.add_argument("file")
+    rt.add_argument("--track", required=True); rt.add_argument("--name", required=True)
     e = sub.add_parser("set-track-attr"); e.add_argument("file")
     e.add_argument("--track", required=True); e.add_argument("--attr", required=True)
     e.add_argument("--value", required=True)
@@ -117,6 +123,11 @@ def main():
         t.setAttribute("name", args.name)
         t.setAttribute("solo", "0")
         container.appendChild(t)
+    elif args.cmd == "remove-track":
+        t = _track(root, args.track)
+        t.parentNode.removeChild(t)
+    elif args.cmd == "rename-track":
+        _track(root, args.track).setAttribute("name", args.name)
     elif args.cmd == "set-track-attr":
         _track(root, args.track).setAttribute(args.attr, args.value)
     elif args.cmd in ("remove-note", "move-note"):
