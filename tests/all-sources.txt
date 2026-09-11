@@ -1082,6 +1082,7 @@ tests/src/core/ProjectVersionTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
+tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp
@@ -1096,6 +1097,7 @@ tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
+tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/PluginPortsHarness.h
 tests/src/plugins/PluginPortsMigrationReference.cpp
 tests/src/plugins/PluginPortsMigrationTest.cpp

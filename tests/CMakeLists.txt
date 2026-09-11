@@ -18,6 +18,7 @@ set(LMMS_TESTS
 	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
+	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
 	src/core/ScriptBindingsTest.cpp
@@ -95,6 +96,41 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 	endif()
 endforeach()
+
+# ---------------------------------------------------------------------------
+# Remote plugin host<->client contract, driven end to end.
+#
+# RemotePluginClientE2ETest runs a real remote plugin client
+# (RemoteZynAddSubFx, the only in-tree remote client that starts headless)
+# through a real host, and pins the shared-audio-block layout with a
+# hand-written client that speaks the same protocol and writes a known planar
+# pattern (tests/src/plugins/FakeRemotePluginClient.cpp). The fake client uses
+# POSIX sockets and shm_open directly, so it is only built on non-Windows
+# hosts; the test reports that half as unexercised everywhere it is absent.
+# ---------------------------------------------------------------------------
+if(NOT WIN32)
+	add_executable(FakeRemotePluginClient
+		src/plugins/FakeRemotePluginClient.cpp
+	)
+	target_compile_features(FakeRemotePluginClient PRIVATE cxx_std_20)
+	target_compile_definitions(RemotePluginClientE2ETest PRIVATE
+		REMOTE_PLUGIN_E2E_FAKE_CLIENT="$<TARGET_FILE:FakeRemotePluginClient>"
+	)
+	add_dependencies(RemotePluginClientE2ETest FakeRemotePluginClient)
+endif()
+
+if(TARGET RemoteZynAddSubFx)
+	target_compile_definitions(RemotePluginClientE2ETest PRIVATE
+		REMOTE_PLUGIN_E2E_CLIENT_DIR="$<TARGET_FILE_DIR:RemoteZynAddSubFx>"
+	)
+	add_dependencies(RemotePluginClientE2ETest RemoteZynAddSubFx)
+endif()
+
+# The test constructs a full Engine and spawns the real client executable, so
+# it needs a Qt platform plugin even though it is guiless (same reason as
+# PluginPortsMigrationTest).
+set_tests_properties(RemotePluginClientE2ETest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # Part C (task #585) - behaviour-preservation harness for the AudioPorts
