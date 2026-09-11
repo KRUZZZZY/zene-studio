@@ -42,6 +42,14 @@ public:
 	PluginBrowser( QWidget * _parent );
 	~PluginBrowser() override = default;
 
+protected:
+	/*!
+	 * The plugin tree is built the first time the tab is actually shown, not
+	 * when it is constructed: a session that never opens the browser never
+	 * pays for plugin discovery. See docs/PLUGIN-SCAN-CACHE.md.
+	 */
+	void showEvent( QShowEvent * event ) override;
+
 private slots:
 	void onFilterChanged( const QString & filter );
 
@@ -52,6 +60,7 @@ private:
 
 	QWidget * m_view;
 	QTreeWidget * m_descTree;
+	bool m_pluginsAdded = false;
 };
 
 

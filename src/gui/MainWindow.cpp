@@ -361,18 +361,12 @@ void MainWindow::finalize()
 
 
 	m_toolsMenu = new QMenu( this );
-	for( const Plugin::Descriptor* desc : getPluginFactory()->descriptors(Plugin::Type::Tool) )
-	{
-		m_toolsMenu->addAction( desc->logo->pixmap(), desc->displayName );
-		m_tools.push_back( ToolPlugin::instantiate( desc->name, /*this*/nullptr )
-						   ->createView(this) );
-	}
-	if( !m_toolsMenu->isEmpty() )
-	{
-		menuBar()->addMenu( m_toolsMenu )->setText( tr( "&Tools" ) );
-		connect( m_toolsMenu, SIGNAL(triggered(QAction*)),
-					this, SLOT(showTool(QAction*)));
-	}
+	// The Tools menu is populated the first time it is opened (updateToolsMenu),
+	// not at start-up: a session that never opens it never pays for plugin
+	// discovery. See docs/PLUGIN-SCAN-CACHE.md.
+	connect( m_toolsMenu, SIGNAL(aboutToShow()), this, SLOT(updateToolsMenu()));
+	connect( m_toolsMenu, SIGNAL(triggered(QAction*)), this, SLOT(showTool(QAction*)));
+	menuBar()->addMenu( m_toolsMenu )->setText( tr( "&Tools" ) );
 
 
 	// help-popup-menu
@@ -1429,6 +1423,25 @@ void MainWindow::timerEvent( QTimerEvent * _te)
 
 
 
+
+
+void MainWindow::updateToolsMenu()
+{
+	if( m_toolsMenuPopulated ) { return; }
+	m_toolsMenuPopulated = true;
+
+	for( const Plugin::Descriptor* desc : getPluginFactory()->descriptors(Plugin::Type::Tool) )
+	{
+		m_toolsMenu->addAction( desc->logo->pixmap(), desc->displayName );
+		m_tools.push_back( ToolPlugin::instantiate( desc->name, /*this*/nullptr )
+					   ->createView(this) );
+	}
+	// A build with no tool plugins does not keep an empty menu in the bar.
+	if( m_toolsMenu->isEmpty() )
+	{
+		menuBar()->removeAction( m_toolsMenu->menuAction() );
+	}
+}
 
 
 void MainWindow::showTool( QAction * _idx )

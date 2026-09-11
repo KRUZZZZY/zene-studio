@@ -30,6 +30,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QShowEvent>
 #include <QStyleOption>
 #include <QTreeWidget>
 
@@ -86,13 +87,23 @@ PluginBrowser::PluginBrowser( QWidget * _parent ) :
 	view_layout->addWidget( searchBar );
 	view_layout->addWidget( m_descTree );
 
-	// Add plugins to the tree
-	addPlugins();
-
+	// Plugins are added on first show, see showEvent().
 	// Resize
 	m_descTree->header()->setSectionResizeMode( QHeaderView::ResizeToContents );
 
 	// Hide empty roots
+	updateRootVisibilities();
+}
+
+
+void PluginBrowser::showEvent( QShowEvent * event )
+{
+	SideBarWidget::showEvent( event );
+
+	if( m_pluginsAdded ) { return; }
+	m_pluginsAdded = true;
+
+	addPlugins();
 	updateRootVisibilities();
 }
 
