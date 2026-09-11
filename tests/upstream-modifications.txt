@@ -53,6 +53,7 @@ src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain c
 src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
 src/core/RemotePlugin.cpp	#589 planar-ports migration: ports allocate the shared block; counts owned by the ports model; removed count ids refused loudly
 src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged)
+src/core/main.cpp	crash reporter: install()/beginSession()/endSession() around the process lifetime and setProjectPath() on every project load (start-up, render, --run-script, clean exit), plus the one-off pending-report offer (QMessageBox in GUI mode, stderr when core-only) and the Song::projectFileNameChanged follow (98a706dbe)
 src/core/midi/MidiAlsaSeq.cpp	# MIDI learn: the ALSA control-change dispatch is restructured to route the CC event through the learn path
 src/core/midi/MidiClient.cpp	# MIDI learn: the parse path forwards each event to MidiLearn::handleMidiEvent() before the ports see it, so a learn can bind a control nothing is listening to yet (a no-op when unarmed)
 src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)

@@ -28,6 +28,7 @@
 #include "versioninfo.h"
 
 #include <QDebug>
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QLocale>
 #include <QTimer>
@@ -36,6 +37,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTextStream>
+#include <QUrl>
 
 #ifdef LMMS_BUILD_WIN32
 #include <windows.h>
@@ -56,6 +58,7 @@
 #include <csignal>  // To register the signal handler
 
 #include "MainApplication.h"
+#include "CrashReporter.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "NotePlayHandle.h"
@@ -693,6 +696,24 @@ int main( int argc, char * * argv )
 
 	ConfigManager::inst()->loadConfigFile(configFile);
 
+	// Install the local crash reporter as soon as the user's working directory
+	// is known.  It writes ONE bounded text file and dies exactly as the
+	// process would have without it; the next launch offers the file.  There is
+	// no upload, no network and no telemetry anywhere in this path (see
+	// include/CrashReporter.h and docs/CRASH-REPORTER.md).
+	crashreporter::install( ConfigManager::inst()->workingDir().toStdString() );
+	crashreporter::beginSession();
+	if( coreOnly && crashreporter::hasPendingReport() )
+	{
+		// A headless run (render / --run-script) cannot show a dialog; offer
+		// the report on stderr instead, and treat that as the one offer so
+		// every later render does not repeat it.  The file itself stays put so
+		// it can still be attached by hand.
+		fprintf( stderr, "A crash report from an earlier session is pending: %s\n",
+			crashreporter::pendingReportPath().c_str() );
+		crashreporter::acknowledgePendingReport();
+	}
+
 	// set language
 	QString pos = ConfigManager::inst()->value( "app", "language" );
 	if( pos.isEmpty() )
@@ -736,9 +757,12 @@ int main( int argc, char * * argv )
 
 		printf( "Loading project...\n" );
 		Engine::getSong()->loadProject( fileToLoad );
+		crashreporter::setProjectPath(
+			Engine::getSong()->projectFileName().toStdString() );
 		if( Engine::getSong()->isEmpty() )
 		{
 			printf("The project %s is empty, aborting!\n", fileToLoad.toUtf8().constData() );
+			crashreporter::endSession();
 			exit( EXIT_FAILURE );
 		}
 		printf( "Done\n" );
@@ -787,6 +811,8 @@ int main( int argc, char * * argv )
 		if( !fileToLoad.isEmpty() )
 		{
 			Engine::getSong()->loadProject( fileToLoad );
+			crashreporter::setProjectPath(
+				Engine::getSong()->projectFileName().toStdString() );
 		}
 
 		QString error;
@@ -810,6 +836,54 @@ int main( int argc, char * * argv )
 		using namespace lmms::gui;
 
 		new GuiApplication();
+
+		// GuiApplication may have just created the working directory after the
+		// first-run prompt, so give the crash reporter another chance to attach
+		// to it; if the directory already existed this is a re-point, and if it
+		// still does not exist the reporter stays off for this session.
+		crashreporter::install( ConfigManager::inst()->workingDir().toStdString() );
+		crashreporter::beginSession();
+
+		// Offer a crash report written by a previous session, if one is
+		// pending.  This is the whole reporting UX: the user is given the file
+		// path and can attach it to a bug report by hand.  Nothing is sent
+		// anywhere, and the offer is made once (acknowledging keeps the file).
+		if( crashreporter::hasPendingReport() )
+		{
+			const QString reportPath = QString::fromStdString(
+				crashreporter::pendingReportPath() );
+			QMessageBox crashBox;
+			crashBox.setWindowTitle( MainWindow::tr( "Crash report" ) );
+			crashBox.setIcon( QMessageBox::Warning );
+			crashBox.setWindowIcon( embed::getIconPixmap( "icon_small" ) );
+			crashBox.setTextFormat( Qt::PlainText );
+			crashBox.setText( MainWindow::tr( "The previous session ended "
+				"unexpectedly and Zene Studio saved a crash report." ) );
+			crashBox.setInformativeText( MainWindow::tr( "Zene Studio never "
+				"sends anything on its own. To report this crash, attach the "
+				"file below to your bug report.\n\n%1" ).arg( reportPath ) );
+			auto keepReport = crashBox.addButton(
+				MainWindow::tr( "Keep report" ), QMessageBox::AcceptRole );
+			auto openFolder = crashBox.addButton(
+				MainWindow::tr( "Open folder" ), QMessageBox::ActionRole );
+			auto discardReport = crashBox.addButton(
+				MainWindow::tr( "Discard" ), QMessageBox::DestructiveRole );
+			crashBox.setDefaultButton( keepReport );
+			crashBox.exec();
+			if( crashBox.clickedButton() == discardReport )
+			{
+				crashreporter::discardPendingReport();
+			}
+			else
+			{
+				if( crashBox.clickedButton() == openFolder )
+				{
+					QDesktopServices::openUrl( QUrl::fromLocalFile(
+						QFileInfo( reportPath ).absolutePath() ) );
+				}
+				crashreporter::acknowledgePendingReport();
+			}
+		}
 
 		// re-intialize RNG - shared libraries might have srand() or
 		// srandom() calls in their init procedure
@@ -885,6 +959,7 @@ int main( int argc, char * * argv )
 			}
 			else // Exit
 			{
+				crashreporter::endSession();
 				return EXIT_SUCCESS;
 			}
 		}
@@ -914,6 +989,12 @@ int main( int argc, char * * argv )
 			else
 			{
 				Engine::getSong()->loadProject( fileToLoad );
+				// Set the hint here as well as at the end of the block: a
+				// modal dialog raised during the load (missing plugins, for
+				// instance) can leave the process sitting before the later
+				// call, and a crash at that moment should still name the file.
+				crashreporter::setProjectPath(
+					Engine::getSong()->projectFileName().toStdString() );
 			}
 		}
 		else if( !fileToImport.isEmpty() )
@@ -921,6 +1002,7 @@ int main( int argc, char * * argv )
 			ImportFilter::import( fileToImport, Engine::getSong() );
 			if( exitAfterImport )
 			{
+				crashreporter::endSession();
 				return EXIT_SUCCESS;
 			}
 		}
@@ -951,6 +1033,16 @@ int main( int argc, char * * argv )
 			Engine::getSong()->createNewProject();
 		}
 
+		// Keep the crash reporter's "project that was open" hint current: set
+		// it for whatever was just loaded, then follow later changes (Open,
+		// Save As, New) so a crash names the file the user was working on.
+		crashreporter::setProjectPath(
+			Engine::getSong()->projectFileName().toStdString() );
+		QObject::connect( Engine::getSong(), &Song::projectFileNameChanged,
+			Engine::getSong(),
+			[](){ crashreporter::setProjectPath(
+				Engine::getSong()->projectFileName().toStdString() ); } );
+
 		// Finally we start the auto save timer and also trigger the
 		// autosave one time as recover.mmp is a signal to possible other
 		// instances of LMMS.
@@ -961,6 +1053,9 @@ int main( int argc, char * * argv )
 	}
 
 	const int ret = app->exec();
+	// A clean exit: clear the "session was open" marker so the next launch
+	// knows the difference between a crash and a deliberate quit.
+	crashreporter::endSession();
 	delete app;
 
 	if( destroyEngine )

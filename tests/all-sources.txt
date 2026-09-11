@@ -82,6 +82,7 @@ include/ControllerRackView.h
 include/ControllerView.h
 include/Controls.h
 include/CPULoadWidget.h
+include/CrashReporter.h
 include/DataFile.h
 include/Delay.h
 include/DeprecationHelper.h
@@ -816,6 +817,7 @@ src/core/ComboBoxModel.cpp
 src/core/ConfigManager.cpp
 src/core/ControllerConnection.cpp
 src/core/Controller.cpp
+src/core/CrashReporter.cpp
 src/core/DataFile.cpp
 src/core/DrumSynth.cpp
 src/core/EffectChain.cpp
@@ -1067,6 +1069,7 @@ tests/src/core/AudioBusTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
+tests/src/core/CrashReporterTest.cpp
 tests/src/core/MathTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp

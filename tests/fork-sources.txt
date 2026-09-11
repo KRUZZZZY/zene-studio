@@ -17,6 +17,7 @@ include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
+include/CrashReporter.h
 include/DpiHelper.h
 include/LatencyCompensation.h
 include/LmmsPolyfill.h
@@ -94,6 +95,7 @@ plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 src/core/AudioBus.cpp
 src/core/AudioPortsModel.cpp
+src/core/CrashReporter.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
 src/core/LufsMeter.cpp
