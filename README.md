@@ -7,6 +7,21 @@ recording music. It is derived from [LMMS](https://github.com/LMMS/lmms) and
 extends it with a modern audio engine, native plugin hosting, and AI-assisted
 DSP — while keeping project files portable and the whole stack open source.
 
+## Download
+
+**Zene Studio 0.1.0-alpha is the first public alpha** — [get it from the releases
+page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.1.0-alpha). Packages
+exist for Linux (x86_64 and aarch64, AppImage), macOS (Apple Silicon and Intel,
+`.dmg`) and Windows (x64 — two installers — and Windows on Arm), and only platforms
+whose build job is green have a package.
+
+They are **unsigned**, so Windows SmartScreen and macOS Gatekeeper warn about an
+unknown developer; the release notes carry the one-time steps, and each file's
+SHA-256 digest is shown on the release page so you can check your download before
+running it. Read [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md) before you
+install: this alpha cannot host instrument plugins, cannot edit clips or take lanes,
+and hosts third-party plugins as **effects only**.
+
 ## What is Zene Studio
 
 Zene Studio is an LMMS-derived digital audio workstation that combines:
@@ -20,9 +35,11 @@ Zene Studio is an LMMS-derived digital audio workstation that combines:
   tracks. The capture path is hardware-verified; the surrounding workflow is not
   finished, so treat this as a prototype rather than a shipped feature.
 - **Lua + WASM scripting** — automate the DAW with Lua or run sandboxed DSP in
-  WebAssembly.
+  WebAssembly. The WASM sandbox needs the wasmtime C API and is **off in the
+  published alpha builds** (`WANT_WASM=OFF`); Lua 5.4 is in.
 - **AI DSP** — RNNoise noise suppression, NAM neural amp modelling, and offline
-  HTDemucs stem separation.
+  HTDemucs stem separation — the stem separator is opt-in at configure time and
+  **off in the published alpha builds** (`WANT_STEM_SPLIT=OFF`).
 - **Slide notes** — pitch-slide and glide editing in the Piano Roll.
 - **HiDPI scaling** — crisp, scalable UI on high-resolution displays.
 - **Git-friendly `.mmpz` project files** — self-contained, XML-based project
@@ -57,26 +74,18 @@ patching is **not available in the current build**.
 
 ## Build status
 
-`main` does not build on CI yet. All of this comes from `gh run list`:
+`main` builds on CI. All seven build jobs (`linux-x86_64`, `linux-arm64`,
+`macos-x86_64`, `macos-arm64`, `msvc-x64`, `mingw64`, `windows-arm64`) are green on
+`0c23587d2` (run `34634112663`) and again on the `v0.1.0-alpha` tag (run
+`34639862178`), and `checks` and `doxygen` pass. Read the live state from
+`gh run list --repo KRUZZZZY/zene-studio` rather than from this file.
 
-- runs 8-10 (2026-09-10) failed; runs 11-13 were **cancelled** by the per-ref concurrency group as
-  further pushes landed, so no completed run had contained the fixes;
-- run #14 (`0b5294140`) was the first run that did, and **all seven jobs still failed** — the six
-  earlier fixes were incomplete. Four further causes were read out of that run's job logs
-  (`synthetic_audio_plugin` linked only Qt, so macOS/mingw/windows-arm64 could not resolve lmms
-  symbols; `PLUGIN_EXPORT` used a bare GCC attribute under MSVC; two vendored-code warnings —
-  RNNoise and Eigen — were promoted to errors by `-DUSE_WERROR`) and are fixed in `bd1d95de6`;
-- the run containing `bd1d95de6` is the verification. Check
-  `gh run list --repo KRUZZZZY/zene-studio` for the current state.
-
-`checks` and `doxygen` pass. Since 2026-09-11, the `quality-gates` workflow runs its static gates
-(3, 4, 6, 7 and 8) on every push and pull request; the two build-backed jobs (unit tests +
-mutation, coverage) stay dispatch-only, so a green check here covers the static gates only.
-
-Do not read the feature list above as a statement that the tree builds today, and
-do not read a green PR check in this repository as evidence that it does — the
-quality-gates workflow builds nothing; `build.yml` is what compiles the tree. See
-[`docs/STATUS.md`](docs/STATUS.md) for the current, dated status of every feature below.
+`quality-gates` runs its static gates (3, 4, 6, 7 and 8) on every push and pull
+request; the two build-backed jobs (unit tests + mutation, coverage) stay
+dispatch-only, so a green check here covers the static gates only — and it proves
+nothing about whether the tree compiles. `build.yml` is what compiles the tree. See
+[`docs/STATUS.md`](docs/STATUS.md) for the current, dated status of every feature
+above.
 
 ## Building
 
