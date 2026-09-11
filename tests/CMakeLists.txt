@@ -21,6 +21,7 @@ set(LMMS_TESTS
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
+	src/core/VcaGroupTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/SlideNotesTest.cpp
@@ -96,6 +97,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 	endif()
 endforeach()
+
+# VcaGroupTest (#622) constructs a full Engine and drives Mixer::masterMix()
+# synchronously, the same shape as the Phase D harnesses.
+set_tests_properties(VcaGroupTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.
