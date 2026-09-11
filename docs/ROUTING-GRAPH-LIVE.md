@@ -12,7 +12,9 @@ Worktree: `projects/lmms-fl-research/zene-pa-router`, branch
 | commit | what it is |
 | --- | --- |
 | `fcec2ebe3` | the render harness + the **pre-change** reference render (`tests/reference/routing-graph-live-render.raw`), captured with the pre-existing chain loop still in place |
-| the commits above `fcec2ebe3` (the top one adds this report) | the graph on the path: `RoutingChainNodes.{h,cpp}`, the `EffectChain` wiring, the tests for both proofs, and the imported gate scripts |
+| `3875183fa` | the graph on the path: `RoutingChainNodes.{h,cpp}`, the `EffectChain` wiring, and the tests for both proofs |
+| `4a3a38311` | `tests/fork-sources-gate.sh` (Gate 9) and the Gate-9-aware `tests/run-all-gates.sh`, imported byte-identical |
+| `e5d6486ee`, `d09ebad52`, and this commit | this report |
 
 The defect this fixes is the repository's own status of record: "the Patcher
 engine is present but uninstantiated, so patching is not available in the
@@ -267,3 +269,17 @@ runs Gate 9 and exits 3 on a skipped gate were **not present** at this branch's
 base (`0c23587d2`); they are committed here byte-identical to the copies on
 `post-alpha/gate-debt` (`84388107e`) so the gates the program's QA suite expects
 can actually be run from this branch.
+
+### The runs behind those numbers
+
+* `JOBS=4 bash tools/local-ci.sh --build-dir build --jobs 4` → configure `0`,
+  build `0`, ctest `0`, **26/26 tests**, overall exit `0`, with the script's own
+  printed deviation (`-DWANT_QT6=ON`: this box has no Qt5 development files, the
+  CI runner does).
+* the gate block above was run at commit `d09ebad52`; the only commit after it is
+  this document, and no gate reads a `.md`.
+* `RoutingGraphLiveTest` was re-run against the rebuilt binaries and reproduced
+  the same four SHA-256 values (7 passed, 0 failed).
+* the `build/` directory was deleted out from under this worktree once during
+  verification (disk pressure from the sibling lanes building concurrently), so
+  the numbers above come from a second, complete run rather than the first.
