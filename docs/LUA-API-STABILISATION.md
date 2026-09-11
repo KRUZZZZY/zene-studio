@@ -84,8 +84,8 @@ deliberately unchanged by this work.
   `ScriptConsole::setEnabled()` exists for a host that owns stdout itself.
 * `ScriptEngine::logMessage()` (worker thread, or the apply side for the MIDI-out
   mirror) now streams as well as captures; a **fatal script error is streamed
-  too** (`runOnWorker`), because a console that goes silent on failure is worse
-  than no console.
+  too** (`ScriptEngine::reportRunResult()`), because a console that goes silent
+  on failure is worse than no console.
 * `src/gui/MainWindow.cpp` (`runScript`) no longer prints the captured lines a
   second time; `src/core/main.cpp` (`--run-script`) turns the console off so the
   documented stdout contract is preserved exactly.
@@ -227,12 +227,36 @@ version test is load-bearing the same way: it compares two translation units,
 so it fails if either spells the version out instead of using the build define —
 which is the drift it exists to catch.
 
+**G. The repository's quality gates, run on the branch** (all read-only
+`--check`/ratchet invocations; no baseline was rewritten):
+
+```sh
+bash tests/no-upstream-regression-gate.sh   # Gate 6 -> EXIT=0
+# PASS: every change to upstream-inherited code since 01148947e is declared
+#       (32 file(s) in the ledger)
+bash tests/file-length-gate.sh --check      # Gate 7 -> EXIT=0
+# PASS (check mode: no regressions) - ScriptEngine.cpp 880 (< 910 baseline),
+#       ScriptBindings.cpp 1169 (< 1217 baseline)
+bash tests/no-tautology-gate.sh             # Gate 3 -> EXIT=0
+bash tests/complexity-gate.sh --check       # Gate 4 -> EXIT=0
+# PASS (check mode: no regressions)
+```
+
+Gate 4 earned its keep: the first version of the console change put the
+"report a failed run" check inline in `ScriptEngine::runOnWorker()` and the gate
+caught the result — `REGRESSION: new function over target:
+lmms::ScriptEngine::runOnWorker@… (CCN 11)` against a target of 10. The fix is
+the honest one rather than a baseline re-anchor: the check moved into
+`ScriptEngine::reportRunResult(RunResult, const QString&)`, a private helper with
+CCN 3, and the run path is back under the target (`--check` now exits 0).
+
 ## 5. Threading statement for the new entry points
 
 | New entry point | Thread | Realtime safety |
 |---|---|---|
 | `ScriptConsole::streamLine()` | script worker thread (`print`, `lmms.log()`) and the apply side (fatal-error log, MIDI-out mirror) | one relaxed-atomic read; no lock, no allocation that the audio thread can observe; never called from an audio-thread path |
 | `ScriptConsole::setEnabled()` / `enabled()` | any (called once before a run by the host) | relaxed atomic |
+| `ScriptEngine::reportRunResult()` | the run's calling thread (the apply side) | pure bookkeeping plus `logMessage()` |
 | `ScriptApi::version()/fullVersion()/major()/minor()/stability()` | any | pure, no state |
 | `ScriptPackages::scan()/parseManifest()/isValidName()` | host side, outside any run | file I/O, so deliberately **not** reachable from a script (no new Lua binding) |
 | `ScriptEngine::isCompatibleVersion()` change | unchanged (caller of `runFile`) | no new work on any hot path |
@@ -279,12 +303,13 @@ the audio thread's only touch point is still the lock-free
 
 **Changed:** `CMakeLists.txt` (API version variables), `src/CMakeLists.txt`
 (compile definitions), `src/core/CMakeLists.txt` (new sources),
+`include/ScriptEngine.h` (the `reportRunResult()` declaration),
 `src/core/ScriptEngine.cpp`, `src/core/ScriptBindings.cpp`,
 `src/core/main.cpp` (declared in the divergence ledger),
 `src/gui/MainWindow.cpp` (ledger reason extended), `tests/CMakeLists.txt`
-(new test + version defines), `tests/fork-sources.txt` (5 new sources), 
+(new test + version defines), `tests/fork-sources.txt` (9 new sources),
 `tests/upstream-modifications.txt`, `.gitignore` (`/logs/`).
 
-All five new sources are registered in `tests/fork-sources.txt` and the new test
+All nine new sources are registered in `tests/fork-sources.txt` and the new test
 in `tests/CMakeLists.txt`; both inherited-file edits carry a ledger entry with a
 reason.

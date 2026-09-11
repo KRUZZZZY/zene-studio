@@ -402,14 +402,7 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 		QMutexLocker locker(&m_stateMutex);
 		m_lastError = message;
 	}
-	if (result != RunResult::Ok && !message.isEmpty())
-	{
-		// A script that died must say so on the console as well as in the
-		// returned error: an author debugging by prints would otherwise see the
-		// output stop with no reason. Console only - m_lastError already carries
-		// the verdict for programmatic callers.
-		logMessage(message);
-	}
+	reportRunResult(result, message);
 	m_running.store(false);
 
 	if (error != nullptr)
@@ -701,6 +694,20 @@ void ScriptEngine::logMessage(const QString& message)
 	// The console is the part a script author sees while debugging: without it
 	// a print() only lands in the capture buffer above, which nothing renders.
 	ScriptConsole::streamLine(message);
+}
+
+
+void ScriptEngine::reportRunResult(RunResult result, const QString& message)
+{
+	if (result == RunResult::Ok || message.isEmpty())
+	{
+		return;
+	}
+	// A script that died must say so on the console as well as in the returned
+	// error: an author debugging by prints would otherwise see the output stop
+	// with no reason. Console only - m_lastError already carries the verdict for
+	// programmatic callers.
+	logMessage(message);
 }
 
 
