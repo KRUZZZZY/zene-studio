@@ -112,6 +112,36 @@ bool recordFromJson(const QJsonObject& obj, PluginScanRecord& out)
 	return true;
 }
 
+/*!
+ * Read and parse the cache file.
+ *
+ * Failure is reported once and is never fatal: the caller gets false and an
+ * empty document, so the scan repeats all the work instead of trusting
+ * anything it could not read.
+ */
+bool readCacheFile(const QString& path, QJsonDocument& out)
+{
+	QFile file(path);
+	if (!file.exists()) { return false; } // no cache yet: a full scan, not an error
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		qWarning() << "plugin-scan-cache: cannot read" << path << "-" << file.errorString()
+			<< "- scanning all plugins";
+		return false;
+	}
+
+	QJsonParseError parseError{};
+	out = QJsonDocument::fromJson(file.readAll(), &parseError);
+	if (parseError.error != QJsonParseError::NoError || !out.isObject())
+	{
+		qWarning() << "plugin-scan-cache: ignoring corrupt cache" << path << "-"
+			<< parseError.errorString() << "- scanning all plugins";
+		out = QJsonDocument();
+		return false;
+	}
+	return true;
+}
+
 } // namespace
 
 
@@ -148,38 +178,37 @@ bool PluginScanCache::load()
 
 	if (!isPersistent()) { return false; }
 
-	QFile file(m_filePath);
-	if (!file.exists()) { return false; } // no cache yet: a full scan, not an error
-	if (!file.open(QIODevice::ReadOnly))
-	{
-		qWarning() << "plugin-scan-cache: cannot read" << m_filePath << "-" << file.errorString()
-			<< "- scanning all plugins";
-		return false;
-	}
-
-	QJsonParseError parseError{};
-	const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
-	if (parseError.error != QJsonParseError::NoError || !doc.isObject())
-	{
-		qWarning() << "plugin-scan-cache: ignoring corrupt cache" << m_filePath << "-"
-			<< parseError.errorString() << "- scanning all plugins";
-		return false;
-	}
+	QJsonDocument doc;
+	if (!readCacheFile(m_filePath, doc)) { return false; }
 
 	const QJsonObject root = doc.object();
 	if (root.value("version").toInt(0) != s_formatVersion)
 	{
-		qWarning() << "plugin-scan-cache: ignoring" << m_filePath << "written in an unknown format version"
-			<< root.value("version").toInt(0) << "- scanning all plugins";
+		qWarning() << "plugin-scan-cache: ignoring" << m_filePath
+			<< "written in an unknown format version" << root.value("version").toInt(0)
+			<< "- scanning all plugins";
 		return false;
 	}
 
+	readFileRecords(root);
+	readQuarantine(root);
+	m_dirty = false;
+	return true;
+}
+
+
+void PluginScanCache::readFileRecords(const QJsonObject& root)
+{
 	for (const QJsonValue& value : root.value("files").toArray())
 	{
 		PluginScanRecord rec;
 		if (value.isObject() && recordFromJson(value.toObject(), rec)) { m_files.insert(rec.filePath, rec); }
 	}
+}
 
+
+void PluginScanCache::readQuarantine(const QJsonObject& root)
+{
 	for (const QJsonValue& value : root.value("quarantine").toArray())
 	{
 		const QJsonObject entry = value.toObject();
@@ -187,9 +216,6 @@ bool PluginScanCache::load()
 		if (path.isEmpty()) { continue; }
 		m_quarantine.append({path, entry.value("reason").toString()});
 	}
-
-	m_dirty = false;
-	return true;
 }
 
 
@@ -246,14 +272,11 @@ void PluginScanCache::store(const PluginScanRecord& record)
 {
 	if (record.filePath.isEmpty()) { return; }
 
+	// "Unchanged" is defined as "would be written identically": the JSON form
+	// is the cache's own notion of a record, so comparing it needs no
+	// field-by-field list to keep in sync with the serialiser.
 	const auto it = m_files.constFind(record.filePath);
-	if (it != m_files.constEnd() && it->size == record.size && it->mtimeMs == record.mtimeMs
-		&& it->status == record.status && it->error == record.error && it->name == record.name
-		&& it->displayName == record.displayName && it->description == record.description
-		&& it->author == record.author && it->version == record.version && it->type == record.type
-		&& it->supportedFileTypes == record.supportedFileTypes && it->logoName == record.logoName
-		&& it->logoHasInlinePixmap == record.logoHasInlinePixmap
-		&& it->hasSubPluginFeatures == record.hasSubPluginFeatures)
+	if (it != m_files.constEnd() && recordToJson(*it) == recordToJson(record))
 	{
 		return; // unchanged: do not dirty the cache
 	}

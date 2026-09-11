@@ -34,6 +34,8 @@
 
 #include "lmms_export.h"
 
+class QJsonObject;
+
 namespace lmms
 {
 
@@ -152,6 +154,10 @@ private:
 	QHash<QString, PluginScanRecord> m_files;
 	QList<QPair<QString, QString>> m_quarantine; //!< path -> reason, in file order
 	mutable bool m_dirty = false;
+
+	//! Apply the "files"/"quarantine" arrays of a parsed cache file.
+	void readFileRecords(const QJsonObject& root);
+	void readQuarantine(const QJsonObject& root);
 };
 
 } // namespace lmms
