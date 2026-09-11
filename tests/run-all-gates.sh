@@ -138,6 +138,11 @@ banner 8 "token duplication (<5%)"
 bash tests/duplication-gate.sh $SCOPE_ARG
 [[ $? -eq 0 ]] && record 8 "duplication" "PASS" || record 8 "duplication" "FAIL"
 
+# ---- Gate 9: every tracked source is registered in a scope manifest ----------
+banner 9 "fork-sources registration"
+bash tests/fork-sources-gate.sh
+[[ $? -eq 0 ]] && record 9 "fork-sources" "PASS" || record 9 "fork-sources" "FAIL"
+
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
 printf '%-6s %-24s %s\n' "gate" "name" "result"
