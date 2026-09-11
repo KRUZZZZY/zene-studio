@@ -52,6 +52,35 @@
 #define LMMS_TEST_PLUGIN_DIR "plugins"
 #endif
 
+namespace
+{
+
+/*!
+ * Windows: a test host cannot load a plugin MODULE library at runtime.
+ *
+ * Every plugin module links the lmms executable, so an MSVC module's import
+ * descriptor names lmms.exe; the Windows loader then fails with
+ * ERROR_MOD_NOT_FOUND (126) because the test host is not lmms.exe. CI
+ * (msvc-x64, QT_FORCE_STDERR_LOGGING=1) shows the loader error verbatim:
+ *   QWARN : ... Cannot load library ...\plugins\tripleoscillator.dll:
+ *           The specified module could not be found.
+ * On Linux/macOS the module's undefined lmms symbols are bound from the
+ * loading process's exported symbol table (the test target sets
+ * ENABLE_EXPORTS), so the same load succeeds there. The product loads these
+ * modules inside lmms.exe, where the import resolves by construction: this
+ * is a test-host limitation, not a product defect.
+ */
+constexpr auto testHostCanLoadPluginModules() -> bool
+{
+#ifdef Q_OS_WIN
+	return false;
+#else
+	return true;
+#endif
+}
+
+} // namespace
+
 class ScriptEngineTest : public QObject
 {
 	Q_OBJECT
@@ -397,12 +426,29 @@ assert(string ~= nil and table ~= nil and math ~= nil, "safe stdlib missing")
 	void testInstrumentParameterReadWrite()
 	{
 		using namespace lmms;
+
+		// This slot loads the real tripleoscillator module through the normal
+		// InstrumentTrack path. On Windows no test host can do that (an MSVC
+		// module's import descriptor names lmms.exe - see the note on
+		// testHostCanLoadPluginModules()), so skip here - and only here - so
+		// the rest of this file keeps running on Windows.
+		if (!testHostCanLoadPluginModules())
+		{
+			QSKIP("this slot loads the tripleoscillator module through the normal host path, "
+				"and a Windows test host cannot load plugin modules: plugin modules link the "
+				"lmms executable, so on Windows their import descriptor names lmms.exe and a "
+				"test host cannot satisfy it; the product loads them inside lmms.exe where "
+				"that resolves by construction (CI msvc-x64: QLibrary::load -> "
+				"ERROR_MOD_NOT_FOUND, 126)");
+		}
+
 		auto* engine = ScriptEngine::instance();
 
 		// A real plugin, loaded through the normal InstrumentTrack path. The
 		// test binary exports its symbols and knows the build-tree plugin dir
 		// (tests/CMakeLists.txt), so plugin modules resolve core symbols the
-		// same way they do inside the lmms executable.
+		// same way they do inside the lmms executable - on ELF platforms. On
+		// Windows this cannot work at all, hence the skip above.
 		auto* track = dynamic_cast<InstrumentTrack*>(
 			Track::create(Track::Type::Instrument, Engine::patternStore()));
 		QVERIFY2(track != nullptr, "could not create an instrument track");
