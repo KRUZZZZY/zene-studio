@@ -74,10 +74,30 @@ plus a `genhtml` report under `build-coverage/coverage/html/`.
 - a file whose coverage drops by more than `COVERAGE_TOLERANCE` (default 0.05
   percentage points) **fails** the gate (exit 1);
 - a file whose coverage rises updates the baseline (ratchet up);
-- new fork sources enter the baseline at their measured coverage;
+- **a NEW fork source enters the baseline only at or above the entry floor**
+  (`COVERAGE_ENTRY_FLOOR`, default 50.00 percentage points). Below the floor the
+  gate **fails** (exit 1) and names the file. The floor is an *entry* rule: files
+  already in the baseline are grandfathered, exactly as in Gates 4 and 7;
+- a deliberate exception to the floor must be declared **with a reason** in
+  `tests/coverage-entry-floor-exempt.txt` (`<path><TAB><reason>`); a blank reason
+  exits 2 rather than being honoured, like the Gate 6 ledger;
+- **a file with zero instrumented lines is not measurable** and is recorded as
+  `n/a` in the baseline and reported as `unmeasurable` — never as `100.00%`. The
+  old behaviour banked such a file at 100% permanently, a claim the tracefile did
+  not support (fixed 2026-09-11, defect recorded in `docs/STATUS.md`);
+- a file recorded `n/a` that later becomes measurable is treated as a new entry,
+  so the floor applies to it too; a previously measured file that stops reporting
+  instrumented lines is reported as `unmeasured` (loudly, not fatally — it is a
+  measurement loss, not a coverage drop);
 - removed sources drop out of the baseline.
 
 `--check` runs in CI mode: report only, baseline never written.
+
+**Measured (2026-09-11):** the 2026-09-09 product baseline (47 measured files,
+76.07%) still passes unchanged under the new rules — this is an entry floor, not
+a retroactive one, so no re-anchor was needed or made. On the next write-mode
+run the only expected baseline change is the `n/a` marker for any zero-instrumented
+file that the old format had recorded as `100.00`.
 
 **Measured numbers — standards fork** (2026-09-09, gcc 13 / lcov 2.0, after the coverage push):
 
@@ -158,8 +178,13 @@ scope), still short of that aspiration for the structural reasons above.
 had landed (2026-09-10) without appearing in the scope file, so no gate — coverage included —
 was watching it. No coverage run has been taken on the new scope, so those two files have no
 coverage record at all and are absent from the figures above. The ratchet will admit them at
-their measured coverage on the next `run-coverage.sh`, and Gate 2 has no entry floor, so a new
-file **cannot** fail on entry — that is one of this suite's open defects, recorded as such.
+their measured coverage on the next `run-coverage.sh`.
+**Corrected 2026-09-11 (later the same day):** this paragraph used to end "Gate 2 has no entry
+floor, so a new file **cannot** fail on entry — that is one of this suite's open defects,
+recorded as such." The defect is fixed: a new file below `COVERAGE_ENTRY_FLOOR` (50.00%) now
+fails the gate, and one with zero instrumented lines is recorded `n/a` instead of `100.00%`
+(see the rules above and `docs/VERIFICATION-DEBT-FIXES.md`). Gate 9 now catches the sibling
+failure mode — a new source file that is in *no* scope list at all.
 **Gate 2 is not green on the product:** the measured 76.07% is below the adopted 85%
 aspiration, and the criteria above only test that coverage does not *fall*. `AudioBus.cpp`
 (95.77%) and `ScriptEngine.cpp` (89.36%) remain short of 100%;
@@ -430,7 +455,7 @@ the file is authoritative.
 
 ## CI enforcement (`.github/workflows/quality-gates.yml`) — 2026-09-09, trigger policy corrected 2026-09-11
 
-The gates are wired into CI in two tiers. **static-gates** — Gates 3, 4, 6, 7 and 8, no build
+The gates are wired into CI in two tiers. **static-gates** — Gates 3, 4, 6, 7, 8 and 9, no build
 needed — runs on every **push and pull request**: 0.2-0.4 min of runner time measured, roughly
 0.1-0.2% of the minutes `build.yml` already spends per push. **unit-tests** (Gates 1 and 5) and
 **coverage** (Gate 2) stay **workflow_dispatch-only** behind their own
@@ -439,8 +464,8 @@ already builds and ctest-runs this tree on every push, and a coverage-baseline c
 a deliberate act. A green check here therefore covers the static gates and nothing else. Run the
 rest locally or dispatch the workflow:
 
-- **static-gates** — Gates 3, 4, 6, 7 and 8 (no build needed; `fetch-depth: 0` for Gate 6).
-  All five can now **fail** the job. That was not true before 2026-09-11: Gates 4 and 7 were
+- **static-gates** — Gates 3, 4, 6, 7, 8 and 9 (no build needed; `fetch-depth: 0` for Gate 6).
+  All six can now **fail** the job. That was not true before 2026-09-11: Gates 4 and 7 were
   invoked with `--check`, and `--check` used to exit 0 unconditionally, so both ratchets were
   red locally and green in CI. `--check` now means "never write the baseline" and still exits 1
   on a regression (see Gates 4 and 7).
@@ -455,7 +480,7 @@ guard, and **unit-tests** and **coverage** each carry
 enforcement means enabling the trigger **and** keeping those guards on the jobs that must not run
 on push.
 
-All eight gates are wired. Gate 5 lives in the `unit-tests` job because it needs the built
+All nine gates are wired. Gate 5 lives in the `unit-tests` job because it needs the built
 test binary; it costs ~3 min there, which is acceptable when it reuses the build. Locally it
 runs by default in `tests/run-all-gates.sh` (`--no-mutation` skips it). An earlier revision of
 this document said Gate 5 was deliberately excluded from CI — that was superseded on
@@ -522,6 +547,38 @@ bash tests/duplication-gate.sh
 
 Requires `npx`; if Node is absent the gate reports **SKIP** rather than a false PASS.
 
+## Gate 9: Every tracked source is registered in a scope manifest (`fork-sources-gate.sh`) — 2026-09-11
+
+**Command**: `bash tests/fork-sources-gate.sh` (add `--verbose` to print the verdict for every file).
+
+Rule: every tracked source file under `src/`, `include/`, `plugins/` and `tests/` must be in
+**`tests/fork-sources.txt`** (this product's own new code — the fork-scoped ratchets and Gate 2's
+per-file baseline watch it) or in **`tests/all-sources.txt`** (inherited upstream code, in the
+whole-tree scope). A file in neither list is in **no** scope: no ratchet measures it, and the gate
+names it with the verdict `NOT IN tests/fork-sources.txt`, plus what to do about it (register it as
+fork-new, or as upstream-inherited). Stale manifest entries — a listed file that does not exist —
+are reported too.
+
+**Why (2026-09-11).** `include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp` shipped
+on 2026-09-10 in no scope list. The only gate that reacted was Gate 6, which reported them as an
+"undeclared change to upstream-inherited code" — the wrong diagnosis for two files upstream has never
+had, and it cost a day. Gate 9 says the right thing in one line. It is a naming check, not a scope
+widener: it does not add files to any ratchet, it refuses to let one be invisible.
+
+Excluded, stated in the script rather than silently skipped: the vendored third-party trees
+(`src/3rdparty/`, `plugins/NeuralAmp/{rtneural,nam,tests}/`, `plugins/RnnoiseDenoiser/rnnoise/`) and
+`tests/reference/**` (frozen verbatim copies of upstream files, provenance in
+`tests/reference/ORIGIN.tsv`).
+
+**Measured (2026-09-11, `post-alpha/gate-debt`):** 1,091 tracked sources scanned; 100 fork-NEW, 992
+inherited, **0 unregistered, 0 stale → exit 0**. Wired into the `static-gates` job, which runs on
+every push and pull request.
+
+**Red/green proof**: `bash tests/test-verification-debt.sh` builds a fixture in which a new file is
+committed in no scope list: at the pre-fix revision no such check exists and Gate 6 calls it an
+undeclared change to upstream code; the fixed Gate 9 names it and exits 1, then exits 0 once the file
+is registered.
+
 ## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
 
 The adopted ruleset requires "dead code: zero (ruff/vulture)". The C++ equivalent is
@@ -556,13 +613,27 @@ evidence, not by a script**, and the distinction is recorded here deliberately.
 ## Running all gates
 
 ```sh
-bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8 (Gate 5 ≈3 min)
+bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9 (Gate 5 ≈3 min)
 bash tests/run-all-gates.sh --no-mutation    # skip the Gate 5 sweep
 bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
 ```
 
 Gate 5 runs by default and reports a real score; `--no-mutation` is the only way to
 skip it. Gate 2 stays opt-in because it rebuilds the whole tree.
+
+**Exit codes (changed 2026-09-11): 0 = every gate ran and passed; 1 = at least one FAIL;
+3 = every gate that ran passed but at least one was SKIPPED.** Before the change `record()`
+only failed on `FAIL`, so a run with two skipped gates printed `RESULT: PASS — every executed
+gate passed` and exited 0 — the two gates it laundered being the two most expensive ones
+(ctest, which needs `build/`, and coverage, which needs `--with-coverage`). The summary now
+counts the skipped gates, names each one and says how to run it for real. A plain
+`run-all-gates.sh` must therefore not be read as a green run: it exits 3 whenever Gate 2 was
+not requested.
+
+`bash tests/test-verification-debt.sh` runs the red/green proof for the three
+2026-09-11 verification-debt fixes (`docs/VERIFICATION-DEBT-FIXES.md`). It is a fixture
+harness, not a gate: it builds synthetic trees in a temp directory and exits non-zero only if
+one of its assertions fails.
 
 ## Notes
 
