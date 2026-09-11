@@ -74,10 +74,10 @@ class LMMS_EXPORT RemotePlugin : public QObject, public RemotePluginBase
 {
 	Q_OBJECT
 public:
-	RemotePlugin();
-
-	//! Ports-infrastructure constructor (Part C, additive): connects this remote
-	//! plugin's shared audio buffer to the given audio ports controller.
+	//! Ports-infrastructure constructor: connects this remote plugin's shared
+	//! audio buffer to the given audio ports controller. The controller owns the
+	//! shared buffer's layout (see updateAudioBuffer()) and decides when the
+	//! plugin's buffers become active.
 	//! See RemotePluginAudioPorts.h.
 	explicit RemotePlugin(RemotePluginAudioPortsController& audioPorts);
 
@@ -100,19 +100,27 @@ public:
 							!= IdHostInfoGotten;
 	}
 
-	inline void waitForInitDone( bool _busyWaiting = true )
-	{
-		m_failed = waitForMessage( IdInitDone, _busyWaiting ).id != IdInitDone;
-	}
+	//! Waits for the remote client's IdInitDone. On success the audio ports are
+	//! activated for `Engine::audioEngine()->framesPerPeriod()` frames, which is
+	//! what allocates the shared audio buffer (see updateAudioBuffer()).
+	void waitForInitDone(bool busyWaiting = true);
 
 	bool processMessage( const message & _m ) override;
 
-	bool process( const SampleFrame* _in_buf, SampleFrame* _out_buf );
+	//! Runs one processing period: tells the remote client to process the shared
+	//! audio buffer and waits for it to finish. The plugin's input and output are
+	//! the planar port buffers described in updateAudioBuffer(); there is no
+	//! buffered copy in or out. When the plugin is failed, not running or has no
+	//! shared buffer yet, the output planes are zero-filled and false is returned.
+	//! @return true if the remote client processed this period
+	bool process();
 
 	//! (Re)allocates the shared audio buffer used by the ports infrastructure
 	//! and tells the remote client about the new shared memory key (Part C).
-	//! The returned block holds `channelsIn` interleaved input frames followed
-	//! by `channelsOut` interleaved output frames.
+	//! The returned block holds `channelsIn + channelsOut` channel-major planar
+	//! buffers of `frames` floats each: first `channelsIn` input planes, then
+	//! `channelsOut` output planes. A repeat call with unchanged arguments
+	//! returns the existing block without reallocating.
 	//! @return pointer to the shared buffer, or nullptr on failure
 	auto updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*;
 
@@ -143,11 +151,10 @@ public:
 		return m.id != IdIsUIVisible ? -1 : m.getInt() ? 1 : 0;
 	}
 
-	//! Audio ports controller this plugin is connected to, or nullptr when the
-	//! legacy processing path is used (Part C, additive). NOTE: the PR returns a
-	//! reference because its constructor always requires a controller; this
-	//! additive slice keeps the controller optional, hence the pointer.
-	auto audioPorts() -> RemotePluginAudioPortsController* { return m_audioPorts; }
+	//! Audio ports controller this plugin is connected to. It is never null: the
+	//! constructor requires one (Part C - the legacy single/interleaved-buffer
+	//! processing path is gone, so every RemotePlugin has ports).
+	auto audioPorts() -> RemotePluginAudioPortsController& { return *m_audioPorts; }
 
 	inline bool failed() const
 	{
@@ -169,17 +176,9 @@ public slots:
 	virtual void hideUI();
 
 protected:
-	inline void setSplittedChannels( bool _on )
-	{
-		m_splitChannels = _on;
-	}
-
-
 	bool m_failed;
+
 private:
-	void resizeSharedProcessingMemory();
-
-
 	QProcess m_process;
 	ProcessWatcher m_watcher;
 
@@ -187,21 +186,18 @@ private:
 	QStringList m_args;
 
 	QRecursiveMutex m_commMutex;
-	bool m_splitChannels;
+
+	RemotePluginAudioPortsController* const m_audioPorts = nullptr;
 
 	SharedMemory<float[]> m_audioBuffer;
-	std::size_t m_audioBufferSize;
 
-	int m_inputCount;
-	int m_outputCount;
-
-	//! Ports-infrastructure state (Part C, additive; see RemotePluginAudioPorts.h).
-	//! Coexists with the legacy members above until the remote-process slice
-	//! retires the old path.
-	RemotePluginAudioPortsController* m_audioPorts = nullptr;
+	//! Channel counts and frame count `m_audioBuffer` was allocated for; a
+	//! repeat call of updateAudioBuffer() with these values is a no-op.
 	ch_cnt_t m_channelsIn = 0;
 	ch_cnt_t m_channelsOut = 0;
 	f_cnt_t m_frames = 0;
+
+	//! View into the output planes of `m_audioBuffer` (see updateAudioBuffer())
 	std::span<float> m_audioOutputs;
 
 #ifndef SYNC_WITH_SHM_FIFO

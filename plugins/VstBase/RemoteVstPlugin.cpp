@@ -185,7 +185,7 @@ public:
 	void hideEditor();
 	void destroyEditor();
 
-	virtual void process( const SampleFrame* _in, SampleFrame* _out );
+	void process( const float* _in, float* _out ) override;
 
 
 	virtual void processMidiEvent( const MidiEvent& event, const f_cnt_t offset );
@@ -287,21 +287,21 @@ public:
 	void savePreset( const std::string & _file );
 
 	// number of inputs
-	virtual int inputCount() const
+	ch_cnt_t inputCount() const override
 	{
 		if( m_plugin )
 		{
-			return m_plugin->numInputs;
+			return static_cast<ch_cnt_t>(m_plugin->numInputs);
 		}
 		return 0;
 	}
 
 	// number of outputs
-	virtual int outputCount() const
+	ch_cnt_t outputCount() const override
 	{
 		if( m_plugin )
 		{
-			return m_plugin->numOutputs;
+			return static_cast<ch_cnt_t>(m_plugin->numOutputs);
 		}
 		return 0;
 	}
@@ -1042,7 +1042,7 @@ bool RemoteVstPlugin::load( const std::string & _plugin_file )
 
 
 
-void RemoteVstPlugin::process( const SampleFrame* _in, SampleFrame* _out )
+void RemoteVstPlugin::process( const float* _in, float* _out )
 {
 	// first we gonna post all MIDI-events we enqueued so far
 	if( m_midiEvents.size() )
@@ -1092,14 +1092,19 @@ void RemoteVstPlugin::process( const SampleFrame* _in, SampleFrame* _out )
 		return;
 	}
 
+	// The host allocated (inputs + outputs) channel-major planar buffers of
+	// `bufferSize()` floats each: input plane i starts at _in[i * bufferSize()]
+	// and the output planes follow directly after the input planes (#589).
+	// NOTE: the input planes belong to the host's routing step; the VST API
+	// wants non-const pointers but must not write them, hence the const_cast.
 	for( int i = 0; i < inputCount(); ++i )
 	{
-		m_inputs[i] = &((float *) _in)[i * bufferSize()];
+		m_inputs[i] = const_cast<float*>(&_in[i * bufferSize()]);
 	}
 
 	for( int i = 0; i < outputCount(); ++i )
 	{
-		m_outputs[i] = &((float *) _out)[i * bufferSize()];
+		m_outputs[i] = &_out[i * bufferSize()];
 		memset( m_outputs[i], 0, bufferSize() * sizeof( float ) );
 	}
 

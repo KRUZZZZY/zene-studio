@@ -25,6 +25,9 @@
 
 #include "VstEffect.h"
 
+#include <algorithm>
+
+#include "Engine.h"
 #include "GuiApplication.h"
 #include "Song.h"
 #include "TextFloat.h"
@@ -60,7 +63,7 @@ Plugin::Descriptor PLUGIN_EXPORT vsteffect_plugin_descriptor =
 
 VstEffect::VstEffect( Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
-	Effect( &vsteffect_plugin_descriptor, _parent, _key ),
+	AudioPlugin( &vsteffect_plugin_descriptor, _parent, _key ),
 	m_pluginMutex(),
 	m_key( *_key ),
 	m_vstControls( this )
@@ -79,27 +82,58 @@ VstEffect::VstEffect( Model * _parent,
 
 
 
-Effect::ProcessStatus VstEffect::processImpl(SampleFrame* buf, const f_cnt_t frames)
+auto VstEffect::processImpl(PlanarBufferView<const float> in, PlanarBufferView<float> out)
+	-> ProcessStatus
 {
 	assert(m_plugin != nullptr);
-	static thread_local auto tempBuf = std::array<SampleFrame, MAXIMUM_BUFFER_SIZE>();
 
-	std::memcpy(tempBuf.data(), buf, sizeof(SampleFrame) * frames);
-	if (m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0))
+	// The remote client processes the shared audio block in place: the input
+	// planes it reads are the dry signal and the output planes it writes are
+	// the wet signal (#589).
+	if (!m_plugin->process())
 	{
-		m_plugin->process(tempBuf.data(), tempBuf.data());
-		m_pluginMutex.unlock();
+		return ProcessStatus::Sleep;
 	}
 
+	if (in.channels() == 0)
+	{
+		// Do not process wet/dry for an instrument loaded as an effect
+		// TODO: Prevent instruments from loading as effects?
+		return ProcessStatus::ContinueIfNotQuiet;
+	}
+
+	// Wet/dry mixing applies to the first 2 channels; additional channels
+	// remain as-is.
 	const float w = wetLevel();
 	const float d = dryLevel();
-	for (f_cnt_t f = 0; f < frames; ++f)
+	const auto mixableOutputs = std::min<ch_cnt_t>(out.channels(), 2);
+	for (ch_cnt_t channel = 0; channel < mixableOutputs; ++channel)
 	{
-		buf[f][0] = w * tempBuf[f][0] + d * buf[f][0];
-		buf[f][1] = w * tempBuf[f][1] + d * buf[f][1];
+		auto wetBuffer = out.buffer(channel);
+		auto dryBuffer = in.buffer(std::min(channel, static_cast<ch_cnt_t>(in.channels() - 1)));
+		for (f_cnt_t f = 0; f < out.frames(); ++f)
+		{
+			wetBuffer[f] = w * wetBuffer[f] + d * dryBuffer[f];
+		}
 	}
 
 	return ProcessStatus::ContinueIfNotQuiet;
+}
+
+
+
+
+auto VstEffect::processLock() -> bool
+{
+	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
+}
+
+
+
+
+void VstEffect::processUnlock()
+{
+	m_pluginMutex.unlock();
 }
 
 
@@ -117,7 +151,7 @@ bool VstEffect::openPlugin(const QString& plugin)
 	}
 
 	QMutexLocker ml( &m_pluginMutex ); Q_UNUSED( ml );
-	m_plugin = QSharedPointer<VstPlugin>(new VstPlugin(plugin));
+	m_plugin = QSharedPointer<VstPlugin>(new VstPlugin(plugin, audioPorts().controller()));
 	if( m_plugin->failed() )
 	{
 		m_plugin.clear();

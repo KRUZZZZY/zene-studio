@@ -326,6 +326,13 @@ enum RemoteMessageIDs
 	IdStartProcessing,
 	IdProcessingDone,
 	IdChangeSharedMemoryKey,
+	//! Retired by the planar audio-ports migration (#589): a client must report
+	//! both channel counts at once (IdChangeInputOutputCount). These two ids are
+	//! deliberately *not* deleted from the enumeration - the ids after them keep
+	//! their numeric value, so a client built against the old interleaved
+	//! protocol is still recognised and can be refused loudly (see
+	//! RemotePlugin::processMessage()) instead of having its messages
+	//! misinterpreted as unrelated ids.
 	IdChangeInputCount,
 	IdChangeOutputCount,
 	IdChangeInputOutputCount,

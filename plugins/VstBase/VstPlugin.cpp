@@ -56,6 +56,7 @@
 #include "LocaleHelper.h"
 #include "MainWindow.h"
 #include "PathUtil.h"
+#include "RemotePluginAudioPorts.h"
 #include "SimpleTextFloat.h"
 #include "Song.h"
 
@@ -124,7 +125,8 @@ enum class ExecutableType
 	Unknown, Win32, Win64, Linux64,
 };
 
-VstPlugin::VstPlugin( const QString & _plugin ) :
+VstPlugin::VstPlugin( const QString & _plugin, RemotePluginAudioPortsController & audioPorts ) :
+	RemotePlugin( audioPorts ),
 	m_plugin( PathUtil::toAbsolute(_plugin) ),
 	m_pluginWindowID( 0 ),
 	m_embedMethod( (gui::getGUI() != nullptr)
@@ -133,7 +135,8 @@ VstPlugin::VstPlugin( const QString & _plugin ) :
 	m_version( 0 ),
 	m_currentProgram()
 {
-	setSplittedChannels( true );
+	// NOTE: the split/interleaved channel mode this class used to configure is
+	// gone (#589) - the audio ports own a single planar shared buffer layout.
 
 	auto pluginType = ExecutableType::Unknown;
 #ifdef LMMS_BUILD_LINUX
@@ -267,6 +270,10 @@ void VstPlugin::loadSettings( const QDomElement & _this )
 		}
 		setParameterDump( dump );
 	}
+
+	// The audio ports (channel counts, pin connections) round-trip with the
+	// plugin's settings like every other migrated plugin (#589).
+	audioPorts().audioPortsModel().loadSettings(_this);
 }
 
 
@@ -310,6 +317,7 @@ void VstPlugin::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 
 	_this.setAttribute( "program", currentProgram() );
+	audioPorts().audioPortsModel().saveSettings(_doc, _this);
 }
 
 void VstPlugin::toggleUI()

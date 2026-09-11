@@ -62,8 +62,12 @@ public:
 
 	bool processMessage( const message & _m ) override;
 
-	virtual void process( const SampleFrame* _in_buf,
-					SampleFrame* _out_buf ) = 0;
+	//! Processes one period. `in` and `out` point into the shared audio block
+	//! allocated by the host (see RemotePlugin::updateAudioBuffer()): `in` is
+	//! `inputCount()` channel-major planar buffers of `bufferSize()` floats each
+	//! (or nullptr when the plugin has no inputs), `out` is `outputCount()`
+	//! channel-major planar buffers directly after the input planes.
+	virtual void process(const float* in, float* out) = 0;
 
 	virtual void processMidiEvent( const MidiEvent&, const f_cnt_t /* _offset */ )
 	{
@@ -87,19 +91,10 @@ public:
 		return m_bufferSize;
 	}
 
-	void setInputCount( int _i )
-	{
-		m_inputCount = _i;
-		sendMessage( message( IdChangeInputCount ).addInt( _i ) );
-	}
-
-	void setOutputCount( int _i )
-	{
-		m_outputCount = _i;
-		sendMessage( message( IdChangeOutputCount ).addInt( _i ) );
-	}
-
-	void setInputOutputCount( int i, int o )
+	//! Reports both channel counts to the host, which resizes the shared audio
+	//! block accordingly. This is the only channel-count message there is
+	//! (Part C/#589).
+	void setInputOutputCount( ch_cnt_t i, ch_cnt_t o )
 	{
 		m_inputCount = i;
 		m_outputCount = o;
@@ -108,12 +103,12 @@ public:
 				.addInt( o ) );
 	}
 
-	virtual int inputCount() const
+	virtual ch_cnt_t inputCount() const
 	{
 		return m_inputCount;
 	}
 
-	virtual int outputCount() const
+	virtual ch_cnt_t outputCount() const
 	{
 		return m_outputCount;
 	}
@@ -131,8 +126,8 @@ private:
 	SharedMemory<float[]> m_audioBuffer;
 	SharedMemory<const VstSyncData> m_vstSyncData;
 
-	int m_inputCount;
-	int m_outputCount;
+	ch_cnt_t m_inputCount;
+	ch_cnt_t m_outputCount;
 
 	sample_rate_t m_sampleRate;
 	f_cnt_t m_bufferSize;
@@ -346,9 +341,10 @@ void RemotePluginClient::doProcessing()
 {
 	if (m_audioBuffer)
 	{
-		process( (SampleFrame*)( m_inputCount > 0 ? m_audioBuffer.get() : nullptr ),
-				(SampleFrame*)( m_audioBuffer.get() +
-					( m_inputCount*m_bufferSize ) ) );
+		// The host allocated (inputs + outputs) channel-major planar buffers of
+		// `m_bufferSize` floats each; skip the input planes when there are none.
+		process(m_inputCount > 0 ? m_audioBuffer.get() : nullptr,
+			m_audioBuffer.get() + m_inputCount * m_bufferSize);
 	}
 	else
 	{
