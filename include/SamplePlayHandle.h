@@ -28,6 +28,7 @@
 
 #include "Sample.h"
 #include "SampleWindow.h"
+#include "WarpMarkers.h"
 #include "PlayHandle.h"
 
 namespace lmms
@@ -86,12 +87,32 @@ private:
 	//! that happens to the clip or the Sample afterwards changes this handle's
 	//! length (Slice 0, invariant I1).
 	SampleWindow m_window;
+	/*! The clip's warp map (#597), snapshotted for the same reason the window is:
+	 *  a live handle renders the warp it was created with. A fixed-capacity value
+	 *  copy - 1.5 KB of memcpy, no allocation, no lock (I8). */
+	WarpMarkers m_warp;
+	//! The clip's own rate at construction (leader/follower), and the rate that
+	//! means "play at the source's natural speed". Their ratio is the resampler
+	//! ratio this handle renders at when no marker governs the position.
+	float m_baseFramesPerTick = 0.0f;
+	float m_naturalFramesPerTick = 0.0f;
+	/*! The handle's length in output frames when the clip is warped or leads:
+	 *  the ticks the window spans under the mapping, at the output rate.
+	 *  `m_rendersLinearly` keeps the historical expression for every clip that
+	 *  is neither, so an unwarped project's arithmetic is unchanged. */
+	f_cnt_t m_timelineFrames = 0;
+	bool m_rendersLinearly = true;
 	f_cnt_t m_frame = 0;
 	Sample* m_sample = nullptr;
 	Track* m_track = nullptr;
 	PatternTrack* m_patternTrack = nullptr;
 	bool m_doneMayReturnTrue = true;
 	bool m_ownAudioBusHandle = false;
+
+	//! The resampler ratio for the period about to be rendered: the local
+	//! warp rate at the source frame this period starts on, over the natural
+	//! rate. Exactly 1.0 for every clip with no markers and no source tempo.
+	float warpRatio() const;
 } ;
 
 

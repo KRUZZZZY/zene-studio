@@ -29,7 +29,9 @@ set(LMMS_TESTS
 	src/core/SlideNotesTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
+	src/core/WarpMarkersTest.cpp
 	src/tracks/AutomationTrackTest.cpp
+	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
 )
 

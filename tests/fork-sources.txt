@@ -31,6 +31,7 @@ include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
 include/SampleWindow.h
+include/WarpMarkers.h
 include/ScriptBindings.h
 include/ScriptEngine.h
 include/SessionModel.h
@@ -127,3 +128,5 @@ tools/local-ci.sh
 # sources, so these belong here rather than in tests/all-sources.txt).
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/WarpMarkersTest.cpp
+tests/src/tracks/SampleClipWarpTest.cpp

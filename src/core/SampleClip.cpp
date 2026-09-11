@@ -27,6 +27,7 @@
 #include <QDomElement>
 #include <QFileInfo>
 
+#include "Engine.h"
 #include "PatternStore.h"
 #include "PathUtil.h"
 #include "SampleClipView.h"
@@ -78,6 +79,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	Clip(orig),
 	m_sample(std::move(orig.m_sample)),
 	m_window(orig.m_window),
+	m_warp(orig.m_warp),
+	m_tempoMode(orig.m_tempoMode),
+	m_sourceTempo(orig.m_sourceTempo),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset)
 {
@@ -161,6 +165,10 @@ void SampleClip::setSampleFile(const QString& sf)
 	setStartTimeOffset(0);
 	if (!sf.isEmpty())
 	{
+		// A different source: the markers were anchored to frames of the old
+		// one, so they go with it. `setSampleFile("")` (the copy constructor)
+		// deliberately keeps them - the source has not changed.
+		m_warp.clear();
 		m_sample = Sample(SampleBuffer::fromFile(sf));
 		resetWindowToFullBuffer();
 		updateLength();
@@ -262,9 +270,79 @@ void SampleClip::setStartTimeOffset(const TimePos& startTimeOffset)
 TimePos SampleClip::sampleLength() const
 {
 	// The clip's audio length is the length of its window, not of the whole file:
-	// for a clip without a trim the two are the same, which is what keeps this
-	// behaviour-preserving (Slice 0).
-	return static_cast<int>(m_window.length() / Engine::framesPerTick(m_sample.sampleRate()));
+	// for a clip without a trim and without a warp the two are the same, which is
+	// what keeps this behaviour-preserving (Slice 0). `windowTicksFor()` is the
+	// pre-warp `length() / framesPerTick()` expression in exactly that case.
+	return TimePos(windowTicksFor(m_window));
+}
+
+
+int SampleClip::windowTicksFor(const SampleWindow& window) const
+{
+	if (m_warp.empty())
+	{
+		return static_cast<int>(window.length() / clipFramesPerTick());
+	}
+	const auto framesPerTick = clipFramesPerTick();
+	return m_warp.timelineOffsetAt(window.sourceOut, window.sourceIn, framesPerTick)
+		- m_warp.timelineOffsetAt(window.sourceIn, window.sourceIn, framesPerTick);
+}
+
+
+float SampleClip::clipFramesPerTick() const
+{
+	// The one place the tempo enters the clip's mapping (design §2.4).
+	if (m_tempoMode == WarpTempoMode::SourceTempo && m_sourceTempo > 0.0f)
+	{
+		const auto projectTempo = static_cast<float>(Engine::getSong()->getTempo());
+		if (projectTempo > 0.0f)
+		{
+			// A leader: resample the clip's own music onto the project grid.
+			return Engine::framesPerTick(m_sample.sampleRate()) * projectTempo / m_sourceTempo;
+		}
+	}
+	return Engine::framesPerTick(m_sample.sampleRate());
+}
+
+
+bool SampleClip::setWarpMarkers(std::span<const WarpMarker> markers)
+{
+	if (!m_warp.set(markers))
+	{
+		Engine::getSong()->collectError(tr("Warp markers rejected: the set is not "
+			"strictly increasing in source frame and timeline position."));
+		return false;
+	}
+	Engine::getSong()->setModified();
+	emit sampleChanged();
+	return true;
+}
+
+
+void SampleClip::clearWarpMarkers()
+{
+	if (m_warp.empty()) { return; }
+	m_warp.clear();
+	Engine::getSong()->setModified();
+	emit sampleChanged();
+}
+
+
+void SampleClip::setWarpTempoMode(WarpTempoMode mode)
+{
+	if (m_tempoMode == mode) { return; }
+	m_tempoMode = mode;
+	Engine::getSong()->setModified();
+	emit sampleChanged();
+}
+
+
+void SampleClip::setSourceTempo(float bpm)
+{
+	if (bpm < 0.0f || m_sourceTempo == bpm) { return; }
+	m_sourceTempo = bpm;
+	Engine::getSong()->setModified();
+	emit sampleChanged();
 }
 
 
@@ -334,15 +412,23 @@ void SampleClip::resetWindowToFullBuffer()
 
 f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 {
-	// The one linear mapping of the window onto the timeline (design §2.4). No
-	// allocation, no lock: this runs on the audio thread (I8).
-	const auto framesPerTick = Engine::framesPerTick(m_sample.sampleRate());
-	const auto relativeTicks = timelinePos.getTicks() - startPosition().getTicks()
-		- startTimeOffset().getTicks();
-	const auto relative = relativeTicks > 0
-		? TimePos(relativeTicks).frames(framesPerTick)
-		: f_cnt_t{ 0 };
-	return std::clamp(m_window.sourceIn + relative, m_window.sourceIn, m_window.sourceOut);
+	// The one mapping of the window onto the timeline (design §2.4). With no
+	// markers it is the linear one exactly as the clip-and-capture wave froze
+	// it; with markers it is the warp map. No allocation, no lock: this runs on
+	// the audio thread (I8).
+	const auto framesPerTick = clipFramesPerTick();
+	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
+	const auto relativeTicks = timelinePos.getTicks() - originTicks;
+
+	if (m_warp.empty())
+	{
+		const auto relative = relativeTicks > 0
+			? TimePos(relativeTicks).frames(framesPerTick)
+			: f_cnt_t{ 0 };
+		return std::clamp(m_window.sourceIn + relative, m_window.sourceIn, m_window.sourceOut);
+	}
+
+	return m_warp.sourceFrameAt(relativeTicks, m_window.sourceIn, m_window.sourceOut, framesPerTick);
 }
 
 
@@ -350,10 +436,17 @@ f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 
 TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
 {
-	const auto framesPerTick = Engine::framesPerTick(m_sample.sampleRate());
+	const auto framesPerTick = clipFramesPerTick();
+	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
 	const auto frame = std::clamp(sourceFrame, m_window.sourceIn, m_window.sourceOut);
-	return TimePos(startPosition().getTicks() + startTimeOffset().getTicks()
-		+ static_cast<int>(TimePos::fromFrames(frame - m_window.sourceIn, framesPerTick)));
+
+	if (m_warp.empty())
+	{
+		return TimePos(originTicks
+			+ static_cast<int>(TimePos::fromFrames(frame - m_window.sourceIn, framesPerTick)));
+	}
+
+	return TimePos(originTicks + m_warp.timelineOffsetAt(frame, m_window.sourceIn, framesPerTick));
 }
 
 
@@ -388,6 +481,27 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	{
 		_this.setAttribute( "srcin", QString::number(m_window.sourceIn) );
 		_this.setAttribute( "srcout", QString::number(m_window.sourceOut) );
+	}
+	// The warp map (#597), as a child element of the clip exactly as the design
+	// asks (§2.4, §2.6). Additive: a clip with no markers and the default
+	// (follower) tempo mode writes no <warp> element at all, so a project
+	// without warp serialises exactly as it did before this task (I9).
+	if (!m_warp.empty() || m_tempoMode != WarpTempoMode::FollowProject)
+	{
+		QDomElement warp = _doc.createElement( "warp" );
+		warp.setAttribute( "mode", m_tempoMode == WarpTempoMode::SourceTempo ? "source" : "follow" );
+		if (m_tempoMode == WarpTempoMode::SourceTempo)
+		{
+			warp.setAttribute( "tempo", QString::number( m_sourceTempo ) );
+		}
+		for (const auto& marker : m_warp.all())
+		{
+			QDomElement node = _doc.createElement( "marker" );
+			node.setAttribute( "src", QString::number( marker.sourceFrame ) );
+			node.setAttribute( "pos", QString::number( marker.offsetTicks ) );
+			warp.appendChild( node );
+		}
+		_this.appendChild( warp );
 	}
 	if (const auto& c = color())
 	{
@@ -444,6 +558,33 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	}
 
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
+
+	// The warp map (#597). Read after `len`/`off`/`srcin`/`srcout` so the window
+	// it clamps into is already the file's window, and after `setSampleFile()`,
+	// which is what replaces the source the markers are anchored to.
+	if (const auto warpNode = _this.firstChildElement("warp"); !warpNode.isNull())
+	{
+		std::array<WarpMarker, WarpMarkers::MaxMarkers> markers{};
+		std::size_t count = 0;
+		for (auto node = warpNode.firstChildElement("marker");
+			!node.isNull() && count < static_cast<std::size_t>(WarpMarkers::MaxMarkers);
+			node = node.nextSiblingElement("marker"))
+		{
+			markers[count++] = { node.attribute("src", "0").toULongLong(),
+				node.attribute("pos", "0").toInt() };
+		}
+
+		m_tempoMode = warpNode.attribute("mode", "follow") == "source"
+			? WarpTempoMode::SourceTempo : WarpTempoMode::FollowProject;
+		m_sourceTempo = warpNode.attribute("tempo", "0").toFloat();
+
+		m_warp.clear();
+		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))
+		{
+			Engine::getSong()->collectError(tr("Warp markers in the project file "
+				"are not strictly increasing; they were ignored."));
+		}
+	}
 
 	if (_this.hasAttribute("color"))
 	{
