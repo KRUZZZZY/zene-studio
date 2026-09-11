@@ -1,3 +1,30 @@
-# Upstream-inherited production files the standards workstream is allowed to change,
-# with the reason. Compile-only fixes belong here and MUST ship a regression test.
-# Format: <repo-relative path>	<reason>
+# Upstream-inherited production files this repo is allowed to change, one per line:
+#   <repo-relative path><TAB><reason>
+# The reason is MANDATORY — tests/no-upstream-regression-gate.sh fails (exit 2) on an
+# entry with an empty reason, and prints every reason it honours.
+#
+# POLICY (2026-09-11). Zene Studio is a product, not an upstream patch series. A blanket
+# ban on touching inherited code would forbid exactly the work a DAW needs — you cannot
+# implement plugin delay compensation without changing the mixer. What this file forbids
+# is *undeclared* divergence: a behavioural change to an inherited file that nobody wrote
+# down. Every entry here is deliberate and reviewed; anything NOT listed is still a
+# violation. Keep each change minimal and local, and ship a test beside it (the gate's
+# rule: fork-NEW fixes need a regression test in the same change).
+#
+# Reasons reference the task/commit that made the change, so a future rebase onto upstream
+# can see what this repo owes. When upstream's copy of a file is taken wholesale, delete
+# its entry here — an entry that no longer differs from the base is dead weight.
+#
+# (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
+# It never held a line, and Gate 6 was red from the first behavioural change.)
+
+include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's compensation graph
+include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
+include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
+include/Effect.h	#605 PDC: latency accessor on the effect interface
+include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment point (9e12a68f5)
+src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
+src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
+src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)

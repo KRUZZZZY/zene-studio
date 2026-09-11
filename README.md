@@ -57,10 +57,11 @@ patching is **not available in the current build**.
 
 ## Build status
 
-`main` does **not** currently build on CI. The `build` workflow's runs 8-10
-(2026-09-10) all failed; `checks` and `doxygen` pass. Local fixes for six of the
-failures are committed on `fix/ci-matrix` (`2dcec93b3`) and are not pushed yet.
-The `quality-gates` workflow is dispatch-only and its last run failed as well.
+`main` did **not** build on CI on 2026-09-10: the `build` workflow's runs 8-10 all failed, while
+`checks` and `doxygen` passed. The fixes for six of those failures were pushed on 2026-09-11
+(`7f08809e4`), so build run #13 is the first run containing them — read the current state from
+`gh run list --repo KRUZZZZY/zene-studio` rather than from this page. The `quality-gates` workflow
+is dispatch-only, so no gate runs on push here.
 
 Do not read the feature list above as a statement that the tree builds today, and
 do not read a green PR check in this repository as evidence that it does — the

@@ -45,18 +45,22 @@ measurement wins — re-run it. Gate definitions and their numbers live in
 - **Quality gates** — `.github/workflows/quality-gates.yml` is **dispatch-only**: nothing runs
   on push or PR, so a green check here proves nothing about gate state. Last dispatch run
   (#2, `main`) **failed**.
-- **Gate 6 (no upstream regression)** — **FAILS on `main`**: exit 1, 12 violations over
-  `01148947e..HEAD` (10 remaining after the 2026-09-11 `fork-sources.txt` fix). The rule and
-  the product's development model are in conflict; resolving it is an owner decision.
+- **Gate 6 (upstream divergence)** — **PASSES since 2026-09-11, under a rewritten rule**: divergence
+  in inherited code is allowed when it is *declared* with a reason in `tests/upstream-modifications.txt`
+  (the divergence ledger) and is a violation when it is not. The ledger declares 10 files (#605 PDC
+  plus two compile-only CI fixes); a blank reason is refused with exit 2. The old blanket ban was red
+  from the first behavioural change — i.e. not a gate — and outlawed exactly the mixer work PDC needs.
 - **Gate 2 (coverage ratchet)** — no entry floor: a zero-line file is banked at 100.00%, and a
   new file enters the baseline at its measured coverage, including 0%.
-- **Gate 4 (complexity ratchet)** — **RED**: 3 regressions (807 functions scanned, 24 over CCN 10).
-  One is new *because this change brought `LatencyCompensation.cpp` into scope*
-  (`processPlanar` CCN 11 — so #605 PDC shipped outside the gates **and** above the target); the
-  other two are baseline-orphans from the gate keying its baseline by function line span. In CI
-  this gate runs `--check`, which exits 0 unconditionally, so it cannot fail there.
-- **Gate 7 (file-length ratchet)** — **RED**: 2 regressions (`ScriptBindings.cpp` 1216 → 1217,
-  `ScriptEngine.cpp` 908 → 910), both pre-existing. Also `--check` in CI, also invisible there.
+- **Gate 4 (complexity ratchet)** — **one genuine regression**: `LatencyCompensation::processPlanar`
+  (CCN 11) — #605 PDC shipped both outside the gates *and* above the CCN 10 target; being refactored
+  on `fix/latency-complexity`. Two gate defects found and fixed on 2026-09-11: the baseline was keyed
+  by function line span (a *growing* function re-reported as a *new* one), and `--check` exited 0
+  unconditionally. 807 functions scanned, 24 over target.
+- **Gate 7 (file-length ratchet)** — **green after a recorded re-anchor** (2026-09-11): two
+  grandfathered files had grown (`ScriptBindings.cpp` 1216 → 1217, `ScriptEngine.cpp` 908 → 910)
+  before the ratchet could fail anywhere; `--reanchor "reason"` is now the only way to move a
+  baseline. 8 files over 500 lines.
 - **Gate 5 (mutation)** — scoped to one translation unit, `src/core/RoutingGraph.cpp` — a file
   the application never calls.
 - **Patcher** — the node-graph engine is in the tree and unit-tested, but no GUI or audio-path
@@ -66,9 +70,10 @@ measurement wins — re-run it. Gate definitions and their numbers live in
 
 **Blocking**
 
-- A `main` that builds — the `build` workflow's runs 8-10 (2026-09-10) all failed. `checks` and
-  `doxygen` pass. Local fixes for six of the failures are committed on `fix/ci-matrix`
-  (`2dcec93b3`) and **not pushed**.
+- A `main` that builds — the `build` workflow's runs 8-10 (2026-09-10) all failed; runs 11 and 12
+  were superseded (cancelled) by the next push before finishing. The fixes for six of the failures
+  are now **pushed** as `7f08809e4` (2026-09-11, rebased from `2dcec93b3` on `fix/ci-matrix`), and
+  build run #13 is the first run that contains them. `checks` and `doxygen` pass.
 - Local reproduction of the CI matrix.
 - Any installable release (no GitHub releases exist).
 

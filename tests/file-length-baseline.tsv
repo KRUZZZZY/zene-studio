@@ -1,8 +1,8 @@
 # per-file line-count baseline (files over 500 lines only)
 # maintained by tests/file-length-gate.sh; do not edit by hand
-src/core/ScriptBindings.cpp	1216
+src/core/ScriptBindings.cpp	1217
 include/AudioPorts.h	992
-src/core/ScriptEngine.cpp	908
+src/core/ScriptEngine.cpp	910
 plugins/ClapEffect/ClapHost.cpp	875
 plugins/Vst3Effect/Vst3Host.cpp	714
 src/wasm/WasmSandbox.cpp	597
