@@ -5,16 +5,20 @@
 #   "token duplication < 5% (jscpd)".
 # QA-GATES.md's six gates did not cover it; this closes the gap.
 #
-# Scope: the fork's NEW sources (tests/fork-sources.txt). jscpd's `cpp` format does not
-# claim `.h` by default, so the extension map below adds headers explicitly — otherwise
-# header-to-header clones are invisible.
+# Scope: tests/fork-sources.txt (default) or tests/all-sources.txt with --scope all.
+# jscpd's `cpp` format does not claim `.h` or `.c` by default, so the extension map below
+# adds both explicitly — without `.h`, header-to-header clones are invisible; without `.c`,
+# the six C sources in the whole-tree scope were never analysed at all.
 #
 # Threshold: DUP_MAX (default 5) percent of duplicated LINES. Exceeding it fails.
 # Boilerplate note: the license header of every file is a genuine text clone. It is
-# counted, not suppressed, so the number stays honest; at min-lines 25 the current
-# clone set is header-only and totals ~1% of lines.
+# counted, not suppressed, so the number stays honest.
 #
-# Usage: bash tests/duplication-gate.sh [--check]
+# Known blind spots (state them, do not hide them): jscpd skips files over ~1 MB and a
+# handful of very small files, so its file count runs a little under the scope size. The
+# gate prints the number it actually analysed.
+#
+# Usage: bash tests/duplication-gate.sh [--check] [--scope fork|all]
 #   (--check is accepted for symmetry with the other gates; behaviour is identical.)
 #
 # Requires npx (Node). If npx is unavailable the gate reports SKIP and exits 0 — it
@@ -29,17 +33,31 @@ cd "$ROOT" || exit 2
 DUP_MAX="${DUP_MAX:-5}"
 MIN_LINES="${DUP_MIN_LINES:-25}"
 MIN_TOKENS="${DUP_MIN_TOKENS:-120}"
+SCOPE="${GATE_SCOPE:-fork}"
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--check) MODE_CHECK=1; shift ;;
+		--scope) SCOPE="${2:-}"; shift 2 ;;
+		*) echo "usage: $0 [--check] [--scope fork|all]" >&2; exit 2 ;;
+	esac
+done
+case "$SCOPE" in
+	fork) SCOPEFILE="$HERE/fork-sources.txt" ;;
+	all)  SCOPEFILE="$HERE/all-sources.txt"
+	      echo "duplication-gate: whole-tree scope (1,095 first-party files)" ;;
+	*) echo "unknown scope '$SCOPE' (use fork|all)" >&2; exit 2 ;;
+esac
 
 if ! command -v npx >/dev/null 2>&1; then
 	echo "duplication-gate: SKIP - npx (Node) not available; no measurement performed"
 	exit 0
 fi
 
-mapfile -t FILES < <(grep -vE '^\s*(#|$)' "$HERE/fork-sources.txt")
-echo "duplication-gate: scanning ${#FILES[@]} fork sources (min-lines ${MIN_LINES}, min-tokens ${MIN_TOKENS}, threshold ${DUP_MAX}%)"
+mapfile -t FILES < <(grep -vE '^\s*(#|$)' "$SCOPEFILE")
+echo "duplication-gate: scanning ${#FILES[@]} $SCOPE sources (min-lines ${MIN_LINES}, min-tokens ${MIN_TOKENS}, threshold ${DUP_MAX}%)"
 
 out="$(npx --yes jscpd \
-	--format cpp --formats-exts "cpp:cpp,h,hpp,cc,cxx" \
+	--format cpp --formats-exts "cpp:cpp,c,h,hpp,cc,cxx" \
 	--min-lines "$MIN_LINES" --min-tokens "$MIN_TOKENS" \
 	--reporters console --silent \
 	"${FILES[@]}" 2>&1)"

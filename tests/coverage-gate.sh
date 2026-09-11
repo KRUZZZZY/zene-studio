@@ -150,7 +150,18 @@ for path in removed:
 total_lines = sum(t for t, _ in coverage.values())
 total_hit = sum(h for _, h in coverage.values())
 total_pct = (100.0 * total_hit / total_lines) if total_lines else 0.0
-print(f"\nfiles: {len(now)}  fork-code line coverage: {total_pct:.2f}%  ({total_hit}/{total_lines} lines)")
+print(f"\ntracefile line coverage: {total_pct:.2f}%  ({total_hit}/{total_lines} lines over {len(now)} files)")
+
+# The ratchet only compares files the baseline knows about, so report that scope's own
+# figure too: for a fork-scoped tracefile the two coincide, for a whole-tree tracefile
+# the tracefile figure includes vendored/generated records the baseline never gates.
+if baseline:
+	scope_files = [p for p in now if p in baseline]
+	scope_total = sum(totals[p] for p in scope_files)
+	scope_hit = sum(hits[p] for p in scope_files)
+	if scope_total:
+		print(f"baseline-scope line coverage: {100.0 * scope_hit / scope_total:.2f}%  "
+			f"({scope_hit}/{scope_total} lines over {len(scope_files)} files in the baseline)")
 
 if regressions:
 	print("\nFAIL: coverage regressed; add or fix tests before merging.", file=sys.stderr)

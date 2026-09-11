@@ -6,6 +6,14 @@
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
+#   bash tests/run-all-gates.sh --whole-tree    # Gates 4, 7, 8 over all 1,095 first-party
+#                                               # files instead of the 99-file fork scope
+#                                               # (upstream code is grandfathered in
+#                                               # tests/*-baseline-all.tsv)
+#
+# Gate 2 (coverage) and Gate 5 (mutation) stay fork-scoped: their runs are expensive and
+# their baselines are meaningful per-file. Whole-tree coverage is measured separately
+# (docs/CONVENTIONS.md records the numbers and their date).
 #
 # Exit 0 only if every gate that ran passed. Each gate's own output is printed.
 # Gate 5 (mutation testing) is enforced by tests/mutation-gate.sh — see tests/QA-GATES.md.
@@ -19,11 +27,13 @@ cd "$ROOT" || exit 2
 WITH_COVERAGE=0
 SKIP_MUTATION=0
 STRICT=""
+SCOPE_ARG=""
 for arg in "$@"; do
 	case "$arg" in
 		--with-coverage) WITH_COVERAGE=1 ;;
 		--no-mutation) SKIP_MUTATION=1 ;;
 		--strict) STRICT="--strict" ;;
+		--whole-tree) SCOPE_ARG="--scope all" ;;
 	esac
 done
 
@@ -76,7 +86,7 @@ bash tests/no-tautology-gate.sh $STRICT
 
 # ---- Gate 4: per-method complexity ------------------------------------------
 banner 4 "per-method complexity"
-bash tests/complexity-gate.sh --check
+bash tests/complexity-gate.sh --check $SCOPE_ARG
 [[ $? -eq 0 ]] && record 4 "complexity" "PASS" || record 4 "complexity" "FAIL"
 
 # ---- Gate 5: mutation testing (scoped harness, enforced) --------------------
@@ -96,12 +106,12 @@ bash tests/no-upstream-regression-gate.sh
 
 # ---- Gate 7: per-file length -------------------------------------------------
 banner 7 "per-file length (<=500 ratchet)"
-bash tests/file-length-gate.sh --check
+bash tests/file-length-gate.sh --check $SCOPE_ARG
 [[ $? -eq 0 ]] && record 7 "file-length" "PASS" || record 7 "file-length" "FAIL"
 
 # ---- Gate 8: token duplication ----------------------------------------------
 banner 8 "token duplication (<5%)"
-bash tests/duplication-gate.sh
+bash tests/duplication-gate.sh $SCOPE_ARG
 [[ $? -eq 0 ]] && record 8 "duplication" "PASS" || record 8 "duplication" "FAIL"
 
 # ---- summary ----------------------------------------------------------------

@@ -21,6 +21,7 @@
 #   bash tests/complexity-gate.sh --check                  # CI: never writes the baseline, STILL fails on regressions
 #   bash tests/complexity-gate.sh --strict                 # also fail if ANY function is over the target
 #   bash tests/complexity-gate.sh --reanchor "reason"      # deliberate, recorded baseline refresh
+#   bash tests/complexity-gate.sh --scope all              # whole tree (1,095 files) instead of the fork scope
 
 set -uo pipefail
 
@@ -33,12 +34,21 @@ TOLERANCE="${COMPLEXITY_TOLERANCE:-0}"   # allowed CCN rise before failing
 
 MODE="ratchet"
 REASON=""
-case "${1:-}" in
-	"")        MODE="ratchet" ;;
-	--check)   MODE="check" ;;
-	--strict)  MODE="strict" ;;
-	--reanchor) MODE="reanchor"; REASON="${2:-}" ;;
-	*) echo "usage: $0 [--check|--strict|--reanchor \"reason\"]" >&2; exit 2 ;;
+SCOPE="${GATE_SCOPE:-fork}"
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--check)    MODE="check"; shift ;;
+		--strict)   MODE="strict"; shift ;;
+		--reanchor) MODE="reanchor"; REASON="${2:-}"; shift 2 ;;
+		--scope)    SCOPE="${2:-}"; shift 2 ;;
+		*) echo "usage: $0 [--check|--strict|--reanchor \"reason\"] [--scope fork|all]" >&2; exit 2 ;;
+	esac
+done
+case "$SCOPE" in
+	fork) SOURCES="$HERE/fork-sources.txt"; BASELINE="$HERE/complexity-baseline.tsv" ;;
+	all)  SOURCES="$HERE/all-sources.txt";  BASELINE="$HERE/complexity-baseline-all.tsv"
+	      echo "complexity-gate: whole-tree scope (1,095 first-party files; upstream code is grandfathered, see docs/CONVENTIONS.md)" ;;
+	*) echo "unknown scope '$SCOPE' (use fork|all)" >&2; exit 2 ;;
 esac
 if [[ "$MODE" == "reanchor" && -z "${REASON// /}" ]]; then
 	echo "usage: $0 --reanchor \"reason\" — an unrecorded re-anchor is not allowed" >&2
@@ -104,18 +114,26 @@ echo
 # Read with migration: a stored key may still carry lizard's line span (legacy format).
 declare -A base
 if [[ -f "$BASELINE" ]]; then
-	while IFS=$'\t' read -r rawkey ccn rest; do
+	while IFS=$'	' read -r rawkey ccn rest; do
 		[[ "$rawkey" =~ ^[[:space:]]*# ]] && continue
 		[[ -z "${rawkey// /}" ]] && continue
 		key="$(sed -E 's/@[0-9]+-[0-9]+//' <<< "$rawkey")"
-		base["$key"]="$ccn"
+		# A qualified name can legitimately appear more than once in a file (same name in
+		# two scopes/overloads). Keyed by name@path those collapse, so keep the WORST
+		# grandfathered value — otherwise the lower entry silently shadows the higher one
+		# and the next run reports a false "CCN rose".
+		if [[ -z "${base[$key]:-}" || "$ccn" -gt "${base[$key]}" ]]; then
+			base["$key"]="$ccn"
+		fi
 	done < "$BASELINE"
 fi
 
 write_baseline() {
 	{ echo "# per-method CCN baseline for fork-NEW code (functions over the target only)";
 	  echo "# keyed by function@path — maintained by tests/complexity-gate.sh; do not edit by hand";
-	  awk -F'\t' '{OFS="\t"; print $1, $2}' "${tmp}.over" | sort -k2,2nr; } > "$BASELINE"
+	  awk -F'	' '{ if ($2+0 > max[$1]) max[$1] = $2+0 }
+	              END { for (k in max) printf "%s	%d\n", k, max[k] }' "${tmp}.over" \
+		| sort -k2,2nr; } > "$BASELINE"
 }
 
 regressed=0

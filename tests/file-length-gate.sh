@@ -18,6 +18,7 @@
 #   bash tests/file-length-gate.sh                        # ratchet: refresh the baseline, fail on regressions
 #   bash tests/file-length-gate.sh --check                # CI: never writes the baseline, STILL fails on regressions
 #   bash tests/file-length-gate.sh --reanchor "reason"    # deliberate, recorded baseline refresh
+#   bash tests/file-length-gate.sh --scope all            # whole tree (1,095 files) instead of the fork scope
 #
 # NOTE (2026-09-11): `--check` used to print PASS unconditionally, so this ratchet could
 # not fail in CI even when red locally. It now performs the same comparison and exits 1 on
@@ -36,11 +37,20 @@ EXEMPT="$HERE/file-length-exempt.txt"
 
 MODE="ratchet"
 REASON=""
-case "${1:-}" in
-	"")        MODE="ratchet" ;;
-	--check)   MODE="check" ;;
-	--reanchor) MODE="reanchor"; REASON="${2:-}" ;;
-	*) echo "usage: $0 [--check|--reanchor \"reason\"]" >&2; exit 2 ;;
+SCOPE="${GATE_SCOPE:-fork}"
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--check)    MODE="check"; shift ;;
+		--reanchor) MODE="reanchor"; REASON="${2:-}"; shift 2 ;;
+		--scope)    SCOPE="${2:-}"; shift 2 ;;
+		*) echo "usage: $0 [--check|--reanchor \"reason\"] [--scope fork|all]" >&2; exit 2 ;;
+	esac
+done
+case "$SCOPE" in
+	fork) SOURCES="$HERE/fork-sources.txt" ;;
+	all)  SOURCES="$HERE/all-sources.txt"; BASELINE="$HERE/file-length-baseline-all.tsv"
+	      echo "file-length-gate: whole-tree scope (1,095 first-party files; upstream files are grandfathered, see docs/CONVENTIONS.md)" ;;
+	*) echo "unknown scope '$SCOPE' (use fork|all)" >&2; exit 2 ;;
 esac
 if [[ "$MODE" == "reanchor" && -z "${REASON// /}" ]]; then
 	echo "usage: $0 --reanchor \"reason\" — an unrecorded re-anchor is not allowed" >&2
@@ -58,7 +68,7 @@ while read -r f; do
 	[[ -f "$f" ]] || continue
 	is_exempt "$f" && continue
 	printf '%s\t%s\n' "$f" "$(wc -l < "$f")"
-done < <(grep -vE '^\s*(#|$)' "$HERE/fork-sources.txt" | sort) > "$current"
+done < <(grep -vE '^\s*(#|$)' "$SOURCES" | sort) > "$current"
 
 over=$(awk -v lim="$LIMIT" -F'\t' '$2 > lim' "$current" | wc -l)
 total=$(wc -l < "$current")

@@ -31,7 +31,7 @@ actually checks it:
 | Convention | Why it is not a gate |
 |---|---|
 | **Cognitive complexity ≤ 10** | lizard exposes cyclomatic complexity and NLOC only; it has no cognitive-complexity metric. The KB rule is unimplementable with the tooling that exists here, so it is *not* claimed. |
-| **Nesting depth ≤ 3** | lizard cannot threshold ND either. It is **reported** alongside every over-target function in Gate 4 output and reviewed by eye; it is not enforced. |
+| **Nesting depth ≤ 3** | Not enforced **and not measured**: lizard 1.24.0 initialises `max_nesting_depth = 0` and never increments it (`lizard.py:324`; no `nesting_depth +=` anywhere in the file), and a deliberately 6-deep probe reports no ND field. Any "ND 0" figure previously reported in this repo was an uninitialised field. The rule needs a different tool. |
 | **Zero dead code** | cppcheck `--enable=unusedFunction` cannot see callers in other translation units or the test binaries, so over the whole tree it reports ~689 hits dominated by vendored headers, and every hit inside fork sources is a public accessor the tests do call. The KB rule is therefore closed *by evidence*, not by a script — recorded in `tests/QA-GATES.md`. |
 | **Strict typing / no `any`** | A TypeScript rule. The C++ analogue — no narrowing conversions at trust boundaries — has no free, reliable enforcer in this tree and is not wired. |
 | **Formatting (`.clang-format`) and lint (`.clang-tidy`)** | Both configs are committed and neither is run by a gate or by CI. There is no `clang-format --dry-run -Werror` check and no `run-clang-tidy` job, so formatting is convention-by-imitation. Adding them is a known gap, not a hidden one; `.clang-tidy`'s checks are the closest thing to a house style that exists in writing. |
@@ -51,19 +51,57 @@ These are process rules, not scripts, and they bind whoever changes this repo:
    reason, and an unrecorded re-anchor exits 2. Growth is re-anchored with a recorded reason or not
    at all; code is never trimmed to satisfy a metric.
 
-## Scope: the gates watch 99 files, the repo has 1,095
+## Scope: 99 files by default, 1,095 on demand
 
-`tests/fork-sources.txt` (99 files) is the fork's own code — the scope for the coverage, mutation,
-length, duplication and complexity ratchets. `tests/all-sources.txt` (1,095 files) is every
-first-party C/C++ source in the repo: upstream-inherited LMMS code plus everything this fork adds.
-Vendored trees (git submodules, `src/3rdparty`, `plugins/NeuralAmp/{rtneural,nam,tests}`,
+`tests/fork-sources.txt` (99 files) is the fork's own code — the default scope for the coverage,
+mutation, length, duplication and complexity ratchets. `tests/all-sources.txt` (1,095 files) is
+every first-party C/C++ source in the repo: upstream-inherited LMMS code plus everything this fork
+adds. Vendored trees (git submodules, `src/3rdparty`, `plugins/NeuralAmp/{rtneural,nam,tests}`,
 `plugins/RnnoiseDenoiser/rnnoise`, and the verbatim copies under `tests/reference`) are excluded
 on purpose and listed in that file's header.
 
-The whole-tree baselines are being measured (complexity, file length, duplication, dead code, and
-whole-tree line coverage) so the same ratchets can be pointed at all 1,095 files without demanding
-a retroactive rewrite of upstream code. Until those baselines land, a statement like "the codebase
-passes the quality gates" is true **only** of the 99-file fork scope — say which scope you mean.
+**Wired 2026-09-11.** Gates 4, 7 and 8 take `--scope all` (or `GATE_SCOPE=all`), and
+`run-all-gates.sh --whole-tree` runs the set over all 1,095 files:
+
+```sh
+bash tests/run-all-gates.sh --whole-tree
+bash tests/complexity-gate.sh  --scope all --check
+bash tests/file-length-gate.sh --scope all --check
+bash tests/duplication-gate.sh --scope all
+```
+
+Whole-tree baselines live in `tests/complexity-baseline-all.tsv` (272 entries) and
+`tests/file-length-baseline-all.tsv` (107 entries) — separate files from the fork baselines so a
+fork regression is never shadowed by upstream grandfathering, or vice versa.
+
+Measured 2026-09-11 with the gates' own tools:
+
+| measurement | fork scope (99 files) | whole tree (1,095 files) |
+|---|---|---|
+| functions scanned / over CCN 10 | 808 / 23 | **8,953 / 273** (max CCN 136, `src/core/main.cpp`) |
+| files over 500 lines | 8 | **107** (24 of them over 1,000) |
+| duplicated lines (jscpd) | 1.09% | **1.29%** (3.83% of tokens, 114 clones) — PASS < 5% |
+| line coverage (lcov) | 76.07% | **32.33%** (23,894/73,918 lines over 919 instrumented files) |
+| files that ran zero lines | — | **489** of the 919 instrumented |
+| files with no coverage record | — | **154** of 1,095 (feature off in this config, or declaration-only header) |
+
+Whole-tree coverage ratchet: `tests/coverage-baseline-all.tsv` (919 per-file entries) plus a
+whole-tree tracefile — `bash tests/coverage-gate.sh <tracefile> tests/coverage-baseline-all.tsv
+--check`. Verified both ways: it passes against the tracefile it was built from, and a copy with
+one entry deliberately raised fails with `REGRESSION … (5 of 142 covered lines lost)`, exit 1.
+
+Gate 2 and Gate 5 stay fork-scoped in `run-all-gates.sh`: their cost is per-build and their
+baselines are per-file. **Dead code is still closed by evidence, not a gate** — whole tree,
+cppcheck reports 745 `unusedFunction` hits, 419 inside the scope and 44% of the total in vendored
+trees; the top scope file is `include/ConfigManager.h` with 23 hits, all accessors the tests call.
+
+Where the untested mass is: **`src/gui` has 19,820 instrumented lines and 44 of them were hit**
+(0.22%) — the unit suite never drives GUI code. Largest single gaps: `PianoRoll.cpp` (2,905 lines,
+0 hit), `AutomationEditor.cpp` (1,107, 0), `DataFile.cpp` (1,036 uncovered), `SetupDialog.cpp`
+(837, 0), `MainWindow.cpp` (836, 0). `tests/src` is at 97.78% and `include` at 52.24%.
+
+Until a whole-tree run has been made green, a statement like "the codebase passes the gates" is
+true only of the 99-file fork scope — say which scope you mean.
 
 ## Running it
 

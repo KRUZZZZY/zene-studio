@@ -9,7 +9,17 @@ Scope: the sources this product adds on top of upstream master `4e677cb6c6ab`,
 listed in `tests/fork-sources.txt` (**99 files** — 97 at the 2026-09-09 port, plus
 `include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp`, added
 2026-09-11 because the #605 PDC work was shipping outside every gate's scope; see the
-Gate 2 scope note). Vendored third-party trees are
+Gate 2 scope note).
+
+**Whole-tree scope (added 2026-09-11).** Gates 4, 7 and 8 also accept `--scope all`, which points
+them at `tests/all-sources.txt` — **1,095 first-party files**, i.e. upstream-inherited code plus
+the fork's own. Their baselines are separate files (`tests/*-baseline-all.tsv`) so the two ratchets
+cannot shadow each other, and `run-all-gates.sh --whole-tree` runs the set. The measured whole-tree
+state (8,953 functions with 273 over CCN 10; 107 files over 500 lines; 1.29% duplicated lines;
+32.33% line coverage over 919 instrumented files) is in
+[`docs/CONVENTIONS.md`](https://github.com/KRUZZZZY/zene-studio/blob/main/docs/CONVENTIONS.md),
+together with the coverage ratchet for the whole tree. Everything in *this* document below
+describes the 99-file fork scope unless it says otherwise. Vendored third-party trees are
 excluded on purpose — 524 files under `src/3rdparty` (lua, luabridge),
 `plugins/NeuralAmp/rtneural`, `plugins/NeuralAmp/nam`, `plugins/NeuralAmp/tests`
 and `plugins/RnnoiseDenoiser/rnnoise`; they are not this repo's code and these
@@ -209,10 +219,16 @@ functions already over the target are grandfathered in `tests/complexity-baselin
 at their measured CCN; a **new** function over the target, or an existing one whose CCN
 **rises**, fails the gate. Existing over-target functions are reported, not rewritten.
 
-**Honest limitation, stated not hidden:** lizard exposes thresholds for
-`nloc`, `cyclomatic_complexity`, `token_count`, `parameter_count`, `length` — **not for
-nesting depth**. ND is therefore *reported* alongside each over-target function and
-reviewed manually; it is not enforced mechanically.
+**Honest limitation, stated not hidden — corrected 2026-09-11:** earlier revisions of this
+document said ND was *reported* alongside each over-target function and reviewed manually. It is
+not reported: **lizard 1.24.0 never computes nesting depth.** `lizard.py:324` initialises
+`max_nesting_depth = 0` and no code path increments it (`grep -nE 'nesting_depth\s*\+=' lizard.py`
+→ no matches); the warning header lists only `cyclomatic_complexity / length / nloc /
+parameter_count`; and a deliberately 6-deep nested probe reports CCN 7 with no ND field at all.
+**The ruleset's nesting-depth rule (≤ 3) is therefore neither enforced nor measured by this
+tooling** — an earlier reading of "ND 0 everywhere" in this file was reporting an uninitialised
+field, not a measurement. Enforcing it needs a different tool, and until one is wired every ND
+figure in this repo should be read as 0-by-omission.
 
 **Measured (2026-09-11, gcc 13, 99-file scope):** `complexity-gate.sh` scans **807 functions**;
 **24 exceed CCN 10**. Two defects found in the gate itself were fixed the same day:
@@ -233,8 +249,11 @@ the full suite from `build/tests` (100% tests passed, 24/24, `PdcMixerTest` incl
 now scans **808 functions with 23 over target, all grandfathered**, and `--check` exits 0.
 
 The figures this section previously carried (13 of 514 functions, highest CCN 27) were measured
-on the standards fork's 42-file scope and no longer describe the product; the highest CCN is now
-29. Baselines can only be moved deliberately now: `--reanchor "reason"` (an unrecorded re-anchor
+on the standards fork's 42-file scope and no longer describe the product. The highest CCN in the
+fork scope is **41** (`ExternalProcessStemSeparator::separate`, grandfathers in
+`tests/complexity-baseline.tsv`), and in the whole tree **136** (`src/core/main.cpp` — see
+`docs/CONVENTIONS.md`); an earlier revision of this paragraph said 29, which was
+`ScriptEngine::applyCommand`'s figure and does not describe the current tree. Baselines can only be moved deliberately now: `--reanchor "reason"` (an unrecorded re-anchor
 is refused with exit 2).
 
 ## Gate 5: Mutation testing (`mutation-gate.sh`) — WIRED 2026-09-09
