@@ -28,3 +28,11 @@ BUILD_PLUGIN(rnnoisedenoiser
 )
 
 TARGET_LINK_LIBRARIES(rnnoisedenoiser m)
+
+# Vendored RNNoise (rnnoise/nnet.h) emits a supported #warning when the build detects
+# only SSE/SSE2 — true on the CI runners. It is informational, it lives in vendored code
+# this repo does not modify, and under -DUSE_WERROR it becomes an error that fails the
+# whole linux-x86_64 build. Keep the warning, drop its error status for this target's C
+# sources only (gcc/clang spell it -Werror=cpp).
+TARGET_COMPILE_OPTIONS(rnnoisedenoiser PRIVATE
+	"$<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-Wno-error=cpp>")

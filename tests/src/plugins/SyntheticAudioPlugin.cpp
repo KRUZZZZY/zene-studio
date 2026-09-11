@@ -40,7 +40,14 @@
 #include "Plugin.h"
 #include "embed.h"
 
+// MSVC has no __attribute__. Mirror tests/reference/plugin_export.h — the header the
+// ported reference plugins use — so this test double compiles with cl.exe as well as
+// with GCC/Clang (msvc-x64 failed on the bare attribute with C3861).
+#if defined(_MSC_VER)
+#define PLUGIN_EXPORT __declspec(dllexport)
+#else
 #define PLUGIN_EXPORT __attribute__((visibility("default")))
+#endif
 
 namespace lmms
 {

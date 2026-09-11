@@ -512,7 +512,13 @@ target_include_directories(synthetic_audio_plugin PRIVATE
 )
 target_compile_definitions(synthetic_audio_plugin PRIVATE PLUGIN_NAME=synthetic)
 target_compile_features(synthetic_audio_plugin PRIVATE cxx_std_20)
-target_link_libraries(synthetic_audio_plugin PRIVATE ${QT_LIBRARIES})
+# The test double subclasses lmms::AudioPlugin, so its object code references lmms
+# symbols (AudioPortsModel's moc, Model's vtable, JournallingObject's dtor ...).
+# Unix shared modules tolerate unresolved symbols; macOS, mingw and MSVC do not, so
+# this target failed to link there while linking only Qt. Real plugins link the lmms
+# target (cmake/modules/BuildPlugin.cmake), and the partc_ref_* harnesses above were
+# fixed the same way — this target was the one left behind.
+target_link_libraries(synthetic_audio_plugin PRIVATE lmms ${QT_LIBRARIES})
 set_target_properties(synthetic_audio_plugin PROPERTIES PREFIX "")
 
 add_executable(AudioPluginTest src/plugins/AudioPluginTest.cpp)

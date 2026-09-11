@@ -32,5 +32,12 @@ TARGET_LINK_LIBRARIES(neuralamp m ${CMAKE_DL_LIBS})
 # host build type is not Release.
 TARGET_COMPILE_OPTIONS(neuralamp PRIVATE $<$<CONFIG:Debug>:-O2>)
 
+# Vendored Eigen (rtneural/modules/Eigen) trips -Wdeprecated-enum-enum-conversion in its
+# NEON kernels on aarch64 — the linux-arm64 CI job — and with -DUSE_WERROR that vendored
+# diagnostic becomes an error in code this repo does not modify. Keep the warning, drop
+# its error status for this target only.
+TARGET_COMPILE_OPTIONS(neuralamp PRIVATE
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-error=deprecated-enum-enum-conversion>")
+
 # Headless verification/benchmark binaries (EXCLUDE_FROM_ALL, see tests/).
 ADD_SUBDIRECTORY(tests)
