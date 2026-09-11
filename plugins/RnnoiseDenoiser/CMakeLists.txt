@@ -13,13 +13,28 @@ SET(RNNOISE_SOURCES
 	rnnoise/rnnoise_tables.c
 )
 
-INCLUDE_DIRECTORIES(BEFORE "${CMAKE_CURRENT_SOURCE_DIR}/rnnoise")
+# Vendored RNNoise (MIT, unmodified upstream C) builds as its OWN target carrying the
+# project's third-party flags — the treatment gme, zynaddsubfx_* and src/3rdparty already
+# get (cmake/modules/ErrorFlags.cmake switches on the target's SYSTEM property).
+#
+# Compiling it inside the plugin target made every RNNoise diagnostic fatal under
+# -DUSE_WERROR / /WX, and they arrived one file at a time: -Werror=cpp on the supported
+# #warning in nnet.h (linux-x86_64), then C4305 in denoise.c, then C4244 in vec.h via
+# nnet.c and nnet_default.c (msvc-x64). Suppressing diagnostics one at a time is a losing
+# game against code this repo does not maintain, and it silently widens the suppression to
+# the plugin's own sources. Isolating the vendored code keeps that plugin's C++ under the
+# normal -Wall/-Werror (/WX) policy while the vendored C compiles warning-quiet.
+ADD_LIBRARY(rnnoise_vendored STATIC ${RNNOISE_SOURCES})
+SET_TARGET_PROPERTIES(rnnoise_vendored PROPERTIES
+	SYSTEM TRUE
+	POSITION_INDEPENDENT_CODE ON
+)
+TARGET_INCLUDE_DIRECTORIES(rnnoise_vendored PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/rnnoise")
 
 BUILD_PLUGIN(rnnoisedenoiser
 	RnnoiseDenoiserEffect.cpp
 	RnnoiseDenoiserControls.cpp
 	RnnoiseDenoiserControlDialog.cpp
-	${RNNOISE_SOURCES}
 	MOCFILES
 		RnnoiseDenoiserEffect.h
 		RnnoiseDenoiserControls.h
@@ -27,17 +42,9 @@ BUILD_PLUGIN(rnnoisedenoiser
 	EMBEDDED_RESOURCES artwork.svg
 )
 
-TARGET_LINK_LIBRARIES(rnnoisedenoiser m)
+# The plugin includes "rnnoise.h" directly, so the vendored include directory is marked
+# SYSTEM for it too — otherwise vendored headers leak warnings into the fork's own TU
+# (the same reason the libgig includes are SYSTEM in the GigPlayer targets).
+TARGET_INCLUDE_DIRECTORIES(rnnoisedenoiser SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/rnnoise")
 
-# Vendored RNNoise (rnnoise/nnet.h) emits a supported #warning when the build detects
-# only SSE/SSE2 — true on the CI runners. It is informational, it lives in vendored code
-# this repo does not modify, and under -DUSE_WERROR it becomes an error that fails the
-# whole linux-x86_64 build. Keep the warning, drop its error status for this target's C
-# sources only (gcc/clang spell it -Werror=cpp).
-#
-# MSVC arm, same reasoning: vendored denoise.c initialises a `const float` from a double
-# literal (C4305) and /WX promotes it (CI msvc-x64). /wd4305 keeps the warning visible and
-# leaves /WX in force for this plugin's own C++ sources.
-TARGET_COMPILE_OPTIONS(rnnoisedenoiser PRIVATE
-	"$<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-Wno-error=cpp>"
-	"$<$<COMPILE_LANG_AND_ID:C,MSVC>:/wd4305>")
+TARGET_LINK_LIBRARIES(rnnoisedenoiser rnnoise_vendored m)
