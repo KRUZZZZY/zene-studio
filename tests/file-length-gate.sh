@@ -19,6 +19,7 @@
 #   bash tests/file-length-gate.sh --check                # CI: never writes the baseline, STILL fails on regressions
 #   bash tests/file-length-gate.sh --reanchor "reason"    # deliberate, recorded baseline refresh
 #   bash tests/file-length-gate.sh --scope all            # whole tree (1,095 files) instead of the fork scope
+#   bash tests/file-length-gate.sh --scope tools          # the fork's own tooling under tools/ (own baseline)
 #
 # NOTE (2026-09-11): `--check` used to print PASS unconditionally, so this ratchet could
 # not fail in CI even when red locally. It now performs the same comparison and exits 1 on
@@ -50,7 +51,9 @@ case "$SCOPE" in
 	fork) SOURCES="$HERE/fork-sources.txt" ;;
 	all)  SOURCES="$HERE/all-sources.txt"; BASELINE="$HERE/file-length-baseline-all.tsv"
 	      echo "file-length-gate: whole-tree scope (1,095 first-party files; upstream files are grandfathered, see docs/CONVENTIONS.md)" ;;
-	*) echo "unknown scope '$SCOPE' (use fork|all)" >&2; exit 2 ;;
+	tools) SOURCES="$HERE/tools-sources.txt"; BASELINE="$HERE/file-length-baseline-tools.tsv"
+	      echo "file-length-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)" ;;
+	*) echo "unknown scope '$SCOPE' (use fork|all|tools)" >&2; exit 2 ;;
 esac
 if [[ "$MODE" == "reanchor" && -z "${REASON// /}" ]]; then
 	echo "usage: $0 --reanchor \"reason\" — an unrecorded re-anchor is not allowed" >&2
@@ -72,7 +75,7 @@ done < <(grep -vE '^\s*(#|$)' "$SOURCES" | sort) > "$current"
 
 over=$(awk -v lim="$LIMIT" -F'\t' '$2 > lim' "$current" | wc -l)
 total=$(wc -l < "$current")
-echo "file-length-gate: ${total} fork sources measured; ${over} exceed ${LIMIT} lines"
+echo "file-length-gate: ${total} ${SCOPE}-scope sources measured; ${over} exceed ${LIMIT} lines"
 
 if [[ "$over" -gt 0 ]]; then
 	echo

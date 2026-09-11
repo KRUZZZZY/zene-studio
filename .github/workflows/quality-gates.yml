@@ -48,12 +48,20 @@ jobs:
         run: bash tests/no-tautology-gate.sh
       - name: Gate 4 - per-method complexity (CC <= 10 ratchet)
         run: bash tests/complexity-gate.sh --check
+      # The fork's own tooling under tools/ is measured by its own scope and baselines
+      # (tests/tools-sources.txt, tests/*-baseline-tools.tsv) - see tests/QA-GATES.md.
+      - name: Gate 4 - per-method complexity, tools scope (fork tooling)
+        run: bash tests/complexity-gate.sh --check --scope tools
       - name: Gate 6 - no upstream behavioural regressions
         run: bash tests/no-upstream-regression-gate.sh
       - name: Gate 7 - per-file length ratchet
         run: bash tests/file-length-gate.sh --check
+      - name: Gate 7 - per-file length, tools scope (fork tooling)
+        run: bash tests/file-length-gate.sh --check --scope tools
       - name: Gate 8 - token duplication
         run: bash tests/duplication-gate.sh
+      - name: Gate 8 - token duplication, tools scope (fork tooling)
+        run: bash tests/duplication-gate.sh --scope tools
       - name: Gate 9 - every tracked source is registered in a scope manifest
         run: bash tests/fork-sources-gate.sh
 

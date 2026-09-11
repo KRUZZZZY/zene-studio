@@ -1,0 +1,60 @@
+# Developer tooling this fork owns, under tools/ — registered here, and measured by its
+# own scope: `--scope tools` on tests/complexity-gate.sh, tests/file-length-gate.sh and
+# tests/duplication-gate.sh, with the baselines tests/complexity-baseline-tools.tsv and
+# tests/file-length-baseline-tools.tsv. The three scopes have separate baselines and
+# cannot shadow each other, exactly as fork/all do.
+#
+# Why this list exists. `tools/` does not exist upstream of this fork: verified with
+# `git ls-tree -r --name-only 4e677cb6c6ab -- tools` (empty) and on upstream master
+# (empty), so every file under it is fork-authored by construction. Until this list
+# existed both available homes misdescribed such a file:
+#   - tests/fork-sources.txt is the C/C++ PRODUCT scope whose ratchets carry per-scope
+#     baselines. Registering tooling there widens those ratchets to code that is not
+#     product code - measured: tools/mmpz-git/mmpz_git.py is 818 lines (over the 500-line
+#     file target) and its functions reach CCN 83, so the fork complexity and file-length
+#     gates light up over a tool no product build ever compiles;
+#   - tests/upstream-modifications.txt is the UPSTREAM-DIVERGENCE ledger, where each line
+#     says "this inherited file diverges, and why". A file upstream has never had cannot
+#     be a divergence of inherited code, so an entry there is a false statement about it.
+# Gate 9 (tests/fork-sources-gate.sh) reports any tracked source in no scope list; this
+# list is the home for the fork's own tooling, so the report has somewhere to point.
+#
+# Regenerate the candidate set with (base = 4e677cb6c6ab, the upstream commit this fork
+# is based on - see the header of tests/fork-sources.txt for why it is not origin/master):
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools \
+#     | grep -E '\.(py|sh|cpp|c|h|hpp|cc|cxx)$'
+# Members of that set which already have a home are NOT repeated here - one file, one
+# home: the four C++ scratch probes (tools/mmpz-git/scratch/*.cpp) and
+# tools/wasm/wat2wasm.cpp are in tests/all-sources.txt (the whole-tree first-party C/C++
+# scope), and tools/local-ci.sh is in tests/fork-sources.txt (it was already measured by
+# the fork scope when this list was added, and moving it would narrow that scope).
+# Gate 9 accepts membership in any of the three lists, and reports a tools/ source that
+# is in none of them.
+#
+# ADDED AT INTEGRATION, 2026-09-12. Three more tooling files - tools/mmpz-git/demo_check.py,
+# tools/mmpz-git/depth-demo.sh and tools/mmpz-git/render-recipe.sh - are registered below.
+# They were added by the post-alpha/mmpz-git-depth lane after this list was measured, so
+# they had no home in any scope list, and Gate 9 failed on them the moment this list
+# existed. Unlike the files discussed above they also KEEP their
+# tests/upstream-modifications.txt entries: Gate 6 does not read this list (it honours
+# tests/fork-sources.txt or the ledger), and these three are not in fork-sources.txt, so
+# dropping the ledger entry would turn a true statement into a Gate 6 violation. Two
+# homes therefore stand for these three paths only, until Gate 6 learns the tools/
+# category the way Gates 4, 7 and 8 already have.
+#
+# Scope limits, stated rather than hidden: these files are Python and shell, so they are
+# outside coverage (lcov instrument) and mutation (C++ harness) by construction, and
+# jscpd in the version wired to Gate 8 supports neither a shell format nor .sh files, so
+# the two .sh entries below are counted by Gates 4 and 7 only.
+
+tools/make_stub_model.py
+tools/mmpz-git/demo_check.py
+tools/mmpz-git/demo_edits.py
+tools/mmpz-git/depth-demo.sh
+tools/mmpz-git/mmpz_git.py
+tools/mmpz-git/render-recipe.sh
+tools/mmpz-git/run-demo.sh
+tools/mmpz-git/scratch/exp-renormalize.sh
+tools/mmpz-git/scratch/proto.py
+tools/mmpz-git/tests/test_mmpz_git.py
+tools/stem_split_cli.py

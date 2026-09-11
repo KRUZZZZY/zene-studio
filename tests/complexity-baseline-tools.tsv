@@ -1,0 +1,15 @@
+# per-method CCN baseline for the fork's own tooling under tools/ (functions over the target only)
+# keyed by function@path — maintained by tests/complexity-gate.sh; do not edit by hand
+cmd_audible_diff@tools/mmpz-git/mmpz_git.py	47
+diff_dom@tools/mmpz-git/mmpz_git.py	34
+main@tools/mmpz-git/demo_edits.py	30
+serialize@tools/mmpz-git/mmpz_git.py	28
+canonicalize_dom.walk@tools/mmpz-git/mmpz_git.py	20
+main@tools/mmpz-git/demo_check.py	20
+read_wav@tools/stem_split_cli.py	19
+save_node@tools/mmpz-git/scratch/proto.py	16
+main@tools/stem_split_cli.py	13
+marker_records@tools/mmpz-git/mmpz_git.py	13
+cmd_diff@tools/mmpz-git/mmpz_git.py	12
+_conflict_comment@tools/mmpz-git/mmpz_git.py	11
+wav_mono@tools/mmpz-git/mmpz_git.py	11

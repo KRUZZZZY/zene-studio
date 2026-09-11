@@ -1072,8 +1072,10 @@ tests/src/core/AudioBusTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
+tests/src/core/LufsMeterTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/MathTest.cpp
+tests/src/core/MidiLearnTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
@@ -1093,6 +1095,7 @@ tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp
+tests/src/core/SessionModelTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SlideNotesTest.cpp
 tests/src/core/StemJobManagerTest.cpp

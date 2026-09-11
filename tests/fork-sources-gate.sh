@@ -2,14 +2,19 @@
 # fork-sources-gate.sh — Gate 9: every tracked first-party source is registered
 # in a scope manifest, and fork-NEW code is named in tests/fork-sources.txt.
 #
-# Rule. Every tracked source file under src/, include/, plugins/ and tests/ must be in
-# exactly one of the two scope manifests:
+# Rule. Every tracked source file under src/, include/, plugins/, tests/ and tools/ must
+# be in one of the three scope manifests:
 #
-#   tests/fork-sources.txt  -> OK: this product's own new code. The fork-scoped
+#   tests/fork-sources.txt  -> OK: this product's own new PRODUCT code. The fork-scoped
 #                              ratchets (coverage, complexity, file-length,
 #                              duplication) and Gate 2's per-file baseline measure it.
-#   tests/all-sources.txt   -> OK: inherited upstream code, in the whole-tree scope.
-#   in neither list         -> VIOLATION, named below as
+#   tests/all-sources.txt   -> OK: the whole-tree first-party C/C++ scope (upstream
+#                              code plus the fork's C/C++ tests and probes).
+#   tests/tools-sources.txt -> OK: the fork's own developer tooling under tools/,
+#                              measured by `--scope tools` on gates 4, 7 and 8 with its
+#                              own baselines (added 2026-09-11; see that file's header
+#                              for why tooling must not go in either of the other two).
+#   in none of them         -> VIOLATION, named below as
 #                              "not in tests/fork-sources.txt".
 #
 # Why this gate exists. `include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp`
@@ -17,6 +22,16 @@
 # which reported them as "undeclared change to upstream-inherited code" — the wrong
 # diagnosis for two files upstream has never had, and it cost a day to read correctly.
 # A file that is in no list is invisible to every ratchet, so this gate says that plainly.
+#
+# Why tools/ is scanned, and why tools gets its own list. `tools/` does not exist
+# upstream (`git ls-tree -r --name-only 4e677cb6c6ab -- tools` is empty), so every file
+# under it is fork-authored. Before tests/tools-sources.txt existed, such a file had no
+# honest home: tests/fork-sources.txt would widen the C/C++ product ratchets onto tooling
+# (measured: an 818-line Python tool with CCN up to 83), and tests/upstream-modifications.txt
+# is the upstream-DIVERGENCE ledger, where a fork-authored file is a false statement.
+# Scanning tools/ here means the fork's tooling is registered like everything else. Non-code
+# files under tools/ (*.md, *.sample, .gitignore, transcripts) stay outside every scope by
+# extension, which is exactly how the same files under src/ and tests/ are treated.
 #
 # Deliberate exclusions (stated, not silently skipped):
 #   - vendored third-party trees: src/3rdparty/, plugins/NeuralAmp/rtneural/,
@@ -48,25 +63,46 @@ done
 
 FORK_FILE="$HERE/fork-sources.txt"
 ALL_FILE="$HERE/all-sources.txt"
+TOOLS_FILE="$HERE/tools-sources.txt"
 for f in "$FORK_FILE" "$ALL_FILE"; do
 	if [[ ! -f "$f" ]]; then
 		echo "error: scope manifest not found: $f" >&2
 		exit 2
 	fi
 done
+# tools-sources.txt is required of this repo, but absent in synthetic fixtures that only
+# exercise the src/ side of this gate — so it is read if present and its absence is
+# reported only against a tools/ file that needs it, rather than failing the whole run.
+TOOLS_AVAILABLE=0
+[[ -f "$TOOLS_FILE" ]] && TOOLS_AVAILABLE=1
 
 declare -A FORK_NEW=()
 declare -A ALL_KNOWN=()
+declare -A TOOLS_KNOWN=()
 while IFS= read -r path; do
 	[[ -n "$path" ]] && FORK_NEW["$path"]=1
 done < <(grep -vE '^[[:space:]]*(#|$)' "$FORK_FILE")
 while IFS= read -r path; do
 	[[ -n "$path" ]] && ALL_KNOWN["$path"]=1
 done < <(grep -vE '^[[:space:]]*(#|$)' "$ALL_FILE")
+if [[ $TOOLS_AVAILABLE -eq 1 ]]; then
+	while IFS= read -r path; do
+		[[ -n "$path" ]] && TOOLS_KNOWN["$path"]=1
+	done < <(grep -vE '^[[:space:]]*(#|$)' "$TOOLS_FILE")
+fi
 
 is_source() {
 	case "$1" in
 		*.cpp|*.c|*.h|*.hpp|*.cc|*.cxx) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+# tools/ is the fork's own tooling and is written in Python and shell as well as C++,
+# so its extension set is wider than the product scope's.
+is_tools_source() {
+	case "$1" in
+		*.cpp|*.c|*.h|*.hpp|*.cc|*.cxx|*.py|*.sh) return 0 ;;
 		*) return 1 ;;
 	esac
 }
@@ -80,25 +116,36 @@ is_excluded() {
 	esac
 }
 
-mapfile -t TRACKED < <(git ls-files -- src include plugins tests | LC_ALL=C sort)
+mapfile -t TRACKED < <(git ls-files -- src include plugins tests tools | LC_ALL=C sort)
 
 scanned=0
 declare -a UNREGISTERED=()
 declare -a INHERITED=()
+declare -a TOOLING=()
 
 for f in "${TRACKED[@]}"; do
-	is_source "$f" || continue
+	if [[ "$f" == tools/* ]]; then
+		is_tools_source "$f" || continue
+	else
+		is_source "$f" || continue
+	fi
 	is_excluded "$f" && continue
 	scanned=$((scanned + 1))
-	if [[ -n "${FORK_NEW[$f]:-}" ]]; then
+	if [[ -n "${TOOLS_KNOWN[$f]:-}" ]]; then
+		TOOLING+=("$f")
+		[[ $VERBOSE -eq 1 ]] && printf '%-56s %s\n' "$f" "tools-sources (fork tooling; gates 4/7/8 --scope tools)"
+	elif [[ -n "${FORK_NEW[$f]:-}" ]]; then
 		[[ $VERBOSE -eq 1 ]] && printf '%-56s %s\n' "$f" "fork-sources (registered)"
 	elif [[ -n "${ALL_KNOWN[$f]:-}" ]]; then
 		INHERITED+=("$f")
-		[[ $VERBOSE -eq 1 ]] && printf '%-56s %s\n' "$f" "all-sources (inherited upstream)"
+		[[ $VERBOSE -eq 1 ]] && printf '%-56s %s\n' "$f" "all-sources (whole-tree scope)"
 	else
 		UNREGISTERED+=("$f")
 		printf '%-56s %s\n' "$f" "NOT IN tests/fork-sources.txt"
-		printf '%-56s %s\n' "" "(and not known upstream in tests/all-sources.txt)"
+		printf '%-56s %s\n' "" "(and not in tests/all-sources.txt or tests/tools-sources.txt)"
+		if [[ "$f" == tools/* && $TOOLS_AVAILABLE -eq 0 ]]; then
+			printf '%-56s %s\n' "" "(this tree has no tests/tools-sources.txt at all)"
+		fi
 	fi
 done
 
@@ -106,16 +153,25 @@ done
 # claims to measure something that is not there. Reported, not fatal (cleanup is
 # deliberate work, and this gate's job is visibility).
 stale=0
-while IFS= read -r path; do
-	if [[ -n "$path" && ! -e "$path" ]]; then
-		printf '%-56s %s\n' "$path" "stale entry in tests/fork-sources.txt (no such file)"
-		stale=$((stale + 1))
-	fi
-done < <(grep -vE '^[[:space:]]*(#|$)' "$FORK_FILE" | LC_ALL=C sort -u)
+list_stale() { # <manifest> <label> — prints stale entries, increments $stale
+	local path
+	while IFS= read -r path; do
+		if [[ -n "$path" && ! -e "$path" ]]; then
+			printf '%-56s %s\n' "$path" "stale entry in tests/$2 (no such file)"
+			stale=$((stale + 1))
+		fi
+	done < <(grep -vE '^[[:space:]]*(#|$)' "$1" | LC_ALL=C sort -u)
+}
+
+list_stale "$FORK_FILE" "fork-sources.txt"
+if [[ $TOOLS_AVAILABLE -eq 1 ]]; then
+	list_stale "$TOOLS_FILE" "tools-sources.txt"
+fi
 
 echo
-echo "scanned $scanned tracked source file(s) under src/, include/, plugins/, tests/;"
-echo "  ${#FORK_NEW[@]} fork-sources entry(ies), ${#INHERITED[@]} inherited upstream, ${stale} stale entry(ies)."
+echo "scanned $scanned tracked source file(s) under src/, include/, plugins/, tests/, tools/;"
+echo "  ${#FORK_NEW[@]} fork-sources entry(ies), ${#INHERITED[@]} all-sources (whole-tree),"
+echo "  ${#TOOLING[@]} tools-sources (fork tooling), ${stale} stale entry(ies)."
 
 if [[ ${#UNREGISTERED[@]} -gt 0 ]]; then
 	echo
@@ -129,10 +185,13 @@ if [[ ${#UNREGISTERED[@]} -gt 0 ]]; then
 	echo "  - new code this product adds -> add it to tests/fork-sources.txt, then re-run"
 	echo "    the ratchets it widens (complexity, file-length, duplication — each has its"
 	echo "    own per-scope baseline);"
-	echo "  - inherited from upstream master -> add it to tests/all-sources.txt."
+	echo "  - inherited from upstream master -> add it to tests/all-sources.txt;"
+	echo "  - the fork's own tooling under tools/ -> add it to tests/tools-sources.txt"
+	echo "    (measured by gates 4, 7 and 8 with --scope tools; never put it in"
+	echo "    tests/upstream-modifications.txt, which is the upstream-divergence ledger)."
 	exit 1
 fi
 
 echo
-echo "PASS: every tracked source in scope is registered (${#FORK_NEW[@]} fork-NEW, ${#INHERITED[@]} inherited)."
+echo "PASS: every tracked source in scope is registered (${#FORK_NEW[@]} fork-NEW, ${#INHERITED[@]} inherited, ${#TOOLING[@]} tooling)."
 exit 0

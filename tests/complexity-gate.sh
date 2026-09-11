@@ -22,6 +22,7 @@
 #   bash tests/complexity-gate.sh --strict                 # also fail if ANY function is over the target
 #   bash tests/complexity-gate.sh --reanchor "reason"      # deliberate, recorded baseline refresh
 #   bash tests/complexity-gate.sh --scope all              # whole tree (1,095 files) instead of the fork scope
+#   bash tests/complexity-gate.sh --scope tools            # the fork's own tooling under tools/ (own baseline)
 
 set -uo pipefail
 
@@ -45,10 +46,15 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 case "$SCOPE" in
-	fork) SOURCES="$HERE/fork-sources.txt"; BASELINE="$HERE/complexity-baseline.tsv" ;;
+	fork) SOURCES="$HERE/fork-sources.txt"; BASELINE="$HERE/complexity-baseline.tsv"
+	      BASELINE_NOTE="fork-NEW code" ;;
 	all)  SOURCES="$HERE/all-sources.txt";  BASELINE="$HERE/complexity-baseline-all.tsv"
+	      BASELINE_NOTE="the whole tree (upstream + fork-NEW code)"
 	      echo "complexity-gate: whole-tree scope (1,095 first-party files; upstream code is grandfathered, see docs/CONVENTIONS.md)" ;;
-	*) echo "unknown scope '$SCOPE' (use fork|all)" >&2; exit 2 ;;
+	tools) SOURCES="$HERE/tools-sources.txt"; BASELINE="$HERE/complexity-baseline-tools.tsv"
+	      BASELINE_NOTE="the fork's own tooling under tools/"
+	      echo "complexity-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)" ;;
+	*) echo "unknown scope '$SCOPE' (use fork|all|tools)" >&2; exit 2 ;;
 esac
 if [[ "$MODE" == "reanchor" && -z "${REASON// /}" ]]; then
 	echo "usage: $0 --reanchor \"reason\" — an unrecorded re-anchor is not allowed" >&2
@@ -93,7 +99,7 @@ total="${#FILES[@]}"
 total="$(python3 -m lizard --csv "${FILES[@]}" 2>/dev/null | grep -cE '^[0-9]+,' || true)"
 over_count="$(grep -c $'^' "${tmp}.over" 2>/dev/null || echo 0)"
 
-echo "complexity-gate: ${total} functions in fork sources; ${over_count} exceed CCN ${CCN_TARGET}"
+echo "complexity-gate: ${total} functions in the ${SCOPE} scope; ${over_count} exceed CCN ${CCN_TARGET}"
 echo
 if [[ "$over_count" -gt 0 ]]; then
 	echo "Functions over the CCN target (grandfathered if in the baseline):"
@@ -129,7 +135,7 @@ if [[ -f "$BASELINE" ]]; then
 fi
 
 write_baseline() {
-	{ echo "# per-method CCN baseline for fork-NEW code (functions over the target only)";
+	{ echo "# per-method CCN baseline for ${BASELINE_NOTE} (functions over the target only)";
 	  echo "# keyed by function@path — maintained by tests/complexity-gate.sh; do not edit by hand";
 	  awk -F'	' '{ if ($2+0 > max[$1]) max[$1] = $2+0 }
 	              END { for (k in max) printf "%s	%d\n", k, max[k] }' "${tmp}.over" \
