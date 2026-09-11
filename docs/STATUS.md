@@ -244,6 +244,18 @@ the audio path. Risk raised mid → high; it outranks feature work.
 - Gate 6's window covers 11 commits of the 133 the base names (an older "5 of 133" figure is stale)
 - `coverage-gate.sh` banks a zero-instrumented-line file as 100% — no entry floor
 
+**Closed 2026-09-11, branch `post-alpha/gate-debt`.** Three of the five items above are now
+mechanical gates rather than prose: the coverage entry floor (`COVERAGE_ENTRY_FLOOR`, 50.00%,
+plus an explicit `unmeasurable`/`n/a` status for a file with zero instrumented lines), the SKIP
+laundering (`run-all-gates.sh` now exits **3** when a gate did not run, and names it), and the
+missing "this new source is not in `tests/fork-sources.txt`" check (new **Gate 9**,
+`tests/fork-sources-gate.sh`: 1,091 tracked sources scanned, 100 fork-NEW, 992 inherited, 0
+unregistered). Each fix landed as its own commit with a red/green fixture proof —
+`bash tests/test-verification-debt.sh`, 29 assertions, exit 0 — and the rules are recorded in
+`tests/QA-GATES.md`. Evidence, exit codes and residual risk: `docs/VERIFICATION-DEBT-FIXES.md`.
+The two remaining items (NeuralAmp/RnnoiseDenoiser at 0.00% with no registered test file; Gate 6's
+window covering a fraction of the base..HEAD history) are unchanged by this work.
+
 **Product-side gaps also missing from the group above**: waveform rendering + peak cache; undo depth and
 drag coalescing; plugin state save/restore; tempo automation and time-signature changes; MIDI clock/MTC;
 dithering and sample-rate-conversion quality; recording crash recovery; real-time-safety verification;
@@ -259,6 +271,8 @@ recount before either number is quoted.
 - `README.md` — product-facing summary; its feature list is scoped by the caveats there and by
   this file.
 - `tests/QA-GATES.md` — gate definitions, measurements, and the open gate defects.
+- `docs/VERIFICATION-DEBT-FIXES.md` — the three 2026-09-11 verification-debt fixes: what changed,
+  the red/green fixture proof for each, the exit codes measured unpiped, and the residual risk.
 - `DOCS-NAMING.md` — naming decision and the remaining wave-R rename checklist.
 - `docs/phase-f/`, `doc/STEM-SPLIT.md` — **historical program artifacts** carried over from the
   pre-product branch stack; kept for provenance, not product documentation.

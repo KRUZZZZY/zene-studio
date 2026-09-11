@@ -1,0 +1,15 @@
+# Deliberate exceptions to the coverage entry floor.
+#
+# tests/coverage-gate.sh refuses to admit a file that is not yet in
+# tests/coverage-baseline.tsv unless its measured coverage is at or above
+# COVERAGE_ENTRY_FLOOR (default 50.00 percentage points), so new code cannot
+# enter the ratchet untested and cannot be banked at a number nobody chose.
+#
+# To admit one deliberately, add a line here with a reason:
+#
+#   <repo-relative path><TAB><why this file may enter below the floor>
+#
+# The reason is mandatory — the gate exits 2 on a blank one rather than
+# honouring it, exactly like tests/upstream-modifications.txt. An exemption
+# records the file at its measured coverage; it does not change the floor for
+# anything else.

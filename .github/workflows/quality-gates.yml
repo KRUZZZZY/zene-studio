@@ -32,10 +32,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  # Gates 3, 4, 6, 7 and 8 need no build: they read the sources and git history.
+  # Gates 3, 4, 6, 7, 8 and 9 need no build: they read the sources and git history.
   # This is the job enforced on push and pull_request (see the trigger policy above).
   static-gates:
-    name: static gates (3, 4, 6, 7, 8)
+    name: static gates (3, 4, 6, 7, 8, 9)
     runs-on: ubuntu-latest
     steps:
       - name: Check out (full history - Gate 6 needs it)
@@ -54,6 +54,8 @@ jobs:
         run: bash tests/file-length-gate.sh --check
       - name: Gate 8 - token duplication
         run: bash tests/duplication-gate.sh
+      - name: Gate 9 - every tracked source is registered in a scope manifest
+        run: bash tests/fork-sources-gate.sh
 
   # Gate 1 needs a real build: "it compiles" never substitutes for a passing ctest.
   unit-tests:
