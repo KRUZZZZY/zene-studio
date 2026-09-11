@@ -143,6 +143,47 @@ program). `[#N]` = already boarded as a task; a bare item = no task yet. Statuse
 surround panning · MIDI Tools transformations (v2 candidate) · cloud services. Freeze/bounce-in-place
 is named there as a later-wave roadmap item rather than a non-goal.
 
+### Review pass — 2026-09-11 (after the feature-list critique)
+
+**Sequencing defect, now fixed.** Five boarded features depended on work that had no task: comping needs
+take lanes, which need clip editing, punch in/out, arbitrary input count and input monitoring; warp needs a
+non-destructive clip model to attach markers to; racks needs `RoutingGraph` instantiated in the audio path
+(still disarmed, below); the Session View grid's drag-drop needs the browser's drag-drop half, which stayed
+unboarded while the browser task boarded only tag search and ML similarity. Boarded the fix as **#611
+clip-and-capture wave (xl, yellow)** — it lands *before* #597, #598 and #600. The four editing/recording
+items listed as gaps above are therefore owned by #611, not gaps.
+
+**Differentiators, now boarded.** They had no board presence at all while auto-mastering was added ahead of
+them, despite being cheaper and being the things the commercial DAWs will never build: **#612** mmpz-git
+depth (three-way merge of concurrent track edits, musical conflict presentation, large assets, audible-diff
+CLI, CI render recipes) · **#613** Lua API stabilisation (versioning + compatibility policy, script-defined
+devices, console, package format, generated docs) · **#614** documented WASM effect ABI for third parties
+(conformance suite, an example built from the docs alone, distribution).
+
+**#608 recategorised.** It is not "engineering beside the build matrix": an `AudioBuffer` over
+`SharedMemoryResource` carries a cross-process pointer table, so its failure mode is memory corruption in
+the audio path. Risk raised mid → high; it outranks feature work.
+
+**Verification debt — this list under-counted it.** Also missing:
+- `run-all-gates.sh` treats SKIP as pass (`record()` only fails on `FAIL`), so a skipped gate is invisible
+- nothing says plainly "this new source is not in `tests/fork-sources.txt`": Gate 6 surfaced
+  `LatencyCompensation.{h,cpp}` only as an *undeclared upstream change* — the wrong diagnosis for a file
+  that is this repo's own code (they were registered on 2026-09-11; 99 files in scope). A gate that names
+  the omission would have caught it in minutes instead of a day
+- NeuralAmp and RnnoiseDenoiser at 0.00% with no registered test file
+- Gate 6's window covers 11 commits of the 133 the base names (an older "5 of 133" figure is stale)
+- `coverage-gate.sh` banks a zero-instrumented-line file as 100% — no entry floor
+
+**Product-side gaps also missing from the group above**: waveform rendering + peak cache; undo depth and
+drag coalescing; plugin state save/restore; tempo automation and time-signature changes; MIDI clock/MTC;
+dithering and sample-rate-conversion quality; recording crash recovery; real-time-safety verification;
+golden-audio integration tests; soak testing; keyboard navigation and accessibility.
+
+**Two claims in the critique that did not survive checking**: `LatencyCompensation.{h,cpp}` *are* in
+`tests/fork-sources.txt` (registered 2026-09-11), and Part C is **90/93** in three documents here
+(`PROGRAM-STATUS.md` ×2, `ableton-gap/SPEC-zene-studio.md`) — the 89/93 figure is unreconciled and needs a
+recount before either number is quoted.
+
 ## Where the documents are
 
 - `README.md` — product-facing summary; its feature list is scoped by the caveats there and by
