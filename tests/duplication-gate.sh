@@ -5,7 +5,9 @@
 #   "token duplication < 5% (jscpd)".
 # QA-GATES.md's six gates did not cover it; this closes the gap.
 #
-# Scope: tests/fork-sources.txt (default) or tests/all-sources.txt with --scope all.
+# Scope: tests/fork-sources.txt (default), tests/all-sources.txt with --scope all, or
+# tests/tools-sources.txt with --scope tools (the fork's own tooling under tools/; that
+# scope adds the `python` format beside `cpp`).
 # jscpd's `cpp` format does not claim `.h` or `.c` by default, so the extension map below
 # adds both explicitly — without `.h`, header-to-header clones are invisible; without `.c`,
 # the six C sources in the whole-tree scope were never analysed at all.
@@ -18,7 +20,7 @@
 # handful of very small files, so its file count runs a little under the scope size. The
 # gate prints the number it actually analysed.
 #
-# Usage: bash tests/duplication-gate.sh [--check] [--scope fork|all]
+# Usage: bash tests/duplication-gate.sh [--check] [--scope fork|all|tools]
 #   (--check is accepted for symmetry with the other gates; behaviour is identical.)
 #
 # Requires npx (Node). If npx is unavailable the gate reports SKIP and exits 0 — it
@@ -38,14 +40,19 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--check) MODE_CHECK=1; shift ;;
 		--scope) SCOPE="${2:-}"; shift 2 ;;
-		*) echo "usage: $0 [--check] [--scope fork|all]" >&2; exit 2 ;;
+		*) echo "usage: $0 [--check] [--scope fork|all|tools]" >&2; exit 2 ;;
 	esac
 done
 case "$SCOPE" in
-	fork) SCOPEFILE="$HERE/fork-sources.txt" ;;
+	fork) SCOPEFILE="$HERE/fork-sources.txt"
+	      FORMAT_ARGS=(--format cpp --formats-exts "cpp:cpp,c,h,hpp,cc,cxx") ;;
 	all)  SCOPEFILE="$HERE/all-sources.txt"
+	      FORMAT_ARGS=(--format cpp --formats-exts "cpp:cpp,c,h,hpp,cc,cxx")
 	      echo "duplication-gate: whole-tree scope (1,095 first-party files)" ;;
-	*) echo "unknown scope '$SCOPE' (use fork|all)" >&2; exit 2 ;;
+	tools) SCOPEFILE="$HERE/tools-sources.txt"
+	       FORMAT_ARGS=(--format python --format cpp --formats-exts "python:py,cpp:cpp,c,h,hpp,cc,cxx")
+	       echo "duplication-gate: tools scope (fork-owned tooling; jscpd has no shell format, so the .sh entries are counted by Gates 4 and 7 only)" ;;
+	*) echo "unknown scope '$SCOPE' (use fork|all|tools)" >&2; exit 2 ;;
 esac
 
 if ! command -v npx >/dev/null 2>&1; then
@@ -57,7 +64,7 @@ mapfile -t FILES < <(grep -vE '^\s*(#|$)' "$SCOPEFILE")
 echo "duplication-gate: scanning ${#FILES[@]} $SCOPE sources (min-lines ${MIN_LINES}, min-tokens ${MIN_TOKENS}, threshold ${DUP_MAX}%)"
 
 out="$(npx --yes jscpd \
-	--format cpp --formats-exts "cpp:cpp,c,h,hpp,cc,cxx" \
+	"${FORMAT_ARGS[@]}" \
 	--min-lines "$MIN_LINES" --min-tokens "$MIN_TOKENS" \
 	--reporters console --silent \
 	"${FILES[@]}" 2>&1)"

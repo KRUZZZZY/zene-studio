@@ -28,6 +28,24 @@ and `plugins/RnnoiseDenoiser/rnnoise`; they are not this repo's code and these
 gates never refactor them. Upstream LMMS code is never refactored by these gates;
 its coverage is intentionally excluded from the reports.
 
+**Tooling scope (added 2026-09-11).** Gates 4, 7 and 8 also accept `--scope tools`, which points
+them at `tests/tools-sources.txt` — the fork's own developer tooling under `tools/` — with its own
+baselines (`tests/*-baseline-tools.tsv`), so the three ratchets cannot shadow each other. `tools/`
+does not exist upstream (`git ls-tree -r --name-only 4e677cb6c6ab -- tools` is empty), so every file
+under it is fork-authored by construction. Before this scope existed such a file had no honest home:
+`tests/fork-sources.txt` is the C/C++ **product** scope, and registering tooling there widens the
+product ratchets onto plain Python — measured, `tools/mmpz-git/mmpz_git.py` is 818 lines with
+functions reaching CCN 83 — while `tests/upstream-modifications.txt` is the upstream-**divergence**
+ledger, where a fork-authored file is a false statement about it. Gate 9 now scans `tools/` and
+reports a tooling file that is in no scope list. `run-all-gates.sh` runs the tools ratchets in the
+same gate rows as the product ones (a red tools scope is a red gate 4/7/8), and the CI `static-gates`
+job runs them as their own steps. Measured entry state: **8 tooling files, 105 functions with 8 over
+CCN 10** (grandfathered in `tests/complexity-baseline-tools.tsv`), **1 file over 500 lines** (818,
+grandfathered in `tests/file-length-baseline-tools.tsv`), **0.00% duplicated lines**. Two limits,
+stated: the two `.sh` entries are counted by Gates 4 and 7 only (jscpd in the version wired here has
+no shell format), and tooling is outside coverage and mutation by construction (lcov instruments
+C/C++ builds; the mutation harness targets one C++ TU).
+
 The **standards fork** numbers below are inherited from the fork's run (kept for
 provenance); the **product** numbers are this repo's own measured run. The
 product's first run was captured 2026-09-09 on the port commit.
@@ -239,6 +257,7 @@ bash tests/complexity-gate.sh            # ratchet: refresh baseline, fail on re
 bash tests/complexity-gate.sh --check    # CI: never writes the baseline, still fails on regressions
 bash tests/complexity-gate.sh --strict   # fail if ANY function is over the target
 bash tests/complexity-gate.sh --reanchor "why"   # deliberate, recorded baseline refresh
+bash tests/complexity-gate.sh --check --scope tools   # the fork's own tooling under tools/
 ```
 
 **Policy — a ratchet, never a rewrite order** (matching Gate 6's no-refactor rule):
@@ -449,6 +468,17 @@ that list at all: they are fork-NEW and were missing from `tests/fork-sources.tx
 exit 2 with `ledger error: ... has no reason`, so a blank declaration cannot be used to launder
 a change.
 
+**Re-measured on `post-alpha/pipeline-hardening` (2026-09-11):** **PASS — 38 files in the ledger, 0
+violations.** Four of those had to be declared to get there: the branch carried them as undeclared
+divergences (Gate 6 exit 1, 4 violations), a declaration omission rather than a product defect.
+
+| file(s) | why |
+|---|---|
+| `include/MainWindow.h`, `include/MidiController.h`, `src/core/midi/MidiAlsaSeq.cpp`, `src/core/midi/MidiClient.cpp` | #607 MIDI learn: the Edit-menu action and its slots, the `MidiController::midiPort()` accessors, and the two MIDI input paths that call `MidiLearn::handleMidiEvent()` before the port mask. The lane shipped its regression test (`tests/src/core/MidiLearnTest.cpp`, `22617a93c`), which is what Gate 6 asks for, but no ledger entry (`5d6ccdf1f`). |
+
+The three test files the same branch left in no scope list are a Gate 9 matter, not Gate 6 — see the
+Gate 9 section.
+
 **Window size, stated plainly:** the gate examines `01148947e..HEAD`, which on `main` is **14
 of the product's 136 commits** over upstream master (`git rev-list --count origin/master..HEAD`
 = 136 at `7f08809e4`). These counts advance with every commit (133/11 at `b61e14c75`, 134/12 at
@@ -466,7 +496,8 @@ already builds and ctest-runs this tree on every push, and a coverage-baseline c
 a deliberate act. A green check here therefore covers the static gates and nothing else. Run the
 rest locally or dispatch the workflow:
 
-- **static-gates** — Gates 3, 4, 6, 7, 8 and 9 (no build needed; `fetch-depth: 0` for Gate 6).
+- **static-gates** — Gates 3, 4, 6, 7, 8 and 9 (no build needed; `fetch-depth: 0` for Gate 6),
+  plus the three tools-scope steps (Gates 4/7/8 with `--scope tools`, added 2026-09-11).
   All six can now **fail** the job. That was not true before 2026-09-11: Gates 4 and 7 were
   invoked with `--check`, and `--check` used to exit 0 unconditionally, so both ratchets were
   red locally and green in CI. `--check` now means "never write the baseline" and still exits 1
@@ -481,6 +512,20 @@ guard, and **unit-tests** and **coverage** each carry
 `if: ${{ github.event_name == 'workflow_dispatch' }}` — so restoring (or widening) per-push
 enforcement means enabling the trigger **and** keeping those guards on the jobs that must not run
 on push.
+
+**Packaging guard (added 2026-09-11).** `.github/workflows/build.yml` carries
+`if-no-files-found: error` on all six package-upload steps, so a package-producing job **fails**
+when its package glob matches nothing instead of warning and going green with zero assets for that
+platform (which is what a rename that misses one packaging path would have produced). The one
+non-package upload — the msvc-x64 ctest log, which runs on `failure()` and may legitimately not
+exist — keeps `if-no-files-found: warn`, with that exemption written beside it. Flag verified
+against the pinned action (`actions/upload-artifact@v7`, ref
+`043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`): its `action.yml` documents
+`error: Fail the action with an error message`, and `src/upload/upload-artifact.ts` calls
+`core.setFailed("No files were found with the provided path: <path>. No artifacts will be
+uploaded.")`. `tests/test-package-upload-guard.sh` exercises the glob decision both ways and
+rejects the workflow if any package step loses the flag; the `checks` workflow runs it on every
+push. Rationale and evidence: `docs/PIPELINE-HARDENING.md` item 1.
 
 All nine gates are wired. Gate 5 lives in the `unit-tests` job because it needs the built
 test binary; it costs ~3 min there, which is acceptable when it reuses the build. Locally it
@@ -527,6 +572,7 @@ exits 1 on a regression, so this ratchet can now fail a CI run.
 bash tests/file-length-gate.sh                    # ratchet: refresh baseline, fail on regressions
 bash tests/file-length-gate.sh --check            # CI: never writes the baseline, still fails on regressions
 bash tests/file-length-gate.sh --reanchor "why"   # deliberate, recorded baseline refresh
+bash tests/file-length-gate.sh --check --scope tools   # the fork's own tooling under tools/
 ```
 
 ## Gate 8: Token duplication (`duplication-gate.sh`) — 2026-09-09
@@ -545,6 +591,7 @@ PASS against the 5% budget, and the only gate that both grew its scope and staye
 
 ```sh
 bash tests/duplication-gate.sh
+bash tests/duplication-gate.sh --scope tools   # fork tooling (python + cpp formats)
 ```
 
 Requires `npx`; if Node is absent the gate reports **SKIP** rather than a false PASS.
@@ -553,13 +600,24 @@ Requires `npx`; if Node is absent the gate reports **SKIP** rather than a false 
 
 **Command**: `bash tests/fork-sources-gate.sh` (add `--verbose` to print the verdict for every file).
 
-Rule: every tracked source file under `src/`, `include/`, `plugins/` and `tests/` must be in
-**`tests/fork-sources.txt`** (this product's own new code — the fork-scoped ratchets and Gate 2's
-per-file baseline watch it) or in **`tests/all-sources.txt`** (inherited upstream code, in the
-whole-tree scope). A file in neither list is in **no** scope: no ratchet measures it, and the gate
-names it with the verdict `NOT IN tests/fork-sources.txt`, plus what to do about it (register it as
-fork-new, or as upstream-inherited). Stale manifest entries — a listed file that does not exist —
+Rule: every tracked source file under `src/`, `include/`, `plugins/`, `tests/` and `tools/` must be in
+one of the three scope manifests:
+**`tests/fork-sources.txt`** (this product's own new PRODUCT code — the fork-scoped ratchets and
+Gate 2's per-file baseline watch it), **`tests/all-sources.txt`** (the whole-tree first-party C/C++
+scope: upstream code plus the fork's C/C++ tests and probes), or **`tests/tools-sources.txt`**
+(the fork's own tooling under `tools/`, measured by Gates 4/7/8 with `--scope tools`). A file in
+none of them is in **no** scope: no ratchet measures it, and the gate names it with the verdict
+`NOT IN tests/fork-sources.txt`, plus what to do about it (register it as fork-new, as
+upstream-inherited, or as fork tooling). Stale manifest entries — a listed file that does not exist —
 are reported too.
+
+**What this gate caught on `post-alpha/integration` (2026-09-11).** Three fork-authored test files
+were in no scope list at all — `tests/src/core/LufsMeterTest.cpp`, `tests/src/core/MidiLearnTest.cpp`
+and `tests/src/core/SessionModelTest.cpp` (Gate 9 exit 1). They are registered in
+`tests/all-sources.txt` — the whole-tree scope — which is where **every** test file in this repo
+lives, fork-authored ones included (48 of the 50 `tests/src/**` entries there are fork code); the
+fork ratchets and Gate 2's per-file baseline deliberately measure product sources, not test
+harnesses. That is the convention this gate is here to make visible.
 
 **Why (2026-09-11).** `include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp` shipped
 on 2026-09-10 in no scope list. The only gate that reacted was Gate 6, which reported them as an

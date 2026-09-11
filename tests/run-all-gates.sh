@@ -15,6 +15,10 @@
 # their baselines are meaningful per-file. Whole-tree coverage is measured separately
 # (docs/CONVENTIONS.md records the numbers and their date).
 #
+# Gates 4, 7 and 8 also run the `tools` scope (tests/tools-sources.txt — the fork's own
+# tooling under tools/, with its own baselines) in the same gate row, so a regression in
+# the tooling fails the same gate as a regression in the product.
+#
 # Exit codes (a skipped gate is NOT a pass):
 #   0  every gate ran and passed
 #   1  at least one gate FAILED
@@ -111,7 +115,12 @@ bash tests/no-tautology-gate.sh $STRICT
 # ---- Gate 4: per-method complexity ------------------------------------------
 banner 4 "per-method complexity"
 bash tests/complexity-gate.sh --check $SCOPE_ARG
-[[ $? -eq 0 ]] && record 4 "complexity" "PASS" || record 4 "complexity" "FAIL"
+rc4=$?
+# The fork's own tooling under tools/ has its own scope and baseline, so it is measured
+# here too: same gate row, so a red tools ratchet is a red gate 4.
+bash tests/complexity-gate.sh --check --scope tools
+rc4t=$?
+[[ $rc4 -eq 0 && $rc4t -eq 0 ]] && record 4 "complexity" "PASS" || record 4 "complexity" "FAIL"
 
 # ---- Gate 5: mutation testing (scoped harness, enforced) --------------------
 banner 5 "mutation testing (src/core/RoutingGraph.cpp)"
@@ -131,12 +140,18 @@ bash tests/no-upstream-regression-gate.sh
 # ---- Gate 7: per-file length -------------------------------------------------
 banner 7 "per-file length (<=500 ratchet)"
 bash tests/file-length-gate.sh --check $SCOPE_ARG
-[[ $? -eq 0 ]] && record 7 "file-length" "PASS" || record 7 "file-length" "FAIL"
+rc7=$?
+bash tests/file-length-gate.sh --check --scope tools
+rc7t=$?
+[[ $rc7 -eq 0 && $rc7t -eq 0 ]] && record 7 "file-length" "PASS" || record 7 "file-length" "FAIL"
 
 # ---- Gate 8: token duplication ----------------------------------------------
 banner 8 "token duplication (<5%)"
 bash tests/duplication-gate.sh $SCOPE_ARG
-[[ $? -eq 0 ]] && record 8 "duplication" "PASS" || record 8 "duplication" "FAIL"
+rc8=$?
+bash tests/duplication-gate.sh --scope tools
+rc8t=$?
+[[ $rc8 -eq 0 && $rc8t -eq 0 ]] && record 8 "duplication" "PASS" || record 8 "duplication" "FAIL"
 
 # ---- Gate 9: every tracked source is registered in a scope manifest ----------
 banner 9 "fork-sources registration"
