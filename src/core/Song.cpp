@@ -90,6 +90,8 @@ Song::Song() :
 	m_isCancelled( false ),
 	m_playMode( PlayMode::None ),
 	m_length( 0 ),
+	m_exportLengthOverrideBars( 0 ),
+	m_exportTailBars( 1 ),
 	m_midiClipToPlay( nullptr ),
 	m_loopMidiClip( false ),
 	m_loopRenderCount(1),
@@ -731,7 +733,12 @@ void Song::startExport()
 	}
 	else
 	{
-		m_exportSongEnd = TimePos(m_length, 0);
+		// A render-length override is what lets a stem export render every stem to
+		// the same length as the mix (see setExportLengthOverrideBars).
+		const bar_t exportBars = m_exportLengthOverrideBars > 0
+			? static_cast<bar_t>(m_exportLengthOverrideBars)
+			: m_length;
+		m_exportSongEnd = TimePos(exportBars, 0);
         
 		// Handle potentially ridiculous loop points gracefully.
 		if (m_loopRenderCount > 1 && timeline.loopEnd() > m_exportSongEnd) 
@@ -740,7 +747,7 @@ void Song::startExport()
 		}
 
 		if (!m_exportLoop) 
-			m_exportSongEnd += TimePos(1,0);
+			m_exportSongEnd += TimePos(m_exportTailBars, 0);
         
 		m_exportSongBegin = TimePos(0,0);
 		m_exportLoopBegin = timeline.loopBegin() < m_exportSongEnd && timeline.loopEnd() <= m_exportSongEnd

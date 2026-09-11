@@ -204,6 +204,38 @@ public:
 		m_renderBetweenMarkers = renderBetweenMarkers;
 	}
 
+	/// Render length override, in bars, for a batch of renders of one project.
+	///
+	/// A whole-project render derives its length from the tracks (`updateLength()`),
+	/// and during export that derivation *skips muted tracks* - which is exactly what a
+	/// per-track/stem render does. Without an override each stem would therefore be
+	/// trimmed to that one track's length, and the stems would line up neither with the
+	/// mix nor with each other. 0 (the default) means "no override": the export length
+	/// is derived from the tracks exactly as it always has been.
+	inline void setExportLengthOverrideBars( int bars )
+	{
+		m_exportLengthOverrideBars = bars;
+	}
+
+	inline int exportLengthOverrideBars() const
+	{
+		return m_exportLengthOverrideBars;
+	}
+
+	/// Bars rendered past the export end, so an effect tail (reverb, delay) is not
+	/// truncated. 1 by default: the whole-project render has always appended one bar
+	/// (`startExport()`), so the default leaves every existing render's length
+	/// exactly as it was.
+	inline void setExportTailBars( int bars )
+	{
+		m_exportTailBars = bars;
+	}
+
+	inline int exportTailBars() const
+	{
+		return m_exportTailBars;
+	}
+
 	inline PlayMode playMode() const
 	{
 		return m_playMode;
@@ -450,6 +482,12 @@ private:
 
 	PlayMode m_playMode;
 	bar_t m_length;
+
+	// Render-length control for batches of renders (stem export). See
+	// setExportLengthOverrideBars()/setExportTailBars() above; both defaults
+	// reproduce the historical export length exactly.
+	volatile int m_exportLengthOverrideBars;
+	volatile int m_exportTailBars;
 
 	const MidiClip* m_midiClipToPlay;
 	bool m_loopMidiClip;

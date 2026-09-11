@@ -26,14 +26,14 @@ include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensatio
 include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
 include/Effect.h	#605 PDC: latency accessor on the effect interface
 include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
-include/Song.h	#594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off
+include/Song.h	#594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off. Stem export (post-alpha/stem-export): setExportLengthOverrideBars()/setExportTailBars() accessors whose defaults (0/1) reproduce the historical export length exactly
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 src/core/AudioBuffer.cpp	#608 memory correctness: access buffer always from the default resource; allocationSize() no longer reserves it in the shared region (746f6bd0e)
 src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment point (9e12a68f5)
 src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
 src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
 src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
-src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged)
+src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged). Stem export (post-alpha/stem-export): startExport() honours the render-length override and the configurable tail, both of which default to the historical length (held by StemExportTest::wholeProjectRenderIsUnchangedByAStemExport)
 src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
 src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)
 src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
@@ -53,3 +53,6 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> proce
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+include/RenderManager.h	stem export (post-alpha/stem-export): StemExportOptions + exportStems()/stemFileName() added beside renderProject()/renderTracks(), whose behaviour is unchanged
+src/core/RenderManager.cpp	stem export (post-alpha/stem-export): exportStems() renders every stem to the whole-project length with a configurable tail and numbers the files in track order; renderProject()/renderTracks() unchanged (held by StemExportTest)
+src/core/main.cpp	stem export (post-alpha/stem-export): headless `exportstems <project> -o <dir> [--tail-bars N]` action beside `render`/`rendertracks`
