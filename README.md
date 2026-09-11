@@ -110,6 +110,13 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWANT_QT6=ON \
       -DWANT_STEM_SPLIT=ON -DWANT_WASM=ON
 ```
 
+## Contributing
+
+Build, test and gate instructions are in [CONTRIBUTING.md](CONTRIBUTING.md); local CI is
+documented in [docs/LOCAL-CI.md](docs/LOCAL-CI.md). Security problems go through
+[SECURITY.md](SECURITY.md), not the public issue tracker. Release publishing is documented in
+[docs/RELEASING.md](docs/RELEASING.md).
+
 ## License and attribution
 
 Zene Studio is licensed under the **GNU General Public License, version 2 or
