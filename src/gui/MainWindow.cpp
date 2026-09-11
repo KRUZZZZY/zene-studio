@@ -24,6 +24,8 @@
 
 #include "MainWindow.h"
 
+#include <cstdio>
+
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDebug>
@@ -38,6 +40,8 @@
 
 #include "AboutDialog.h"
 #include "AutomationEditor.h"
+#include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -46,6 +50,7 @@
 #include "ExportProjectDialog.h"
 #include "FileBrowser.h"
 #include "FileDialog.h"
+#include "HeadlessMode.h"
 #include "Metronome.h"
 #include "MixerView.h"
 #include "GuiApplication.h"
@@ -476,12 +481,32 @@ void MainWindow::finalize()
 	m_toolBarLayout->setColumnStretch( 100, 1 );
 
 	// setup-dialog opened before?
+	//
+	// Every dialog below is a QUESTION FOR A HUMAN. In a run with no display
+	// nobody can answer it, and Qt blocks in that dialog's nested event loop -
+	// before app->exec() is ever reached. That is the second half of the #626
+	// reproductions: with the audio device failing to open, this box used to
+	// block here forever, so the control surface never became ready and answered
+	// `busy` to everything (measured 92 s and still going). Ask the questions
+	// only when there is a display; otherwise say it on stderr, where the log and
+	// the agent's `control.ping` report both see it.
+	const bool interactive = !isHeadlessRun();
+
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
 	{
 		ConfigManager::inst()->setValue( "app", "configured", "1" );
 		// no, so show it that user can setup everything
-		SetupDialog sd;
-		sd.exec();
+		if( interactive )
+		{
+			SetupDialog sd;
+			sd.exec();
+		}
+		else
+		{
+			fprintf( stderr, "MainWindow: headless run: skipping the setup dialog; "
+				"configure the audio and MIDI devices in the --config file\n" );
+			fflush( stderr );
+		}
 	}
 	// look whether the audio engine failed to start the audio device selected by the
 	// user and is using AudioDummy as a fallback
@@ -489,12 +514,24 @@ void MainWindow::finalize()
 	else if( Engine::audioEngine()->audioDevStartFailed() || !AudioEngine::isAudioDevNameValid(
 		ConfigManager::inst()->value( "audioengine", "audiodev" ) ) )
 	{
-		QMessageBox::critical(nullptr, "Audio device setup failed",
-			tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart LMMS."));
+		if( interactive )
+		{
+			QMessageBox::critical(nullptr, "Audio device setup failed",
+				tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart LMMS."));
 
-		// if so, offer the audio settings section of the setup dialog
-		SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
-		sd.exec();
+			// if so, offer the audio settings section of the setup dialog
+			SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
+			sd.exec();
+		}
+		else
+		{
+			// The engine already fell back to the dummy device and keeps working
+			// (render, edit, save); an agent needs the reason, not a prompt. The
+			// same sentence is what control.ping reports as audio.message.
+			fprintf( stderr, "MainWindow: audio device setup failed: %s\n",
+				Engine::audioEngine()->audioDevStartReason().toUtf8().constData() );
+			fflush( stderr );
+		}
 	}
 
 	// Add editor subwindows
@@ -613,6 +650,27 @@ bool MainWindow::mayChangeProject(bool stopPlayback)
 
 	if( !Engine::getSong()->isModified() && getSession() != SessionState::Recover )
 	{
+		return( true );
+	}
+
+	// A control-surface quit (control.quit) has nobody to ask. It states its
+	// intent up front, so answer the same question the dialog below would ask
+	// exactly as a user would, minus the dialog. Without this the question blocks
+	// in a nested event loop that nothing can dismiss, and the process never
+	// finishes quitting - the whole of reproduction (a) in task #626 (the stack
+	// was QCoreApplication::quit -> QApplication::closeAllWindows ->
+	// MainWindow::closeEvent -> this dialog).
+	const ControlRegistry::QuitPromptAnswer quitAnswer = ControlRegistry::quitPromptAnswer();
+	if( quitAnswer != ControlRegistry::QuitPromptAnswer::Ask )
+	{
+		if( quitAnswer == ControlRegistry::QuitPromptAnswer::Save )
+		{
+			return( saveProject() );
+		}
+		if( getSession() == SessionState::Recover )
+		{
+			sessionCleanup();
+		}
 		return( true );
 	}
 

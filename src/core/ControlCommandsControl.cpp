@@ -22,16 +22,15 @@
  */
 
 #include <cstdio>
-#include <cstdlib>
 
-#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QTimer>
 
+#include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
+#include "Song.h"
 #include "lmmsversion.h"
 
 namespace lmms
@@ -42,6 +41,56 @@ namespace
 
 //! The control protocol version (AGENT-TOOLING.md #2).
 constexpr int ControlProtocolVersion = 1;
+
+//! The engine's own view of the audio device. A client must never be told a bare
+//! "ready" while the instance cannot make a sound (task #626): the fallback is
+//! announced here, with the device that failed and the one in use. The SHAPE is
+//! stable - every field is always present - because a client may poll this before
+//! the engine object exists at all, and a checker cannot read optional keys.
+QJsonObject audioReport()
+{
+	QJsonObject out;
+	out.insert(QStringLiteral("state"), QStringLiteral("engine_missing"));
+	out.insert(QStringLiteral("device"), QString());
+	out.insert(QStringLiteral("requested"), QString());
+	out.insert(QStringLiteral("start_failed"), false);
+	out.insert(QStringLiteral("sound_output"), false);
+	AudioEngine* audio = Engine::audioEngine();
+	if (audio == nullptr) { return out; }
+
+	const bool failed = audio->audioDevStartFailed();
+	out.insert(QStringLiteral("state"),
+		failed ? QStringLiteral("dummy_fallback") : QStringLiteral("ok"));
+	out.insert(QStringLiteral("device"), audio->audioDevName());
+	out.insert(QStringLiteral("requested"), audio->audioDevRequestName());
+	out.insert(QStringLiteral("start_failed"), failed);
+	out.insert(QStringLiteral("sound_output"), !failed);
+	if (failed)
+	{
+		out.insert(QStringLiteral("message"), audio->audioDevStartReason());
+	}
+	return out;
+}
+
+//! control.ping's result: liveness, readiness, and - while not ready - why.
+QJsonObject pingResult()
+{
+	const ControlRegistry::ReadinessReport state = ControlRegistry::readinessReport();
+	QJsonObject result;
+	result.insert(QStringLiteral("pong"), true);
+	result.insert(QStringLiteral("engine_ready"), state.ready);
+	result.insert(QStringLiteral("version"), QString::fromUtf8(LMMS_VERSION));
+	result.insert(QStringLiteral("proto"), ControlProtocolVersion);
+	if (!state.ready)
+	{
+		QJsonObject reason;
+		reason.insert(QStringLiteral("code"), state.code);
+		reason.insert(QStringLiteral("message"), state.message);
+		result.insert(QStringLiteral("reason"), reason);
+	}
+	result.insert(QStringLiteral("audio"), audioReport());
+	return result;
+}
 
 QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
 {
@@ -58,184 +107,248 @@ QJsonObject noArgsSchema()
 	return schemaObject({});
 }
 
+QJsonObject booleanSchema()
+{
+	return QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}};
+}
+
+QJsonObject stringSchema()
+{
+	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
+}
+
+QJsonObject objectSchema()
+{
+	return QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}};
+}
+
+QJsonObject integerSchema()
+{
+	return QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}};
+}
+
+QJsonObject arraySchema()
+{
+	return QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}};
+}
+
+//! control.quit's handler. Split out of the registration below so the CCN
+//! ratchet measures the decision, not the declaration.
+ControlResult handleQuit(const QJsonObject& args)
+{
+	const bool save = args.value(QStringLiteral("save")).toBool(false);
+	Song* song = Engine::getSong();
+	const bool modified = song != nullptr && song->isModified();
+	const bool hasFile = song != nullptr && !song->projectFileName().isEmpty();
+
+	// Saving without a file name would open the interactive Save-As dialog - a
+	// hang in a headless run. Refuse, typed and actionable.
+	if (save && !hasFile)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("control.quit with save:true needs a project file; call project.save "
+				"first, or call control.quit with save:false to discard the unsaved changes"));
+	}
+
+	QJsonObject result;
+	result.insert(QStringLiteral("quitting"), true);
+	result.insert(QStringLiteral("save_requested"), save);
+	result.insert(QStringLiteral("project_modified"), modified);
+	result.insert(QStringLiteral("unsaved_changes"),
+		(!save && modified) ? QStringLiteral("discarded") : QStringLiteral("none"));
+
+	// The real fix for #626 is here: the GUI's own quit questions (the "project
+	// was modified" QMessageBox that MainWindow::closeEvent shows) are answered
+	// from this intent instead of by a dialog nobody can click, and a request
+	// that arrives before startup has finished is remembered and applied by
+	// main() once the engine is ready. There is no "did the event loop stop?"
+	// workaround any more; the bounded last-resort guard lives in
+	// ControlRegistry::scheduleQuit().
+	ControlRegistry::requestQuit(save ? ControlRegistry::QuitPromptAnswer::Save
+									  : ControlRegistry::QuitPromptAnswer::Discard);
+	return ControlResult::success(result);
+}
+
+void registerPingCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.ping");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("ping");
+	cmd.description = QStringLiteral("Liveness probe; also reports whether the engine is addressable "
+		"yet, and why not when it is not.");
+	cmd.requiresEngine = false;
+	cmd.argsSchema = noArgsSchema();
+	cmd.resultSchema = schemaObject({
+		{QStringLiteral("pong"), booleanSchema()},
+		{QStringLiteral("engine_ready"), booleanSchema()},
+		{QStringLiteral("version"), stringSchema()},
+		{QStringLiteral("proto"), integerSchema()},
+		// present only while engine_ready is false: {code, message}
+		{QStringLiteral("reason"), objectSchema()},
+		// always present: the device actually in use and whether it makes sound
+		{QStringLiteral("audio"), objectSchema()},
+	});
+	cmd.handler = [](const QJsonObject&) { return ControlResult::success(pingResult()); };
+	registry.registerCommand(cmd);
+}
+
+void registerVersionCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.version");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("version");
+	cmd.description = QStringLiteral("The product version string and the control protocol version.");
+	cmd.requiresEngine = false;
+	cmd.argsSchema = noArgsSchema();
+	cmd.resultSchema = schemaObject({
+		{QStringLiteral("version"), stringSchema()},
+		{QStringLiteral("proto"), integerSchema()},
+	});
+	cmd.handler = [](const QJsonObject&) {
+		QJsonObject result;
+		result.insert(QStringLiteral("version"), QString::fromUtf8(LMMS_VERSION));
+		result.insert(QStringLiteral("proto"), ControlProtocolVersion);
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerCommandsListCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.commands_list");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("commands_list");
+	cmd.description = QStringLiteral("Every registered command with its schemas and requires declaration.");
+	cmd.requiresEngine = false;
+	cmd.argsSchema = noArgsSchema();
+	cmd.resultSchema = schemaObject({
+		{QStringLiteral("commands"), arraySchema()},
+		{QStringLiteral("count"), integerSchema()},
+	});
+	cmd.handler = [&registry](const QJsonObject&) { return ControlResult::success(registry.describeAll()); };
+	registry.registerCommand(cmd);
+}
+
+void registerTransactionsCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.transactions");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("transactions");
+	cmd.description = QStringLiteral("The transactions recorded for mutating commands (SPEC A16 hook).");
+	cmd.requiresEngine = false;
+	cmd.argsSchema = noArgsSchema();
+	cmd.resultSchema = schemaObject({
+		{QStringLiteral("transactions"), arraySchema()},
+	});
+	cmd.handler = [&registry](const QJsonObject&) {
+		QJsonObject result;
+		result.insert(QStringLiteral("transactions"), registry.transactions());
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerUndoCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.undo");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("undo");
+	cmd.description = QStringLiteral("Undo the last journal checkpoint through the engine's ProjectJournal.");
+	cmd.argsSchema = noArgsSchema();
+	cmd.resultSchema = schemaObject({
+		{QStringLiteral("undone"), booleanSchema()},
+		{QStringLiteral("can_undo"), booleanSchema()},
+		{QStringLiteral("can_redo"), booleanSchema()},
+		{QStringLiteral("mechanism"), stringSchema()},
+	});
+	cmd.handler = [](const QJsonObject&) {
+		auto* journal = Engine::projectJournal();
+		bool undone = false;
+		if (journal != nullptr && journal->canUndo())
+		{
+			journal->undo();
+			undone = true;
+		}
+		QJsonObject result;
+		result.insert(QStringLiteral("undone"), undone);
+		result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
+		result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
+		result.insert(QStringLiteral("mechanism"), QStringLiteral("lmms::ProjectJournal"));
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerRedoCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.redo");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("redo");
+	cmd.description = QStringLiteral("Redo the last undone journal checkpoint.");
+	cmd.argsSchema = noArgsSchema();
+	cmd.resultSchema = schemaObject({
+		{QStringLiteral("redone"), booleanSchema()},
+		{QStringLiteral("can_undo"), booleanSchema()},
+		{QStringLiteral("can_redo"), booleanSchema()},
+	});
+	cmd.handler = [](const QJsonObject&) {
+		auto* journal = Engine::projectJournal();
+		bool redone = false;
+		if (journal != nullptr && journal->canRedo())
+		{
+			journal->redo();
+			redone = true;
+		}
+		QJsonObject result;
+		result.insert(QStringLiteral("redone"), redone);
+		result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
+		result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerQuitCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.quit");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("quit");
+	cmd.description = QStringLiteral("Ask the instance to run its normal shutdown (the reply is sent "
+		"first). Unsaved changes are discarded unless save is true.");
+	cmd.requiresEngine = false;
+	cmd.argsSchema = schemaObject({
+		// false (the default): discard unsaved changes. true: save the current
+		// project to its existing file first (refused when it has none).
+		{QStringLiteral("save"), booleanSchema()},
+	});
+	cmd.resultSchema = schemaObject({
+		{QStringLiteral("quitting"), booleanSchema()},
+		{QStringLiteral("save_requested"), booleanSchema()},
+		{QStringLiteral("project_modified"), booleanSchema()},
+		{QStringLiteral("unsaved_changes"), stringSchema()},
+	});
+	cmd.handler = handleQuit;
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerControlGroupCommands(ControlRegistry& registry)
 {
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("control.ping");
-		cmd.group = QStringLiteral("control");
-		cmd.verb = QStringLiteral("ping");
-		cmd.description = QStringLiteral("Liveness probe; also reports whether the engine is addressable yet.");
-		cmd.requiresEngine = false;
-		cmd.argsSchema = noArgsSchema();
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("pong"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-			{QStringLiteral("engine_ready"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-			{QStringLiteral("version"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
-			{QStringLiteral("proto"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		});
-		cmd.handler = [](const QJsonObject&) {
-			QJsonObject result;
-			result.insert(QStringLiteral("pong"), true);
-			result.insert(QStringLiteral("engine_ready"), ControlRegistry::isEngineReady());
-			result.insert(QStringLiteral("version"), QString::fromUtf8(LMMS_VERSION));
-			result.insert(QStringLiteral("proto"), ControlProtocolVersion);
-			return ControlResult::success(result);
-		};
-		registry.registerCommand(cmd);
-	}
-
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("control.version");
-		cmd.group = QStringLiteral("control");
-		cmd.verb = QStringLiteral("version");
-		cmd.description = QStringLiteral("The product version string and the control protocol version.");
-		cmd.requiresEngine = false;
-		cmd.argsSchema = noArgsSchema();
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("version"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
-			{QStringLiteral("proto"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		});
-		cmd.handler = [](const QJsonObject&) {
-			QJsonObject result;
-			result.insert(QStringLiteral("version"), QString::fromUtf8(LMMS_VERSION));
-			result.insert(QStringLiteral("proto"), ControlProtocolVersion);
-			return ControlResult::success(result);
-		};
-		registry.registerCommand(cmd);
-	}
-
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("control.commands_list");
-		cmd.group = QStringLiteral("control");
-		cmd.verb = QStringLiteral("commands_list");
-		cmd.description = QStringLiteral("Every registered command with its schemas and requires declaration.");
-		cmd.requiresEngine = false;
-		cmd.argsSchema = noArgsSchema();
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("commands"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		});
-		cmd.handler = [&registry](const QJsonObject&) { return ControlResult::success(registry.describeAll()); };
-		registry.registerCommand(cmd);
-	}
-
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("control.transactions");
-		cmd.group = QStringLiteral("control");
-		cmd.verb = QStringLiteral("transactions");
-		cmd.description = QStringLiteral("The transactions recorded for mutating commands (SPEC A16 hook).");
-		cmd.requiresEngine = false;
-		cmd.argsSchema = noArgsSchema();
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("transactions"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-		});
-		cmd.handler = [&registry](const QJsonObject&) {
-			QJsonObject result;
-			result.insert(QStringLiteral("transactions"), registry.transactions());
-			return ControlResult::success(result);
-		};
-		registry.registerCommand(cmd);
-	}
-
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("control.undo");
-		cmd.group = QStringLiteral("control");
-		cmd.verb = QStringLiteral("undo");
-		cmd.description = QStringLiteral("Undo the last journal checkpoint through the engine's ProjectJournal.");
-		cmd.argsSchema = noArgsSchema();
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("undone"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-			{QStringLiteral("can_undo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-			{QStringLiteral("can_redo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-			{QStringLiteral("mechanism"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
-		});
-		cmd.handler = [](const QJsonObject&) {
-			auto* journal = Engine::projectJournal();
-			bool undone = false;
-			if (journal != nullptr && journal->canUndo())
-			{
-				journal->undo();
-				undone = true;
-			}
-			QJsonObject result;
-			result.insert(QStringLiteral("undone"), undone);
-			result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
-			result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
-			result.insert(QStringLiteral("mechanism"), QStringLiteral("lmms::ProjectJournal"));
-			return ControlResult::success(result);
-		};
-		registry.registerCommand(cmd);
-	}
-
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("control.redo");
-		cmd.group = QStringLiteral("control");
-		cmd.verb = QStringLiteral("redo");
-		cmd.description = QStringLiteral("Redo the last undone journal checkpoint.");
-		cmd.argsSchema = noArgsSchema();
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("redone"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-			{QStringLiteral("can_undo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-			{QStringLiteral("can_redo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-		});
-		cmd.handler = [](const QJsonObject&) {
-			auto* journal = Engine::projectJournal();
-			bool redone = false;
-			if (journal != nullptr && journal->canRedo())
-			{
-				journal->redo();
-				redone = true;
-			}
-			QJsonObject result;
-			result.insert(QStringLiteral("redone"), redone);
-			result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
-			result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
-			return ControlResult::success(result);
-		};
-		registry.registerCommand(cmd);
-	}
-
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("control.quit");
-		cmd.group = QStringLiteral("control");
-		cmd.verb = QStringLiteral("quit");
-		cmd.description = QStringLiteral("Ask the instance to exit (the reply is sent first).");
-		cmd.requiresEngine = false;
-		cmd.argsSchema = noArgsSchema();
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("quitting"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-		});
-		cmd.handler = [](const QJsonObject&) {
-			QJsonObject result;
-			result.insert(QStringLiteral("quitting"), true);
-			// Ask the event loop to stop...
-			QTimer::singleShot(0, QCoreApplication::instance(), &QCoreApplication::quit);
-			// ...and verify with a watchdog. Measured in this tree: after a
-			// control.undo / control.redo the event loop no longer stops on
-			// QCoreApplication::quit() (the journal restore leaves the loop
-			// un-stoppable; see the lane report). The watchdog keeps the shutdown
-			// contract anyway: it unlinks the control socket and leaves the
-			// process with a success code.
-			QTimer::singleShot(2000, QCoreApplication::instance(), []() {
-				fprintf(stderr, "control.quit: the event loop did not stop; "
-					"unlinking the control socket and exiting\n");
-				fflush(stderr);
-				ControlRegistry::instance()->runShutdownHooks();
-				std::exit(EXIT_SUCCESS);
-			});
-			return ControlResult::success(result);
-		};
-		registry.registerCommand(cmd);
-	}
+	registerPingCommand(registry);
+	registerVersionCommand(registry);
+	registerCommandsListCommand(registry);
+	registerTransactionsCommand(registry);
+	registerUndoCommand(registry);
+	registerRedoCommand(registry);
+	registerQuitCommand(registry);
 }
 
 } // namespace lmms

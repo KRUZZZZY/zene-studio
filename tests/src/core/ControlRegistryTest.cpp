@@ -48,6 +48,14 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! Runs after every slot, so a slot that flips the readiness flag (and fails
+	//! before flipping it back) cannot poison the ones after it.
+	void cleanup()
+	{
+		ControlRegistry::setReady(true);
+		ControlRegistry::setQuitPromptAnswer(ControlRegistry::QuitPromptAnswer::Ask);
+	}
+
 	//! Every command of the first slice is registered under its stable group.verb id.
 	void requiredCommandsAreRegistered()
 	{
@@ -229,6 +237,60 @@ private slots:
 		const ControlResult result = registry->invoke(QStringLiteral("test.echo"), args);
 		QVERIFY(result.ok);
 		QCOMPARE(result.result.value(QStringLiteral("echoed")).toString(), QStringLiteral("hello"));
+	}
+
+	//! The quit prompt answer defaults to Ask: the GUI keeps asking a human, and
+	//! only a control-surface quit (control.quit) states an intent instead (#626).
+	void quitPromptAnswerDefaultsToAskingAHuman()
+	{
+		QCOMPARE(ControlRegistry::quitPromptAnswer(), ControlRegistry::QuitPromptAnswer::Ask);
+		QVERIFY(!ControlRegistry::quitPending());
+		ControlRegistry::setQuitPromptAnswer(ControlRegistry::QuitPromptAnswer::Discard);
+		QCOMPARE(ControlRegistry::quitPromptAnswer(), ControlRegistry::QuitPromptAnswer::Discard);
+		ControlRegistry::setQuitPromptAnswer(ControlRegistry::QuitPromptAnswer::Ask);
+	}
+
+	//! Task #626: a ping that is not ready says WHY. A bare engine_ready=false left
+	//! a client with nothing to act on, which is what made the defect expensive.
+	void notReadyPingCarriesAReason()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlRegistry::setReady(false);
+		const ControlResult result = registry->invoke(QStringLiteral("control.ping"));
+		QVERIFY(result.ok);
+		QCOMPARE(result.result.value(QStringLiteral("engine_ready")).toBool(), false);
+
+		const QJsonObject reason = result.result.value(QStringLiteral("reason")).toObject();
+		QVERIFY2(!reason.isEmpty(), "engine_ready=false with no reason object");
+		QVERIFY2(!reason.value(QStringLiteral("code")).toString().isEmpty(), "reason has no code");
+		QVERIFY2(!reason.value(QStringLiteral("message")).toString().isEmpty(), "reason has no message");
+
+		// The audio report is present whether or not the engine is ready, so a client
+		// can tell "still starting up" from "your sound card never opened".
+		const QJsonObject audio = result.result.value(QStringLiteral("audio")).toObject();
+		QVERIFY(!audio.isEmpty());
+		QVERIFY(audio.contains(QStringLiteral("state")));
+		QVERIFY(audio.contains(QStringLiteral("start_failed")));
+
+		ControlRegistry::setReady(true);
+		const ControlResult ready = registry->invoke(QStringLiteral("control.ping"));
+		QVERIFY(ready.ok);
+		QCOMPARE(ready.result.value(QStringLiteral("engine_ready")).toBool(), true);
+	}
+
+	//! ...and an engine command issued in that window repeats the same reason.
+	void engineCommandBeforeReadyCarriesTheReason()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlRegistry::setReady(false);
+		const ControlResult result = registry->invoke(QStringLiteral("mixer.get_state"));
+		QVERIFY(!result.ok);
+		QCOMPARE(result.errorKind, ControlErrorKind::Busy);
+		const QString message = result.errorMessage;
+		QVERIFY2(!message.isEmpty(), "the busy error carries no message");
+		// The message must name the machine-readable reason, not just say "busy".
+		QVERIFY2(message.contains(QStringLiteral("engine_starting")), qPrintable(message));
+		ControlRegistry::setReady(true);
 	}
 
 	//! Every mutating command leaves a transaction behind (SPEC A16 hook).

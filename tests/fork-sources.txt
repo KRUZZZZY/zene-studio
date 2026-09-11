@@ -125,3 +125,27 @@ src/core/ControlCommandsTransport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlServer.cpp
 tests/src/core/ControlRegistryTest.cpp
+
+# ---- Control-surface hardening: shutdown + readiness (task #626, lane
+#      post-alpha/control-hardening) ----
+# One place decides whether this run can show a dialog to a human. Both #626
+# reproductions were a modal dialog in a run that has no human: the "project was
+# modified, save it?" prompt during quit (a) and the audio-device-failure box
+# before app->exec() (b). MainWindow and the control registry ask the same
+# question, so they ask it in one place.
+include/HeadlessMode.h
+src/core/HeadlessMode.cpp
+# Split out of ControlRegistry.cpp by task #626 so no one file carries the whole
+# surface: the JSON-schema subset the registry validates with, and the session
+# state a client reads before it may use the command table (readiness report +
+# shutdown intent). Both were already fork-NEW inside ControlRegistry.cpp.
+src/core/ControlSchema.cpp
+src/core/ControlSession.cpp
+# The #626 tests: both shutdown reproductions, the documented readiness order, the
+# no-audio-device report, and the negative controls that prove each of those can
+# fail (a check that cannot fail is not evidence).
+tests/control_harness.py
+tests/control-shutdown.py
+tests/control-readiness.py
+tests/control-no-audio-device.py
+tests/control-negative-control.py

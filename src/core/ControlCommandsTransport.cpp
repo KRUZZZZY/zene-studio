@@ -96,6 +96,12 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("play");
 		cmd.description = QStringLiteral("Start playback of the current song.");
+		// Playback is audible output, so this one command refuses (typed,
+		// 'requires') when the configured audio device failed to open and the
+		// engine is running on the dummy device - the refusal names the backend.
+		// Everything else stays usable headless: the model, render and save
+		// (task #626).
+		cmd.requiresDecl = {QStringLiteral("device")};
 		cmd.argsSchema = schemaObject({});
 		cmd.resultSchema = schemaObject({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},

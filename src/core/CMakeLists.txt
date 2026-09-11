@@ -41,7 +41,9 @@ set(LMMS_SRCS
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsTransport.cpp
 	core/ControlRegistry.cpp
+	core/ControlSchema.cpp
 	core/ControlServer.cpp
+	core/ControlSession.cpp
 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).
 	${CMAKE_SOURCE_DIR}/include/ControlRegistry.h
 	${CMAKE_SOURCE_DIR}/include/ControlServer.h
@@ -54,6 +56,7 @@ set(LMMS_SRCS
 	core/Engine.cpp
 	core/EnvelopeAndLfoParameters.cpp
 	core/fft_helpers.cpp
+	core/HeadlessMode.cpp
 	core/Mixer.cpp
 	core/ImportFilter.cpp
 	core/InlineAutomation.cpp
