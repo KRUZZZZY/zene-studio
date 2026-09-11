@@ -39,9 +39,9 @@ True pitch-preserving stretch is a DSP project of its own and is **not** built �
 |---|---|
 | The two virtuals | `include/Clip.h:156`, `include/Clip.h:160` |
 | The base implementation (tick identity, for MIDI/automation) | `include/Clip.h:209`, `include/Clip.h:216` |
-| `SampleClip`'s declarations | `include/SampleClip.h:97-98` (unchanged — the freeze held) |
+| `SampleClip`'s declarations | `include/SampleClip.h:115-116` (line numbers moved; the signatures are unchanged — the freeze held) |
 | Today's linear implementation, now branched | `src/core/SampleClip.cpp:413`, `src/core/SampleClip.cpp:437` |
-| The authored window | `include/SampleWindow.h:47`, `include/SampleClip.h:128` (`m_window`) |
+| The authored window | `include/SampleWindow.h:47`, `include/SampleClip.h:185` (`m_window`) |
 | The two playback call sites | `src/tracks/SampleTrack.cpp:130-131` (unchanged by this lane) |
 | The handle that renders what the pass derived | `src/core/SamplePlayHandle.cpp:154` |
 
@@ -148,7 +148,7 @@ The two mapping functions are closed at the markers; only the rate is half-open.
 * `loadSettings` reads it **after** `len`/`off`/`srcin`/`srcout`/`autoresize`, i.e. after
   the window it clamps into and after `setSampleFile()` — which is the call that replaces
   the source the markers are anchored to. A clip that names a *different* source clears
-  its markers (`:170`); the copy constructor's `setSampleFile("")` deliberately does not,
+  its markers (`:171`); the copy constructor's `setSampleFile("")` deliberately does not,
   so `clone()` and `Clip::copyStateTo` carry the warp.
 * A hand-edited file with a non-monotonic marker list is refused with a project error, not
   loaded half-way.
@@ -316,31 +316,35 @@ $ bash tests/data/warp/render-proof.sh --base "$PWD/build/lmms-base" --warp "$PW
 render-proof verdict exit=0
 ```
 
-| comparison (best-aligned samples, floor measured in the same run) | differing | max │Δ│ |
-|---|---|---|
-| base binary vs itself, run 1 vs run 2 | 17 640 | 0.07 LSB |
-| warp binary vs itself, run 1 vs run 2 | 15 510 | 0.50 LSB |
-| **base vs warp, project with no warp** | **1 768** | **0.50 LSB** |
-| **base vs warp, project with no warp (run 2)** | **1 834** | **0.50 LSB** |
-| warp binary, warped project vs plain project (**sensitivity control**) | **87 334** | **0.98 FS** |
-| base binary, warped project vs plain project | 16 616 | 0.50 LSB |
+Run three times; every run held all nine verdicts. Two of the runs, side by side:
 
-Tolerance for this run: `max(2 × floor, floor + 512)` = 35 280 of 528 896 samples.
+| comparison (best-aligned samples, floor measured in the same run) | run A: differing / max │Δ│ | run B: differing / max │Δ│ |
+|---|---|---|
+| base binary vs itself, run 1 vs run 2 | 17 640 / 0.07 LSB | 17 638 / 0.50 LSB |
+| warp binary vs itself, run 1 vs run 2 | 15 510 / 0.50 LSB | 1 834 / 0.50 LSB |
+| **base vs warp, project with no warp** | **1 768 / 0.50 LSB** | **184 / 0.50 LSB** |
+| **base vs warp, project with no warp (run 2)** | **1 834 / 0.50 LSB** | **16 616 / 0.50 LSB** |
+| warp binary, warped project vs plain (**sensitivity control**) | **87 334 / 0.98 FS** | **87 996 / 0.99 FS** |
+| base binary, warped project vs plain | 16 616 / 0.50 LSB | 6 612 / 0.50 LSB |
+
+Tolerance for both runs: `max(2 × floor, floor + 512)` = 35 280 and 35 276 of 528 896 samples.
 
 Readings:
 
-* **The change is inside the noise floor and the sensitivity control is 2.5× outside it.**
-  A project with no warp differs from the base binary by **0.5 LSB peak on 0.33 % of
-  samples** — an order of magnitude *below* the 3.3 % the base binary differs from itself —
-  while the warped project differs from the unwarped one by **0.98 FS on 16.5 % of
-  samples**. The comparator is not blind.
-* **Byte-identity is reported when it happens and never asserted.** In the recorded run
-  above it did not hold; in the run before it, `base-plain-run1` and `warp-plain-run1` had
-  the *same sha256* (`20577555b866ecc4…`, 0 differing samples). Both are consistent with
-  the renderer's run-to-run jitter, which is why the floor is the test.
+* **The change is at or below the noise floor and the sensitivity control is 2.5× outside
+  it.** A project with no warp differs from the base binary by **0.5 LSB peak on 0.03–3.1 %
+  of samples** — at worst the same as the 3.3 % the base binary differs from *itself*, and
+  at best 96× smaller — while the warped project differs from the unwarped one by
+  **~1 FS on 16.6 % of samples**. The comparator is not blind, and the code path this lane
+  added is the only thing between those two columns.
+* **Byte-identity is reported when it happens and never asserted.** In neither of these two
+  runs did the cross-binary pair share a sha256; in the run before them,
+  `base-plain-run1` and `warp-plain-run1` had the *same* sha256
+  (`20577555b866ecc4…`, 0 differing samples). All three outcomes are the renderer's
+  run-to-run jitter, which is exactly why the floor — not a hash — is the test.
 * **The base binary cannot see `<warp>` at all** — it renders the warped project as the
-  plain one (16 616 differing, inside the floor; identical onset table). That is what
-  "markers were invisible before this task" means.
+  plain one (0.5 LSB peak, inside the floor; identical onset table). That is what "markers
+  were invisible before this task" means.
 
 ### 5.4 The render's real measurement (the acceptance item)
 
@@ -388,11 +392,47 @@ Both are machine limits, not code limits, and they are recorded rather than retr
 
 ### 5.6 Gates
 
-| gate | command | exit | note |
+All three, unpiped, on the committed tree (`217e78885`):
+
+| gate | command | exit | what it said |
 |---|---|---|---|
-| 9 fork-sources | `bash tests/fork-sources-gate.sh` | 0 | `include/WarpMarkers.h`, the two test files and the proof script are registered |
-| 6 no upstream regression | `bash tests/no-upstream-regression-gate.sh` | 0 | `include/SampleClip.h`, `include/SamplePlayHandle.h`, `src/core/SampleClip.cpp`, `src/core/SamplePlayHandle.cpp` — reasons extended in `tests/upstream-modifications.txt` |
-| all | `bash tests/run-all-gates.sh` | 3 | 3 = PASS-WITH-SKIPS (coverage and mutation are opt-in) |
+| 9 fork-sources | `bash tests/fork-sources-gate.sh` | **1** | **all four of this lane's new sources are `fork-sources (registered)`**; the violation is 3 files from another lane: `tests/src/core/LufsMeterTest.cpp`, `MidiLearnTest.cpp`, `SessionModelTest.cpp` |
+| 6 upstream regression | `bash tests/no-upstream-regression-gate.sh` | **1** | **all four upstream files this lane changed print `declared divergence -> …#597 warp: …`**; the violations are 4 files from the MIDI-learn merge: `include/MainWindow.h`, `include/MidiController.h`, `src/core/midi/MidiAlsaSeq.cpp`, `src/core/midi/MidiClient.cpp` |
+| all gates | `bash tests/run-all-gates.sh` | **1** | `RESULT: FAIL` — see the table below |
+
+```
+1      ctest                    PASS
+2      coverage                 SKIP
+3      no-tautology             PASS
+4      complexity               PASS
+5      mutation                 PASS        kill score 88.5% >= 80%
+6      upstream-regression      FAIL        pre-existing
+7      file-length              FAIL        pre-existing
+8      duplication              PASS        0.88% duplicated lines (budget 5%)
+9      fork-sources             FAIL        pre-existing
+```
+
+**The brief expected 0 / 0 / 3. The measured answer is 1 / 1 / 1**, and the reason is
+three pre-existing reds, not this change:
+
+* **6 and 9** are the violations the Slice 0 lane reported as inherited from the MIDI-learn
+  merge (`e2689e62b`). Every file *this* lane added is registered and every file it changed
+  is declared; the seven offending paths are all present at the base commit `903d70916`
+  and untouched here (`git cat-file -e 903d70916:<path>` for each). Registering another
+  lane's test files is not a no-op: `fork-sources.txt` enrolment is what puts a file under
+  the coverage, complexity, file-length and duplication ratchets, and that is that lane's
+  decision — the same call the Slice 0 and stem-export lanes made.
+* **7 is new information.** The file-length ratchet is red **at the base commit**:
+  `tests/src/tracks/SampleClipWindowTest.cpp` is **511 lines**, it is 511 lines at
+  `903d70916`, this lane never touches it (`git diff 903d70916 HEAD --` on that path is
+  empty), and it is in neither `file-length-baseline.tsv` nor `file-length-baseline-all.tsv`.
+  **The Slice 0 report's "gate 7 PASS" does not reproduce** — that lane's own new test file
+  is the regression. It is reported here rather than silently absorbed: trimming another
+  lane's file would not change this run's verdict, because 6 and 9 stay red regardless.
+  This lane's own four new files are 467, 258, 268 and 381 lines, all under the 500 limit.
+
+Exit 3 (PASS-WITH-SKIPS) is unreachable on this base for that reason: only gate 2 is a
+skip, and a skip plus a failure is a failure.
 
 ---
 
@@ -441,10 +481,11 @@ JOBS=2 CTEST_JOBS=1 bash tools/local-ci.sh --build-dir build --jobs 2   # config
 cd build/tests && ctest -R 'Warp|SampleClip' --output-on-failure
 QT_QPA_PLATFORM=offscreen ./SampleClipWarpTest -v1
 
-# the render proof needs a binary from BEFORE this change:
+# the render proof needs a binary from BEFORE this change (the parent commit):
+BASE_COMMIT=903d70916     # post-alpha/clip-slice0
 cp build/lmms build/lmms-warp
-git checkout HEAD~1 -- include/SampleClip.h include/SamplePlayHandle.h \
-                       src/core/SampleClip.cpp src/core/SamplePlayHandle.cpp
+git checkout "$BASE_COMMIT" -- include/SampleClip.h include/SamplePlayHandle.h \
+                               src/core/SampleClip.cpp src/core/SamplePlayHandle.cpp
 cmake --build build -j2 --target lmms && cp build/lmms build/lmms-base
 git checkout HEAD -- include/SampleClip.h include/SamplePlayHandle.h \
                      src/core/SampleClip.cpp src/core/SamplePlayHandle.cpp
