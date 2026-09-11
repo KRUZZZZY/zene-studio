@@ -49,7 +49,7 @@ what happens to it when the sandbox rules change (today `openSandbox()` at
 `ScriptEngine::runFile()` (`src/core/ScriptEngine.cpp:291`) and
 `runString()`/`runOnWorker()` (`:337`) are the entire entry-point set. Nothing in
 the audio engine, the mixer or the song's transport calls into the script engine:
-`ScriptEngine::audioThreadTick()` (`:578`, declared `include/ScriptEngine.h:168`)
+`ScriptEngine::audioThreadTick()` (`:571`, declared `include/ScriptEngine.h:168`)
 **has no caller anywhere in the tree** — verified with
 `grep -rn audioThreadTick src include` — and the only production caller of
 `processCommands()` is the headless `--run-script` path
@@ -68,7 +68,7 @@ decision.
 Every engine change a script can request is a `ScriptCommand`
 (`include/ScriptEngine.h:62-92`, enum at `:64`), queued on a bounded SPSC ring
 (`ScriptCommandQueueCapacity = 1024`, `:51`) and applied only by
-`ScriptEngine::applyCommand()` (`src/core/ScriptEngine.cpp:445`) on the apply
+`ScriptEngine::applyCommand()` (`src/core/ScriptEngine.cpp:438`) on the apply
 side. `AddNote`, `SetModelValue`, `AddInstrumentTrack` and `AddCheckPoint`
 already cover what a note-generating device would emit, and
 `LuaPatternClip::addNoteAt()` (`src/core/ScriptBindings.cpp:835`) is the binding
@@ -103,7 +103,8 @@ recommendation below is a note generator and not an effect.
    `ScriptBindingsTest::trackWrapper`), never throw from C++ and never no-op
    silently.
 
-**Touch points, as of this branch:**
+**Touch points, as of this branch** (line numbers at HEAD; the symbols are the
+stable references):
 
 | Concern | File:line |
 |---|---|
@@ -112,7 +113,7 @@ recommendation below is a note generator and not an effect.
 | Binding registration to reuse | `src/core/ScriptBindings.cpp:276` |
 | View pools (per-run recycling — a device state must NOT use these) | `src/core/ScriptBindings.cpp:218` (`beginRun`) |
 | Command enum / queue | `include/ScriptEngine.h:51-92` |
-| Apply side | `src/core/ScriptEngine.cpp:445` (`applyCommand`) |
+| Apply side | `src/core/ScriptEngine.cpp:438` (`applyCommand`) |
 | Proposed trigger entry point | new, modelled on `src/core/ScriptEngine.cpp:337` (`runOnWorker`) |
 | Note output already available | `src/core/ScriptBindings.cpp:835` (`LuaPatternClip::addNoteAt`) |
 | Version gate the device package inherits | `src/core/ScriptEngine.cpp:291` (`runFile`) |

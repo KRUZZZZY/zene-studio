@@ -15,6 +15,9 @@
 
 ## 1. What existed before this work (established before designing anything)
 
+*(Cited line numbers are as of this branch's HEAD; the symbol name is the stable
+reference if the tree moves.)*
+
 The Lua API was real and working: Lua 5.4 vendored, LuaBridge 2.10, a sandbox, a
 bounded command queue and an instruction budget, four example scripts, two test
 binaries.
@@ -22,8 +25,8 @@ binaries.
 | Piece | Where | What it was |
 |---|---|---|
 | Engine + worker thread | `include/ScriptEngine.h:140-262`, `src/core/ScriptEngine.cpp:85-132` | A `ScriptEngine` singleton runs a script on a dedicated worker thread; a **fresh `lua_State` per invocation** (`src/core/ScriptEngine.cpp:96` `luaL_newstate`, `:132` `lua_close`), so nothing survives a run |
-| Instruction budget | `src/core/ScriptEngine.cpp:111-132` (`instructionHook`), `:96-110`; header default `include/ScriptEngine.h:245` | Count hook, default 5,000,000 instructions; a script may only *lower* its budget (`restrictedSetHook`) |
-| Command enum + queue | `include/ScriptEngine.h:62-92` (`ScriptCommand`), `:51` (capacity 1024), `src/core/ScriptEngine.cpp:445` (`applyCommand`) | The single engine-mutation path; failed pushes are dropped and counted |
+| Instruction budget | `src/core/ScriptEngine.cpp:111-132` (`instructionHook`), `:96-110`; header default `include/ScriptEngine.h:254` | Count hook, default 5,000,000 instructions; a script may only *lower* its budget (`restrictedSetHook`) |
+| Command enum + queue | `include/ScriptEngine.h:62-92` (`ScriptCommand`), `:51` (capacity 1024), `src/core/ScriptEngine.cpp:438` (`applyCommand`) | The single engine-mutation path; failed pushes are dropped and counted |
 | Bindings surface | `include/ScriptBindings.h` (406 lines), `src/core/ScriptBindings.cpp:276` (`registerAll`) | 14 Lua classes + the `lmms` namespace |
 | Tests (the contract that must not break) | `tests/src/core/ScriptEngineTest.cpp` (592), `tests/src/core/ScriptBindingsTest.cpp` (741) | Header gate, sandbox, budget, file sandbox, apply-side threading, queue overflow, all bindings |
 | Spec | `specs/SPEC-lua-api-v0.md` | §6 promises the `--! lmms-api` header gate; §1 excludes audio-thread scripting; §11 defers idle-triggered scripts (OQ-1) |
@@ -37,14 +40,14 @@ binaries.
    two, and neither came from the build. A policy could not be written honestly
    against a version that has three spellings.
 2. **No console.** `print()` and `lmms.log():*` went to `logMessage()`
-   (`src/core/ScriptEngine.cpp:694`), which appends to `m_logMessages` and
+   (`src/core/ScriptEngine.cpp:687`), which appends to `m_logMessages` and
    `emit logged`. The buffer is only read by `takeLogMessages()`
    — called by the harness and by `MainWindow::runScript()`, which printed
    *after* the script had finished. Nothing streamed, and a headless run only
    saw output because `main.cpp` printed the buffer at the end.
 3. **No way to define a device**, and (as shown in the design doc) no honest
    small way to add one: there is no persistent Lua state and no trigger —
-   `ScriptEngine::audioThreadTick()` (`src/core/ScriptEngine.cpp:578`) **has no
+   `ScriptEngine::audioThreadTick()` (`src/core/ScriptEngine.cpp:571`) **has no
    caller in the tree** (`grep -rn audioThreadTick src include` → definition and
    declaration only), and the only production caller of `processCommands()` is
    the headless action (`src/core/main.cpp:799`).
@@ -307,9 +310,10 @@ the audio thread's only touch point is still the lock-free
 `src/core/ScriptEngine.cpp`, `src/core/ScriptBindings.cpp`,
 `src/core/main.cpp` (declared in the divergence ledger),
 `src/gui/MainWindow.cpp` (ledger reason extended), `tests/CMakeLists.txt`
-(new test + version defines), `tests/fork-sources.txt` (9 new sources),
+(new test + version defines), `tests/fork-sources.txt` (8 new sources),
 `tests/upstream-modifications.txt`, `.gitignore` (`/logs/`).
 
-All nine new sources are registered in `tests/fork-sources.txt` and the new test
-in `tests/CMakeLists.txt`; both inherited-file edits carry a ledger entry with a
-reason.
+All eight new sources (four headers, four translation units) are registered in
+`tests/fork-sources.txt` and the new test in `tests/CMakeLists.txt`; both
+inherited-file edits carry a ledger entry with a reason, and every new entry
+point states the thread it runs on (§5).
