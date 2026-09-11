@@ -79,91 +79,107 @@ ControlResult ControlResult::failure(ControlErrorKind kind, const QString& messa
 // properties, additionalProperties, minimum, maximum, enum)
 // ---------------------------------------------------------------------------
 
-static QString validateValue(const QJsonValue& value, const QJsonObject& spec, const QString& path)
+static bool typeMatches(const QJsonValue& value, const QString& type)
+{
+	if (type == QLatin1String("string")) { return value.isString(); }
+	if (type == QLatin1String("number")) { return value.isDouble(); }
+	if (type == QLatin1String("integer"))
+	{
+		return value.isDouble() && std::floor(value.toDouble()) == value.toDouble();
+	}
+	if (type == QLatin1String("boolean")) { return value.isBool(); }
+	if (type == QLatin1String("object")) { return value.isObject(); }
+	if (type == QLatin1String("array")) { return value.isArray(); }
+	return true; // an unknown type never rejects a value
+}
+
+static QString pathLabel(const QString& path)
+{
+	return path.isEmpty() ? QStringLiteral("args") : path;
+}
+
+static QString checkType(const QJsonValue& value, const QJsonObject& spec, const QString& path)
 {
 	const QString type = spec.value(QStringLiteral("type")).toString();
-	if (!type.isEmpty())
-	{
-		bool typeOk = true;
-		if (type == QLatin1String("string")) { typeOk = value.isString(); }
-		else if (type == QLatin1String("number")) { typeOk = value.isDouble(); }
-		else if (type == QLatin1String("integer"))
-		{
-			typeOk = value.isDouble() && std::floor(value.toDouble()) == value.toDouble();
-		}
-		else if (type == QLatin1String("boolean")) { typeOk = value.isBool(); }
-		else if (type == QLatin1String("object")) { typeOk = value.isObject(); }
-		else if (type == QLatin1String("array")) { typeOk = value.isArray(); }
-		if (!typeOk)
-		{
-			return QStringLiteral("%1: expected %2").arg(path.isEmpty() ? QStringLiteral("args") : path, type);
-		}
-	}
+	if (type.isEmpty() || typeMatches(value, type)) { return QString(); }
+	return QStringLiteral("%1: expected %2").arg(pathLabel(path), type);
+}
 
-	if (value.isDouble())
+static QString checkRange(const QJsonValue& value, const QJsonObject& spec, const QString& path)
+{
+	if (!value.isDouble()) { return QString(); }
+	const QJsonValue minimum = spec.value(QStringLiteral("minimum"));
+	if (minimum.isDouble() && value.toDouble() < minimum.toDouble())
 	{
-		if (spec.contains(QStringLiteral("minimum")) &&
-			value.toDouble() < spec.value(QStringLiteral("minimum")).toDouble())
-		{
-			return QStringLiteral("%1: %2 is below the minimum %3")
-				.arg(path, QString::number(value.toDouble()),
-					QString::number(spec.value(QStringLiteral("minimum")).toDouble()));
-		}
-		if (spec.contains(QStringLiteral("maximum")) &&
-			value.toDouble() > spec.value(QStringLiteral("maximum")).toDouble())
-		{
-			return QStringLiteral("%1: %2 is above the maximum %3")
-				.arg(path, QString::number(value.toDouble()),
-					QString::number(spec.value(QStringLiteral("maximum")).toDouble()));
-		}
+		return QStringLiteral("%1: %2 is below the minimum %3")
+			.arg(pathLabel(path), QString::number(value.toDouble()), QString::number(minimum.toDouble()));
 	}
-
-	if (spec.contains(QStringLiteral("enum")))
+	const QJsonValue maximum = spec.value(QStringLiteral("maximum"));
+	if (maximum.isDouble() && value.toDouble() > maximum.toDouble())
 	{
-		bool found = false;
-		for (const QJsonValue& allowed : spec.value(QStringLiteral("enum")).toArray())
-		{
-			if (allowed == value) { found = true; break; }
-		}
-		if (!found)
-		{
-			return QStringLiteral("%1: value not in the allowed set").arg(path);
-		}
+		return QStringLiteral("%1: %2 is above the maximum %3")
+			.arg(pathLabel(path), QString::number(value.toDouble()), QString::number(maximum.toDouble()));
 	}
-
-	if (value.isObject() && spec.contains(QStringLiteral("properties")))
-	{
-		const QJsonObject object = value.toObject();
-		const QJsonObject properties = spec.value(QStringLiteral("properties")).toObject();
-		const QJsonArray required = spec.value(QStringLiteral("required")).toArray();
-		for (const QJsonValue& name : required)
-		{
-			if (!object.contains(name.toString()))
-			{
-				return QStringLiteral("%1: missing required property '%2'")
-					.arg(path.isEmpty() ? QStringLiteral("args") : path, name.toString());
-			}
-		}
-		const bool noAdditional = spec.contains(QStringLiteral("additionalProperties")) &&
-			!spec.value(QStringLiteral("additionalProperties")).toBool(true);
-		for (auto it = object.begin(); it != object.end(); ++it)
-		{
-			if (!properties.contains(it.key()))
-			{
-				if (noAdditional)
-				{
-					return QStringLiteral("%1: unexpected property '%2'")
-						.arg(path.isEmpty() ? QStringLiteral("args") : path, it.key());
-				}
-				continue;
-			}
-			const QString subPath = path.isEmpty() ? it.key() : path + QLatin1Char('.') + it.key();
-			const QString reason = validateValue(it.value(), properties.value(it.key()).toObject(), subPath);
-			if (!reason.isEmpty()) { return reason; }
-		}
-	}
-
 	return QString();
+}
+
+static QString checkEnum(const QJsonValue& value, const QJsonObject& spec, const QString& path)
+{
+	if (!spec.contains(QStringLiteral("enum"))) { return QString(); }
+	for (const QJsonValue& allowed : spec.value(QStringLiteral("enum")).toArray())
+	{
+		if (allowed == value) { return QString(); }
+	}
+	return QStringLiteral("%1: value not in the allowed set").arg(pathLabel(path));
+}
+
+static QString validateValue(const QJsonValue& value, const QJsonObject& spec, const QString& path);
+
+//! Validates the properties present in \p object; empty string means OK.
+static QString checkProperties(const QJsonObject& object, const QJsonObject& properties,
+	bool noAdditional, const QString& path)
+{
+	for (auto it = object.begin(); it != object.end(); ++it)
+	{
+		if (!properties.contains(it.key()))
+		{
+			if (noAdditional)
+			{
+				return QStringLiteral("%1: unexpected property '%2'").arg(pathLabel(path), it.key());
+			}
+			continue;
+		}
+		const QString subPath = path.isEmpty() ? it.key() : path + QLatin1Char('.') + it.key();
+		const QString reason = validateValue(it.value(), properties.value(it.key()).toObject(), subPath);
+		if (!reason.isEmpty()) { return reason; }
+	}
+	return QString();
+}
+
+static QString checkObjectMembers(const QJsonValue& value, const QJsonObject& spec, const QString& path)
+{
+	if (!value.isObject() || !spec.contains(QStringLiteral("properties"))) { return QString(); }
+	const QJsonObject object = value.toObject();
+	for (const QJsonValue& name : spec.value(QStringLiteral("required")).toArray())
+	{
+		if (!object.contains(name.toString()))
+		{
+			return QStringLiteral("%1: missing required property '%2'")
+				.arg(pathLabel(path), name.toString());
+		}
+	}
+	const bool noAdditional = spec.contains(QStringLiteral("additionalProperties")) &&
+		!spec.value(QStringLiteral("additionalProperties")).toBool(true);
+	return checkProperties(object, spec.value(QStringLiteral("properties")).toObject(), noAdditional, path);
+}
+
+static QString validateValue(const QJsonValue& value, const QJsonObject& spec, const QString& path)
+{
+	QString reason = checkType(value, spec, path);
+	if (reason.isEmpty()) { reason = checkRange(value, spec, path); }
+	if (reason.isEmpty()) { reason = checkEnum(value, spec, path); }
+	if (reason.isEmpty()) { reason = checkObjectMembers(value, spec, path); }
+	return reason;
 }
 
 QString ControlRegistry::validateArgs(const QJsonObject& schema, const QJsonObject& args)

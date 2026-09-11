@@ -75,6 +75,31 @@ QByteArray errorLine(int id, ControlErrorKind kind, const QString& message)
 	return responseLine(id, ControlResult::failure(kind, message));
 }
 
+//! True when the request speaks this protocol; otherwise \p reply is filled.
+bool protoMatches(const QJsonObject& request, int id, QByteArray* reply)
+{
+	if (!request.contains(QStringLiteral("proto"))) { return true; }
+	if (request.value(QStringLiteral("proto")).toInt(-1) == ControlProtocolVersion) { return true; }
+	*reply = errorLine(id, ControlErrorKind::Refused,
+		QStringLiteral("unsupported protocol version; this instance speaks proto %1")
+			.arg(ControlProtocolVersion));
+	return false;
+}
+
+//! True when the request carries an object (or no) 'args'; otherwise \p reply is filled.
+bool readArgs(const QJsonObject& request, QJsonObject* args, int id, QByteArray* reply)
+{
+	if (!request.contains(QStringLiteral("args"))) { return true; }
+	if (!request.value(QStringLiteral("args")).isObject())
+	{
+		*reply = errorLine(id, ControlErrorKind::InvalidArgs,
+			QStringLiteral("request 'args' must be an object"));
+		return false;
+	}
+	*args = request.value(QStringLiteral("args")).toObject();
+	return true;
+}
+
 } // namespace
 
 ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
@@ -87,6 +112,70 @@ ControlServer::~ControlServer()
 {
 	close();
 }
+
+#if defined(Q_OS_UNIX)
+namespace
+{
+
+//! socket() + bind() for an absolute path, or -1 with \p error set.
+int openBoundSocket(const QByteArray& nativePath, QString* error)
+{
+	sockaddr_un address;
+	std::memset(&address, 0, sizeof(address));
+	address.sun_family = AF_UNIX;
+	if (nativePath.size() >= static_cast<int>(sizeof(address.sun_path)))
+	{
+		if (error) { *error = QStringLiteral("the control socket path is too long"); }
+		return -1;
+	}
+	std::memcpy(address.sun_path, nativePath.constData(), nativePath.size());
+
+	const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0)
+	{
+		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
+		return -1;
+	}
+	::fcntl(fd, F_SETFD, FD_CLOEXEC);
+
+	// A stale socket file left by a crashed instance would make bind() fail.
+	::unlink(address.sun_path);
+	if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
+	{
+		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
+		::close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+//! Pin the socket file to mode 0600 (verified) and listen, non-blocking.
+bool pinAndListen(int fd, const char* nativePath, QString* error)
+{
+	if (::chmod(nativePath, S_IRUSR | S_IWUSR) != 0)
+	{
+		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
+		return false;
+	}
+	struct stat info;
+	if (::stat(nativePath, &info) != 0 || (info.st_mode & 0777) != (S_IRUSR | S_IWUSR))
+	{
+		if (error) { *error = QStringLiteral("could not pin the socket file to mode 0600"); }
+		return false;
+	}
+	if (::listen(fd, 16) != 0)
+	{
+		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
+		return false;
+	}
+	// The listener must not block: one QSocketNotifier activation drains every
+	// pending connection, and a blocking accept() there would freeze the UI thread.
+	::fcntl(fd, F_SETFL, O_NONBLOCK);
+	return true;
+}
+
+} // namespace
+#endif
 
 bool ControlServer::listen(const QString& path, QString* error)
 {
@@ -110,62 +199,14 @@ bool ControlServer::listen(const QString& path, QString* error)
 	return false;
 #else
 	const QByteArray nativePath = path.toLocal8Bit();
-	sockaddr_un address;
-	std::memset(&address, 0, sizeof(address));
-	address.sun_family = AF_UNIX;
-	if (nativePath.size() >= static_cast<int>(sizeof(address.sun_path)))
+	const int fd = openBoundSocket(nativePath, error);
+	if (fd < 0) { return false; }
+	if (!pinAndListen(fd, nativePath.constData(), error))
 	{
-		if (error) { *error = QStringLiteral("the control socket path is too long"); }
-		return false;
-	}
-	std::memcpy(address.sun_path, nativePath.constData(), nativePath.size());
-
-	const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
-	if (fd < 0)
-	{
-		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
-		return false;
-	}
-	::fcntl(fd, F_SETFD, FD_CLOEXEC);
-
-	// A stale socket file left by a crashed instance would make bind() fail.
-	::unlink(address.sun_path);
-
-	if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
-	{
-		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
 		::close(fd);
+		::unlink(nativePath.constData());
 		return false;
 	}
-
-	// Mode 0600, verified: never serve a socket another user could connect to.
-	if (::chmod(address.sun_path, S_IRUSR | S_IWUSR) != 0)
-	{
-		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
-		::close(fd);
-		::unlink(address.sun_path);
-		return false;
-	}
-	struct stat info;
-	if (::stat(address.sun_path, &info) != 0 || (info.st_mode & 0777) != (S_IRUSR | S_IWUSR))
-	{
-		if (error) { *error = QStringLiteral("could not pin the socket file to mode 0600"); }
-		::close(fd);
-		::unlink(address.sun_path);
-		return false;
-	}
-
-	if (::listen(fd, 16) != 0)
-	{
-		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
-		::close(fd);
-		::unlink(address.sun_path);
-		return false;
-	}
-
-	// The listener must not block: one QSocketNotifier activation drains every
-	// pending connection, and a blocking accept() there would freeze the UI thread.
-	::fcntl(fd, F_SETFL, O_NONBLOCK);
 
 	m_listenFd = fd;
 	m_path = path;
@@ -335,13 +376,8 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 	}
 	const int id = static_cast<int>(idValue.toDouble());
 
-	if (request.contains(QStringLiteral("proto")) &&
-		request.value(QStringLiteral("proto")).toInt(-1) != ControlProtocolVersion)
-	{
-		return errorLine(id, ControlErrorKind::Refused,
-			QStringLiteral("unsupported protocol version; this instance speaks proto %1")
-				.arg(ControlProtocolVersion));
-	}
+	QByteArray reply;
+	if (!protoMatches(request, id, &reply)) { return reply; }
 
 	const QJsonValue cmdValue = request.value(QStringLiteral("cmd"));
 	if (!cmdValue.isString() || cmdValue.toString().isEmpty())
@@ -351,18 +387,10 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 	}
 
 	QJsonObject args;
-	if (request.contains(QStringLiteral("args")))
-	{
-		if (!request.value(QStringLiteral("args")).isObject())
-		{
-			return errorLine(id, ControlErrorKind::InvalidArgs,
-				QStringLiteral("request 'args' must be an object"));
-		}
-		args = request.value(QStringLiteral("args")).toObject();
-	}
+	if (!readArgs(request, &args, id, &reply)) { return reply; }
 
 	const ControlResult result = m_registry->invoke(cmdValue.toString(), args);
-	const QByteArray reply = responseLine(id, result);
+	reply = responseLine(id, result);
 	emit exchanged(trimmed, reply);
 	return reply;
 }
