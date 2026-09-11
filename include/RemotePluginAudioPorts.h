@@ -154,8 +154,12 @@ protected:
 		SampleT* ptr = m_buffers->updateAudioBuffer(channelsIn, channelsOut, frames);
 		if (!ptr)
 		{
-			// Error occurred
+			// Error occurred. Reset m_frames as well: initialized() is
+			// `m_frames != 0`, so a stale frame count would keep reporting the
+			// buffers as ACTIVE while m_insOuts is null, and the router's send
+			// would then dereference the null pointer table.
 			m_insOuts = nullptr;
+			m_frames = 0;
 			return;
 		}
 

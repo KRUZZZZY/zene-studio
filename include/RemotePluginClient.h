@@ -343,8 +343,25 @@ void RemotePluginClient::doProcessing()
 	{
 		// The host allocated (inputs + outputs) channel-major planar buffers of
 		// `m_bufferSize` floats each; skip the input planes when there are none.
+		//
+		// The counts are the ones the host sized the block for, so they and the
+		// mapping agree - unless a channel-count change is in flight (reported but
+		// not yet applied, or refused because it came from the processing thread):
+		// processing would then read or write past the end of the shared block.
+		// Compare against the block's own size - read from the in-band header, so
+		// it is authoritative - and refuse rather than overrun. One wide multiply
+		// and a compare per period; nothing per sample.
+		const auto inputOffset = static_cast<std::size_t>(m_inputCount) * m_bufferSize;
+		if (inputOffset + static_cast<std::size_t>(m_outputCount) * m_bufferSize
+				> m_audioBuffer.size())
+		{
+			debugMessage( "doProcessing(): channel counts do not fit the shared "
+				"audio buffer, refusing to process\n" );
+			return;
+		}
+
 		process(m_inputCount > 0 ? m_audioBuffer.get() : nullptr,
-			m_audioBuffer.get() + m_inputCount * m_bufferSize);
+			m_audioBuffer.get() + inputOffset);
 	}
 	else
 	{

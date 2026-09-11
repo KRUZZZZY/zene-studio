@@ -31,6 +31,12 @@
 
 #include <algorithm>
 
+#include <QDir>
+#include <QFile>
+#include <QList>
+#include <QStandardPaths>
+#include <QTemporaryDir>
+
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
 #include "Engine.h"
@@ -91,6 +97,122 @@ constexpr auto planeOffset(ch_cnt_t channel, f_cnt_t frames) -> std::ptrdiff_t
 {
 	return static_cast<std::ptrdiff_t>(channel) * frames;
 }
+
+#ifndef SYNC_WITH_SHM_FIFO
+/*
+ * A stand-in for a remote plugin *client*, for the two failures that can only be
+ * reached with a live client on the other end of the socket: the host's
+ * `process()` refuses to run without one, and every wait in it is a wait on the
+ * client. The peer is a python3 script because the client half of this protocol
+ * has no host-buildable implementation: `RemoteVstPlugin`'s process() needs a
+ * real VST library, and the Windows client binaries are CI-only.
+ *
+ * `RemotePlugin::init()` starts it with the socket path as argv[1]; the test
+ * passes the log path and the behaviour mode as extra arguments.
+ * Framing is `RemotePluginBase::sendMessage`: int32 message id, int32 argument
+ * count, then that many int32-length-prefixed strings.
+ *
+ * Modes:
+ *   "reply"        - answer every period request with IdProcessingDone
+ *   "silent"       - read and log everything, never answer
+ *   "die-on-start" - exit without answering on the first period request, i.e.
+ *                    the client dies mid-period
+ */
+auto writeTestPeer(const QString& dir, const QString& python) -> QString
+{
+	const auto scriptPath = QDir{dir}.filePath(QStringLiteral("test-peer.py"));
+	QFile script{scriptPath};
+	if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	{
+		return {};
+	}
+
+	QByteArray contents = "#!" + python.toUtf8() + "\n";
+	contents += R"PY(
+import socket, struct, sys, time
+
+# RemoteMessageIDs (RemotePluginBase.h)
+ID_QUIT = 3
+ID_START_PROCESSING = 9
+ID_PROCESSING_DONE = 10
+
+sock_path, log_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+
+client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+client.connect(sock_path)
+log = open(log_path, "a", buffering=1)
+
+def read_exact(size):
+    data = b""
+    while len(data) < size:
+        chunk = client.recv(size - len(data))
+        if not chunk:
+            return None
+        data += chunk
+    return data
+
+def read_int():
+    data = read_exact(4)
+    return None if data is None else struct.unpack("<i", data)[0]
+
+while True:
+    message_id = read_int()
+    if message_id is None:
+        break
+    arguments = read_int()
+    if arguments is None:
+        break
+    for _ in range(arguments):
+        length = read_int()
+        if length is None:
+            break
+        if length > 0 and read_exact(length) is None:
+            break
+    log.write(str(message_id) + "\n")
+    if message_id == ID_QUIT:
+        break
+    if message_id == ID_START_PROCESSING and mode == "die-on-start":
+        time.sleep(0.25)  # the host's wait must observe the death, not a reply
+        break
+    if message_id == ID_START_PROCESSING and mode == "reply":
+        client.sendall(struct.pack("<ii", ID_PROCESSING_DONE, 0))
+)PY";
+
+	if (script.write(contents) != contents.size())
+	{
+		return {};
+	}
+	script.close();
+
+	if (!QFile::setPermissions(scriptPath,
+			QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+				| QFileDevice::ReadGroup | QFileDevice::ExeGroup
+				| QFileDevice::ReadOther | QFileDevice::ExeOther))
+	{
+		return {};
+	}
+
+	return scriptPath;
+}
+
+//! Message ids the test peer logged, in arrival order
+auto peerLogIds(const QString& logPath) -> QList<int>
+{
+	QList<int> ids;
+	QFile log{logPath};
+	if (!log.open(QIODevice::ReadOnly))
+	{
+		return ids;
+	}
+	const auto lines = QString::fromUtf8(log.readAll()).split(QLatin1Char('\n'),
+		Qt::SkipEmptyParts);
+	for (const auto& line : lines)
+	{
+		ids.push_back(line.trimmed().toInt());
+	}
+	return ids;
+}
+#endif // SYNC_WITH_SHM_FIFO
 
 } // namespace
 
@@ -352,6 +474,190 @@ private slots:
 			QCOMPARE(outBefore.sample(0, frame), 0.0f);
 		}
 	}
+
+	//! A reallocation that fails must leave the buffers reporting NOT
+	//! initialized. `initialized()` is `m_frames != 0`, so a stale frame count
+	//! keeps the ports "active" while the pointer table is null - the router's
+	//! send would then dereference a null pointer table. `updateAudioBuffer()`
+	//! returns nullptr both for counts it refuses (the ports model allows
+	//! channelsOut == 0, but not 0/0) and for a failed shared-memory allocation;
+	//! both share the branch this pins.
+	void failedReallocationLeavesBuffersInactive()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		auto* buffers = ports.buffers();
+
+		// A successful allocation first, so there is state to go stale
+		buffers->updateBuffers(2, 2, frames);
+		QCOMPARE(buffers->initialized(), true);
+		QCOMPARE(buffers->frames(), frames);
+
+		// The refused reallocation (0/0 counts; any nullptr from
+		// updateAudioBuffer() takes this path)
+		buffers->updateBuffers(0, 0, frames);
+
+		QCOMPARE(buffers->initialized(), false);
+		QCOMPARE(buffers->frames(), f_cnt_t{0});
+	}
+
+#ifndef SYNC_WITH_SHM_FIFO
+	//! The client dies mid-period: the wait for IdProcessingDone comes back
+	//! without a reply, and discarding that result made process() report success
+	//! on planes the client may have written only partially - which the router
+	//! then mixed. It must report failure and leave silence instead.
+	void abandonedWaitLeavesSilenceAndReportsFailure()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The host starts the peer and it connects straight away, which is what
+		// init()'s accept() waits for; a false return means no failure was
+		// reported.
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("die-on-start")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+
+		// Allocate the block the client would write its period into
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(2));
+
+		auto out = ports.buffers()->output();
+		QCOMPARE(out.channels(), ch_cnt_t{2});
+		QCOMPARE(out.frames(), frames);
+
+		// Plant data in the output planes: a period the client abandoned must
+		// not leak the planes' previous content into the mix.
+		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+		{
+			std::fill(out.bufferPtr(channel), out.bufferPtr(channel) + frames, 1.0f);
+		}
+
+		QCOMPARE(plugin.process(), false);
+
+		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+		{
+			for (f_cnt_t frame = 0; frame < frames; ++frame)
+			{
+				QCOMPARE(out.sample(channel, frame), 0.0f);
+			}
+		}
+
+		// The peer logged the period request before dying, so what was exercised
+		// is the abandoned wait - not process()'s "not running" guard.
+		QVERIFY(peerLogIds(logPath).contains(IdStartProcessing));
+	}
+
+	//! Positive control for the check above: a client that answers
+	//! IdProcessingDone still makes process() report success.
+	void repliedPeriodReportsSuccess()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("reply")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(2));
+
+		QCOMPARE(plugin.process(), true);
+	}
+
+	//! Zero output channels: the ports model accepts channelsOut == 0, so the
+	//! output span is empty and every period returns false. The period request
+	//! must not be sent at all - its reply would never be read, so the client's
+	//! replies would pile up in the socket until a send blocked (on the audio
+	//! thread), and a refused send after a false return would also skew the
+	//! protocol by one period.
+	void zeroOutputPluginNeverRequestsAPeriod()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("silent")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+
+		// The client reports two inputs and no outputs: a 2-plane block whose
+		// output span is empty.
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(0));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), ch_cnt_t{2});
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{0});
+		QCOMPARE(ports.buffers()->initialized(), true);
+
+		for (int period = 0; period < 3; ++period)
+		{
+			QCOMPARE(plugin.process(), false);
+		}
+
+		// Give the peer time to receive anything that was sent, then check it
+		// saw no period request - while proving it did see the messages sent
+		// before it, so an empty log cannot pass for "nothing was sent".
+		QTest::qWait(250);
+		const auto ids = peerLogIds(logPath);
+		QVERIFY(ids.contains(IdSyncKey));
+		QVERIFY(ids.contains(IdChangeSharedMemoryKey));
+		QVERIFY(!ids.contains(IdStartProcessing));
+	}
+#endif // SYNC_WITH_SHM_FIFO
 };
 
 QTEST_GUILESS_MAIN(RemotePluginAudioPortsTest)

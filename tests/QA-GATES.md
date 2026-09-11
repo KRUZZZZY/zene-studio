@@ -603,3 +603,32 @@ skip it. Gate 2 stays opt-in because it rebuilds the whole tree.
   holds the planar case and
   `AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts` holds the in-place
   case sample-exactly.
+- **Remote-plugin (out-of-process) host coverage and its two known, unfixed defects
+  (2026-09-11).** `RemotePluginAudioPortsTest` drives the host side of the socket
+  protocol against a client stand-in it writes itself (`test-peer.py`, run with python3;
+  the slots `QSKIP` when python3 is absent and do not exist where the build has no socket
+  path, i.e. `SYNC_WITH_SHM_FIFO` platforms like Windows). `RemotePlugin::init()` starts
+  the peer, the peer connects and logs every message id it receives, and each slot picks
+  its behaviour: never answer ("silent"), answer `IdProcessingDone` ("reply"), or exit on
+  the first period request ("die-on-start"). Covered: a client that dies mid-period must
+  leave the output planes silent and make `process()` report false (its wait's result used
+  to be discarded, so a partially written period was mixed); a peer that answers still
+  yields true (positive control); a plugin with zero output channels never sends
+  `IdStartProcessing` (the request must not be sent when nothing can consume the reply —
+  replies otherwise accumulate until a socket blocks on the audio thread); and a failed
+  reallocation leaves the ports reporting NOT initialized. **The real client half is still
+  not exercised on this box**: `RemoteVstPlugin`'s client needs a real VST library to load
+  and the Windows client binaries are CI-only. `NativeLinuxRemoteVstPlugin64` compiles the
+  same client sources locally (with the CI flags, `USE_WERROR=ON`), which is what carries
+  the client-side change here. **Known and deliberately not fixed, scheduled for the next
+  release:** (a) a client-initiated channel-count change (`IdChangeInputOutputCount`) is
+  applied inline on the audio thread by the message pump inside `process()`'s
+  `waitForMessage()` (`src/core/RemotePlugin.cpp` -> `processMessage` ->
+  `setChannelCounts` -> `AudioPortsModel::bufferPropertiesChanging` ->
+  `RemotePluginAudioPorts::updateBuffers`), so it can allocate shared memory, unmap the
+  block the caller's plane views point into, and emit a Qt signal from the audio thread;
+  (b) the same rebuild is reachable from a GUI-thread pump, because the VstPlugin
+  parameter/info entry points that run pumping waits (`waitForMessage(..., busyWaiting=true)`,
+  `plugins/VstBase/VstPlugin.cpp:591-596` and the helpers beside it) are called from GUI
+  constructors (`plugins/Vestige/Vestige.cpp:1008-1009`,
+  `plugins/VstEffect/VstEffectControls.cpp:398-399`).

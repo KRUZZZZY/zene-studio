@@ -395,19 +395,34 @@ bool RemotePlugin::process()
 	// the router could never read a stale period. Remote plugin output is mixed
 	// additively, so stale planes are rendered as audio.
 	std::ranges::fill(m_audioOutputs, 0.f);
-	sendMessage(IdStartProcessing);
 
 	if (m_failed || m_audioOutputs.empty())
 	{
-		// Failed while processing (or the buffer went away): leave silence behind for
-		// the same reason - a false return must not be able to leak this period's
-		// partial or stale planes into the mix.
-		std::ranges::fill(m_audioOutputs, 0.f);
+		// Failed before this period was requested (or the buffer went away): leave
+		// silence behind for the same reason - a false return must not be able to
+		// leak this period's stale planes into the mix. The test comes *before* the
+		// request on purpose: returning without sending keeps the protocol in step
+		// (an unconsumed reply would be read as the next period's, i.e. one period
+		// of skew), and a plugin with zero output channels - the ports model accepts
+		// channelsOut == 0, so m_audioOutputs is then an empty span - would
+		// otherwise collect one reply per period until a socket buffer fills and
+		// the audio thread blocks in sendMessage().
 		unlock();
 		return false;
 	}
 
-	waitForMessage(IdProcessingDone);
+	sendMessage(IdStartProcessing);
+
+	if (waitForMessage(IdProcessingDone).id != IdProcessingDone)
+	{
+		// The client died (or abandoned the period) before it replied. Without
+		// this check process() would report success on a period the client may
+		// have written only partially, and the router would mix those planes;
+		// silence them, exactly as the neighbouring failure paths do.
+		std::ranges::fill(m_audioOutputs, 0.f);
+		unlock();
+		return false;
+	}
 	unlock();
 
 	return true;

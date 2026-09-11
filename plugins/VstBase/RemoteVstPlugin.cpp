@@ -1097,12 +1097,23 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 	// and the output planes follow directly after the input planes (#589).
 	// NOTE: the input planes belong to the host's routing step; the VST API
 	// wants non-const pointers but must not write them, hence the const_cast.
-	for( int i = 0; i < inputCount(); ++i )
+	//
+	// The plane setup is bound by the counts the arrays and the shared block were
+	// sized for - the base class's cached counts, which are what the host last
+	// acknowledged (setInputOutputCount()). The live plugin fields behind the
+	// inputCount()/outputCount() overrides can be larger: when a plugin raises
+	// audioMasterIOChanged from the processing thread that request is denied
+	// (updateInOutCount()), so m_inputs/m_outputs and the host's block keep the
+	// cached size, and iterating the live counts would write past the end of
+	// `new float*[]` and read past the end of the shared block.
+	const auto cachedInputs = RemotePluginClient::inputCount();
+	const auto cachedOutputs = RemotePluginClient::outputCount();
+	for( int i = 0; i < cachedInputs; ++i )
 	{
 		m_inputs[i] = const_cast<float*>(&_in[i * bufferSize()]);
 	}
 
-	for( int i = 0; i < outputCount(); ++i )
+	for( int i = 0; i < cachedOutputs; ++i )
 	{
 		m_outputs[i] = &_out[i * bufferSize()];
 		memset( m_outputs[i], 0, bufferSize() * sizeof( float ) );
