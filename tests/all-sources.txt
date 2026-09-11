@@ -274,6 +274,7 @@ include/RenameDialog.h
 include/RenderManager.h
 include/RingBuffer.h
 include/RmsHelper.h
+include/RoutingChainNodes.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
@@ -893,6 +894,7 @@ src/core/ProjectVersion.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
 src/core/RingBuffer.cpp
+src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
@@ -1083,6 +1085,7 @@ tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
+tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp

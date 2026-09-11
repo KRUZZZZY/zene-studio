@@ -44,6 +44,7 @@
 #include <QString>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <vector>
 
@@ -57,6 +58,8 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "RoutingChainNodes.h"
+#include "RoutingGraph.h"
 #include "SampleFrame.h"
 
 #ifndef ROUTING_GRAPH_LIVE_REFERENCE_FILE
@@ -147,6 +150,39 @@ void printEvidence(const char* label, const QByteArray& data)
 	std::fflush(stdout);
 }
 
+//! True when every sample of @a scaled is @a base scaled by @a factor. The
+//! re-directed render is expected to differ from the linear one by exactly the
+//! work of the effect the re-wiring took out of the path, which is a stronger
+//! claim than "the bytes differ".
+bool isScaledBy(const QByteArray& scaled, const QByteArray& base, float factor)
+{
+	if (scaled.size() != base.size() || scaled.isEmpty()) { return false; }
+
+	const auto* scaledSamples = reinterpret_cast<const float*>(scaled.constData());
+	const auto* baseSamples = reinterpret_cast<const float*>(base.constData());
+	const int count = scaled.size() / static_cast<int>(sizeof(float));
+	for (int i = 0; i < count; ++i)
+	{
+		if (scaledSamples[i] != baseSamples[i] * factor) { return false; }
+	}
+	return true;
+}
+
+//! The graph's source node: the node no connection feeds.
+int inputNodeId(const RoutingGraph& graph)
+{
+	for (const RoutingConnection& connection : graph.connections())
+	{
+		bool fed = false;
+		for (const RoutingConnection& other : graph.connections())
+		{
+			if (other.destNode == connection.sourceNode) { fed = true; break; }
+		}
+		if (!fed) { return connection.sourceNode; }
+	}
+	return -1;
+}
+
 } // namespace
 
 } // namespace lmms
@@ -178,6 +214,11 @@ private slots:
 	//! before the chain was routed through the graph.
 	void rendersLikeTheCommittedReference()
 	{
+		// The equivalence claim is only worth anything if the graph is on the
+		// path while the byte-identical render is produced.
+		QVERIFY2(chainUnderTest()->routesThroughGraph(),
+			"the chain is not routed through the graph - the equivalence proof would be vacuous");
+
 		const QByteArray first = render();
 		const QByteArray second = render();
 
@@ -224,7 +265,113 @@ private slots:
 			"render is NOT byte-identical to the committed reference");
 	}
 
+	//! The graph is built from the chain's own effects, in chain order, with the
+	//! connections the plain loop used to walk.
+	void chainIsRoutedThroughTheGraph()
+	{
+		auto* chain = chainUnderTest();
+		QVERIFY(chain->routesThroughGraph());
+
+		const RoutingGraph& graph = chain->routingGraph();
+		QVERIFY(graph.isPrepared());
+		QCOMPARE(graph.frames(), Engine::audioEngine()->framesPerPeriod());
+		// One source node plus one node per effect: input -> effect 0 -> effect 1
+		QCOMPARE(graph.nodeCount(), 3);
+		QCOMPARE(graph.outputNodeId(), 2);
+
+		const auto& connections = graph.connections();
+		QCOMPARE(connections.size(), std::size_t{2});
+		QCOMPARE(connections[0].sourceNode, 0);
+		QCOMPARE(connections[0].destNode, 1);
+		QCOMPARE(connections[1].sourceNode, 1);
+		QCOMPARE(connections[1].destNode, 2);
+		QCOMPARE(inputNodeId(graph), 0);
+	}
+
+	//! A chain with nothing in it has nothing to route, so it keeps the plain
+	//! loop: the graph is not on the path of a project that configures none.
+	void chainWithoutEffectsIsNotRouted()
+	{
+		EffectChain empty{nullptr};
+		QVERIFY(!empty.routesThroughGraph());
+		QCOMPARE(empty.routingGraph().nodeCount(), 0);
+		QVERIFY(!empty.routingGraph().isPrepared());
+	}
+
+	//! Liveness: re-directing a connection changes the render, and changes it by
+	//! exactly the work the re-wiring takes out of the path. The node set is
+	//! untouched, so nothing but the wiring can be responsible.
+	void redirectingAConnectionChangesTheRender()
+	{
+		auto* chain = chainUnderTest();
+		auto& graph = chain->routingGraph();
+		QVERIFY(chain->routesThroughGraph());
+
+		const QByteArray linear = render();
+		printEvidence("render-linear", linear);
+
+		const int sourceId = inputNodeId(graph);
+		const int firstEffectId = 1;
+		const int secondEffectId = 2;
+		QCOMPARE(sourceId, 0);
+		QCOMPARE(graph.outputNodeId(), secondEffectId);
+
+		// Re-direct the chain's input straight to the second effect, bypassing
+		// the first one. Same nodes, same output node, different wiring.
+		QVERIFY(graph.disconnect(sourceId, firstEffectId, 0, 0));
+		QVERIFY(graph.connect(sourceId, secondEffectId, 0, 0));
+
+		QVERIFY(chain->routesThroughGraph());
+		QCOMPARE(graph.nodeCount(), 3);
+
+		const QByteArray redirected = render();
+		printEvidence("render-redirected", redirected);
+
+		QCOMPARE(redirected.size(), linear.size());
+		QVERIFY2(redirected != linear, "the re-directed wiring did not change the render");
+		QVERIFY2(isScaledBy(linear, redirected, kFirstLeft),
+			"the re-directed render is not the linear render without effect 0's gain");
+
+		// Put the wiring back and confirm the render comes back with it.
+		QVERIFY(graph.disconnect(sourceId, secondEffectId, 0, 0));
+		QVERIFY(graph.connect(sourceId, firstEffectId, 0, 0));
+		QCOMPARE(render(), linear);
+	}
+
+	//! The audio thread's path through the graph allocates nothing.
+	void processingThroughTheGraphAllocatesNothing()
+	{
+		auto* chain = chainUnderTest();
+		QVERIFY(chain->routesThroughGraph());
+
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		std::vector<SampleFrame> block(fpp);
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			block[f][0] = liveSignal(0, f, 0);
+			block[f][1] = liveSignal(0, f, 1);
+		}
+		SampleFrame* busData[1] = {block.data()};
+		AudioBus bus{busData, 1, fpp};
+
+		// The first block may touch lazy internals; measure the second.
+		chain->processAudioBuffer(bus);
+
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		chain->processAudioBuffer(bus);
+		const std::uint64_t allocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+
+		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
 private:
+	EffectChain* chainUnderTest()
+	{
+		return &Engine::mixer()->mixerChannel(kChannel)->m_fxChain;
+	}
+
 	void buildGraph()
 	{
 		auto mixer = Engine::mixer();
