@@ -474,6 +474,10 @@ jobs:
           # from a Windows run, which makes any fix unfalsifiable.
           QT_FORCE_STDERR_LOGGING: "1"
       - name: Prove the plugin modules' lmms.exe import binding (diagnostic, non-fatal)
+        # if: always() matters: without it this step is SKIPPED whenever Run tests fails, which
+        # is exactly the case it exists to explain - the first run carrying it produced no
+        # dumpbin output at all for that reason (the QWARN lines still proved the mechanism).
+        if: always()
         # The three failing tests are exactly the three that load plugin MODULE libraries at
         # runtime. Those modules link the lmms executable, so on Windows their import tables
         # name lmms.exe; a test host cannot satisfy that. This turns the inference into evidence
