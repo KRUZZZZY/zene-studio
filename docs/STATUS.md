@@ -96,7 +96,75 @@ Ableton Link; groove pool, scale awareness, note probability.
 **Polish** — modern stock devices; factory content; design system; autosave recovery; crash
 reporter.
 
-## Feature backlog — everything still to be added
+## Feature backlog — three release bars, not one list
+
+Rearranged 2026-09-11. The flat list below conflated three different finish lines; **item numbers are
+kept unchanged so every reference still resolves**. The three bars are *not* three phases of one
+sequence — see the structural point at the end.
+
+### Bar 1 — v0.1, an alpha people can actually install (six items)
+
+`40` an installable release · `41` local reproduction of the CI matrix · `42` the `#589` Part C decision
+(four plugin dirs unmigrated, so the sample-exact guarantee has holes) · `13` a green build matrix
+(`#609`) · `608` the `AudioBuffer` SharedMemory pointer defect — memory-correctness in the audio path,
+fixed before anything ships rather than after · arguably `44` the gates actually enforcing on push.
+
+Nothing else on the list should gate this. Shipping an alpha with two-track recording and effects-only
+hosting is normal: Bitwig 1.0 shipped without comping, Ardour shipped without plugin isolation for
+years. Ship it with a known-limitations page.
+
+Where it stands: `13` is 6/7 green with msvc-x64 in flight against the libm fix; `608` is boarded at
+risk=high; `42` needs an owner decision (the remote-process `process()` question); `40` and `41` are
+unstarted.
+
+### Bar 2 — v1.0, a complete DAW (items 1–45)
+
+Items 1–45 are the functional surface: record, edit, mix, host third-party instruments, finish a track
+without hitting a wall. But **"built" and "release ready" are different things**, and the gap is entirely
+work that will never appear on a feature board:
+
+- **A beta period and its bug backlog.** Every DAW's v1 bug list is dominated by things nobody predicted;
+  no line item substitutes for real users.
+- **Performance at scale.** 200 tracks, 100 plugin instances, eight-hour sessions, no leak, no
+  degradation. `21` gets multicore scheduling; it does not get a soak test that passes.
+- **Plugin compatibility in the wild.** `18` gets instrument hosting; it does not get the matrix of which
+  real plugins load, play, save and reload on which platform — that is nightly testing against a
+  reference set, and it always surfaces vendor-specific breakage.
+- **Crash-free rate**, measured, from `38`'s reporter — which requires users first.
+- **Project-format stability**: a migration guarantee for LMMS projects, and a commitment that `.mmpz`
+  written by v1 opens in v1.1.
+- **Licensing audit.** RNNoise, RTNeural, Eigen, Lua, LuaBridge, ML model weights, and whatever ships in
+  `35` — provenance cleared for redistribution under this licence. A lawyer task, not an engineering one.
+- **Security disclosure process.** The product hosts arbitrary native plugins and executes sandboxed Lua
+  and WASM; sandbox-escape reports will arrive and need somewhere to go.
+- **Docs, manual and localisation** for every new UI string, plus **accessibility** (keyboard navigation,
+  screen-reader labels).
+- **Support capacity.** Issue triage is a standing cost from day one of a release.
+
+Call it another 30–40% on top of 1–45.
+
+### Bar 3 — competitive with Ableton (items 34, 35, 36)
+
+Necessary for Bar 2, nowhere near sufficient — and each of these three is larger than everything else on
+the list combined. `34` **modern stock devices**: roughly 30 instruments and effects, each with new DSP
+and new UI, each null-tested, each denormal-safe, each judged by ear. `35` **factory content**: several GB
+of curated, licence-cleared samples and 500+ presets. `36` **design system**: a full component library
+plus retrofitting every existing Qt widget to it. Three lines, three to five years of sound-design,
+curation and taste work. Velocity does not compress them.
+
+### The structural point — this list contains no user input
+
+Items `34`, `35` and `36` cannot be done correctly without users: you cannot design the right 30 devices,
+curate the right content, or build a design system that fits real workflows by reasoning about it. `39`'s
+learned ranker is explicitly conditional on pick-logs, i.e. on users, and it sits behind ~38 unboarded
+items.
+
+**So the release is not the output of this list — it is an input to the second half of it.** Ship the
+alpha as soon as the build is green and 40–42 land. Then Bar 2 gets built against real bug reports instead
+of against this gap audit, and "is it release ready" stops being a judgement call and becomes a
+crash-free rate read off a dashboard.
+
+### Inventory — the same items, flat, with their numbering (unchanged)
 
 Assembled 2026-09-11 from this file's own gap audit plus the board (`lmms-complete-daw-program`
 program). `[#N]` = already boarded as a task; a bare item = no task yet. Statuses are the board's.
