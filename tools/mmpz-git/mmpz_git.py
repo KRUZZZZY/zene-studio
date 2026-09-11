@@ -1260,7 +1260,11 @@ def cmd_conflicts(args) -> int:
 # what makes a per-track answer possible without faking it with mutes.
 # ---------------------------------------------------------------------------
 
-RENDERER_CANDIDATES = ("build/lmms", "build/bin/lmms", "build-ci/lmms",
+RENDERER_CANDIDATES = ("build/zene", "build/bin/zene", "build-ci/zene",
+                       "build-ci/bin/zene",
+                       # pre-wave-R trees: the binary was named lmms before the
+                       # product rename, so these stay as fallbacks
+                       "build/lmms", "build/bin/lmms", "build-ci/lmms",
                        "build-ci/bin/lmms")
 
 
@@ -1274,7 +1278,7 @@ def find_renderer(explicit=None):
     here = os.path.dirname(os.path.abspath(__file__))
     root = os.path.abspath(os.path.join(here, "..", ".."))
     cands.extend(os.path.join(root, rel) for rel in RENDERER_CANDIDATES)
-    cands.append(shutil.which("lmms") or "")
+    cands.append(shutil.which("zene") or shutil.which("lmms") or "")
     for c in cands:
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c
@@ -1844,7 +1848,7 @@ def main(argv=None) -> int:
     ad.add_argument("b")
     ad.add_argument("--renderer", default=None,
                     help="path to the built binary (default: $MMPZ_GIT_RENDERER, "
-                         "then build/lmms, then $PATH)")
+                         "then build/zene, then build/lmms, then $PATH)")
     ad.add_argument("--track", default=None,
                     help="compare only this track (the renderer's per-track "
                          "output is used; the full mix is skipped)")

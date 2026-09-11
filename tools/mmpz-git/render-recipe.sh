@@ -93,7 +93,8 @@ if [ "$DO_BUILD" -eq 1 ]; then
 fi
 
 if [ -z "$RENDERER" ]; then
-	for cand in "$BUILD_DIR/lmms" "$BUILD_DIR/bin/lmms" "$ROOT/build/lmms"; do
+	for cand in "$BUILD_DIR/zene" "$BUILD_DIR/bin/zene" "$ROOT/build/zene" \
+	            "$BUILD_DIR/lmms" "$BUILD_DIR/bin/lmms" "$ROOT/build/lmms"; do
 		if [ -x "$cand" ]; then RENDERER="$cand"; break; fi
 	done
 fi

@@ -448,11 +448,17 @@ class MergeDepth(unittest.TestCase):
 class BinarySafety(unittest.TestCase):
     """The DAW must be able to load every file the tool writes."""
 
-    BIN = os.path.join(ROOT, "build", "lmms")
+    # Wave R renamed the built binary from lmms to zene; accept either so a
+    # pre-rename build tree still runs these tests instead of skipping them.
+    BIN = os.path.join(ROOT, "build", "zene")
+    BIN_PRE_RENAME = os.path.join(ROOT, "build", "lmms")
 
     def setUp(self):
         if not (os.path.isfile(self.BIN) and os.access(self.BIN, os.X_OK)):
-            self.skipTest("build/lmms not built (see docs/MMPZ-GIT-DEPTH.md)")
+            if os.path.isfile(self.BIN_PRE_RENAME) and os.access(self.BIN_PRE_RENAME, os.X_OK):
+                type(self).BIN = self.BIN_PRE_RENAME
+            else:
+                self.skipTest("build/zene (or build/lmms) not built (see docs/MMPZ-GIT-DEPTH.md)")
 
     def _loads(self, path, what):
         """Load the project the way the DAW does and prove it produced audio.
@@ -780,11 +786,17 @@ class PureAudioMaths(unittest.TestCase):
 class AudibleDiffBinary(unittest.TestCase):
     """End-to-end audible diff, skipped unless the binary was built here."""
 
-    BIN = os.path.join(ROOT, "build", "lmms")
+    # Wave R renamed the built binary from lmms to zene; accept either so a
+    # pre-rename build tree still runs these tests instead of skipping them.
+    BIN = os.path.join(ROOT, "build", "zene")
+    BIN_PRE_RENAME = os.path.join(ROOT, "build", "lmms")
 
     def setUp(self):
         if not (os.path.isfile(self.BIN) and os.access(self.BIN, os.X_OK)):
-            self.skipTest("build/lmms not built (see docs/MMPZ-GIT-DEPTH.md)")
+            if os.path.isfile(self.BIN_PRE_RENAME) and os.access(self.BIN_PRE_RENAME, os.X_OK):
+                type(self).BIN = self.BIN_PRE_RENAME
+            else:
+                self.skipTest("build/zene (or build/lmms) not built (see docs/MMPZ-GIT-DEPTH.md)")
 
     def test_identical_project_renders_identically(self):
         src = os.path.join(ROOT, "data", "projects", "shorties", "sv-DnB-Startup.mmpz")

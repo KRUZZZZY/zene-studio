@@ -15,7 +15,12 @@ export QT_QPA_PLATFORM=offscreen
 
 cd "$WORKTREE" || exit 1
 
-"$WORKTREE/build/lmms" render "$PROJECT" -o "$OUT" -f wav -a > "$LOG" 2>&1 &
+# Wave R renamed the built binary from lmms to zene; prefer it and keep the
+# pre-rename name as a fallback so this script runs against either build tree.
+RENDERER="$WORKTREE/build/zene"
+[ -x "$RENDERER" ] || RENDERER="$WORKTREE/build/lmms"
+
+"$RENDERER" render "$PROJECT" -o "$OUT" -f wav -a > "$LOG" 2>&1 &
 HOST=$!
 echo "host pid=$HOST"
 
