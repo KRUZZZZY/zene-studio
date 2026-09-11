@@ -30,6 +30,7 @@ include/RemotePluginAudioPorts.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
+include/SampleWindow.h
 include/ScriptBindings.h
 include/ScriptEngine.h
 include/SessionModel.h
@@ -121,3 +122,7 @@ src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tools/local-ci.sh
+#
+# Test sources added by this fork (Gate 9 scans tests/ too; upstream has no tests/
+# sources, so these belong here rather than in tests/all-sources.txt).
+tests/src/tracks/SampleClipWindowTest.cpp

@@ -39,6 +39,7 @@ namespace lmms
 SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	Clip(_track),
 	m_sample(std::move(sample)),
+	m_window(SampleWindow::full(m_sample.sampleSize())),
 	m_isPlaying(false),
 	m_startFrameOffset(0)
 {
@@ -76,6 +77,7 @@ SampleClip::SampleClip(Track* track)
 SampleClip::SampleClip(const SampleClip& orig) :
 	Clip(orig),
 	m_sample(std::move(orig.m_sample)),
+	m_window(orig.m_window),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset)
 {
@@ -143,6 +145,8 @@ void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)
 	{
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		m_sample = Sample(std::move(sb));
+		// a new source means a new window: the whole buffer (Slice 0)
+		resetWindowToFullBuffer();
 	}
 	updateLength();
 
@@ -158,6 +162,7 @@ void SampleClip::setSampleFile(const QString& sf)
 	if (!sf.isEmpty())
 	{
 		m_sample = Sample(SampleBuffer::fromFile(sf));
+		resetWindowToFullBuffer();
 		updateLength();
 	}
 	else
@@ -256,7 +261,10 @@ void SampleClip::setStartTimeOffset(const TimePos& startTimeOffset)
 
 TimePos SampleClip::sampleLength() const
 {
-	return static_cast<int>(m_sample.sampleSize() / Engine::framesPerTick(m_sample.sampleRate()));
+	// The clip's audio length is the length of its window, not of the whole file:
+	// for a clip without a trim the two are the same, which is what keeps this
+	// behaviour-preserving (Slice 0).
+	return static_cast<int>(m_window.length() / Engine::framesPerTick(m_sample.sampleRate()));
 }
 
 
@@ -264,7 +272,9 @@ TimePos SampleClip::sampleLength() const
 
 void SampleClip::setSampleStartFrame(f_cnt_t startFrame)
 {
-	m_sample.setStartFrame(startFrame);
+	// The legacy absolute setter for the window's start. Nothing on the playback
+	// path calls it any more: the window is authored state (Slice 0).
+	setSampleWindow({ startFrame, m_window.sourceOut });
 }
 
 
@@ -272,7 +282,78 @@ void SampleClip::setSampleStartFrame(f_cnt_t startFrame)
 
 void SampleClip::setSamplePlayLength(f_cnt_t length)
 {
-	m_sample.setEndFrame(length);
+	// The legacy absolute setter for the window's END frame, as it always was.
+	setSampleWindow({ m_window.sourceIn, length });
+}
+
+
+
+
+void SampleClip::setSampleWindow(const SampleWindow& window)
+{
+	const auto bufferFrames = static_cast<f_cnt_t>(m_sample.sampleSize());
+	const auto clamped = SampleWindow::clamped(window.sourceIn, window.sourceOut, bufferFrames);
+	if (clamped.empty() || clamped == m_window)
+	{
+		// I4: a window that is not well formed is a rejected edit, not a clamped
+		// one - and an edit that changes nothing is not an edit.
+		return;
+	}
+
+	m_window = clamped;
+
+	// Sample's frame fields are the render-time scratch they already were (OQ-1):
+	// pointing them at the window keeps Sample::render, sampleDuration() and the
+	// waveform drawing reading the window, while the authored state stays here.
+	m_sample.setStartFrame(static_cast<int>(m_window.sourceIn));
+	m_sample.setEndFrame(static_cast<int>(m_window.sourceOut));
+
+	if (m_window != SampleWindow::full(bufferFrames))
+	{
+		// A window that is not the whole buffer is a manual edit, so it must
+		// survive a tempo change and a reload (design §2.6, OQ-4).
+		setAutoResize(false);
+	}
+
+	Engine::getSong()->setModified();
+	emit sampleChanged();
+}
+
+
+
+
+void SampleClip::resetWindowToFullBuffer()
+{
+	m_window = SampleWindow::full(static_cast<f_cnt_t>(m_sample.sampleSize()));
+	m_sample.setStartFrame(static_cast<int>(m_window.sourceIn));
+	m_sample.setEndFrame(static_cast<int>(m_window.sourceOut));
+}
+
+
+
+
+f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
+{
+	// The one linear mapping of the window onto the timeline (design §2.4). No
+	// allocation, no lock: this runs on the audio thread (I8).
+	const auto framesPerTick = Engine::framesPerTick(m_sample.sampleRate());
+	const auto relativeTicks = timelinePos.getTicks() - startPosition().getTicks()
+		- startTimeOffset().getTicks();
+	const auto relative = relativeTicks > 0
+		? TimePos(relativeTicks).frames(framesPerTick)
+		: f_cnt_t{ 0 };
+	return std::clamp(m_window.sourceIn + relative, m_window.sourceIn, m_window.sourceOut);
+}
+
+
+
+
+TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
+{
+	const auto framesPerTick = Engine::framesPerTick(m_sample.sampleRate());
+	const auto frame = std::clamp(sourceFrame, m_window.sourceIn, m_window.sourceOut);
+	return TimePos(startPosition().getTicks() + startTimeOffset().getTicks()
+		+ static_cast<int>(TimePos::fromFrames(frame - m_window.sourceIn, framesPerTick)));
 }
 
 
@@ -337,6 +418,7 @@ void SampleClip::loadSettings( const QDomElement & _this )
 
 		auto buffer = SampleBuffer::fromBase64(_this.attribute("data"), sampleRate);
 		m_sample = Sample(std::move(buffer));
+		resetWindowToFullBuffer();
 	}
 	changeLength( _this.attribute( "len" ).toInt() );
 	setMuted( _this.attribute( "muted" ).toInt() );

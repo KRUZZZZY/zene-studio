@@ -141,6 +141,24 @@ public:
 	TimePos startTimeOffset() const;
 	virtual void setStartTimeOffset(const TimePos& startTimeOffset);
 
+	/*! The clip's source position for a timeline position, in the source's own
+	 *  units: frames for a clip whose source is audio (SampleClip overrides this),
+	 *  ticks for a clip with no frame-domain source.
+	 *
+	 *  This pair is the mapping seam the clip-and-capture wave froze (task #611,
+	 *  docs/CLIP-CAPTURE-DESIGN.md §2.4) so that warp/time-stretch (#597) can add a
+	 *  non-linear mapping without touching the clip model: today's implementation is
+	 *  linear, and it is the single place the clip's window relates to the timeline.
+	 *
+	 *  The result is always inside the clip's own source range, and the two
+	 *  functions are inverses up to the frame-to-tick truncation.
+	 */
+	virtual f_cnt_t sourceFrameAt(TimePos timelinePos) const;
+
+	/*! The inverse of sourceFrameAt(): the timeline position a source frame is
+	 *  reached at, clamped to the clip's source range. Trimming is what needs it. */
+	virtual TimePos timelinePosAt(f_cnt_t sourceFrame) const;
+
 	// Will copy the state of a clip to another clip
 	static void copyStateTo( Clip *src, Clip *dst );
 
@@ -182,6 +200,23 @@ private:
 	friend class ClipView;
 
 } ;
+
+
+/*! The base class's source unit is the tick, so a timeline position maps onto the
+ *  source by the clip's own start and slip. MIDI and automation clips have no
+ *  frame-domain source and inherit this unchanged; SampleClip overrides both with
+ *  the frame-domain linear map (design §2.4). #597 replaces the override. */
+inline f_cnt_t Clip::sourceFrameAt(TimePos timelinePos) const
+{
+	const auto relative = timelinePos.getTicks() - m_startPosition.getTicks() - m_startTimeOffset.getTicks();
+	return relative > 0 ? static_cast<f_cnt_t>(relative) : 0;
+}
+
+
+inline TimePos Clip::timelinePosAt(f_cnt_t sourceFrame) const
+{
+	return TimePos(static_cast<int>(m_startPosition.getTicks() + m_startTimeOffset.getTicks() + sourceFrame));
+}
 
 
 } // namespace lmms

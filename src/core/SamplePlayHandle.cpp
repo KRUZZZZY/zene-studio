@@ -38,6 +38,13 @@ SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 	, m_sample(sample)
 	, m_ownAudioBusHandle(ownAudioBusHandle)
 {
+	// The window this handle renders, taken once here. For the preview and
+	// metronome paths (SamplePlayHandle.cpp:106-108) that is the sample's own
+	// range, which is exactly what they rendered before Slice 0; the clip
+	// constructors below replace it with the clip's authored window.
+	m_window = { static_cast<f_cnt_t>(m_sample->startFrame()),
+		static_cast<f_cnt_t>(m_sample->endFrame()) };
+	m_state.setFrameIndex(m_sample->startFrame());
 	if (ownAudioBusHandle)
 	{
 		setAudioBusHandle(new AudioBusHandle("SamplePlayHandle", false));
@@ -56,10 +63,24 @@ SamplePlayHandle::SamplePlayHandle( const QString& sampleFile ) :
 
 
 SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
+	SamplePlayHandle(clip, clip->sampleWindow())
+{
+}
+
+
+
+
+SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window ) :
 	SamplePlayHandle(&clip->sample(), false)
 {
 	m_track = clip->getTrack();
 	setAudioBusHandle(((SampleTrack *)clip->getTrack())->audioBusHandle());
+
+	// The clip's authored window is read, never written (Slice 0, I1). Sample's
+	// frame fields already mirror it (SampleClip::setSampleWindow), so this only
+	// has to start the render at the frame this pass begins on.
+	m_window = window;
+	m_state.setFrameIndex(static_cast<int>(m_window.sourceIn));
 }
 
 
@@ -135,7 +156,10 @@ bool SamplePlayHandle::isFromTrack( const Track * _track ) const
 
 f_cnt_t SamplePlayHandle::totalFrames() const
 {
-	return (m_sample->endFrame() - m_sample->startFrame()) *
+	// The length comes from the window snapshotted at construction, not from the
+	// sample's live frame fields: a later playback pass on another clip (or on
+	// this one) cannot change how long this handle plays for.
+	return m_window.length() *
 			(static_cast<float>(Engine::audioEngine()->outputSampleRate()) / m_sample->sampleRate());
 }
 

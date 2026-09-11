@@ -29,6 +29,7 @@ set(LMMS_TESTS
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/tracks/AutomationTrackTest.cpp
+	src/tracks/SampleClipWindowTest.cpp
 )
 
 # Offline stem separation tests (opt-in, see doc/STEM-SPLIT.md).
