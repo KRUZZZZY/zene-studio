@@ -125,3 +125,13 @@ src/core/ControlCommandsTransport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlServer.cpp
 tests/src/core/ControlRegistryTest.cpp
+
+# ---- Agent surface gate (SPEC A15, lane post-alpha/agent-surface-gate) ----
+# control.surface_report reflects the live menu/toolbar surface so the
+# agent_surface ctest can fail on an action with no registered command.
+# The gate itself is Python: the reflection lives in the running process, so the
+# test drives a real instance over the control socket exactly like an agent does.
+# Registered as fork-NEW so the fork-scoped ratchets measure them.
+src/core/ControlCommandsSurface.cpp
+tests/agent-surface-gate.py
+tests/agent_surface_lib.py

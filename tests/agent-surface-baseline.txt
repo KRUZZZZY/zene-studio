@@ -1,0 +1,49 @@
+# agent-surface baseline - menu/toolbar actions with no registered
+# command id (SPEC-zene-studio.md A15). DO NOT ADD LINES BY HAND:
+# the ratchet only moves one way. A line is deleted when its action
+# gets a command id; the whole file is rewritten only by a deliberate
+#   tests/agent-surface-gate.py ... --reanchor "reason"
+#
+# re-anchored 2026-09-12: initial baseline: the lane features in flight predate the command registry, so the measured surface is grandfathered (SPEC A15, task #620)
+menu:Edit/Scales and keymaps
+menu:Edit/Settings
+menu:File/Export MIDI...
+menu:File/Export Tracks...
+menu:File/Export...
+menu:File/Import...
+menu:File/New
+menu:File/Open...
+menu:File/Quit
+menu:File/Run Script...
+menu:File/Save
+menu:File/Save As...
+menu:File/Save as New Version
+menu:File/Save as default template
+menu:Help/About
+menu:Help/Online Help
+menu:View/Attach all subwindows
+menu:View/Automation Editor
+menu:View/Controller Rack
+menu:View/Detach all subwindows
+menu:View/Enable note labels in piano roll
+menu:View/Fullscreen
+menu:View/Mixer
+menu:View/Pattern Editor
+menu:View/Piano Roll
+menu:View/Project Notes
+menu:View/Smooth scroll
+menu:View/Song Editor
+toolbar:mainToolbar/Automation Editor (Ctrl+4)
+toolbar:mainToolbar/Create new project
+toolbar:mainToolbar/Create new project from template
+toolbar:mainToolbar/Export current project
+toolbar:mainToolbar/Metronome
+toolbar:mainToolbar/Mixer (Ctrl+5)
+toolbar:mainToolbar/Open existing project
+toolbar:mainToolbar/Pattern Editor (Ctrl+2)
+toolbar:mainToolbar/Piano Roll (Ctrl+3)
+toolbar:mainToolbar/Recently opened projects
+toolbar:mainToolbar/Save current project
+toolbar:mainToolbar/Show/hide controller rack (Ctrl+6)
+toolbar:mainToolbar/Show/hide project notes (Ctrl+7)
+toolbar:mainToolbar/Song Editor (Ctrl+1)

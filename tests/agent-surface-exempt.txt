@@ -1,0 +1,21 @@
+# agent-surface exemptions - menus whose CONTENTS are generated at run time
+#
+# SPEC A15 asks that every action in every menu and toolbar resolve to a command
+# id. Three menus in this product are not action lists at all: their entries are
+# data read from the user's machine (recently-opened projects, template files on
+# disk) or from whatever plugins this particular build ships. They are out of
+# scope for the forward check - but they are COUNTED and reported by
+# tests/agent-surface-gate.py, never silently dropped, and the exemption is
+# narrow: a matcher here exempts exactly one container, and an unregistered
+# action anywhere else still fails the gate.
+#
+# Format: <matcher><TAB><reason>. matcher is `class:<ShortClassName>` for a QMenu
+# subclass, or `path:<MenuPath>` for a menu reached by name. An entry with no
+# reason is refused (the gate exits 2).
+#
+# The user's own recent projects: file names, not product actions.
+class:RecentProjectsMenu	entries are the user's recently-opened .mmp files (user data, read from the config at start-up)
+# Project templates found on disk (factory directory + the user's template dir).
+class:TemplatesMenu	entries are template files discovered on disk at run time (environment-dependent)
+# Whatever Tool plugins this build happens to ship (LadspaBrowser, TapTempo, ...).
+path:Tools	entries are the Tool plugins this build has registered, not a fixed action list

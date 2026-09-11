@@ -634,3 +634,35 @@ if(PYTHON3_EXECUTABLE)
 else()
 	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
 endif()
+
+# ---------------------------------------------------------------------------
+# agent_surface (SPEC A15 / task #620). The anti-drift gate: it reflects the
+# LIVE menu/toolbar surface over the control socket, fails on any action that
+# has no registered command (grandfathering the ones that do not, in
+# tests/agent-surface-baseline.txt, under a shrink-only ratchet), checks that
+# every declared command is either swept headless or allowlisted with a reason,
+# and then sweeps each non-allowlisted command to a typed result under
+# QT_QPA_PLATFORM=offscreen with a throwaway HOME.
+#
+# The gate is a Python file rather than a test binary on purpose: the reflection
+# it needs lives in the running process (control.surface_report walks the real
+# MainWindow), so the test drives a real instance exactly like an agent would.
+# --check is passed explicitly: this gate must never rewrite its own baseline
+# during a test run; only a deliberate --reanchor "reason" does that.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME agent_surface
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/agent-surface-gate.py
+			$<TARGET_FILE:lmms>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+			--check
+			--report ${CMAKE_CURRENT_BINARY_DIR}/agent-surface-report.json
+	)
+	set_tests_properties(agent_surface PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+else()
+	message(STATUS "python3 not found: agent_surface is not registered")
+endif()

@@ -50,3 +50,4 @@ plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
 src/core/main.cpp	#A11/A12: --control-socket flag starts the opt-in in-app JSON-RPC control server and documents it in --help (post-alpha/agent-control-surface)
+src/gui/MainWindow.cpp	#A11/A15: Edit->Undo/Redo declare the registry commands they implement (control.undo/control.redo, the same ProjectJournal the menu slot drives) so the agent_surface gate can see the menu item as reachable (post-alpha/agent-surface-gate)
