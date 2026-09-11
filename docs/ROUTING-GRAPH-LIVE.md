@@ -204,6 +204,12 @@ pre-existing range-for, unchanged — whenever any of these holds:
   CLAP/VST3-style hosting): those route their own ports on the bus and override
   the bus entry point, and the graph's planar blocks cannot carry that port map.
 
+`EffectChain::processAudioBuffer(AudioBuffer&)` — the planar overload, which
+nothing in-tree calls — still walks `m_effects` directly. The bus overload is
+the path `MixerChannel::doProcessing()` and `AudioBusHandle::processEffects()`
+take; routing a second, unused entry point would add a second behaviour to
+prove for no gain. If a caller ever appears, it needs its own equivalence proof.
+
 ## 7. What is NOT done
 
 * **Re-wired connections are not persisted.** The graph is rebuilt linearly on
@@ -226,6 +232,10 @@ pre-existing range-for, unchanged — whenever any of these holds:
   not this task.
 * **Multi-pair buses, instruments/sample-playback chains as graph nodes, and
   graph-level serialization** are untouched.
+* `EffectChain::loadSettings()` still does not lock the audio engine (an
+  upstream `TODO` inside that function), so a project loaded while the audio
+  thread is running stays unsynchronised. The graph rebuild inherits that
+  hazard; it neither adds a new one nor removes this one.
 
 ## 8. How to reproduce
 
