@@ -126,3 +126,4 @@ tools/local-ci.sh
 # Test sources added by this fork (Gate 9 scans tests/ too; upstream has no tests/
 # sources, so these belong here rather than in tests/all-sources.txt).
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/src/core/ClipSerialisationTest.cpp

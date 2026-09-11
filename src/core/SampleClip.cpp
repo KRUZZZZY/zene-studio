@@ -381,6 +381,14 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 
 	_this.setAttribute( "sample_rate", m_sample.sampleRate());
+	// The authored window, in source frames (Slice 1 of task #611). Additive: a
+	// clip that plays its whole source writes neither attribute, so a project
+	// without a trim serialises exactly as it did before this slice (I9).
+	if (m_window != SampleWindow::full(static_cast<f_cnt_t>(m_sample.sampleSize())))
+	{
+		_this.setAttribute( "srcin", QString::number(m_window.sourceIn) );
+		_this.setAttribute( "srcout", QString::number(m_window.sourceOut) );
+	}
 	if (const auto& c = color())
 	{
 		_this.setAttribute("color", c->name());
@@ -389,7 +397,6 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	{
 		_this.setAttribute("reversed", "true");
 	}
-	// TODO: start- and end-frame
 }
 
 
@@ -423,6 +430,19 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	changeLength( _this.attribute( "len" ).toInt() );
 	setMuted( _this.attribute( "muted" ).toInt() );
 	setStartTimeOffset( _this.attribute( "off" ).toInt() );
+
+	// The authored window (Slice 1 of task #611). Applied after `len` and `off` -
+	// which stay authoritative for a file that carries a window, exactly as the
+	// design asks (§2.6) - and before `autoresize`, so the file's own value decides
+	// that flag rather than the "this was a manual edit" rule in setSampleWindow().
+	if (_this.hasAttribute("srcin") || _this.hasAttribute("srcout"))
+	{
+		const auto srcOut = _this.attribute("srcout");
+		setSampleWindow({ _this.attribute("srcin", "0").toULongLong(),
+			srcOut.isEmpty() ? static_cast<qulonglong>(m_sample.sampleSize())
+				: srcOut.toULongLong() });
+	}
+
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
 
 	if (_this.hasAttribute("color"))

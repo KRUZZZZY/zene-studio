@@ -56,6 +56,6 @@ plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client re
 include/Clip.h	#611 Slice 0: freezes the clip->source mapping seam (sourceFrameAt/timelinePosAt) for #597; the base implementation is the tick identity, so every inherited clip behaves as before
 include/SampleClip.h	#611 Slice 0: the authored SampleWindow member and its accessors; SampleClip's own header, no other clip type affected
 include/SamplePlayHandle.h	#611 Slice 0: the window snapshot member and the clip constructors that carry it; the preview/metronome constructors are unchanged
-src/core/SampleClip.cpp	#611 Slice 0: the authored window (setter, mapping, window-based sampleLength); the legacy frame setters author the window instead of writing Sample directly, which is identical for an untrimmed clip
+src/core/SampleClip.cpp	#611 Slices 0+1: the authored window (setter, mapping, window-based sampleLength) and its serialisation (srcin/srcout, written only for a trimmed clip); the legacy frame setters author the window instead of writing Sample directly, which is identical for an untrimmed clip
 src/core/SamplePlayHandle.cpp	#611 Slice 0: the handle snapshots its window at construction and totalFrames() reads the snapshot, not the sample's live frame fields (SampleTrack.cpp:126-127 used to move those under it)
 src/tracks/SampleTrack.cpp	#611 Slice 0: play() no longer writes the clip's window; the pass derives the window from the transport position and hands it to the play handle as a snapshot (I1)
