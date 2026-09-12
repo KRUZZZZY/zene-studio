@@ -44,7 +44,7 @@ grep -o '<dc:[a-z]*>[^<]*' <file>.svg        # SVG RDF metadata
 python3 -c "...PNG tEXt/iTXt/XMP chunks..."  # raster metadata
 ```
 
-Full raw logs: `docs/evidence/brand-placeholders/provenance-audit.txt`.
+Full raw logs: `tests/evidence/brand-placeholders/provenance-audit.txt`.
 
 | # | Shipped path | Format / size | Byte-identical to upstream? | Upstream path | Own embedded metadata | Licence-bearing? |
 |---|---|---|---|---|---|---|
@@ -181,7 +181,7 @@ mv data/themes/default/zene-plugin-logo.svg /tmp/…   # (restored immediately)
 ```
 
 Both directions are pasted, with unpiped exit codes, in
-`docs/evidence/brand-placeholders/`:
+`tests/evidence/brand-placeholders/`:
 
 * `plugin-logo-test-red-green.txt` — the red→green pair
 * `ctest-results.txt` — the full suite from `build/tests`
@@ -206,7 +206,7 @@ the product resolves:
   path (`src/gui/GuiApplication.cpp:108`) — so the name resolves **from the plugin's own directory**;
 * otherwise it resolves against the theme search path (`GuiApplication.cpp:106–108`).
 
-Result on this tree (`docs/evidence/brand-placeholders/resource-sweep.txt`):
+Result on this tree (`tests/evidence/brand-placeholders/resource-sweep.txt`):
 
 ```
 first-party resource names referenced: 498
@@ -242,7 +242,7 @@ exactly.
 
 ### 3c. Container and dimension proofs
 
-`docs/evidence/brand-placeholders/verify-placeholders.txt` (`evidence/verify-placeholders.py`,
+`tests/evidence/brand-placeholders/verify-placeholders.txt` (`tests/evidence/brand-placeholders/verify-placeholders.py`,
 exit 0) checks all 38 rasters:
 
 * **dimensions equal the pre-change files exactly** — 34/34 PNGs match the inventory snapshotted
@@ -296,7 +296,7 @@ cp ../zene-pa-gatedebt/tests/fork-sources-gate.sh tests/.g9tmp.sh   # copied, ru
 bash tests/.g9tmp.sh
 ```
 
-…with the exit code recorded in `docs/evidence/brand-placeholders/gate-9-sibling-copy.txt`. The tree
+…with the exit code recorded in `tests/evidence/brand-placeholders/gate-9-sibling-copy.txt`. The tree
 is left clean of `.g9tmp.sh`.
 
 **Coverage (Gate 2) was skipped** — `run-all-gates.sh` skips it without `--with-coverage`, and a full
@@ -358,13 +358,13 @@ Suggested line for the release notes:
 cd <worktree>
 python3 tools/brand/rasterise-placeholders.py            # regenerate all 38 rasters from the 3 SVGs
 python3 tools/brand/rasterise-placeholders.py --check    # exit 0 iff the committed rasters match
-python3 evidence/verify-placeholders.py                  # dimensions, metadata, containers, byte-identity
+python3 tests/evidence/brand-placeholders/verify-placeholders.py  # dimensions, metadata, containers, byte-identity
 python3 tests/brand-resource-sweep.py                    # the resolution sweep (§3b)
 bash tests/no-upstream-regression-gate.sh ; echo EXIT=$?  # Gate 6
 bash tests/run-all-gates.sh ; echo EXIT=$?                # gates 1,3,4,5,6,7,8
 ```
 
-Evidence lives in `docs/evidence/brand-placeholders/` **inside the repo**, not `/tmp` — an earlier
+Evidence lives in `tests/evidence/brand-placeholders/` **inside the repo**, not `/tmp` — an earlier
 verification's `/tmp` evidence was destroyed by a disk reclaim.
 
 ---
@@ -391,7 +391,7 @@ guessed at:
   modified.
 * **`tests/brand-resource-sweep.py`** — new. The sweep of §3b, runnable and exit-coded
   (non-zero if any name fails to resolve). Registered in `tests/fork-sources.txt`.
-* **`evidence/verify-placeholders.py`** — new. The dimension/metadata/container/byte-identity
+* **`tests/evidence/brand-placeholders/verify-placeholders.py`** — new. The dimension/metadata/container/byte-identity
   checks of §3c.
 * **`tools/brand/rasterise-placeholders.py --check`** — new. The negative-capable control: exit 0
   only if the committed rasters are exactly what the SVGs produce, so a hand-edited or stale bitmap

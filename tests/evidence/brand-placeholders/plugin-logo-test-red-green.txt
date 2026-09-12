@@ -1,0 +1,50 @@
+=== PluginLogoResourceTest, run in BOTH directions against the replaced artwork ===
+=== tests run from build/tests (workspace rule 7); exit codes unpiped (rule 6) ===
+
+--- GREEN: placeholder in place ---
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginLogoResourceTest
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of PluginLogoResourceTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : PluginLogoResourceTest::initTestCase()
+QINFO  : PluginLogoResourceTest::pluginLogoLoads() plugin logo 'zene-plugin-logo' resolved to 48 x 48 px from the artwork search path
+PASS   : PluginLogoResourceTest::pluginLogoLoads()
+QWARN  : PluginLogoResourceTest::aMissingResourceIsTheOnePixelFallback() Error loading icon pixmap "zene-plugin-logo-does-not-exist": "File not found"
+PASS   : PluginLogoResourceTest::aMissingResourceIsTheOnePixelFallback()
+PASS   : PluginLogoResourceTest::cleanupTestCase()
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 15ms
+********* Finished testing of PluginLogoResourceTest *********
+GREEN_EXIT=0
+
+--- RED control: move the placeholder out of the way so the assertion is not vacuous ---
+$ mv data/themes/default/zene-plugin-logo.svg .g-red-control.svg.bak
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of PluginLogoResourceTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : PluginLogoResourceTest::initTestCase()
+QWARN  : PluginLogoResourceTest::pluginLogoLoads() Error loading icon pixmap "zene-plugin-logo": "File not found"
+FAIL!  : PluginLogoResourceTest::pluginLogoLoads() 'logo.width() > 1 && logo.height() > 1' returned FALSE. (the plugin logo is the 1x1 fallback pixmap: the resource did not resolve)
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-placeholder/tests/src/core/PluginLogoResourceTest.cpp(56)]
+QWARN  : PluginLogoResourceTest::aMissingResourceIsTheOnePixelFallback() Error loading icon pixmap "zene-plugin-logo-does-not-exist": "File not found"
+PASS   : PluginLogoResourceTest::aMissingResourceIsTheOnePixelFallback()
+PASS   : PluginLogoResourceTest::cleanupTestCase()
+Totals: 3 passed, 1 failed, 0 skipped, 0 blacklisted, 7ms
+********* Finished testing of PluginLogoResourceTest *********
+RED_EXIT=1
+
+$ mv .g-red-control.svg.bak data/themes/default/zene-plugin-logo.svg   # restore
+restored: 2218 bytes
+
+--- re-verify GREEN after restore ---
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of PluginLogoResourceTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : PluginLogoResourceTest::initTestCase()
+QINFO  : PluginLogoResourceTest::pluginLogoLoads() plugin logo 'zene-plugin-logo' resolved to 48 x 48 px from the artwork search path
+PASS   : PluginLogoResourceTest::pluginLogoLoads()
+QWARN  : PluginLogoResourceTest::aMissingResourceIsTheOnePixelFallback() Error loading icon pixmap "zene-plugin-logo-does-not-exist": "File not found"
+PASS   : PluginLogoResourceTest::aMissingResourceIsTheOnePixelFallback()
+PASS   : PluginLogoResourceTest::cleanupTestCase()
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 16ms
+********* Finished testing of PluginLogoResourceTest *********
+GREEN_AGAIN_EXIT=0

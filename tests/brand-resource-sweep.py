@@ -99,8 +99,8 @@ def resolves(name: str, plugin_dir: str | None) -> str | None:
     return None
 
 
-def main() -> int:
-    quiet = "--quiet" in sys.argv
+def scan_call_sites() -> tuple[dict[str, set[str]], int]:
+    """Every (name -> referencing files) pair in first-party code, and the raw call count."""
     names: dict[str, set[str]] = {}
     occurrences = 0
     for path in first_party_files():
@@ -112,34 +112,48 @@ def main() -> int:
         for m in CALL_RE.finditer(text):
             occurrences += 1
             names.setdefault(m.group(1), set()).add(rel)
+    return names, occurrences
 
-    # Resolve per CALL SITE, not per name: `logo` is used by 36 plugins and each one resolves it
-    # from its own directory, so a name-level answer would be wrong in both directions.
-    unresolved = []
-    resolved_sites = 0
-    site_report: dict[str, list[str]] = {}
+
+def resolve_call_sites(names: dict[str, set[str]]) -> tuple[list[tuple[str, str]], int]:
+    """Resolve per CALL SITE, not per name.
+
+    `logo` is used by ~36 plugins and each resolves it from its own directory, so a
+    name-level answer is wrong in both directions: it hides one plugin's missing file
+    behind another's present one, and it reports a staleness the product does not have.
+    """
+    unresolved: list[tuple[str, str]] = []
+    resolved = 0
     for name, files in sorted(names.items()):
         for f in sorted(files):
-            hit = resolves(name, plugin_dir_of(f))
-            if hit:
-                resolved_sites += 1
+            if resolves(name, plugin_dir_of(f)):
+                resolved += 1
             else:
                 unresolved.append((name, f))
-                site_report.setdefault(name, []).append(f)
+    return unresolved, resolved
 
+
+def print_report(names: dict[str, set[str]], occurrences: int,
+                 unresolved: list[tuple[str, str]], resolved: int, quiet: bool) -> None:
     print(f"first-party resource names referenced: {len(names)}")
     print(f"call sites scanned:                    {occurrences}")
-    print(f"call sites resolved:                   {resolved_sites}")
+    print(f"call sites resolved:                   {resolved}")
     print(f"UNRESOLVED call sites:                 {len(unresolved)}")
     if unresolved:
         print()
         for name, f in unresolved:
             print(f"    {name}  <- {f}")
-    if not quiet:
-        print()
-        for probe in ("zene-plugin-logo", "splash", "icon", "background_artwork"):
-            hit = resolves(probe, None)
-            print(f"    probe {probe!r:22} -> {hit}")
+    if quiet:
+        return
+    print()
+    for probe in ("zene-plugin-logo", "splash", "icon", "background_artwork"):
+        print(f"    probe {probe!r:22} -> {resolves(probe, None)}")
+
+
+def main() -> int:
+    names, occurrences = scan_call_sites()
+    unresolved, resolved = resolve_call_sites(names)
+    print_report(names, occurrences, unresolved, resolved, "--quiet" in sys.argv)
     return 1 if unresolved else 0
 
 

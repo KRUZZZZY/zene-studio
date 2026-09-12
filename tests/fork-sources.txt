@@ -113,3 +113,5 @@ src/wasm/WasmWorker.h
 tools/local-ci.sh
 tools/brand/rasterise-placeholders.py
 tests/brand-resource-sweep.py
+tests/evidence/brand-placeholders/verify-placeholders.py
+tests/evidence/brand-placeholders/provenance-audit.py

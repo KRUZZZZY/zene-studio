@@ -72,7 +72,19 @@ for f in ('cmake/apple/icon.icns','cmake/apple/project.icns'):
     if i != len(d): bad(f + " chunk walk did not land on EOF")
 
 # --- 5. nothing may still be byte-identical to upstream ---------------------
-PRE = os.environ.get('PRE_CHANGE_REV', 'HEAD~1')
+def _default_pre() -> str:
+    # The pre-change revision: the branch this placeholder work was based on.  HEAD~1 is
+    # only right while the artwork commit is still the tip.
+    if os.environ.get('PRE_CHANGE_REV'):
+        return os.environ['PRE_CHANGE_REV']
+    for cand in ('post-alpha/rename-complete', 'HEAD~2'):
+        if subprocess.run(f'git rev-parse --verify --quiet {cand}^{{commit}}', shell=True,
+                          capture_output=True).returncode == 0:
+            return cand
+    return 'HEAD'
+
+
+PRE = _default_pre()
 print(f"[5] byte-identity against origin/master (same path and pre-rename path); 'unchanged' compared to {PRE}")
 ren = {}
 out = subprocess.run(['git','diff','--name-status','-M','origin/master..HEAD'],

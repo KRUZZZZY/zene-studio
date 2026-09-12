@@ -10,7 +10,7 @@
 [4] ICNS container structure
     cmake/apple/icon.icns: total=28494 chunks=[('ic11', 999, (32, 32)), ('ic12', 1829, (64, 64)), ('ic07', 3473, (128, 128)), ('ic13', 7099, (256, 256)), ('ic09', 15086, (512, 512))]
     cmake/apple/project.icns: total=20856 chunks=[('ic11', 850, (32, 32)), ('ic12', 1382, (64, 64)), ('ic07', 2567, (128, 128)), ('ic13', 5100, (256, 256)), ('ic09', 10949, (512, 512))]
-[5] byte-identity against origin/master (same path and pre-rename path); 'unchanged' compared to HEAD~1
+[5] byte-identity against origin/master (same path and pre-rename path); 'unchanged' compared to post-alpha/rename-complete
     38 files compared; still-upstream=0
 
 RESULT: PASS

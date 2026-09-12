@@ -1,6 +1,0 @@
-
-scanned 1094 tracked source file(s) under src/, include/, plugins/, tests/;
-  102 fork-sources entry(ies), 995 inherited upstream, 0 stale entry(ies).
-
-PASS: every tracked source in scope is registered (102 fork-NEW, 995 inherited).
-GATE9_EXIT=0

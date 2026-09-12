@@ -37,9 +37,22 @@ def git_bytes(rev_path: str) -> bytes | None:
 
 
 # Provenance is a question about the state BEFORE the placeholder change, so the
-# "shipped" bytes come from a revision, not the working tree.  Default HEAD~1 is the
-# commit this branch's placeholder work sits on top of.
-SHIPPED = os.environ.get("SHIPPED_REV", "HEAD~1")
+# "shipped" bytes come from a revision, not the working tree.  The default is the branch
+# this placeholder work was based on; override with SHIPPED_REV=<rev> to audit any other
+# point (and note the rename map is only meaningful on a revision that still carries the
+# upstream artwork - replace the art and git stops pairing the renames).
+def _default_shipped() -> str:
+    if os.environ.get("SHIPPED_REV"):
+        return os.environ["SHIPPED_REV"]
+    for cand in ("post-alpha/rename-complete", "HEAD~2"):
+        r = subprocess.run(f"git rev-parse --verify --quiet {cand}^{{commit}}",
+                           shell=True, capture_output=True)
+        if r.returncode == 0:
+            return cand
+    return "HEAD"
+
+
+SHIPPED = _default_shipped()
 
 
 def shipped_bytes(path: str) -> bytes | None:
@@ -145,55 +158,70 @@ for d in ICON_DIRS:
     IDENTITY.append(f"cmake/linux/icons/{d}/mimetypes/application-x-lmms-project.png")
 
 
-def main() -> int:
-    ren = rename_map()
+def classify(path: str, upstream_path: str) -> str:
+    """Which provenance bucket this shipped file falls in. One verdict string per file."""
+    if identical_to(path, path):
+        return "identical_same_path"
+    if upstream_path != path and identical_to(upstream_path, path):
+        return "identical_renamed"
+    if path.endswith(".svg"):
+        art_current = svg_art_md5(f"{SHIPPED}:{path}")
+        art_upstream = svg_art_md5(f"origin/master:{upstream_path}")
+        if art_current and art_current == art_upstream:
+            return "art_only"
+    return "differs"
+
+
+VERDICT_TEXT = {
+    "identical_same_path": "IDENTICAL (same path)",
+    "identical_renamed": "IDENTICAL (renamed)",
+    "art_only": "ART IDENTICAL, metadata renamed",
+    "differs": "DIFFERS",
+}
+
+
+def print_rename_map(ren: dict[str, str]) -> None:
     print(f"== Part A. Rename map origin/master -> {SHIPPED} (images only) ==")
     for dst, src in sorted(ren.items()):
         if dst.lower().endswith((".svg", ".png", ".ico", ".icns", ".xpm")):
             print(f"   {src}  ->  {dst}")
     print()
 
-    print(f"== Part B. Identity-artwork provenance (41 shipped files) ==")
+
+def audit_rows(ren: dict[str, str]) -> dict[str, int]:
+    counts = {"identical_same_path": 0, "identical_renamed": 0, "art_only": 0, "differs": 0}
+    print(f"== Part B. Identity-artwork provenance ({len(IDENTITY)} shipped files) ==")
     print(f"   (the shipped state audited is {SHIPPED!r}; set SHIPPED_REV to change it)")
     hdr = f"{'path':<68} {'bytes':>7}  {'vs origin/master':<34} metadata"
     print(hdr)
     print("-" * len(hdr))
-    counts = {"identical_same_path": 0, "identical_renamed": 0, "art_only": 0, "differs": 0}
     for path in sorted(IDENTITY):
+        verdict = classify(path, ren.get(path, path))
+        counts[verdict] += 1
         size = len(shipped_bytes(path) or b"")
-        up_path = ren.get(path, path)
-        verdict = ""
-        if identical_to(path, path):
-            verdict = "IDENTICAL (same path)"
-            counts["identical_same_path"] += 1
-        elif up_path != path and identical_to(up_path, path):
-            verdict = f"IDENTICAL (renamed from {up_path.split('/')[-1]})"
-            counts["identical_renamed"] += 1
-        elif path.endswith(".svg"):
-            a_cur = svg_art_md5(f"{SHIPPED}:{path}")
-            a_up = svg_art_md5(f"origin/master:{up_path}") if up_path != path else a_cur
-            if a_cur and a_cur == a_up:
-                verdict = f"ART IDENTICAL ({a_cur[:12]}...), metadata renamed"
-                counts["art_only"] += 1
-            else:
-                verdict = "DIFFERS"
-                counts["differs"] += 1
-        else:
-            verdict = "DIFFERS"
-            counts["differs"] += 1
         meta = svg_meta(path) if path.endswith(".svg") else png_meta(path)
-        print(f"{path:<68} {size:>7}  {verdict:<34} {meta[:150]}")
+        print(f"{path:<68} {size:>7}  {VERDICT_TEXT[verdict]:<34} {meta[:150]}")
     print()
-    print("== Part C. Totals ==")
-    for k, v in counts.items():
-        print(f"   {k:<24} {v}")
+    return counts
 
-    print()
+
+def print_reproduction() -> None:
     print("== Part D. Raw commands, for reproduction ==")
     print("   git show origin/master:<upstream-path> | cmp - <shipped-path>; echo $?")
     print(f"   git diff --name-status -M origin/master..{SHIPPED} | grep '^R'")
     print("   git diff origin/master:data/themes/default/lmms-plugin-logo.svg "
           f"{SHIPPED}:data/themes/default/zene-plugin-logo.svg")
+
+
+def main() -> int:
+    ren = rename_map()
+    print_rename_map(ren)
+    counts = audit_rows(ren)
+    print("== Part C. Totals ==")
+    for k in ("identical_same_path", "identical_renamed", "art_only", "differs"):
+        print(f"   {k:<24} {counts[k]}")
+    print()
+    print_reproduction()
     return 0
 
 
