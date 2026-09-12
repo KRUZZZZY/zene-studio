@@ -1,0 +1,46 @@
+### unit 6 = docs/fork-readme, pinned 2e36486d5f6b58b136c3fc226dfab994ff56f776
+### DELIBERATELY NOT MERGED (orchestrator directive, 2026-09-12) - see docs/INTEGRATION-MERGES-3E.md
+
+## 1. what the unit actually contains (6 commits, not 1)
+  2e36486d5 2026-09-09 Zachariah Markusson | docs: fork README — Zene Studio development-fork banner, branch inventory, product-repo pointer
+  3d97b11f3 2026-09-09 regulus79 | Revert knife tool auto-selecting short ends (#8502)
+  76ffa57ef 2026-09-08 Fawn | Resolve all Doxygen warnings & docs cleanup (#8361)
+  e64cf9b8a 2026-09-08 Fawn | Remove OSS audio backend (#8482)
+  d10f6a23d 2026-09-08 Fawn | Remove libsoundio audio backend (#8475)
+  b6908f60a 2026-09-08 Bimal Poudel | Add .vs, .vscode to gitignore (#7988)
+
+## 2. of those, which are upstream LMMS commits already on origin/master?
+  FORK     2e36486d5f6b58b136c3fc226dfab994ff56f776  docs: fork README — Zene Studio development-fork banner, branch inventory, product-repo pointer
+  UPSTREAM  3d97b11f3a4e4ae12a0f3ba1f354c8a8dbf75bb5  Revert knife tool auto-selecting short ends (#8502)
+  UPSTREAM  76ffa57efe516d436fd06003403abebdb95a07af  Resolve all Doxygen warnings & docs cleanup (#8361)
+  UPSTREAM  e64cf9b8ad0f7e0214901852b06e4344e74d3918  Remove OSS audio backend (#8482)
+  UPSTREAM  d10f6a23d75d29243eee3e6b3bd91136b7104011  Remove libsoundio audio backend (#8475)
+  UPSTREAM  b6908f60ab6f62909935933bef864ac4dfc83799  Add .vs, .vscode to gitignore (#7988)
+
+## 3. the unit's own delta (2e36486d5 vs its parent) is one file:
+
+ README.md | 26 +++++++++++++++++++++++---
+ 1 file changed, 23 insertions(+), 3 deletions(-)
+
+## 4. file classes of the 96 paths the merge would touch (vs its merge base 4e677cb6c)
+      6 documentation
+      3 other (CI/deps)
+     87 PRODUCT CODE
+
+## 5. files it would DELETE (present at HEAD, absent on the branch):
+  DELETE cmake/modules/FindSoundIo.cmake (16 lines at HEAD)
+  DELETE include/AudioOss.h (91 lines at HEAD)
+  DELETE include/AudioSoundIo.h (142 lines at HEAD)
+  DELETE include/MidiOss.h (81 lines at HEAD)
+  DELETE src/core/audio/AudioOss.cpp (288 lines at HEAD)
+  DELETE src/core/audio/AudioSoundIo.cpp (473 lines at HEAD)
+  DELETE src/core/midi/MidiOss.cpp (114 lines at HEAD)
+
+## 6. the merge's conflict surface (git merge-tree --write-tree --messages, read-only preview)
+  conflicting paths: 6
+  CONFLICT (content): Merge conflict in .gitignore
+  CONFLICT (content): Merge conflict in README.md
+  CONFLICT (content): Merge conflict in doc/CMakeLists.txt
+  CONFLICT (content): Merge conflict in doc/Doxyfile.in
+  CONFLICT (content): Merge conflict in include/Clip.h
+  CONFLICT (modify/delete): src/core/audio/AudioSoundIo.cpp deleted in 2e36486d5 and modified in HEAD.  Version HEAD of src/core/audio/AudioSoundIo.cpp left in tree.

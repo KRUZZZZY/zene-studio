@@ -1,0 +1,30 @@
+unit 3e1480477b  merge-base 3e1480477b  paths=0
+TOTAL hard residue for the unit's own delta: 0
+
+unit ae89fa8940  merge-base ae89fa8940  paths=0
+TOTAL hard residue for the unit's own delta: 0
+
+unit bbf7a307cb  merge-base bbf7a307cb  paths=0
+TOTAL hard residue for the unit's own delta: 0
+
+unit dbcb8a2ba6  merge-base dbcb8a2ba6  paths=0
+TOTAL hard residue for the unit's own delta: 0
+
+unit e317f1062d  merge-base 0b52941404  paths=15
+  CMakeLists.txt                                delta-added=  10 in-HEAD=  10 substring=  0 RESIDUE=0
+  include/SessionModel.h                        delta-added= 307 in-HEAD= 307 substring=  0 RESIDUE=0
+  include/Song.h                                delta-added=  16 in-HEAD=  16 substring=  0 RESIDUE=0
+  src/CMakeLists.txt                            delta-added=   9 in-HEAD=   9 substring=  0 RESIDUE=0
+  src/core/CMakeLists.txt                       delta-added=  10 in-HEAD=  10 substring=  0 RESIDUE=0
+  src/core/SessionClip.cpp                      delta-added= 210 in-HEAD= 210 substring=  0 RESIDUE=0
+  src/core/SessionModel.cpp                     delta-added= 331 in-HEAD= 331 substring=  0 RESIDUE=0
+  src/core/SessionModelPrivate.h                delta-added= 118 in-HEAD= 118 substring=  0 RESIDUE=0
+  src/core/Song.cpp                             delta-added=  21 in-HEAD=  21 substring=  0 RESIDUE=0
+  src/lmmsconfig.h.in                           delta-added=   1 in-HEAD=   1 substring=  0 RESIDUE=0
+  tests/CMakeLists.txt                          delta-added=   7 in-HEAD=   7 substring=  0 RESIDUE=0
+  tests/fork-sources.txt                        delta-added=   4 in-HEAD=   4 substring=  0 RESIDUE=0
+  tests/src/core/ProjectVersionTest.cpp         delta-added= 308 in-HEAD= 308 substring=  0 RESIDUE=0
+  tests/src/core/SessionModelTest.cpp           delta-added= 322 in-HEAD= 322 substring=  0 RESIDUE=0
+  tests/upstream-modifications.txt              delta-added=   3 in-HEAD=   0 substring=  3 RESIDUE=0
+TOTAL hard residue for the unit's own delta: 0
+

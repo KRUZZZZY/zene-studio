@@ -1,0 +1,43 @@
+### patch-id twin hunt: unit 4 dbcb8a2ba
+  patch-id=54a95eb1f682e93d747af483130b837e1421d2dd
+  TWIN in HEAD: 416fb186b 2026-09-09 Zachariah Markusson | AudioBus: fix Debug build (missing <iostream>) and silenceAllChannels() skipping every second pair
+  TWIN in HEAD: 9327c350f 2026-09-09 Zachariah Markusson | AudioBus: fix Debug build (missing <iostream>) and silenceAllChannels() skipping every second pair
+
+### patch-id twin hunt: unit 5 e317f1062
+  patch-id=e9d5bf9d7b9274dba510028a6efead3f14b525a2
+  (no TWIN line above = no duplicate)
+
+### unit 3 bbf7a307c src/CMakeLists.txt — branch-only lines
+-IF(WANT_WASM)
+-	ADD_SUBDIRECTORY(wasm)
+-ENDIF()
+-	SET(WINRC "${CMAKE_BINARY_DIR}/zene.rc")
++	SET(WINRC "${CMAKE_BINARY_DIR}/lmms.rc")
+-	SET(WINRC "${CMAKE_BINARY_DIR}/zenec.obj")
++	SET(WINRC "${CMAKE_BINARY_DIR}/lmmsrc.obj")
+-					"-o\"${CMAKE_BINARY_DIR}/zenec.obj\""
+-					"-i\"${CMAKE_BINARY_DIR}/zene.rc\""
+-				DEPENDS "${CMAKE_BINARY_DIR}/zene.rc")
++					"-o\"${CMAKE_BINARY_DIR}/lmmsrc.obj\""
++					"-i\"${CMAKE_BINARY_DIR}/lmms.rc\""
++				DEPENDS "${CMAKE_BINARY_DIR}/lmms.rc")
+-# Paths relative to the zene executable
++# Paths relative to lmms executable
+-IF(NOT LMMS_HAVE_SESSION_VIEW)
+-	# Same AUTOMOC trap for the gated Session View header. SessionModel has no
+-	# Q_OBJECT today (it is a plain data model), so this guard is a no-op now;
+-	# it keeps the WANT_SESSION_VIEW=OFF build clean if a Q_OBJECT is ever
+-	# added to the header.
+-	SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/SessionModel.h"
+-		PROPERTIES SKIP_AUTOMOC ON)
+-ENDIF()
+-IF(WANT_WASM)
+-	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${WASMTIME_INCLUDE_DIRS})
+-	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE LMMS_HAVE_WASM=1)
+-	target_static_definitions(lmmsobjs LMMS_HAVE_WASM=1)
+-	target_static_libraries(lmmsobjs ${WASMTIME_LIBRARIES})
+-ENDIF()
+-# Lua scripting API version: the numbers come from the top-level CMakeLists.txt
+
+### which HEAD commit added include/SessionModel.h
+ca5c19376 feat(session): Session View data layer with versioned XML persistence (#594)

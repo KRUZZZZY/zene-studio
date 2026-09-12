@@ -1,0 +1,48 @@
+
+tests/integration-logs-3a/final/render-final-1.wav
+  file sha256   6b51f70fc32e993d7aaad3592e356954622ce842a0cbf1d6043962f185f24cb1  (2177112 bytes)
+  chunk fmt    size=       16  payload sha256=3b9b8f3ae2f92cd966db8fa02134f6f6b7ac1db3a8a7734c053c17e45d14d12b
+      fmt=1 channels=2 sampleRate=44100 byteRate=176400 blockAlign=4 bitsPerSample=16
+  chunk LIST   size=       36  payload sha256=9a457784205c372da0b0197c6bc96c409e0227c6d0cef08f76427f92e6340347
+      INFO ISFT = 'LMMS (libsndfile-1.2.2)'
+  chunk data   size=  2177024  payload sha256=b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca
+
+tests/integration-logs-3b/final/render-final-1.wav
+  file sha256   943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  (2177120 bytes)
+  chunk fmt    size=       16  payload sha256=3b9b8f3ae2f92cd966db8fa02134f6f6b7ac1db3a8a7734c053c17e45d14d12b
+      fmt=1 channels=2 sampleRate=44100 byteRate=176400 blockAlign=4 bitsPerSample=16
+  chunk LIST   size=       44  payload sha256=9fdb1a38dd4d3f13b577d93fb83e54e74413a50c8ba3b0dc3e4e17398767940f
+      INFO ISFT = 'Zene Studio (libsndfile-1.2.2)'
+  chunk data   size=  2177024  payload sha256=b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca
+
+tests/integration-logs-3b/final/render-oldinput.wav
+  file sha256   943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  (2177120 bytes)
+  chunk fmt    size=       16  payload sha256=3b9b8f3ae2f92cd966db8fa02134f6f6b7ac1db3a8a7734c053c17e45d14d12b
+      fmt=1 channels=2 sampleRate=44100 byteRate=176400 blockAlign=4 bitsPerSample=16
+  chunk LIST   size=       44  payload sha256=9fdb1a38dd4d3f13b577d93fb83e54e74413a50c8ba3b0dc3e4e17398767940f
+      INFO ISFT = 'Zene Studio (libsndfile-1.2.2)'
+  chunk data   size=  2177024  payload sha256=b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca
+
+tests/integration-logs-3c/final/render-final-1.wav
+  file sha256   943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  (2177120 bytes)
+  chunk fmt    size=       16  payload sha256=3b9b8f3ae2f92cd966db8fa02134f6f6b7ac1db3a8a7734c053c17e45d14d12b
+      fmt=1 channels=2 sampleRate=44100 byteRate=176400 blockAlign=4 bitsPerSample=16
+  chunk LIST   size=       44  payload sha256=9fdb1a38dd4d3f13b577d93fb83e54e74413a50c8ba3b0dc3e4e17398767940f
+      INFO ISFT = 'Zene Studio (libsndfile-1.2.2)'
+  chunk data   size=  2177024  payload sha256=b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca
+
+tests/integration-logs-3d/final/render-final-1.wav
+  file sha256   943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  (2177120 bytes)
+  chunk fmt    size=       16  payload sha256=3b9b8f3ae2f92cd966db8fa02134f6f6b7ac1db3a8a7734c053c17e45d14d12b
+      fmt=1 channels=2 sampleRate=44100 byteRate=176400 blockAlign=4 bitsPerSample=16
+  chunk LIST   size=       44  payload sha256=9fdb1a38dd4d3f13b577d93fb83e54e74413a50c8ba3b0dc3e4e17398767940f
+      INFO ISFT = 'Zene Studio (libsndfile-1.2.2)'
+  chunk data   size=  2177024  payload sha256=b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca
+
+tests/integration-logs-3d/final/render-final-2.wav
+  file sha256   943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  (2177120 bytes)
+  chunk fmt    size=       16  payload sha256=3b9b8f3ae2f92cd966db8fa02134f6f6b7ac1db3a8a7734c053c17e45d14d12b
+      fmt=1 channels=2 sampleRate=44100 byteRate=176400 blockAlign=4 bitsPerSample=16
+  chunk LIST   size=       44  payload sha256=9fdb1a38dd4d3f13b577d93fb83e54e74413a50c8ba3b0dc3e4e17398767940f
+      INFO ISFT = 'Zene Studio (libsndfile-1.2.2)'
+  chunk data   size=  2177024  payload sha256=b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca

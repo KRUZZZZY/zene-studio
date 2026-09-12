@@ -1,0 +1,108 @@
+
+.github/workflows/build.yml: unit-only lines=15 present-at-HEAD(verbatim/renamed)=13 substring-of-a-HEAD-line=1 RESIDUE=1
+   RESIDUE| 'on': [push, pull_request]
+
+TOTAL HARD RESIDUE LINES for 3e1480477b: 1
+
+tests/CMakeLists.txt: unit-only lines=6 present-at-HEAD(verbatim/renamed)=5 substring-of-a-HEAD-line=0 RESIDUE=1
+   RESIDUE| 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest")
+
+tests/all-sources.txt: unit-only lines=233 present-at-HEAD(verbatim/renamed)=230 substring-of-a-HEAD-line=0 RESIDUE=3
+   RESIDUE| #     sources kept for A/B comparison - real sources, but duplicates by construction).
+   RESIDUE| # Regenerate with:
+   RESIDUE| #     | sort > tests/all-sources.txt
+
+tests/src/core/RemotePluginClientE2ETest.cpp: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+tests/src/plugins/FakeRemotePluginClient.cpp: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+TOTAL HARD RESIDUE LINES for ae89fa8940: 4
+
+src/CMakeLists.txt: unit-only lines=15 present-at-HEAD(verbatim/renamed)=13 substring-of-a-HEAD-line=0 RESIDUE=2
+   RESIDUE| # Paths relative to lmms executable
+   RESIDUE| target_static_libraries(lmmsobjs ringbuffer)
+
+TOTAL HARD RESIDUE LINES for bbf7a307cb: 2
+
+src/core/AudioBus.cpp: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+tests/CMakeLists.txt: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+tests/src/core/AudioBusTest.cpp: unit-only lines=22 present-at-HEAD(verbatim/renamed)=1 substring-of-a-HEAD-line=0 RESIDUE=21
+   RESIDUE|  * AudioBusTest.cpp - unit tests for AudioBus (Phase F hardening, task #592)
+   RESIDUE|  * Copyright (c) 2026 LMMS developers
+   RESIDUE| #include "LmmsTypes.h"
+   RESIDUE| 	//! Regression test for the pair-iteration bug in silenceAllChannels():
+   RESIDUE| 	//! m_channelPairs is the number of channel *pairs*, so the loop must
+   RESIDUE| 	//! advance one pair at a time. Stepping by 2 (as track channels) only
+   RESIDUE| 	//! zeroed every second pair and left the rest of the bus carrying signal.
+   RESIDUE| 	//! Multi-pair buses are what multi-channel plugin I/O uses, so a bus that
+   RESIDUE| 	//! silently keeps signal is exactly the fixed-count artefact SPEC 8.2
+   RESIDUE| 	//! asks us to rule out.
+   RESIDUE| 				// distinct non-zero value per pair so a missed pair is named
+   RESIDUE| 		// The single-pair bus used by every MixerChannel/AudioBusHandle must
+   RESIDUE| 		// keep working (this is the shape the mixer actually creates).
+   RESIDUE| 		SampleFrame single[1][frames];
+   RESIDUE| 		SampleFrame* singleBus[1] = {single[0]};
+   RESIDUE| 			single[0][f][0] = 0.5f;
+   RESIDUE| 			single[0][f][1] = 0.5f;
+   RESIDUE| 		AudioBus singlePair{singleBus, 1, frames};
+   RESIDUE| 		singlePair.silenceAllChannels();
+   RESIDUE| 			QCOMPARE(single[0][f][0], 0.0f);
+   RESIDUE| 			QCOMPARE(single[0][f][1], 0.0f);
+
+TOTAL HARD RESIDUE LINES for dbcb8a2ba6: 21
+
+CMakeLists.txt: unit-only lines=8 present-at-HEAD(verbatim/renamed)=1 substring-of-a-HEAD-line=0 RESIDUE=7
+   RESIDUE| SET(PROJECT_AUTHOR      "LMMS Developers")
+   RESIDUE| SET(PROJECT_URL         "https://lmms.io")
+   RESIDUE| SET(PROJECT_EMAIL       "lmms-devel@lists.sourceforge.net")
+   RESIDUE| SET(PROJECT_DESCRIPTION "${PROJECT_NAME_UCASE} - Free music production software")
+   RESIDUE| SET(PROJECT_COPYRIGHT   "2008-${PROJECT_YEAR} ${PROJECT_AUTHOR}")
+   RESIDUE| SET(VERSION_MAJOR       "1")
+   RESIDUE| SET(VERSION_MINOR       "3")
+
+include/SessionModel.h: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+include/Song.h: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+src/CMakeLists.txt: unit-only lines=14 present-at-HEAD(verbatim/renamed)=13 substring-of-a-HEAD-line=0 RESIDUE=1
+   RESIDUE| # Paths relative to lmms executable
+
+src/core/CMakeLists.txt: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+src/core/SessionClip.cpp: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+src/core/SessionModel.cpp: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+src/core/SessionModelPrivate.h: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+src/core/Song.cpp: unit-only lines=15 present-at-HEAD(verbatim/renamed)=1 substring-of-a-HEAD-line=7 RESIDUE=7
+   RESIDUE| 		if (p->isRecording() && relTime >= 0 && relTime < p->length())
+   RESIDUE| 			// The automation system really needs to be reworked.
+   RESIDUE| 			// For whatever reason, the values in an automation clip are stored in un-un-scaled format, so if you
+   RESIDUE| 			model->setValue(model->scaledValue(it.value()), true);
+   RESIDUE| 		m_exportSongEnd = TimePos(m_length, 0);
+   RESIDUE| 			m_exportSongEnd += TimePos(1,0);
+   RESIDUE| 			QMessageBox::warning( nullptr, tr("LMMS Error report"), errorSummary(),
+
+src/lmmsconfig.h.in: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+tests/CMakeLists.txt: unit-only lines=6 present-at-HEAD(verbatim/renamed)=3 substring-of-a-HEAD-line=1 RESIDUE=2
+   RESIDUE| 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest")
+   RESIDUE| target_link_libraries(synthetic_audio_plugin PRIVATE ${QT_LIBRARIES})
+
+tests/fork-sources.txt: unit-only lines=13 present-at-HEAD(verbatim/renamed)=8 substring-of-a-HEAD-line=0 RESIDUE=5
+   RESIDUE| # Sources added by this fork on top of upstream master (4e677cb6c).
+   RESIDUE| # Regenerate with:
+   RESIDUE| #   git diff --name-only --diff-filter=A origin/master HEAD -- src include plugins \
+   RESIDUE| #     | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+   RESIDUE| #     | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)'
+
+tests/src/core/ProjectVersionTest.cpp: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+tests/src/core/SessionModelTest.cpp: unit-only lines=0 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=0 RESIDUE=0
+
+tests/upstream-modifications.txt: unit-only lines=10 present-at-HEAD(verbatim/renamed)=0 substring-of-a-HEAD-line=10 RESIDUE=0
+
+TOTAL HARD RESIDUE LINES for e317f1062d: 22

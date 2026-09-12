@@ -1,0 +1,12 @@
+=== merge 4: part-b-engine-integration (dbcb8a2ba61cd4ee4a67a832cc0b582f187069cc) onto 131ce442a ===
+Auto-merging tests/CMakeLists.txt
+CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+Auto-merging tests/src/core/AudioBusTest.cpp
+CONFLICT (add/add): Merge conflict in tests/src/core/AudioBusTest.cpp
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1
+conflicted files: 2
+  tests/CMakeLists.txt
+  tests/src/core/AudioBusTest.cpp
+NO-CONTENT: the merged index is byte-identical to HEAD (131ce442a^{tree} 411c3978a0a9)
+conflicted=2 merge_exit=1

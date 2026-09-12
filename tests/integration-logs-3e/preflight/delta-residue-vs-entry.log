@@ -1,0 +1,60 @@
+unit 3e1480477b  merge-base 2315fc2462  against f68cf8e51  paths=1
+  .github/workflows/build.yml                   delta-added=  24 in-HEAD=  24 substring=  0 RESIDUE=0
+TOTAL hard residue for the unit's own delta: 0
+
+unit ae89fa8940  merge-base 52a7e8f454  against f68cf8e51  paths=4
+  tests/CMakeLists.txt                          delta-added=  36 in-HEAD=  36 substring=  0 RESIDUE=0
+  tests/all-sources.txt                         delta-added=   2 in-HEAD=   2 substring=  0 RESIDUE=0
+  tests/src/core/RemotePluginClientE2ETest.cpp  delta-added= 451 in-HEAD= 451 substring=  0 RESIDUE=0
+  tests/src/plugins/FakeRemotePluginClient.cpp  delta-added= 442 in-HEAD= 442 substring=  0 RESIDUE=0
+TOTAL hard residue for the unit's own delta: 0
+
+unit bbf7a307cb  merge-base a592a8b360  against f68cf8e51  paths=1
+  src/CMakeLists.txt                            delta-added=   8 in-HEAD=   8 substring=  0 RESIDUE=0
+TOTAL hard residue for the unit's own delta: 0
+
+unit dbcb8a2ba6  merge-base 4ac5c3e38e  against f68cf8e51  paths=3
+  src/core/AudioBus.cpp                         delta-added=   4 in-HEAD=   4 substring=  0 RESIDUE=0
+  tests/CMakeLists.txt                          delta-added=   1 in-HEAD=   1 substring=  0 RESIDUE=0
+  tests/src/core/AudioBusTest.cpp               delta-added= 102 in-HEAD=  81 substring=  0 RESIDUE=21
+      RESIDUE|  * AudioBusTest.cpp - unit tests for AudioBus (Phase F hardening, task #592)
+      RESIDUE|  * Copyright (c) 2026 LMMS developers
+      RESIDUE| #include "LmmsTypes.h"
+      RESIDUE| 	//! Regression test for the pair-iteration bug in silenceAllChannels():
+      RESIDUE| 	//! m_channelPairs is the number of channel *pairs*, so the loop must
+      RESIDUE| 	//! advance one pair at a time. Stepping by 2 (as track channels) only
+      RESIDUE| 	//! zeroed every second pair and left the rest of the bus carrying signal.
+      RESIDUE| 	//! Multi-pair buses are what multi-channel plugin I/O uses, so a bus that
+      RESIDUE| 	//! silently keeps signal is exactly the fixed-count artefact SPEC 8.2
+      RESIDUE| 	//! asks us to rule out.
+      RESIDUE| 				// distinct non-zero value per pair so a missed pair is named
+      RESIDUE| 		// The single-pair bus used by every MixerChannel/AudioBusHandle must
+      RESIDUE| 		// keep working (this is the shape the mixer actually creates).
+      RESIDUE| 		SampleFrame single[1][frames];
+      RESIDUE| 		SampleFrame* singleBus[1] = {single[0]};
+      RESIDUE| 			single[0][f][0] = 0.5f;
+      RESIDUE| 			single[0][f][1] = 0.5f;
+      RESIDUE| 		AudioBus singlePair{singleBus, 1, frames};
+      RESIDUE| 		singlePair.silenceAllChannels();
+      RESIDUE| 			QCOMPARE(single[0][f][0], 0.0f);
+      RESIDUE| 			QCOMPARE(single[0][f][1], 0.0f);
+TOTAL hard residue for the unit's own delta: 21
+
+unit e317f1062d  merge-base 0b52941404  against f68cf8e51  paths=15
+  CMakeLists.txt                                delta-added=  10 in-HEAD=  10 substring=  0 RESIDUE=0
+  include/SessionModel.h                        delta-added= 307 in-HEAD= 307 substring=  0 RESIDUE=0
+  include/Song.h                                delta-added=  16 in-HEAD=  16 substring=  0 RESIDUE=0
+  src/CMakeLists.txt                            delta-added=   9 in-HEAD=   9 substring=  0 RESIDUE=0
+  src/core/CMakeLists.txt                       delta-added=  10 in-HEAD=  10 substring=  0 RESIDUE=0
+  src/core/SessionClip.cpp                      delta-added= 210 in-HEAD= 210 substring=  0 RESIDUE=0
+  src/core/SessionModel.cpp                     delta-added= 331 in-HEAD= 331 substring=  0 RESIDUE=0
+  src/core/SessionModelPrivate.h                delta-added= 118 in-HEAD= 118 substring=  0 RESIDUE=0
+  src/core/Song.cpp                             delta-added=  21 in-HEAD=  21 substring=  0 RESIDUE=0
+  src/lmmsconfig.h.in                           delta-added=   1 in-HEAD=   1 substring=  0 RESIDUE=0
+  tests/CMakeLists.txt                          delta-added=   7 in-HEAD=   7 substring=  0 RESIDUE=0
+  tests/fork-sources.txt                        delta-added=   4 in-HEAD=   4 substring=  0 RESIDUE=0
+  tests/src/core/ProjectVersionTest.cpp         delta-added= 308 in-HEAD= 308 substring=  0 RESIDUE=0
+  tests/src/core/SessionModelTest.cpp           delta-added= 322 in-HEAD= 322 substring=  0 RESIDUE=0
+  tests/upstream-modifications.txt              delta-added=   3 in-HEAD=   0 substring=  3 RESIDUE=0
+TOTAL hard residue for the unit's own delta: 0
+

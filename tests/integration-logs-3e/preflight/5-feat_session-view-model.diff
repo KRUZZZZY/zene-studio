@@ -1,0 +1,1880 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 05c650c03..fd45d2f93 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -107,6 +107,7 @@ OPTION(WANT_VST_32	"Include 32-bit Windows VST support" ON)
+ OPTION(WANT_VST_64	"Include 64-bit Windows VST support" ON)
+ OPTION(WANT_WINMM	"Include WinMM MIDI support" OFF)
+ OPTION(WANT_STEM_SPLIT	"Include offline stem separation (HTDemucs via ONNX Runtime, opt-in)" OFF)
++OPTION(WANT_SESSION_VIEW	"Include the Session View data layer (<session> project block, opt-in)" OFF)
+ OPTION(WANT_DEBUG_FPE	"Debug floating point exceptions" OFF)
+ option(WANT_DEBUG_ASAN	"Enable AddressSanitizer" OFF)
+ option(WANT_DEBUG_TSAN	"Enable ThreadSanitizer" OFF)
+@@ -139,6 +140,15 @@ IF(WANT_STEM_SPLIT)
+ ENDIF()
+ 
+ 
++# Session View data layer (opt-in). The model and its <session> persistence are
++# pure Qt: they are compiled only when the feature is enabled, and the
++# WANT_SESSION_VIEW=OFF build must stay clean (see src/CMakeLists.txt for the
++# AUTOMOC guard).
++IF(WANT_SESSION_VIEW)
++	SET(LMMS_HAVE_SESSION_VIEW 1)
++ENDIF()
++
++
+ # Set the target microarchitecture
+ if(TARGET_UARCH_FLAGS)
+ 	if(TARGET_UARCH AND NOT TARGET_UARCH STREQUAL "custom")
+diff --git a/include/SessionModel.h b/include/SessionModel.h
+new file mode 100644
+index 000000000..53a60839f
+--- /dev/null
++++ b/include/SessionModel.h
+@@ -0,0 +1,307 @@
++/*
++ * SessionModel.h - Session View data layer (clip slots, scenes)
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ */
++
++#ifndef LMMS_SESSION_MODEL_H
++#define LMMS_SESSION_MODEL_H
++
++#include <QString>
++#include <vector>
++
++#include "lmms_export.h"
++
++class QDomDocument;
++class QDomElement;
++
++namespace lmms
++{
++
++/*! Session View data layer (SPEC-zene-studio A1, §4.1).
++ *
++ *  The grid is track columns x scene rows. Every cell is a ClipSlot holding a
++ *  reference to a MIDI pattern or an audio clip plus its launch settings and
++ *  Follow Action chain; every row is a Scene with an optional tempo and time
++ *  signature override.
++ *
++ *  This is the persisted model only. Launching, Follow Action evaluation and
++ *  the separate session clock domain (SPEC A2/A3) belong to the engine and are
++ *  deliberately not implemented here. Session clips are a NEW type (SPEC A1),
++ *  not PatternClip: the slot stores a reference, never timeline state, and a
++ *  track's session and arrangement content stay mutually exclusive.
++ *
++ *  Serialisation is the versioned <session> block (see SessionModel.cpp for the
++ *  schema and the version policy). Everything is feature-gated behind
++ *  WANT_SESSION_VIEW (LMMS_HAVE_SESSION_VIEW).
++ */
++class LMMS_EXPORT SessionModel;
++
++//! Launch mode of a clip slot (SPEC §4.1: Trigger, Gate, Toggle, Repeat).
++enum class LaunchMode : int
++{
++	Trigger = 0, //!< starts on trigger, plays until stopped or its loop ends
++	Gate,        //!< plays while the trigger is held
++	Toggle,      //!< first trigger starts, second trigger stops
++	Repeat       //!< retriggers in a loop while held
++};
++
++/*! Launch quantisation, expressed in bars. The numeric value is the number of
++ *  bars (0 = none), so `Global` (-1) defers to the session default and the
++ *  serialised value stays self-describing. */
++enum class LaunchQuantisation : int
++{
++	Global = -1, //!< per-clip only: use SessionModel's global quantisation
++	None = 0,
++	Bar = 1,
++	TwoBars = 2,
++	FourBars = 4
++};
++
++//! One entry of a clip's Follow Action chain (SPEC §4.1).
++struct LMMS_EXPORT FollowAction
++{
++	enum class Type : int
++	{
++		NoAction = 0,
++		Stop,
++		PlayAgain,
++		Previous,
++		Next,
++		First,
++		Last,
++		Any,
++		Other,
++		Jump
++	};
++
++	Type type = Type::NoAction;
++	//! Chance A/B weight, 0..1. Entries of a chain are picked with these
++	//! weights; a single entry with chance 1 is the plain "always" action.
++	double chance = 1.0;
++	//! Linked timing (the action fires after the clip length) vs Unlinked.
++	bool linked = true;
++	//! Unlinked follow-action time, in bars (ignored when linked).
++	double timeBars = 1.0;
++	//! Target scene row for Type::Jump.
++	int jumpTo = 0;
++
++	bool operator==( const FollowAction& other ) const
++	{
++		return type == other.type && chance == other.chance
++			&& linked == other.linked && timeBars == other.timeBars
++			&& jumpTo == other.jumpTo;
++	}
++	bool operator!=( const FollowAction& other ) const { return !( *this == other ); }
++};
++
++/*! One grid cell: a reference to a MIDI pattern or an audio clip plus its
++ *  launch settings. An empty slot is not serialised at all. */
++class LMMS_EXPORT ClipSlot
++{
++public:
++	enum class Type : int
++	{
++		Empty = 0,
++		Midi,
++		Audio
++	};
++
++	Type type() const { return m_type; }
++	bool isEmpty() const { return m_type == Type::Empty; }
++
++	//! MIDI clips reference a pattern by its PatternStore id.
++	int patternId() const { return m_patternId; }
++	//! Audio clips reference a sample file by (possibly relative) path.
++	const QString& audioSource() const { return m_audioSource; }
++
++	//! Setting one reference kind clears the other: a slot is either a MIDI
++	//! or an audio clip, never both (SPEC A1 mutual exclusivity).
++	void setPatternReference( int patternId );
++	void setAudioReference( const QString& source );
++	void clear();
++
++	const QString& name() const { return m_name; }
++	void setName( const QString& name ) { m_name = name; }
++
++	LaunchMode launchMode() const { return m_launchMode; }
++	void setLaunchMode( LaunchMode mode ) { m_launchMode = mode; }
++
++	LaunchQuantisation launchQuantisation() const { return m_launchQuantisation; }
++	void setLaunchQuantisation( LaunchQuantisation quantisation ) { m_launchQuantisation = quantisation; }
++
++	bool legato() const { return m_legato; }
++	void setLegato( bool legato ) { m_legato = legato; }
++
++	//! Loop region in ticks, relative to the clip (SPEC §4.1 per-clip loop).
++	int loopStart() const { return m_loopStart; }
++	void setLoopStart( int ticks ) { m_loopStart = ticks; }
++	int loopLength() const { return m_loopLength; }
++	void setLoopLength( int ticks ) { m_loopLength = ticks; }
++
++	float gainDb() const { return m_gainDb; }
++	void setGainDb( float gainDb ) { m_gainDb = gainDb; }
++	int transpose() const { return m_transpose; }
++	void setTranspose( int semitones ) { m_transpose = semitones; }
++	int detune() const { return m_detune; }
++	void setDetune( int cents ) { m_detune = cents; }
++	bool ramMode() const { return m_ramMode; }
++	void setRamMode( bool ramMode ) { m_ramMode = ramMode; }
++
++	const std::vector<FollowAction>& followActions() const { return m_followActions; }
++	void setFollowActions( std::vector<FollowAction> chain ) { m_followActions = std::move( chain ); }
++	void addFollowAction( const FollowAction& action ) { m_followActions.push_back( action ); }
++
++	//! Writes the slot's attributes onto a <clip> element.
++	void saveState( QDomDocument& doc, QDomElement& element ) const;
++	void restoreState( const QDomElement& element );
++
++private:
++	Type m_type = Type::Empty;
++	int m_patternId = -1;
++	QString m_audioSource;
++	QString m_name;
++	LaunchMode m_launchMode = LaunchMode::Trigger;
++	LaunchQuantisation m_launchQuantisation = LaunchQuantisation::Global;
++	bool m_legato = false;
++	int m_loopStart = 0;
++	int m_loopLength = 0;
++	float m_gainDb = 0.0f;
++	int m_transpose = 0;
++	int m_detune = 0;
++	bool m_ramMode = false;
++	std::vector<FollowAction> m_followActions;
++};
++
++//! One grid row: an optional tempo / time-signature override (SPEC §4.1).
++class LMMS_EXPORT Scene
++{
++public:
++	const QString& name() const { return m_name; }
++	void setName( const QString& name ) { m_name = name; }
++
++	bool tempoEnabled() const { return m_tempoEnabled; }
++	void setTempoEnabled( bool enabled ) { m_tempoEnabled = enabled; }
++	double tempo() const { return m_tempo; }
++	void setTempo( double tempo ) { m_tempo = tempo; }
++
++	bool timeSigEnabled() const { return m_timeSigEnabled; }
++	void setTimeSigEnabled( bool enabled ) { m_timeSigEnabled = enabled; }
++	int timeSigNumerator() const { return m_timeSigNumerator; }
++	void setTimeSigNumerator( int numerator ) { m_timeSigNumerator = numerator; }
++	int timeSigDenominator() const { return m_timeSigDenominator; }
++	void setTimeSigDenominator( int denominator ) { m_timeSigDenominator = denominator; }
++
++	//! True when the scene carries anything beyond its (empty) defaults.
++	bool isModified() const
++	{
++		return !m_name.isEmpty() || m_tempoEnabled || m_timeSigEnabled;
++	}
++
++	void saveState( QDomDocument& doc, QDomElement& element ) const;
++	void restoreState( const QDomElement& element );
++
++private:
++	QString m_name;
++	bool m_tempoEnabled = false;
++	double m_tempo = 120.0;
++	bool m_timeSigEnabled = false;
++	int m_timeSigNumerator = 4;
++	int m_timeSigDenominator = 4;
++};
++
++class LMMS_EXPORT SessionModel
++{
++public:
++	//! Version of the <session> block this build writes. See the version
++	//! policy in SessionModel.cpp.
++	static constexpr int CurrentVersion = 1;
++	//! Default global launch quantisation (Live's default: one bar).
++	static constexpr LaunchQuantisation DefaultLaunchQuantisation = LaunchQuantisation::Bar;
++
++	SessionModel() = default;
++
++	// ---- grid ---------------------------------------------------------
++
++	int trackCount() const { return m_trackCount; }
++	int sceneCount() const { return m_sceneCount; }
++
++	//! Resize the grid. Existing slots keep their content and grid position;
++	//! cells that appear are empty.
++	void setTrackCount( int tracks );
++	void setSceneCount( int scenes );
++
++	//! Slot at (track, scene). Out-of-range access returns a shared empty
++	//! slot so callers cannot corrupt the grid; index with valid coordinates.
++	const ClipSlot& slot( int track, int scene ) const;
++	ClipSlot& slot( int track, int scene );
++
++	const Scene& scene( int scene ) const;
++	Scene& scene( int scene );
++
++	// ---- session-wide state -------------------------------------------
++
++	LaunchQuantisation globalLaunchQuantisation() const { return m_globalLaunchQuantisation; }
++	void setGlobalLaunchQuantisation( LaunchQuantisation quantisation ) { m_globalLaunchQuantisation = quantisation; }
++
++	//! True when the model holds nothing worth persisting: no grid, no clip,
++	//! no scene override and the default global quantisation.
++	bool isEmpty() const;
++
++	//! Whether saveState() should emit a <session> block. A project that never
++	//! used the session view (no block on load, nothing added since) re-saves
++	//! without one, byte-identically.
++	bool shouldPersist() const { return m_hadSessionBlock || !isEmpty(); }
++
++	//! True when the loaded project contained a <session> element.
++	bool hadSessionBlock() const { return m_hadSessionBlock; }
++
++	void clear();
++
++	// ---- persistence ---------------------------------------------------
++
++	//! Appends <session version="1" ...> to `parent` and returns it. The
++	//! caller decides whether to call this (see shouldPersist()).
++	QDomElement saveState( QDomDocument& doc, QDomElement& parent ) const;
++
++	//! Loads a <session> element. Returns false when the block was not
++	//! understood (unknown/future version); such a block is preserved verbatim
++	//! so a re-save through this build does not drop it.
++	bool restoreState( const QDomElement& element );
++
++	//! Raw XML of a <session> block written by a newer build; empty otherwise.
++	const QString& preservedUnknownXml() const { return m_preservedUnknownXml; }
++
++private:
++	void resize( int tracks, int scenes );
++
++	int m_trackCount = 0;
++	int m_sceneCount = 0;
++	std::vector<ClipSlot> m_slots; //!< track * sceneCount + scene
++	std::vector<Scene> m_scenes;
++	LaunchQuantisation m_globalLaunchQuantisation = DefaultLaunchQuantisation;
++	bool m_hadSessionBlock = false;
++	QString m_preservedUnknownXml;
++};
++
++} // namespace lmms
++
++#endif // LMMS_SESSION_MODEL_H
+diff --git a/include/Song.h b/include/Song.h
+index 1c18cbbb7..1be42115a 100644
+--- a/include/Song.h
++++ b/include/Song.h
+@@ -35,11 +35,16 @@
+ #include "Controller.h"
+ #include "Metronome.h"
+ #include "lmms_constants.h"
++#include "lmmsconfig.h"
+ #include "MeterModel.h"
+ #include "Timeline.h"
+ #include "TrackContainer.h"
+ #include "VstSyncController.h"
+ 
++#ifdef LMMS_HAVE_SESSION_VIEW
++#include "SessionModel.h"
++#endif
++
+ namespace lmms
+ {
+ 
+@@ -326,6 +331,13 @@ public:
+ 
+ 	Metronome& metronome() { return m_metronome; }
+ 
++#ifdef LMMS_HAVE_SESSION_VIEW
++	//! Session View data layer (SPEC-zene-studio A1). Compiled only with
++	//! WANT_SESSION_VIEW; persisted as the versioned <session> block.
++	SessionModel& sessionModel() { return m_sessionModel; }
++	const SessionModel& sessionModel() const { return m_sessionModel; }
++#endif
++
+ public slots:
+ 	void playSong();
+ 	void record();
+@@ -459,6 +471,10 @@ private:
+ 
+ 	Metronome m_metronome;
+ 
++#ifdef LMMS_HAVE_SESSION_VIEW
++	SessionModel m_sessionModel;
++#endif
++
+ 	friend class Engine;
+ 	friend class gui::SongEditor;
+ 	friend class gui::ControllerRackView;
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 0ef01dfaa..fded721a2 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -118,6 +118,15 @@ IF(NOT LMMS_HAVE_STEM_SPLIT)
+ 		PROPERTIES SKIP_AUTOMOC ON)
+ ENDIF()
+ 
++IF(NOT LMMS_HAVE_SESSION_VIEW)
++	# Same AUTOMOC trap for the gated Session View header. SessionModel has no
++	# Q_OBJECT today (it is a plain data model), so this guard is a no-op now;
++	# it keeps the WANT_SESSION_VIEW=OFF build clean if a Q_OBJECT is ever
++	# added to the header.
++	SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/SessionModel.h"
++		PROPERTIES SKIP_AUTOMOC ON)
++ENDIF()
++
+ IF(WANT_WASM)
+ 	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${WASMTIME_INCLUDE_DIRS})
+ 	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE LMMS_HAVE_WASM=1)
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index cba8aed98..94a1bd29d 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -16,6 +16,15 @@ IF(LMMS_HAVE_STEM_SPLIT)
+ 	ENDIF()
+ ENDIF()
+ 
++# Session View data layer (opt-in, see include/SessionModel.h). Pure Qt: the
++# model, the clip slots and scenes, and the versioned <session> block.
++IF(LMMS_HAVE_SESSION_VIEW)
++	SET(LMMS_SESSION_SRCS
++		core/SessionClip.cpp
++		core/SessionModel.cpp
++	)
++ENDIF()
++
+ set(LMMS_SRCS
+ 	${LMMS_SRCS}
+ 
+@@ -161,6 +170,7 @@ set(LMMS_SRCS
+ 	core/midi/MidiWinMM.cpp
+ 
+ 	${LMMS_STEM_SRCS}
++	${LMMS_SESSION_SRCS}
+ 
+ 	PARENT_SCOPE
+ )
+diff --git a/src/core/SessionClip.cpp b/src/core/SessionClip.cpp
+new file mode 100644
+index 000000000..e1fe68fda
+--- /dev/null
++++ b/src/core/SessionClip.cpp
+@@ -0,0 +1,210 @@
++/*
++ * SessionClip.cpp - ClipSlot and Scene serialisation (Session View)
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ */
++
++
++#include "SessionModelPrivate.h"
++
++#include <QDomDocument>
++#include <QDomElement>
++#include <QString>
++
++namespace lmms
++{
++
++namespace
++{
++using namespace sessionSerialization;
++}
++
++// ---------------------------------------------------------------------------
++// ClipSlot
++// ---------------------------------------------------------------------------
++
++void ClipSlot::setPatternReference( int patternId )
++{
++	m_type = Type::Midi;
++	m_patternId = patternId;
++	m_audioSource.clear();
++}
++
++
++void ClipSlot::setAudioReference( const QString& source )
++{
++	m_type = Type::Audio;
++	m_audioSource = source;
++	m_patternId = -1;
++}
++
++
++void ClipSlot::clear()
++{
++	*this = ClipSlot();
++}
++
++
++void ClipSlot::saveState( QDomDocument& doc, QDomElement& element ) const
++{
++	Q_UNUSED( doc )
++
++	element.setAttribute( QStringLiteral( "type" ), static_cast<int>( m_type ) );
++	switch( m_type )
++	{
++		case Type::Midi:
++			element.setAttribute( QStringLiteral( "pattern" ), m_patternId );
++			break;
++		case Type::Audio:
++			element.setAttribute( QStringLiteral( "src" ), m_audioSource );
++			break;
++		case Type::Empty:
++			break;
++	}
++	if( !m_name.isEmpty() )
++	{
++		element.setAttribute( QStringLiteral( "name" ), m_name );
++	}
++	element.setAttribute( QStringLiteral( "launchmode" ), static_cast<int>( m_launchMode ) );
++	element.setAttribute( QStringLiteral( "quantisation" ), static_cast<int>( m_launchQuantisation ) );
++	element.setAttribute( QStringLiteral( "legato" ), m_legato ? 1 : 0 );
++	element.setAttribute( QStringLiteral( "loopstart" ), m_loopStart );
++	element.setAttribute( QStringLiteral( "looplength" ), m_loopLength );
++	element.setAttribute( QStringLiteral( "gain" ), doubleToAttribute( m_gainDb ) );
++	element.setAttribute( QStringLiteral( "transpose" ), m_transpose );
++	element.setAttribute( QStringLiteral( "detune" ), m_detune );
++	element.setAttribute( QStringLiteral( "ram" ), m_ramMode ? 1 : 0 );
++
++	if( !m_followActions.empty() )
++	{
++		QDomElement chain = doc.createElement( QStringLiteral( "followactions" ) );
++		element.appendChild( chain );
++		for( const FollowAction& action : m_followActions )
++		{
++			QDomElement actionElement = doc.createElement( QStringLiteral( "followaction" ) );
++			actionElement.setAttribute( QStringLiteral( "type" ), static_cast<int>( action.type ) );
++			actionElement.setAttribute( QStringLiteral( "chance" ), doubleToAttribute( action.chance ) );
++			actionElement.setAttribute( QStringLiteral( "linked" ), action.linked ? 1 : 0 );
++			actionElement.setAttribute( QStringLiteral( "time" ), doubleToAttribute( action.timeBars ) );
++			actionElement.setAttribute( QStringLiteral( "jump" ), action.jumpTo );
++			chain.appendChild( actionElement );
++		}
++	}
++}
++
++
++void ClipSlot::restoreState( const QDomElement& element )
++{
++	*this = ClipSlot();
++
++	const int type = element.attribute( QStringLiteral( "type" ), QStringLiteral( "0" ) ).toInt();
++	switch( type )
++	{
++		case static_cast<int>( Type::Midi ):
++			m_type = Type::Midi;
++			m_patternId = element.attribute( QStringLiteral( "pattern" ), QStringLiteral( "-1" ) ).toInt();
++			break;
++		case static_cast<int>( Type::Audio ):
++			m_type = Type::Audio;
++			m_audioSource = element.attribute( QStringLiteral( "src" ) );
++			break;
++		default:
++			m_type = Type::Empty;
++			break;
++	}
++
++	m_name = element.attribute( QStringLiteral( "name" ) );
++	m_launchMode = launchModeFromInt( element.attribute( QStringLiteral( "launchmode" ),
++		QStringLiteral( "0" ) ).toInt() );
++	m_launchQuantisation = launchQuantisationFromInt( element.attribute( QStringLiteral( "quantisation" ),
++		QStringLiteral( "-1" ) ).toInt(), true );
++	m_legato = element.attribute( QStringLiteral( "legato" ), QStringLiteral( "0" ) ).toInt() != 0;
++	m_loopStart = element.attribute( QStringLiteral( "loopstart" ), QStringLiteral( "0" ) ).toInt();
++	m_loopLength = element.attribute( QStringLiteral( "looplength" ), QStringLiteral( "0" ) ).toInt();
++	m_gainDb = static_cast<float>( doubleAttribute( element, QStringLiteral( "gain" ), 0.0 ) );
++	m_transpose = element.attribute( QStringLiteral( "transpose" ), QStringLiteral( "0" ) ).toInt();
++	m_detune = element.attribute( QStringLiteral( "detune" ), QStringLiteral( "0" ) ).toInt();
++	m_ramMode = element.attribute( QStringLiteral( "ram" ), QStringLiteral( "0" ) ).toInt() != 0;
++
++	const QDomElement chain = element.firstChildElement( QStringLiteral( "followactions" ) );
++	for( QDomElement actionElement = chain.firstChildElement( QStringLiteral( "followaction" ) );
++		!actionElement.isNull();
++		actionElement = actionElement.nextSiblingElement( QStringLiteral( "followaction" ) ) )
++	{
++		FollowAction action;
++		action.type = followActionTypeFromInt( actionElement.attribute( QStringLiteral( "type" ),
++			QStringLiteral( "0" ) ).toInt() );
++		action.chance = doubleAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
++		action.linked = actionElement.attribute( QStringLiteral( "linked" ), QStringLiteral( "1" ) ).toInt() != 0;
++		action.timeBars = doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 );
++		action.jumpTo = actionElement.attribute( QStringLiteral( "jump" ), QStringLiteral( "0" ) ).toInt();
++		m_followActions.push_back( action );
++	}
++}
++
++
++
++// ---------------------------------------------------------------------------
++// Scene
++// ---------------------------------------------------------------------------
++
++void Scene::saveState( QDomDocument& doc, QDomElement& element ) const
++{
++	Q_UNUSED( doc )
++
++	if( !m_name.isEmpty() )
++	{
++		element.setAttribute( QStringLiteral( "name" ), m_name );
++	}
++	if( m_tempoEnabled )
++	{
++		element.setAttribute( QStringLiteral( "tempo" ), doubleToAttribute( m_tempo ) );
++	}
++	if( m_timeSigEnabled )
++	{
++		element.setAttribute( QStringLiteral( "timesig_numerator" ), m_timeSigNumerator );
++		element.setAttribute( QStringLiteral( "timesig_denominator" ), m_timeSigDenominator );
++	}
++}
++
++
++void Scene::restoreState( const QDomElement& element )
++{
++	*this = Scene();
++
++	m_name = element.attribute( QStringLiteral( "name" ) );
++	if( element.hasAttribute( QStringLiteral( "tempo" ) ) )
++	{
++		m_tempoEnabled = true;
++		m_tempo = doubleAttribute( element, QStringLiteral( "tempo" ), 120.0 );
++	}
++	if( element.hasAttribute( QStringLiteral( "timesig_numerator" ) )
++		|| element.hasAttribute( QStringLiteral( "timesig_denominator" ) ) )
++	{
++		m_timeSigEnabled = true;
++		m_timeSigNumerator = element.attribute( QStringLiteral( "timesig_numerator" ),
++			QStringLiteral( "4" ) ).toInt();
++		m_timeSigDenominator = element.attribute( QStringLiteral( "timesig_denominator" ),
++			QStringLiteral( "4" ) ).toInt();
++	}
++}
++
++} // namespace lmms
+diff --git a/src/core/SessionModel.cpp b/src/core/SessionModel.cpp
+new file mode 100644
+index 000000000..9e52008e1
+--- /dev/null
++++ b/src/core/SessionModel.cpp
+@@ -0,0 +1,331 @@
++/*
++ * SessionModel.cpp - Session View data layer (clip slots, scenes)
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ */
++
++
++#include "SessionModelPrivate.h"
++
++#include <algorithm>
++
++#include <QDomDocument>
++#include <QDomElement>
++#include <QString>
++
++namespace lmms
++{
++
++namespace
++{
++using namespace sessionSerialization;
++
++//! Upper bounds for a grid read from a file, so a malformed or hostile
++//! project cannot make the loader allocate an unbounded grid.
++constexpr int MaxTracks = 256;
++constexpr int MaxScenes = 512;
++
++//! Restores every <scene> child of a <session> block.
++void restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
++{
++	for( QDomElement sceneElement = scenesElement.firstChildElement( QStringLiteral( "scene" ) );
++		!sceneElement.isNull();
++		sceneElement = sceneElement.nextSiblingElement( QStringLiteral( "scene" ) ) )
++	{
++		const int index = sceneElement.attribute( QStringLiteral( "index" ),
++			QStringLiteral( "-1" ) ).toInt();
++		if( index >= 0 && index < static_cast<int>( scenes.size() ) )
++		{
++			scenes[static_cast<std::size_t>( index )].restoreState( sceneElement );
++		}
++	}
++}
++
++
++//! Restores every <clip> child of a <session> block. Slots pointing outside
++//! the grid are dropped (the block is malformed or truncated).
++void restoreClips( const QDomElement& clipsElement, SessionModel& model )
++{
++	for( QDomElement clipElement = clipsElement.firstChildElement( QStringLiteral( "clip" ) );
++		!clipElement.isNull();
++		clipElement = clipElement.nextSiblingElement( QStringLiteral( "clip" ) ) )
++	{
++		const int track = clipElement.attribute( QStringLiteral( "track" ),
++			QStringLiteral( "-1" ) ).toInt();
++		const int scene = clipElement.attribute( QStringLiteral( "scene" ),
++			QStringLiteral( "-1" ) ).toInt();
++		if( track >= 0 && track < model.trackCount() && scene >= 0 && scene < model.sceneCount() )
++		{
++			model.slot( track, scene ).restoreState( clipElement );
++		}
++	}
++}
++}
++
++
++// ---------------------------------------------------------------------------
++// SessionModel
++// ---------------------------------------------------------------------------
++
++void SessionModel::setTrackCount( int tracks )
++{
++	resize( tracks, m_sceneCount );
++}
++
++
++void SessionModel::setSceneCount( int scenes )
++{
++	resize( m_trackCount, scenes );
++}
++
++
++void SessionModel::resize( int tracks, int scenes )
++{
++	tracks = std::clamp( tracks, 0, MaxTracks );
++	scenes = std::clamp( scenes, 0, MaxScenes );
++	if( tracks == m_trackCount && scenes == m_sceneCount )
++	{
++		return;
++	}
++
++	const std::size_t slotCount = static_cast<std::size_t>( tracks ) * static_cast<std::size_t>( scenes );
++	// NOTE: the local must not be called "slots" - Qt defines that as a
++	// keyword macro (Q_SLOTS), which would erase the declarator.
++	std::vector<ClipSlot> newSlots;
++	newSlots.resize( slotCount );
++	const int copyTracks = std::min( tracks, m_trackCount );
++	const int copyScenes = std::min( scenes, m_sceneCount );
++	for( int track = 0; track < copyTracks; ++track )
++	{
++		for( int scene = 0; scene < copyScenes; ++scene )
++		{
++			const std::size_t oldIndex = static_cast<std::size_t>( track ) * m_sceneCount + scene;
++			const std::size_t newIndex = static_cast<std::size_t>( track ) * scenes + scene;
++			newSlots[newIndex] = m_slots[oldIndex];
++		}
++	}
++
++	m_slots = std::move( newSlots );
++	m_trackCount = tracks;
++	m_sceneCount = scenes;
++	m_scenes.resize( static_cast<std::size_t>( scenes ) );
++}
++
++
++const ClipSlot& SessionModel::slot( int track, int scene ) const
++{
++	// Out-of-range reads return a shared empty slot instead of crashing; the
++	// grid is only valid for [0, trackCount) x [0, sceneCount).
++	static const ClipSlot empty;
++	if( track < 0 || track >= m_trackCount || scene < 0 || scene >= m_sceneCount )
++	{
++		return empty;
++	}
++	return m_slots[static_cast<std::size_t>( track ) * m_sceneCount + scene];
++}
++
++
++ClipSlot& SessionModel::slot( int track, int scene )
++{
++	// Same contract as the const overload; an out-of-range write is a caller
++	// bug and lands in a throwaway slot rather than corrupting the grid.
++	static ClipSlot scratch;
++	if( track < 0 || track >= m_trackCount || scene < 0 || scene >= m_sceneCount )
++	{
++		scratch.clear();
++		return scratch;
++	}
++	return m_slots[static_cast<std::size_t>( track ) * m_sceneCount + scene];
++}
++
++
++const Scene& SessionModel::scene( int scene ) const
++{
++	static const Scene empty;
++	if( scene < 0 || scene >= m_sceneCount )
++	{
++		return empty;
++	}
++	return m_scenes[static_cast<std::size_t>( scene )];
++}
++
++
++Scene& SessionModel::scene( int scene )
++{
++	static Scene scratch;
++	if( scene < 0 || scene >= m_sceneCount )
++	{
++		scratch = Scene();
++		return scratch;
++	}
++	return m_scenes[static_cast<std::size_t>( scene )];
++}
++
++
++bool SessionModel::isEmpty() const
++{
++	if( m_trackCount > 0 || m_sceneCount > 0 )
++	{
++		return false;
++	}
++	if( m_globalLaunchQuantisation != DefaultLaunchQuantisation )
++	{
++		return false;
++	}
++	for( const Scene& scene : m_scenes )
++	{
++		if( scene.isModified() )
++		{
++			return false;
++		}
++	}
++	for( const ClipSlot& slot : m_slots )
++	{
++		if( !slot.isEmpty() )
++		{
++			return false;
++		}
++	}
++	return true;
++}
++
++
++void SessionModel::clear()
++{
++	m_trackCount = 0;
++	m_sceneCount = 0;
++	m_slots.clear();
++	m_scenes.clear();
++	m_globalLaunchQuantisation = DefaultLaunchQuantisation;
++	m_hadSessionBlock = false;
++	m_preservedUnknownXml.clear();
++}
++
++
++QDomElement SessionModel::saveState( QDomDocument& doc, QDomElement& parent ) const
++{
++	// A block written by a newer build is opaque to us: re-emit it verbatim
++	// instead of regenerating it from the (empty) parsed model. See the
++	// version policy in restoreState().
++	if( !m_preservedUnknownXml.isEmpty() )
++	{
++		QDomDocument preserved;
++		if( preserved.setContent( m_preservedUnknownXml, false ) )
++		{
++			const QDomElement preservedRoot = preserved.documentElement();
++			if( !preservedRoot.isNull() )
++			{
++				QDomElement imported = doc.importNode( preservedRoot, true ).toElement();
++				parent.appendChild( imported );
++				return imported;
++			}
++		}
++	}
++
++	QDomElement session = doc.createElement( QStringLiteral( "session" ) );
++	parent.appendChild( session );
++	session.setAttribute( QStringLiteral( "version" ), CurrentVersion );
++	session.setAttribute( QStringLiteral( "tracks" ), m_trackCount );
++	session.setAttribute( QStringLiteral( "scenes" ), m_sceneCount );
++	session.setAttribute( QStringLiteral( "launchquantisation" ),
++		static_cast<int>( m_globalLaunchQuantisation ) );
++
++	QDomElement scenesElement = doc.createElement( QStringLiteral( "scenes" ) );
++	session.appendChild( scenesElement );
++	for( int scene = 0; scene < m_sceneCount; ++scene )
++	{
++		const Scene& sceneModel = m_scenes[static_cast<std::size_t>( scene )];
++		if( !sceneModel.isModified() )
++		{
++			continue;
++		}
++		QDomElement sceneElement = doc.createElement( QStringLiteral( "scene" ) );
++		sceneElement.setAttribute( QStringLiteral( "index" ), scene );
++		sceneModel.saveState( doc, sceneElement );
++		scenesElement.appendChild( sceneElement );
++	}
++
++	QDomElement clipsElement = doc.createElement( QStringLiteral( "clips" ) );
++	session.appendChild( clipsElement );
++	for( int track = 0; track < m_trackCount; ++track )
++	{
++		for( int scene = 0; scene < m_sceneCount; ++scene )
++		{
++			const ClipSlot& clipSlot = slot( track, scene );
++			if( clipSlot.isEmpty() )
++			{
++				continue;
++			}
++			QDomElement clipElement = doc.createElement( QStringLiteral( "clip" ) );
++			clipElement.setAttribute( QStringLiteral( "track" ), track );
++			clipElement.setAttribute( QStringLiteral( "scene" ), scene );
++			clipSlot.saveState( doc, clipElement );
++			clipsElement.appendChild( clipElement );
++		}
++	}
++
++	return session;
++}
++
++
++bool SessionModel::restoreState( const QDomElement& element )
++{
++	clear();
++
++	if( element.isNull() || element.tagName() != QStringLiteral( "session" ) )
++	{
++		return false;
++	}
++
++	// A <session> block without a version attribute can only come from this
++	// feature's first version, so it is read as version 1.
++	const int version = element.attribute( QStringLiteral( "version" ), QStringLiteral( "1" ) ).toInt();
++	if( version > CurrentVersion )
++	{
++		// Version policy: a block from a newer build is IGNORED, never
++		// interpreted with guessed semantics - but it is kept verbatim so
++		// that saving through this build does not silently drop data the
++		// newer build wrote. This matches DataFile's policy of never refusing
++		// a project whose version is above the known upgrade chain
++		// (DataFile::upgrade() clamps instead of rejecting), and is stricter
++		// about content preservation.
++		m_hadSessionBlock = true;
++		m_preservedUnknownXml = elementToString( element );
++		return false;
++	}
++
++	m_hadSessionBlock = true;
++
++	const int tracks = element.attribute( QStringLiteral( "tracks" ), QStringLiteral( "0" ) ).toInt();
++	const int scenes = element.attribute( QStringLiteral( "scenes" ), QStringLiteral( "0" ) ).toInt();
++	resize( tracks, scenes );
++
++	m_globalLaunchQuantisation = launchQuantisationFromInt(
++		element.attribute( QStringLiteral( "launchquantisation" ),
++			QString::number( static_cast<int>( DefaultLaunchQuantisation ) ) ).toInt(), false );
++
++	restoreScenes( element.firstChildElement( QStringLiteral( "scenes" ) ), m_scenes );
++	restoreClips( element.firstChildElement( QStringLiteral( "clips" ) ), *this );
++
++	return true;
++}
++
++} // namespace lmms
+diff --git a/src/core/SessionModelPrivate.h b/src/core/SessionModelPrivate.h
+new file mode 100644
+index 000000000..3cc18e5df
+--- /dev/null
++++ b/src/core/SessionModelPrivate.h
+@@ -0,0 +1,118 @@
++/*
++ * SessionModelPrivate.h - internal serialisation helpers (Session View)
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ */
++
++
++#ifndef LMMS_SESSION_MODEL_PRIVATE_H
++#define LMMS_SESSION_MODEL_PRIVATE_H
++
++#include <QDomDocument>
++#include <QDomElement>
++#include <QString>
++#include <QTextStream>
++
++#include "SessionModel.h"
++
++namespace lmms
++{
++
++//! Internal helpers shared by SessionModel.cpp and SessionClip.cpp. Not part
++//! of the public API.
++namespace sessionSerialization
++{
++
++//! Shortest decimal that round-trips `value` exactly: readable in the XML
++//! ("0.6", "-3.25", "174") but never lossy - a value that needs more digits
++//! falls back to 'g' with 17 significant digits, which round-trips every
++//! IEEE-754 double through QString::toDouble().
++inline QString doubleToAttribute( double value )
++{
++	const QString shortForm = QString::number( value );
++	bool ok = false;
++	const double parsed = shortForm.toDouble( &ok );
++	if( ok && parsed == value )
++	{
++		return shortForm;
++	}
++	return QString::number( value, 'g', 17 );
++}
++
++inline double doubleAttribute( const QDomElement& element, const QString& name, double defaultValue )
++{
++	bool ok = false;
++	const double value = element.attribute( name ).toDouble( &ok );
++	return ok ? value : defaultValue;
++}
++
++inline LaunchMode launchModeFromInt( int value )
++{
++	if( value < static_cast<int>( LaunchMode::Trigger )
++		|| value > static_cast<int>( LaunchMode::Repeat ) )
++	{
++		return LaunchMode::Trigger;
++	}
++	return static_cast<LaunchMode>( value );
++}
++
++inline LaunchQuantisation launchQuantisationFromInt( int value, bool allowGlobal )
++{
++	if( allowGlobal && value == static_cast<int>( LaunchQuantisation::Global ) )
++	{
++		return LaunchQuantisation::Global;
++	}
++	switch( value )
++	{
++		case static_cast<int>( LaunchQuantisation::None ):
++		case static_cast<int>( LaunchQuantisation::Bar ):
++		case static_cast<int>( LaunchQuantisation::TwoBars ):
++		case static_cast<int>( LaunchQuantisation::FourBars ):
++			return static_cast<LaunchQuantisation>( value );
++		default:
++			return allowGlobal ? LaunchQuantisation::Global : LaunchQuantisation::Bar;
++	}
++}
++
++inline FollowAction::Type followActionTypeFromInt( int value )
++{
++	if( value < static_cast<int>( FollowAction::Type::NoAction )
++		|| value > static_cast<int>( FollowAction::Type::Jump ) )
++	{
++		return FollowAction::Type::NoAction;
++	}
++	return static_cast<FollowAction::Type>( value );
++}
++
++inline QString elementToString( const QDomElement& element )
++{
++	QString out;
++	QTextStream stream( &out );
++	element.save( stream, 2 );
++	stream.flush();
++	return out;
++}
++
++} // namespace sessionSerialization
++
++} // namespace lmms
++
++#endif // LMMS_SESSION_MODEL_PRIVATE_H
+diff --git a/src/core/Song.cpp b/src/core/Song.cpp
+index 1d3a7bc29..bbbdc3329 100644
+--- a/src/core/Song.cpp
++++ b/src/core/Song.cpp
+@@ -917,6 +917,10 @@ void Song::clearProject()
+ 
+ 	removeAllControllers();
+ 
++#ifdef LMMS_HAVE_SESSION_VIEW
++	m_sessionModel.clear();
++#endif
++
+ 	emit dataChanged();
+ 
+ 	Engine::projectJournal()->clearJournal();
+@@ -1133,6 +1137,14 @@ void Song::loadProject( const QString & fileName )
+ 			{
+ 				restoreKeymapStates(node.toElement());
+ 			}
++#ifdef LMMS_HAVE_SESSION_VIEW
++			else if( node.nodeName() == "session" )
++			{
++				// Versioned <session> block (SPEC-zene-studio A1). Unknown or
++				// future versions are ignored and preserved by the model.
++				m_sessionModel.restoreState( node.toElement() );
++			}
++#endif
+ 			else if( getGUI() != nullptr )
+ 			{
+ 				if( node.nodeName() == getGUI()->getControllerRackView()->nodeName() )
+@@ -1241,6 +1253,15 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
+ 	saveScaleStates(dataFile, dataFile.content());
+ 	saveKeymapStates(dataFile, dataFile.content());
+ 
++#ifdef LMMS_HAVE_SESSION_VIEW
++	// Only projects that use the session view carry a <session> block; a
++	// pre-session project re-saves without one (see SessionModel::shouldPersist).
++	if( m_sessionModel.shouldPersist() )
++	{
++		m_sessionModel.saveState( dataFile, dataFile.content() );
++	}
++#endif
++
+ 	m_savingProject = false;
+ 
+ 	return dataFile.writeFile(filename, withResources);
+diff --git a/src/lmmsconfig.h.in b/src/lmmsconfig.h.in
+index 26b52da5e..4f7d89420 100644
+--- a/src/lmmsconfig.h.in
++++ b/src/lmmsconfig.h.in
+@@ -39,6 +39,7 @@
+ #cmakedefine LMMS_HAVE_SF_COMPLEVEL
+ #cmakedefine LMMS_HAVE_WINMM
+ #cmakedefine LMMS_HAVE_STEM_SPLIT
++#cmakedefine LMMS_HAVE_SESSION_VIEW
+ #cmakedefine LMMS_HAVE_ONNXRUNTIME
+ 
+ #cmakedefine LMMS_DEBUG_FPE
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 910e5a322..fc6ed9a3f 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -40,6 +40,13 @@ IF(LMMS_HAVE_STEM_SPLIT)
+ 	ENDIF()
+ ENDIF()
+ 
++# Session View data layer tests (opt-in, see include/SessionModel.h).
++IF(LMMS_HAVE_SESSION_VIEW)
++	LIST(APPEND LMMS_TESTS
++		src/core/SessionModelTest.cpp
++	)
++ENDIF()
++
+ # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
+ # CMakeLists.txt). Applied to the unit-test executables only; the Part C
+ # reference/migration targets below keep the plain debug build so behaviour
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 9ebc9fba3..3b7e30479 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -29,6 +29,7 @@ include/RoutingNode.h
+ include/RoutingNodes.h
+ include/ScriptBindings.h
+ include/ScriptEngine.h
++include/SessionModel.h
+ include/StemSeparation/ExternalProcessStemSeparator.h
+ include/StemSeparation/OnnxRuntimeStemSeparator.h
+ include/StemSeparation/StemJobManager.h
+@@ -99,6 +100,9 @@ src/core/RoutingNode.cpp
+ src/core/RoutingNodes.cpp
+ src/core/ScriptBindings.cpp
+ src/core/ScriptEngine.cpp
++src/core/SessionClip.cpp
++src/core/SessionModel.cpp
++src/core/SessionModelPrivate.h
+ src/core/StemJobManager.cpp
+ src/core/StemModelStore.cpp
+ src/core/StemTrackBuilder.cpp
+diff --git a/tests/src/core/ProjectVersionTest.cpp b/tests/src/core/ProjectVersionTest.cpp
+index 05e97d9c4..de283f12e 100644
+--- a/tests/src/core/ProjectVersionTest.cpp
++++ b/tests/src/core/ProjectVersionTest.cpp
+@@ -26,6 +26,45 @@
+ 
+ #include <QtTest>
+ 
++#include "lmmsconfig.h"
++
++#ifdef LMMS_HAVE_SESSION_VIEW
++
++#include <QDomDocument>
++#include <QDomElement>
++#include <QString>
++#include <QTextStream>
++
++#include "DataFile.h"
++#include "SessionModel.h"
++
++namespace
++{
++
++QString fileToString( lmms::DataFile& dataFile )
++{
++	QString out;
++	QTextStream stream( &out );
++	dataFile.write( stream );
++	stream.flush();
++	return out;
++}
++
++
++QString nodeToString( const QDomElement& node )
++{
++	QString out;
++	QTextStream stream( &out );
++	node.save( stream, 2 );
++	stream.flush();
++	return out;
++}
++
++} // namespace
++
++#endif // LMMS_HAVE_SESSION_VIEW
++
++
+ class ProjectVersionTest : public QObject
+ {
+ 	Q_OBJECT
+@@ -75,6 +114,275 @@ private slots:
+ 		//An identifier of the form "-x" is non-numeric, not negative
+ 		QVERIFY(ProjectVersion("1.0.0-alpha.-1") > "1.0.0-alpha.1");
+ 	}
++
++#ifdef LMMS_HAVE_SESSION_VIEW
++
++	//! (task #594) A <session> block round-trips every ClipSlot and Scene
++	//! field without loss, and re-serialising the loaded model is
++	//! byte-identical.
++	void sessionBlockRoundTrip()
++	{
++		using namespace lmms;
++
++		SessionModel model;
++		model.setTrackCount( 2 );
++		model.setSceneCount( 3 );
++		model.setGlobalLaunchQuantisation( LaunchQuantisation::TwoBars );
++
++		model.scene( 0 ).setName( "Intro" );
++		model.scene( 1 ).setName( "Chorus" );
++		model.scene( 1 ).setTempoEnabled( true );
++		model.scene( 1 ).setTempo( 128.5 );
++		model.scene( 1 ).setTimeSigEnabled( true );
++		model.scene( 1 ).setTimeSigNumerator( 3 );
++		model.scene( 1 ).setTimeSigDenominator( 8 );
++
++		// MIDI slot: every field at a non-default value.
++		ClipSlot& midi = model.slot( 0, 0 );
++		midi.setPatternReference( 7 );
++		midi.setName( "Bass" );
++		midi.setLaunchMode( LaunchMode::Toggle );
++		midi.setLaunchQuantisation( LaunchQuantisation::FourBars );
++		midi.setLegato( true );
++		midi.setLoopStart( 96 );
++		midi.setLoopLength( 384 );
++		midi.setGainDb( -6.5f );
++		midi.setTranspose( -3 );
++		midi.setDetune( 12 );
++		midi.setRamMode( true );
++
++		FollowAction next;
++		next.type = FollowAction::Type::Next;
++		next.chance = 0.75;
++		next.linked = false;
++		next.timeBars = 2.5;
++		next.jumpTo = 1;
++		midi.addFollowAction( next );
++
++		FollowAction stop;
++		stop.type = FollowAction::Type::Stop;
++		stop.chance = 0.25;
++		midi.addFollowAction( stop );
++
++		// Audio slot: a different reference kind and launch mode.
++		ClipSlot& audio = model.slot( 1, 2 );
++		audio.setAudioReference( QStringLiteral( "samples/kick.wav" ) );
++		audio.setLaunchMode( LaunchMode::Gate );
++		audio.setLaunchQuantisation( LaunchQuantisation::None );
++		audio.setLoopLength( 192 );
++
++		QDomDocument doc;
++		QDomElement root = doc.createElement( QStringLiteral( "song" ) );
++		doc.appendChild( root );
++		const QDomElement session = model.saveState( doc, root );
++		QVERIFY( !session.isNull() );
++		QCOMPARE( session.tagName(), QStringLiteral( "session" ) );
++		QCOMPARE( session.attribute( QStringLiteral( "version" ) ).toInt(), SessionModel::CurrentVersion );
++		QCOMPARE( session.attribute( QStringLiteral( "tracks" ) ).toInt(), 2 );
++		QCOMPARE( session.attribute( QStringLiteral( "scenes" ) ).toInt(), 3 );
++		QCOMPARE( session.attribute( QStringLiteral( "launchquantisation" ) ).toInt(),
++			static_cast<int>( LaunchQuantisation::TwoBars ) );
++
++		// Sparse grid: only the two filled slots are written.
++		const QDomElement clips = session.firstChildElement( QStringLiteral( "clips" ) );
++		QCOMPARE( clips.elementsByTagName( QStringLiteral( "clip" ) ).length(), 2 );
++
++		const QDomElement midiElement = clips.firstChildElement( QStringLiteral( "clip" ) );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "track" ) ).toInt(), 0 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "scene" ) ).toInt(), 0 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "type" ) ).toInt(),
++			static_cast<int>( ClipSlot::Type::Midi ) );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "pattern" ) ).toInt(), 7 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "name" ) ), QStringLiteral( "Bass" ) );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "launchmode" ) ).toInt(),
++			static_cast<int>( LaunchMode::Toggle ) );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "quantisation" ) ).toInt(),
++			static_cast<int>( LaunchQuantisation::FourBars ) );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "legato" ) ).toInt(), 1 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "loopstart" ) ).toInt(), 96 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "looplength" ) ).toInt(), 384 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "gain" ) ).toDouble(), -6.5 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "transpose" ) ).toInt(), -3 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "detune" ) ).toInt(), 12 );
++		QCOMPARE( midiElement.attribute( QStringLiteral( "ram" ) ).toInt(), 1 );
++		QCOMPARE( midiElement.firstChildElement( QStringLiteral( "followactions" ) )
++			.elementsByTagName( QStringLiteral( "followaction" ) ).length(), 2 );
++
++		const QString first = nodeToString( session );
++
++		// Load into a fresh model and compare every field.
++		SessionModel loaded;
++		QVERIFY( loaded.restoreState( session ) );
++		QVERIFY( loaded.hadSessionBlock() );
++		QCOMPARE( loaded.trackCount(), 2 );
++		QCOMPARE( loaded.sceneCount(), 3 );
++		QCOMPARE( static_cast<int>( loaded.globalLaunchQuantisation() ),
++			static_cast<int>( LaunchQuantisation::TwoBars ) );
++
++		QCOMPARE( loaded.scene( 0 ).name(), QStringLiteral( "Intro" ) );
++		QCOMPARE( loaded.scene( 1 ).name(), QStringLiteral( "Chorus" ) );
++		QVERIFY( loaded.scene( 1 ).tempoEnabled() );
++		QVERIFY( loaded.scene( 1 ).tempo() == 128.5 );
++		QVERIFY( loaded.scene( 1 ).timeSigEnabled() );
++		QCOMPARE( loaded.scene( 1 ).timeSigNumerator(), 3 );
++		QCOMPARE( loaded.scene( 1 ).timeSigDenominator(), 8 );
++		QVERIFY( !loaded.scene( 2 ).isModified() );
++
++		const ClipSlot& loadedMidi = loaded.slot( 0, 0 );
++		QCOMPARE( static_cast<int>( loadedMidi.type() ), static_cast<int>( ClipSlot::Type::Midi ) );
++		QCOMPARE( loadedMidi.patternId(), 7 );
++		QCOMPARE( loadedMidi.name(), QStringLiteral( "Bass" ) );
++		QCOMPARE( static_cast<int>( loadedMidi.launchMode() ), static_cast<int>( LaunchMode::Toggle ) );
++		QCOMPARE( static_cast<int>( loadedMidi.launchQuantisation() ),
++			static_cast<int>( LaunchQuantisation::FourBars ) );
++		QCOMPARE( loadedMidi.legato(), true );
++		QCOMPARE( loadedMidi.loopStart(), 96 );
++		QCOMPARE( loadedMidi.loopLength(), 384 );
++		QVERIFY( loadedMidi.gainDb() == -6.5f );
++		QCOMPARE( loadedMidi.transpose(), -3 );
++		QCOMPARE( loadedMidi.detune(), 12 );
++		QCOMPARE( loadedMidi.ramMode(), true );
++		QCOMPARE( loadedMidi.followActions().size(), std::size_t( 2 ) );
++		QVERIFY( loadedMidi.followActions()[0] == next );
++		QVERIFY( loadedMidi.followActions()[1] == stop );
++
++		const ClipSlot& loadedAudio = loaded.slot( 1, 2 );
++		QCOMPARE( static_cast<int>( loadedAudio.type() ), static_cast<int>( ClipSlot::Type::Audio ) );
++		QCOMPARE( loadedAudio.audioSource(), QStringLiteral( "samples/kick.wav" ) );
++		QCOMPARE( loadedAudio.patternId(), -1 );
++		QCOMPARE( static_cast<int>( loadedAudio.launchMode() ), static_cast<int>( LaunchMode::Gate ) );
++		QCOMPARE( static_cast<int>( loadedAudio.launchQuantisation() ),
++			static_cast<int>( LaunchQuantisation::None ) );
++		QCOMPARE( loadedAudio.legato(), false );
++		QCOMPARE( loadedAudio.loopLength(), 192 );
++		QVERIFY( loaded.slot( 1, 0 ).isEmpty() );
++
++		// Re-save the loaded model: identical bytes.
++		QDomDocument doc2;
++		QDomElement root2 = doc2.createElement( QStringLiteral( "song" ) );
++		doc2.appendChild( root2 );
++		const QDomElement session2 = loaded.saveState( doc2, root2 );
++		QCOMPARE( nodeToString( session2 ), first );
++
++		// An untouched model writes nothing.
++		QVERIFY( SessionModel().isEmpty() );
++		QVERIFY( !SessionModel().shouldPersist() );
++		QVERIFY( model.shouldPersist() );
++	}
++
++	//! (task #594) A project saved before the session view existed carries no
++	//! <session> block; loading and re-saving it is byte-identical.
++	void projectWithoutSessionRoundTripsUnchanged()
++	{
++		using namespace lmms;
++
++		DataFile fresh( DataFile::Type::SongProject );
++		const QString version = fresh.documentElement().attribute( QStringLiteral( "version" ) );
++		QVERIFY( !version.isEmpty() );
++
++		const QString project = QString(
++			"<?xml version=\"1.0\"?>\n"
++			"<lmms-project version=\"%1\" type=\"song\" creator=\"LMMS\">\n"
++			"  <head/>\n"
++			"  <song>\n"
++			"    <trackcontainer type=\"song\">\n"
++			"      <track type=\"0\" name=\"t\" muted=\"0\">\n"
++			"        <instrumenttrack/>\n"
++			"        <pattern type=\"0\" name=\"p\" muted=\"0\" steps=\"16\" pos=\"0\" len=\"192\" frozen=\"0\">\n"
++			"          <midiclip steps=\"16\" name=\"c\" muted=\"0\" pos=\"0\" len=\"192\" type=\"0\">\n"
++			"            <note key=\"60\" vol=\"100\" pan=\"0\" len=\"384\" pos=\"0\" type=\"0\"/>\n"
++			"          </midiclip>\n"
++			"        </pattern>\n"
++			"      </track>\n"
++			"    </trackcontainer>\n"
++			"  </song>\n"
++			"</lmms-project>\n" ).arg( version );
++
++		DataFile old( project.toUtf8() );
++		QVERIFY( old.type() == DataFile::Type::SongProject );
++		QVERIFY( !old.content().isNull() );
++
++		const QString first = fileToString( old );
++
++		// No session state is invented for a pre-session project.
++		QVERIFY( !first.contains( QStringLiteral( "session" ) ) );
++		QVERIFY( old.content().firstChildElement( QStringLiteral( "session" ) ).isNull() );
++
++		// Byte-identical re-save.
++		DataFile roundTrip( first.toUtf8() );
++		QCOMPARE( fileToString( roundTrip ), first );
++
++		// The loader leaves the model empty and produces no block.
++		SessionModel model;
++		QVERIFY( !model.hadSessionBlock() );
++		QVERIFY( model.isEmpty() );
++		QVERIFY( !model.shouldPersist() );
++	}
++
++	//! (task #594) A <session> block written by a newer build is ignored, not
++	//! guessed at, and preserved verbatim so re-saving cannot drop it.
++	void unknownFutureSessionVersionIsIgnoredAndPreserved()
++	{
++		using namespace lmms;
++
++		DataFile fresh( DataFile::Type::SongProject );
++		const QString version = fresh.documentElement().attribute( QStringLiteral( "version" ) );
++
++		const QString project = QString(
++			"<?xml version=\"1.0\"?>\n"
++			"<lmms-project version=\"%1\" type=\"song\" creator=\"LMMS\">\n"
++			"  <head/>\n"
++			"  <song>\n"
++			"    <trackcontainer type=\"song\"/>\n"
++			"    <session version=\"99\" tracks=\"1\" scenes=\"1\">\n"
++			"      <clips><clip track=\"0\" scene=\"0\" type=\"1\" pattern=\"4\"/></clips>\n"
++			"    </session>\n"
++			"  </song>\n"
++			"</lmms-project>\n" ).arg( version );
++
++		DataFile data( project.toUtf8() );
++		const QDomElement sessionElement = data.content().firstChildElement( QStringLiteral( "session" ) );
++		QVERIFY( !sessionElement.isNull() );
++		QCOMPARE( sessionElement.attribute( QStringLiteral( "version" ) ).toInt(), 99 );
++
++		SessionModel model;
++		QVERIFY( !model.restoreState( sessionElement ) );
++		QVERIFY( model.hadSessionBlock() );
++		QVERIFY( model.shouldPersist() );
++		QVERIFY( !model.preservedUnknownXml().isEmpty() );
++		// Nothing was interpreted.
++		QCOMPARE( model.trackCount(), 0 );
++		QCOMPARE( model.sceneCount(), 0 );
++		QVERIFY( model.slot( 0, 0 ).isEmpty() );
++
++		// The opaque block survives a save through this build.
++		QDomDocument doc;
++		QDomElement root = doc.createElement( QStringLiteral( "song" ) );
++		doc.appendChild( root );
++		const QDomElement saved = model.saveState( doc, root );
++		QCOMPARE( saved.attribute( QStringLiteral( "version" ) ).toInt(), 99 );
++		QCOMPARE( saved.attribute( QStringLiteral( "tracks" ) ).toInt(), 1 );
++		const QDomElement savedClip = saved.firstChildElement( QStringLiteral( "clips" ) )
++			.firstChildElement( QStringLiteral( "clip" ) );
++		QVERIFY( !savedClip.isNull() );
++		QCOMPARE( savedClip.attribute( QStringLiteral( "pattern" ) ).toInt(), 4 );
++
++		// A block from this build's own version is parsed, not preserved.
++		QDomDocument doc2;
++		QDomElement root2 = doc2.createElement( QStringLiteral( "song" ) );
++		doc2.appendChild( root2 );
++		SessionModel own;
++		own.setTrackCount( 1 );
++		own.setSceneCount( 1 );
++		own.slot( 0, 0 ).setPatternReference( 4 );
++		const QDomElement ownElement = own.saveState( doc2, root2 );
++		SessionModel reparsed;
++		QVERIFY( reparsed.restoreState( ownElement ) );
++		QVERIFY( reparsed.preservedUnknownXml().isEmpty() );
++		QCOMPARE( reparsed.slot( 0, 0 ).patternId(), 4 );
++	}
++
++#endif // LMMS_HAVE_SESSION_VIEW
+ };
+ 
+ QTEST_GUILESS_MAIN(ProjectVersionTest)
+diff --git a/tests/src/core/SessionModelTest.cpp b/tests/src/core/SessionModelTest.cpp
+new file mode 100644
+index 000000000..e831acc54
+--- /dev/null
++++ b/tests/src/core/SessionModelTest.cpp
+@@ -0,0 +1,322 @@
++/*
++ * SessionModelTest.cpp - Session View data layer end-to-end round trip
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ */
++
++#include <QtTest>
++
++#include <QDomDocument>
++#include <QDomElement>
++#include <QFile>
++#include <QTemporaryDir>
++
++#include "Engine.h"
++#include "SessionModel.h"
++#include "Song.h"
++
++using namespace lmms;
++
++namespace
++{
++
++QString readFile( const QString& path )
++{
++	QFile file( path );
++	if( !file.open( QIODevice::ReadOnly ) )
++	{
++		return QString();
++	}
++	return QString::fromUtf8( file.readAll() );
++}
++
++
++//! The <session> ... </session> substring of a project file, for byte-exact
++//! comparison across a save/load/save cycle (session blocks never nest).
++QString sessionBlock( const QString& project )
++{
++	const int start = project.indexOf( QStringLiteral( "<session " ) );
++	const int end = project.indexOf( QStringLiteral( "</session>" ) );
++	if( start < 0 || end < 0 )
++	{
++		return QString();
++	}
++	return project.mid( start, end + 10 - start );
++}
++
++} // namespace
++
++
++class SessionModelTest : public QObject
++{
++	Q_OBJECT
++private slots:
++	void initTestCase()
++	{
++		Engine::init( true );
++	}
++
++	void cleanupTestCase()
++	{
++		Engine::destroy();
++	}
++
++	//! The deliverable: a saved project round-trips a <session> block with
++	//! every clip-slot and scene field intact through a real .mmp file.
++	void songProjectRoundTripsSessionBlock()
++	{
++		QTemporaryDir dir;
++		QVERIFY( dir.isValid() );
++
++		Song* song = Engine::getSong();
++		song->clearProject();
++		QVERIFY( song->sessionModel().isEmpty() );
++		QVERIFY( !song->sessionModel().shouldPersist() );
++
++		SessionModel& model = song->sessionModel();
++		model.setTrackCount( 2 );
++		model.setSceneCount( 2 );
++		model.setGlobalLaunchQuantisation( LaunchQuantisation::FourBars );
++
++		model.scene( 0 ).setName( QStringLiteral( "Verse" ) );
++		model.scene( 1 ).setName( QStringLiteral( "Drop" ) );
++		model.scene( 1 ).setTempoEnabled( true );
++		model.scene( 1 ).setTempo( 174.0 );
++		model.scene( 1 ).setTimeSigEnabled( true );
++		model.scene( 1 ).setTimeSigNumerator( 7 );
++		model.scene( 1 ).setTimeSigDenominator( 8 );
++
++		ClipSlot& midi = model.slot( 0, 0 );
++		midi.setPatternReference( 11 );
++		midi.setName( QStringLiteral( "Lead" ) );
++		midi.setLaunchMode( LaunchMode::Repeat );
++		midi.setLaunchQuantisation( LaunchQuantisation::Bar );
++		midi.setLegato( true );
++		midi.setLoopStart( 48 );
++		midi.setLoopLength( 768 );
++		midi.setGainDb( -3.25f );
++		midi.setTranspose( 5 );
++		midi.setDetune( -7 );
++		midi.setRamMode( true );
++		FollowAction jump;
++		jump.type = FollowAction::Type::Jump;
++		jump.chance = 0.6;
++		jump.linked = false;
++		jump.timeBars = 4.0;
++		jump.jumpTo = 1;
++		midi.addFollowAction( jump );
++		FollowAction again;
++		again.type = FollowAction::Type::PlayAgain;
++		again.chance = 0.4;
++		midi.addFollowAction( again );
++
++		ClipSlot& audio = model.slot( 1, 1 );
++		audio.setAudioReference( QStringLiteral( "samples/snare.wav" ) );
++		audio.setName( QStringLiteral( "Snare" ) );
++		audio.setLaunchMode( LaunchMode::Toggle );
++		audio.setLaunchQuantisation( LaunchQuantisation::Global );
++		audio.setLegato( true );
++		audio.setLoopStart( 0 );
++		audio.setLoopLength( 96 );
++		audio.setGainDb( 1.5f );
++		audio.setTranspose( -12 );
++		audio.setDetune( 3 );
++
++		QVERIFY( model.shouldPersist() );
++
++		const QString first = dir.filePath( QStringLiteral( "first.mmp" ) );
++		QVERIFY( song->saveProjectFile( first ) );
++		const QString firstText = readFile( first );
++		QVERIFY( !firstText.isEmpty() );
++
++		// QDom serialises attributes in hash order, so verify the block
++		// through the DOM rather than by substring.
++		QDomDocument parsed;
++		QVERIFY( parsed.setContent( firstText.toUtf8() ) );
++		const QDomElement savedSession = parsed.documentElement()
++			.firstChildElement( QStringLiteral( "song" ) )
++			.firstChildElement( QStringLiteral( "session" ) );
++		QVERIFY( !savedSession.isNull() );
++		QCOMPARE( savedSession.attribute( QStringLiteral( "version" ) ).toInt(),
++			SessionModel::CurrentVersion );
++		QCOMPARE( savedSession.attribute( QStringLiteral( "tracks" ) ).toInt(), 2 );
++		QCOMPARE( savedSession.attribute( QStringLiteral( "scenes" ) ).toInt(), 2 );
++		QCOMPARE( savedSession.attribute( QStringLiteral( "launchquantisation" ) ).toInt(),
++			static_cast<int>( LaunchQuantisation::FourBars ) );
++		QCOMPARE( savedSession.firstChildElement( QStringLiteral( "clips" ) )
++			.elementsByTagName( QStringLiteral( "clip" ) ).length(), 2 );
++		QVERIFY( firstText.contains( QStringLiteral( "pattern=\"11\"" ) ) );
++		QVERIFY( firstText.contains( QStringLiteral( "src=\"samples/snare.wav\"" ) ) );
++		const QString firstSession = sessionBlock( firstText );
++		QVERIFY( !firstSession.isEmpty() );
++
++		// A new project must not inherit the previous one's session state.
++		song->clearProject();
++		QVERIFY( song->sessionModel().isEmpty() );
++		QVERIFY( !song->sessionModel().hadSessionBlock() );
++
++		song->loadProject( first );
++		const SessionModel& loaded = song->sessionModel();
++		QVERIFY( loaded.hadSessionBlock() );
++		QCOMPARE( loaded.trackCount(), 2 );
++		QCOMPARE( loaded.sceneCount(), 2 );
++		QCOMPARE( static_cast<int>( loaded.globalLaunchQuantisation() ),
++			static_cast<int>( LaunchQuantisation::FourBars ) );
++
++		QCOMPARE( loaded.scene( 0 ).name(), QStringLiteral( "Verse" ) );
++		QCOMPARE( loaded.scene( 1 ).name(), QStringLiteral( "Drop" ) );
++		QVERIFY( loaded.scene( 1 ).tempoEnabled() );
++		QVERIFY( loaded.scene( 1 ).tempo() == 174.0 );
++		QVERIFY( loaded.scene( 1 ).timeSigEnabled() );
++		QCOMPARE( loaded.scene( 1 ).timeSigNumerator(), 7 );
++		QCOMPARE( loaded.scene( 1 ).timeSigDenominator(), 8 );
++		QVERIFY( !loaded.scene( 0 ).tempoEnabled() );
++		QVERIFY( !loaded.scene( 0 ).timeSigEnabled() );
++
++		const ClipSlot& loadedMidi = loaded.slot( 0, 0 );
++		QCOMPARE( static_cast<int>( loadedMidi.type() ), static_cast<int>( ClipSlot::Type::Midi ) );
++		QCOMPARE( loadedMidi.patternId(), 11 );
++		QCOMPARE( loadedMidi.name(), QStringLiteral( "Lead" ) );
++		QCOMPARE( static_cast<int>( loadedMidi.launchMode() ), static_cast<int>( LaunchMode::Repeat ) );
++		QCOMPARE( static_cast<int>( loadedMidi.launchQuantisation() ),
++			static_cast<int>( LaunchQuantisation::Bar ) );
++		QCOMPARE( loadedMidi.legato(), true );
++		QCOMPARE( loadedMidi.loopStart(), 48 );
++		QCOMPARE( loadedMidi.loopLength(), 768 );
++		QVERIFY( loadedMidi.gainDb() == -3.25f );
++		QCOMPARE( loadedMidi.transpose(), 5 );
++		QCOMPARE( loadedMidi.detune(), -7 );
++		QCOMPARE( loadedMidi.ramMode(), true );
++		QCOMPARE( loadedMidi.followActions().size(), std::size_t( 2 ) );
++		QVERIFY( loadedMidi.followActions()[0] == jump );
++		QVERIFY( loadedMidi.followActions()[1] == again );
++
++		const ClipSlot& loadedAudio = loaded.slot( 1, 1 );
++		QCOMPARE( static_cast<int>( loadedAudio.type() ), static_cast<int>( ClipSlot::Type::Audio ) );
++		QCOMPARE( loadedAudio.audioSource(), QStringLiteral( "samples/snare.wav" ) );
++		QCOMPARE( loadedAudio.patternId(), -1 );
++		QCOMPARE( loadedAudio.name(), QStringLiteral( "Snare" ) );
++		QCOMPARE( static_cast<int>( loadedAudio.launchMode() ), static_cast<int>( LaunchMode::Toggle ) );
++		QCOMPARE( static_cast<int>( loadedAudio.launchQuantisation() ),
++			static_cast<int>( LaunchQuantisation::Global ) );
++		QCOMPARE( loadedAudio.legato(), true );
++		QCOMPARE( loadedAudio.loopLength(), 96 );
++		QVERIFY( loadedAudio.gainDb() == 1.5f );
++		QCOMPARE( loadedAudio.transpose(), -12 );
++		QCOMPARE( loadedAudio.detune(), 3 );
++		QVERIFY( loaded.slot( 0, 1 ).isEmpty() );
++
++		// Save the loaded project again: the <session> block is byte-identical.
++		const QString second = dir.filePath( QStringLiteral( "second.mmp" ) );
++		QVERIFY( song->saveProjectFile( second ) );
++		QCOMPARE( sessionBlock( readFile( second ) ), firstSession );
++
++		// .mmpz is the same document, compressed (DataFile::writeFile).
++		const QString compressed = dir.filePath( QStringLiteral( "compressed.mmpz" ) );
++		QVERIFY( song->saveProjectFile( compressed ) );
++		QVERIFY( !readFile( compressed ).startsWith( QStringLiteral( "<?xml" ) ) );
++		song->clearProject();
++		song->loadProject( compressed );
++		QCOMPARE( song->sessionModel().slot( 0, 0 ).patternId(), 11 );
++		QCOMPARE( song->sessionModel().slot( 1, 1 ).audioSource(), QStringLiteral( "samples/snare.wav" ) );
++		QCOMPARE( song->sessionModel().scene( 1 ).timeSigNumerator(), 7 );
++		QVERIFY( song->sessionModel().scene( 1 ).tempo() == 174.0 );
++	}
++
++	//! A project that never used the session view loads unchanged and
++	//! re-saves byte-identically, with no <session> block.
++	void preSessionProjectLoadsAndSavesUnchanged()
++	{
++		QTemporaryDir dir;
++		QVERIFY( dir.isValid() );
++
++		Song* song = Engine::getSong();
++		song->clearProject();
++		QVERIFY( !song->sessionModel().shouldPersist() );
++
++		const QString first = dir.filePath( QStringLiteral( "a.mmp" ) );
++		QVERIFY( song->saveProjectFile( first ) );
++		const QString firstText = readFile( first );
++		QVERIFY( !firstText.isEmpty() );
++		QVERIFY( !firstText.contains( QStringLiteral( "session" ) ) );
++
++		song->loadProject( first );
++		QVERIFY( !song->sessionModel().hadSessionBlock() );
++		QVERIFY( song->sessionModel().isEmpty() );
++		QVERIFY( !song->sessionModel().shouldPersist() );
++
++		const QString second = dir.filePath( QStringLiteral( "b.mmp" ) );
++		QVERIFY( song->saveProjectFile( second ) );
++		const QString secondText = readFile( second );
++		QVERIFY( !secondText.contains( QStringLiteral( "session" ) ) );
++		QCOMPARE( secondText, firstText );
++	}
++
++	//! A slot references either a pattern or an audio clip, never both
++	//! (SPEC-zene-studio A1 mutual exclusivity).
++	void slotReferenceIsMutuallyExclusive()
++	{
++		ClipSlot slot;
++		QVERIFY( slot.isEmpty() );
++		slot.setPatternReference( 3 );
++		QCOMPARE( static_cast<int>( slot.type() ), static_cast<int>( ClipSlot::Type::Midi ) );
++		QCOMPARE( slot.patternId(), 3 );
++		QVERIFY( slot.audioSource().isEmpty() );
++
++		slot.setAudioReference( QStringLiteral( "loop.wav" ) );
++		QCOMPARE( static_cast<int>( slot.type() ), static_cast<int>( ClipSlot::Type::Audio ) );
++		QCOMPARE( slot.patternId(), -1 );
++		QCOMPARE( slot.audioSource(), QStringLiteral( "loop.wav" ) );
++
++		slot.setPatternReference( 9 );
++		QVERIFY( slot.audioSource().isEmpty() );
++		QCOMPARE( slot.patternId(), 9 );
++
++		slot.clear();
++		QVERIFY( slot.isEmpty() );
++		QCOMPARE( slot.patternId(), -1 );
++	}
++
++	//! Growing and shrinking the grid keeps the slots that remain.
++	void gridResizePreservesSlots()
++	{
++		SessionModel model;
++		model.setTrackCount( 2 );
++		model.setSceneCount( 2 );
++		model.slot( 1, 1 ).setPatternReference( 5 );
++		model.scene( 1 ).setName( QStringLiteral( "B" ) );
++
++		model.setSceneCount( 4 );
++		QCOMPARE( model.slot( 1, 1 ).patternId(), 5 );
++		QCOMPARE( model.scene( 1 ).name(), QStringLiteral( "B" ) );
++
++		model.setTrackCount( 3 );
++		QCOMPARE( model.slot( 1, 1 ).patternId(), 5 );
++
++		model.setSceneCount( 1 );
++		QVERIFY( model.slot( 1, 1 ).isEmpty() );
++		QVERIFY( model.scene( 1 ).name().isEmpty() );
++		QCOMPARE( model.slot( 1, 0 ).patternId(), -1 );
++	}
++};
++
++QTEST_GUILESS_MAIN( SessionModelTest )
++#include "SessionModelTest.moc"
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index cce768a7a..bb9510c9a 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -23,8 +23,11 @@ include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensatio
+ include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
+ include/Effect.h	#605 PDC: latency accessor on the effect interface
+ include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
++include/Song.h	#594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off
+ src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment point (9e12a68f5)
+ src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
+ src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
+ src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
++src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged)
++src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
+ src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)

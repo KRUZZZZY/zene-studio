@@ -1,0 +1,26 @@
+### patch-id comparison: pinned unit vs its same-subject twin in HEAD
+  unit 3e1480477 patch-id 0a738a9e07b8  twin 5b82864e0 patch-id 0a738a9e07b8  -> SAME
+      unit files: .github/workflows/build.yml 
+      twin files: .github/workflows/build.yml 
+  unit 6eb3a0c99 patch-id e4e056d2c465  twin a4717846a patch-id e4e056d2c465  -> SAME
+      unit files: .github/workflows/build.yml 
+      twin files: .github/workflows/build.yml 
+  unit ae89fa894 patch-id 506083ff9ebb  twin 0c23587d2 patch-id 506083ff9ebb  -> SAME
+      unit files: tests/CMakeLists.txt tests/all-sources.txt tests/src/core/RemotePluginClientE2ETest.cpp tests/src/plugins/FakeRemotePluginClient.cpp 
+      twin files: tests/CMakeLists.txt tests/all-sources.txt tests/src/core/RemotePluginClientE2ETest.cpp tests/src/plugins/FakeRemotePluginClient.cpp 
+  unit bbf7a307c patch-id b83532e2f09f  twin 038e0edda patch-id 2c73effcf6ac  -> DIFFERENT
+      unit files: src/CMakeLists.txt 
+      twin files: src/CMakeLists.txt 
+  unit dbcb8a2ba patch-id 54a95eb1f682  twin 416fb186b patch-id 54a95eb1f682  -> SAME
+      unit files: src/core/AudioBus.cpp tests/CMakeLists.txt tests/src/core/AudioBusTest.cpp 
+      twin files: src/core/AudioBus.cpp tests/CMakeLists.txt tests/src/core/AudioBusTest.cpp 
+  unit e317f1062 patch-id e9d5bf9d7b92  twin ca5c19376 patch-id de9435a49350  -> DIFFERENT
+      unit files: CMakeLists.txt include/SessionModel.h include/Song.h src/CMakeLists.txt src/core/CMakeLists.txt src/core/SessionClip.cpp src/core/SessionModel.cpp src/core/SessionModelPrivate.h src/core/Song.cpp src/lmmsconfig.h.in tests/CMakeLists.txt tests/fork-sources.txt tests/src/core/ProjectVersionTest.cpp tests/src/core/SessionModelTest.cpp tests/upstream-modifications.txt 
+      twin files: CMakeLists.txt include/SessionModel.h include/Song.h src/CMakeLists.txt src/core/CMakeLists.txt src/core/SessionClip.cpp src/core/SessionModel.cpp src/core/SessionModelPrivate.h src/core/Song.cpp src/lmmsconfig.h.in tests/CMakeLists.txt tests/fork-sources.txt tests/src/core/ProjectVersionTest.cpp tests/src/core/SessionModelTest.cpp tests/upstream-modifications.txt 
+
+### per-unit content proof summary
+  unit 1 (3e1480477, 6eb3a0c99): build.yml 15 branch-only lines -> all present at HEAD (13 verbatim/renamed, 1 substring, 1 'on': list form which HEAD has as push/pull_request/workflow_dispatch)
+  unit 2 (ae89fa894): both added files IDENTICAL blobs; registrations present
+  unit 3 (bbf7a307c): the +8 guard lines verbatim at src/CMakeLists.txt:111-119
+  unit 4 (dbcb8a2ba): src/core/AudioBus.cpp IDENTICAL blob; patch-id SAME as HEAD commit 416fb186b
+  unit 5 (e317f1062): SessionModel.h/SessionModel.cpp/SessionModelPrivate.h/SessionClip.cpp/SessionModelTest.cpp/ProjectVersionTest.cpp all IDENTICAL blobs

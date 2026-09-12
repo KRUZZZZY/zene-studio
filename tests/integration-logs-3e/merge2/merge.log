@@ -1,0 +1,12 @@
+=== merge 2: test/real-client-e2e (ae89fa89401e409ddf2aaa456b1cdf52c3c7e4c6) onto 6d1204b7f ===
+Auto-merging tests/CMakeLists.txt
+CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+Auto-merging tests/all-sources.txt
+CONFLICT (content): Merge conflict in tests/all-sources.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1
+conflicted files: 2
+  tests/CMakeLists.txt
+  tests/all-sources.txt
+NO-CONTENT: the merged index is byte-identical to HEAD (6d1204b7f^{tree} 411c3978a0a9)
+conflicted=2 merge_exit=1

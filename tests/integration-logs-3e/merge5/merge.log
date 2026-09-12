@@ -1,0 +1,27 @@
+=== merge 5: feat/session-view-model (e317f1062dcca0f0411e293588c3cf731cc0b127) onto 2a245406b ===
+Auto-merging CMakeLists.txt
+Auto-merging include/Song.h
+CONFLICT (content): Merge conflict in include/Song.h
+Auto-merging src/CMakeLists.txt
+Auto-merging src/core/CMakeLists.txt
+CONFLICT (content): Merge conflict in src/core/CMakeLists.txt
+Auto-merging src/core/Song.cpp
+CONFLICT (content): Merge conflict in src/core/Song.cpp
+Auto-merging src/lmmsconfig.h.in
+Auto-merging tests/CMakeLists.txt
+CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+Auto-merging tests/fork-sources.txt
+CONFLICT (content): Merge conflict in tests/fork-sources.txt
+Auto-merging tests/upstream-modifications.txt
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1
+conflicted files: 6
+  include/Song.h
+  src/core/CMakeLists.txt
+  src/core/Song.cpp
+  tests/CMakeLists.txt
+  tests/fork-sources.txt
+  tests/upstream-modifications.txt
+NO-CONTENT: the merged index is byte-identical to HEAD (2a245406b^{tree} 411c3978a0a9)
+conflicted=6 merge_exit=1

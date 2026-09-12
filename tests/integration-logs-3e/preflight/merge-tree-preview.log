@@ -1,0 +1,118 @@
+=== unit 1 tools/local-ci (exit 1)
+    CONFLICTS:
+      100644 f7cc7a9100e2d3fe83eabe0d35e6d8e0818fedfa 1	.github/workflows/build.yml
+      100644 503a0a3ff2b59650b9456cf1f02599ec7b0d397e 2	.github/workflows/build.yml
+      100644 248e2325088589d173197753fd698c194788d033 3	.github/workflows/build.yml
+      
+      Auto-merging .github/workflows/build.yml
+      CONFLICT (content): Merge conflict in .github/workflows/build.yml
+=== unit 2 test/real-client-e2e (exit 1)
+    CONFLICTS:
+      100644 8842cc8c9db0ded5314328369097c72f60516e70 1	tests/CMakeLists.txt
+      100644 0d0608268d0a3c470704c24fb24719bb17cf4768 2	tests/CMakeLists.txt
+      100644 4e433c254fdec69f65029d1f92f0a58bfce2ec8c 3	tests/CMakeLists.txt
+      100644 cf59ceb283113cf32154f5d26c88f8c7f4e1b0a1 1	tests/all-sources.txt
+      100644 dc7de9d4798ba9dd3689cea11bd9ee87671d2b8a 2	tests/all-sources.txt
+      100644 4d7d0debd7f88664b4cbdf88881d08223538d825 3	tests/all-sources.txt
+      
+      Auto-merging tests/CMakeLists.txt
+      CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+      Auto-merging tests/all-sources.txt
+      CONFLICT (content): Merge conflict in tests/all-sources.txt
+=== unit 3 feat/stem-split (exit 1)
+    CONFLICTS:
+      100644 ffcca40e25228b730679de1a1474b0b23499965f 1	src/CMakeLists.txt
+      100644 632a53a6524117309ab0b6acd8f5979779da525b 2	src/CMakeLists.txt
+      100644 29b7506513d5173960e7692d7511782038a46e35 3	src/CMakeLists.txt
+      
+      Auto-merging src/CMakeLists.txt
+      CONFLICT (content): Merge conflict in src/CMakeLists.txt
+=== unit 4 part-b-engine-integration (exit 1)
+    CONFLICTS:
+      100644 5294b982d922e6531b8a84281d6c56881f813c17 1	tests/CMakeLists.txt
+      100644 0d0608268d0a3c470704c24fb24719bb17cf4768 2	tests/CMakeLists.txt
+      100644 931cc1d9cf49d87501ab13edf6f85aa758b64c73 3	tests/CMakeLists.txt
+      100644 3d2a2c659d611536e156c81ffb810d597e1e0b2c 2	tests/src/core/AudioBusTest.cpp
+      100644 494151f5b3c20a54a64204a558136ecbc4316a23 3	tests/src/core/AudioBusTest.cpp
+      
+      Auto-merging tests/CMakeLists.txt
+      CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+      Auto-merging tests/src/core/AudioBusTest.cpp
+      CONFLICT (add/add): Merge conflict in tests/src/core/AudioBusTest.cpp
+=== unit 5 feat/session-view-model (exit 1)
+    CONFLICTS:
+      100644 1c18cbbb7b791b8a35cf07f536a85c7402f44a71 1	include/Song.h
+      100644 fea934b1ec50af955bfa61530e60ca611c3fb6f2 2	include/Song.h
+      100644 1be42115a7ab787bd498d66b087cc2f109f9d6bb 3	include/Song.h
+      100644 cba8aed9849f696566f5f98327606b89df7927ff 1	src/core/CMakeLists.txt
+      100644 daf692c99246f07e1560c90b06f3366fe7d9ccaf 2	src/core/CMakeLists.txt
+      100644 94a1bd29df1b5bfc4c5b2db93a733c27ca202aca 3	src/core/CMakeLists.txt
+      100644 1d3a7bc291e69930624fe2e22bb39584df19090c 1	src/core/Song.cpp
+      100644 2172858163a9459914bb4135285f5f863a6f0870 2	src/core/Song.cpp
+      100644 bbbdc33298605d1443a8ab5fceb62803011336a6 3	src/core/Song.cpp
+      100644 910e5a322e09b697ecf9968331d444431e4d34f9 1	tests/CMakeLists.txt
+      100644 0d0608268d0a3c470704c24fb24719bb17cf4768 2	tests/CMakeLists.txt
+      100644 fc6ed9a3f90a6ec5e7af82856451caf6627f3fcf 3	tests/CMakeLists.txt
+      100644 9ebc9fba36b8817c93c98853d483f43469893cc6 1	tests/fork-sources.txt
+      100644 2ffe2f846ccdca31fa6285b168b3886db255d114 2	tests/fork-sources.txt
+      100644 3b7e30479aae7feb0fd6266e2bcbad88dfa99a70 3	tests/fork-sources.txt
+      100644 cce768a7a7041276807e5364062f21a8b5d31753 1	tests/upstream-modifications.txt
+      100644 9c21289647bbfcc098d1e58650eddea36e6ef718 2	tests/upstream-modifications.txt
+      100644 bb9510c9adc90b85af048ff9940b06a5ea9fae35 3	tests/upstream-modifications.txt
+      
+      Auto-merging CMakeLists.txt
+      Auto-merging include/Song.h
+      CONFLICT (content): Merge conflict in include/Song.h
+      Auto-merging src/CMakeLists.txt
+      Auto-merging src/core/CMakeLists.txt
+      CONFLICT (content): Merge conflict in src/core/CMakeLists.txt
+      Auto-merging src/core/Song.cpp
+      CONFLICT (content): Merge conflict in src/core/Song.cpp
+      Auto-merging src/lmmsconfig.h.in
+      Auto-merging tests/CMakeLists.txt
+      CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+      Auto-merging tests/fork-sources.txt
+      CONFLICT (content): Merge conflict in tests/fork-sources.txt
+      Auto-merging tests/upstream-modifications.txt
+      CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+=== unit 6 docs/fork-readme (exit 1)
+    CONFLICTS:
+      100644 5afe75307159eda0b60960d89b7164fc19e5e1b6 1	.gitignore
+      100644 adc18cadfe77e3f58f647d3db117710508c8101a 2	.gitignore
+      100644 8c98feeae953b6ed55cd8f4506b093408ea16d21 3	.gitignore
+      100644 d17780420e3716f6a0cbc5a46f24918bcde25d01 1	README.md
+      100644 383679872f08c571585aa4f1782bc46f08332939 2	README.md
+      100644 f869a75f0f635c234f078a9f3042e79377dd0c04 3	README.md
+      100644 02ec94a6bb204078e41e30ee51e0195c32e708ff 1	doc/CMakeLists.txt
+      100644 c0899f77c7f11c89ec1ffaa697d40e3cef0563d3 2	doc/CMakeLists.txt
+      100644 1572d3d4f45ccd7e8771fb95cadcccf18feddfec 3	doc/CMakeLists.txt
+      100644 58183f2bc46913e95d8b302fcb95175da72ef038 1	doc/Doxyfile.in
+      100644 8bb10139b9c6fae94eeb6ee96cc4ef4585e3dbd5 2	doc/Doxyfile.in
+      100644 d234f79a2f405527bb492de7af1ade4e50e7b87b 3	doc/Doxyfile.in
+      100644 5da53383ef04184460aec7a808d6ffe0c88f8989 1	include/Clip.h
+      100644 5e1220b452791636478ffe730da7689b9ef04562 2	include/Clip.h
+      100644 93fe9a6ae6e2fac6a3bf1e27cfa3418044e87744 3	include/Clip.h
+      100644 9121b6aa5f9d22101bfa2c3d4b1e0a44aa878181 1	src/core/audio/AudioSoundIo.cpp
+      100644 25e3c92b37c61ca578e7ed0a619faf2e42fc5c65 2	src/core/audio/AudioSoundIo.cpp
+      
+      Auto-merging .github/workflows/deps-ubuntu-24.04-gcc.txt
+      Auto-merging .gitignore
+      CONFLICT (content): Merge conflict in .gitignore
+      Auto-merging Brewfile
+      Auto-merging CMakeLists.txt
+      Auto-merging README.md
+      CONFLICT (content): Merge conflict in README.md
+      Auto-merging doc/CMakeLists.txt
+      CONFLICT (content): Merge conflict in doc/CMakeLists.txt
+      Auto-merging doc/Doxyfile.in
+      CONFLICT (content): Merge conflict in doc/Doxyfile.in
+      Auto-merging include/AudioBuffer.h
+      Auto-merging include/AudioBusHandle.h
+      Auto-merging include/AudioEngine.h
+      Auto-merging include/AutomatableModel.h
+      Auto-merging include/Clip.h
+      CONFLICT (content): Merge conflict in include/Clip.h
+      Auto-merging include/InstrumentTrack.h
+      Auto-merging include/Note.h
+      Auto-merging include/embed.h
+      Auto-merging plugins/MidiImport/MidiImport.cpp

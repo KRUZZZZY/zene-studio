@@ -1,0 +1,9 @@
+=== merge 3: feat/stem-split (bbf7a307cb17f10727bdb4fe68960528a71254ad) onto 345fd747b ===
+Auto-merging src/CMakeLists.txt
+CONFLICT (content): Merge conflict in src/CMakeLists.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1
+conflicted files: 1
+  src/CMakeLists.txt
+NO-CONTENT: the merged index is byte-identical to HEAD (345fd747b^{tree} 411c3978a0a9)
+conflicted=1 merge_exit=1

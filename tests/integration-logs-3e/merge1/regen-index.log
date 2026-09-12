@@ -1,0 +1,4 @@
+fork-sources.txt     rev=INDEX entries=175 duplicates=0 +0 -0 REPRODUCES
+all-sources.txt      rev=INDEX entries=1209 duplicates=0 +0 -0 REPRODUCES
+tools-sources.txt    rev=INDEX entries=18 duplicates=0 +0 -0 REPRODUCES
+VERIFY RESULT: ALL-REPRODUCE
