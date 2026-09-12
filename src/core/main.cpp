@@ -71,6 +71,7 @@
 #include "MainWindow.h"
 #include "MixHelpers.h"
 #include "OutputSettings.h"
+#include "ProjectRecovery.h"
 #include "ProjectRenderer.h"
 #include "RenderManager.h"
 #include "Song.h"
@@ -959,16 +960,42 @@ int main( int argc, char * * argv )
 		srand( getpid() + time( 0 ) );
 
 		// recover a file?
-		QString recoveryFile = ConfigManager::inst()->recoveryFile();
+		QString const recoveryFile = ConfigManager::inst()->recoveryFile();
 
-		bool recoveryFilePresent = QFileInfo( recoveryFile ).exists() &&
-				QFileInfo( recoveryFile ).isFile();
-		bool autoSaveEnabled =
+		// A recovery file is offered only when it is THIS session's. Upstream
+		// offers any recover.mmp, so a stale file left by an unrelated project is
+		// offered forever (and suppresses "open last project" until discarded),
+		// and an explicit project named on the command line is hijacked by a
+		// recovery of something else. decideRecovery() is the whole rule, as a
+		// pure function, unit-tested headless in tests/src/core/ProjectRecoveryTest.cpp.
+		const ProjectRecovery::RecoveryInfo recovery =
+				ProjectRecovery::readRecoveryInfo( recoveryFile );
+		const ProjectRecovery::RecoveryDecision recoveryDecision =
+				ProjectRecovery::decideRecovery( recovery, fileToLoad );
+		const bool recoveryFilePresent = recoveryDecision.offered();
+		const bool autoSaveEnabled =
 			ConfigManager::inst()->value( "ui", "enableautosave" ).toInt();
+
+		// Say why a recovery file that IS on disk was not offered, so a report can
+		// show it instead of describing a dialog that never appeared.
+		if( recovery.fileExists && !recoveryFilePresent )
+		{
+			fprintf( stderr, "zene: not offering recovery file %s: %s\n",
+					recoveryFile.toUtf8().constData(),
+					recoveryDecision.detail.toUtf8().constData() );
+		}
+
 		if( recoveryFilePresent )
 		{
 			QMessageBox mb;
 			mb.setWindowTitle( MainWindow::tr( "Project recovery" ) );
+			// Name the project the recovery actually belongs to. Upstream's dialog
+			// says "the project of this session", which a user cannot check.
+			QString const recoveredProject =
+				recoveryDecision.projectLabel.isEmpty()
+					? MainWindow::tr( "It is a project that has not been saved yet." )
+					: MainWindow::tr( "Project it belongs to: %1" )
+						.arg( recoveryDecision.projectLabel );
 			mb.setText( QString(
 				"<html>"
 				"<p style=\"margin-left:6\">%1</p>"
@@ -994,7 +1021,8 @@ int main( int argc, char * * argv )
 				MainWindow::tr( "Discard" ),
 				MainWindow::tr( "Launch a default session and delete "
 					"the restored files. This is not reversible." )
-							) );
+							) + QStringLiteral( "<p style=\"margin-left:6\">%1</p>" )
+							.arg( recoveredProject ) );
 
 			mb.setIcon( QMessageBox::Warning );
 			mb.setWindowIcon( embed::getIconPixmap( "icon_small" ) );

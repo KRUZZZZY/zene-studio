@@ -26,6 +26,7 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDateTime>
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDomElement>
@@ -62,6 +63,7 @@
 #include "PluginView.h"
 #include "ProjectJournal.h"
 #include "ProjectNotes.h"
+#include "ProjectRecovery.h"
 #include "ProjectRenderer.h"
 #include "RecentProjectsMenu.h"
 #include "RemotePluginBase.h"
@@ -1336,8 +1338,9 @@ void MainWindow::closeEvent( QCloseEvent * _ce )
 
 void MainWindow::sessionCleanup()
 {
-	// delete recover session files
-	QFile::remove( ConfigManager::inst()->recoveryFile() );
+	// delete the recovery session files: the recovery project file and the
+	// identity sidecar autoSave() writes beside it
+	ProjectRecovery::removeRecovery( ConfigManager::inst()->recoveryFile() );
 	setSession( SessionState::Normal );
 }
 
@@ -1501,7 +1504,16 @@ void MainWindow::autoSave()
 				"enablerunningautosave" ).toInt() ||
 			! Engine::getSong()->isPlaying() ) )
 	{
-		Engine::getSong()->saveProjectFile(ConfigManager::inst()->recoveryFile());
+		// Write the recovery file, then the sidecar that records WHICH project it
+		// came from, so the next launch can tell this session's recovery from a
+		// stale or unrelated one (ProjectRecovery::decideRecovery). Both are
+		// plain writes on this GUI thread -- no audio-thread callback is added.
+		QString const recoveryFile = ConfigManager::inst()->recoveryFile();
+		if( Engine::getSong()->saveProjectFile( recoveryFile ) )
+		{
+			ProjectRecovery::writeRecoveryIdentity( recoveryFile,
+					Engine::getSong()->projectFileName(), QDateTime::currentDateTimeUtc() );
+		}
 		autoSaveTimerReset();  // Reset timer
 	}
 	else

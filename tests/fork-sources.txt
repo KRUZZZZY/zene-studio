@@ -48,6 +48,7 @@ include/MidiLearnGui.h
 include/MultiTrackRecorder.h
 include/PinConnector.h
 include/PluginAudioPorts.h
+include/ProjectRecovery.h
 include/PluginScanCache.h
 include/RecordRingBuffer.h
 include/RemotePluginAudioPorts.h
@@ -129,6 +130,7 @@ src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
 src/core/MidiLearn.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/ProjectRecovery.cpp
 src/core/PluginScanCache.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
