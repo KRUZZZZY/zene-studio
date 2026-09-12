@@ -5,8 +5,10 @@ Entry tip: **`09e313c19`** — the tip train 3E left, with `git status --porcela
 train's own evidence directory. Exit: **two merge commits** — `b96d01d61` (unit 1) and `c639bbd61`
 (unit 2) — **one labelled fix-up commit** `0ddbb1ca1` between them, the evidence commit `1fab5e4f1`
 (this report included) and the tip-verification commit that follows it.
-`git log --oneline --merges 09e313c19..HEAD` names the two merges without this report having to guess its
-own tip.
+`git log --oneline --merges --first-parent 09e313c19..HEAD` names exactly the train's own two merges
+without this report having to guess its own tip. **`--first-parent` is load-bearing:** without it the
+unit's own history contributes eleven more merges to that output (13 in total), because unit 1 merged a
+whole wave of lane branches inside its own line — one more way this train is not 3E's shape.
 
 Nothing was pushed; no remote, PR, issue or **tag** was touched; `origin` (LMMS/lmms) and `messmerd`
 were never contacted; no rebase, amend, reset or force; nothing staged with `git add -A` (every
@@ -26,12 +28,20 @@ Train 3E measured five units and found its entry tree and its exit tree differed
 This train is the inverse, and the brief was right about that:
 
 ```
-$ git diff --stat 09e313c19 HEAD
- 107 files changed, 22421 insertions(+), 676 deletions(-)      (before the unit-2 merge; +12 lines after it)
-$ git diff --name-status 09e313c19 HEAD | awk '{print $1}' | sort | uniq -c
+$ git diff --shortstat 09e313c19 b96d01d61          # merge 1's own content
+ 107 files changed, 22449 insertions(+), 131 deletions(-)
+$ git diff --name-status 09e313c19 b96d01d61 | awk '{print $1}' | sort | uniq -c
   79 A        <- 79 files the release line did not have at all
   28 M
+$ git diff --shortstat 0ddbb1ca1 c639bbd61          # merge 2's own content
+ 1 file changed, 12 insertions(+)
+$ git diff --shortstat 09e313c19 1f33dd200 -- . ':(exclude)tests/integration-logs-3f' ':(exclude)docs/INTEGRATION-MERGES-3F.md'
+ 108 files changed, 22466 insertions(+), 131 deletions(-)     # product only, evidence excluded
 ```
+
+(The merge-1 commit message quotes `+22,421/−676`; that was the *staged index mid-resolution*, before the
+last two registry resolutions were staged. The committed figure is `+22,449/−131`, above. Corrected here
+rather than amended — this train rewrites no history.)
 
 **And the two sides are individually green while their union is not.** The incoming unit ships an
 anti-drift gate (`tests/agent-surface-gate.py`, ctest name `agent_surface`) that reflects the *live*
@@ -56,7 +66,7 @@ the lesson 3E wrote down: **mergeable is not additive, and additive is not green
 
 | # | unit | merged from (pinned sha) | merge commit | conflicts | content |
 |---|---|---|---|---|---|
-| 1 | `post-alpha/agent-surface-onto-integration` | `f8715fa423e44f2dcc260fa2ac09456b0d39843f` | `b96d01d61` | 2 | **107 paths: 79 added, 28 modified, +22,421/−676** |
+| 1 | `post-alpha/agent-surface-onto-integration` | `f8715fa423e44f2dcc260fa2ac09456b0d39843f` | `b96d01d61` | 2 | **107 paths: 79 added, 28 modified, +22,449/−131** |
 | — | (fix-up: the unit's two `-Werror` failures) | — | `0ddbb1ca1` | — | 3 files |
 | 2 | `fix/latency-complexity` | `df9944ba1d3ffaa302bc8bafaa018b40218d794c` | `c639bbd61` | 3 | **1 file, +12 lines** (everything else already in this line) |
 
@@ -494,9 +504,10 @@ tools/      do_merge_3f.sh            - merge by sha, save all three stages, no 
                                         warning that it reads the index stages (see the ledger note)
 ```
 
-The git history of the train is `b96d01d61` (merge 1), `0ddbb1ca1` (fix-up), `c639bbd61` (merge 2) —
-**two merges and one labelled fix-up** — plus the evidence commit and this report. `git log --merges
-09e313c19..HEAD` returns exactly those two.
+The git history of the train is `b96d01d61` (merge 1), `0ddbb1ca1` (fix-up), `c639bbd61` (merge 2),
+`1fab5e4f1` (evidence + this report) and `1f33dd200` (the tip verification) — **two merges and one
+labelled fix-up** plus two evidence commits. `git log --oneline --merges --first-parent 09e313c19..HEAD`
+returns exactly the two merges.
 
 ## Tools used, and why
 
