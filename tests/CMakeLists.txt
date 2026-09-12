@@ -19,7 +19,11 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
+	src/core/MixerAbRegressionTest.cpp
+	src/core/MixerRoutingBackwardCompatTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
+	src/core/PhaseDSidechainTest.cpp
+	src/core/PhaseFChannelScaleTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
 	src/core/ProjectRecoveryTest.cpp
@@ -139,6 +143,24 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 endforeach()
 
+# ---------------------------------------------------------------------------
+# PhaseDSidechainTest loads the native Compressor module.
+#
+# It points LMMS_PLUGIN_DIR at a private directory holding a link to the built
+# Compressor, to prove sidechain ducking through the real plugin. The path comes
+# in as PART_D_COMPRESSOR_LIBRARY; until now nothing defined that macro, so the
+# file could not compile and was never registered - a test that looked like
+# Phase D coverage and could not run in any way. $<TARGET_FILE:> resolves to the
+# built module and makes the plugin a build dependency.
+# ---------------------------------------------------------------------------
+add_dependencies(PhaseDSidechainTest compressor)
+target_compile_definitions(PhaseDSidechainTest PRIVATE
+	PART_D_COMPRESSOR_LIBRARY="$<TARGET_FILE:compressor>")
+# The Compressor module is dlopen()ed, so the test binary must export the
+# lmms:: core symbols the module resolves from its host (same reason
+# ScriptEngineTest and PluginScanCacheTest set this). Without it the load fails
+# with "undefined symbol: _ZTIN4lmms16AutomatableModelE".
+set_target_properties(PhaseDSidechainTest PROPERTIES ENABLE_EXPORTS ON)
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.

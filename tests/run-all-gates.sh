@@ -2,7 +2,7 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9 (Gate 5 ≈3 min)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
@@ -162,6 +162,13 @@ banner 9 "fork-sources registration"
 bash tests/fork-sources-gate.sh
 [[ $? -eq 0 ]] && record 9 "fork-sources" "PASS" || record 9 "fork-sources" "FAIL"
 
+# ---- Gate 10: test-source registration ---------------------------------------
+# Gate 9 answers "is this file in a scope manifest"; it cannot answer "is this
+# test ever built". Three test sources were found unregistered by hand in one
+# night (one of which could not even compile), all while every gate was green.
+banner 10 "test-source registration"
+bash tests/unregistered-tests-gate.sh
+[[ $? -eq 0 ]] && record 10 "unregistered-tests" "PASS" || record 10 "unregistered-tests" "FAIL"
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
