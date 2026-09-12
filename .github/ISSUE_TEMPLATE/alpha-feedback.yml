@@ -25,7 +25,7 @@ body:
       description: |
         Which file did you download, and what does Help > About (or --version) say? A package from
         the release tag reports 0.2.1-alpha; a package built from an untagged commit reports the last
-        tag plus the commit count and hash (for example 0.2.0-alpha.12+b099fd6, from the superseded
+        tag plus the commit count and hash (for example 0.2.0-alpha.12+b099fd6c, from the superseded
         v0.2.0-alpha tag — its build failed on every platform and 0.2.1-alpha replaces it).
       placeholder: "e.g. Linux AppImage x86_64, 0.2.1-alpha"
     validations:
