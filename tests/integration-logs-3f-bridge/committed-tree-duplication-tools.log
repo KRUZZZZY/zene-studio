@@ -1,0 +1,4 @@
+duplication-gate: tools scope (fork-owned tooling; jscpd has no shell format, so the .sh entries are counted by Gates 4 and 7 only)
+duplication-gate: scanning 34 tools sources (min-lines 25, min-tokens 120, threshold 5%)
+
+PASS: duplicated lines 0.00% (budget 5%)

@@ -1,8 +1,9 @@
 # The MCP bridge meets the tools-scope bar, and Gate 6's `tools/` rule is fixed
 
 Lane: `post-alpha/foreign-merge`. Worktree: `projects/lmms-fl-research/zene-pa-foreign`.
-Commits: `4b48a18c8` (the bridge meets the tools-scope bar) and `c4879b440` (Gate 6's
-`tools/**` rule). Nothing is pushed; no tag exists.
+Commits: `8131b1ac9` (the bridge meets the tools-scope bar), `c4879b440` (Gate 6's `tools/**`
+rule), `56000c514` (this report and the evidence logs), plus a fourth commit carrying the
+committed-tree re-runs of §7. Nothing is pushed; no tag exists.
 
 Evidence: **`tests/integration-logs-3f-bridge/`** (committed, never `/tmp`). Every exit code
 in this document is from an unpiped run — `cmd > log 2>&1; echo EXIT=$?` — and the log is
@@ -357,3 +358,27 @@ is the contract that caught the crash.
   never written to, and no C++ file was modified — the scratch branch that held the negative-control
   commit was deleted, and `src/core/AudioResampler.cpp` is byte-identical to the upstream base
   (`git diff --exit-code 4e677cb6c6ab`, EXIT=0).
+
+## 7. The committed-tree re-runs
+
+The runs in §4 were taken with the work committed (Gate 6 and Gate 9 read `git`, not the working
+tree), and re-running them after `56000c514` — i.e. with the evidence and the report themselves now
+tracked under `tests/**` — changes nothing, which is the point of taking them twice:
+
+```
+$ bash tests/no-upstream-regression-gate.sh              > tests/integration-logs-3f-bridge/committed-tree-gate6.log                 2>&1; echo EXIT=$?
+EXIT=0
+$ bash tests/fork-sources-gate.sh                        > tests/integration-logs-3f-bridge/committed-tree-gate9.log                 2>&1; echo EXIT=$?
+EXIT=0
+$ bash tests/complexity-gate.sh --scope tools --check    > tests/integration-logs-3f-bridge/committed-tree-complexity-tools.log      2>&1; echo EXIT=$?
+EXIT=0
+$ bash tests/file-length-gate.sh --scope tools --check   > tests/integration-logs-3f-bridge/committed-tree-file-length-tools.log     2>&1; echo EXIT=$?
+EXIT=0
+$ bash tests/duplication-gate.sh --scope tools --check   > tests/integration-logs-3f-bridge/committed-tree-duplication-tools.log     2>&1; echo EXIT=$?
+EXIT=0
+$ diff <(…tools-sources.txt…) <(…git diff --diff-filter=A 4e677cb6c6ab HEAD -- tools…) && echo REPRODUCES   # the manifest's own command
+REPRODUCES                                                                                                    EXIT=0
+```
+
+The bridge's own modules are recorded in §5 and were run at `8131b1ac9`; `pytest tests/ -q` at the
+same commit collected 64 tests in one process and reported 63 passed / 1 failed.
