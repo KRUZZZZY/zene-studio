@@ -25,6 +25,18 @@ that is this page's fault — report it and it gets added.
   step in it describes how a *packaged* artefact behaves when it is launched (AppImage FUSE, SmartScreen,
   Gatekeeper), and no artefact of this release exists on this machine to re-check the steps against. Restoring
   that section is a decision for whoever builds and ships the packages, and it is a copy, not a verification.
+- **Packages come from the release page, and only from there.** A build job uploads a package for a tag build
+  or a manual CI run, never for an ordinary push, so a push that is neither produces no package at all; and
+  only the platforms whose build job is green have packages. Check the release page for the current set.
+  Verified in the tree: six of the workflow's seven `upload-artifact` steps carry
+  `if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'`
+  (`.github/workflows/build.yml:147`, `:278`, `:420`, `:545`, `:717`, `:825`); the seventh (`:688`) uploads the
+  ctest log on failure and is commented as deliberately exempt "because this is evidence, not a package". The
+  workflow's own triggers are `push`, `pull_request` and `workflow_dispatch` (`:8-10`), so an ordinary push
+  runs the jobs but uploads no package.
+  *This bullet is the one piece of an incoming 0.1.0-era rewrite of this page that had no counterpart here;
+  everything else in that edit is either already carried above in a newer form or deliberately excluded — see
+  `tests/integration-logs-3f/`.*
 - **Every save writes a `.bak` next to your project.** Verified in the tree: the backup is
   `<project file>.bak`, beside the project — `src/core/DataFile.cpp:347` composes `fullName + ".bak"` and
   `:435` moves the current file there before the new one is renamed into place at `:438`. It is not written
