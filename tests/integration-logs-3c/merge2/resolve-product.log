@@ -1,0 +1,9 @@
+  resolved include/Song.h members
+  resolved Song.cpp processNextBuffer
+  resolved Song.cpp clearProject
+  ledger: deduped the repeated clause on include/Mixer.h (1 entry)
+Traceback (most recent call last):
+  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/tests/integration-logs-3c/tools/resolve_merge2_product.py", line 180, in <module>
+    assert h.count("m_sessionScheduler;") == 1, "Song.h: session scheduler member"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Song.h: session scheduler member

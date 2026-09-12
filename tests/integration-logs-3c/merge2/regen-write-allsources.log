@@ -1,0 +1,4 @@
+all-sources.txt      rev=INDEX entries=1177 duplicates=0 +2 -0 DOES-NOT-REPRODUCE
+   + include/SessionScheduler.h
+   + src/core/SessionScheduler.cpp
+VERIFY RESULT: MISMATCH
