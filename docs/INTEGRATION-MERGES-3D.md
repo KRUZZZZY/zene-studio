@@ -523,6 +523,9 @@ final/                     checks.log + local-ci/gate9/gate6/run-all-gates/regen
                            regression-named-restored.log)
 tools/                     3C's resolve_pair.py / regen.py / precommit_check.py / verify_union.py /
                            merge_ledger.py, with regen.py's fork command amended for this train
+tip/                       tip.txt (the commit the run was made at, 2c593cec7) and the same six-step
+                           procedure re-run on the finished tree: local-ci, Gate 9, Gate 6, the ten
+                           gates, the manifest re-derivations and the tree check - identical results
 ```
 
 The git-history commits of the train are `221686487`, `d7de12677`, `ea0426199` — **three merges, no
