@@ -408,7 +408,7 @@ bash tests/integration-logs-teardown2/repro/loop-case.sh "$PWD/build/tests/Rende
 
 # the identity of the vanished thread, without a core file
 gcc -shared -fPIC -O1 -g -o /tmp/abort-trace.so \
-    tests/integration-logs-teardown2/repro/abort-trace.c -ldl    # or: gdb -x repro/gdb-cmds2.txt
+    tools/diagnostics/abort-trace.c -ldl    # or: gdb -x repro/gdb-cmds2.txt
 ```
 
 Restore the release configuration afterwards by recompiling those two objects normally
