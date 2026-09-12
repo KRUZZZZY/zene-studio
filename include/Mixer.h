@@ -31,6 +31,7 @@
 #include "JournallingObject.h"
 #include "LatencyCompensation.h"
 #include "Model.h"
+#include "Rack.h"
 #include "ThreadableJob.h"
 
 #include <atomic>
@@ -65,6 +66,14 @@ public:
 	virtual ~MixerChannel();
 
 	EffectChain m_fxChain;
+
+	/**
+	 * The channel's rack (#599): m_fxChain is its chain 0, and it holds any
+	 * parallel chains plus the chain selector. It stays off the signal path
+	 * unless a project configures it, so a channel with no rack renders
+	 * exactly as it did before racks existed (@see Rack).
+	 */
+	Rack m_rack;
 
 	// set to true if any effect in the channel is enabled and running
 	bool m_stillRunning;

@@ -181,6 +181,11 @@ banner 10 "test-source registration"
 bash tests/unregistered-tests-gate.sh
 [[ $? -eq 0 ]] && record 10 "unregistered-tests" "PASS" || record 10 "unregistered-tests" "FAIL"
 
+# ---- Gate 9: every tracked source is registered in a scope manifest ----------
+banner 9 "fork-sources registration"
+bash tests/fork-sources-gate.sh
+[[ $? -eq 0 ]] && record 9 "fork-sources" "PASS" || record 9 "fork-sources" "FAIL"
+
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
 printf '%-6s %-24s %s\n' "gate" "name" "result"

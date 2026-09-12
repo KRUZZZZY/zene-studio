@@ -287,6 +287,8 @@ include/ProjectRecovery.h
 include/ProjectRenderer.h
 include/ProjectVersion.h
 include/QuadratureLfo.h
+include/Rack.h
+include/RackNodes.h
 include/RaiiHelpers.h
 include/RecentProjectsMenu.h
 include/RecordRingBuffer.h
@@ -298,6 +300,7 @@ include/RenameDialog.h
 include/RenderManager.h
 include/RingBuffer.h
 include/RmsHelper.h
+include/RoutingChainNodes.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
@@ -898,9 +901,12 @@ src/core/ProjectJournal.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectVersion.cpp
+src/core/Rack.cpp
+src/core/RackNodes.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
 src/core/RingBuffer.cpp
+src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
@@ -1146,7 +1152,6 @@ tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
-tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp
 tests/src/core/PdcMixerTest.cpp
 tests/src/core/PhaseDMixerTestSupport.h
@@ -1154,10 +1159,12 @@ tests/src/core/PhaseDPerfBench.cpp
 tests/src/core/PhaseDSidechainTest.cpp
 tests/src/core/PhaseFChannelScaleTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
+tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectVersionTest.cpp
+tests/src/core/RackTest.cpp
 tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RecordingRealtimeTest.cpp
@@ -1165,6 +1172,7 @@ tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RenderJobQueueTest.cpp
+tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp

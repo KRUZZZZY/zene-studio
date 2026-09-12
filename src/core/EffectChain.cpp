@@ -32,9 +32,13 @@
 
 #include "AudioBus.h"
 #include "AudioBuffer.h"
+#include "AudioEngine.h"
 #include "Effect.h"
 #include "DummyEffect.h"
+#include "Engine.h"
 #include "LatencyCompensation.h"
+#include "RoutingChainNodes.h"
+#include "RoutingGraph.h"
 
 namespace lmms
 {
@@ -43,11 +47,83 @@ namespace lmms
 EffectChain::EffectChain( Model * _parent ) :
 	Model( _parent ),
 	SerializingObject(),
+	m_graph( std::make_unique<RoutingGraph>() ),
 	m_enabledModel( false, nullptr, tr( "Effects enabled" ) )
 {
 	// Disabling the chain takes every effect out of the signal path, so the
 	// cached PDC latency must follow (#605).
 	connect(&m_enabledModel, &BoolModel::dataChanged, [this] { refreshLatency(); });
+}
+
+
+auto EffectChain::routingGraph() -> RoutingGraph&
+{
+	return *m_graph;
+}
+
+
+auto EffectChain::routingGraph() const -> const RoutingGraph&
+{
+	return *m_graph;
+}
+
+
+void EffectChain::rebuildRoutingGraph()
+{
+	m_graph->clear();
+	m_effectNodes.clear();
+	m_graphInput.reset();
+	m_graphOutput.reset();
+	m_graphActive = false;
+
+	auto* engine = Engine::audioEngine();
+	const f_cnt_t frames = engine != nullptr ? engine->framesPerPeriod() : 0;
+	if (frames == 0 || m_effects.empty()) { return; }
+
+	// Effects with audio ports route their own ports on the bus (AudioPlugin
+	// overrides the bus entry point for exactly that); the graph's planar
+	// blocks cannot carry that port map, so the whole chain keeps the
+	// pre-existing path rather than routing half of it.
+	for (const Effect* effect : m_effects)
+	{
+		if (effect->audioPortsModel() != nullptr) { return; }
+	}
+
+	m_graphInput = std::make_unique<AudioBuffer>(frames, DEFAULT_CHANNELS);
+	m_graphOutput = std::make_unique<AudioBuffer>(frames, DEFAULT_CHANNELS);
+	m_graphInput->silenceAllChannels();
+	m_graphOutput->silenceAllChannels();
+
+	auto input = std::make_unique<ChainInputNode>(m_graphInput.get());
+	const int inputId = m_graph->addNode(std::move(input));
+
+	// Same effects, same order, same connections the plain loop walks: the
+	// graph is equivalent by construction, not by coincidence.
+	int previous = inputId;
+	for (Effect* effect : m_effects)
+	{
+		auto node = std::make_unique<EffectNode>(effect);
+		EffectNode* const raw = node.get();
+		const int id = m_graph->addNode(std::move(node));
+		m_effectNodes.push_back(raw);
+
+		QString error;
+		if (!m_graph->connect(previous, id, 0, 0, &error))
+		{
+			// Unreachable for a linear chain (no cycle is possible); leave the
+			// chain on the plain loop rather than on a half-wired graph.
+			m_graph->clear();
+			m_effectNodes.clear();
+			m_graphInput.reset();
+			m_graphOutput.reset();
+			return;
+		}
+		previous = id;
+	}
+
+	m_graph->setOutputNode(previous);
+	m_graph->prepare(frames, DEFAULT_CHANNELS);
+	m_graphActive = true;
 }
 
 
@@ -153,6 +229,8 @@ void EffectChain::loadSettings( const QDomElement & _this )
 	}
 
 	refreshLatency();
+	// The restored effects are this chain's signal path too.
+	rebuildRoutingGraph();
 	emit dataChanged();
 }
 
@@ -167,6 +245,10 @@ void EffectChain::appendEffect( Effect * _effect )
 	// directly (tests, native plugins) only pass through here.
 	_effect->setEffectChain( this );
 	m_effects.push_back(_effect);
+	// The chain's signal path is defined by its effect list, so the routing
+	// graph is rebuilt inside the model change: the audio thread must never see
+	// a graph that does not mirror the list it is rendering.
+	rebuildRoutingGraph();
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( true );
@@ -190,6 +272,8 @@ void EffectChain::removeEffect( Effect * _effect )
 	}
 	m_effects.erase( found );
 
+	rebuildRoutingGraph();
+
 	Engine::audioEngine()->doneChangeInModel();
 
 	if (m_effects.empty())
@@ -208,6 +292,11 @@ void EffectChain::moveDown( Effect * _effect )
 {
 	if (_effect != m_effects.back())
 	{
+		// Reordering the list reorders the signal path, so it needs the same
+		// model change every other topology edit takes: without it the audio
+		// thread could swap the list (and the graph below) out from under the
+		// plain loop's range-for.
+		//
 		// D5 (mixer concurrency audit): the swap changes the order of the
 		// vector a worker range-fors in processAudioBuffer(). Same idiom as
 		// appendEffect()/removeEffect()/clear() above: hold the change mutex
@@ -216,6 +305,7 @@ void EffectChain::moveDown( Effect * _effect )
 		auto it = std::find(m_effects.begin(), m_effects.end(), _effect);
 		assert(it != m_effects.end());
 		std::swap(*std::next(it), *it);
+		rebuildRoutingGraph();
 		Engine::audioEngine()->doneChangeInModel();
 	}
 }
@@ -227,11 +317,14 @@ void EffectChain::moveUp( Effect * _effect )
 {
 	if (_effect != m_effects.front())
 	{
-		// D5: see moveDown() above.
+		// D5: see moveDown() above. The graph is rebuilt inside the same model
+		// change, so the audio thread never sees an effect list the graph does
+		// not mirror.
 		Engine::audioEngine()->requestChangeInModel();
 		auto it = std::find(m_effects.begin(), m_effects.end(), _effect);
 		assert(it != m_effects.end());
 		std::swap(*std::prev(it), *it);
+		rebuildRoutingGraph();
 		Engine::audioEngine()->doneChangeInModel();
 	}
 }
@@ -278,13 +371,107 @@ bool EffectChain::processAudioBuffer(AudioBus& bus, const AudioBuffer* sidechain
 	m_sidechainBuffer = sidechainBuffer;
 
 	bool moreEffects = false;
-	for (Effect* effect : m_effects)
+	if (canProcessThroughGraph(bus))
 	{
-		moreEffects |= effect->processAudioBuffer(bus);
+		// The same effects, in the same order, on the same block - driven by
+		// the graph's cached plan instead of a range-for over m_effects.
+		moreEffects = processThroughGraph(bus);
+	}
+	else
+	{
+		for (Effect* effect : m_effects)
+		{
+			moreEffects |= effect->processAudioBuffer(bus);
+		}
 	}
 
 	m_sidechainBuffer = previousSidechain;
 
+	return moreEffects;
+}
+
+
+auto EffectChain::canProcessThroughGraph(const AudioBus& bus) const -> bool
+{
+	// The audio thread never builds or re-wires a graph; it only runs one the
+	// control thread has already prepared. Anything unexpected - a block size
+	// the nodes were not prepared for, a bus the planar buffers cannot mirror,
+	// or a chain the graph no longer mirrors - falls back to the plain loop, so
+	// the fallback is always the pre-existing behaviour rather than a guess.
+	return m_graphActive
+		&& m_graph != nullptr
+		&& m_graph->isPrepared()
+		&& m_graph->frames() == bus.frames()
+		&& bus.channelPairs() == 1
+		&& graphMirrorsEffectList();
+}
+
+
+auto EffectChain::graphMirrorsEffectList() const -> bool
+{
+	if (m_effectNodes.size() != m_effects.size()) { return false; }
+	for (std::size_t i = 0; i < m_effectNodes.size(); ++i)
+	{
+		if (m_effectNodes[i] == nullptr || m_effectNodes[i]->effect() != m_effects[i])
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+
+auto EffectChain::processThroughGraph(AudioBus& bus) -> bool
+{
+	AudioBuffer& input = *m_graphInput;
+	AudioBuffer& output = *m_graphOutput;
+	const f_cnt_t frames = m_graph->frames();
+
+	// 1. Mirror the incoming block into the graph's boundary buffer. The bus's
+	//    quiet flags and the planar buffer's silence flags have the same
+	//    polarity (1 = quiet), so the flags carry over instead of the block
+	//    being re-scanned.
+	input.silenceAllChannels();
+	{
+		const float* const samples = bus.trackChannelPair(0).data();
+		float* const left = input.buffer(0).data();
+		float* const right = input.buffer(1).data();
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			left[f] = samples[2 * f];
+			right[f] = samples[2 * f + 1];
+		}
+	}
+	if (!bus.quietChannels()[0]) { input.assumeNonSilent(0); }
+	if (!bus.quietChannels()[1]) { input.assumeNonSilent(1); }
+
+	// 2. Run the graph: every node in the cached plan, then the output node's
+	//    block is copied into `output`.
+	m_graph->process(output);
+
+	// 3. Publish the rendered block back onto the bus, silence flags included:
+	//    the mixer reads those flags to decide whether the channels fed by this
+	//    one still have something to say.
+	{
+		float* const samples = bus.trackChannelPair(0).data();
+		const float* const left = output.buffer(0).data();
+		const float* const right = output.buffer(1).data();
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			samples[2 * f] = left[f];
+			samples[2 * f + 1] = right[f];
+		}
+	}
+	bus.quietChannels()[0] = output.silenceFlags()[0];
+	bus.quietChannels()[1] = output.silenceFlags()[1];
+
+	// 4. The effects' "continue processing" answers leave the graph through
+	//    their nodes; the chain still reports them to the mixer as one answer.
+	bool moreEffects = false;
+	for (const EffectNode* node : m_effectNodes)
+	{
+		moreEffects |= node->lastResult();
+	}
 	return moreEffects;
 }
 
@@ -307,6 +494,10 @@ void EffectChain::clear()
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( false );
+
+	// Nothing left to route: the graph goes back to empty (and inactive), so
+	// the chain's signal path is exactly the plain loop again.
+	rebuildRoutingGraph();
 
 	refreshLatency();
 }

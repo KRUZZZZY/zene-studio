@@ -95,6 +95,8 @@ tools/mmpz-git/run-demo.sh
 tools/mmpz-git/scratch/exp-renormalize.sh
 tools/mmpz-git/scratch/proto.py
 tools/mmpz-git/tests/test_mmpz_git.py
+tools/rack-render-fixture.py
+tools/rack-render-proof.py
 tools/render-determinism-compare.py
 tools/render-determinism-probe.sh
 tools/stem-export-demo.py

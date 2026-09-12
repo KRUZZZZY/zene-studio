@@ -38,6 +38,7 @@ set(LMMS_TESTS
 	src/core/ProjectOpenIntegrityTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp
+	src/core/RackTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RecordingRealtimeTest.cpp
@@ -45,6 +46,7 @@ set(LMMS_TESTS
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
+	src/core/RoutingGraphLiveTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
 	src/core/ScriptBindingsTest.cpp
@@ -179,6 +181,18 @@ target_compile_definitions(PhaseDSidechainTest PRIVATE
 # ScriptEngineTest and PluginScanCacheTest set this). Without it the load fails
 # with "undefined symbol: _ZTIN4lmms16AutomatableModelE".
 set_target_properties(PhaseDSidechainTest PROPERTIES ENABLE_EXPORTS ON)
+
+# ---------------------------------------------------------------------------
+# RoutingGraph on the mixer channel's effect chain (docs/ROUTING-GRAPH-LIVE.md).
+#
+# RoutingGraphLiveTest renders a channel whose chain is processed through a
+# RoutingGraph and compares it byte-for-byte against a reference render captured
+# before the graph was put on the path, then re-directs a connection and shows
+# the render changes. The reference lives in tests/reference/.
+# ---------------------------------------------------------------------------
+target_compile_definitions(RoutingGraphLiveTest PRIVATE
+	ROUTING_GRAPH_LIVE_REFERENCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/reference/routing-graph-live-render.raw"
+)
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.

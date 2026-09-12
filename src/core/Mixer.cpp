@@ -129,6 +129,7 @@ void MixerSidechainRoute::updateName()
 
 MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_fxChain( nullptr ),
+	m_rack( &m_fxChain ),
 	m_stillRunning( false ),
 	m_peakLeft( 0.0f ),
 	m_peakRight( 0.0f ),
@@ -506,9 +507,21 @@ void MixerChannel::doProcessing()
 		// into m_sidechainBuffer before our own FX chain reads it.
 		sumSidechainInputs(fpp);
 
-		m_stillRunning = m_sidechainReceives.empty()
-			? m_fxChain.processAudioBuffer(m_bus)
-			: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
+		// #599: a channel with a rack (two or more chains) renders this period
+		// through the rack's RoutingGraph; with no rack configured the
+		// channel's own chain is the whole signal path, exactly as before.
+		if( m_rack.canProcessThroughRack( m_bus ) )
+		{
+			m_stillRunning = m_sidechainReceives.empty()
+				? m_rack.processAudioBuffer( m_bus )
+				: m_rack.processAudioBuffer( m_bus, &m_sidechainBuffer );
+		}
+		else
+		{
+			m_stillRunning = m_sidechainReceives.empty()
+				? m_fxChain.processAudioBuffer(m_bus)
+				: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
+		}
 
 		// D1: the volume multiply happens after the send loop, producing the
 		// post-fader snapshot used by post-fader sidechain taps.
@@ -1535,6 +1548,8 @@ void Mixer::clearChannel(mix_ch_t index)
 {
 	MixerChannel * ch = m_mixerChannels[index];
 	ch->m_fxChain.clear();
+	// #599: a cleared channel has no rack (no parallel chains, no selector).
+	ch->m_rack.clear();
 	ch->m_volumeModel.setValue( 1.0f );
 	ch->m_muteModel.setValue( false );
 	ch->m_soloModel.setValue( false );
@@ -1588,6 +1603,9 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		_this.appendChild( mixch );
 
 		ch->m_fxChain.saveState( _doc, mixch );
+		// #599: the rack's parallel chains and the chain selector; a channel
+		// with no rack writes no element at all.
+		ch->m_rack.saveSettings( _doc, mixch );
 		ch->m_volumeModel.saveSettings( _doc, mixch, "volume" );
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
@@ -1697,6 +1715,10 @@ void Mixer::loadSettings( const QDomElement & _this )
 
 		m_mixerChannels[num]->m_fxChain.restoreState( mixch.firstChildElement(
 			m_mixerChannels[num]->m_fxChain.nodeName() ) );
+
+		// #599: the channel's rack, if the project has one. A project with no
+		// <rack> element loads an empty rack, which is off the signal path.
+		m_mixerChannels[num]->m_rack.loadSettings( mixch );
 
 		// mixer sends
 		QDomNodeList chData = mixch.childNodes();

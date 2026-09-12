@@ -118,7 +118,14 @@
 #     onto them, which is exactly the scope widening 3A refused for
 #     plugins/RnnoiseDenoiser/testdata/*.sh. Their commands are recorded in
 #     docs/BRAND-PLACEHOLDERS.md and beside the scripts in tests/evidence/.
-
+#
+# Merged 2026-09-12 (integration wave 3B, merge #5 = post-alpha/racks). That lane added
+# tools/rack-render-fixture.py and tools/rack-render-proof.py here by hand; neither can be
+# produced by this file's own command, and the regeneration run proved it (both reported
+# as `-` removals). Both are MOVED to tests/tools-sources.txt, the documented home for the
+# fork's own tooling under tools/ and the list whose own command DOES produce them - a
+# recorded move of home, not a lost entry, and the same treatment merge #2 gave
+# tools/brand/rasterise-placeholders.py.
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
@@ -139,8 +146,11 @@ include/PinConnector.h
 include/PluginAudioPorts.h
 include/PluginScanCache.h
 include/ProjectRecovery.h
+include/Rack.h
+include/RackNodes.h
 include/RecordRingBuffer.h
 include/RemotePluginAudioPorts.h
+include/RoutingChainNodes.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
@@ -225,6 +235,9 @@ src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectRecovery.cpp
+src/core/Rack.cpp
+src/core/RackNodes.cpp
+src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
