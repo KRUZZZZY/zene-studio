@@ -1,5 +1,11 @@
 # Loudness and true-peak meter (ITU-R BS.1770-4 / EBU R128)
 
+> **Superseded in part (2026-09-11, lane `post-alpha/lufs-wire`).** This lane built the measurement
+> core and stopped at the class boundary by design. The class is no longer inert: the render path
+> now feeds it and reports it to the user. See **[docs/LUFS-WIRING.md](LUFS-WIRING.md)** for what was
+> wired, the measured renders and the passivity proof. Every statement below that says nothing
+> consumes the class is marked `[SUPERSEDED]` and describes the tree as it stood when this lane landed.
+
 **Lane:** `post-alpha/lufs-meter` · **Branch base:** `post-alpha/v0.2` @ `0c23587d2`
 **Scope:** one coherent slice — a realtime-safe measurement core plus a consumption point. The
 GUI meter is deliberately out of scope.
@@ -34,8 +40,13 @@ const lmms::LufsMeter::Reading reading = meter.read();                // UI thre
   takes planar per-channel buffers for the 1/2/6-channel layouts.
 - The getters are read-only and lock-free; the value reads never take a lock, so a poll can land
   between two blocks. That is what a meter wants and it keeps the audio thread lock-free.
-- **Nothing calls it.** No mixer, engine, render or device code constructs a `LufsMeter`; the
-  class is inert in the default audio path (verified with `grep`, see "Wiring" below).
+- **Nothing called it, until the wiring lane.** `[SUPERSEDED]` No mixer, engine, render or device
+  code constructed a `LufsMeter` when this lane landed; the class was inert in the default audio
+  path (verified with `grep`, see "Wiring" below). `post-alpha/lufs-wire` added the consumer: the
+  render path constructs a `LoudnessReport` (which owns a `LufsMeter`) when the render asked for a
+  report and feeds it each rendered block — see [docs/LUFS-WIRING.md](LUFS-WIRING.md). `grep` for
+  the class now finds `src/core/ProjectRenderer.cpp`, `src/core/LoudnessReport.cpp` and
+  `src/core/RenderManager.cpp`, all reachable from `lmms render` and the export dialog.
 
 ## The algorithm, and where each piece comes from
 
@@ -150,7 +161,10 @@ square wave is the other direction: samples at full scale, waveform between them
 6. **Momentary/short-term are ungated**, as EBU Tech 3341 specifies; they are *not* the gated
    integrated value over a short window.
 
-## Wiring: provably inert
+## Wiring: provably inert (as of this lane)
+
+`[SUPERSEDED — the class now has a consumer; see docs/LUFS-WIRING.md.]` The evidence below is what
+this lane ran when it landed; the grep is no longer empty, by design.
 
 ```
 $ grep -rn "LufsMeter" src/ include/ plugins/ --include=*.cpp --include=*.h | grep -v "include/LufsMeter.h\|src/core/LufsMeter.cpp"
@@ -298,8 +312,11 @@ build-list lines and the scope file are the allowed categories.
 
 ## What is NOT proven
 
-- **No GUI, no wiring, no device.** By design and by the brief. Nothing has listened to a real
-  mixer output through this class yet, and no render has been produced *from* it.
+- **No GUI, no wiring, no device** — in this lane. `[SUPERSEDED for the wiring: the render path,
+  the export dialog and the sidecar report are `post-alpha/lufs-wire`'s work — docs/LUFS-WIRING.md.
+  Still true: no GUI *meter widget* exists, and the meter is not fed from the live audio thread.]`
+  By design and by the brief. Nothing has listened to a real mixer output through this class yet,
+  and no render has been produced *from* it.
 - **No reference-implementation cross-check.** The numbers are checked against the published
   vectors (EBU Tech 3341 signal definitions plus the recommendation's own tables), not against a
   second implementation run (libebur128/ffmpeg) on the same bit-exact input. That is the strongest

@@ -58,6 +58,8 @@ private:
 	void onFileFormatChanged(int index);
 	void onStartButtonClicked();
 	void updateTitleBar(int prog);
+	//! Shows the loudness report when one was produced, otherwise closes.
+	void onRenderFinished();
 
 	QLabel* m_fileFormatLabel = nullptr;
 	QComboBox* m_fileFormatComboBox = nullptr;
@@ -82,6 +84,10 @@ private:
 
 	QCheckBox* m_exportAsLoopBox = nullptr;
 	QCheckBox* m_exportBetweenLoopMarkersBox = nullptr;
+	//! Ask the render for an EBU R128 loudness report (OutputSettings).
+	QCheckBox* m_loudnessReportBox = nullptr;
+	//! The report itself, shown once the render finished.
+	QLabel* m_loudnessResultLabel = nullptr;
 	QLabel* m_loopRepeatLabel = nullptr;
 	QSpinBox* m_loopRepeatBox = nullptr;
 	QPushButton* m_startButton = nullptr;

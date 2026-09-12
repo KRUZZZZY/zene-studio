@@ -41,6 +41,7 @@ include/CrashReporter.h
 include/DpiHelper.h
 include/LatencyCompensation.h
 include/LmmsPolyfill.h
+include/LoudnessReport.h
 include/LufsMeter.h
 include/MidiLearn.h
 include/MidiLearnGui.h
@@ -123,6 +124,7 @@ src/core/AudioPortsModel.cpp
 src/core/CrashReporter.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
+src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
 src/core/MidiLearn.cpp
 src/core/OnnxRuntimeStemSeparator.cpp

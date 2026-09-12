@@ -157,10 +157,26 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	loopRepeatLayout->addWidget(m_loopRepeatLabel);
 	loopRepeatLayout->addWidget(m_loopRepeatBox);
 
+	// The loudness report is offered on by default in the GUI: it is measured
+	// from the blocks that are written, so the render itself is unchanged, and
+	// the report is the one thing a user cannot get from the file afterwards.
+	m_loudnessReportBox = new QCheckBox(tr("Loudness report (EBU R128)"));
+	m_loudnessReportBox->setToolTip(tr("Measure the render and write the EBU R128 report - integrated LUFS, "
+									   "short-term maximum and true peak - beside the output as "
+									   "\"<file>.loudness.txt\". Measure-only: the exported audio is identical "
+									   "either way."));
+	m_loudnessReportBox->setChecked(true);
+
+	m_loudnessResultLabel = new QLabel();
+	m_loudnessResultLabel->setWordWrap(true);
+	m_loudnessResultLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	m_loudnessResultLabel->hide();
+
 	auto exportSettingsGroupBox = new QGroupBox(tr("Export settings"));
 	auto exportSettingsLayout = new QVBoxLayout{exportSettingsGroupBox};
 	exportSettingsLayout->addWidget(m_exportAsLoopBox);
 	exportSettingsLayout->addWidget(m_exportBetweenLoopMarkersBox);
+	exportSettingsLayout->addWidget(m_loudnessReportBox);
 	exportSettingsLayout->addLayout(loopRepeatLayout);
 
 	m_fileFormatSettingsLayout->addRow(m_fileFormatLabel, m_fileFormatComboBox);
@@ -174,6 +190,7 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	mainLayout->addWidget(exportSettingsGroupBox);
 	mainLayout->addWidget(m_fileFormatSettingsGroupBox);
 	mainLayout->addStretch();
+	mainLayout->addWidget(m_loudnessResultLabel);
 	mainLayout->addLayout(startCancelButtonsLayout);
 	mainLayout->addWidget(m_progressBar);
 
@@ -251,6 +268,7 @@ void ExportProjectDialog::onStartButtonClicked()
 
 	const auto compressionLevel = m_compressionLevelComboBox->currentData().toDouble();
 	outputSettings.setCompressionLevel(compressionLevel);
+	outputSettings.setLoudnessReport(m_loudnessReportBox->isChecked());
 
 	const auto format = static_cast<ProjectRenderer::ExportFileFormat>(m_fileFormatComboBox->currentData().toInt());
 	m_renderManager = std::make_unique<RenderManager>(outputSettings, format, m_path);
@@ -262,7 +280,7 @@ void ExportProjectDialog::onStartButtonClicked()
 
 	connect(m_renderManager.get(), &RenderManager::progressChanged, m_progressBar, &QProgressBar::setValue);
 	connect(m_renderManager.get(), &RenderManager::progressChanged, this, &ExportProjectDialog::updateTitleBar);
-	connect(m_renderManager.get(), &RenderManager::finished, this, &QDialog::accept);
+	connect(m_renderManager.get(), &RenderManager::finished, this, &ExportProjectDialog::onRenderFinished);
 
 	switch (m_mode)
 	{
@@ -291,6 +309,37 @@ void ExportProjectDialog::reject()
 void ExportProjectDialog::updateTitleBar(int prog)
 {
 	setWindowTitle(tr("Rendering: %1%").arg(prog));
+}
+
+void ExportProjectDialog::onRenderFinished()
+{
+	const QString report = m_renderManager ? m_renderManager->loudnessReportText() : QString();
+	if (report.isEmpty())
+	{
+		// No report was asked for (or the render was silent and produced none):
+		// behave exactly as before.
+		accept();
+		return;
+	}
+
+	// Keep the dialog open so the measurement is actually readable, and offer
+	// the sidecar next to the render as the copy that outlives the dialog.
+	QString text = report;
+	const QString sidecar = m_renderManager->loudnessReportPath();
+	if (!sidecar.isEmpty())
+	{
+		text += tr("Written to %1").arg(sidecar);
+	}
+	else if (!m_renderManager->loudnessReportError().isEmpty())
+	{
+		text += tr("The report could not be written: %1").arg(m_renderManager->loudnessReportError());
+	}
+	m_loudnessResultLabel->setText(text);
+	m_loudnessResultLabel->show();
+	m_startButton->setEnabled(false);
+	m_cancelButton->setText(tr("Close"));
+	setWindowTitle(tr("Export finished - EBU R128 loudness report"));
+	adjustSize();
 }
 
 } // namespace lmms::gui

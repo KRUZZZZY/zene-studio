@@ -85,12 +85,25 @@ public:
 		m_compressionLevel = level;
 	}
 
+	/**
+	 * Whether this render should also produce an EBU R128 loudness report
+	 * (see LoudnessReport, include/LoudnessReport.h): measured from the blocks
+	 * that are written to the file, reported on the export dialog and in a
+	 * ".loudness.txt" sidecar beside the render.
+	 *
+	 * Off by default, and measure-only: turning it on changes the report, never
+	 * the rendered audio.
+	 */
+	bool loudnessReport() const { return m_loudnessReport; }
+	void setLoudnessReport(bool enabled) { m_loudnessReport = enabled; }
+
 private:
 	sample_rate_t m_sampleRate;
 	bitrate_t m_bitRate;
 	BitDepth m_bitDepth;
 	StereoMode m_stereoMode;
 	double m_compressionLevel;
+	bool m_loudnessReport = false;
 };
 
 

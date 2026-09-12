@@ -28,6 +28,7 @@
 #include "ProjectRenderer.h"
 #include "Song.h"
 #include "PerfLog.h"
+#include "LoudnessReport.h"
 
 #include "AudioFileWave.h"
 #include "AudioFileOgg.h"
@@ -97,7 +98,23 @@ ProjectRenderer::ProjectRenderer(
 			m_fileDev = nullptr;
 		}
 	}
+
+	// The loudness report is opt-in (OutputSettings::loudnessReport(), set by the
+	// export dialog's checkbox or the CLI's --loudness-report). When it is off,
+	// no meter is constructed and the render path is the one it always was.
+	if( outputSettings.loudnessReport() && m_fileDev != nullptr )
+	{
+		// The frames the loop below sees are the frames the file device writes,
+		// i.e. at the device's own rate (AudioFileDevice::setSampleRate()).
+		m_loudnessReport = std::make_unique<LoudnessReport>(
+			m_fileDev->sampleRate(), DEFAULT_CHANNELS );
+	}
 }
+
+
+
+
+ProjectRenderer::~ProjectRenderer() = default;
 
 
 
@@ -168,6 +185,15 @@ void ProjectRenderer::run()
 	while (!Engine::getSong()->isExportDone() && !m_abort)
 	{
 		const auto buffer = Engine::audioEngine()->renderNextPeriod();
+
+		// The loudness tap: measure the very block that is about to be written.
+		// addBlock() only reads it (const SampleFrame*), so the bytes in the
+		// file are the bytes the report measured, unaltered. Off by default.
+		if (m_loudnessReport && !m_abort)
+		{
+			m_loudnessReport->addBlock(buffer.data(), static_cast<f_cnt_t>(buffer.size()));
+		}
+
 		m_fileDev->writeBuffer(buffer.data(), buffer.size());
 
 		const int nprog = Engine::getSong()->getExportProgress();
@@ -191,6 +217,10 @@ void ProjectRenderer::run()
 	{
 		QFile( f ).remove();
 	}
+	else if( m_loudnessReport )
+	{
+		reportLoudness( f );
+	}
 }
 
 
@@ -200,6 +230,33 @@ void ProjectRenderer::abortProcessing()
 {
 	m_abort = true;
 	wait();
+}
+
+
+void ProjectRenderer::reportLoudness( const QString& renderedFile )
+{
+	const QString report = m_loudnessReport->reportText( renderedFile );
+
+	// The user-visible surface is the sidecar file beside the render (the GUI
+	// shows the same text on the export dialog; the console line is a pointer to
+	// both, not the only place the result exists).
+	QString error;
+	if( m_loudnessReport->writeSidecar( renderedFile, &error ) )
+	{
+		m_loudnessReportPath = m_loudnessReport->sidecarPathFor( renderedFile );
+		printf( "\n%s\n", m_loudnessReport->summary().toUtf8().constData() );
+		printf( "Loudness report written to %s\n", m_loudnessReportPath.toUtf8().constData() );
+	}
+	else
+	{
+		m_loudnessReportError = error;
+		fprintf( stderr, "\n%s\n", m_loudnessReport->summary().toUtf8().constData() );
+		fprintf( stderr, "Loudness report could not be written: %s\n", error.toUtf8().constData() );
+	}
+	fflush( stdout );
+	fflush( stderr );
+
+	emit loudnessReportReady( report );
 }
 
 
