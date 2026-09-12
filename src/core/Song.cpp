@@ -919,6 +919,10 @@ void Song::clearProject()
 
 #ifdef LMMS_HAVE_SESSION_VIEW
 	m_sessionModel.clear();
+#else
+	// This build has no session reader; whatever block the previous project
+	// carried must not leak into the next one (see loadProject()).
+	m_preservedSessionXml.clear();
 #endif
 
 	emit dataChanged();
@@ -1061,6 +1065,18 @@ void Song::loadProject( const QString & fileName )
 			createNewProject();
 		}
 		setProjectFileName(m_oldFileName);
+		// A failed open must not leave the document half-initialised. This
+		// branch returns before the success path re-enables them, so both
+		// flags used to stay off for the rest of the session: setModified()
+		// is a no-op while m_loadingProject is set (see its body) and
+		// MainWindow::autoSave() refuses to run while isLoadingProject() is
+		// true. The user who opened one bad file - or hit the local-plugin
+		// refusal - then carried on with autosave, undo journalling and
+		// modified-tracking all disabled until a restart, with nothing said.
+		// The previous project is still loaded here (clearProject() has not
+		// run), so restoring the two flags restores exactly its state.
+		m_loadingProject = false;
+		Engine::projectJournal()->setJournalling( true );
 		return;
 	}
 
@@ -1143,6 +1159,20 @@ void Song::loadProject( const QString & fileName )
 				// Versioned <session> block (SPEC-zene-studio A1). Unknown or
 				// future versions are ignored and preserved by the model.
 				m_sessionModel.restoreState( node.toElement() );
+			}
+#else
+			else if( node.nodeName() == "session" )
+			{
+				// This build has no Session View reader (WANT_SESSION_VIEW=OFF,
+				// the default). No other branch matches the element, so
+				// without this the block would simply vanish from the project
+				// the moment a default build re-saved it - silently, with no
+				// error, losing a whole feature's data. The raw XML is kept and
+				// re-emitted on save (see saveProjectFile()) so a load -> save
+				// round trip through a session-blind build cannot drop it.
+				QTextStream preserved( &m_preservedSessionXml );
+				node.toElement().save( preserved, 2 );
+				preserved.flush();
 			}
 #endif
 			else if( getGUI() != nullptr )
@@ -1259,6 +1289,25 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	if( m_sessionModel.shouldPersist() )
 	{
 		m_sessionModel.saveState( dataFile, dataFile.content() );
+	}
+#else
+	// A <session> block read by a build without the Session View feature is
+	// written back exactly as it was read, so this build cannot drop a
+	// feature's data by opening and saving a project. Nothing is appended when
+	// the loaded project had no block, which is why project I/O stays
+	// byte-identical for every project that never used the session view.
+	if( !m_preservedSessionXml.isEmpty() )
+	{
+		QDomDocument preserved;
+		if( preserved.setContent( m_preservedSessionXml, false ) )
+		{
+			const QDomElement preservedRoot = preserved.documentElement();
+			if( !preservedRoot.isNull() )
+			{
+				dataFile.content().appendChild(
+					dataFile.importNode( preservedRoot, true ) );
+			}
+		}
 	}
 #endif
 

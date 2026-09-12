@@ -422,20 +422,70 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 		return false;
 	}
 
-	if (ConfigManager::inst()->value("app", "disablebackup").toInt())
+	// The final renames are the point where a save can go anywhere without the
+	// content having gone anywhere. Upstream discarded every return value here
+	// and returned true unconditionally, so a rename the filesystem refused
+	// (a locked or foreign-owned target, a read-only mount, an antivirus
+	// scanner holding the file) still ended in "saved": the document was
+	// marked clean, the file name was adopted, and the new project sat in
+	// <name>.new while the file on disk was the old one - or was absent
+	// entirely, if the previous file had already been moved to <name>.bak.
+	// Every step is checked now, a failure is reported where the user can see
+	// it, and the previous project is put back before returning false.
+	const bool backupDisabled =
+		ConfigManager::inst()->value("app", "disablebackup").toInt() != 0;
+
+	bool previousFileMoved = false;
+	if (backupDisabled)
 	{
 		// remove current file
-		QFile::remove(fullName);
+		if (QFile::exists(fullName) && !QFile::remove(fullName))
+		{
+			showError(SongEditor::tr("Could not save file"),
+				SongEditor::tr("The existing project file %1 could not be replaced, "
+					"so the project was not saved there. Nothing has been discarded: "
+					"the project was written to %2.")
+					.arg(fullName, fullNameTemp));
+			return false;
+		}
 	}
 	else
 	{
 		// remove old backup file
 		QFile::remove(fullNameBak);
 		// move current file to backup file
-		QFile::rename(fullName, fullNameBak);
+		previousFileMoved = QFile::exists(fullName)
+			&& QFile::rename(fullName, fullNameBak);
+		if (QFile::exists(fullName) && !previousFileMoved)
+		{
+			// Losing the backup is not losing the save: the new content still
+			// replaces the old one below. It is reported because the user is
+			// told to keep backups and this is the one save that will not make
+			// one.
+			showError(SongEditor::tr("Could not create a backup"),
+				SongEditor::tr("The previous version of %1 could not be moved to %2, "
+					"so it will not be kept as a backup.")
+					.arg(fullName, fullNameBak));
+		}
 	}
-	// move temporary file to current file
-	QFile::rename(fullNameTemp, fullName);
+	// move temporary file to current file. This is the step that must not fail
+	// quietly: until it succeeds, the project file on disk is still the old
+	// one, or is absent because the backup step above moved it away.
+	if (!QFile::rename(fullNameTemp, fullName))
+	{
+		// Put the previous project back rather than leaving it only in the
+		// backup file.
+		if (previousFileMoved)
+		{
+			QFile::rename(fullNameBak, fullName);
+		}
+		showError(SongEditor::tr("Could not save file"),
+			SongEditor::tr("The project could not be moved into place as %1, so it "
+				"was NOT saved. Nothing has been discarded: the project data is at "
+				"%2 - copy it aside before trying again.")
+				.arg(fullName, fullNameTemp));
+		return false;
+	}
 
 	return true;
 }
