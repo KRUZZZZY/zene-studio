@@ -136,7 +136,7 @@ bool lv2DeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 	*useKey = true;
 	return true;
 }
-#endif
+#endif // LMMS_HAVE_LV2
 
 bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error)
@@ -242,7 +242,7 @@ void appendLv2Type(Plugin::Type type, Lv2Manager* manager, QList<ControlDeviceEn
 		appendLv2Descriptor(descriptor, type, manager, out);
 	}
 }
-#endif
+#endif // LMMS_HAVE_LV2
 
 void controlLv2DeviceEntries(QList<ControlDeviceEntry>* out)
 {

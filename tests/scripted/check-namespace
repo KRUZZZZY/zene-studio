@@ -68,6 +68,13 @@ known_no_namespace_lmms = {
     'plugins/CarlaBase/DummyCarla.cpp',
     # unclear why it has no namespace
     'plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp',
+    # C, not C++: a C translation unit has no namespace to put its three interposed
+    # libc functions in (the render-determinism measurement shim, not product code)
+    'tools/ncpu-shim.c',
+    # its namespace is luabridge, not lmms, and that is the point: the file declares
+    # only luabridge::Stack<> specialisations for Qt value types, which C++ requires
+    # to live in the namespace of the template they specialise
+    'include/ScriptLuaQtTypes.h',
 }
 
 exclude_files = re.compile(
