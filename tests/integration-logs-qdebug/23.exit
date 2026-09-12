@@ -1,1 +1,1 @@
-release-version-gate EXIT=0
+RELEASE_VERSION_EXIT=0
