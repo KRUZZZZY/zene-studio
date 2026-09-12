@@ -184,6 +184,9 @@ include/StemSeparation/StemSeparator.h
 include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
+include/Telemetry.h
+include/TelemetryConsentDialog.h
+include/TelemetryNetworkTransport.h
 include/TrackRecorder.h
 include/VcaGroup.h
 include/WarpMarkers.h
@@ -268,6 +271,8 @@ src/core/SessionScheduler.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
+src/core/Telemetry.cpp
+src/core/TelemetryNetworkTransport.cpp
 src/core/VcaGroup.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
@@ -275,6 +280,7 @@ src/core/midi/MpeExpression.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
 src/gui/StemSplitController.cpp
+src/gui/TelemetryConsentDialog.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h

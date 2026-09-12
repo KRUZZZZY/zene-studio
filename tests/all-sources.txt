@@ -356,6 +356,9 @@ include/SystemSemaphore.h
 include/TabBar.h
 include/TabButton.h
 include/TabWidget.h
+include/Telemetry.h
+include/TelemetryConsentDialog.h
+include/TelemetryNetworkTransport.h
 include/TemplatesMenu.h
 include/TempoSyncBarModelEditor.h
 include/TempoSyncKnob.h
@@ -937,6 +940,8 @@ src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
 src/core/StepRecorder.cpp
+src/core/Telemetry.cpp
+src/core/TelemetryNetworkTransport.cpp
 src/core/TempoSyncKnobModel.cpp
 src/core/ThreadPool.cpp
 src/core/TimePos.cpp
@@ -1037,6 +1042,7 @@ src/gui/SideBarWidget.cpp
 src/gui/StemSplitController.cpp
 src/gui/StringPairDrag.cpp
 src/gui/SubWindow.cpp
+src/gui/TelemetryConsentDialog.cpp
 src/gui/ToolPluginView.cpp
 src/gui/clips/AutomationClipView.cpp
 src/gui/clips/ClipView.cpp
@@ -1197,6 +1203,7 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
+tests/src/core/TelemetryTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp

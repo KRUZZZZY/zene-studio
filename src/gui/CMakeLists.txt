@@ -10,6 +10,16 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	)
 ENDIF()
 
+# Telemetry consent / "what we send" screen (opt-in, see docs/TELEMETRY-V1.md).
+# Compiled only when the packager left the kill switch on. The header carries
+# no Q_OBJECT on purpose, so AUTOMOC never generates a moc for it and the OFF
+# build cannot fail on a moc'd slot whose .cpp the switch removed.
+IF(ZENE_TELEMETRY_ENABLED)
+	SET(LMMS_TELEMETRY_GUI_SRCS
+		gui/TelemetryConsentDialog.cpp
+	)
+ENDIF()
+
 SET(LMMS_SRCS
 	${LMMS_SRCS}
 	gui/ActionGroup.cpp
@@ -145,6 +155,8 @@ SET(LMMS_SRCS
 	gui/widgets/ToolButton.cpp
 
 	${LMMS_STEM_GUI_SRCS}
+
+	${LMMS_TELEMETRY_GUI_SRCS}
 
 	PARENT_SCOPE
 )

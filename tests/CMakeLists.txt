@@ -59,6 +59,7 @@ set(LMMS_TESTS
 	src/core/ScriptStabilisationTest.cpp
 	src/core/SlideNotesTest.cpp
 	src/core/StemExportTest.cpp
+	src/core/TelemetryTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/core/WarpMarkersTest.cpp

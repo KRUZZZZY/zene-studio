@@ -73,6 +73,12 @@
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
+#ifdef ZENE_TELEMETRY_ENABLED
+	// Only included when the dialog is compiled. An unconditional include makes
+	// AUTOMOC emit moc for a Q_OBJECT whose .cpp the kill switch removed, and
+	// the link then fails on the moc'd slots (found by the OFF configure).
+	#include "TelemetryConsentDialog.h"
+#endif
 #include "TextFloat.h"
 #include "ToolButton.h"
 #include "ToolPlugin.h"
@@ -400,6 +406,19 @@ void MainWindow::finalize()
 	help_menu->addSeparator();
 	help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
 				  this, SLOT(aboutLMMS()));
+
+#ifdef ZENE_TELEMETRY_ENABLED
+	// Opt-in telemetry: default off, and this screen is where a user turns it
+	// on, sees the exact payload, and turns it off again. See
+	// docs/TELEMETRY-V1.md.
+	help_menu->addSeparator();
+	QAction * telemetryAction = help_menu->addAction( embed::getIconPixmap( "setup" ),
+				  tr( "Telemetry - what we send..." ) );
+	connect( telemetryAction, &QAction::triggered, this, [this] {
+		TelemetryConsentDialog dialog( this );
+		dialog.exec();
+	} );
+#endif
 
 	// create tool-buttons
 	auto project_new = new ToolButton(
