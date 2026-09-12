@@ -22,7 +22,18 @@
 # Regenerate the candidate set with (base = 4e677cb6c6ab, the upstream commit this fork
 # is based on - see the header of tests/fork-sources.txt for why it is not origin/master):
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools \
-#     | grep -E '\.(py|sh|cpp|c|h|hpp|cc|cxx)$'
+#     | grep -E '\.(py|sh|cpp|c|h|hpp|cc|cxx)$' | LC_ALL=C sort
+# Verify the entry list below against it. The candidate set also contains the six paths whose
+# home is another manifest (named in the paragraph below), so the check subtracts them; this
+# must print REPRODUCES and nothing else:
+#   diff <(grep -vE '^[[:space:]]*(#|$)' tests/tools-sources.txt | LC_ALL=C sort) \
+#     <(git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools \
+#       | grep -E '\.(py|sh|cpp|c|h|hpp|cc|cxx)$' \
+#       | grep -vE '^(tools/local-ci\.sh|tools/mmpz-git/scratch/(qtesc|qtroundtrip|qtsave|qtsave2)\.cpp|tools/wasm/wat2wasm\.cpp)$' \
+#       | LC_ALL=C sort) && echo REPRODUCES
+# Nothing else is subtracted - in particular every tools/ path that appears in NO manifest is
+# a Gate 9 failure, not an omission from this list. The collation is pinned to C for the same
+# reason the other two manifests pin it.
 # Members of that set which already have a home are NOT repeated here - one file, one
 # home: the four C++ scratch probes (tools/mmpz-git/scratch/*.cpp) and
 # tools/wasm/wat2wasm.cpp are in tests/all-sources.txt (the whole-tree first-party C/C++
@@ -31,16 +42,23 @@
 # Gate 9 accepts membership in any of the three lists, and reports a tools/ source that
 # is in none of them.
 #
+# MOVED HERE 2026-09-12 (gate hygiene). tools/stem-export-demo.py was a second hand-added
+# tools/ entry in tests/fork-sources.txt, which contradicts the one-file-one-home rule this
+# list established and the fork-sources.txt header's own claim that the rest of the fork's
+# tooling lives here. It is a 267-line Python demo for the stem-export lane (117068e76) with
+# no function above CCN 9 and no file-length concern, so this list is its correct home. It is
+# registered below; tests/fork-sources.txt no longer carries it, and its own regeneration
+# command no longer yields it.
+#
 # ADDED AT INTEGRATION, 2026-09-12. Three more tooling files - tools/mmpz-git/demo_check.py,
 # tools/mmpz-git/depth-demo.sh and tools/mmpz-git/render-recipe.sh - are registered below.
 # They were added by the post-alpha/mmpz-git-depth lane after this list was measured, so
 # they had no home in any scope list, and Gate 9 failed on them the moment this list
-# existed. Unlike the files discussed above they also KEEP their
-# tests/upstream-modifications.txt entries: Gate 6 does not read this list (it honours
-# tests/fork-sources.txt or the ledger), and these three are not in fork-sources.txt, so
-# dropping the ledger entry would turn a true statement into a Gate 6 violation. Two
-# homes therefore stand for these three paths only, until Gate 6 learns the tools/
-# category the way Gates 4, 7 and 8 already have.
+# existed. At that time Gate 6 did not read this list, so they also had to keep their
+# tests/upstream-modifications.txt entries; Gate 6 now classifies a path registered here as
+# fork tooling (2026-09-12, gate hygiene), and those seven ledger entries - these three plus
+# tools/mmpz-git/{mmpz_git.py,demo_edits.py,run-demo.sh,tests/test_mmpz_git.py} - have been
+# deleted from it, so one file has one home again.
 #
 # Scope limits, stated rather than hidden: these files are Python and shell, so they are
 # outside coverage (lcov instrument) and mutation (C++ harness) by construction, and
@@ -57,4 +75,5 @@ tools/mmpz-git/run-demo.sh
 tools/mmpz-git/scratch/exp-renormalize.sh
 tools/mmpz-git/scratch/proto.py
 tools/mmpz-git/tests/test_mmpz_git.py
+tools/stem-export-demo.py
 tools/stem_split_cli.py

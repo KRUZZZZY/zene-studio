@@ -1,0 +1,32 @@
+test file                                      slots    asserts taut    verdict
+src/core/ArrayVectorTest.cpp                   173      148     0       ok
+src/core/AudioBufferTest.cpp                   229      217     0       ok
+src/core/AudioBusHandleTest.cpp                22       15      0       ok
+src/core/AudioBusTest.cpp                      133      119     0       ok
+src/core/AudioPortsModelTest.cpp               124      123     0       ok
+src/core/AudioPortsTest.cpp                    59       40      0       ok
+src/core/AutomatableModelTest.cpp              27       22      0       ok
+src/core/CrashReporterTest.cpp                 109      86      0       ok
+src/core/LoudnessReportTest.cpp                54       42      0       ok
+src/core/LufsMeterTest.cpp                     66       46      0       ok
+src/core/MathTest.cpp                          13       12      0       ok
+src/core/MidiLearnTest.cpp                     49       46      0       ok
+src/core/MixerRoutingBackwardCompatTest.cpp    58       40      0       ok
+src/core/MultiTrackRecorderTest.cpp            17       16      0       ok
+src/core/PdcMixerTest.cpp                      129      57      0       ok
+src/core/PhaseDSidechainTest.cpp               96       46      0       ok
+src/core/PluginAudioPortsTest.cpp              82       72      0       ok
+src/core/PluginScanCacheTest.cpp               186      135     0       ok
+src/core/ProjectVersionTest.cpp                114      112     0       ok
+src/core/RecordRingBufferTest.cpp              57       41      0       ok
+src/core/RelativePathsTest.cpp                 12       11      0       ok
+src/core/RemotePluginAudioPortsTest.cpp        113      92      0       ok
+src/core/RemotePluginClientE2ETest.cpp         57       38      0       ok
+src/core/RoutingGraphTest.cpp                  172      150     0       ok
+
+Out of scope (helper executables, not QTest classes):
+  tests/src/core/TwoTrackAlsaCaptureProbe.cpp
+  tests/src/core/TwoTrackRecordingHarness.cpp
+  tests/src/plugins/PluginPortsMigrationReference.cpp
+
+PASS: every registered test file has test slots and real assertions, no literal tautologies

@@ -1,0 +1,4 @@
+duplication-gate: whole-tree scope (1,095 first-party files)
+duplication-gate: scanning 1113 all sources (min-lines 25, min-tokens 120, threshold 5%)
+
+PASS: duplicated lines 1.21% (budget 5%)

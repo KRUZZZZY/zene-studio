@@ -2,8 +2,8 @@
 # fork-sources-gate.sh — Gate 9: every tracked first-party source is registered
 # in a scope manifest, and fork-NEW code is named in tests/fork-sources.txt.
 #
-# Rule. Every tracked source file under src/, include/, plugins/, tests/ and tools/ must
-# be in one of the three scope manifests:
+# Rule. Every tracked source file under src/, include/, plugins/, tests/, tools/ and
+# modules/ must be in one of the three scope manifests:
 #
 #   tests/fork-sources.txt  -> OK: this product's own new PRODUCT code. The fork-scoped
 #                              ratchets (coverage, complexity, file-length,
@@ -32,6 +32,15 @@
 # Scanning tools/ here means the fork's tooling is registered like everything else. Non-code
 # files under tools/ (*.md, *.sample, .gitignore, transcripts) stay outside every scope by
 # extension, which is exactly how the same files under src/ and tests/ are treated.
+#
+# Why modules/ is scanned. `modules/wasm/` is this fork's own wasm sandbox fixture tree:
+# the `.wat` modules and the one reference C module (modules/wasm/demo/gain_clip.c) that
+# tests/src/wasm/WasmSandboxTest.cpp compiles to wasm. The .wat files are not sources by
+# extension and need no home, but gain_clip.c is a first-party C source, and it was
+# registered in tests/all-sources.txt while lying OUTSIDE this gate's pathspec - a
+# registration no run could ever validate (the all-scope also never measured it, so the
+# file was registered and unmeasured at the same time). modules/ is now part of the scan,
+# which makes that entry checkable and gives any future module source a home.
 #
 # Deliberate exclusions (stated, not silently skipped):
 #   - vendored third-party trees: src/3rdparty/, plugins/NeuralAmp/rtneural/,
@@ -116,7 +125,7 @@ is_excluded() {
 	esac
 }
 
-mapfile -t TRACKED < <(git ls-files -- src include plugins tests tools | LC_ALL=C sort)
+mapfile -t TRACKED < <(git ls-files -- src include plugins tests tools modules | LC_ALL=C sort)
 
 scanned=0
 declare -a UNREGISTERED=()
@@ -164,12 +173,13 @@ list_stale() { # <manifest> <label> — prints stale entries, increments $stale
 }
 
 list_stale "$FORK_FILE" "fork-sources.txt"
+list_stale "$ALL_FILE" "all-sources.txt"
 if [[ $TOOLS_AVAILABLE -eq 1 ]]; then
 	list_stale "$TOOLS_FILE" "tools-sources.txt"
 fi
 
 echo
-echo "scanned $scanned tracked source file(s) under src/, include/, plugins/, tests/, tools/;"
+echo "scanned $scanned tracked source file(s) under src/, include/, plugins/, tests/, tools/, modules/;"
 echo "  ${#FORK_NEW[@]} fork-sources entry(ies), ${#INHERITED[@]} all-sources (whole-tree),"
 echo "  ${#TOOLING[@]} tools-sources (fork tooling), ${stale} stale entry(ies)."
 

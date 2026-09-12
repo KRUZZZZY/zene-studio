@@ -6,22 +6,22 @@ this directory; nothing in this document is aspirational — if it is not checke
 by a script, it is not a gate.
 
 Scope: the sources this product adds on top of upstream master `4e677cb6c6ab`,
-listed in `tests/fork-sources.txt` (**103 files** — 97 at the 2026-09-09 port, plus
-`include/LatencyCompensation.h` and `src/core/LatencyCompensation.cpp`, added
-2026-09-11 because the #605 PDC work was shipping outside every gate's scope; see the
-Gate 2 scope note; plus the four MIDI-learn files
-`include/MidiLearn.h`, `include/MidiLearnGui.h`, `src/core/MidiLearn.cpp` and
-`src/gui/MidiLearnGui.cpp`, added 2026-09-11 with the MIDI-learn lane).
+listed in `tests/fork-sources.txt` — **129 files**, the count the file held on 2026-09-12
+(`post-alpha/gate-hygiene`). It was 103 on 2026-09-11 and has grown with almost every merged
+lane since; every gate prints the number of sources it measured, and the manifest's own header
+carries the command that regenerates it and the five `tests/src/core` entries it registers by
+name, so this paragraph's figure is a dated measurement rather than an invariant.
 
 **Whole-tree scope (added 2026-09-11).** Gates 4, 7 and 8 also accept `--scope all`, which points
-them at `tests/all-sources.txt` — **1,095 first-party files**, i.e. upstream-inherited code plus
-the fork's own. Their baselines are separate files (`tests/*-baseline-all.tsv`) so the two ratchets
-cannot shadow each other, and `run-all-gates.sh --whole-tree` runs the set. The measured whole-tree
-state (8,953 functions with 273 over CCN 10; 107 files over 500 lines; 1.29% duplicated lines;
-32.33% line coverage over 919 instrumented files) is in
-[`docs/CONVENTIONS.md`](https://github.com/KRUZZZZY/zene-studio/blob/main/docs/CONVENTIONS.md),
-together with the coverage ratchet for the whole tree. Everything in *this* document below
-describes the 99-file fork scope unless it says otherwise. Vendored third-party trees are
+them at `tests/all-sources.txt` — **1,133 first-party files** on 2026-09-12 (upstream-inherited
+code plus the fork's own). Their baselines are separate files (`tests/*-baseline-all.tsv`) so the
+two ratchets cannot shadow each other, and `run-all-gates.sh --whole-tree` runs the set. Measured
+whole-tree state on 2026-09-12, after the reconciliation recorded under "Scope policy" below:
+**9,462 functions with 275 over CCN 10; 112 files over 500 lines; 1.21% duplicated lines**. The
+whole-tree coverage ratchet lives in
+[`docs/CONVENTIONS.md`](https://github.com/KRUZZZZY/zene-studio/blob/main/docs/CONVENTIONS.md) and
+was **not** re-measured here (it needs an instrumented build). Everything in *this* document below
+describes the 129-file fork scope unless it says otherwise. Vendored third-party trees are
 excluded on purpose — 524 files under `src/3rdparty` (lua, luabridge),
 `plugins/NeuralAmp/rtneural`, `plugins/NeuralAmp/nam`, `plugins/NeuralAmp/tests`
 and `plugins/RnnoiseDenoiser/rnnoise`; they are not this repo's code and these
@@ -39,9 +39,11 @@ functions reaching CCN 83 — while `tests/upstream-modifications.txt` is the up
 ledger, where a fork-authored file is a false statement about it. Gate 9 now scans `tools/` and
 reports a tooling file that is in no scope list. `run-all-gates.sh` runs the tools ratchets in the
 same gate rows as the product ones (a red tools scope is a red gate 4/7/8), and the CI `static-gates`
-job runs them as their own steps. Measured entry state: **8 tooling files, 105 functions with 8 over
-CCN 10** (grandfathered in `tests/complexity-baseline-tools.tsv`), **1 file over 500 lines** (818,
-grandfathered in `tests/file-length-baseline-tools.tsv`), **0.00% duplicated lines**. Two limits,
+job runs them as their own steps. Measured entry state at creation — **SUPERSEDED**, the
+paragraphs below carry the current figures; this one is kept because it is the state the scope was
+created from: **8 tooling files, 105 functions with 8 over CCN 10** (grandfathered in
+`tests/complexity-baseline-tools.tsv`), **1 file over 500 lines** (818, grandfathered in
+`tests/file-length-baseline-tools.tsv`), **0.00% duplicated lines**. Two limits,
 stated: the two `.sh` entries are counted by Gates 4 and 7 only (jscpd in the version wired here has
 no shell format), and tooling is outside coverage and mutation by construction (lcov instruments
 C/C++ builds; the mutation harness targets one C++ TU).
@@ -51,7 +53,7 @@ baselines were created by `post-alpha/pipeline-hardening` from the tooling as it
 lane's branch — `tools/mmpz-git/mmpz_git.py` at **818** lines. Three files the fork added after that
 measurement (`tools/mmpz-git/demo_check.py`, `tools/mmpz-git/depth-demo.sh`,
 `tools/mmpz-git/render-recipe.sh`) were registered in `tests/tools-sources.txt` at integration, which
-makes the scope **11 tooling files**; the same merge pulled in the already-landed
+made the scope **11 tooling files**; the same merge pulled in the already-landed
 `post-alpha/mmpz-git-depth` lane, which had deepened `mmpz_git.py` to **1896** lines and added
 `tools/mmpz-git/tests/test_mmpz_git.py` (**855**). Both tools ratchets therefore failed on the merged
 tree for reasons that predate it, and both baselines were refreshed through the gate's own documented
@@ -81,6 +83,109 @@ the refreshed baseline because `post-alpha/mmpz-git-depth` split that function: 
 `file-length-gate.sh --check --scope tools` → EXIT=0 and `complexity-gate.sh --check --scope tools`
 → EXIT=0, with all three tools-scope steps green in `run-all-gates.sh`.
 
+**Re-anchored again (2026-09-12, `post-alpha/gate-hygiene`).** Two changes move this scope, and one
+of them fixes a **false red** that made the suite fail for everyone without a built binary:
+
+- `tools/stem-export-demo.py` moved **into** this scope from `tests/fork-sources.txt`. Tooling has
+  one home, and `tests/tools-sources.txt` is the home its own header declares; `fork-sources.txt`
+  was carrying the demo as a second hand-added `tools/` entry, which contradicted that file's own
+  header and the one-file-one-home rule. The move also needed a Gate 6 fix: a `tools/` path
+  registered here is now classified as fork tooling, so its (untrue) upstream-divergence ledger
+  entry could be deleted rather than replaced — see the Gate 6 section.
+- `tools/mmpz-git/tests/test_mmpz_git.py`: on a clean checkout
+  `PureAudioMaths::test_missing_renderer_is_an_error_not_a_crash` **FAILED** (independent audit
+  reproduction: `Ran 44 tests in 155.0s` / `FAILED (failures=1, skipped=6)` / `EXIT=1`) because
+  `audible-diff` refuses with "no renderer found" (exit 2) *before* it reaches the "no such file"
+  input check the test asserts. Five tests in the file skipped on the missing binary and one
+  failed, which is the worst of both. It now **skips, naming the missing dependency**, on
+  `mmpz_git.find_renderer()` — the tool's own resolution, not a hardcoded path — and the
+  assertions are unchanged and still run when a renderer exists. Measured both ways:
+  no renderer → `OK (skipped=7)`, EXIT=0; renderer present → `OK`, EXIT=0. The guard and its
+  docstring take the file from **855 to 877** lines:
+
+```
+bash tests/file-length-gate.sh --scope tools --reanchor "<reason>"   # EXIT=0
+  RE-ANCHORED: 2 file(s) over 500 lines (mmpz_git.py 1896, test_mmpz_git.py 877)
+```
+
+The recorded reason names the file, both sizes, the failing test and the audit's reproduction.
+Current tools scope, measured 2026-09-12: **12 tooling files, 201 functions with 13 over CCN 10**
+(grandfathered), **2 files over 500 lines** (1896, 877 — grandfathered), **0.00% duplicated lines**.
+
+## Scope policy: what runs by default, and what does not — 2026-09-12
+
+Three scopes exist, each with its own manifest, its own baselines and its own measured numbers.
+Only two of them run by default, and that gap is the defect this section exists to state:
+
+| scope | manifest | who runs it | status on 2026-09-12 |
+|---|---|---|---|
+| **fork** (default) | `tests/fork-sources.txt` (129) | `run-all-gates.sh`, CI `static-gates`, every gate's bare invocation | **GREEN** — and this is the **release gate**, per `docs/CONVENTIONS.md` |
+| **tools** (default) | `tests/tools-sources.txt` (12) | `run-all-gates.sh` (same gate rows), CI `static-gates` (own steps) | **GREEN** |
+| **whole tree** (advisory) | `tests/all-sources.txt` (1,133) | **nothing by default** — `run-all-gates.sh --whole-tree`, or `--scope all` by hand | **GREEN** as of 2026-09-12; was RED and unreported until then |
+
+**The whole-tree scope was red from the post-alpha merges until 2026-09-12, and no default runner,
+CI job or merge record said so.** At `87b9a5397` it stood at 23 file-length regressions (5 new files
+over 500, including `src/core/CrashReporter.cpp` 526, `include/Song.h` 539 and
+`src/core/PluginFactory.cpp` 580) and 13 complexity regressions (the worst being
+`lmms::PluginFactory::discoverPlugins` CCN 15 → 32). `run-all-gates.sh` is fork-scoped unless
+`--whole-tree`, CI's `static-gates` job runs the fork scope plus the tools scope, and
+`docs/INTEGRATION-MERGES.md` published the fork-scope PASS without mentioning the other one.
+
+**Why the whole tree is not the release gate, stated rather than implied.** The fork scope is the
+scope this product's own code is judged in: it is what CI enforces on every push, what
+`run-all-gates.sh` runs, and what `docs/CONVENTIONS.md` names as the product ratchet. The whole-tree
+scope exists to stop *unnoticed* growth in code the fork inherits and edits — it is a monitoring
+ratchet over upstream LMMS plus the fork's own sources, and most of what it measures is upstream
+code this repo deliberately does not refactor. A red whole-tree scope is therefore a signal to
+review and record, not a release blocker by itself; a red **fork** scope is a blocker. What was
+wrong before 2026-09-12 was not the priority order, it was that the second signal was **invisible**:
+a scope nobody runs and nobody reports is a scope that cannot fail.
+
+What was done about the red whole-tree scope, in the order it happened:
+
+1. **The genuine code regression was fixed by extraction, not by a baseline.**
+   `PluginFactory::discoverPlugins` (222 lines, CCN 32) was split into named stages —
+   `candidatePluginFiles()`, `dropQuarantinedPlugins()`, `planPluginScan()` + `planForCandidate()`,
+   `preloadPluginLibraries()`, `scanOnePlugin()`, `loadPluginDescriptor()`, `appendLoadedPlugin()`,
+   `appendCacheServedPlugin()`, `addSupportedFileTypes()` — with the load path's three outcomes
+   (did not load / loaded but no descriptor / descriptor resolved) carried explicitly instead of by
+   fallthrough. `discoverPlugins` is now **CCN 7**, `NLOC 40`, and nothing in the file exceeds the
+   target. Behaviour is held by `tests/src/core/PluginScanCacheTest.cpp` (cold scan discovers the
+   real module, warm scan serves it from the cache without `dlopen`, a changed file is re-scanned,
+   a quarantined plugin leaves discovery, a corrupt cache degrades to a full scan); the run is in
+   `docs/GATE-HYGIENE.md`.
+2. **Every remaining regression got its own decision, one file at a time — never a scope-wide
+   re-anchor.** `--reanchor "reason"` rewrites the *whole* baseline, so using it for the merged tree
+   would have grandfathered 23 file-length entries and 12 complexity entries **unreviewed**, which
+   is a real weakening of the ratchet even though it is done through the documented mechanism. A
+   sibling lane reached the same conclusion from the other side and refused to move its 511-line
+   `SampleClipWindowTest.cpp` into this scope for exactly that reason. So the gates gained a
+   **single-file** mode:
+
+```sh
+bash tests/file-length-gate.sh --scope all --reanchor-file <path> "<reason>"   # one entry
+bash tests/complexity-gate.sh  --scope all --reanchor-file <path> "<reason>"   # one file's functions
+```
+
+   It carries every other baseline entry over unchanged, prints each key with its old and new value,
+   refuses a blank reason (exit 2) and refuses a path that is not over the limit or not in the
+   scope's manifest (exit 2). One invocation per file, each with a reason naming the file, its
+   measured size (or CCN), the delta, the commit that last touched it, and why the growth is
+   legitimate: 23 file-length entries and 10 complexity paths, all printed and committed under
+   `tests/gate-hygiene-logs/reanchor/per-file-all.log`. The one file that grew *because of this
+   pass* is `src/core/PluginFactory.cpp` (580 → 688, the extraction in step 1) — recorded as its own
+   entry rather than paid for by trimming code (`docs/CONVENTIONS.md` rule 4).
+3. **The gap is now visible where it hid.** Every `run-all-gates.sh` run prints a scope line saying
+   which scopes it measured and that a default run does not measure the whole-tree scope; the gate
+   banners no longer print a stale file count; and this section carries the policy: the all scope is
+   refreshed **per file, with a printed reason**, and must be run with `--whole-tree` before a
+   freeze.
+
+Deliberately **not** done: the whole-tree scope is still absent from CI's `static-gates` job.
+Enforcing it is an owner decision about runner minutes (that job is the only one that runs on every
+push) and about whether the integration branch's CI may go red on the next merge before a freeze.
+The local exit codes for all three scopes are recorded instead, in `docs/GATE-HYGIENE.md`.
+
 The **standards fork** numbers below are inherited from the fork's run (kept for
 provenance); the **product** numbers are this repo's own measured run. The
 product's first run was captured 2026-09-09 on the port commit.
@@ -97,6 +202,26 @@ cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 ```
 
 **Pass criterion**: 100% of tests pass, exit code 0.
+
+**Measured (2026-09-12, `post-alpha/gate-hygiene`):** `100% tests passed, 0 tests failed out of 37`
+(`tests/gate-hygiene-logs/after-ctest.log`), up from 36 — the extra test is
+`MixerRoutingBackwardCompatTest`, see below.
+
+**Two test files that had never run (found 2026-09-12).** `tests/src/core/MixerRoutingBackwardCompatTest.cpp`
+and `tests/src/core/PhaseDSidechainTest.cpp` are QTest suites with `QTEST_GUILESS_MAIN` that were in
+**neither** `tests/CMakeLists.txt` nor any other build list: never compiled, never executed, while
+`docs/phase-f/CRITERIA-TO-EVIDENCE.md` cited both as evidence. A test that does not run is not
+evidence, and "0 tests is a pass" is already this repo's stated error.
+
+- `MixerRoutingBackwardCompatTest.cpp` — **registered** (`tests/CMakeLists.txt:19`), built, and run
+  by name: `QT_QPA_PLATFORM=offscreen ./MixerRoutingBackwardCompatTest` → EXIT=0,
+  `Totals: 5 passed, 0 failed, 0 skipped`, which is what its documentation claims.
+- `PhaseDSidechainTest.cpp` — **does not compile**, so it is **not** registered and the exclusion is
+  recorded in `tests/CMakeLists.txt` with the error and its cause:
+  `error: 'PART_D_COMPRESSOR_LIBRARY' was not declared in this scope` at line 103 — the macro is
+  referenced exactly once in the repo and defined nowhere. The fix is a one-line interface change to
+  take the built plugin from `LMMS_TEST_PLUGIN_DIR` as the other test TUs do; it was **not** applied,
+  because a test must not be bent until it passes. Register the file when it compiles.
 
 **Scope**: `tests/` — Qt test binaries plus the migration harness.
 **Current baseline (product): 26/26 passing** — Debug, `WANT_QT6=ON`,
@@ -274,8 +399,9 @@ Helper executables that are registered but are not QTest classes
 `PluginPortsMigrationReference.cpp`) are listed by the script as explicitly
 out of scope rather than silently skipped.
 
-**Measured (2026-09-11):** 21 registered QTest files, **all PASS** — 0 tautologies
-(1,744 slots, 1,477 assertions; 2026-09-09: 20 files, 1,597 / 1,408). Coverage (Gate 2) is the corroborating signal:
+**Measured (2026-09-12, `post-alpha/gate-hygiene`):** 31 registered QTest files, **all PASS** — 0
+tautologies (2,689 slots, 2,193 assertions). Earlier measurements, kept in order: 2026-09-11 —
+21 files, 1,744 / 1,477; 2026-09-09 — 20 files, 1,597 / 1,408. Coverage (Gate 2) is the corroborating signal:
 test-unreachable code shows 0%.
 
 ## Gate 4: Per-method complexity (`complexity-gate.sh`) — WIRED 2026-09-09
@@ -288,6 +414,7 @@ is **lizard** (`pip install lizard`, reports CCN and ND for C/C++).
 **Command**:
 
 ```sh
+bash tests/complexity-gate.sh --reanchor-file <path> "reason"   # ONE file's entries only
 bash tests/complexity-gate.sh            # ratchet: refresh baseline, fail on regressions
 bash tests/complexity-gate.sh --check    # CI: never writes the baseline, still fails on regressions
 bash tests/complexity-gate.sh --strict   # fail if ANY function is over the target
@@ -311,8 +438,10 @@ tooling** — an earlier reading of "ND 0 everywhere" in this file was reporting
 field, not a measurement. Enforcing it needs a different tool, and until one is wired every ND
 figure in this repo should be read as 0-by-omission.
 
-**Measured (2026-09-11, gcc 13, 99-file scope):** `complexity-gate.sh` scans **807 functions**;
-**24 exceed CCN 10**. Two defects found in the gate itself were fixed the same day:
+**Measured (2026-09-11, gcc 13, the 99-file scope as it then was):** `complexity-gate.sh` scans
+**807 functions**; **24 exceed CCN 10** (the number in this sentence is the pre-fix count; the
+paragraph three below, on the same run, says 23 — the fixed gate reports 23, which is what
+`complexity-baseline.tsv` holds). Two defects found in the gate itself were fixed the same day:
 
 - **The baseline was keyed by function line span.** `complexity-baseline.tsv` stored
   `applyCommand@485-601`; the function's span had moved to `485-603`, so a two-line change
@@ -327,13 +456,21 @@ figure in this repo should be read as 0-by-omission.
 read that `process()` and `processPlanar()` duplicated verbatim is now the private helper
 `readWrapped()`, which takes the function to CCN 10. Verified by a real Debug build (exit 0) and
 the full suite from `build/tests` (100% tests passed, 24/24, `PdcMixerTest` included). The gate
-now scans **808 functions with 23 over target, all grandfathered**, and `--check` exits 0.
+now scans **1,093 functions in the 129-file fork scope with 23 over target, all grandfathered**
+(2026-09-12), and `--check` exits 0. The gate also **reports** a baseline key whose function is no
+longer over target (`improved: … is no longer over CCN 10 (baseline entry is dead weight; remove it
+deliberately)`) — it never pruned dead entries before, and a dead entry masks a future rise up to its
+recorded value. Two such keys were removed from the all-scope baseline with the 2026-09-12 pass:
+`lmms::PluginFactory::discoverPlugins` (CCN 32 → 7, so its grandfathered 15 was dead weight) and
+`lmms::RemotePlugin::process`. For the all scope the same run measures **9,462 functions with
+275 over target** and, after the 2026-09-12 re-anchor, exits 0 as well (see "Scope policy").
 
 The figures this section previously carried (13 of 514 functions, highest CCN 27) were measured
 on the standards fork's 42-file scope and no longer describe the product. The highest CCN in the
-fork scope is **41** (`ExternalProcessStemSeparator::separate`, grandfathers in
-`tests/complexity-baseline.tsv`), and in the whole tree **136** (`src/core/main.cpp` — see
-`docs/CONVENTIONS.md`); an earlier revision of this paragraph said 29, which was
+fork scope is **41** (`ExternalProcessStemSeparator::separate`, grandfathered in
+`tests/complexity-baseline.tsv`), and in the whole tree **155** (`main` in `src/core/main.cpp`,
+grandfathered in `tests/complexity-baseline-all.tsv` by the 2026-09-12 re-anchor; it was 136 before
+the post-alpha merges and 141 at `a4fe66c4f` — see `docs/CONVENTIONS.md`); an earlier revision of this paragraph said 29, which was
 `ScriptEngine::applyCommand`'s figure and does not describe the current tree. Baselines can only be moved deliberately now: `--reanchor "reason"` (an unrecorded re-anchor
 is refused with exit 2).
 
@@ -503,8 +640,9 @@ that list at all: they are fork-NEW and were missing from `tests/fork-sources.tx
 exit 2 with `ledger error: ... has no reason`, so a blank declaration cannot be used to launder
 a change.
 
-**Re-measured on `post-alpha/pipeline-hardening` (2026-09-11):** **PASS — 38 files in the ledger, 0
-violations.** Four of those had to be declared to get there: the branch carried them as undeclared
+**Re-measured on `post-alpha/pipeline-hardening` (2026-09-11):** **PASS — 38 changed paths
+declared by that ledger, 0 violations.** (Wording: the gate counts the changed *paths* it classified
+as declared, which is not the number of *entries* the ledger holds — see the next paragraph.) Four of those had to be declared to get there: the branch carried them as undeclared
 divergences (Gate 6 exit 1, 4 violations), a declaration omission rather than a product defect.
 
 | file(s) | why |
@@ -513,6 +651,27 @@ divergences (Gate 6 exit 1, 4 violations), a declaration omission rather than a 
 
 The three test files the same branch left in no scope list are a Gate 9 matter, not Gate 6 — see the
 Gate 9 section.
+
+**Re-measured on `post-alpha/gate-hygiene` (2026-09-12):** **PASS — 88 changed paths declared; the
+ledger holds 112 entries, exit 0.** The two figures are different numbers and the gate now prints
+both, each labelled: `$declared` counts the changed paths this run classified as declared, while the
+ledger holds one entry per declared path whether or not it changed since `01148947e` (deleted paths
+and rename sources keep their entry). Printing the first as "files in the ledger" was read as a
+contradiction against the ledger's 112–114 entries for as long as it stood.
+
+Two changes to this gate came with that measurement, both of them corrections rather than
+relaxations:
+
+- **`tools/` is a category now.** Gate 6 reads `tests/tools-sources.txt` and classifies a path
+  registered there as *fork tooling (allowed)*. `tools/` does not exist at the fork point
+  (`git ls-tree -r --name-only 4e677cb6c6ab -- tools` is empty), so every path under it is
+  fork-authored by construction and cannot be a divergence of inherited code. Before this, a
+  `tools/` file could only get past Gate 6 by being declared in
+  `tests/upstream-modifications.txt`, which made the ledger say something untrue about it; the
+  **seven** such entries (`tools/mmpz-git/{mmpz_git.py,demo_edits.py,demo_check.py,depth-demo.sh,render-recipe.sh,run-demo.sh,tests/test_mmpz_git.py}`)
+  have been deleted, taking the ledger from 119 entries to **112**.
+- Nothing else moved: an inherited file still needs a ledger entry with a reason, and a blank reason
+  still exits 2.
 
 **Window size, stated plainly:** the gate examines `01148947e..HEAD`, which on `main` is **14
 of the product's 136 commits** over upstream master (`git rev-list --count origin/master..HEAD`
@@ -587,7 +746,17 @@ gate closes that gap using the same ratchet policy — **no retroactive rewrite*
 - a new file over 500 lines fails;
 - a grandfathered file that grows fails;
 - a file that shrinks drops out of the baseline (the ratchet moves one way only);
-- exemptions live in `tests/file-length-exempt.txt` with a stated reason.
+- exemptions live in `tests/file-length-exempt.txt` with a stated reason. **That file exists
+  as of 2026-09-12** (`post-alpha/gate-hygiene`):  it was named here and by
+  `file-length-gate.sh:14,36` from the start but had never been created, which makes a documented
+  fail-closed input absent — the same defect class as a gate that cannot fail. It now exists with
+  its contract written out and **zero active exemptions** (no file needs one: everything over the
+  target is a hand-written source that is grandfathered in its scope's baseline, and listing one
+  here instead would hide the decision rather than record it). The gate also **refuses a blank
+  reason** (exit 2), and reports an exempt file leaving a baseline as exempt rather than as "no
+  longer a fork source". Verified with a scratch entry: the exemption is honoured (measured count
+  130 → 129) and a blank reason exits 2 with
+  `exempt error: tests/file-length-exempt.txt entry '…' has no reason`.
 
 **Measured (2026-09-09):** 42 fork sources; 6 grandfathered over 500 lines —
 `ScriptBindings.cpp` 1127, `AudioPorts.h` 992, `ScriptEngine.cpp` 900,
@@ -607,8 +776,23 @@ exits 1 on a regression, so this ratchet can now fail a CI run.
 bash tests/file-length-gate.sh                    # ratchet: refresh baseline, fail on regressions
 bash tests/file-length-gate.sh --check            # CI: never writes the baseline, still fails on regressions
 bash tests/file-length-gate.sh --reanchor "why"   # deliberate, recorded baseline refresh
+bash tests/file-length-gate.sh --reanchor-file <path> "reason"   # ONE file's entry only
 bash tests/file-length-gate.sh --check --scope tools   # the fork's own tooling under tools/
 ```
+
+**Single-file re-anchors (added 2026-09-12).** `--reanchor` rewrites the whole baseline, so it can
+only be used for a reviewed, scope-wide reconciliation; using it for a merged tree grandfathers
+every other entry unreviewed, which is a real weakening of the ratchet even though it is the
+documented mechanism. `--reanchor-file <path> "reason"` moves exactly one path's entries and carries
+everything else over untouched; it prints each key with its old and new value, exits 2 on a blank
+reason, and exits 2 on a path that is not over the limit or not in the scope's manifest. Both
+ratchets have it, and the whole-tree scope's 2026-09-12 decisions were made with it, one file at a
+time — see "Scope policy".
+
+**Measured (2026-09-12, `post-alpha/gate-hygiene`, 129-file scope):** 129 fork sources measured,
+**9 over 500 lines** — the same nine as below. The all scope measures **1,133 sources with 112 over
+500** and the tools scope **12 with 2 over 500**; both were re-anchored on 2026-09-12 (see "Scope
+policy").
 
 **Measured (2026-09-11, 115-file scope — post-alpha/integration):** 115 fork sources measured,
 **9 over 500 lines**. The ninth is `src/core/CrashReporter.cpp` (526), added by
@@ -661,6 +845,11 @@ not suppressed, so the number stays honest.
 **Measured (2026-09-11, 99-file scope):** 99 fork sources, **1.09% duplicated lines** — still a
 PASS against the 5% budget, and the only gate that both grew its scope and stayed green.
 
+**Measured (2026-09-12, all three scopes):** fork **0.41%** (129 sources), whole tree **1.21%**
+(1,133 sources), tools **0.00%** (12 sources) — every one a PASS against the 5% budget. The fork
+figure is measured, not explained: the 1.09% → 0.41% drop coincides with the scope growing
+99 → 129 sources, so a constant absolute clone volume would produce the same direction.
+
 ```sh
 bash tests/duplication-gate.sh
 bash tests/duplication-gate.sh --scope tools   # fork tooling (python + cpp formats)
@@ -706,6 +895,19 @@ Excluded, stated in the script rather than silently skipped: the vendored third-
 **Measured (2026-09-11, `post-alpha/gate-debt`):** 1,091 tracked sources scanned; 100 fork-NEW, 992
 inherited, **0 unregistered, 0 stale → exit 0**. Wired into the `static-gates` job, which runs on
 every push and pull request.
+
+**Measured (2026-09-12, `post-alpha/gate-hygiene`):** **1,146 tracked sources scanned; 129 fork-NEW,
+1,005 whole-tree, 12 tooling; 0 unregistered, 0 stale → exit 0.** Two changes came with it:
+
+- **`modules/` is scanned now**, which is what closes the registration-that-could-never-be-checked:
+  `modules/wasm/demo/gain_clip.c` was registered in `tests/all-sources.txt` while sitting outside
+  this gate's pathspec (`src include plugins tests tools`), so no run could ever validate the
+  entry — and the all scope never measured the file either, making it registered and unmeasured at
+  once. `modules/wasm/*.wat` are not sources by extension and need no home.
+- **`tests/all-sources.txt` is now checked in the other direction too** (an entry with no file is
+  reported as a stale entry, as it already was for the fork and tools manifests), because the
+  all-sources manifest is the one whose entries were previously unvalidated in both directions:
+  nothing checked file→registered for it, and nothing checked registered→exists either.
 
 **Red/green proof**: `bash tests/test-verification-debt.sh` builds a fixture in which a new file is
 committed in no scope list: at the pre-fix revision no such check exists and Gate 6 calls it an
@@ -779,7 +981,12 @@ absent is compiled out with a `STATUS` line rather than an error. See
 bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9 (Gate 5 ≈3 min)
 bash tests/run-all-gates.sh --no-mutation    # skip the Gate 5 sweep
 bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
+bash tests/run-all-gates.sh --whole-tree     # gates 4, 7, 8 over tests/all-sources.txt as well
 ```
+
+Every run's summary prints the **scope line** — which scopes it measured and, in a default run, that
+the whole-tree scope was not measured. A default run is the fork scope plus the tools scope; the
+whole-tree scope is run deliberately (`--whole-tree`) and before a freeze. See "Scope policy".
 
 Gate 5 runs by default and reports a real score; `--no-mutation` is the only way to
 skip it. Gate 2 stays opt-in because it rebuilds the whole tree.

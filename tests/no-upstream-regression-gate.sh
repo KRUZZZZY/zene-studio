@@ -19,6 +19,12 @@
 #   - CI config           -> allowed, non-runtime (.github/**)
 #   - *.md                -> allowed (documentation)
 #   - fork-NEW sources    -> allowed (listed in tests/fork-sources.txt)
+#   - fork TOOLING        -> allowed (listed in tests/tools-sources.txt). tools/ does not
+#     exist at the fork point (`git ls-tree -r --name-only 4e677cb6c6ab -- tools` is empty),
+#     so every path under it is fork-authored by construction and cannot be a divergence of
+#     inherited code. Before this category existed, a tools/ file had to be declared in
+#     tests/upstream-modifications.txt to get past this gate, which made the ledger say
+#     something untrue about it; those entries have been removed.
 #   - any other production source -> allowed ONLY if listed in
 #     tests/upstream-modifications.txt with a non-empty reason
 #
@@ -42,6 +48,13 @@ mapfile -t CHANGED < <(git diff --name-only "$BASE"..HEAD | sort -u)
 [[ ${#CHANGED[@]} -eq 0 ]] && { echo "PASS: no changes since $BASE"; exit 0; }
 
 FORK_NEW="$(grep -vE '^\s*(#|$)' tests/fork-sources.txt | sort -u)"
+# Fork-authored tooling under tools/ has its own manifest (see the header). Read it here so
+# a registered tools/ source is classified as fork tooling instead of being pushed into the
+# upstream-divergence ledger, where it would be a false statement.
+TOOL_SOURCES=""
+if [[ -f tests/tools-sources.txt ]]; then
+	TOOL_SOURCES="$(grep -vE '^\s*(#|$)' tests/tools-sources.txt | sort -u)"
+fi
 
 # --- ledger: every entry needs a non-empty reason ---------------------------
 declare -A ALLOW REASON
@@ -72,6 +85,8 @@ for f in "${CHANGED[@]}"; do
 		*)
 			if grep -qxF "$f" <<< "$FORK_NEW"; then
 				verdict="fork-NEW (allowed)"
+			elif [[ "$f" == tools/* ]] && grep -qxF "$f" <<< "$TOOL_SOURCES"; then
+				verdict="fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)"
 			elif [[ -n "${ALLOW[$f]:-}" ]]; then
 				verdict="declared divergence -> ${REASON[$f]}"
 				declared=$((declared + 1))
@@ -90,4 +105,16 @@ if [[ "$violations" -eq 1 ]]; then
 	echo "      tests/upstream-modifications.txt with a reason and ship a regression test."
 	exit 1
 fi
-echo "PASS: every change to upstream-inherited code since $BASE is declared ($declared file(s) in the ledger)"
+# Two different numbers, so the summary says which is which: $declared counts the
+# CHANGED PATHS this run classified as declared, while the ledger holds one entry
+# per declared path whether or not it changed since $BASE (deleted paths and
+# renames keep their entry). Printing the first as "files in the ledger" made the
+# two look like a contradiction.
+ledger_entries=0
+if [[ -f tests/upstream-modifications.txt ]]; then
+	ledger_entries="$(grep -vcE '^[[:space:]]*(#|$)' tests/upstream-modifications.txt)"
+fi
+ledger_noun="entries"
+[[ "$ledger_entries" -eq 1 ]] && ledger_noun="entry"
+echo "PASS: every change to upstream-inherited code since $BASE is declared"
+echo "      ($declared changed path(s) declared; the ledger holds $ledger_entries $ledger_noun)"

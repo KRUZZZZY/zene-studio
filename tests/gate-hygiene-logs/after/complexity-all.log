@@ -1,0 +1,305 @@
+complexity-gate: whole-tree scope (every source in tests/all-sources.txt; upstream code is grandfathered, see docs/CONVENTIONS.md)
+#TOTAL	9462	275
+complexity-gate: 9462 functions in the all scope; 275 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  155      672    893    main@263-1155@src/core/main.cpp
+  113      123    139    lmms::gui::getKeyOffsetFromKeyEvent@123-261@src/gui/instrument/PianoView.cpp
+  103      558    732    lmms::gui::PianoRoll::paintEvent@3324-4055@src/gui/editors/PianoRoll.cpp
+  97       368    573    lmms::MonstroSynth::renderOutput@110-682@plugins/Monstro/Monstro.cpp
+  92       259    356    lmms::gui::PianoRoll::mouseMoveEvent@2490-2845@src/gui/editors/PianoRoll.cpp
+  81       537    648    lmms::DrumSynth::GetDSFileSamples@284-931@src/core/DrumSynth.cpp
+  70       287    409    lmms::gui::PianoRoll::mousePressEvent@1661-2069@src/gui/editors/PianoRoll.cpp
+  63       207    245    lmms::gui::PianoRoll::keyPressEvent@1307-1551@src/gui/editors/PianoRoll.cpp
+  62       247    385    lmms::RemoteVstPlugin::hostCallback@1828-2212@plugins/VstBase/RemoteVstPlugin.cpp
+  62       277    335    lmms::DataFile::upgrade_1_3_0@1314-1648@src/core/DataFile.cpp
+  62       292    396    lmms::gui::AutomationEditor::paintEvent@1027-1422@src/gui/editors/AutomationEditor.cpp
+  55       215    328    lmms::NesObject::renderOutput@105-432@plugins/Nes/Nes.cpp
+  50       153    197    lmms::ConfigManager::loadConfigFile@417-613@src/core/ConfigManager.cpp
+  48       230    298    lmms::CompressorEffect::processImpl@240-537@plugins/Compressor/Compressor.cpp
+  48       234    287    lmms::MidiImport::readSMF@264-550@plugins/MidiImport/MidiImport.cpp
+  44       145    194    lmms::Lv2Ports::Meta::get@91-284@src/core/lv2/Lv2Ports.cpp
+  44       239    319    lmms::gui::MidiClipView::paintEvent@552-870@src/gui/clips/MidiClipView.cpp
+  43       269    320    lmms::LOMMEffect::processImpl@105-424@plugins/LOMM/LOMM.cpp
+  42       149    167    lmms::MonstroSynth::updateModulators@685-851@plugins/Monstro/Monstro.cpp
+  41       117    178    lmms::Lb302Synth::process@318-495@plugins/Lb302/Lb302.cpp
+  41       198    214    lmms::ExternalProcessStemSeparator::separate@238-451@src/core/ExternalProcessStemSeparator.cpp
+  39       135    153    lmms::SfxrSynth::update@150-302@plugins/Sfxr/Sfxr.cpp
+  39       154    220    lmms::SaProcessor::analyze@100-319@plugins/SpectrumAnalyzer/SaProcessor.cpp
+  39       124    163    lmms::RemoteVstPlugin::processMessage@564-726@plugins/VstBase/RemoteVstPlugin.cpp
+  37       625    870    lmms::gui::SetupDialog::SetupDialog@93-962@src/gui/modals/SetupDialog.cpp
+  36       66     72     lmms::GigInstrument::getDimensions@770-841@plugins/GigPlayer/GigPlayer.cpp
+  36       214    246    lmms::LadspaEffect::pluginInstantiation@262-507@plugins/LadspaEffect/LadspaEffect.cpp
+  36       123    182    lmms::InstrumentFunctionArpeggio::processNote@339-520@src/core/InstrumentFunctions.cpp
+  36       118    141    lmms::InstrumentTrack::processInEvent@322-462@src/tracks/InstrumentTrack.cpp
+  35       120    170    lmms::GigInstrument::playImpl@321-490@plugins/GigPlayer/GigPlayer.cpp
+  35       109    142    lmms::AudioBusHandle::doProcessing@126-267@src/core/AudioBusHandle.cpp
+  35       100    144    lmms::AudioEngine::tryAudioDevices@712-855@src/core/AudioEngine.cpp
+  35       155    219    lmms::gui::PianoRoll::dragNotes@3096-3314@src/gui/editors/PianoRoll.cpp
+  34       52     58     lmms::DataFile::validate@200-257@src/core/DataFile.cpp
+  34       135    161    lmms::gui::PianoRoll::wheelEvent@4103-4263@src/gui/editors/PianoRoll.cpp
+  33       270    363    lmms::BasicFilters::update@340-702@include/BasicFilters.h
+  32       120    134    lmms::BitcrushEffect::processImpl@104-237@plugins/Bitcrush/Bitcrush.cpp
+  32       140    154    lmms::gui::ClipView::mousePressEvent@621-774@src/gui/clips/ClipView.cpp
+  31       158    168    lmms::clap::HostedPlugin::load@469-636@plugins/ClapEffect/ClapHost.cpp
+  31       164    212    lmms::Song::loadProject@1019-1230@src/core/Song.cpp
+  30       155    198    main@128-325@tests/src/plugins/PluginPortsMigrationReference.cpp
+  29       170    212    lmms::EqEffect::processImpl@67-278@plugins/Eq/EqEffect.cpp
+  29       90     113    lmms::AudioEngine::tryMidiClients@860-972@src/core/AudioEngine.cpp
+  29       100    119    lmms::ScriptEngine::applyCommand@438-556@src/core/ScriptEngine.cpp
+  29       179    218    lmms::gui::ClipView::mouseMoveEvent@792-1009@src/gui/clips/ClipView.cpp
+  28       99     131    lmms::DualFilterEffect::processImpl@80-210@plugins/DualFilter/DualFilter.cpp
+  28       141    191    lmms::MidiExport::tryExport@70-260@plugins/MidiExport/MidiExport.cpp
+  28       89     139    lmms::NotePlayHandle::play@190-328@src/core/NotePlayHandle.cpp
+  28       137    196    lmms::gui::AutomationEditor::mouseMoveEvent@718-913@src/gui/editors/AutomationEditor.cpp
+  27       111    123    lmms::gui::EqCurve::paint@668-790@plugins/Eq/EqCurve.cpp
+  27       145    184    lmms::GranularPitchShifterEffect::processImpl@64-247@plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp
+  27       210    235    lmms::SlewDistortion::processImpl@442-676@plugins/SlewDistortion/SlewDistortion.cpp
+  27       135    151    lmms::OnnxRuntimeStemSeparator::separate@91-241@src/core/OnnxRuntimeStemSeparator.cpp
+  27       102    146    lmms::Song::processNextBuffer@209-354@src/core/Song.cpp
+  27       172    267    lmms::gui::AutomationEditor::mousePressEvent@386-652@src/gui/editors/AutomationEditor.cpp
+  27       82     106    lmms::gui::PianoRoll::mouseReleaseEvent@2380-2485@src/gui/editors/PianoRoll.cpp
+  26       84     102    lmms::Lv2Proc::check@66-167@src/core/lv2/Lv2Proc.cpp
+  26       87     116    lmms::InstrumentTrack::play@700-815@src/tracks/InstrumentTrack.cpp
+  26       175    204    main@130-333@tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
+  25       133    165    lmms::BasicFilters::calcFilterCoeffs@705-869@include/BasicFilters.h
+  25       87     107    lmms::CrossoverEQEffect::processImpl@92-198@plugins/CrossoverEQ/CrossoverEQ.cpp
+  25       290    375    lmms::SlewDistortion::processImpl@63-437@plugins/SlewDistortion/SlewDistortion.cpp
+  25       122    132    lmms::vst3::HostedPlugin::load@250-381@plugins/Vst3Effect/Vst3Host.cpp
+  25       60     70     lmms::gui::FileItem::determineFileType@1237-1306@src/gui/FileBrowser.cpp
+  25       152    156    partc::overridesFor@107-262@tests/src/plugins/PluginPortsHarness.h
+  24       158    191    lmms::gui::SlewDistortionControlDialog::paintEvent@200-390@plugins/SlewDistortion/SlewDistortionControlDialog.cpp
+  24       107    114    lmms::RemoteVstPlugin::savePreset@1500-1613@plugins/VstBase/RemoteVstPlugin.cpp
+  24       104    152    main@2494-2645@plugins/VstBase/RemoteVstPlugin.cpp
+  24       98     121    lmms::VstPlugin::processMessage@412-532@plugins/VstBase/VstPlugin.cpp
+  24       89     102    lmms::gui::PianoRoll::markSemiTone@511-612@src/gui/editors/PianoRoll.cpp
+  24       62     62     lmms::gui::SongEditor::keyPressEvent@468-529@src/gui/editors/SongEditor.cpp
+  24       109    143    lmms::gui::PianoView::paintEvent@810-952@src/gui/instrument/PianoView.cpp
+  23       138    178    lmms::FreeBoyInstrument::playNoteImpl@231-408@plugins/FreeBoy/FreeBoy.cpp
+  23       90     102    lmms::LadspaEffect::processImpl@128-229@plugins/LadspaEffect/LadspaEffect.cpp
+  23       107    139    lmms::SidInstrument::playNoteImpl@284-422@plugins/Sid/SidInstrument.cpp
+  23       64     91     lmms::AudioPortsModel::updateDirectRouting@247-337@src/core/AudioPortsModel.cpp
+  23       137    164    lmms::MidiAlsaSeq::run@457-620@src/core/midi/MidiAlsaSeq.cpp
+  22       25     35     lmms::gui::SfxrInstrumentView::mutate@1002-1036@plugins/Sfxr/Sfxr.cpp
+  22       86     112    lmms::AutomatableModel::loadSettings@178-289@src/core/AutomatableModel.cpp
+  22       105    147    lmms::InstrumentSoundShaping::processAudioBuffer@108-254@src/core/InstrumentSoundShaping.cpp
+  22       100    121    lmms::MidiApple::HandleReadCallback@239-359@src/core/midi/MidiApple.cpp
+  22       132    183    lmms::gui::AutomationClipView::paintEvent@226-408@src/gui/clips/AutomationClipView.cpp
+  21       176    194    lmms::HydrogenImport::readSong@139-332@plugins/HydrogenImport/HydrogenImport.cpp
+  21       76     86     lmms::OpulenzInstrument::handleMidiEvent@295-380@plugins/OpulenZ/OpulenZ.cpp
+  21       117    159    lmms::PatmanInstrument::loadPatch@212-370@plugins/Patman/Patman.cpp
+  21       125    137    lmms::gui::SaSpectrumView::drawGrid@436-572@plugins/SpectrumAnalyzer/SaSpectrumView.cpp
+  21       138    211    lmms::BandLimitedWave::generateWaves@65-275@src/core/BandLimitedWave.cpp
+  21       124    144    lmms::AudioSoundIo::AudioSoundIo@40-183@src/core/audio/AudioSoundIo.cpp
+  21       59     84     lmms::gui::PianoRoll::updateParameterEditPos@2848-2931@src/gui/editors/PianoRoll.cpp
+  21       91     93     lmms::gui::TempoSyncKnob::updateDescAndIcon@182-274@src/gui/widgets/TempoSyncKnob.cpp
+  21       158    172    partc::instrumentOverridesFor@701-872@tests/src/plugins/PluginPortsHarness.h
+  20       151    196    lmms::FrequencyShifterEffect::processImpl@65-260@plugins/FrequencyShifter/FrequencyShifterEffect.cpp
+  20       105    127    lmms::gui::LadspaPortDialog::LadspaPortDialog@40-166@plugins/LadspaBrowser/LadspaPortDialog.cpp
+  20       69     99     lmms::Mixer::updateLatencyCompensation@1257-1355@src/core/Mixer.cpp
+  20       45     45     lmms::PluginIssue::msgFor@33-77@src/core/PluginIssue.cpp
+  20       140    162    lmms::Lv2Proc::createPort@566-727@src/core/lv2/Lv2Proc.cpp
+  20       115    152    lmms::gui::PatternClipView::paintEvent@91-242@src/gui/clips/PatternClipView.cpp
+  19       58     65     lmms::MonstroSynth::oscillate@178-242@plugins/Monstro/Monstro.h
+  19       55     87     lmms::OpulenzInstrument::loadFile@588-674@plugins/OpulenZ/OpulenZ.cpp
+  19       112    116    lmms::DataFile::upgrade_0_2_1_20070501@680-795@src/core/DataFile.cpp
+  19       82     108    lmms::Mixer::deleteChannel@637-744@src/core/Mixer.cpp
+  19       47     51     lmms::PathUtil::baseLocation@16-66@src/core/PathUtil.cpp
+  19       92     110    lmms::InstrumentTrack::loadTrackSpecificSettings@900-1009@src/tracks/InstrumentTrack.cpp
+  19       59     79     PluginPortsMigrationTest::slice8PluginsAreLiveAndExact@650-728@tests/src/plugins/PluginPortsMigrationTest.cpp
+  19       101    119    lmms::wasm::WasmSandboxTest::p3_moduleLatencyIsApplied@735-853@tests/src/wasm/WasmSandboxTest.cpp
+  18       36     36     lmms::vst3::HostedPlugin::loadState@471-506@plugins/Vst3Effect/Vst3Host.cpp
+  18       115    141    lmms::WatsynObject::renderOutput@106-246@plugins/Watsyn/Watsyn.cpp
+  18       40     70     lmms::AudioEngine::isAudioDevNameValid@589-658@src/core/AudioEngine.cpp
+  18       73     92     lmms::AutomatableModel::valueBuffer@530-621@src/core/AutomatableModel.cpp
+  18       143    165    lmms::gui::ExportProjectDialog::ExportProjectDialog@54-218@src/gui/modals/ExportProjectDialog.cpp
+  17       102    131    lmms::GigInstrument::loadSample@495-625@plugins/GigPlayer/GigPlayer.cpp
+  17       75     114    sp_revsc_compute@163-276@plugins/ReverbSC/revsc.c
+  17       115    126    lmms::RemoteVstPlugin::loadPresetFile@1618-1743@plugins/VstBase/RemoteVstPlugin.cpp
+  17       81     83     lmms::ExprSynth::renderOutput@748-830@plugins/Xpressive/ExprSynth.cpp
+  17       87     93     lmms::gui::XpressiveView::expressionChanged@525-617@plugins/Xpressive/Xpressive.cpp
+  17       80     85     lmms::AudioBus::update@195-279@src/core/AudioBus.cpp
+  17       114    152    lmms::fixAutomationTracks@223-374@src/core/UpgradeExtendedNoteRange.cpp
+  17       70     89     lmms::Lv2Proc::createPorts@732-820@src/core/lv2/Lv2Proc.cpp
+  17       55     63     lmms::gui::FileBrowser::reloadTree@266-328@src/gui/FileBrowser.cpp
+  17       25     43     lmms::gui::FileBrowserTreeWidget::keyPressEvent@533-575@src/gui/FileBrowser.cpp
+  17       39     42     lmms::gui::MicrotunerConfig::loadKeymapFromFile@513-554@src/gui/MicrotunerConfig.cpp
+  17       59     69     lmms::gui::PianoRoll::mouseDoubleClickEvent@2074-2142@src/gui/editors/PianoRoll.cpp
+  17       53     68     lmms::gui::PianoRoll::computeSelectedNotes@2308-2375@src/gui/editors/PianoRoll.cpp
+  17       68     79     lmms::gui::TimeLineWidget::mouseMoveEvent@322-400@src/gui/editors/TimeLineWidget.cpp
+  17       90     100    lmms::SampleTrack::play@73-172@src/tracks/SampleTrack.cpp
+  16       30     34     lmms::gui::LOMMControlDialog::mousePressEvent@207-240@plugins/LOMM/LOMMControlDialog.cpp
+  16       43     52     lmms::OpulenzInstrument::updatePatch@534-585@plugins/OpulenZ/OpulenZ.cpp
+  16       81     105    lmms::SlicerT::findSlices@147-251@plugins/SlicerT/SlicerT.cpp
+  16       58     79     lmms::gui::SaSpectrumView::makePath@354-432@plugins/SpectrumAnalyzer/SaSpectrumView.cpp
+  16       69     83     lmms::ZynAddSubFxInstrument::loadSettings@227-309@plugins/ZynAddSubFx/ZynAddSubFx.cpp
+  16       57     71     lmms::AutomatableModel::saveSettings@103-173@src/core/AutomatableModel.cpp
+  16       52     66     lmms::AutomationClip::flipX@715-780@src/core/AutomationClip.cpp
+  16       66     81     lmms::DataFile::loadData@2128-2208@src/core/DataFile.cpp
+  16       44     46     lmms::Ladspa2LMMS::Ladspa2LMMS@34-79@src/core/Ladspa2LMMS.cpp
+  16       58     66     lmms::LadspaControl::loadSettings@219-284@src/core/LadspaControl.cpp
+  16       76     118    lmms::MixerChannel::doProcessing@411-528@src/core/Mixer.cpp
+  16       69     91     lmms::Mixer::masterMix@1359-1449@src/core/Mixer.cpp
+  16       58     80     lmms::Song::clearProject@857-936@src/core/Song.cpp
+  16       65     76     lmms::TrackContainer::automatedValuesFromTracks@267-342@src/core/TrackContainer.cpp
+  16       43     50     lmms::gui::FileBrowserTreeWidget::getContextActions@708-757@src/gui/FileBrowser.cpp
+  16       73     85     lmms::gui::MainWindow::exportProject@1556-1640@src/gui/MainWindow.cpp
+  16       59     63     lmms::gui::MixerView::keyPressEvent@469-531@src/gui/MixerView.cpp
+  16       169    191    main@76-266@tests/src/core/TwoTrackAlsaCaptureProbe.cpp
+  15       88     117    lmms::DynProcEffect::processImpl@96-212@plugins/DynamicsProcessor/DynamicsProcessor.cpp
+  15       29     30     lmms::gui::EqParameterWidget::updateHandle@106-135@plugins/Eq/EqParameterWidget.cpp
+  15       58     64     main@20-83@plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+  15       64     80     lmms::AudioBus::sanitize@96-175@src/core/AudioBus.cpp
+  15       32     51     lmms::AudioEngine::isMidiDevNameValid@660-710@src/core/AudioEngine.cpp
+  15       67     67     lmms::LadspaManager::getDefaultSetting@435-501@src/core/LadspaManager.cpp
+  15       18     18     lmms::NotePlayHandle::operator ==@502-519@src/core/NotePlayHandle.cpp
+  15       21     21     lmms::PathUtil::basePrefix@78-98@src/core/PathUtil.cpp
+  15       35     38     lmms::RoutingGraph::connect@90-127@src/core/RoutingGraph.cpp
+  15       42     53     lmms::RoutingGraph::rebuildPlan@310-362@src/core/RoutingGraph.cpp
+  15       39     41     lmms::Sample::render@136-176@src/core/Sample.cpp
+  15       60     70     lmms::Track::loadTrack@241-310@src/core/Track.cpp
+  15       67     71     lmms::TrackContainer::loadSettings@84-154@src/core/TrackContainer.cpp
+  15       65     78     lmms::AudioPortAudio::AudioPortAudio@96-173@src/core/audio/AudioPortAudio.cpp
+  15       65     132    lmms::MidiClientRaw::parseData@104-235@src/core/midi/MidiClient.cpp
+  15       57     70     lmms::gui::FileBrowser::addItems@368-437@src/gui/FileBrowser.cpp
+  15       227    291    lmms::gui::PianoRoll::PianoRoll@157-447@src/gui/editors/PianoRoll.cpp
+  15       62     73     lmms::gui::PianoRoll::updateStrumPos@3020-3092@src/gui/editors/PianoRoll.cpp
+  15       63     92     lmms::gui::TimeLineWidget::paintEvent@133-224@src/gui/editors/TimeLineWidget.cpp
+  15       75     85     lmms::wasm::WasmSandbox::loadModuleBytes@336-420@src/wasm/WasmSandbox.cpp
+  14       27     33     lmms::gui::AudioFileProcessorWaveView::zoom@362-394@plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp
+  14       60     66     lmms::NoteKey::stringToNoteKey@61-126@plugins/HydrogenImport/HydrogenImport.cpp
+  14       54     63     lmms::gui::LadspaControlDialog::updateEffectView@70-132@plugins/LadspaEffect/LadspaControlDialog.cpp
+  14       63     94     lmms::gui::PatchesDialog::setup@158-251@plugins/Sf2Player/PatchesDialog.cpp
+  14       47     59     lmms::DrumSynth::GetPrivateProfileString@189-247@src/core/DrumSynth.cpp
+  14       30     51     lmms::ProjectVersion::compare@81-131@src/core/ProjectVersion.cpp
+  14       70     106    lmms::RemotePlugin::init@231-336@src/core/RemotePlugin.cpp
+  14       54     69     lmms::decodeSampleOggVorbis@116-184@src/core/SampleDecoder.cpp
+  14       44     48     lmms::ScriptEngine::resolveProjectPath@714-761@src/core/ScriptEngine.cpp
+  14       62     88     lmms::Song::processAutomations@357-444@src/core/Song.cpp
+  14       47     55     lmms::Track::toggleSolo@588-642@src/core/Track.cpp
+  14       55     63     lmms::gui::FileBrowserTreeWidget::previewFileItem@793-855@src/gui/FileBrowser.cpp
+  14       39     48     lmms::gui::MainWindow::MovableQMdiArea::mouseMoveEvent@1745-1792@src/gui/MainWindow.cpp
+  14       96     130    lmms::gui::PinConnector::paintEvent@184-313@src/gui/PinConnector.cpp
+  14       60     72     lmms::gui::SampleThumbnail::visualize@108-179@src/gui/SampleThumbnail.cpp
+  14       94     143    lmms::gui::SampleClipView::paintEvent@231-373@src/gui/clips/SampleClipView.cpp
+  14       64     73     lmms::gui::AutomationEditor::wheelEvent@1548-1620@src/gui/editors/AutomationEditor.cpp
+  14       49     54     lmms::gui::FloatModelEditorBase::updateInteractionState@418-471@src/gui/widgets/FloatModelEditorBase.cpp
+  14       61     87     lmms::gui::LcdWidget::paintEvent@137-223@src/gui/widgets/LcdWidget.cpp
+  14       52     63     Steinberg::Vst::ZeneTestInstrument::TestInstrument::process@283-345@tests/data/vst3-test-instrument/vst3-test-instrument.cpp
+  14       78     95     AudioPortsTest::pinMatrix4x4SetReset@81-175@tests/src/core/AudioPortsTest.cpp
+  14       135    185    PluginPortsMigrationTest::migratedPluginsPreserveBehaviour@219-403@tests/src/plugins/PluginPortsMigrationTest.cpp
+  13       35     55     lmms::CarlaInstrument::handleDispatcher@288-342@plugins/CarlaBase/Carla.cpp
+  13       84     94     lmms::clap::HostedPlugin::process@741-834@plugins/ClapEffect/ClapHost.cpp
+  13       48     59     lmms::Sf2Instrument::playNoteImpl@653-711@plugins/Sf2Player/Sf2Player.cpp
+  13       42     66     lmms::gui::SaSpectrumView::refreshPaths@231-296@plugins/SpectrumAnalyzer/SaSpectrumView.cpp
+  13       82     102    lmms::MalletsInstrument::loadSettings@168-269@plugins/Stk/Mallets/Mallets.cpp
+  13       112    127    lmms::MalletsInstrument::playNoteImpl@282-408@plugins/Stk/Mallets/Mallets.cpp
+  13       48     58     lmms::VestigeInstrument::loadFile@334-391@plugins/Vestige/Vestige.cpp
+  13       75     87     lmms::vst3::HostedPlugin::prepare@508-594@plugins/Vst3Effect/Vst3Host.cpp
+  13       29     56     lmms::RemoteVstPlugin::processUIThreadMessages@2238-2293@plugins/VstBase/RemoteVstPlugin.cpp
+  13       70     79     RemoteZynAddSubFx::guiLoop@168-246@plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp
+  13       43     47     lmms::AutomationClip::resolveAllIDs@1033-1079@src/core/AutomationClip.cpp
+  13       95     127    lmms::DataFile::writeFile@315-441@src/core/DataFile.cpp
+  13       106    137    lmms::EnvelopeAndLfoParameters::updateSampleVars@402-538@src/core/EnvelopeAndLfoParameters.cpp
+  13       58     73     lmms::LadspaManager::LadspaManager@46-118@src/core/LadspaManager.cpp
+  13       47     58     lmms::Mixer::moveChannelLeft@748-805@src/core/Mixer.cpp
+  13       61     79     lmms::Mixer::loadSettings@1590-1668@src/core/Mixer.cpp
+  13       47     56     lmms::AudioJack::processCallback@379-434@src/core/audio/AudioJack.cpp
+  13       56     61     lmms::MidiAlsaRaw::run@103-163@src/core/midi/MidiAlsaRaw.cpp
+  13       57     75     lmms::writeToByteSeq@36-110@src/core/midi/MidiEventToByteSeq.cpp
+  13       62     69     lmms::gui::ControlLayout::doLayout@233-301@src/gui/ControlLayout.cpp
+  13       34     38     lmms::gui::MicrotunerConfig::validateScaleForm@313-350@src/gui/MicrotunerConfig.cpp
+  13       45     53     lmms::gui::PianoRoll::fitNoteLengths@720-772@src/gui/editors/PianoRoll.cpp
+  13       35     47     lmms::gui::PianoRoll::parameterEditNoteUnderMouse@5157-5203@src/gui/editors/PianoRoll.cpp
+  13       37     52     lmms::gui::PianoRollWindow::showEvent@5729-5780@src/gui/editors/PianoRoll.cpp
+  13       75     94     lmms::gui::LfoGraph::paintEvent@62-155@src/gui/instrument/LfoGraph.cpp
+  13       44     65     lmms::gui::FileDialog::FileDialog@41-105@src/gui/modals/FileDialog.cpp
+  13       51     77     lmms::gui::TrackContentWidget::canPasteSelection@332-408@src/gui/tracks/TrackContentWidget.cpp
+  13       36     54     lmms::InstrumentTrack::processAudioBuffer@227-280@src/tracks/InstrumentTrack.cpp
+  12       68     81     lmms::RemotePluginClient::processMessage@240-320@include/RemotePluginClient.h
+  12       60     75     lmms::AudioFileProcessor::playNoteImpl@107-181@plugins/AudioFileProcessor/AudioFileProcessor.cpp
+  12       37     59     lmms::gui::PatchesDialog::bankChanged@338-396@plugins/Sf2Player/PatchesDialog.cpp
+  12       50     75     lmms::SaProcessor::reallocateBuffers@364-438@plugins/SpectrumAnalyzer/SaProcessor.cpp
+  12       38     43     lmms::gui::SaSpectrumView::updateBuffers@305-347@plugins/SpectrumAnalyzer/SaSpectrumView.cpp
+  12       53     61     lmms::vst3::HostedPlugin::process@639-699@plugins/Vst3Effect/Vst3Host.cpp
+  12       39     39     lmms::LocalZynAddSubFx::processMidiEvent@227-265@plugins/ZynAddSubFx/LocalZynAddSubFx.cpp
+  12       46     65     lmms::Effect::processAudioBuffer@177-241@src/core/Effect.cpp
+  12       48     71     lmms::RemotePlugin::processMessage@528-598@src/core/RemotePlugin.cpp
+  12       50     52     lmms::TempoSyncKnobModel::calculateTempoSyncTime@73-124@src/core/TempoSyncKnobModel.cpp
+  12       70     86     lmms::AudioAlsa::setHWParams@256-341@src/core/audio/AudioAlsa.cpp
+  12       18     23     lmms::MidiPort::processOutEvent@159-181@src/core/midi/MidiPort.cpp
+  12       38     42     lmms::MidiWinMM::handleInputEvent@188-229@src/core/midi/MidiWinMM.cpp
+  12       46     50     lmms::gui::FileBrowserTreeWidget::mouseMoveEvent@873-922@src/gui/FileBrowser.cpp
+  12       32     42     lmms::gui::FileSearchJob::runSearch@60-101@src/gui/FileSearchJob.cpp
+  12       43     49     lmms::gui::MidiClipView::wheelEvent@496-544@src/gui/clips/MidiClipView.cpp
+  12       75     98     lmms::gui::PianoRoll::drawDetuningInfo@1098-1195@src/gui/editors/PianoRoll.cpp
+  12       38     43     lmms::gui::PianoRoll::keyReleaseEvent@1556-1598@src/gui/editors/PianoRoll.cpp
+  12       40     49     lmms::gui::PianoRoll::selectAll@4590-4638@src/gui/editors/PianoRoll.cpp
+  12       49     55     lmms::gui::TrackContainerView::dropEvent@390-444@src/gui/editors/TrackContainerView.cpp
+  12       51     62     lmms::gui::PianoView::mouseMoveEvent@520-581@src/gui/instrument/PianoView.cpp
+  12       83     105    lmms::gui::Knob::drawKnob@380-484@src/gui/widgets/Knob.cpp
+  12       68     80     lmms::wasm::WasmWorker::processSlot@155-234@src/wasm/WasmWorker.cpp
+  12       27     34     runningClientPids@133-166@tests/src/plugins/ZynSeparateProcessTest.cpp
+  11       47     58     lmms::CarlaInstrument::refreshParams@380-437@plugins/CarlaBase/Carla.cpp
+  11       22     22     lmms::clap::describe@65-86@plugins/ClapEffect/ClapHost.cpp
+  11       47     61     lmms::DelayEffect::processImpl@84-144@plugins/Delay/DelayEffect.cpp
+  11       50     58     lmms::gui::EqParameterWidget::changeHandle@140-197@plugins/Eq/EqParameterWidget.cpp
+  11       51     61     lmms::gui::EqSpectrumView::paintEvent@209-269@plugins/Eq/EqSpectrumView.cpp
+  11       44     62     lmms::GigInstrument::addSamples@701-762@plugins/GigPlayer/GigPlayer.cpp
+  11       62     69     lmms::gui::LadspaDescription::LadspaDescription@42-110@plugins/LadspaBrowser/LadspaDescription.cpp
+  11       59     87     AmpV::one_cycle@338-424@plugins/LadspaEffect/caps/Amp.cc
+  11       36     56     lmms::Sf2Instrument::noteOn@714-769@plugins/Sf2Player/Sf2Player.cpp
+  11       70     82     lmms::Sf2Instrument::playImpl@788-869@plugins/Sf2Player/Sf2Player.cpp
+  11       35     52     lmms::gui::SaSpectrumView::drawSpectrum@175-226@plugins/SpectrumAnalyzer/SaSpectrumView.cpp
+  11       38     46     lmms::gui::SaSpectrumView::makeLinearAmpTics@765-810@plugins/SpectrumAnalyzer/SaSpectrumView.cpp
+  11       80     99     lmms::gui::SaWaterfallView::paintEvent@82-180@plugins/SpectrumAnalyzer/SaWaterfallView.cpp
+  11       77     108    lmms::RemoteVstPlugin::initEditor@794-901@plugins/VstBase/RemoteVstPlugin.cpp
+  11       149    183    lmms::gui::VstEffectControlDialog::VstEffectControlDialog@44-226@plugins/VstEffect/VstEffectControlDialog.cpp
+  11       52     72     lmms::WaveShaperEffect::processImpl@68-139@plugins/WaveShaper/WaveShaper.cpp
+  11       35     41     lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp
+  11       41     47     lmms::DataFile::upgrade_1_1_91@1140-1186@src/core/DataFile.cpp
+  11       51     57     lmms::DataFile::upgrade_mixerRename@1844-1900@src/core/DataFile.cpp
+  11       65     74     lmms::LadspaControl::LadspaControl@37-110@src/core/LadspaControl.cpp
+  11       71     80     lmms::StemModelStore::download@203-282@src/core/StemModelStore.cpp
+  11       70     88     lmms::AudioOss::AudioOss@68-155@src/core/audio/AudioOss.cpp
+  11       22     31     lmms::compressbands@189-219@src/core/fft_helpers.cpp
+  11       22     25     lmms::MidiPort::processInEvent@130-154@src/core/midi/MidiPort.cpp
+  11       66     88     lmms::gui::FileBrowserTreeWidget::contextMenuEvent@606-693@src/gui/FileBrowser.cpp
+  11       71     79     lmms::gui::LadspaControlView::LadspaControlView@39-117@src/gui/LadspaControlView.cpp
+  11       113    158    lmms::gui::MainWindow::MainWindow@86-243@src/gui/MainWindow.cpp
+  11       48     52     lmms::gui::MainWindow::saveProjectAs@833-884@src/gui/MainWindow.cpp
+  11       32     38     lmms::gui::ClipView::mouseReleaseEvent@1021-1058@src/gui/clips/ClipView.cpp
+  11       37     55     lmms::gui::MidiClipView::mousePressEvent@422-476@src/gui/clips/MidiClipView.cpp
+  11       29     34     lmms::gui::TimeLineWidget::getLoopAction@233-266@src/gui/editors/TimeLineWidget.cpp
+  11       35     42     lmms::gui::TimeLineWidget::mousePressEvent@279-320@src/gui/editors/TimeLineWidget.cpp
+  11       62     99     lmms::gui::TrackContentWidget::pasteSelection@429-527@src/gui/tracks/TrackContentWidget.cpp
+  11       44     57     lmms::InstrumentTrack::processOutEvent@467-523@src/tracks/InstrumentTrack.cpp
+  11       33     46     lmms::MidiClip::splitNotesAlongLine@361-406@src/tracks/MidiClip.cpp
+  11       58     65     lmms::wasm::WasmWorker::run@89-153@src/wasm/WasmWorker.cpp
+  11       54     83     AudioBufferTest::CrossProcess_TwoProcessesWithSameSharedMemory@384-466@tests/src/core/AudioBufferTest.cpp
+  11       81     91     verifyTrack@126-216@tests/src/core/TwoTrackRecordingHarness.cpp
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+include/BasicFilters.h: lmms::BasicFilters::update has 270 NLOC, 33 CCN, 2784 token, 2 PARAM, 363 length, 0 ND
+include/BasicFilters.h: lmms::BasicFilters::calcFilterCoeffs has 133 NLOC, 25 CCN, 1109 token, 2 PARAM, 165 length, 0 ND
+include/RemotePluginClient.h: lmms::RemotePluginClient::processMessage has 68 NLOC, 12 CCN, 303 token, 1 PARAM, 81 length, 0 ND
+plugins/AudioFileProcessor/AudioFileProcessor.cpp: lmms::AudioFileProcessor::playNoteImpl has 60 NLOC, 12 CCN, 405 token, 2 PARAM, 75 length, 0 ND
+plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp: lmms::gui::AudioFileProcessorWaveView::zoom has 27 NLOC, 14 CCN, 337 token, 1 PARAM, 33 length, 0 ND
+plugins/Bitcrush/Bitcrush.cpp: lmms::BitcrushEffect::processImpl has 120 NLOC, 32 CCN, 1046 token, 1 PARAM, 134 length, 0 ND
+plugins/CarlaBase/Carla.cpp: lmms::CarlaInstrument::handleDispatcher has 35 NLOC, 13 CCN, 119 token, 5 PARAM, 55 length, 0 ND
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::load has 158 NLOC, 31 CCN, 1385 token, 3 PARAM, 168 length, 0 ND
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::process has 84 NLOC, 13 CCN, 840 token, 5 PARAM, 94 length, 0 ND
+plugins/Compressor/Compressor.cpp: lmms::CompressorEffect::processImpl has 230 NLOC, 48 CCN, 2035 token, 1 PARAM, 298 length, 0 ND
+plugins/CrossoverEQ/CrossoverEQ.cpp: lmms::CrossoverEQEffect::processImpl has 87 NLOC, 25 CCN, 848 token, 1 PARAM, 107 length, 0 ND
+plugins/DualFilter/DualFilter.cpp: lmms::DualFilterEffect::processImpl has 99 NLOC, 28 CCN, 948 token, 1 PARAM, 131 length, 0 ND
+plugins/DynamicsProcessor/DynamicsProcessor.cpp: lmms::DynProcEffect::processImpl has 88 NLOC, 15 CCN, 666 token, 1 PARAM, 117 length, 0 ND
+plugins/Eq/EqCurve.cpp: lmms::gui::EqCurve::paint has 111 NLOC, 27 CCN, 953 token, 3 PARAM, 123 length, 0 ND
+plugins/Eq/EqEffect.cpp: lmms::EqEffect::processImpl has 170 NLOC, 29 CCN, 1672 token, 1 PARAM, 212 length, 0 ND
+plugins/Eq/EqParameterWidget.cpp: lmms::gui::EqParameterWidget::updateHandle has 29 NLOC, 15 CCN, 345 token, 0 PARAM, 30 length, 0 ND
+plugins/FreeBoy/FreeBoy.cpp: lmms::FreeBoyInstrument::playNoteImpl has 138 NLOC, 23 CCN, 1171 token, 2 PARAM, 178 length, 0 ND
+plugins/FrequencyShifter/FrequencyShifterEffect.cpp: lmms::FrequencyShifterEffect::processImpl has 151 NLOC, 20 CCN, 1554 token, 1 PARAM, 196 length, 0 ND
+plugins/GigPlayer/GigPlayer.cpp: lmms::GigInstrument::playImpl has 120 NLOC, 35 CCN, 870 token, 1 PARAM, 170 length, 0 ND
+plugins/GigPlayer/GigPlayer.cpp: lmms::GigInstrument::loadSample has 102 NLOC, 17 CCN, 761 token, 3 PARAM, 131 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)

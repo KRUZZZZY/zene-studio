@@ -1,0 +1,8 @@
+run 1 EXIT=0
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 1432ms
+run 2 EXIT=0
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 2179ms
+run 3 EXIT=0
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 2191ms
+run 4 EXIT=0
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 2181ms

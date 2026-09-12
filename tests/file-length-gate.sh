@@ -11,14 +11,19 @@
 #   - a grandfathered file that GROWS by more than TOLERANCE lines fails;
 #   - a file that shrinks updates the baseline down (the ratchet only moves one way).
 #
-# Exemptions: add the repo-relative path to tests/file-length-exempt.txt with a reason
-# (generated tables/fixtures, vendored data). Exempt files are not measured.
+# Exemptions: add the repo-relative path to tests/file-length-exempt.txt with a
+# reason, tab-separated (generated tables/fixtures, vendored data). Exempt files
+# are not measured in any scope. A blank reason exits 2 - an exemption without a
+# stated reason is not honoured, the same fail-closed rule the divergence ledger
+# and the coverage entry floor follow.
 #
 # Usage:
 #   bash tests/file-length-gate.sh                        # ratchet: refresh the baseline, fail on regressions
 #   bash tests/file-length-gate.sh --check                # CI: never writes the baseline, STILL fails on regressions
 #   bash tests/file-length-gate.sh --reanchor "reason"    # deliberate, recorded baseline refresh
-#   bash tests/file-length-gate.sh --scope all            # whole tree (1,095 files) instead of the fork scope
+#   bash tests/file-length-gate.sh --reanchor-file <path> "reason"
+#                                                         # ONE file's entry, everything else untouched
+#   bash tests/file-length-gate.sh --scope all            # whole tree (every source in tests/all-sources.txt)
 #   bash tests/file-length-gate.sh --scope tools          # the fork's own tooling under tools/ (own baseline)
 #
 # NOTE (2026-09-11): `--check` used to print PASS unconditionally, so this ratchet could
@@ -38,19 +43,27 @@ EXEMPT="$HERE/file-length-exempt.txt"
 
 MODE="ratchet"
 REASON=""
+TARGET=""
 SCOPE="${GATE_SCOPE:-fork}"
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--check)    MODE="check"; shift ;;
 		--reanchor) MODE="reanchor"; REASON="${2:-}"; shift 2 ;;
+		--reanchor-file)
+			MODE="reanchor-file"
+			shift
+			if [[ $# -lt 2 ]]; then
+				echo "usage: $0 --reanchor-file <path> \"reason\"" >&2; exit 2
+			fi
+			TARGET="$1"; REASON="$2"; shift 2 ;;
 		--scope)    SCOPE="${2:-}"; shift 2 ;;
-		*) echo "usage: $0 [--check|--reanchor \"reason\"] [--scope fork|all]" >&2; exit 2 ;;
+		*) echo "usage: $0 [--check|--reanchor \"reason\"|--reanchor-file <path> \"reason\"] [--scope fork|all|tools]" >&2; exit 2 ;;
 	esac
 done
 case "$SCOPE" in
 	fork) SOURCES="$HERE/fork-sources.txt" ;;
 	all)  SOURCES="$HERE/all-sources.txt"; BASELINE="$HERE/file-length-baseline-all.tsv"
-	      echo "file-length-gate: whole-tree scope (1,095 first-party files; upstream files are grandfathered, see docs/CONVENTIONS.md)" ;;
+	      echo "file-length-gate: whole-tree scope (every source in tests/all-sources.txt; upstream files are grandfathered, see docs/CONVENTIONS.md)" ;;
 	tools) SOURCES="$HERE/tools-sources.txt"; BASELINE="$HERE/file-length-baseline-tools.tsv"
 	      echo "file-length-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)" ;;
 	*) echo "unknown scope '$SCOPE' (use fork|all|tools)" >&2; exit 2 ;;
@@ -59,11 +72,41 @@ if [[ "$MODE" == "reanchor" && -z "${REASON// /}" ]]; then
 	echo "usage: $0 --reanchor \"reason\" — an unrecorded re-anchor is not allowed" >&2
 	exit 2
 fi
+if [[ "$MODE" == "reanchor-file" ]]; then
+	[[ -n "${TARGET// /}" ]] || { echo "usage: $0 --reanchor-file <path> \"reason\"" >&2; exit 2; }
+	[[ -n "${REASON// /}" ]] || { echo "usage: $0 --reanchor-file <path> \"reason\" — an unrecorded re-anchor is not allowed" >&2; exit 2; }
+fi
+
+# The exemption list is a REQUIRED input, not an optional one. This gate's contract says
+# exemptions live in it, so a missing file leaves the gate unable to tell "no exemptions"
+# from "the exemption home is gone" - the fail-open shape rule 3 forbids, and the shape this
+# file was actually in until 2026-09-12 (documented in tests/QA-GATES.md and by this script,
+# but never created). Absence is a setup error (exit 2) now, with the fix in the message.
+if [[ ! -f "$EXEMPT" ]]; then
+	echo "error: $EXEMPT is missing - it is this gate's exemption home, and its absence" >&2
+	echo "       silently makes every exemption it would hold unenforceable." >&2
+	echo "       If no exemption is needed, commit the file with its header and no entries;" >&2
+	echo "       see tests/QA-GATES.md (Gate 7) for the contract." >&2
+	exit 2
+fi
 
 is_exempt() {
-	[[ -f "$EXEMPT" ]] || return 1
 	grep -vE '^\s*(#|$)' "$EXEMPT" | cut -f1 | grep -qxF "$1"
 }
+
+# Exemptions are fail-closed: a path without a stated reason is refused rather
+# than honoured, so the file cannot become a silent mute button for the ratchet.
+if [[ -f "$EXEMPT" ]]; then
+	while IFS=$'	' read -r ex_path ex_why; do
+		[[ "$ex_path" =~ ^[[:space:]]*# ]] && continue
+		[[ -z "${ex_path// /}" ]] && continue
+		if [[ -z "${ex_why// /}" ]]; then
+			echo "exempt error: tests/file-length-exempt.txt entry '$ex_path' has no reason" >&2
+			echo "an exemption must say why the file should not be measured (this gate refuses a blank one)" >&2
+			exit 2
+		fi
+	done < "$EXEMPT"
+fi
 
 current="$(mktemp)"
 while read -r f; do
@@ -91,6 +134,32 @@ write_baseline() {
 }
 
 # --- compare against the baseline --------------------------------------------
+# A single-file re-anchor. `--reanchor` rewrites the WHOLE baseline, so it is only
+# usable for a reviewed, scope-wide reconciliation; that primitive alone forces the
+# worst choice there is (grandfather everything unreviewed, or leave the scope red
+# forever). This mode moves exactly one path's entry: the rest of the baseline is
+# carried over unchanged, the measurement and the reason are printed, and a file
+# that is not over the limit is refused rather than quietly entered.
+reanchor_one() { # <path> <reason>
+	local path="$1" reason="$2" n old
+	n="$(awk -F'\t' -v p="$path" '$1==p {print $2}' "$current")"
+	if [[ -z "$n" ]]; then
+		echo "reanchor-file: '$path' is not measured in the ${SCOPE} scope (not in the manifest, or exempt)" >&2
+		exit 2
+	fi
+	if [[ "$n" -le "$LIMIT" ]]; then
+		echo "reanchor-file: '$path' is ${n} lines, at or below the ${LIMIT}-line limit — nothing to grandfather" >&2
+		exit 2
+	fi
+	old="${base[$path]:-none}"
+	base["$path"]="$n"
+	{ echo "# per-file line-count baseline (files over ${LIMIT} lines only)"
+	  echo "# maintained by tests/file-length-gate.sh; do not edit by hand"
+	  for f in "${!base[@]}"; do printf '%s\t%s\n' "$f" "${base[$f]}"; done | sort -k2,2nr; } > "$BASELINE"
+	echo "RE-ANCHORED (single file, ${SCOPE} scope): $path ${old} -> ${n} lines"
+	echo "reason: ${reason}"
+}
+
 regressed=0
 if [[ ! -f "$BASELINE" ]]; then
 	if [[ "$MODE" == "check" ]]; then
@@ -118,10 +187,14 @@ while IFS=$'\t' read -r f n; do
 done < "$current"
 
 # files that dropped to or below the limit leave the baseline (ratchet down)
-while IFS=$'\t' read -r f n; do
+while IFS=$'	' read -r f n; do
 	[[ "$f" =~ ^# ]] && continue
 	[[ -z "${f// /}" ]] && continue
-	cur=$(awk -F'\t' -v p="$f" '$1==p {print $2}' "$current")
+	if is_exempt "$f"; then
+		echo "improved: $f is exempt (tests/file-length-exempt.txt) - not measured, dropped from the baseline"
+		continue
+	fi
+	cur=$(awk -F'	' -v p="$f" '$1==p {print $2}' "$current")
 	if [[ -z "$cur" ]]; then
 		echo "improved: $f is no longer a fork source - dropped from the baseline"
 	elif [[ "$cur" -le "$LIMIT" ]]; then
@@ -135,6 +208,9 @@ reanchor)
 	write_baseline
 	echo "RE-ANCHORED: baseline rewritten from the current tree (${over} file(s) over ${LIMIT} lines)"
 	echo "reason: ${REASON}"
+	;;
+reanchor-file)
+	reanchor_one "$TARGET" "$REASON"
 	;;
 check)
 	if [[ "$regressed" -eq 1 ]]; then

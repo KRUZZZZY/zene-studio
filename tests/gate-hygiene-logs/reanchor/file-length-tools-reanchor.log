@@ -1,0 +1,10 @@
+file-length-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)
+file-length-gate: 12 tools-scope sources measured; 2 exceed 500 lines
+
+  lines  file
+  1896   tools/mmpz-git/mmpz_git.py
+  877    tools/mmpz-git/tests/test_mmpz_git.py
+
+REGRESSION: tools/mmpz-git/tests/test_mmpz_git.py grew 855 -> 877 lines
+RE-ANCHORED: baseline rewritten from the current tree (2 file(s) over 500 lines)
+reason: tools/mmpz-git/tests/test_mmpz_git.py 855 -> 877 (+22): PureAudioMaths::test_missing_renderer_is_an_error_not_a_crash now SKIPS, with the missing dependency named, when mmpz_git.find_renderer() resolves no renderer. Before this, that test FAILED on a clean checkout - the audit's reproduction was "Ran 44 tests in 155.0s / FAILED (failures=1, skipped=6)" / EXIT=1 - because audible-diff refuses with "no renderer found" (exit 2) before it ever reaches the "no such file" input check the test asserts, so a suite that should skip for everyone without a built binary went red instead. The +22 lines are the guard and its docstring; the assertions are unchanged and still run when a renderer exists (verified both ways). No code was trimmed to satisfy the metric, and no other tools/ file's baseline entry moved.

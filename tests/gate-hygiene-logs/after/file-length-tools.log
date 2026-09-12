@@ -1,0 +1,8 @@
+file-length-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)
+file-length-gate: 12 tools-scope sources measured; 2 exceed 500 lines
+
+  lines  file
+  1896   tools/mmpz-git/mmpz_git.py
+  877    tools/mmpz-git/tests/test_mmpz_git.py
+
+PASS (check mode: no regressions; baseline not written)

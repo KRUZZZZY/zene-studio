@@ -153,6 +153,25 @@ private:
 	//! Rebuild a descriptor from a cache record (declared here, defined in the .cpp).
 	Plugin::Descriptor* descriptorFromCacheRecord(const PluginScanRecord& record);
 
+	/*!
+	 * Plugin discovery, split into its stages so that no single method carries
+	 * the whole scan (per-method CCN target: tests/complexity-gate.sh). Each
+	 * stage below is one of the steps discoverPlugins() used to inline; the
+	 * sequence, the order of the decisions and the observable behaviour are
+	 * unchanged - only the function boundaries moved.
+	 */
+	QSet<QFileInfo> candidatePluginFiles() const;
+	void dropQuarantinedPlugins(QSet<QFileInfo>& files);
+	void scanOnePlugin(const QFileInfo& file, PluginInfoList& pluginInfos,
+		DescriptorMap& descriptors);
+	void appendLoadedPlugin(const QFileInfo& file, const std::shared_ptr<QLibrary>& library,
+		Plugin::Descriptor* descriptor, PluginInfoList& pluginInfos,
+		DescriptorMap& descriptors);
+	void appendCacheServedPlugin(const PluginScanRecord& record, const QFileInfo& file,
+		PluginInfoList& pluginInfos, DescriptorMap& descriptors);
+	void addSupportedFileTypes(const QString& supportedFileTypes, const PluginInfo& info,
+		const Plugin::Descriptor::SubPluginFeatures::Key* key = nullptr);
+
 	static std::unique_ptr<PluginFactory> s_instance;
 
 	static void filterPlugins(QSet<QFileInfo>& files);

@@ -20,6 +20,7 @@ set(LMMS_TESTS
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
+	src/core/MixerRoutingBackwardCompatTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
@@ -33,6 +34,21 @@ set(LMMS_TESTS
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
+	# NOT REGISTERED, deliberately: src/core/PhaseDSidechainTest.cpp (455 lines, Phase D
+	# sidechain routing, #587) does not compile, so registering it would break the build for every
+	# job instead of producing evidence. It was found unregistered (never built, never run) by the
+	# 2026-09-12 gate-hygiene pass; compiling it by hand gives, on the first try:
+	#
+	#   tests/src/core/PhaseDSidechainTest.cpp:103:62: error: 'PART_D_COMPRESSOR_LIBRARY' was not
+	#   declared in this scope
+	#       const QString compressor = QString::fromUtf8(PART_D_COMPRESSOR_LIBRARY);
+	#
+	# That macro is referenced exactly once in the repo and defined nowhere (no CMakeLists.txt,
+	# no header): the test was written against a compile definition that was never wired. The
+	# other test TUs take a built plugin from LMMS_TEST_PLUGIN_DIR (defined for them in this
+	# file), so the fix is a one-line interface fix there - it is NOT applied here, because a
+	# test must not be bent until it passes; the defect is reported instead. Remove this note and
+	# add the file to LMMS_TESTS when it compiles. See docs/GATE-HYGIENE.md.
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/ScriptStabilisationTest.cpp

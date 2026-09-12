@@ -1,4 +1,4 @@
 # per-file line-count baseline (files over 500 lines only)
 # maintained by tests/file-length-gate.sh; do not edit by hand
 tools/mmpz-git/mmpz_git.py	1896
-tools/mmpz-git/tests/test_mmpz_git.py	855
+tools/mmpz-git/tests/test_mmpz_git.py	877

@@ -1,0 +1,80 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-gatehygiene/build/tests
+      Start  1: ArrayVectorTest
+ 1/37 Test  #1: ArrayVectorTest ..................   Passed    0.03 sec
+      Start  2: AudioBufferTest
+ 2/37 Test  #2: AudioBufferTest ..................   Passed    0.03 sec
+      Start  3: AudioBusHandleTest
+ 3/37 Test  #3: AudioBusHandleTest ...............   Passed    1.44 sec
+      Start  4: AudioBusTest
+ 4/37 Test  #4: AudioBusTest .....................   Passed    1.43 sec
+      Start  5: AudioPortsModelTest
+ 5/37 Test  #5: AudioPortsModelTest ..............   Passed    1.43 sec
+      Start  6: AudioPortsTest
+ 6/37 Test  #6: AudioPortsTest ...................   Passed    1.69 sec
+      Start  7: AutomatableModelTest
+ 7/37 Test  #7: AutomatableModelTest .............   Passed    1.49 sec
+      Start  8: LoudnessReportTest
+ 8/37 Test  #8: LoudnessReportTest ...............   Passed    1.30 sec
+      Start  9: LufsMeterTest
+ 9/37 Test  #9: LufsMeterTest ....................   Passed    1.96 sec
+      Start 10: CrashReporterTest
+10/37 Test #10: CrashReporterTest ................   Passed    0.80 sec
+      Start 11: MathTest
+11/37 Test #11: MathTest .........................   Passed    0.02 sec
+      Start 12: MidiLearnTest
+12/37 Test #12: MidiLearnTest ....................   Passed    1.81 sec
+      Start 13: MixerRoutingBackwardCompatTest
+13/37 Test #13: MixerRoutingBackwardCompatTest ...   Passed    2.18 sec
+      Start 14: MultiTrackRecorderTest
+14/37 Test #14: MultiTrackRecorderTest ...........   Passed    0.03 sec
+      Start 15: PluginAudioPortsTest
+15/37 Test #15: PluginAudioPortsTest .............   Passed    1.41 sec
+      Start 16: PluginScanCacheTest
+16/37 Test #16: PluginScanCacheTest ..............   Passed    0.10 sec
+      Start 17: ProjectVersionTest
+17/37 Test #17: ProjectVersionTest ...............   Passed    0.02 sec
+      Start 18: RecordRingBufferTest
+18/37 Test #18: RecordRingBufferTest .............   Passed    0.03 sec
+      Start 19: RelativePathsTest
+19/37 Test #19: RelativePathsTest ................   Passed    0.03 sec
+      Start 20: RemotePluginAudioPortsTest
+20/37 Test #20: RemotePluginAudioPortsTest .......   Passed    2.25 sec
+      Start 21: RemotePluginClientE2ETest
+21/37 Test #21: RemotePluginClientE2ETest ........   Passed    1.66 sec
+      Start 22: RoutingGraphTest
+22/37 Test #22: RoutingGraphTest .................   Passed    0.03 sec
+      Start 23: PdcMixerTest
+23/37 Test #23: PdcMixerTest .....................   Passed    1.52 sec
+      Start 24: ScriptBindingsTest
+24/37 Test #24: ScriptBindingsTest ...............   Passed    1.65 sec
+      Start 25: ScriptEngineTest
+25/37 Test #25: ScriptEngineTest .................   Passed    1.67 sec
+      Start 26: ScriptStabilisationTest
+26/37 Test #26: ScriptStabilisationTest ..........   Passed    2.00 sec
+      Start 27: SlideNotesTest
+27/37 Test #27: SlideNotesTest ...................   Passed    0.02 sec
+      Start 28: StemExportTest
+28/37 Test #28: StemExportTest ...................   Passed    3.60 sec
+      Start 29: TimelineTest
+29/37 Test #29: TimelineTest .....................   Passed    1.41 sec
+      Start 30: TwoTrackRecordingHarness
+30/37 Test #30: TwoTrackRecordingHarness .........   Passed    2.04 sec
+      Start 31: AutomationTrackTest
+31/37 Test #31: AutomationTrackTest ..............   Passed    1.49 sec
+      Start 32: PluginPortsMigrationTest
+32/37 Test #32: PluginPortsMigrationTest .........   Passed    5.21 sec
+      Start 33: ClapBusMapTest
+33/37 Test #33: ClapBusMapTest ...................   Passed    0.01 sec
+      Start 34: ClapHostTest
+34/37 Test #34: ClapHostTest .....................   Passed    0.01 sec
+      Start 35: ClapEffectIntegrationTest
+35/37 Test #35: ClapEffectIntegrationTest ........   Passed    1.36 sec
+      Start 36: ZynSeparateProcessTest
+36/37 Test #36: ZynSeparateProcessTest ...........   Passed    2.62 sec
+      Start 37: AudioPluginTest
+37/37 Test #37: AudioPluginTest ..................   Passed    2.36 sec
+
+100% tests passed, 0 tests failed out of 37
+
+Total Test time (real) =  48.15 sec
+CTEST EXIT=0

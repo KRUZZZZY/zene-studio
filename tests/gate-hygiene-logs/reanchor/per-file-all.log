@@ -1,0 +1,149 @@
+============================================================================================================
+PER-FILE RE-ANCHORS: whole-tree FILE-LENGTH scope (tests/file-length-baseline-all.tsv)
+command form: bash tests/file-length-gate.sh --scope all --reanchor-file <path> "<reason>"
+============================================================================================================
+$ bash tests/file-length-gate.sh --scope all --reanchor-file include/RemotePluginBase.h "<reason: 642 -> 649 lines (+7)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): include/RemotePluginBase.h 642 -> 649 lines
+  reason: include/RemotePluginBase.h: 642 -> 649 lines (+7). Last touched by 8bb0cfd9d core: retire the remote-plugin interleaved process path for planar audio ports (#589). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #589 planar-ports migration: single-channel count ids retired in place (kept numeric to refuse a stale pre-#589 client loudly).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file include/Song.h "<reason: new file over 500 (539 lines)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): include/Song.h none -> 539 lines
+  reason: include/Song.h: new file over 500 (539 lines). Last touched by 117068e76 stem export: RenderManager::exportStems() + `lmms exportstems` (post-alpha/stem-export). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off. Stem export (post-alpha/stem-exp....
+$ bash tests/file-length-gate.sh --scope all --reanchor-file plugins/Vestige/Vestige.cpp "<reason: 1194 -> 1213 lines (+19)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): plugins/Vestige/Vestige.cpp 1194 -> 1213 lines
+  reason: plugins/Vestige/Vestige.cpp: 1194 -> 1213 lines (+19). Last touched by 8bb0cfd9d core: retire the remote-plugin interleaved process path for planar audio ports (#589). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin.
+$ bash tests/file-length-gate.sh --scope all --reanchor-file plugins/VstBase/RemoteVstPlugin.cpp "<reason: 2629 -> 2645 lines (+16)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): plugins/VstBase/RemoteVstPlugin.cpp 2629 -> 2645 lines
+  reason: plugins/VstBase/RemoteVstPlugin.cpp: 2629 -> 2645 lines (+16). Last touched by 0845c339c fix(core): the remote-plugin failure paths must fail loudly. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize().
+$ bash tests/file-length-gate.sh --scope all --reanchor-file plugins/VstBase/VstPlugin.cpp "<reason: 932 -> 940 lines (+8)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): plugins/VstBase/VstPlugin.cpp 932 -> 940 lines
+  reason: plugins/VstBase/VstPlugin.cpp: 932 -> 940 lines (+8). Last touched by 8bb0cfd9d core: retire the remote-plugin interleaved process path for planar audio ports (#589). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings.
+$ bash tests/file-length-gate.sh --scope all --reanchor-file plugins/ZynAddSubFx/ZynAddSubFx.cpp "<reason: 662 -> 757 lines (+95)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): plugins/ZynAddSubFx/ZynAddSubFx.cpp 662 -> 757 lines
+  reason: plugins/ZynAddSubFx/ZynAddSubFx.cpp: 662 -> 757 lines (+95). Last touched by 0e1cdcef6 feat(plugins): make the ZynAddSubFx remote path an opt-in per-plugin toggle. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #589 planar-ports migration: play() -> processImpl(); setBufferType()/activate() on the local path; ports controller passed to the remote plugin; post-alpha/oop-hosting: the persisted toggle selects t....
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/core/ConfigManager.cpp "<reason: 781 -> 783 lines (+2)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/core/ConfigManager.cpp 781 -> 783 lines
+  reason: src/core/ConfigManager.cpp: 781 -> 783 lines (+2). Last touched by 018d2041f feat(naming): wave R — rename the product to Zene Studio in build, packaging and UI. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: wave R rename (018d2041f): the bundled data search path moved from share/lmms/ to share/zene/, and the build-tree discovery moved from the lmms_SOURCE_DIR/lmms_BINARY_DIR CMake cache entries to the ze....
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/core/CrashReporter.cpp "<reason: new file over 500 (526 lines)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/core/CrashReporter.cpp none -> 526 lines
+  reason: src/core/CrashReporter.cpp: new file over 500 (526 lines). Last touched by 98a706dbe feat(crash): minimal offline crash reporter with a bounded local report. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): the fork-scope baseline re-anchored this file at 349aa0732 (one self-contained offline crash reporter: signal-safe formatting, the handler, install/teardown, the report writer and the Windows no-op stub, deliberately one unit) and the whole-tree scope was left red for the same file - this entry is that same decision in the other scope, which is the asymmetry this pass resolves.
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/core/main.cpp "<reason: 991 -> 1155 lines (+164)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/core/main.cpp 991 -> 1155 lines
+  reason: src/core/main.cpp: 991 -> 1155 lines (+164). Last touched by 1ef366607 Merge branch 'post-alpha/lufs-wire' into post-alpha/integration. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: crash reporter: install()/beginSession()/endSession() around the process lifetime and setProjectPath() on every project load (start-up, render, --run-script, clean exit), plus the one-off pending-repo....
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/core/midi/MidiAlsaSeq.cpp "<reason: 699 -> 706 lines (+7)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/core/midi/MidiAlsaSeq.cpp 699 -> 706 lines
+  reason: src/core/midi/MidiAlsaSeq.cpp: 699 -> 706 lines (+7). Last touched by 5d6ccdf1f feat(midi): global one-shot MIDI-learn mode. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: # MIDI learn: the ALSA control-change dispatch is restructured to route the CC event through the learn path; #607 MIDI learn: the SND_SEQ_EVENT_CONTROLLER case feeds MidiLearn::handleMidiEvent() befor....
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/core/Mixer.cpp "<reason: 1720 -> 1725 lines (+5)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/core/Mixer.cpp 1720 -> 1725 lines
+  reason: src/core/Mixer.cpp: 1720 -> 1725 lines (+5). Last touched by 44430848a fix(mixer): keep compensated receivers awake, advance muted rings, fix wasm latency. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/core/PluginFactory.cpp "<reason: new file over 500 (688 lines)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/core/PluginFactory.cpp none -> 688 lines
+  reason: src/core/PluginFactory.cpp: new file over 500 (688 lines). Last touched by 59c299664 PluginFactory: split discoverPlugins into named stages (CCN 32 -> 7). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): grew in this same pass: PluginFactory::discoverPlugins was split into named stages to take its CCN from 32 to 7 (the complexity half of this scope's fix). The file-length consequence of that extraction is recorded here rather than paid for by trimming code to a line budget (docs/CONVENTIONS.md rule 4).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/core/Song.cpp "<reason: 1544 -> 1572 lines (+28)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/core/Song.cpp 1544 -> 1572 lines
+  reason: src/core/Song.cpp: 1544 -> 1572 lines (+28). Last touched by 117068e76 stem export: RenderManager::exportStems() + `lmms exportstems` (post-alpha/stem-export). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesU....
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/gui/editors/PianoRoll.cpp "<reason: 5935 -> 5939 lines (+4)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/gui/editors/PianoRoll.cpp 5935 -> 5939 lines
+  reason: src/gui/editors/PianoRoll.cpp: 5935 -> 5939 lines (+4). Last touched by 2c77fd71a fix(qt6): the Qt 6 QMouseEvent deprecations a gcc/Qt6 -Werror build is alone in seeing. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file src/gui/MainWindow.cpp "<reason: 1762 -> 1800 lines (+38)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): src/gui/MainWindow.cpp 1762 -> 1800 lines
+  reason: src/gui/MainWindow.cpp: 1762 -> 1800 lines (+38). Last touched by abb3a1a7f Merge branch 'post-alpha/wave-r-rename' into post-alpha/integration. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4); plugin-scan: build the Tools menu on first open, so start-up never scans plugins (023770f....
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/core/AudioBufferTest.cpp "<reason: 755 -> 934 lines (+179)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/core/AudioBufferTest.cpp 755 -> 934 lines
+  reason: tests/src/core/AudioBufferTest.cpp: 755 -> 934 lines (+179). Last touched by 746f6bd0e fix(core): AudioBuffer's channel access buffer must be process-local, not shared (#608). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/core/PdcMixerTest.cpp "<reason: 638 -> 786 lines (+148)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/core/PdcMixerTest.cpp 638 -> 786 lines
+  reason: tests/src/core/PdcMixerTest.cpp: 638 -> 786 lines (+148). Last touched by 44430848a fix(mixer): keep compensated receivers awake, advance muted rings, fix wasm latency. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/core/PluginScanCacheTest.cpp "<reason: new file over 500 (670 lines)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/core/PluginScanCacheTest.cpp none -> 670 lines
+  reason: tests/src/core/PluginScanCacheTest.cpp: new file over 500 (670 lines). Last touched by 49d29f51f test(plugins): hold the scan-cache test and its store to the repo's gates. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/core/RemotePluginAudioPortsTest.cpp "<reason: new file over 500 (665 lines)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/core/RemotePluginAudioPortsTest.cpp none -> 665 lines
+  reason: tests/src/core/RemotePluginAudioPortsTest.cpp: new file over 500 (665 lines). Last touched by 0845c339c fix(core): the remote-plugin failure paths must fail loudly. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/core/ScriptEngineTest.cpp "<reason: 546 -> 592 lines (+46)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/core/ScriptEngineTest.cpp 546 -> 592 lines
+  reason: tests/src/core/ScriptEngineTest.cpp: 546 -> 592 lines (+46). Last touched by 018d2041f feat(naming): wave R — rename the product to Zene Studio in build, packaging and UI. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/plugins/PluginPortsHarness.h "<reason: 1156 -> 1196 lines (+40)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/plugins/PluginPortsHarness.h 1156 -> 1196 lines
+  reason: tests/src/plugins/PluginPortsHarness.h: 1156 -> 1196 lines (+40). Last touched by 3d87d33ca fix(ci): missing LV2 fixture, install-path arithmetic, and my own deps-list mistake. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/plugins/PluginPortsMigrationTest.cpp "<reason: 632 -> 731 lines (+99)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/plugins/PluginPortsMigrationTest.cpp 632 -> 731 lines
+  reason: tests/src/plugins/PluginPortsMigrationTest.cpp: 632 -> 731 lines (+99). Last touched by 018d2041f feat(naming): wave R — rename the product to Zene Studio in build, packaging and UI. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+$ bash tests/file-length-gate.sh --scope all --reanchor-file tests/src/wasm/WasmSandboxTest.cpp "<reason: 948 -> 1022 lines (+74)>"
+  EXIT=0
+  RE-ANCHORED (single file, all scope): tests/src/wasm/WasmSandboxTest.cpp 948 -> 1022 lines
+  reason: tests/src/wasm/WasmSandboxTest.cpp: 948 -> 1022 lines (+74). Last touched by 44430848a fix(mixer): keep compensated receivers awake, advance muted rings, fix wasm latency. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+============================================================================================================
+PER-FILE RE-ANCHORS: whole-tree COMPLEXITY scope (tests/complexity-baseline-all.tsv)
+command form: bash tests/complexity-gate.sh --scope all --reanchor-file <path> "<reason>"
+============================================================================================================
+$ bash tests/complexity-gate.sh --scope all --reanchor-file src/core/main.cpp "<reason: main@263-1155 CCN 136 -> 155>"
+  EXIT=0
+  reason: src/core/main.cpp: main@263-1155 CCN 136 -> 155. Last touched by 1ef366607 Merge branch 'post-alpha/lufs-wire' into post-alpha/integration. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: crash reporter: install()/beginSession()/endSession() around the process lifetime and setProjectPath() on every project load (start-up, render, --run-script, clean exit), plus the one-off pending-repo....
+  RE-ANCHORED (single file): main@src/core/main.cpp CCN 136 -> CCN 155
+$ bash tests/complexity-gate.sh --scope all --reanchor-file src/core/Song.cpp "<reason: lmms::Song::loadProject@1019-1230 CCN 29 -> 31; lmms::Song::clearProject@857-936 CCN 15 -> 16>"
+  EXIT=0
+  reason: src/core/Song.cpp: lmms::Song::loadProject@1019-1230 CCN 29 -> 31; lmms::Song::clearProject@857-936 CCN 15 -> 16. Last touched by 117068e76 stem export: RenderManager::exportStems() + `lmms exportstems` (post-alpha/stem-export). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesU....
+  RE-ANCHORED (single file): lmms::Song::loadProject@src/core/Song.cpp CCN 29 -> CCN 31
+  RE-ANCHORED (single file): lmms::Song::processNextBuffer@src/core/Song.cpp CCN 27 -> CCN 27
+  RE-ANCHORED (single file): lmms::Song::clearProject@src/core/Song.cpp CCN 15 -> CCN 16
+  RE-ANCHORED (single file): lmms::Song::processAutomations@src/core/Song.cpp CCN 14 -> CCN 14
+$ bash tests/complexity-gate.sh --scope all --reanchor-file tests/src/plugins/PluginPortsMigrationReference.cpp "<reason: main@128-325 CCN 29 -> 30>"
+  EXIT=0
+  reason: tests/src/plugins/PluginPortsMigrationReference.cpp: main@128-325 CCN 29 -> 30. Last touched by 3d87d33ca fix(ci): missing LV2 fixture, install-path arithmetic, and my own deps-list mistake. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+  RE-ANCHORED (single file): main@tests/src/plugins/PluginPortsMigrationReference.cpp CCN 29 -> CCN 30
+$ bash tests/complexity-gate.sh --scope all --reanchor-file tests/src/plugins/Vst3InstrumentFixtureProbe.cpp "<reason: main@130-333 new over target at CCN 26>"
+  EXIT=0
+  reason: tests/src/plugins/Vst3InstrumentFixtureProbe.cpp: main@130-333 new over target at CCN 26. Last touched by bb554ca83 build(vst3): compile lmms_vst3_sdk as third-party; add a MIDI-capable VST3 instrument fixture. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+  RE-ANCHORED (single file): main@tests/src/plugins/Vst3InstrumentFixtureProbe.cpp new entry -> CCN 26
+$ bash tests/complexity-gate.sh --scope all --reanchor-file tests/src/plugins/PluginPortsMigrationTest.cpp "<reason: PluginPortsMigrationTest::slice8PluginsAreLiveAndExact@650-728 CCN 12 -> 19; PluginPortsMigrationTest::migratedPluginsPreserveBehaviour@219-403 CCN 12 -> 14>"
+  EXIT=0
+  reason: tests/src/plugins/PluginPortsMigrationTest.cpp: PluginPortsMigrationTest::slice8PluginsAreLiveAndExact@650-728 CCN 12 -> 19; PluginPortsMigrationTest::migratedPluginsPreserveBehaviour@219-403 CCN 12 -> 14. Last touched by 018d2041f feat(naming): wave R — rename the product to Zene Studio in build, packaging and UI. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+  RE-ANCHORED (single file): PluginPortsMigrationTest::slice8PluginsAreLiveAndExact@tests/src/plugins/PluginPortsMigrationTest.cpp CCN 12 -> CCN 19
+  RE-ANCHORED (single file): PluginPortsMigrationTest::migratedPluginsPreserveBehaviour@tests/src/plugins/PluginPortsMigrationTest.cpp CCN 12 -> CCN 14
+$ bash tests/complexity-gate.sh --scope all --reanchor-file plugins/ZynAddSubFx/ZynAddSubFx.cpp "<reason: lmms::ZynAddSubFxInstrument::loadSettings@227-309 CCN 14 -> 16>"
+  EXIT=0
+  reason: plugins/ZynAddSubFx/ZynAddSubFx.cpp: lmms::ZynAddSubFxInstrument::loadSettings@227-309 CCN 14 -> 16. Last touched by 0e1cdcef6 feat(plugins): make the ZynAddSubFx remote path an opt-in per-plugin toggle. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #589 planar-ports migration: play() -> processImpl(); setBufferType()/activate() on the local path; ports controller passed to the remote plugin; post-alpha/oop-hosting: the persisted toggle selects t....
+  RE-ANCHORED (single file): lmms::ZynAddSubFxInstrument::loadSettings@plugins/ZynAddSubFx/ZynAddSubFx.cpp CCN 14 -> CCN 16
+$ bash tests/complexity-gate.sh --scope all --reanchor-file src/core/Mixer.cpp "<reason: lmms::Mixer::masterMix@1359-1449 CCN 14 -> 16>"
+  EXIT=0
+  reason: src/core/Mixer.cpp: lmms::Mixer::masterMix@1359-1449 CCN 14 -> 16. Last touched by 44430848a fix(mixer): keep compensated receivers awake, advance muted rings, fix wasm latency. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): upstream-inherited file with a declared divergence in tests/upstream-modifications.txt - the declared change is: #605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644).
+  RE-ANCHORED (single file): lmms::Mixer::updateLatencyCompensation@src/core/Mixer.cpp CCN 20 -> CCN 20
+  RE-ANCHORED (single file): lmms::Mixer::deleteChannel@src/core/Mixer.cpp CCN 19 -> CCN 19
+  RE-ANCHORED (single file): lmms::MixerChannel::doProcessing@src/core/Mixer.cpp CCN 19 -> CCN 16
+  RE-ANCHORED (single file): lmms::Mixer::masterMix@src/core/Mixer.cpp CCN 14 -> CCN 16
+  RE-ANCHORED (single file): lmms::Mixer::moveChannelLeft@src/core/Mixer.cpp CCN 13 -> CCN 13
+  RE-ANCHORED (single file): lmms::Mixer::loadSettings@src/core/Mixer.cpp CCN 13 -> CCN 13
+$ bash tests/complexity-gate.sh --scope all --reanchor-file tests/data/vst3-test-instrument/vst3-test-instrument.cpp "<reason: Steinberg::Vst::ZeneTestInstrument::TestInstrument::process@283-345 new over target at CCN 14>"
+  EXIT=0
+  reason: tests/data/vst3-test-instrument/vst3-test-instrument.cpp: Steinberg::Vst::ZeneTestInstrument::TestInstrument::process@283-345 new over target at CCN 14. Last touched by bb554ca83 build(vst3): compile lmms_vst3_sdk as third-party; add a MIDI-capable VST3 instrument fixture. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): a test fixture module built for the integration test that loads it: the over-target function IS the module under test, and flattening its branching would change what the test exercises.
+  RE-ANCHORED (single file): Steinberg::Vst::ZeneTestInstrument::TestInstrument::process@tests/data/vst3-test-instrument/vst3-test-instrument.cpp new entry -> CCN 14
+$ bash tests/complexity-gate.sh --scope all --reanchor-file tests/src/plugins/ZynSeparateProcessTest.cpp "<reason: runningClientPids@133-166 new over target at CCN 12>"
+  EXIT=0
+  reason: tests/src/plugins/ZynSeparateProcessTest.cpp: runningClientPids@133-166 new over target at CCN 12. Last touched by 0e1cdcef6 feat(plugins): make the ZynAddSubFx remote path an opt-in per-plugin toggle. Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+  RE-ANCHORED (single file): runningClientPids@tests/src/plugins/ZynSeparateProcessTest.cpp new entry -> CCN 12
+$ bash tests/complexity-gate.sh --scope all --reanchor-file tests/src/core/AudioBufferTest.cpp "<reason: AudioBufferTest::CrossProcess_TwoProcessesWithSameSharedMemory@384-466 new over target at CCN 11>"
+  EXIT=0
+  reason: tests/src/core/AudioBufferTest.cpp: AudioBufferTest::CrossProcess_TwoProcessesWithSameSharedMemory@384-466 new over target at CCN 11. Last touched by 746f6bd0e fix(core): AudioBuffer's channel access buffer must be process-local, not shared (#608). Individual decision 2026-09-12 (post-alpha/gate-hygiene, whole-tree scope): fork-authored test source: the growth is the feature's own regression tests / test logic, which is what the ratchet exists to force a decision about (splitting a test TU is a separate refactor, not something a line or CCN threshold decides).
+  RE-ANCHORED (single file): AudioBufferTest::CrossProcess_TwoProcessesWithSameSharedMemory@tests/src/core/AudioBufferTest.cpp new entry -> CCN 11

@@ -1,0 +1,34 @@
+complexity-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)
+#TOTAL	201	13
+complexity-gate: 201 functions in the tools scope; 13 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  47       136    140    cmd_audible_diff@1502-1641@tools/mmpz-git/mmpz_git.py
+  34       54     64     diff_dom@352-415@tools/mmpz-git/mmpz_git.py
+  30       105    110    main@54-163@tools/mmpz-git/demo_edits.py
+  28       56     64     serialize@133-196@tools/mmpz-git/mmpz_git.py
+  20       43     44     main@25-68@tools/mmpz-git/demo_check.py
+  20       37     40     canonicalize_dom.walk@238-277@tools/mmpz-git/mmpz_git.py
+  19       41     42     read_wav@69-110@tools/stem_split_cli.py
+  16       37     37     save_node@9-45@tools/mmpz-git/scratch/proto.py
+  13       24     25     marker_records@1210-1234@tools/mmpz-git/mmpz_git.py
+  13       70     80     main@226-305@tools/stem_split_cli.py
+  12       26     26     cmd_diff@418-443@tools/mmpz-git/mmpz_git.py
+  11       40     55     _conflict_comment@780-834@tools/mmpz-git/mmpz_git.py
+  11       28     29     wav_mono@1331-1359@tools/mmpz-git/mmpz_git.py
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+tools/mmpz-git/demo_check.py: main has 43 NLOC, 20 CCN, 325 token, 1 PARAM, 44 length, 0 ND
+tools/mmpz-git/demo_edits.py: main has 105 NLOC, 30 CCN, 1121 token, 0 PARAM, 110 length, 0 ND
+tools/mmpz-git/mmpz_git.py: serialize has 56 NLOC, 28 CCN, 498 token, 4 PARAM, 64 length, 0 ND
+tools/mmpz-git/mmpz_git.py: canonicalize_dom.walk has 37 NLOC, 20 CCN, 218 token, 1 PARAM, 40 length, 0 ND
+tools/mmpz-git/mmpz_git.py: diff_dom has 54 NLOC, 34 CCN, 611 token, 5 PARAM, 64 length, 0 ND
+tools/mmpz-git/mmpz_git.py: cmd_diff has 26 NLOC, 12 CCN, 237 token, 1 PARAM, 26 length, 0 ND
+tools/mmpz-git/mmpz_git.py: marker_records has 24 NLOC, 13 CCN, 223 token, 1 PARAM, 25 length, 0 ND
+tools/mmpz-git/mmpz_git.py: cmd_audible_diff has 136 NLOC, 47 CCN, 1194 token, 1 PARAM, 140 length, 0 ND
+tools/mmpz-git/scratch/proto.py: save_node has 37 NLOC, 16 CCN, 329 token, 3 PARAM, 37 length, 0 ND
+tools/stem_split_cli.py: read_wav has 41 NLOC, 19 CCN, 440 token, 1 PARAM, 42 length, 0 ND
+tools/stem_split_cli.py: main has 70 NLOC, 13 CCN, 567 token, 0 PARAM, 80 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)
