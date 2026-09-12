@@ -117,8 +117,13 @@ ControlServer::~ControlServer()
 namespace
 {
 
-//! socket() + bind() for an absolute path, or -1 with \p error set.
-int openBoundSocket(const QByteArray& nativePath, QString* error)
+//! socket() + bind() for an absolute path, or -1 with \p error set. It unlinks
+//! the path ONLY when \p unlinkStale — the caller has established with lstat()
+//! that what is there is a socket left by a crashed instance. Nothing else is
+//! ever removed: the previous version unlinked whatever it found, which is how
+//! `--control-socket ~/my-song.mmp` destroyed that project (see
+//! docs/CONTROL-SOCKET-PATH-SAFETY.md).
+int openBoundSocket(const QByteArray& nativePath, bool unlinkStale, QString* error)
 {
 	sockaddr_un address;
 	std::memset(&address, 0, sizeof(address));
@@ -138,8 +143,10 @@ int openBoundSocket(const QByteArray& nativePath, QString* error)
 	}
 	::fcntl(fd, F_SETFD, FD_CLOEXEC);
 
-	// A stale socket file left by a crashed instance would make bind() fail.
-	::unlink(address.sun_path);
+	if (unlinkStale)
+	{
+		::unlink(address.sun_path);
+	}
 	if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
 	{
 		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
@@ -147,6 +154,108 @@ int openBoundSocket(const QByteArray& nativePath, QString* error)
 		return -1;
 	}
 	return fd;
+}
+
+//! True when something is LISTENING at \p nativePath.
+//!
+//! A socket file at the path is only evidence that a socket was once created
+//! there. `connect()` is what separates a crashed run's leftover from a live
+//! listener: a stale socket refuses the connection (`ECONNREFUSED`), a live one
+//! accepts it. The probe connection is closed immediately; the listener sees a
+//! client that connected and went away, which is what a liveness probe looks like
+//! — this repo's own `tests/control_socket_harness.py` waits for a socket the same
+//! way.
+//!
+//! Only `ECONNREFUSED` (and `ENOENT`: the socket vanished under us) mean "nothing
+//! is listening". EVERY other outcome is treated as LIVE, because the two ways to
+//! be wrong are not symmetric: refusing to start costs an exit code, while
+//! unlinking a live socket costs a running program its control channel:
+//!   * `EACCES` — a socket owned by another user (`/var/run/docker.sock`, an X11
+//!     socket, an ssh-agent's): that is a live foreign socket, not our leftover;
+//!   * `EAGAIN`/`EINPROGRESS` — a listener whose accept backlog is full;
+//!   * `socket()` failing at all — we cannot even probe.
+//! The probe is non-blocking for the same reason: a blocking `connect()` to a
+//! listener with a full backlog would HANG the instance at start-up.
+bool socketHasLiveListener(const char* nativePath)
+{
+	const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0) { return true; }
+	::fcntl(fd, F_SETFD, FD_CLOEXEC);
+	::fcntl(fd, F_SETFL, O_NONBLOCK);
+
+	sockaddr_un address;
+	std::memset(&address, 0, sizeof(address));
+	address.sun_family = AF_UNIX;
+	std::memcpy(address.sun_path, nativePath, std::strlen(nativePath));
+
+	const int connected = ::connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+	const int probeErrno = errno;
+	::close(fd);
+	if (connected == 0) { return true; }
+	return probeErrno != ECONNREFUSED && probeErrno != ENOENT;
+}
+
+//! What the path handed to --control-socket already holds.
+enum class PathState
+{
+	Free,        //!< nothing there: bind normally
+	StaleSocket, //!< a socket nothing is listening on: unlink, then bind
+	LiveSocket,  //!< a socket something IS listening on: REFUSE, touch nothing
+	Conflict,    //!< a regular file, a device, a FIFO or a symlink: REFUSE
+	Directory,   //!< a directory: it can never be a socket path
+};
+
+//! Classify \p nativePath for the bind WITHOUT following a symlink (lstat, not
+//! stat), describing what was found in \p found and any lstat() failure in
+//! \p problem. lstat is deliberate: unlink() on a symlink deletes the LINK, not
+//! its target, so a symlink is never treated as a stale socket even when it
+//! points at one.
+PathState classifySocketPath(const char* nativePath, QString* found, QString* problem)
+{
+	struct stat info;
+	if (::lstat(nativePath, &info) != 0)
+	{
+		if (errno == ENOENT) { return PathState::Free; }
+		if (problem) { *problem = QString::fromLocal8Bit(std::strerror(errno)); }
+		return PathState::Conflict;
+	}
+	if (S_ISSOCK(info.st_mode))
+	{
+		if (found) { *found = QStringLiteral("a socket"); }
+		return socketHasLiveListener(nativePath) ? PathState::LiveSocket : PathState::StaleSocket;
+	}
+	if (S_ISDIR(info.st_mode))
+	{
+		if (found) { *found = QStringLiteral("a directory"); }
+		return PathState::Directory;
+	}
+	if (found)
+	{
+		if (S_ISLNK(info.st_mode)) { *found = QStringLiteral("a symbolic link"); }
+		else if (S_ISREG(info.st_mode)) { *found = QStringLiteral("a regular file"); }
+		else if (S_ISFIFO(info.st_mode)) { *found = QStringLiteral("a FIFO"); }
+		else if (S_ISCHR(info.st_mode) || S_ISBLK(info.st_mode)) { *found = QStringLiteral("a device node"); }
+		else { *found = QStringLiteral("not a socket"); }
+	}
+	return PathState::Conflict;
+}
+
+//! The refusal a launcher can read when there is no socket to answer on: the
+//! surface's OWN typed error, in the exact shape the protocol uses on the wire
+//! ({"id":-1,"ok":false,"error":{"kind":"...","message":"..."}}; -1 is the id
+//! the server itself gives a reply that belongs to no request), on stderr.
+void reportTypedError(ControlErrorKind kind, const QString& message)
+{
+	QJsonObject error;
+	error.insert(QStringLiteral("kind"), controlErrorKindName(kind));
+	error.insert(QStringLiteral("message"), message);
+	QJsonObject reply;
+	reply.insert(QStringLiteral("id"), -1);
+	reply.insert(QStringLiteral("ok"), false);
+	reply.insert(QStringLiteral("error"), error);
+	const QByteArray line = QJsonDocument(reply).toJson(QJsonDocument::Compact);
+	// "%s": the message is a path, which may contain '%'.
+	qWarning("control socket: %s", line.constData());
 }
 
 //! Pin the socket file to mode 0600 (verified) and listen, non-blocking.
@@ -179,37 +288,113 @@ bool pinAndListen(int fd, const char* nativePath, QString* error)
 
 bool ControlServer::listen(const QString& path, QString* error)
 {
+	m_lastErrorKind = ControlErrorKind::None;
+	// Every failure below is REPORTED twice: as the string the caller prints and
+	// as the surface's typed error on stderr, because a launcher whose instance
+	// refused to start has no socket to send a request to
+	// (docs/CONTROL-SOCKET-PATH-SAFETY.md).
+	const auto fail = [this, error](ControlErrorKind kind, const QString& message) {
+		m_lastErrorKind = kind;
+		if (error) { *error = message; }
+		reportTypedError(kind, message);
+		return false;
+	};
+
 	if (path.isEmpty() || !path.startsWith(QLatin1Char('/')))
 	{
-		if (error) { *error = QStringLiteral("the control socket path must be absolute"); }
-		return false;
+		return fail(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the control socket path must be absolute"));
 	}
 	if (isListening())
 	{
-		if (error) { *error = QStringLiteral("already listening on %1").arg(m_path); }
-		return false;
+		return fail(ControlErrorKind::InvalidArgs,
+			QStringLiteral("already listening on %1").arg(m_path));
 	}
 
 #if !defined(Q_OS_UNIX)
 	Q_UNUSED(path);
-	if (error)
-	{
-		*error = QStringLiteral("the control socket is supported on POSIX platforms only");
-	}
-	return false;
+	return fail(ControlErrorKind::InvalidArgs,
+		QStringLiteral("the control socket is supported on POSIX platforms only"));
 #else
 	const QByteArray nativePath = path.toLocal8Bit();
-	const int fd = openBoundSocket(nativePath, error);
-	if (fd < 0) { return false; }
-	if (!pinAndListen(fd, nativePath.constData(), error))
+	if (nativePath.size() >= static_cast<int>(sizeof(sockaddr_un::sun_path)))
+	{
+		return fail(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the control socket path is too long (%1 bytes; the limit is %2)")
+				.arg(nativePath.size()).arg(sizeof(sockaddr_un::sun_path) - 1));
+	}
+
+	// The bind UNLINKS the path. Before it does, establish what is there:
+	//   - nothing            -> bind normally;
+	//   - a stale socket     -> a socket NOTHING is listening on (a crashed
+	//                           instance's leftover): unlinking it is the only way
+	//                           to bind, so do it, and say so;
+	//   - a live socket      -> someone IS listening there: REFUSE, touch nothing.
+	//                           Unlinking it would leave that instance reachable by
+	//                           nobody while it still believes it is listening
+	//                           (docs/CONTROL-SURFACE-FUZZ.md F1/F2);
+	//   - a directory        -> a socket can never live at a directory's path, so
+	//                           the argument itself is wrong (invalid_args) and
+	//                           nothing is or was at risk of being deleted;
+	//   - anything else      -> REFUSE (refused): unlinking would destroy it.
+	QString found;
+	QString examineError;
+	const PathState state = classifySocketPath(nativePath.constData(), &found, &examineError);
+	if (state == PathState::LiveSocket)
+	{
+		return fail(ControlErrorKind::Refused,
+			QStringLiteral("refusing to use %1 as the control socket: a live socket is already "
+				"listening there (another instance, or another program); pass a different path, or "
+				"stop that process first").arg(path));
+	}
+	if (state == PathState::Conflict)
+	{
+		if (!examineError.isEmpty())
+		{
+			return fail(ControlErrorKind::Refused,
+				QStringLiteral("refusing to use %1 as the control socket: it could not be "
+					"examined (%2)").arg(path, examineError));
+		}
+		return fail(ControlErrorKind::Refused,
+			QStringLiteral("refusing to use %1 as the control socket: %2 already exists there, it is "
+				"not a socket, and starting the server would destroy it; remove it yourself or pass "
+				"a different path").arg(path, found));
+	}
+	if (state == PathState::Directory)
+	{
+		return fail(ControlErrorKind::InvalidArgs,
+			QStringLiteral("%1 is a directory, and a directory can never be a control socket path "
+				"(nothing was deleted); pass the path of a socket file inside it").arg(path));
+	}
+	if (state == PathState::StaleSocket)
+	{
+		qWarning("control socket: unlinking the stale socket file %s left by an earlier instance",
+			qPrintable(path));
+	}
+
+	QString detail;
+	const int fd = openBoundSocket(nativePath, state == PathState::StaleSocket, &detail);
+	if (fd < 0) { return fail(ControlErrorKind::Refused, detail); }
+	if (!pinAndListen(fd, nativePath.constData(), &detail))
 	{
 		::close(fd);
 		::unlink(nativePath.constData());
-		return false;
+		return fail(ControlErrorKind::Refused, detail);
 	}
 
 	m_listenFd = fd;
 	m_path = path;
+	// Remember WHICH inode this instance bound, so close() can refuse to unlink a
+	// path that no longer holds it: if the socket at the path has been replaced
+	// while we were listening, the replacement belongs to someone else, and
+	// removing it would leave that instance listening where nothing can reach it
+	// (docs/CONTROL-SURFACE-FUZZ.md F1).
+	struct stat bound;
+	if (::lstat(nativePath.constData(), &bound) == 0)
+	{
+		m_boundDevice = static_cast<quint64>(bound.st_dev);
+		m_boundInode = static_cast<quint64>(bound.st_ino);
+	}
 	m_registry->addShutdownHook([this]() { close(); });
 	m_notifier = new QSocketNotifier(m_listenFd, QSocketNotifier::Read, this);
 	connect(m_notifier, &QSocketNotifier::activated, this, &ControlServer::onNewConnection);
@@ -241,7 +426,23 @@ void ControlServer::close()
 	}
 	if (!m_path.isEmpty())
 	{
-		::unlink(m_path.toLocal8Bit().constData());
+		const QByteArray nativePath = m_path.toLocal8Bit();
+		struct stat info;
+		const bool present = ::lstat(nativePath.constData(), &info) == 0;
+		if (present && static_cast<quint64>(info.st_dev) == m_boundDevice
+			&& static_cast<quint64>(info.st_ino) == m_boundInode)
+		{
+			::unlink(nativePath.constData());
+		}
+		else if (present)
+		{
+			// The path was replaced while we were listening: that socket is somebody
+			// else's, and unlinking it would leave them listening where nothing can
+			// reach them (docs/CONTROL-SURFACE-FUZZ.md F1). Say so instead.
+			qWarning("control socket: not unlinking %s: the path now holds a different file "
+				"(it was replaced while this instance was listening)",
+				qPrintable(m_path));
+		}
 		m_path.clear();
 	}
 #endif
@@ -278,6 +479,21 @@ void ControlServer::onClientReadable(int fd)
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
 
+	if (it->draining)
+	{
+		// The rest of an over-cap request line: read it and keep none of it, so the
+		// close below is a clean FIN (see Client::draining).
+		char sink[8192];
+		while (true)
+		{
+			const ssize_t got = ::read(fd, sink, sizeof(sink));
+			if (got > 0) { continue; }
+			if (got < 0 && errno == EINTR) { continue; }
+			if (got == 0) { dropClient(fd); }
+			return; // EAGAIN: wait for the next activation
+		}
+	}
+
 	QByteArray& buffer = it->buffer;
 	char chunk[4096];
 	bool closed = false;
@@ -287,6 +503,11 @@ void ControlServer::onClientReadable(int fd)
 		if (got > 0)
 		{
 			buffer.append(chunk, static_cast<int>(got));
+			// Stop reading once the pending bytes pass the cap: a client that never
+			// sends a newline must not be able to grow this buffer (and the
+			// instance's heap) without bound. Complete lines are dispatched below,
+			// so what is left here is the unterminated tail.
+			if (buffer.size() > MaxRequestLineBytes) { break; }
 			continue;
 		}
 		if (got == 0) { closed = true; }
@@ -299,11 +520,40 @@ void ControlServer::onClientReadable(int fd)
 		const QByteArray line = buffer.left(newline);
 		buffer.remove(0, newline + 1);
 		const QByteArray reply = dispatchLine(line);
-		if (!reply.isEmpty())
+		if (!reply.isEmpty() && !writeAll(fd, reply + '\n'))
 		{
-			writeAll(fd, reply + '\n');
+			// A failed write leaves a TRUNCATED line on the wire: this socket is
+			// non-blocking, so it can take part of a line and then EAGAIN. Write
+			// nothing else on this connection and drop it, so the peer reads EOF
+			// after a partial line instead of the next reply's bytes glued to it.
+			dropClient(fd);
+			return;
 		}
 		newline = buffer.indexOf('\n');
+	}
+
+	// Every complete line is gone, so a buffer still over the cap is ONE request
+	// line that never ended. Refuse it in the surface's own vocabulary, then
+	// retire the connection: resynchronising would mean buffering the rest of a
+	// line of unknown length, which is exactly what the cap refuses to do.
+	if (buffer.size() > MaxRequestLineBytes)
+	{
+		const QByteArray refusal = errorLine(-1, ControlErrorKind::InvalidArgs,
+			QStringLiteral("the request line exceeds the %1-byte limit and was refused")
+				.arg(MaxRequestLineBytes));
+		// The refusal goes out BEFORE the drain, and the drain is why it arrives:
+		// see Client::draining.
+		writeAll(fd, refusal + '\n');
+		it->draining = true;
+		buffer.clear();
+		buffer.squeeze();
+		if (closed)
+		{
+			// EOF is already in hand and everything read has been discarded: the
+			// close is clean.
+			dropClient(fd);
+		}
+		return;
 	}
 
 	if (closed)

@@ -1,0 +1,2017 @@
+make: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[1]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  0%] Built target ringbuffer
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  1%] Built target lua
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  1%] Built target weakjack
+[  1%] Built target carla_native-plugin
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  2%] Built target tap_autopan
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target caps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_chorusflanger
+[  3%] Built target tap_deesser
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_doubler
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_dynamics_m
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_dynamics_st
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_echo
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_eq
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_eqbw
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_limiter
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_pinknoise
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  3%] Built target tap_pitch
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target tap_reflector
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target tap_reverb
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target tap_rotspeak
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target tap_sigmoid
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target tap_tremolo
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target tap_tubewarmth
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target tap_vibrato
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  4%] Built target alias_1407
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  5%] Built target allpass_1895
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  5%] Built target am_pitchshift_1433
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  5%] Built target amp_1181
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  5%] Built target blo
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  5%] Built target iir
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  5%] Built target bode_shifter_1431
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target bode_shifter_cv_1432
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target butterworth_1902
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target chebstortion_1430
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target comb_1190
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target comb_1887
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target comb_splitter_1411
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target const_1909
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target crossover_dist_1404
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target dc_remove_1207
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target debug_1184
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target decay_1886
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target decimator_1202
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target declip_1195
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target delay_1898
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target delayorama_1402
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target diode_1185
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target divider_1186
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target dj_eq_1901
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target dj_flanger_1438
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target dyson_compress_1403
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target fad_delay_1192
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target fast_lookahead_limiter_1913
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target flanger_1191
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target fm_osc_1415
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target foldover_1213
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target foverdrive_1196
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  6%] Built target freq_tracker_1418
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  7%] Built target gate_1410
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  7%] Built target gate_1921
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  7%] Built target giant_flange_1437
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  7%] Built target gong_1424
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  7%] Built target gong_beater_1439
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  8%] Built target gsm
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  8%] Built target gverb
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  8%] Built target hard_limiter_1413
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  8%] Built target harmonic_gen_1220
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  9%] Built target hermes_filter_1200
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  9%] Built target highpass_iir_1890
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  9%] Built target hilbert_1440
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  9%] Built target imp_1199
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  9%] Built target impulse_1885
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[  9%] Built target inv_1429
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target karaoke_1409
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target latency_1914
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target lcr_delay_1436
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target lowpass_iir_1891
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target ls_filter_1908
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target matrix_ms_st_1421
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target matrix_spatialiser_1422
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 10%] Built target matrix_st_ms_1420
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target mbeq_1197
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target mod_delay_1419
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target multivoice_chorus_1201
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target notch_iir_1894
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target phasers_1217
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target pitchscale
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target plate_1423
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target pointer_cast_1910
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target rate_shifter_1417
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target retro_flange_1208
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target revdelay_1605
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target ringmod_1188
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target satan_maximiser_1408
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target db
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target rms
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target shaper_1187
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target sifter_1210
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 11%] Built target sin_cos_1881
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target single_para_1203
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target sinus_wavewrapper_1198
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target smooth_decimate_1414
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target split_1406
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target step_muxer_1212
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target surround_encoder_1401
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target svf_1214
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target tape_delay_1211
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target transient_1206
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target triple_para_1204
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target valve_1209
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target valve_rect_1405
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target vocoder_1337
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target vynil_1905
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target wave_terrain_1412
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 12%] Built target xfade_1915
+[ 12%] Built target zm1_1428
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 13%] Built target cmt
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 14%] Built target veal
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 14%] Built target adplug
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 15%] Built target gme
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 15%] Built target rnnoise_vendored
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 16%] Built target resid_objects
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 16%] Performing build step for 'NativeLinuxRemoteVstPlugin64'
+make[3]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/plugins/VstBase/NativeLinuxRemoteVstPlugin64-prefix/src/NativeLinuxRemoteVstPlugin64-build'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[4]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/plugins/VstBase/NativeLinuxRemoteVstPlugin64-prefix/src/NativeLinuxRemoteVstPlugin64-build'
+make[5]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/plugins/VstBase/NativeLinuxRemoteVstPlugin64-prefix/src/NativeLinuxRemoteVstPlugin64-build'
+[ 17%] Built target lmms_vst3_sdk
+make[5]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/plugins/VstBase/NativeLinuxRemoteVstPlugin64-prefix/src/NativeLinuxRemoteVstPlugin64-build'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[100%] Built target NativeLinuxRemoteVstPlugin64
+make[4]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/plugins/VstBase/NativeLinuxRemoteVstPlugin64-prefix/src/NativeLinuxRemoteVstPlugin64-build'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[3]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/plugins/VstBase/NativeLinuxRemoteVstPlugin64-prefix/src/NativeLinuxRemoteVstPlugin64-build'
+[ 18%] No install step for 'NativeLinuxRemoteVstPlugin64'
+[ 20%] Built target zynaddsubfx_synth
+[ 20%] Completed 'NativeLinuxRemoteVstPlugin64'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 21%] Built target zynaddsubfx_nio
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 21%] Built target NativeLinuxRemoteVstPlugin64
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 21%] Built target FakeRemotePluginClient_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target zynaddsubfx_gui
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target ClapBusMapTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target clap-test-gain_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target lmmsobjs_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target analogue_osc_1416
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target bandpass_a_iir_1893
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target bandpass_iir_1892
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target gsm_1215
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 23%] Built target gverb_1216
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 24%] Built target pitch_scale_1193
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 24%] Built target pitch_scale_1194
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 24%] Built target sc1_1425
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 24%] Built target sc2_1426
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target sc3_1427
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target sc4_1882
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target sc4m_1916
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target se4_1883
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target ZynAddSubFxCore
+[ 25%] Built target FakeRemotePluginClient_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target clap-test-gain_autogen
+[ 25%] Built target ClapBusMapTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target RemoteZynAddSubFx
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target FakeRemotePluginClient
+[ 25%] Automatic MOC and UIC for target lmmsobjs
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target ClapBusMapTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target clap-test-gain
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target ClapHostTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target ClapHostTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target ClapHostTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Built target lmmsobjs_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/lmmsobjs_autogen/mocs_compilation.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlServer.cpp.o
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target lmmsobjs
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ArrayVectorTest_autogen_timestamp_deps
+[ 39%] Built target zene_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AudioBusHandleTest_autogen_timestamp_deps
+[ 39%] Built target AudioBufferTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AudioBusTest_autogen_timestamp_deps
+[ 39%] Built target AudioEngineTeardownTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AudioPortsModelTest_autogen_timestamp_deps
+[ 39%] Built target AudioPortsTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AutomatableModelTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AutomationModesTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ClipSerialisationTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ClipWarpPersistenceTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ConfigMigrationTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlAutomationScriptTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlDeviceCatalogueTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlEditCommandsTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlRegistryTest_autogen_timestamp_deps
+[ 39%] Built target CrashReporterTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target DataFileSaveIntegrityTest_autogen_timestamp_deps
+[ 39%] Built target DataFileFormatTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target LoudnessReportTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target LufsMeterTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MasteringTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MathTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MidiLearnTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MidiLearnThreadTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MidiProbabilityPersistenceTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MixerAbRegressionTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MixerConcurrencyTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MixerRoutingBackwardCompatTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MpeExpressionTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MpeInputPathTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MpeNoteStorageTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target MultiTrackRecorderTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target NoteRandomTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target NoteTransformTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target PhaseFChannelScaleTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target PluginLogoResourceTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target PluginAudioPortsTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ProjectOpenIntegrityTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ProjectRecoveryTest_autogen_timestamp_deps
+[ 39%] Built target ProjectVersionTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target RackTest_autogen_timestamp_deps
+[ 39%] Built target RecordClipTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target RecordRingBufferTest_autogen_timestamp_deps
+[ 39%] Built target RecordingRealtimeTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target RelativePathsTest_autogen_timestamp_deps
+[ 39%] Built target ReversibilityContractTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ReversibilityUndoTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target RemotePluginAudioPortsTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target RemotePluginClientE2ETest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target RenderJobQueueTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target RoutingGraphLiveTest_autogen_timestamp_deps
+[ 39%] Built target RoutingGraphTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target VcaGroupTest_autogen_timestamp_deps
+[ 39%] Built target PdcMixerTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ScriptEngineTest_autogen_timestamp_deps
+[ 39%] Built target ScriptBindingsTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target SlideNotesTest_autogen_timestamp_deps
+[ 39%] Built target ScriptStabilisationTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target StemExportTest_autogen_timestamp_deps
+[ 39%] Built target StableTrackIdsTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target TimelineTest_autogen_timestamp_deps
+[ 39%] Built target TelemetryTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target TwoTrackRecordingHarness_autogen_timestamp_deps
+[ 39%] Built target WarpMarkersTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AutomationTrackTest_autogen_timestamp_deps
+[ 39%] Built target MidiLearnGuiTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target SampleClipWindowTest_autogen_timestamp_deps
+[ 39%] Built target SampleClipWarpTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target zene_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ArrayVectorTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AudioBufferTest_autogen
+[ 39%] Built target AudioBusHandleTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AudioBusTest_autogen
+[ 39%] Built target AudioEngineTeardownTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AudioPortsTest_autogen
+[ 39%] Built target AudioPortsModelTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target AutomatableModelTest_autogen
+[ 39%] Built target AutomationModesTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ClipSerialisationTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ClipWarpPersistenceTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ConfigMigrationTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlAutomationScriptTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlDeviceCatalogueTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlEditCommandsTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 39%] Built target ControlRegistryTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target CrashReporterTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target DataFileFormatTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target DataFileSaveIntegrityTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target LufsMeterTest_autogen
+[ 40%] Built target LoudnessReportTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target MasteringTest_autogen
+[ 40%] Built target MathTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target MidiLearnThreadTest_autogen
+[ 40%] Built target MidiLearnTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target MidiProbabilityPersistenceTest_autogen
+[ 40%] Built target MixerAbRegressionTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target MixerConcurrencyTest_autogen
+[ 40%] Built target MixerRoutingBackwardCompatTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target MpeInputPathTest_autogen
+[ 40%] Built target MpeExpressionTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target MpeNoteStorageTest_autogen
+[ 40%] Built target MultiTrackRecorderTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target NoteRandomTest_autogen
+[ 40%] Built target NoteTransformTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target PluginLogoResourceTest_autogen
+[ 40%] Built target PhaseFChannelScaleTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target PluginAudioPortsTest_autogen
+[ 40%] Built target ProjectOpenIntegrityTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target ProjectRecoveryTest_autogen
+[ 40%] Built target ProjectVersionTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RecordClipTest_autogen
+[ 40%] Built target RackTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RecordRingBufferTest_autogen
+[ 40%] Built target RecordingRealtimeTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target ReversibilityContractTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RelativePathsTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target ReversibilityUndoTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RemotePluginAudioPortsTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RemotePluginClientE2ETest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RenderJobQueueTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RoutingGraphLiveTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target RoutingGraphTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target PdcMixerTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target VcaGroupTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target ScriptBindingsTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target ScriptEngineTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target ScriptStabilisationTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target SlideNotesTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target StableTrackIdsTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target StemExportTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target TelemetryTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target TimelineTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target TwoTrackRecordingHarness_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target WarpMarkersTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target MidiLearnGuiTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target AutomationTrackTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 40%] Built target SampleClipWarpTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 41%] Built target SampleClipWindowTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 41%] Building CXX object src/CMakeFiles/zene.dir/core/main.cpp.o
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 41%] Linking CXX executable ArrayVectorTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 41%] Built target ArrayVectorTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 41%] Linking CXX executable AudioBufferTest
+[ 41%] Linking CXX executable ../zene
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 41%] Built target AudioBufferTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 41%] Linking CXX executable AudioBusHandleTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 42%] Built target zene
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 42%] Linking CXX executable AudioBusTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 42%] Built target AudioBusHandleTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Linking CXX executable AudioEngineTeardownTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Built target AudioBusTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Linking CXX executable AudioPortsModelTest
+[ 43%] Built target AudioEngineTeardownTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Linking CXX executable AudioPortsTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Built target AudioPortsModelTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Linking CXX executable AutomatableModelTest
+[ 43%] Built target AudioPortsTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Linking CXX executable AutomationModesTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Built target AutomatableModelTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 43%] Linking CXX executable ClipSerialisationTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Built target AutomationModesTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Linking CXX executable ClipWarpPersistenceTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Built target ClipSerialisationTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Linking CXX executable ConfigMigrationTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Built target ClipWarpPersistenceTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Linking CXX executable ControlAutomationScriptTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Built target ConfigMigrationTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 44%] Linking CXX executable ControlDeviceCatalogueTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Built target ControlAutomationScriptTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Linking CXX executable ControlEditCommandsTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Built target ControlDeviceCatalogueTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Built target ControlEditCommandsTest
+[ 45%] Linking CXX executable ControlRegistryTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Linking CXX executable CrashReporterTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Built target CrashReporterTest
+[ 45%] Built target ControlRegistryTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Linking CXX executable DataFileSaveIntegrityTest
+[ 45%] Linking CXX executable DataFileFormatTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Built target DataFileSaveIntegrityTest
+[ 45%] Built target DataFileFormatTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Linking CXX executable LoudnessReportTest
+[ 45%] Linking CXX executable LufsMeterTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 45%] Built target LoudnessReportTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 46%] Built target LufsMeterTest
+[ 46%] Linking CXX executable MasteringTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 46%] Linking CXX executable MathTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 46%] Built target MasteringTest
+[ 46%] Built target MathTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 46%] Linking CXX executable MidiLearnThreadTest
+[ 46%] Linking CXX executable MidiLearnTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Built target MidiLearnThreadTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Built target MidiLearnTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Linking CXX executable MidiProbabilityPersistenceTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Linking CXX executable MixerAbRegressionTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Built target MixerAbRegressionTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Built target MidiProbabilityPersistenceTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Linking CXX executable MixerConcurrencyTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Linking CXX executable MixerRoutingBackwardCompatTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Built target MixerRoutingBackwardCompatTest
+[ 47%] Built target MixerConcurrencyTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 47%] Linking CXX executable MpeExpressionTest
+[ 47%] Linking CXX executable MpeInputPathTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 48%] Built target MpeExpressionTest
+[ 48%] Built target MpeInputPathTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 48%] Linking CXX executable MpeNoteStorageTest
+[ 48%] Linking CXX executable MultiTrackRecorderTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 48%] Built target MpeNoteStorageTest
+[ 48%] Built target MultiTrackRecorderTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 48%] Linking CXX executable NoteRandomTest
+[ 48%] Linking CXX executable NoteTransformTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 48%] Built target NoteRandomTest
+[ 48%] Built target NoteTransformTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 48%] Linking CXX executable PhaseFChannelScaleTest
+[ 48%] Linking CXX executable PluginLogoResourceTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 48%] Built target PluginLogoResourceTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 49%] Built target PhaseFChannelScaleTest
+[ 49%] Linking CXX executable PluginAudioPortsTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 49%] Linking CXX executable ProjectOpenIntegrityTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 49%] Built target PluginAudioPortsTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 49%] Built target ProjectOpenIntegrityTest
+[ 49%] Linking CXX executable ProjectRecoveryTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 49%] Linking CXX executable ProjectVersionTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 49%] Built target ProjectRecoveryTest
+[ 49%] Built target ProjectVersionTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 49%] Linking CXX executable RecordClipTest
+[ 49%] Linking CXX executable RackTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Built target RackTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Built target RecordClipTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Linking CXX executable RecordRingBufferTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Linking CXX executable RecordingRealtimeTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Built target RecordRingBufferTest
+[ 50%] Built target RecordingRealtimeTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Linking CXX executable RelativePathsTest
+[ 50%] Linking CXX executable ReversibilityContractTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Built target RelativePathsTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Linking CXX executable ReversibilityUndoTest
+[ 50%] Built target ReversibilityContractTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 50%] Linking CXX executable RemotePluginAudioPortsTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 51%] Built target RemotePluginAudioPortsTest
+[ 52%] Built target ReversibilityUndoTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Linking CXX executable RemotePluginClientE2ETest
+[ 52%] Linking CXX executable RenderJobQueueTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Built target RemotePluginClientE2ETest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Linking CXX executable RoutingGraphLiveTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Built target RenderJobQueueTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Linking CXX executable RoutingGraphTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Built target RoutingGraphLiveTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Linking CXX executable PdcMixerTest
+[ 52%] Built target RoutingGraphTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Linking CXX executable VcaGroupTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Built target PdcMixerTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 52%] Linking CXX executable ScriptBindingsTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 53%] Built target VcaGroupTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 53%] Linking CXX executable ScriptEngineTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 53%] Built target ScriptBindingsTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 53%] Linking CXX executable ScriptStabilisationTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 53%] Built target ScriptEngineTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 53%] Linking CXX executable SlideNotesTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 53%] Built target ScriptStabilisationTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable StableTrackIdsTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target SlideNotesTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable StemExportTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target StableTrackIdsTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable TelemetryTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target StemExportTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable TimelineTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target TelemetryTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable TwoTrackRecordingHarness
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target TimelineTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable WarpMarkersTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target TwoTrackRecordingHarness
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable MidiLearnGuiTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target WarpMarkersTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable AutomationTrackTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target MidiLearnGuiTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable SampleClipWarpTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target AutomationTrackTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Linking CXX executable SampleClipWindowTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target SampleClipWarpTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_amplifier_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_bassbooster_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_bitcrush_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_dualfilter_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_waveshaper_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_flanger_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_delay_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_compressor_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_crossovereq_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_dynamicsprocessor_autogen_timestamp_deps
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target SampleClipWindowTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_lomm_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_multitapecho_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_reverbsc_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_stereoenhancer_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_stereomatrix_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_dispersion_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_vectorscope_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_analyzer_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_granularpitchshifter_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_eq_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_freeboy_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_nes_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_sid_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_opulenz_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_sfxr_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_bitinvader_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_watsyn_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_xpressive_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_vibedstrings_autogen_timestamp_deps
+[ 54%] Built target partc_ref_kicker_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_monstro_autogen_timestamp_deps
+[ 54%] Built target partc_ref_tripleoscillator_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_organic_autogen_timestamp_deps
+[ 54%] Built target partc_ref_audiofileprocessor_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_lb302_autogen_timestamp_deps
+[ 54%] Built target partc_ref_ladspaeffect_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_oscilloscope_autogen_timestamp_deps
+[ 54%] Built target partc_ref_frequencyshifter_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_lv2effect_autogen_timestamp_deps
+[ 54%] Built target partc_ref_slewdistortion_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_lv2instrument_autogen_timestamp_deps
+[ 54%] Built target partc_ref_sf2player_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target partc_ref_gigplayer_autogen_timestamp_deps
+[ 54%] Built target synthetic_audio_plugin_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 54%] Built target kicker
+[ 55%] Built target audiofileprocessor
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 55%] Built target tripleoscillator
+[ 55%] Built target amplifier
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 55%] Built target bitinvader
+[ 56%] Built target bassbooster
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 56%] Built target carlabase
+[ 56%] Built target bitcrush
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 58%] Built target compressor
+[ 58%] Built target clapeffect
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 59%] Built target delay
+[ 60%] Built target crossovereq
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 61%] Built target dispersion
+[ 62%] Built target dualfilter
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 62%] Built target dynamicsprocessor
+[ 63%] Built target eq
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 64%] Built target flanger
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 64%] Built target frequencyshifter
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 64%] Built target granularpitchshifter
+[ 64%] Built target hydrogenimport
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 64%] Built target ladspabrowser
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 65%] Built target ladspaeffect
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 66%] Built target lomm
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 67%] Built target lv2effect
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 67%] Built target lv2instrument
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 68%] Built target lb302
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 68%] Built target midiimport
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 68%] Built target midiexport
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 69%] Built target multitapecho
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 69%] Built target monstro
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 70%] Built target nes
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 70%] Built target neuralamp
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 71%] Built target opulenz
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 71%] Built target organic
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 71%] Built target oscilloscope
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 72%] Built target freeboy
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 72%] Built target patman
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 72%] Built target peakcontrollereffect
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 72%] Built target gigplayer_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 73%] Built target reverbsc
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 74%] Built target rnnoisedenoiser
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 74%] Built target sf2player_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 75%] Built target sfxr
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 75%] Built target sid
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 75%] Built target slewdistortion
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 76%] Built target slicert
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 77%] Built target analyzer
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 78%] Built target stereoenhancer
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 78%] Built target stereomatrix
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 79%] Built target taptempo
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 79%] Built target vstbase
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 79%] Built target vst3effect
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 80%] Built target vst3instrument
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 80%] Built target vestige
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 81%] Built target vsteffect
+[ 81%] Built target watsyn
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 82%] Built target vectorscope
+[ 83%] Built target waveshaper
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target xpressive
+[ 84%] Built target vibedstrings
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target PhaseDSidechainTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target zynaddsubfx
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target PluginScanCacheTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_amplifier_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_bassbooster_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_bitcrush_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_dualfilter_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_waveshaper_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_flanger_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_delay_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_compressor_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_crossovereq_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_dynamicsprocessor_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_lomm_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_multitapecho_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_reverbsc_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_stereoenhancer_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_stereomatrix_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_dispersion_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_vectorscope_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_analyzer_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_granularpitchshifter_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_eq_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_freeboy_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_nes_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_sid_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_opulenz_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_sfxr_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_bitinvader_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 84%] Built target partc_ref_watsyn_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_xpressive_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_vibedstrings_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_kicker_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_tripleoscillator_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_monstro_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_organic_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_audiofileprocessor_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_lb302_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_ladspaeffect_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_frequencyshifter_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_oscilloscope_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_slewdistortion_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 85%] Built target partc_ref_lv2effect_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 86%] Built target partc_ref_lv2instrument_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 86%] Built target partc_ref_sf2player_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 86%] Built target partc_ref_gigplayer_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 86%] Built target ClapEffectIntegrationTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 86%] Built target ZynSeparateProcessTest_autogen_timestamp_deps
+[ 86%] Built target synthetic_audio_plugin_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 86%] Built target carlapatchbay
+[ 87%] Built target carlarack
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 87%] Built target gigplayer_autogen
+[ 87%] Built target sf2player_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 87%] Built target PhaseDSidechainTest_autogen
+[ 87%] Built target PluginScanCacheTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 88%] Built target partc_ref_bassbooster
+[ 89%] Built target partc_ref_amplifier
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 90%] Built target partc_ref_dualfilter
+[ 90%] Built target partc_ref_bitcrush
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 91%] Built target partc_ref_flanger
+[ 91%] Built target partc_ref_waveshaper
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 91%] Built target partc_ref_delay
+[ 91%] Built target partc_ref_compressor
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 92%] Built target partc_ref_crossovereq
+[ 92%] Built target partc_ref_dynamicsprocessor
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 92%] Built target partc_ref_multitapecho
+[ 92%] Built target partc_ref_lomm
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 92%] Built target partc_ref_reverbsc
+[ 93%] Built target partc_ref_stereoenhancer
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 93%] Built target partc_ref_dispersion
+[ 93%] Built target partc_ref_stereomatrix
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 93%] Built target partc_ref_vectorscope
+[ 93%] Built target partc_ref_analyzer
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 93%] Built target partc_ref_granularpitchshifter
+[ 93%] Built target partc_ref_eq
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 93%] Built target partc_ref_freeboy
+[ 93%] Built target partc_ref_nes
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 93%] Built target partc_ref_sid
+[ 93%] Built target partc_ref_opulenz
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 93%] Built target partc_ref_sfxr
+[ 93%] Built target partc_ref_bitinvader
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 93%] Built target partc_ref_watsyn
+[ 93%] Built target partc_ref_xpressive
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 94%] Built target partc_ref_vibedstrings
+[ 94%] Built target partc_ref_kicker
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 94%] Built target partc_ref_tripleoscillator
+[ 94%] Built target partc_ref_monstro
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 95%] Built target partc_ref_organic
+[ 95%] Built target partc_ref_audiofileprocessor
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 96%] Built target partc_ref_lb302
+[ 96%] Built target partc_ref_ladspaeffect
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 96%] Built target partc_ref_frequencyshifter
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 96%] Built target partc_ref_oscilloscope
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 96%] Built target partc_ref_slewdistortion
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 96%] Built target partc_ref_lv2effect
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 96%] Built target partc_ref_lv2instrument
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 97%] Built target partc_ref_sf2player
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target partc_ref_gigplayer
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target ClapEffectIntegrationTest_autogen
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target ZynSeparateProcessTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target synthetic_audio_plugin
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target gigplayer
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target sf2player
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Linking CXX executable PhaseDSidechainTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Linking CXX executable PluginScanCacheTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target PhaseDSidechainTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Built target PluginPortsMigrationReference_autogen_timestamp_deps
+[ 98%] Built target PluginScanCacheTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 98%] Linking CXX executable ZynSeparateProcessTest
+[ 99%] Linking CXX executable ClapEffectIntegrationTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 99%] Built target ZynSeparateProcessTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 99%] Built target AudioPluginTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 99%] Built target PluginPortsMigrationReference_autogen
+[ 99%] Built target ClapEffectIntegrationTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 99%] Built target AudioPluginTest_autogen
+[ 99%] Linking CXX executable PluginPortsMigrationReference
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 99%] Linking CXX executable AudioPluginTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 99%] Built target PluginPortsMigrationReference
+[ 99%] Built target AudioPluginTest
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[ 99%] Built target PluginPortsMigrationTest_autogen_timestamp_deps
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[100%] Built target PluginPortsMigrationTest_autogen
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make[2]: Entering directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[100%] Linking CXX executable PluginPortsMigrationTest
+make[2]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+[100%] Built target PluginPortsMigrationTest
+make[1]: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+make: Leaving directory '/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel'
+BUILD_EXIT=0

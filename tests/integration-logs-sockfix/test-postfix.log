@@ -1,0 +1,21 @@
+no server listening at /tmp/zctl-run-a5pbryee/zene.sock (expected): [Errno 111] Connection refused
+PASS: a regular file at --control-socket is refused and left byte-identical
+PASS: a stale socket is still cleaned up, is reported, and the instance listens
+PASS: a free path still binds normally (no refusal, no unlink line)
+PASS: a directory at --control-socket is invalid_args, and survives with its contents
+PASS: a symlink at --control-socket is refused, and link and target both survive
+PASS: a live listener at --control-socket is refused, and the listener survives
+PASS: a socket that replaced ours survives our clean exit
+no reply to a request sent after the over-cap line (expected): no response line inside 5.0s (socket timed out)
+PASS: an over-cap request line is refused typed and the connection is retired
+
+=== PASS ===
+  a regular file at --control-socket is refused and left byte-identical ok
+  a stale socket is still cleaned up, is reported, and the instance listens ok
+  a free path still binds normally (no refusal, no unlink line) ok
+  a directory at --control-socket is invalid_args, and survives with its contents ok
+  a symlink at --control-socket is refused, and link and target both survive ok
+  a live listener at --control-socket is refused, and the listener survives ok
+  a socket that replaced ours survives our clean exit ok
+  an over-cap request line is refused typed and the connection is retired ok
+TEST_EXIT=0

@@ -1,0 +1,25 @@
+== pre-fix (ba24a9578 ControlServer.{h,cpp}) ==
+binary      : /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/zene
+socket path : /tmp/sockfix-repro-1000/song.mmp (32 bytes)
+before      : mode=-rw-rw-r-- size=23 sha256=32f6b10007968b9c22e7fa826b916eb853ce2465ead977f3940c8070726e0ff9
+exit        : 124 (timeout: the process was still running)
+sha256sum: /tmp/sockfix-repro-1000/song.mmp: No such device or address
+after       : mode=srw------- size=0 sha256=
+kind        : socket
+-- stderr --
+Lv2 plugin SUMMARY: 73 of 87  loaded in 143 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+-- stdout --
+control socket listening on /tmp/sockfix-repro-1000/song.mmp
+== end pre-fix (ba24a9578 ControlServer.{h,cpp}) ==

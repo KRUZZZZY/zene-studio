@@ -1,0 +1,54 @@
+FAIL: a regular file at --control-socket is refused and left byte-identical
+  - the process was still running 25.0s later; a path refusal is immediate (the deadlock here is what the test is for)
+  - the file was replaced by a socket: THE DEFECT (0-byte socket)
+  - the file is now 0 bytes, was 92
+  - the file is NOT byte-identical: sha256 81e9e20a77448e74e45d1623f748552b8dd2076a389b64cab263dc75dd367de8 -> <unreadable: [Errno 6] No such device or address: '/tmp/zctl-run-z5c4mtg5/zene.sock'>
+  - no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: ' not loaded plugins, please set\n  environment variable "LMMS_LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\n'
+  - something ACCEPTED a connection at /tmp/zctl-run-z5c4mtg5/zene.sock: the server started on a path it should have refused
+FAIL: a stale socket is still cleaned up, is reported, and the instance listens
+  - the app log does not say the stale socket /tmp/zctl-run-vfbyylvg/zene.sock was unlinked and does not name it: "QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'\ncontrol socket listening on /tmp/zctl-run-vfbyylvg/zene.sock\n"
+PASS: a free path still binds normally (no refusal, no unlink line)
+FAIL: a directory at --control-socket is invalid_args, and survives with its contents
+  - no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: "QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'\ncontrol socket: Address already in use\n"
+FAIL: a symlink at --control-socket is refused, and link and target both survive
+  - the process was still running 25.0s later; a path refusal is immediate (the deadlock here is what the test is for)
+  - the symlink at the socket path was removed or replaced
+  - no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: ' not loaded plugins, please set\n  environment variable "LMMS_LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\n'
+FAIL: a live listener at --control-socket is refused, and the listener survives
+  - the process was still running 25.0s later; a path refusal is immediate (the deadlock here is what the test is for)
+  - the socket at the path is a different inode: the live socket was replaced (inode 1310797 -> 1310843)
+  - no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: ' not loaded plugins, please set\n  environment variable "LMMS_LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\n'
+  - the foreign listener can no longer accept connections: timed out
+FAIL: a socket that replaced ours survives our clean exit
+  - the instance's exit UNLINKED the replacement socket at the path: a live listener there is now unreachable with isListening() still true (F1)
+  - the exit neither unlinked nor said it was leaving the replacement alone: 'LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\ncontrol socket listening on /tmp/zctl-run-vnhcsjpk/zene.sock\n'
+FAIL: an over-cap request line is refused typed and the connection is retired
+  - no refusal arrived for an over-cap request line inside 10s: no response line inside 10.0s (socket timed out) (the line was buffered instead of capped)
+
+=== FAIL ===
+  a regular file at --control-socket is refused and left byte-identical FAILED (6)
+      the process was still running 25.0s later; a path refusal is immediate (the deadlock here is what the test is for)
+      the file was replaced by a socket: THE DEFECT (0-byte socket)
+      the file is now 0 bytes, was 92
+      the file is NOT byte-identical: sha256 81e9e20a77448e74e45d1623f748552b8dd2076a389b64cab263dc75dd367de8 -> <unreadable: [Errno 6] No such device or address: '/tmp/zctl-run-z5c4mtg5/zene.sock'>
+      no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: ' not loaded plugins, please set\n  environment variable "LMMS_LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\n'
+      something ACCEPTED a connection at /tmp/zctl-run-z5c4mtg5/zene.sock: the server started on a path it should have refused
+  a stale socket is still cleaned up, is reported, and the instance listens FAILED (1)
+      the app log does not say the stale socket /tmp/zctl-run-vfbyylvg/zene.sock was unlinked and does not name it: "QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'\ncontrol socket listening on /tmp/zctl-run-vfbyylvg/zene.sock\n"
+  a free path still binds normally (no refusal, no unlink line) ok
+  a directory at --control-socket is invalid_args, and survives with its contents FAILED (1)
+      no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: "QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'\ncontrol socket: Address already in use\n"
+  a symlink at --control-socket is refused, and link and target both survive FAILED (3)
+      the process was still running 25.0s later; a path refusal is immediate (the deadlock here is what the test is for)
+      the symlink at the socket path was removed or replaced
+      no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: ' not loaded plugins, please set\n  environment variable "LMMS_LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\n'
+  a live listener at --control-socket is refused, and the listener survives FAILED (4)
+      the process was still running 25.0s later; a path refusal is immediate (the deadlock here is what the test is for)
+      the socket at the path is a different inode: the live socket was replaced (inode 1310797 -> 1310843)
+      no typed refusal on stderr (looked for a line carrying '{"id"'); the process said: ' not loaded plugins, please set\n  environment variable "LMMS_LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\n'
+      the foreign listener can no longer accept connections: timed out
+  a socket that replaced ours survives our clean exit FAILED (2)
+      the instance's exit UNLINKED the replacement socket at the path: a live listener there is now unreachable with isListening() still true (F1)
+      the exit neither unlinked nor said it was leaving the replacement alone: 'LV2_DEBUG" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\ncontrol socket listening on /tmp/zctl-run-vnhcsjpk/zene.sock\n'
+  an over-cap request line is refused typed and the connection is retired FAILED (1)
+      no refusal arrived for an over-cap request line inside 10s: no response line inside 10.0s (socket timed out) (the line was buffered instead of capped)

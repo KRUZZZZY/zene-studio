@@ -30,12 +30,12 @@
 #include <QString>
 #include <QVector>
 
+#include "ControlRegistry.h"
+
 class QSocketNotifier;
 
 namespace lmms
 {
-
-class ControlRegistry;
 
 //! A local (AF_UNIX) socket speaking line-delimited JSON-RPC, one request and
 //! one response per line:
@@ -48,17 +48,35 @@ class ControlRegistry;
 //! file is mode 0600, is unlinked on exit, and the listener is AF_UNIX only:
 //! nothing ever listens on the network (SPEC A12 / AGENT-TOOLING.md #9.1).
 //!
+//! The bind is destructive to the path it uses, so it is refused rather than
+//! performed when the path already holds something that is not a socket, or
+//! holds a socket something is still listening on (a liveness probe separates a
+//! crashed run's leftover from a live listener; see listen()); close() unlinks
+//! only the socket THIS instance bound. See docs/CONTROL-SOCKET-PATH-SAFETY.md.
+//!
 //! Implemented with POSIX sockets plus QSocketNotifier rather than Qt Network,
 //! so the audio application gains no new Qt module dependency.
 class ControlServer : public QObject
 {
 	Q_OBJECT
 public:
+	//! Largest request LINE accepted, in bytes. The per-client buffer used to be
+	//! unbounded: a client that never sent a newline could make the instance
+	//! allocate without limit. Over the cap the request is refused with
+	//! `invalid_args` and the connection is dropped.
+	static constexpr int MaxRequestLineBytes = 1024 * 1024;
+
 	explicit ControlServer(ControlRegistry* registry, QObject* parent = nullptr);
 	~ControlServer() override;
 
 	//! Listen on \p path (must be absolute). Returns false and sets \p error on failure.
 	bool listen(const QString& path, QString* error);
+
+	//! The typed error kind of the last listen() that FAILED; ControlErrorKind::None
+	//! after a success. It is the same closed set the protocol answers with, and
+	//! listen() reports the refusal on stderr in the wire shape, so a launcher that
+	//! never got a socket (and so can never send a request) can still read why.
+	ControlErrorKind lastErrorKind() const { return m_lastErrorKind; }
 
 	//! Stop listening, drop every client and unlink the socket file. Idempotent.
 	void close();
@@ -81,17 +99,32 @@ private:
 		int fd = -1;
 		QSocketNotifier* notifier = nullptr;
 		QByteArray buffer;
+		//! True after an over-cap request line was refused: the rest of what the
+		//! peer sends is read and DISCARDED (bounded, per chunk) until EOF, so the
+		//! connection closes with nothing queued. Closing while unread bytes sit on
+		//! the socket sends RST, and an RST makes the peer's kernel throw away the
+		//! typed refusal already in its receive buffer.
+		bool draining = false;
 	};
 
 	void onNewConnection();
 	void onClientReadable(int fd);
 	void dropClient(int fd);
+	//! Write every byte of \p bytes or fail. A caller MUST drop the client when
+	//! this returns false: the bytes already written are a TRUNCATED line, and
+	//! writing the next reply after them would make the two read as one line.
 	bool writeAll(int fd, const QByteArray& bytes);
 
 	ControlRegistry* m_registry;
 	int m_listenFd = -1;
 	QSocketNotifier* m_notifier = nullptr;
 	QString m_path;
+	ControlErrorKind m_lastErrorKind = ControlErrorKind::None;
+	//! The (device, inode) this instance bound with listen(), so close() can tell
+	//! its own socket file from a replacement at the same path. quint64 rather than
+	//! dev_t/ino_t: this header is cross-platform and those types are POSIX.
+	quint64 m_boundDevice = 0;
+	quint64 m_boundInode = 0;
 	QHash<int, Client> m_clients;
 };
 

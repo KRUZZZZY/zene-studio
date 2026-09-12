@@ -1,0 +1,12 @@
+== post-fix (fix/control-socket-path-safety) ==
+binary      : /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-sockfix/build-rel/zene
+socket path : /tmp/sockfix-repro-1000/song.mmp (32 bytes)
+before      : mode=-rw-rw-r-- size=23 sha256=32f6b10007968b9c22e7fa826b916eb853ce2465ead977f3940c8070726e0ff9
+exit        : 1
+after       : mode=-rw-rw-r-- size=23 sha256=32f6b10007968b9c22e7fa826b916eb853ce2465ead977f3940c8070726e0ff9
+kind        : regular file
+-- stderr --
+control socket: {"error":{"kind":"refused","message":"refusing to use /tmp/sockfix-repro-1000/song.mmp as the control socket: a regular file already exists there, it is not a socket, and starting the server would destroy it; remove it yourself or pass a different path"},"id":-1,"ok":false}
+control socket: refusing to use /tmp/sockfix-repro-1000/song.mmp as the control socket: a regular file already exists there, it is not a socket, and starting the server would destroy it; remove it yourself or pass a different path
+-- stdout --
+== end post-fix (fix/control-socket-path-safety) ==
