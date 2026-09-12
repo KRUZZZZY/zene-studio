@@ -179,19 +179,22 @@ that is this page's fault — report it and it gets added.
   `docs/RENDER-DETERMINISM.md` §9 and §10.
 - **No measured crash-free rate.** The crash reporter is new in this release; until there is a body of reports
   the "how often does it crash" number does not exist. That number is the point of shipping an alpha.
-- **Our own test coverage, measured on this release tree: 81.60 % of the lines we instrument (7,113/8,717),
-  over the 119 of the 175 fork-scope entries the scope held then that produced a record.** (Merge train 3F
-  has since grown the fork scope from 175 to 242 entries, so that pair belongs to the capture and is not a
-  ratio over the whole scope today.) The **ratchet scope** — the gate's own per-file baseline — is at
-  **85.77 %**, which is above our 85 % aspiration; the headline is lower because a fuller configuration
-  instruments more files. The other 56 entries are sources this configuration does not compile, headers no
-  translation unit instantiates, and tooling, and **the gate prints that split itself**, so the number is a
-  claim about the 119 files it names and not about the whole scope.
+- **Our own test coverage, measured on this release tree: 87.21 % of the lines this configuration instruments
+  (13,770/15,790), over the 165 of the 242 fork-scope entries that produced a record in that capture.** The
+  **baseline scope** — the gate's own per-file baseline, 67 files — is at **85.95 %** (4,614/5,368), above our
+  85 % aspiration; the headline is lower because a fuller configuration instruments more files. The other 77
+  entries are sources this configuration does not compile, headers no translation unit instantiates, and
+  tooling, and **the gate prints that split itself**, so the number is a claim about the 165 files it names and
+  not about the whole scope. Measured at `3ef822eaf`; every commit after it is documentation only.
   How it was measured, so you can repeat it: `tests/run-coverage.sh build-coverage` on this tree with the pinned
   VST3 SDK and CLAP headers provisioned and **`-DWANT_VST3_TEST_INSTRUMENT=ON`**, so the plugin modules are
   instrumented *and* their integration suites actually run. An earlier capture of the same tree with the fixture
-  off measured **75.06 % over the same 119 files** — the 6.5-point difference is eight plugin files that go from
-  0 % to covered once those suites run, which is why the fuller configuration is the honest one.
+  off measured **75.06 %** — the two numbers the *earlier* capture reported over the 119 files it named (81.60 %
+  with the fixture, 75.06 % without) are a genuine before/after pair because they share a denominator, and the
+  gap is eight plugin files that go from 0 % to covered once those suites run, which is why the fuller
+  configuration is the honest one. **Today's 87.21 % is not comparable with that pair**: it is a rate over the
+  165 files that produced a record in the current capture, and the merge trains grew the fork scope from 175
+  entries to 242 in between, so the denominator moved with the tree.
 - **Our own coverage gate fails on that same build, and we are telling you rather than exempting it away.**
   `tests/coverage-gate.sh --check` reports **15 new files below its 50 % entry floor**. **Ten** are dialogs,
   views and plugin-browser code that **cannot be constructed in a headless test binary** — a `Knob` needs
