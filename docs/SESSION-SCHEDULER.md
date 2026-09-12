@@ -274,18 +274,26 @@ AB_EVIDENCE gate-cancelled  bytes=302168 sha256=85a7e748ae185d9223abca003b1a442c
 `SessionSchedulerTest` = 21 passing cases, 0 failing. `SessionSchedulerRenderTest` = 5 passing,
 0 failing.
 
-A note on flakiness, because it is the failure mode that costs the most trust: the first version of
-the two-thread hand-off case asserted two things that depend on how the producer and the consumer
-interleave — that the bounded queue had *ever* been full, and that a pending launch had *already*
-fired by the time the queue drained. It failed roughly one run in three and was caught by running it
-repeatedly rather than once. Both assertions were removed (the drop counting is pinned
-deterministically by `aFullCommandQueueRefusesInsteadOfGrowing` instead, and the clock is now
-advanced past the grid line before the launch count is checked). The case then ran **50 consecutive
-times with 0 failures**, and the full suite twice at 28/28. Nothing about the engine changed; the
-test was measuring the scheduler's *timing* rather than its *behaviour*.
+A note on the two-thread hand-off case, because the first version of it was wrong twice over and
+both failures were found by running it repeatedly rather than once:
 
-The queue-full and slot-table-full bounds are still counted and readable
-(`droppedCommands()`), they are just not asserted from a two-thread race.
+1. It asserted two things that depend on how the producer and the consumer *interleave* — that the
+   bounded queue had ever been full, and that a pending launch had already fired by the time the
+   queue drained. Those failed on a normal machine and were removed. (The queue-full behaviour is
+   pinned deterministically by `aFullCommandQueueRefusesInsteadOfGrowing`, and the clock is now
+   advanced past the grid line before the launch count is checked.)
+2. Worse, the consumer stopped after a *period count*. If the producer thread is scheduled late,
+   the consumer burns those periods against an empty queue, exits, and then `join()`s — while the
+   producer, still pushing, finds the queue full and spins forever on a queue nobody drains. The
+   run then hangs until the QtTest watchdog aborts it with SIGABRT. Measured: one run in three at
+   best, and it aborted two full-suite runs. The consumer now drains until the producer is
+   *finished* (release/acquire on a done flag) with a generous wall-clock bound, which removes the
+   interleaving from the test's correctness entirely.
+
+After the fix: 40 consecutive runs and 64 runs at 8-way parallelism (which is what makes a producer
+start late) with **0 failures**, and the full suite green three consecutive times at 28/28. The
+engine was not changed to make any of this pass — the last commit touches only the test.
+
 
 
 ## 11. Gates

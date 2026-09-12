@@ -39,6 +39,7 @@
 #include <QtTest>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <vector>
@@ -475,8 +476,15 @@ private slots:
 	}
 
 	/*! The producer/consumer contract with two real threads: the model thread
-	 *  keeps pushing while the audio thread drains, nothing is lost, nothing is
-	 *  dropped, and the audio thread still allocates nothing while it runs. */
+	 *  keeps pushing while the audio thread drains, nothing accepted is lost,
+	 *  and the audio thread still allocates nothing while it runs.
+	 *
+	 *  The consumer must keep draining until the producer has *finished*, not
+	 *  until a period count: if the producer thread is scheduled late, a
+	 *  count-bounded consumer exits while the producer is still pushing, the
+	 *  producer then spins on a full queue that nobody drains, and join()
+	 *  hangs until the QtTest watchdog kills the run. It did, twice. The
+	 *  bound here is wall-clock and it is generous. */
 	void commandsCrossThreadsWithoutLoss()
 	{
 		SessionScheduler scheduler;
@@ -493,22 +501,19 @@ private slots:
 					std::this_thread::yield();
 				}
 			}
-			producerDone.store( true );
+			producerDone.store( true, std::memory_order_release );
 		} );
 
 		SessionClockContext ctx = clock( 0 );
 		lmms::test::tlCountAllocations = true;
 		lmms::test::resetAllocationCount();
-		int periods = 0;
-		// Every command the model thread got into the queue must come out the
-		// other side: the hand-off is the property under test here, not how
-		// many of the presses survive as a launch (repeated presses on one
-		// slot collapse into one scheduled start, which is correct).
-		while( scheduler.processedCommands() < std::uint64_t( kCommands ) && periods < 200000 )
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 60 );
+		while( ( !producerDone.load( std::memory_order_acquire )
+				|| scheduler.processedCommands() < std::uint64_t( kCommands ) )
+			&& std::chrono::steady_clock::now() < deadline )
 		{
 			ctx.positionTicks += kTickStep;
 			scheduler.processAudio( ctx, kFramesPerPeriod );
-			++periods;
 		}
 		const std::uint64_t allocations = lmms::test::tlAllocationCount;
 		const std::uint64_t processed = scheduler.processedCommands();
