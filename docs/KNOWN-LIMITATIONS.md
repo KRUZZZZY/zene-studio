@@ -147,20 +147,29 @@ that is this page's fault — report it and it gets added.
   `docs/RENDER-DETERMINISM.md` §9 and §10.
 - **No measured crash-free rate.** The crash reporter is new in this release; until there is a body of reports
   the "how often does it crash" number does not exist. That number is the point of shipping an alpha.
-- **Our own test coverage is 84.34 % of the lines we instrument, over 67 of the 139 scope entries.** The other
-  72 are **29 sources that are not compiled in this configuration** (7 CLAP, 7 VST3, 6 stem separation, 5 WASM,
-  3 Session View, 1 harness), **41 headers that no translation unit instantiates**, and 2 tooling entries. That
-  means the figure is **not** a statement about the whole source tree — the gate now prints that split itself —
-  and it is still **below our own 85 % aspiration**, which we are not claiming to meet.
-  Verified against this tree: the figure's owner has merged, and the tree records its measurement —
-  `docs/CONVENTIONS.md:23` holds **84.34 % (4523/5363)** over the **67 of 139** fork-scope entries that produced
-  a coverage record, and `docs/COVERAGE-GATE-GREEN.md` §0 reaches the same headline, replacing the older merged
-  run's 81.46 % (3747/4600) over 61 files (`docs/COVERAGE-RUN.md`). The lane that wrote both,
-  `post-alpha/coverage-green`, is an ancestor of this tip. **What this is not, stated plainly:** a fresh
-  measurement of the release tip. The number was taken by that lane at its own base on this lineage; a re-run
-  needs a full `--with-coverage` build, which this documentation pass did not perform. Quote it with its file
-  count, which is the rule `docs/CONVENTIONS.md` sets — "84.34 % over 67 files" is a measurement, "84.34 %"
-  alone is not.
+- **Our own test coverage, measured on this release tree: 81.60 % of the lines we instrument (7,113/8,717),
+  over the 119 of the 175 fork-scope entries that produced a record.** The **ratchet scope** — the 67 files our
+  gate tracks — is at **85.77 %**, which is above our 85 % aspiration; the headline is lower because a fuller
+  configuration instruments more files. The other 56 entries are sources this configuration does not compile,
+  headers no translation unit instantiates, and tooling, and **the gate prints that split itself**, so the
+  number is a claim about the 119 files it names and not about the whole scope.
+  How it was measured, so you can repeat it: `tests/run-coverage.sh build-coverage` on this tree with the pinned
+  VST3 SDK and CLAP headers provisioned and **`-DWANT_VST3_TEST_INSTRUMENT=ON`**, so the plugin modules are
+  instrumented *and* their integration suites actually run. An earlier capture of the same tree with the fixture
+  off measured **75.06 % over the same 119 files** — the 6.5-point difference is eight plugin files that go from
+  0 % to covered once those suites run, which is why the fuller configuration is the honest one.
+- **Our own coverage gate fails on that same build, and we are telling you rather than exempting it away.**
+  `tests/coverage-gate.sh --check` reports **15 new files below its 50 % entry floor**. **Ten** are dialogs,
+  views and plugin-browser code that **cannot be constructed in a headless test binary** — a `Knob` needs
+  `getGUI()`, which is null under a render-only engine init, the same wall we hit and documented while fixing
+  the instrument window. **Two** are the telemetry transport and its consent dialog, **inert by design**
+  (there is no server to send to). **Three are genuinely untested rather than untestable — including the VST3
+  *effect* module's own class, which no test instantiates because the fixture we built is an *instrument*.**
+  We are **not** writing exemptions for those fifteen at this release: an entry-floor exemption is a per-file
+  decision with a written reason, and making fifteen of them at the tag is how a gate stops meaning anything —
+  the same reasoning that left the whole-tree ratchets red rather than grandfathered. The plan is on the record:
+  build an effect fixture and instantiate the effect module, then decide the headless-untestable and
+  deliberately-inert files individually, with their reasons.
 - **Automation is not sample-accurate.** Modes work (Read / Touch / Latch / Write) and riding a control in Read
   cannot destroy written automation, but automation is evaluated once per tick, so it lands on a tick boundary
   rather than a sample. Verified in the tree via the automation lane's own record: `docs/AUTOMATION-MODES.md`
