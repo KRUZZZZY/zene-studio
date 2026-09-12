@@ -28,6 +28,7 @@
 #include <QDebug>
 #include <QFile>
 #include <QMessageBox>
+#include <QSet>
 
 #include <algorithm>
 #include <cmath>
@@ -37,6 +38,7 @@
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "ControllerConnection.h"
+#include "UnattendedRun.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "Mixer.h"
 #include "MixerView.h"
@@ -52,6 +54,7 @@
 #include "PatternTrack.h"
 #include "PianoRoll.h"
 #include "ProjectJournal.h"
+#include "ProjectIds.h"
 #include "ProjectNotes.h"
 #include "Scale.h"
 #include "SongEditor.h"
@@ -1004,6 +1007,11 @@ void Song::createNewProject()
 
 	clearProject();
 
+	// A brand-new document starts its id counter at 0, so the first object an
+	// agent creates after project.new is <prefix>-0 rather than a number left
+	// over from whatever was loaded before (SPEC-stable-ids.md 2.1).
+	ProjectIds::reset();
+
 	Engine::projectJournal()->setJournalling( false );
 
 	m_oldFileName = "";
@@ -1065,6 +1073,11 @@ void Song::loadProject( const QString & fileName )
 
 	m_loadingProject = true;
 
+	// A load must never leave a modal dialog open in an agent instance (task
+	// #625): record why a file was refused so project.open can answer with a
+	// typed error instead.
+	m_loadRefusal.clear();
+
 	Engine::projectJournal()->setJournalling( false );
 
 	m_oldFileName = m_fileName;
@@ -1078,6 +1091,8 @@ void Song::loadProject( const QString & fileName )
 	if( dataFile.head().isNull() )
 	{
 		cantLoadProject = true;
+		m_loadRefusal = tr( "the project file could not be read or parsed "
+			"(see the log for the parser's line/column report)" );
 	}
 	else
 	{
@@ -1086,12 +1101,15 @@ void Song::loadProject( const QString & fileName )
 		if (dataFile.hasLocalPlugins())
 		{
 			cantLoadProject = true;
+			m_loadRefusal = tr("Project file contains local paths to plugins, which could be used to "
+					"run malicious code.");
 
-			if (getGUI() != nullptr)
+			// In an agent instance nobody can answer this box (task #625), so
+			// the refusal becomes the typed error project.open returns.
+			if (getGUI() != nullptr && !lmms::isUnattendedRun())
 			{
 				QMessageBox::critical(nullptr, tr("Aborting project load"),
-					tr("Project file contains local paths to plugins, which could be used to "
-						"run malicious code."));
+					m_loadRefusal);
 			}
 			else
 			{
@@ -1129,6 +1147,14 @@ void Song::loadProject( const QString & fileName )
 	clearProject();
 
 	clearErrors();
+
+	// The id pass, load half (SPEC-stable-ids.md R2/R3). Reset the counter so
+	// assignment is deterministic - the container walk below creates the tracks
+	// in document order and the Track constructor allocates in that order, so
+	// the same legacy document always yields the same ids - and clear the
+	// assignment count project.open reports as `ids_assigned`.
+	ProjectIds::reset();
+	ProjectIds::beginLoad();
 
 	Engine::audioEngine()->requestChangeInModel();
 
@@ -1252,6 +1278,42 @@ void Song::loadProject( const QString & fileName )
 	// quirk for fixing projects with broken positions of Clips inside pattern tracks
 	Engine::patternStore()->fixIncorrectPositions();
 
+	// The id pass, post-walk half (SPEC-stable-ids.md R3). The objects exist and
+	// carry ids now, so this is the one place the document's own counter can be
+	// honoured and repaired:
+	//
+	//  * `next-id` is taken from the root. A file written by this build carries
+	//    it; a legacy file (or a file that came back through an older build,
+	//    which drops it) does not, and then the counter is already at
+	//    max(id seen)+1 because every setId() observed its value.
+	//  * Two live tracks sharing an id is only reachable from an external merge
+	//    of two projects (GIT-FRIENDLY-MMPZ.md documents real .mmpz merges). The
+	//    second in document order is re-assigned from the high-water mark and
+	//    counted, so the repair shows up in `ids_assigned` instead of hiding.
+	if (dataFile.documentElement().hasAttribute(QStringLiteral("next-id")))
+	{
+		bool ok = false;
+		const int stored = dataFile.documentElement().attribute(QStringLiteral("next-id")).toInt(&ok);
+		if (ok) { ProjectIds::observeNext(stored); }
+	}
+	{
+		QSet<int> seen;
+		const TrackContainer::TrackList& loaded = tracks();
+		for (int i = 0; i < static_cast<int>(loaded.size()); ++i)
+		{
+			Track* track = loaded[i];
+			if (seen.contains(track->id()))
+			{
+				track->setId(ProjectIds::allocate());
+				ProjectIds::noteLoadAssignment();
+			}
+			else
+			{
+				seen.insert(track->id());
+			}
+		}
+	}
+
 	// Connect controller links to their controllers
 	// now that everything is loaded
 	ControllerConnection::finalizeConnections();
@@ -1282,7 +1344,12 @@ void Song::loadProject( const QString & fileName )
 
 	if ( hasErrors())
 	{
-		if ( getGUI() != nullptr )
+		// The "LMMS Error report" box is a question for a human.  In an agent
+		// instance (--control-socket) or a run with no display it would park
+		// the UI thread in a nested event loop - project.open never returns,
+		// and the client is told nothing (task #625).  The same report goes to
+		// stderr, and project.open hands the caller the per-item list.
+		if ( getGUI() != nullptr && !lmms::isUnattendedRun() )
 		{
 			QMessageBox::warning( nullptr, tr("Zene Studio Error report"), errorSummary(),
 							QMessageBox::Ok );
@@ -1362,6 +1429,14 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 #endif
 
 	m_savingProject = false;
+
+	// The project-scoped id counter, on the root element beside version /
+	// creatorversion (SPEC-stable-ids.md 3.2). The root is already a mutable
+	// document header: DataFile's constructor writes five sibling attributes
+	// there and DataFile::upgrade() rewrites them. This is the ONLY place ids
+	// reach the disk - load-time assignment is in memory only, which is what
+	// keeps the agent_surface gate's fixture byte-identical across a sweep.
+	dataFile.documentElement().setAttribute( "next-id", ProjectIds::next() );
 
 	return dataFile.writeFile(filename, withResources);
 }

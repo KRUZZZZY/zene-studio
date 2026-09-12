@@ -77,6 +77,11 @@
 #include "Song.h"
 #include "ScriptConsole.h"
 #include "ScriptEngine.h"
+#include "ControlRegistry.h"
+#include "ControlServer.h"
+#include "UnattendedRun.h"
+
+#include <memory>
 
 #ifdef LMMS_DEBUG_FPE
 #include <fenv.h> // For feenableexcept
@@ -220,6 +225,8 @@ void printHelp()
 		"  -p, --profile <out>            Dump profiling information to file <out>\n"
 		"      --run-script <file>        Run the Lua script <file> headless and exit\n"
 		"          Prints the script's LuaLog output to stdout\n"
+		"      --control-socket <path>    Listen for agent JSON-RPC commands on the\n"
+		"          AF_UNIX socket <path>. Opt-in; off unless given.\n"
 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
 		"          Range: 44100 (default) to 192000\n"
 		"          Possible values: 1, 2, 4, 8\n"
@@ -276,7 +283,7 @@ int main( int argc, char * * argv )
 	bool outputSpecified = false;
 	int scriptExitCode = EXIT_SUCCESS;
 	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile,
-			scriptFile;
+			scriptFile, controlSocket;
 
 	// first of two command-line parsing stages
 	for (int i = 1; i < argc; ++i)
@@ -720,6 +727,24 @@ int main( int argc, char * * argv )
 
 			scriptFile = QString::fromLocal8Bit( argv[i] );
 		}
+		else if( arg == "--control-socket" )
+		{
+			// Opt-in agent control socket (SPEC-zene-studio.md A12). Off unless
+			// this flag is given; the socket is AF_UNIX, mode 0600, local only.
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No control socket path specified" );
+			}
+
+			controlSocket = QString::fromLocal8Bit( argv[i] );
+			// Mark the whole process as agent-driven before the GUI or the
+			// engine exists: from here on no modal dialog may be opened, and
+			// the commands that raise one answer with a typed result instead
+			// (task #625, SPEC A13).
+			lmms::setAgentInstance( true );
+		}
 		else
 		{
 			if( argv[i][0] == '-' )
@@ -793,6 +818,25 @@ int main( int argc, char * * argv )
 #endif
 
 	bool destroyEngine = false;
+
+	// Opt-in agent control surface (SPEC A12). The socket is started before the
+	// engine so that a client can connect and probe (control.ping) while the
+	// instance is still initialising; commands that need the model return the
+	// typed 'busy' refusal until Engine::init() has run.
+	std::unique_ptr<ControlServer> controlServer;
+	if( !controlSocket.isEmpty() )
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		controlServer = std::make_unique<ControlServer>( registry );
+		QString controlError;
+		if( !controlServer->listen( controlSocket, &controlError ) )
+		{
+			fprintf( stderr, "control socket: %s\n", controlError.toUtf8().constData() );
+			return EXIT_FAILURE;
+		}
+		printf( "control socket listening on %s\n", controlSocket.toUtf8().constData() );
+		fflush( stdout );
+	}
 
 	// if we have an output file for rendering, just render the song
 	// without starting the GUI
@@ -985,7 +1029,21 @@ int main( int argc, char * * argv )
 					recoveryDecision.detail.toUtf8().constData() );
 		}
 
-		if( recoveryFilePresent )
+		if( recoveryFilePresent && lmms::isUnattendedRun() )
+		{
+			// A modal here runs BEFORE app->exec(): in an unattended run
+			// (--control-socket, or no display at all) nobody can click it, so
+			// the instance would never become ready (task #625).  Take the
+			// box's own default button - "Recover", the non-destructive answer
+			// - and say so on stderr.
+			fileToLoad = recoveryFile;
+			getGUI()->mainWindow()->setSession( MainWindow::SessionState::Recover );
+			fprintf( stderr, "main: unattended run: recovering %s without the "
+				"\"Project recovery\" prompt (the prompt's default answer)\n",
+				recoveryFile.toUtf8().constData() );
+			fflush( stderr );
+		}
+		else if( recoveryFilePresent )
 		{
 			QMessageBox mb;
 			mb.setWindowTitle( MainWindow::tr( "Project recovery" ) );
@@ -1149,7 +1207,32 @@ int main( int argc, char * * argv )
 		}
 	}
 
+	// The application is fully constructed and the initial project exists: from
+	// here the agent surface may drive the model (before this point every
+	// command returns the typed 'busy' refusal).
+	if( controlServer )
+	{
+		controlServer->registry()->setReady( true );
+		// A client may have asked to quit before startup finished (the socket is
+		// up first, by design). Apply it now that the normal shutdown path - and
+		// the main event loop - actually exist (task #626).
+		ControlRegistry::applyPendingQuit();
+	}
+
 	const int ret = app->exec();
+
+	// The loop returned: the shutdown is doing its work, so disarm the
+	// last-resort guard (it must only ever catch a shutdown that never returns).
+	ControlRegistry::cancelShutdownGuard();
+
+	// Unlink the control socket here rather than at the end of main: the shutdown
+	// contract is "gone on exit", and this way it is gone before the engine
+	// teardown, which the agent may be watching (task #626).
+	if( controlServer )
+	{
+		controlServer->close();
+	}
+
 	// A clean exit: clear the "session was open" marker so the next launch
 	// knows the difference between a crash and a deliberate quit.
 	crashreporter::endSession();

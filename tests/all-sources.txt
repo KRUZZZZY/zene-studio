@@ -1137,6 +1137,7 @@ tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ConfigMigrationTest.cpp
+tests/src/core/ControlRegistryTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp

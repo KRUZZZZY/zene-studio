@@ -105,6 +105,18 @@ public:
 	void collectError( const QString error );
 	bool hasErrors();
 	QString errorSummary();
+	//! The messages collected by the last load, with how often each occurred
+	//! (SPEC A13: a headless client reads which samples/plugins failed and why
+	//! from a typed result instead of a dialog nobody can answer).
+	const QHash<QString, int>& errors() const
+	{
+		return m_errors;
+	}
+	//! Why the most recent loadProject() refused the file, empty when it loaded.
+	QString loadRefusal() const
+	{
+		return m_loadRefusal;
+	}
 
 	void processNextBuffer();
 
@@ -497,6 +509,8 @@ private:
 	SaveOptions m_saveOptions;
 
 	QHash<QString, int> m_errors;
+	//! Set by loadProject() when it refuses a file; empty after a good load.
+	QString m_loadRefusal;
 
 	std::array<Timeline, PlayModeCount> m_timelines;
 

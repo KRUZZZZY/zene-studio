@@ -126,6 +126,20 @@ public:
 	{
 		return m_audioDevStartFailed;
 	}
+	//! The device name the configuration asked for (may differ from
+	//! audioDevName() after a fallback). Needed so a failure report can name the
+	//! backend that failed to open instead of saying only "an audio device".
+	inline const QString & audioDevRequestName() const
+	{
+		return m_audioDevRequestName;
+	}
+	//! Why the configured device could not be used, when it could not: the text
+	//! control.ping and the typed 'requires' refusal hand to an agent. Empty when
+	//! the device started normally.
+	inline const QString & audioDevStartReason() const
+	{
+		return m_audioDevStartReason;
+	}
 
 	//! Set new audio device. Old device will be deleted,
 	//! unless it's stored using storeAudioDevice
@@ -441,6 +455,8 @@ private:
 	AudioDevice * m_audioDev;
 	AudioDevice * m_oldAudioDev;
 	QString m_audioDevName;
+	QString m_audioDevRequestName;
+	QString m_audioDevStartReason;
 	bool m_audioDevStartFailed;
 
 	// MIDI device stuff

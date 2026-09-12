@@ -126,11 +126,75 @@
 # fork's own tooling under tools/ and the list whose own command DOES produce them - a
 # recorded move of home, not a lost entry, and the same treatment merge #2 gave
 # tools/brand/rasterise-placeholders.py.
+# ---------------------------------------------------------------------------
+# Merged 2026-09-12 (post-alpha/agent-surface-integration -> post-alpha/integration).
+# The entry list below is the machine-checked UNION of the two parents' entry sets:
+#   150 (this branch) u 166 (agent-surface) = 216 entries, 0 lost, 0 extra,
+# asserted in python against BOTH parents' entry sets - an ENTRY union, never a line
+# union. The other programme's per-entry annotations for its own registrations are kept
+# above their entries. Its 12-line header is NOT carried: its `Regenerate with` command
+# is based on `origin/master` and does not describe this file, and the two notes it adds
+# (the vendored trees excluded on purpose, the lcov anchoring) are already stated in the
+# header above. The 21 entries that programme registered by hand are kept, with the
+# reasons it wrote beside them, because it registered them on purpose so the fork-scoped
+# ratchets measure them ("Registered as fork-NEW so the fork-scoped ratchets measure
+# them"): 11 tests/*.py harnesses and 10 tests/src/core/*.{cpp,h} sources. Running the
+# command under "Regenerate with" reproduces post-alpha/integration's 150 entries exactly,
+# and prints 195 of this union's 216 - it omits exactly the 21 hand-registered entries and
+# adds none, which is the same relationship the other programme's own file already had to
+# its own command (its 166 entries were 21 wider than the 145 that command printed).
+# This is a deliberate scope decision, recorded here rather than taken
+# silently: it widens the fork-scoped file-length / complexity / duplication ratchets onto
+# those files, which is what registering them was for; it narrows no scope this branch had.
+# ---------------------------------------------------------------------------
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
+# ---- Agent control surface: automation + scripting command groups ----
+# Lane post-alpha/cmd-automation off post-alpha/cmd-plugins. The automation.*
+# group (read-back, the point edits, and the registered-but-refused
+# automation.mode_set, because this tree has no automation modes) and the
+# script.* group (script.run drives the embedded ScriptEngine in the running
+# instance; script.list reports the scripts the build ships). Registered as
+# fork-NEW so the fork-scoped ratchets measure them.
+include/ControlAutomationSupport.h
+# ---- Agent control surface: plugin/dsp + settings command groups ----
+# Lane post-alpha/cmd-plugins off post-alpha/agent-control-surface. The device
+# catalogue and device support shared by plugin.list / dsp.get_state, the
+# plugin.* device+parameter+state+preset commands, and the settings.*/audio.*/
+# midi.*/app.* group. Registered as fork-NEW so the fork-scoped ratchets measure
+# them.
+include/ControlDeviceSupport.h
+# ---- Notes / clips / tracks command group (SPEC A11-A16, lane post-alpha/cmd-notes) ----
+# The piano-roll and song-editor half of AGENT-TOOLING.md section 5: note.*,
+# roll.get_state, clip.*, track.add/remove/rename/set_mute/set_solo/set_arm and
+# arrangement.get_state, plus the helpers they share. Registered as fork-NEW so
+# the fork-scoped ratchets measure them.
+include/ControlEdit.h
+# ---- Agent control surface (SPEC A11-A16, lane post-alpha/agent-control-surface) ----
+# The in-app command registry, the opt-in JSON-RPC control socket and the
+# first command groups (control.*, transport.*, track.*, mixer.*, project.*,
+# render.render). Registered as fork-NEW so the fork-scoped ratchets measure them.
+include/ControlRegistry.h
+# ---- SPEC A16 reversibility contract (#623, lane post-alpha/reversibility) ----
+# New sources only. The command files this lane touches were already fork-NEW;
+# the two UPSTREAM-inherited files it extends (include/ProjectJournal.h,
+# src/core/ProjectJournal.cpp) are declared in tests/upstream-modifications.txt.
+#   ControlReversibility.{h,cpp}      the contract: class lookup + undo-step helper
+#   ControlReversibilityTable.cpp     THE classification table, one row per command
+#   ProjectRevisions.{h,cpp}          the keep-3 previous-revision set of project.save
+#   ReversibilityContractTest.cpp     apply -> undo -> read back, and the typed refusal
+include/ControlReversibility.h
+include/ControlServer.h
+# ---- Shared command-surface vocabulary (lane post-alpha/stable-ids, step 0) ----
+# Four merge repairs each re-derived the same small helpers; the last was four
+# schema helpers defined identically in two translation units (a duplicate-symbol
+# link failure). objectSchema + the property helpers + the trk-/clip-/note-/ch-/
+# fx-/dev- id grammar now have one header and one definition, and the twelve
+# per-file anonymous-namespace copies are gone.
+include/ControlVocabulary.h
 include/CrashReporter.h
 include/DpiHelper.h
 include/LatencyCompensation.h
@@ -145,7 +209,12 @@ include/NoteTransform.h
 include/PinConnector.h
 include/PluginAudioPorts.h
 include/PluginScanCache.h
+# ---- Stable track ids (SPEC-stable-ids.md slice 1, lane post-alpha/stable-ids) ----
+# The project-scoped monotonic id counter behind every stable id (one counter, one
+# root attribute, one repair rule) and its acceptance test.
+include/ProjectIds.h
 include/ProjectRecovery.h
+include/ProjectRevisions.h
 include/Rack.h
 include/RackNodes.h
 include/RecordRingBuffer.h
@@ -173,6 +242,13 @@ include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
 include/TrackRecorder.h
+# ---- Headless load path (task #625: no modal may block an agent instance) ----
+# The tests that hold the startup/load path to SPEC A13 ("every command runs
+# with no display and no audio device"). Registered as fork-NEW so the
+# fork-scoped gates measure them. The fixture they use is
+# tests/data/error-carrying-project.mmp (documented in
+# tests/data/README-error-fixtures.md): it carries two load errors on purpose.
+include/UnattendedRun.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
 plugins/ClapEffect/ClapEffect.cpp
@@ -224,6 +300,68 @@ plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 src/core/AudioBus.cpp
 src/core/AudioPortsModel.cpp
+src/core/ControlAutomationSupport.cpp
+src/core/ControlCommandsArrangement.cpp
+src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAutomation.cpp
+src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsClip.cpp
+src/core/ControlCommandsControl.cpp
+src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsPlugin.cpp
+src/core/ControlCommandsPluginParams.cpp
+src/core/ControlCommandsPluginPreset.cpp
+src/core/ControlCommandsPluginState.cpp
+src/core/ControlCommandsProject.cpp
+# Split out of ControlCommandsProject.cpp / ControlCommandsArrangement.cpp so no
+# file crosses the 500-line ratchet (Gate 7) and the file-level commands are
+# readable next to each other.
+src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsScript.cpp
+src/core/ControlCommandsSettings.cpp
+# ---- Agent surface gate (SPEC A15, lane post-alpha/agent-surface-gate) ----
+# control.surface_report reflects the live menu/toolbar surface so the
+# agent_surface ctest can fail on an action with no registered command.
+# The gate itself is Python: the reflection lives in the running process, so the
+# test drives a real instance over the control socket exactly like an agent does.
+# Registered as fork-NEW so the fork-scoped ratchets measure them.
+src/core/ControlCommandsSurface.cpp
+src/core/ControlCommandsTransport.cpp
+src/core/ControlDeviceCatalogue.cpp
+# ---- Agent control surface: the LV2 half of the device catalogue ----
+# Lane post-alpha/lv2-catalogue off post-alpha/cmd-plugins. LV2 devices are
+# enumerated through the LV2 host module's own discovery path
+# (SubPluginFeatures::listSubPluginKeys) into plugin.list, and loadable through
+# plugin.load. The extended product sources are already listed above under the
+# cmd-plugins entry (ControlDeviceSupport.{h,cpp}, ControlDeviceCatalogue.cpp,
+# ControlCommandsPlugin.cpp); the entries below are what this lane adds - the
+# hosted-format (LADSPA/LV2) catalogue + instantiation split out of
+# ControlDeviceSupport.cpp so no file crosses the line ratchet, and the
+# in-process catalogue test.
+src/core/ControlDeviceHosted.cpp
+src/core/ControlDeviceState.cpp
+src/core/ControlDeviceSupport.cpp
+src/core/ControlEditSupport.cpp
+src/core/ControlRegistry.cpp
+src/core/ControlReversibility.cpp
+src/core/ControlReversibilityTable.cpp
+# ---- Control-surface hardening: shutdown + readiness (task #626, lane
+#      post-alpha/control-hardening) ----
+# One place decides whether this run can show a dialog to a human. Both #626
+# reproductions were a modal dialog in a run that has no human: the "project was
+# modified, save it?" prompt during quit (a) and the audio-device-failure box
+# before app->exec() (b). MainWindow and the control registry ask the same
+# question, so they ask it in one place.
+# Split out of ControlRegistry.cpp by task #626 so no one file carries the whole
+# surface: the JSON-schema subset the registry validates with, and the session
+# state a client reads before it may use the command table (readiness report +
+# shutdown intent). Both were already fork-NEW inside ControlRegistry.cpp.
+src/core/ControlSchema.cpp
+src/core/ControlServer.cpp
+src/core/ControlSession.cpp
+src/core/ControlVocabulary.cpp
 src/core/CrashReporter.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
@@ -234,7 +372,9 @@ src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/PluginScanCache.cpp
+src/core/ProjectIds.cpp
 src/core/ProjectRecovery.cpp
+src/core/ProjectRevisions.cpp
 src/core/Rack.cpp
 src/core/RackNodes.cpp
 src/core/RoutingChainNodes.cpp
@@ -253,6 +393,7 @@ src/core/SessionModelPrivate.h
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
+src/core/UnattendedRun.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
 src/gui/MidiLearnGui.cpp
@@ -264,13 +405,49 @@ src/wasm/WasmSandbox.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
+tests/agent-surface-gate.py
+tests/agent_surface_lib.py
+tests/control-headless-no-audio-device.py
+tests/control-headless-project-open.py
+tests/control-headless-working-directory.py
+tests/control-negative-control.py
+tests/control-no-audio-device.py
+tests/control-readiness.py
+# ---- SPEC A16 acceptance transcript (#623, lane post-alpha/reversibility) ----
+# The raw apply -> undo -> read back transcript for one command of each class,
+# driven over the socket against the real binary (usage in its own docstring).
+tests/control-reversibility-transcript.py
+# The #626 tests: both shutdown reproductions, the documented readiness order, the
+# no-audio-device report, and the negative controls that prove each of those can
+# fail (a check that cannot fail is not evidence).
+tests/control-shutdown.py
+tests/control-stable-ids.py
+tests/control_socket_flows.py
+# One socket harness for every control-surface test (2026-09-12): the #626 harness and
+# the #625 headless-load harness had drifted into two Instance/Client classes and two
+# names for "the bounded wait expired", so they were collapsed into this module.
+# Split 2026-09-12 (Gate 7, the 500-line per-file ratchet): this is the CORE (Instance,
+# Client, the bounds, the readiness poll, the assertion helpers); the `check_*` payloads
+# and the multi-instance flow helpers live in tests/control_socket_flows.py, which every
+# case test imports alongside this module. Both halves are registered so the ratchets
+# measure both — a split that hides half the code from the gate would be a dodge.
+tests/control_socket_harness.py
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ControlAutomationScriptTest.cpp
+tests/src/core/ControlDeviceCatalogueTest.cpp
+tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlRegistryTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
+# Split so no test file crosses the 500-line ratchet either (Gate 7).
+tests/src/core/ReversibilityContractTest.cpp
+tests/src/core/ReversibilityTestSupport.h
+tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/SessionModelTest.cpp
+tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/tracks/SampleClipWindowTest.cpp

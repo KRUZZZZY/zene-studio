@@ -764,7 +764,11 @@ AudioDevice * AudioEngine::tryAudioDevices()
 {
 	bool success_ful = false;
 	AudioDevice * dev = nullptr;
-	QString dev_name = ConfigManager::inst()->value( "audioengine", "audiodev" );
+	// What the configuration asked for, verbatim, so a failure report can name
+	// the backend that did not open (task #626).
+	m_audioDevRequestName = ConfigManager::inst()->value( "audioengine", "audiodev" );
+	m_audioDevStartReason.clear();
+	QString dev_name = m_audioDevRequestName;
 	if( !isAudioDevNameValid( dev_name ) )
 	{
 		dev_name = "";
@@ -898,6 +902,16 @@ AudioDevice * AudioEngine::tryAudioDevices()
 			"files...\n" );
 
 		m_audioDevStartFailed = true;
+		// Say WHAT failed to open and what is being used instead, so control.ping
+		// and the typed 'requires' refusal can hand an agent an actionable
+		// sentence instead of a bare false (task #626). The backend library's own
+		// error text (SDL_GetError / snd_strerror) is printed by the backend
+		// above and stays on stderr.
+		m_audioDevStartReason = m_audioDevRequestName.isEmpty()
+			? tr( "no configured audio device could be opened; the engine is running with '%1' (no sound output)" )
+				.arg( AudioDummy::name() )
+			: tr( "the configured audio device '%1' could not be opened; the engine is running with '%2' (no sound output)" )
+				.arg( m_audioDevRequestName, AudioDummy::name() );
 	}
 
 	m_audioDevName = AudioDummy::name();

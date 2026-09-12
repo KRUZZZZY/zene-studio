@@ -161,6 +161,24 @@ public:
 		return name();
 	}
 
+	/*! The track's stable id, the number in "trk-<n>" (SPEC-stable-ids.md).
+	 *
+	 * Assigned ONCE, in the constructor, and never changed while the track is
+	 * alive: it names the object, not its position in Song::tracks(). The only
+	 * other writer is loadTrack(), which takes the value the project file
+	 * carries so a re-save keeps it; a file element with no id leaves the
+	 * constructor's value in place, which is what makes legacy assignment
+	 * deterministic (construction order == document order).
+	 */
+	int id() const
+	{
+		return m_id;
+	}
+
+	//! Take \a id from a project file. Raises the project counter above it, so
+	//! the number can never be handed to a new object (see ProjectIds).
+	void setId(int id);
+
 	using Model::dataChanged;
 
 	inline int getHeight()
@@ -214,6 +232,7 @@ private:
 private:
 	TrackContainer* m_trackContainer;
 	Type m_type;
+	int m_id;
 	QString m_name;
 	int m_height;
 

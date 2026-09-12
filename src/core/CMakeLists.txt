@@ -46,6 +46,42 @@ set(LMMS_SRCS
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
 	core/CrashReporter.cpp
+	core/ControlCommandsArrangement.cpp
+	core/ControlCommandsClip.cpp
+	core/ControlAutomationSupport.cpp
+	core/ControlCommandsAutomation.cpp
+	core/ControlCommandsAutomationEdit.cpp
+	core/ControlCommandsControl.cpp
+	core/ControlCommandsDsp.cpp
+	core/ControlCommandsMixer.cpp
+	core/ControlCommandsNotes.cpp
+	core/ControlCommandsPlugin.cpp
+	core/ControlCommandsPluginParams.cpp
+	core/ControlCommandsPluginPreset.cpp
+	core/ControlCommandsPluginState.cpp
+	core/ControlCommandsArrangementState.cpp
+	core/ControlCommandsProject.cpp
+	core/ControlCommandsProjectFiles.cpp
+	core/ControlCommandsScript.cpp
+	core/ControlCommandsSettings.cpp
+	core/ControlCommandsSurface.cpp
+	core/ControlCommandsTransport.cpp
+	core/ControlDeviceCatalogue.cpp
+	core/ControlDeviceHosted.cpp
+	core/ControlDeviceState.cpp
+	core/ControlDeviceSupport.cpp
+	core/ControlEditSupport.cpp
+	core/ControlRegistry.cpp
+	core/ControlReversibility.cpp
+	core/ControlReversibilityTable.cpp
+	core/ControlSchema.cpp
+	core/ControlVocabulary.cpp
+	core/ControlServer.cpp
+	core/ControlSession.cpp
+	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).
+	${CMAKE_SOURCE_DIR}/include/ControlEdit.h
+	${CMAKE_SOURCE_DIR}/include/ControlRegistry.h
+	${CMAKE_SOURCE_DIR}/include/ControlServer.h
 	core/Controller.cpp
 	core/ControllerConnection.cpp
 	core/DataFile.cpp
@@ -100,7 +136,9 @@ set(LMMS_SRCS
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
 	core/ProjectRecovery.cpp
+	core/ProjectIds.cpp
 	core/ProjectRenderer.cpp
+	core/ProjectRevisions.cpp
 	core/ProjectVersion.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
@@ -134,6 +172,7 @@ set(LMMS_SRCS
 	core/ToolPlugin.cpp
 	core/Track.cpp
 	core/TrackContainer.cpp
+	core/UnattendedRun.cpp
 	core/UpgradeExtendedNoteRange.h
 	core/UpgradeExtendedNoteRange.cpp
 	core/Clip.cpp
