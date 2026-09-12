@@ -261,6 +261,12 @@ LMMS_EXPORT void registerPluginPresetCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDspCommands(ControlRegistry& registry);
 //! settings.*, audio.*, midi.* and app.version.
 LMMS_EXPORT void registerSettingsCommands(ControlRegistry& registry);
+//! automation.get_state and automation.mode_set.
+LMMS_EXPORT void registerAutomationCommands(ControlRegistry& registry);
+//! automation.add_point / automation.remove_point / automation.clear.
+LMMS_EXPORT void registerAutomationEditCommands(ControlRegistry& registry);
+//! script.run and script.list.
+LMMS_EXPORT void registerScriptCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

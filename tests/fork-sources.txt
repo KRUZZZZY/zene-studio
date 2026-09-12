@@ -8,7 +8,6 @@
 # (lua, luabridge), plugins/NeuralAmp/rtneural (RTNeural), plugins/NeuralAmp/nam
 # (Neural Amp Modeler), plugins/NeuralAmp/tests, plugins/RnnoiseDenoiser/rnnoise
 # (RNNoise). They are not this fork's code and these gates never refactor them.
-#
 # lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
 # resolves this file's directory to the repo root).
 include/AudioBus.h
@@ -125,7 +124,6 @@ src/core/ControlCommandsTransport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlServer.cpp
 tests/src/core/ControlRegistryTest.cpp
-
 # ---- Control-surface hardening: shutdown + readiness (task #626, lane
 #      post-alpha/control-hardening) ----
 # One place decides whether this run can show a dialog to a human. Both #626
@@ -149,7 +147,6 @@ tests/control-shutdown.py
 tests/control-readiness.py
 tests/control-no-audio-device.py
 tests/control-negative-control.py
-
 # ---- Agent surface gate (SPEC A15, lane post-alpha/agent-surface-gate) ----
 # control.surface_report reflects the live menu/toolbar surface so the
 # agent_surface ctest can fail on an action with no registered command.
@@ -159,7 +156,6 @@ tests/control-negative-control.py
 src/core/ControlCommandsSurface.cpp
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
-
 # ---- Notes / clips / tracks command group (SPEC A11-A16, lane post-alpha/cmd-notes) ----
 # The piano-roll and song-editor half of AGENT-TOOLING.md section 5: note.*,
 # roll.get_state, clip.*, track.add/remove/rename/set_mute/set_solo/set_arm and
@@ -171,7 +167,6 @@ src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlEditSupport.cpp
 tests/src/core/ControlEditCommandsTest.cpp
-
 # ---- Agent control surface: plugin/dsp + settings command groups ----
 # Lane post-alpha/cmd-plugins off post-alpha/agent-control-surface. The device
 # catalogue and device support shared by plugin.list / dsp.get_state, the
@@ -188,7 +183,6 @@ src/core/ControlCommandsSettings.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
-
 # ---- Agent control surface: the LV2 half of the device catalogue ----
 # Lane post-alpha/lv2-catalogue off post-alpha/cmd-plugins. LV2 devices are
 # enumerated through the LV2 host module's own discovery path
@@ -213,3 +207,16 @@ tests/headless_load_harness.py
 tests/control-headless-project-open.py
 tests/control-headless-working-directory.py
 tests/control-headless-no-audio-device.py
+# ---- Agent control surface: automation + scripting command groups ----
+# Lane post-alpha/cmd-automation off post-alpha/cmd-plugins. The automation.*
+# group (read-back, the point edits, and the registered-but-refused
+# automation.mode_set, because this tree has no automation modes) and the
+# script.* group (script.run drives the embedded ScriptEngine in the running
+# instance; script.list reports the scripts the build ships). Registered as
+# fork-NEW so the fork-scoped ratchets measure them.
+include/ControlAutomationSupport.h
+src/core/ControlAutomationSupport.cpp
+src/core/ControlCommandsAutomation.cpp
+src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsScript.cpp
+tests/src/core/ControlAutomationScriptTest.cpp

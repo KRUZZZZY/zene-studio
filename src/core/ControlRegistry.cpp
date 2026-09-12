@@ -390,6 +390,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerPluginCommands(registry);
 	registerDspCommands(registry);
 	registerSettingsCommands(registry);
+	registerAutomationCommands(registry);
+	registerAutomationEditCommands(registry);
+	registerScriptCommands(registry);
 }
 
 } // namespace lmms

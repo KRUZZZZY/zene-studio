@@ -38,6 +38,9 @@ set(LMMS_SRCS
 	core/ConfigManager.cpp
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
+	core/ControlAutomationSupport.cpp
+	core/ControlCommandsAutomation.cpp
+	core/ControlCommandsAutomationEdit.cpp
 	core/ControlCommandsControl.cpp
 	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp
@@ -47,6 +50,7 @@ set(LMMS_SRCS
 	core/ControlCommandsPluginPreset.cpp
 	core/ControlCommandsPluginState.cpp
 	core/ControlCommandsProject.cpp
+	core/ControlCommandsScript.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
 	core/ControlCommandsTransport.cpp

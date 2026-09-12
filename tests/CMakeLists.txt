@@ -13,6 +13,7 @@ set(LMMS_TESTS
 	src/core/AutomatableModelTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	src/core/ControlDeviceCatalogueTest.cpp
+	src/core/ControlAutomationScriptTest.cpp
 	src/core/ControlRegistryTest.cpp
 	src/core/MathTest.cpp
 	src/core/MultiTrackRecorderTest.cpp

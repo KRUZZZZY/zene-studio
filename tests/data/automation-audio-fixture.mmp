@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!DOCTYPE lmms-project>
+<lmms-project type="song" version="1.0" creator="LMMS" creatorversion="1.2.0">
+  <head timesig_denominator="4" bpm="140" masterpitch="0" mastervol="100" timesig_numerator="4"/>
+  <song>
+    <trackcontainer visible="1" width="580" height="159" type="song" x="425" y="16" maximized="0" minimized="0">
+      <track type="0" muted="0" name="Automation Target" solo="0">
+        <instrumenttrack pitch="0" vol="100" mixch="0" pan="0" basenote="57" usemasterpitch="0" pitchrange="1">
+          <instrument name="tripleoscillator">
+            <tripleoscillator finel0="0" vol1="100" finel1="0" coarse0="0" finer0="0" vol2="0" pan0="0" finer1="0" coarse1="0" finel2="0" pan1="0" coarse2="0" finer2="0" pan2="0" wavetype0="0" wavetype1="0" wavetype2="0" phoffset0="0" phoffset1="0" phoffset2="0" modalgo1="0" modalgo2="0" modalgo3="0" stphdetun0="0" stphdetun1="0" stphdetun2="0" userwavefile0="" userwavefile1="" userwavefile2="" vol0="100"/>
+          </instrument>
+          <eldata fwet="0" ftype="0" fres="0.5" fcut="14000">
+            <elvol lspd="0.1" ctlenvamt="0" lpdel="0" pdel="0" amt="1" hold="0" syncmode="0" userwavefile="" latt="0" sustain="1" lamt="0" lshp="0" lspd_denominator="4" lspd_numerator="4" x100="0" rel="0.1" dec="0.1" att="0"/>
+            <elcut lspd="0.1" ctlenvamt="1" lpdel="0" pdel="0" amt="0" hold="0" syncmode="0" userwavefile="" latt="0" sustain="0.5" lamt="0" lshp="0" lspd_denominator="4" lspd_numerator="4" x100="0" rel="0.1" dec="0.1" att="0"/>
+            <elres lspd="0.1" ctlenvamt="0" lpdel="0" pdel="0" amt="0" hold="0" syncmode="0" userwavefile="" latt="0" sustain="0.5" lamt="0" lshp="0" lspd_denominator="4" lspd_numerator="4" x100="0" rel="0.1" dec="0.1" att="0"/>
+          </eldata>
+          <chordcreator chordrange="1" chord="0" chord-enabled="0"/>
+          <arpeggiator arpdir="0" arpgate="100" arptime_denominator="4" syncmode="0" arp-enabled="0" arprange="2" arptime_numerator="4" arpmode="0" arp="8" arptime="158"/>
+          <midiport inputchannel="0" fixedinputvelocity="-1" outputcontroller="0" outputchannel="1" fixedoutputvelocity="-1" readable="0" fixedoutputnote="-1" outputprogram="1" writable="0" basevelocity="127" inputcontroller="0"/>
+          <fxchain numofeffects="0" enabled="0"/>
+        </instrumenttrack>
+        <midiclip type="1" name="Tone" autoresize="1" pos="0" muted="0" steps="16" len="384">
+          <note key="60" vol="100" pos="0" len="24" pan="0"/>
+          <note key="64" vol="100" pos="32" len="24" pan="0"/>
+          <note key="67" vol="100" pos="64" len="24" pan="0"/>
+          <note key="72" vol="100" pos="96" len="24" pan="0"/>
+          <note key="60" vol="100" pos="128" len="24" pan="0"/>
+          <note key="64" vol="100" pos="160" len="24" pan="0"/>
+          <note key="67" vol="100" pos="192" len="24" pan="0"/>
+          <note key="72" vol="100" pos="224" len="24" pan="0"/>
+          <note key="60" vol="100" pos="256" len="24" pan="0"/>
+          <note key="64" vol="100" pos="288" len="24" pan="0"/>
+          <note key="67" vol="100" pos="320" len="24" pan="0"/>
+          <note key="72" vol="100" pos="352" len="24" pan="0"/>
+        </midiclip>
+      </track>
+    </trackcontainer>
+    <mixer visible="1" width="647" height="332" x="9" y="441" maximized="0" minimized="0">
+      <mixerchannel num="0" muted="0" volume="1" name="Master" soloed="0">
+        <fxchain numofeffects="0" enabled="0"/>
+      </mixerchannel>
+    </mixer>
+    <ControllerRackView visible="1" width="258" height="173" x="664" y="444" maximized="0" minimized="0"/>
+    <pianoroll visible="0" width="640" height="480" x="1" y="1" maximized="1" minimized="0"/>
+    <automationeditor visible="0" width="640" height="400" x="356" y="129" maximized="0" minimized="0"/>
+    <projectnotes visible="0" width="408" height="394" x="9" y="16" maximized="0" minimized="0"><![CDATA[<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
+<html><head><meta name="qrichtext" content="1" /></head><body style="font-family:'Verdana'; font-size:11pt;">
+<p>Automation audio-truth fixture: one instrument track (&quot;Automation Target&quot;) with a 384-tick
+MIDI clip of twelve notes, and a master mixer channel. Built so that automating a parameter changes
+the rendered audio measurably - the notes span the whole clip, so a gain shape that is loud in the
+first quarter and silent in the rest cannot render the same samples as the flat default.</p>
+</body></html>]]></projectnotes>
+    <timeline lp0pos="0" lp1pos="192" lpstate="0"/>
+    <controllers/>
+  </song>
+</lmms-project>
