@@ -73,6 +73,7 @@
 #include "ScriptEngine.h"
 #include "ControlRegistry.h"
 #include "ControlServer.h"
+#include "UnattendedRun.h"
 
 #include <memory>
 
@@ -689,6 +690,11 @@ int main( int argc, char * * argv )
 			}
 
 			controlSocket = QString::fromLocal8Bit( argv[i] );
+			// Mark the whole process as agent-driven before the GUI or the
+			// engine exists: from here on no modal dialog may be opened, and
+			// the commands that raise one answer with a typed result instead
+			// (task #625, SPEC A13).
+			lmms::setAgentInstance( true );
 		}
 		else
 		{
@@ -860,7 +866,21 @@ int main( int argc, char * * argv )
 				QFileInfo( recoveryFile ).isFile();
 		bool autoSaveEnabled =
 			ConfigManager::inst()->value( "ui", "enableautosave" ).toInt();
-		if( recoveryFilePresent )
+		if( recoveryFilePresent && lmms::isUnattendedRun() )
+		{
+			// A modal here runs BEFORE app->exec(): in an unattended run
+			// (--control-socket, or no display at all) nobody can click it, so
+			// the instance would never become ready (task #625).  Take the
+			// box's own default button - "Recover", the non-destructive answer
+			// - and say so on stderr.
+			fileToLoad = recoveryFile;
+			getGUI()->mainWindow()->setSession( MainWindow::SessionState::Recover );
+			fprintf( stderr, "main: unattended run: recovering %s without the "
+				"\"Project recovery\" prompt (the prompt's default answer)\n",
+				recoveryFile.toUtf8().constData() );
+			fflush( stderr );
+		}
+		else if( recoveryFilePresent )
 		{
 			QMessageBox mb;
 			mb.setWindowTitle( MainWindow::tr( "Project recovery" ) );

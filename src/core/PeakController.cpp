@@ -30,6 +30,7 @@
 #include <QMessageBox>
 
 #include "AudioEngine.h"
+#include "UnattendedRun.h"
 #include "EffectChain.h"
 #include "plugins/PeakControllerEffect/PeakControllerEffect.h"
 
@@ -208,16 +209,28 @@ PeakController * PeakController::getControllerBySetting(const QDomElement & _thi
 			{
 				effect->m_effectId = newEffectId++;
 			}
-			QMessageBox msgBox;
-			msgBox.setIcon( QMessageBox::Information );
-			msgBox.setWindowTitle( tr("Peak Controller Bug") );
-			msgBox.setText( tr("Due to a bug in older version of LMMS, the peak "
+			// This runs while a project is loading. An agent instance
+			// (--control-socket) has nobody to answer the box, so the load
+			// would never finish (task #625): say it on stderr instead.
+			if (lmms::isUnattendedRun())
+			{
+				qWarning() << tr("Due to a bug in older version of LMMS, the peak "
+						"controllers may not be connect properly. Please ensure that "
+						"peak controllers are connected properly and re-save this file.");
+			}
+			else
+			{
+				QMessageBox msgBox;
+				msgBox.setIcon( QMessageBox::Information );
+				msgBox.setWindowTitle( tr("Peak Controller Bug") );
+				msgBox.setText( tr("Due to a bug in older version of LMMS, the peak "
 							   "controllers may not be connect properly. "
 							   "Please ensure that peak controllers are connected "
 							   "properly and re-save this file. "
 							   "Sorry for any inconvenience caused.") );
-			msgBox.setStandardButtons(QMessageBox::Ok);
-			msgBox.exec();
+				msgBox.setStandardButtons(QMessageBox::Ok);
+				msgBox.exec();
+			}
 		}
 	}
 

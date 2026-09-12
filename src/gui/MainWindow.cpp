@@ -24,6 +24,8 @@
 
 #include "MainWindow.h"
 
+#include <cstdio>
+
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDebug>
@@ -37,7 +39,9 @@
 #include <QSplitter>
 
 #include "AboutDialog.h"
+#include "AudioEngine.h"
 #include "AutomationEditor.h"
+#include "UnattendedRun.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -476,12 +480,31 @@ void MainWindow::finalize()
 	m_toolBarLayout->setColumnStretch( 100, 1 );
 
 	// setup-dialog opened before?
+	//
+	// Both dialogs below are questions for a human, asked BEFORE app->exec().
+	// In an unattended run (--control-socket, or no display at all) nobody can
+	// answer them, so Qt parks the startup path in a nested event loop: the
+	// instance stays alive, keeps answering `control.ping` with
+	// engine_ready=false, and never becomes usable (task #625, measured on
+	// 6b01b98eb). Ask only when a human is actually there; otherwise say it on
+	// stderr, where the log and the operator can see it.
+	const bool interactive = !lmms::isUnattendedRun();
+
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
 	{
 		ConfigManager::inst()->setValue( "app", "configured", "1" );
 		// no, so show it that user can setup everything
-		SetupDialog sd;
-		sd.exec();
+		if( interactive )
+		{
+			SetupDialog sd;
+			sd.exec();
+		}
+		else
+		{
+			fprintf( stderr, "MainWindow: unattended run: skipping the first-run setup dialog; "
+				"configure audio and MIDI in the --config file\n" );
+			fflush( stderr );
+		}
 	}
 	// look whether the audio engine failed to start the audio device selected by the
 	// user and is using AudioDummy as a fallback
@@ -489,12 +512,30 @@ void MainWindow::finalize()
 	else if( Engine::audioEngine()->audioDevStartFailed() || !AudioEngine::isAudioDevNameValid(
 		ConfigManager::inst()->value( "audioengine", "audiodev" ) ) )
 	{
-		QMessageBox::critical(nullptr, "Audio device setup failed",
-			tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart LMMS."));
+		// The engine already fell back to the dummy device and keeps working
+		// (render, edit, save), so there is nothing to refuse: report which
+		// backend was asked for and which device is in use, and carry on.
+		const QString requested = ConfigManager::inst()->value( "audioengine", "audiodev" );
+		const bool failed = Engine::audioEngine()->audioDevStartFailed();
+		const bool known = AudioEngine::isAudioDevNameValid( requested );
+		if( interactive )
+		{
+			QMessageBox::critical(nullptr, "Audio device setup failed",
+				tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart LMMS."));
 
-		// if so, offer the audio settings section of the setup dialog
-		SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
-		sd.exec();
+			// if so, offer the audio settings section of the setup dialog
+			SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
+			sd.exec();
+		}
+		else
+		{
+			fprintf( stderr, "MainWindow: audio-device-setup backend=\"%s\" "
+				"device_start_failed=%d name_known=%d device=\"%s\" "
+				"(unattended run: no dialog, the engine continues)\n",
+				requested.toUtf8().constData(), failed ? 1 : 0, known ? 1 : 0,
+				Engine::audioEngine()->audioDevName().toUtf8().constData() );
+			fflush( stderr );
+		}
 	}
 
 	// Add editor subwindows

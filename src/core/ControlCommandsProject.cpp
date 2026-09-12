@@ -182,10 +182,20 @@ void registerProjectOpen(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("open");
 	cmd.description = QStringLiteral("Load a project file into this running instance.");
 	cmd.argsSchema = schemaObject({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
+	// SPEC A13: the load path must work with no display. A project that loads
+	// with errors returns the per-item list here instead of stopping on the
+	// "LMMS Error report" box, which in an agent instance nobody can click
+	// (task #625).
 	cmd.resultSchema = schemaObject({
 		{QStringLiteral("file"), stringProperty()},
 		{QStringLiteral("track_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		{QStringLiteral("loaded_with_errors"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
+		{QStringLiteral("error_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		{QStringLiteral("errors"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), schemaObject({
+				{QStringLiteral("message"), stringProperty()},
+				{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}}})}}},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -198,10 +208,33 @@ void registerProjectOpen(ControlRegistry& registry)
 		Song* song = Engine::getSong();
 		song->loadProject(path);
 
+		// A refused file (unparseable, or carrying local plugin paths) leaves
+		// the session as it was; the reason is a typed refusal, not a modal.
+		const QString refusal = song->loadRefusal();
+		if (!refusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1: %2").arg(path, refusal));
+		}
+
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), song->projectFileName());
 		result.insert(QStringLiteral("track_count"), static_cast<int>(song->tracks().size()));
 		result.insert(QStringLiteral("tempo"), song->getTempo());
+		// The per-item load errors, sorted so the answer is reproducible: each
+		// entry is what failed (the sample or plugin path, in the message) and
+		// why (the same sentence the "LMMS Error report" box used to show).
+		QJsonArray errors;
+		QStringList messages = song->errors().keys();
+		messages.sort();
+		for (const QString& message : messages)
+		{
+			errors.append(QJsonObject{{QStringLiteral("message"), message},
+				{QStringLiteral("count"), song->errors().value(message)}});
+		}
+		result.insert(QStringLiteral("errors"), errors);
+		result.insert(QStringLiteral("error_count"), errors.size());
+		result.insert(QStringLiteral("loaded_with_errors"), !errors.isEmpty());
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"), QJsonObject());
 		transaction.insert(QStringLiteral("inverse"),

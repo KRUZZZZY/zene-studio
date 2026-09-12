@@ -37,6 +37,7 @@
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "ControllerConnection.h"
+#include "UnattendedRun.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "Mixer.h"
 #include "MixerView.h"
@@ -1013,6 +1014,11 @@ void Song::loadProject( const QString & fileName )
 
 	m_loadingProject = true;
 
+	// A load must never leave a modal dialog open in an agent instance (task
+	// #625): record why a file was refused so project.open can answer with a
+	// typed error instead.
+	m_loadRefusal.clear();
+
 	Engine::projectJournal()->setJournalling( false );
 
 	m_oldFileName = m_fileName;
@@ -1026,6 +1032,8 @@ void Song::loadProject( const QString & fileName )
 	if( dataFile.head().isNull() )
 	{
 		cantLoadProject = true;
+		m_loadRefusal = tr( "the project file could not be read or parsed "
+			"(see the log for the parser's line/column report)" );
 	}
 	else
 	{
@@ -1034,12 +1042,15 @@ void Song::loadProject( const QString & fileName )
 		if (dataFile.hasLocalPlugins())
 		{
 			cantLoadProject = true;
+			m_loadRefusal = tr("Project file contains local paths to plugins, which could be used to "
+					"run malicious code.");
 
-			if (getGUI() != nullptr)
+			// In an agent instance nobody can answer this box (task #625), so
+			// the refusal becomes the typed error project.open returns.
+			if (getGUI() != nullptr && !lmms::isUnattendedRun())
 			{
 				QMessageBox::critical(nullptr, tr("Aborting project load"),
-					tr("Project file contains local paths to plugins, which could be used to "
-						"run malicious code."));
+					m_loadRefusal);
 			}
 			else
 			{
@@ -1193,7 +1204,12 @@ void Song::loadProject( const QString & fileName )
 
 	if ( hasErrors())
 	{
-		if ( getGUI() != nullptr )
+		// The "LMMS Error report" box is a question for a human.  In an agent
+		// instance (--control-socket) or a run with no display it would park
+		// the UI thread in a nested event loop - project.open never returns,
+		// and the client is told nothing (task #625).  The same report goes to
+		// stderr, and project.open hands the caller the per-item list.
+		if ( getGUI() != nullptr && !lmms::isUnattendedRun() )
 		{
 			QMessageBox::warning( nullptr, tr("LMMS Error report"), errorSummary(),
 							QMessageBox::Ok );
