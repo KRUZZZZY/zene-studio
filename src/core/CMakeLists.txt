@@ -277,6 +277,7 @@ set(LMMS_SRCS
 	core/RackNodes.cpp
 	core/RackZones.cpp
 	core/RenderManager.cpp
+	core/RetroMidiCapture.cpp
 	core/RingBuffer.cpp
 	core/RoutingChainNodes.cpp
 	core/RoutingGraph.cpp

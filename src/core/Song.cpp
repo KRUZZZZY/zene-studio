@@ -56,6 +56,7 @@
 #include "ProjectJournal.h"
 #include "ProjectIds.h"
 #include "ProjectNotes.h"
+#include "RetroMidiCapture.h"
 #include "Scale.h"
 #include "SongEditor.h"
 #include "PeakController.h"
@@ -256,6 +257,15 @@ void Song::processNextBuffer()
 	// runs exactly the block it has always run. Placed beside followTempoMap()
 	// because both are per-block readers of control-thread state.
 	processModulation();
+
+	// Retrospective MIDI capture (owner item 14, docs/MIDI-RETRO-CAPTURE.md): publish
+	// this period's transport tick once, so the raw MIDI clients can stamp a captured
+	// event without reading live Song state from the MIDI thread - getPlayPos() hands
+	// out a reference into that state and include/Song.h holds no atomics. One relaxed
+	// store per rendered period, and the same value is not published while stopped, so
+	// a capture that is armed but not rolling stamps nothing new. Placed after
+	// followTempoMap() so the tick published is the one this block's tempo map sets.
+	RetroMidiCapture::publishTick( static_cast<std::uint32_t>( getPlayPos().getTicks() ) );
 
 	// At the beginning of the song, we have to reset the LFOs
 	if (m_playMode == PlayMode::Song && getPlayPos() == 0)

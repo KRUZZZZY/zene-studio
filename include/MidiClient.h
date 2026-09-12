@@ -30,6 +30,7 @@
 
 
 #include "MidiEvent.h"
+#include "RetroMidiCapture.h"
 
 class QObject;
 
@@ -110,8 +111,24 @@ public:
 	// any other working
 	static MidiClient * openMidiClient();
 
+	// Retrospective MIDI capture (owner item 14, docs/MIDI-RETRO-CAPTURE.md):
+	// one bounded recent-event ring for this client, off by default. The client's
+	// own receive paths record into it (MidiClientRaw::processParsedEvent() and
+	// MidiAlsaSeq::run()); the GUI/control thread reads it.
+	RetroMidiCapture& retroCapture()
+	{
+		return m_retroCapture;
+	}
+
+	const RetroMidiCapture& retroCapture() const
+	{
+		return m_retroCapture;
+	}
+
 protected:
 	std::vector<MidiPort *> m_midiPorts;
+
+	RetroMidiCapture m_retroCapture;
 
 } ;
 

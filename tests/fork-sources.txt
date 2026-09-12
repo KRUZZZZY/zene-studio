@@ -312,6 +312,8 @@ include/RackZones.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
 include/RemotePluginAudioPorts.h
+include/RetroMidiCapture.h
+include/RetroMidiRing.h
 include/RoutingChainNodes.h
 include/RoutingGraph.h
 include/RoutingNode.h
@@ -514,6 +516,7 @@ src/core/RackMacros.cpp
 src/core/RackNodes.cpp
 src/core/RackZones.cpp
 src/core/RecordingJournal.cpp
+src/core/RetroMidiCapture.cpp
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
@@ -610,6 +613,7 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
+
 tests/src/tracks/SampleClipWindowTest.cpp
 tools/local-ci.sh
 tools/ncpu-shim.c

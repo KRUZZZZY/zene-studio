@@ -61,6 +61,7 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
+	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
 	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerConcurrencyTest.cpp
@@ -92,6 +93,7 @@ set(LMMS_TESTS
 	src/core/RackZonesTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
+	src/core/RetroMidiRingTest.cpp
 	src/core/RecordingRealtimeTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp

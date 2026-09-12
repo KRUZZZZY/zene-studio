@@ -243,6 +243,18 @@ void MidiClientRaw::processParsedEvent()
 	// bind a control that no MidiPort is listening to yet. No-op when unarmed.
 	MidiLearn::instance()->handleMidiEvent(m_midiParseData.m_midiEvent);
 
+	// Retrospective MIDI capture (owner item 14, docs/MIDI-RETRO-CAPTURE.md) takes
+	// the same event set as MIDI learn on this path - every parsed event, before the
+	// per-port loop, so an event no port is subscribed to is still recorded. A raw
+	// client has no tick of its own, so the engine's per-period transport tick is
+	// the stamp, and it has no source-port id. The guard is outside capture() so
+	// that while nothing is armed this is one relaxed atomic load per event and the
+	// tick load is not even evaluated.
+	if (m_retroCapture.isArmed())
+	{
+		m_retroCapture.capture(m_midiParseData.m_midiEvent, RetroMidiCapture::publishedTick());
+	}
+
 	for (const auto& midiPort : m_midiPorts)
 	{
 		midiPort->processInEvent(m_midiParseData.m_midiEvent);
