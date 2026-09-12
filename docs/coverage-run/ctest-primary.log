@@ -1,0 +1,74 @@
+== Running ctest (from build-coverage/tests)
+Internal ctest changing into directory: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage/build-coverage/tests
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage/build-coverage/tests
+      Start  1: ArrayVectorTest
+ 1/33 Test  #1: ArrayVectorTest ..................   Passed    0.13 sec
+      Start  2: AudioBufferTest
+ 2/33 Test  #2: AudioBufferTest ..................   Passed    0.21 sec
+      Start  3: AudioBusHandleTest
+ 3/33 Test  #3: AudioBusHandleTest ...............   Passed    2.72 sec
+      Start  4: AudioBusTest
+ 4/33 Test  #4: AudioBusTest .....................   Passed    3.02 sec
+      Start  5: AudioPortsModelTest
+ 5/33 Test  #5: AudioPortsModelTest ..............   Passed    2.76 sec
+      Start  6: AudioPortsTest
+ 6/33 Test  #6: AudioPortsTest ...................   Passed    2.78 sec
+      Start  7: AutomatableModelTest
+ 7/33 Test  #7: AutomatableModelTest .............   Passed    2.30 sec
+      Start  8: LoudnessReportTest
+ 8/33 Test  #8: LoudnessReportTest ...............   Passed    5.28 sec
+      Start  9: LufsMeterTest
+ 9/33 Test  #9: LufsMeterTest ....................   Passed    7.91 sec
+      Start 10: CrashReporterTest
+10/33 Test #10: CrashReporterTest ................   Passed    0.96 sec
+      Start 11: MathTest
+11/33 Test #11: MathTest .........................   Passed    0.11 sec
+      Start 12: MidiLearnTest
+12/33 Test #12: MidiLearnTest ....................   Passed    3.23 sec
+      Start 13: MultiTrackRecorderTest
+13/33 Test #13: MultiTrackRecorderTest ...........   Passed    0.10 sec
+      Start 14: PluginAudioPortsTest
+14/33 Test #14: PluginAudioPortsTest .............   Passed    2.50 sec
+      Start 15: PluginScanCacheTest
+15/33 Test #15: PluginScanCacheTest ..............   Passed    0.20 sec
+      Start 16: ProjectVersionTest
+16/33 Test #16: ProjectVersionTest ...............   Passed    0.11 sec
+      Start 17: RecordRingBufferTest
+17/33 Test #17: RecordRingBufferTest .............   Passed    0.15 sec
+      Start 18: RelativePathsTest
+18/33 Test #18: RelativePathsTest ................   Passed    0.11 sec
+      Start 19: RemotePluginAudioPortsTest
+19/33 Test #19: RemotePluginAudioPortsTest .......   Passed    3.41 sec
+      Start 20: RemotePluginClientE2ETest
+20/33 Test #20: RemotePluginClientE2ETest ........   Passed    2.66 sec
+      Start 21: RoutingGraphTest
+21/33 Test #21: RoutingGraphTest .................   Passed    0.13 sec
+      Start 22: PdcMixerTest
+22/33 Test #22: PdcMixerTest .....................   Passed    3.45 sec
+      Start 23: ScriptBindingsTest
+23/33 Test #23: ScriptBindingsTest ...............   Passed    2.18 sec
+      Start 24: ScriptEngineTest
+24/33 Test #24: ScriptEngineTest .................   Passed    2.73 sec
+      Start 25: ScriptStabilisationTest
+25/33 Test #25: ScriptStabilisationTest ..........   Passed    2.49 sec
+      Start 26: SlideNotesTest
+26/33 Test #26: SlideNotesTest ...................   Passed    0.17 sec
+      Start 27: StemExportTest
+27/33 Test #27: StemExportTest ...................   Passed   17.13 sec
+      Start 28: TimelineTest
+28/33 Test #28: TimelineTest .....................   Passed    2.14 sec
+      Start 29: TwoTrackRecordingHarness
+29/33 Test #29: TwoTrackRecordingHarness .........   Passed    2.12 sec
+      Start 30: AutomationTrackTest
+30/33 Test #30: AutomationTrackTest ..............   Passed    2.86 sec
+      Start 31: PluginPortsMigrationTest
+31/33 Test #31: PluginPortsMigrationTest .........   Passed    8.14 sec
+      Start 32: ZynSeparateProcessTest
+32/33 Test #32: ZynSeparateProcessTest ...........   Passed    3.38 sec
+      Start 33: AudioPluginTest
+33/33 Test #33: AudioPluginTest ..................   Passed    2.05 sec
+
+100% tests passed, 0 tests failed out of 33
+
+Total Test time (real) =  89.64 sec
+== Capturing coverage
