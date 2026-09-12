@@ -164,6 +164,7 @@ include/ScriptEngine.h
 include/ScriptLuaQtTypes.h
 include/ScriptPackage.h
 include/SessionModel.h
+include/SessionScheduler.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
 include/StemSeparation/StemJobManager.h
@@ -251,6 +252,7 @@ src/core/ScriptPackage.cpp
 src/core/SessionClip.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
+src/core/SessionScheduler.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp

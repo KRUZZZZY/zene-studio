@@ -331,6 +331,7 @@ include/ScriptPackage.h
 include/SendButtonIndicator.h
 include/SerializingObject.h
 include/SessionModel.h
+include/SessionScheduler.h
 include/SetupDialog.h
 include/SharedMemory.h
 include/SideBar.h
@@ -928,6 +929,7 @@ src/core/SerializingObject.cpp
 src/core/SessionClip.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
+src/core/SessionScheduler.cpp
 src/core/Song.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
@@ -1180,6 +1182,8 @@ tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SessionModelTest.cpp
+tests/src/core/SessionSchedulerRenderTest.cpp
+tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SlideNotesTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h

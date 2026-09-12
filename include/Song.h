@@ -44,6 +44,7 @@
 
 #ifdef LMMS_HAVE_SESSION_VIEW
 #include "SessionModel.h"
+#include "SessionScheduler.h"
 #endif
 
 namespace lmms
@@ -386,6 +387,12 @@ public:
 	//! WANT_SESSION_VIEW; persisted as the versioned <session> block.
 	SessionModel& sessionModel() { return m_sessionModel; }
 	const SessionModel& sessionModel() const { return m_sessionModel; }
+
+	/*! Session View launch scheduler (task #595, SPEC A2/A3). The engine owns
+	 *  the launch state; `processNextBuffer()` drives it on the audio thread
+	 *  and takes a track over while its session clip plays (SPEC A1). */
+	SessionScheduler& sessionScheduler() { return m_sessionScheduler; }
+	const SessionScheduler& sessionScheduler() const { return m_sessionScheduler; }
 #endif
 
 public slots:
@@ -531,6 +538,7 @@ private:
 
 #ifdef LMMS_HAVE_SESSION_VIEW
 	SessionModel m_sessionModel;
+	SessionScheduler m_sessionScheduler;
 #else
 	//! Raw XML of a <session> block loaded by a build without the Session View
 	//! reader (WANT_SESSION_VIEW=OFF), re-emitted verbatim on save so this

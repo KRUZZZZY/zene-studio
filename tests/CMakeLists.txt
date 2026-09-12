@@ -78,6 +78,12 @@ ENDIF()
 IF(LMMS_HAVE_SESSION_VIEW)
 	LIST(APPEND LMMS_TESTS
 		src/core/SessionModelTest.cpp
+		# Launch scheduler + quantisation engine (task #595): the pure launch
+		# decision, the LaunchMode state machine, the lock-free hand-off.
+		src/core/SessionSchedulerTest.cpp
+		# Behaviour-preservation proof: a real headless render is byte-identical
+		# with nothing launched, and differs with a launched clip.
+		src/core/SessionSchedulerRenderTest.cpp
 	)
 ENDIF()
 
