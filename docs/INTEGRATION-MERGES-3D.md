@@ -13,7 +13,8 @@ were never contacted; no branch was rebased, amended, reset or rewritten; nothin
 `git add -A` (every `git diff --cached --name-only` was read before every commit). Every exit code
 below was measured unpiped (`cmd > log 2>&1; echo EXIT=$?`) and every log is committed under
 `tests/integration-logs-3d/` — never `/tmp`. One build directory (`build/`), `df -h`: 60 GB free at
-entry, 59 GB at exit.
+entry, 59 GB during the train and 60 GB at exit (the scratch evidence is committed, not kept in
+build/).
 
 Gate 9 = `tests/fork-sources-gate.sh` · Gate 6 = `tests/no-upstream-regression-gate.sh` ·
 `run-all-gates.sh` exits **3** = `PASS-WITH-SKIPS` (gate 2 coverage needs `--with-coverage`), which is
