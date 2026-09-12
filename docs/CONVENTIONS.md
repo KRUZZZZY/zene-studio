@@ -20,7 +20,7 @@ actually checks it:
 | 2 | Per-file ≤ 500 lines | KB ruleset | Gate 7 `tests/file-length-gate.sh` | fork-NEW sources | **green**; 8 files over 500 grandfathered; ratchet with recorded `--reanchor` |
 | 3 | Token duplication < 5% | KB ruleset | Gate 8 `tests/duplication-gate.sh` (jscpd, headers included) | fork-NEW sources | **green**; 1.09% duplicated lines |
 | 4 | No tautological tests | KB ruleset | Gate 3 `tests/no-tautology-gate.sh` | every registered QTest file | **green**; 21 files, 1,744 slots, 1,477 assertions, 0 tautologies |
-| 5 | Coverage ≥ 85%, never falling | KB ruleset | Gate 2 `tests/coverage-gate.sh` (lcov ratchet, line-weighted) | fork-NEW sources | **ratchet green, aspiration not met and not claimed**: 84.34% (4523/5363) over the **67 of the 139 fork-scope entries that produced a coverage record** (2026-09-12). The headline is a claim about those 67 files, not about the scope — 72 entries produce no record in this configuration (see "Scope" below). The recorded baseline's per-file entries are capped at what each file measured, and the gate stores each entry's instrumented-line count, so a percentage that moves because the *compiled TU set* changed is no longer read as a regression |
+| 5 | Coverage ≥ 85%, never falling | KB ruleset | Gate 2 `tests/coverage-gate.sh` (lcov ratchet, line-weighted) | fork-NEW sources | **measured on the release tree 2026-09-12: 81.60% (7113/8717) over the 119 of the 175 fork-scope entries that produced a record** in the fuller configuration (VST3 SDK and CLAP provisioned, `WANT_VST3_TEST_INSTRUMENT=ON`). The **ratchet scope** — the 67 files the baseline tracks — is at **85.77%**, above the aspiration. The headline is a claim about those 119 files, not about the scope: 56 entries produce no record here and the gate prints that split itself. The gate stores each entry's instrumented-line count, so a percentage that moves because the *compiled TU set* changed is read as `denominator-moved` rather than as a regression. **Gate 2 currently exits 1 on its 50% entry floor with 15 new files below it** — ten dialogs/views/browser files a headless binary cannot construct, two telemetry files inert by design, and three genuinely untested (including the VST3 *effect* module's class, because the fixture is an *instrument*). Documented in `docs/KNOWN-LIMITATIONS.md`; exemptions are deliberately not being written at the tag. |
 | 6 | Mutation kill score ≥ 80% on core | KB ruleset | Gate 5 `tests/mutation-gate.sh` (scoped harness) | one TU, `src/core/RoutingGraph.cpp` | **green**; 27/30 = 90%, scope stated as a limit |
 | 7 | All tests pass | repo | Gate 1 (`ctest` from `build/tests`) | `tests/` | **green**; 24/24 (Debug, Qt6) |
 | 8 | No *undeclared* divergence in inherited code | repo policy 2026-09-11 | Gate 6 `tests/no-upstream-regression-gate.sh` + `tests/upstream-modifications.txt` ledger | commits since `tests/gate-base.txt` | **green**; 10 declared files, blank reason refused (exit 2) |
@@ -51,28 +51,31 @@ These are process rules, not scripts, and they bind whoever changes this repo:
    reason, and an unrecorded re-anchor exits 2. Growth is re-anchored with a recorded reason or not
    at all; code is never trimmed to satisfy a metric.
 
-## Scope: 139 files by default, 1,120 on demand — and 67 of the 139 are measured
+## Scope: 175 files by default, 1,209 on demand — and 119 of the 175 are measured
 
-`tests/fork-sources.txt` (**139** entries) is the fork's own code — the default scope for the coverage,
-mutation, length, duplication and complexity ratchets. `tests/all-sources.txt` (**1,120** entries) is
+`tests/fork-sources.txt` (**175** entries) is the fork's own code — the default scope for the coverage,
+mutation, length, duplication and complexity ratchets. `tests/all-sources.txt` (**1,209** entries) is
 every first-party C/C++ source in the repo: upstream-inherited LMMS code plus everything this fork
 adds. Vendored trees (git submodules, `src/3rdparty`, `plugins/NeuralAmp/{rtneural,nam,tests}`,
 `plugins/RnnoiseDenoiser/rnnoise`, and the verbatim copies under `tests/reference`) are excluded
 on purpose and listed in that file's header.
 
-**A scope entry is not a measured file.** Of the 139 fork-scope entries, **67 produce a coverage
-record** in the configuration this repo builds, and the other 72 cannot: 29 are sources no binary in
-this configuration compiles (7 CLAP — no CLAP SDK; 7 VST3 — no SDK; 5 wasm and 3 Session View — gates
-off; 6 stem separation — `WANT_STEM_SPLIT=OFF`; 1 standalone harness), 41 are headers no compiled TU
-instantiates code from, and 2 are shell/Python tooling that no C++ instrumentation can ever see.
-Gate 2 prints `scope: 139 entries … 67 produced a record … 72 did not` on every run, and
-`python3 tests/coverage-green/classify-scope.py <tracefile> <build-dir>` names the reason for each.
-**Quote a coverage figure with the file count it was taken over** — "84.34% over 67 files" is a
-measurement; "84.34%" alone is not.
+**A scope entry is not a measured file.** Of the **175** fork-scope entries, **119 produce a coverage
+record** in the fuller configuration (SDK and CLAP provisioned, `WANT_VST3_TEST_INSTRUMENT=ON`) and the
+other **56** cannot — the classifier names each one's reason:
+`python3 tests/coverage-green/classify-scope.py <tracefile> <build-dir>`. Its categories on the release
+tree: **37** entries instantiate no compiled translation unit (headers), **6** are behind
+`WANT_STEM_SPLIT=OFF`, **5** need `wasmtime` which is absent, **3** are behind `WANT_SESSION_VIEW=OFF`,
+**2** have no object in this build, and **1** is a plugin module built as a loadable `.so` that no test
+binary links. Gate 2 prints `scope: 175 entries … 119 produced a record … 56 did not` on every run.
+**Quote a coverage figure with the file count it was taken over** — "81.60% over 119 files" is a
+measurement; "81.60%" alone is not.
 
-Two manifest defects are open and belong to the gate-hygiene lane, not here: the entry counts above
-are stale in older text that quoted 99 / 1,095, and `tests/all-sources.txt` is not a superset of
-`tests/fork-sources.txt` (see `post-alpha/gate-hygiene`).
+**The two manifest defects this section used to record as open are fixed** (they belonged to the
+gate-hygiene lane, which has merged): the entry counts above now match the files, and all three
+manifests reproduce byte-exactly from their own documented commands — `ALL-REPRODUCE` on
+fork-sources, all-sources and tools at every merge of trains 3A-3D. Older text quoting **99 / 1,095**
+is stale; the current figures are the ones in this paragraph.
 
 **Wired 2026-09-11.** Gates 4, 7 and 8 take `--scope all` (or `GATE_SCOPE=all`), and
 `run-all-gates.sh --whole-tree` runs the set over all 1,095 files:
@@ -116,7 +119,7 @@ Where the untested mass is: **`src/gui` has 19,820 instrumented lines and 44 of 
 
 Until a whole-tree run has been made green, a statement like "the codebase passes the gates" is
 true only of the fork scope — say which scope you mean, and for coverage say which *measured subset*
-of it (67 of its 139 entries; see the scope note above).
+of it (119 of its 175 entries; see the scope note above).
 
 ## Running it
 
