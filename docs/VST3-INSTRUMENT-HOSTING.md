@@ -47,10 +47,20 @@ plugins/Vst3Instrument/CMakeLists.txt               module + its share of the ho
 plugins/Vst3Instrument/logo.png                     browser icon
 ```
 
-Touched: `plugins/Vst3Effect/Vst3Host.{h,cpp}` (the event path — shared by both hosts),
-`cmake/modules/PluginList.cmake` (register the plug-in), `cmake/modules/Vst3Sdk.cmake` (make the
-target idempotent, now that two directories include it), `tests/CMakeLists.txt`,
-`tests/fork-sources.txt`, `tests/all-sources.txt`.
+The event path itself, extracted out of the host so that `Vst3Host.cpp` does not absorb it (the
+repository's file-length and complexity ratchets measure exactly that, see §10):
+
+```
+plugins/Vst3Effect/Vst3MidiQueue.h                  MidiEventIn, the ring, its two bounds
+plugins/Vst3Effect/Vst3MidiEvent.{h,cpp}            event-bus policy, MIDI -> VST3 Event, the drain
+plugins/Vst3Effect/Vst3Host.{h,cpp}                 the host: three call sites into the above
+```
+
+Touched: `plugins/Vst3Effect/Vst3Host.{h,cpp}` (the event path — shared by both hosts; it stayed in
+place rather than forking a second host), `cmake/modules/PluginList.cmake` (register the plug-in),
+`cmake/modules/Vst3Sdk.cmake` (make the target idempotent, now that two directories include it),
+`tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt`,
+`tests/file-length-baseline.tsv` and `tests/complexity-baseline.tsv` (re-anchored with a reason, §10).
 
 **Documented policy decisions** (spec §4's open questions):
 
@@ -160,17 +170,39 @@ code path. Baseline binary: the **same build directory, configured without VST3*
 feature was configured in.
 
 ```
-same-build run-to-run floor : max|delta| = 0 LSB, -inf dB
-baseline vs new (subject)   : max|delta| = 0 LSB, -inf dB
+same-build run-to-run floor : max|delta| = 1 LSB, -131.505 dB   (REPEATS=5)
+baseline vs new (subject)   : max|delta| = 0 LSB, -inf dB       (bit-identical)
 sensitivity control         : max|delta| = 13105 LSB, -7.964 dB
 ```
 
 The control is the same project with `mastervol` 100 → 60 (and nothing else, so the render length is
-identical): the measurement sees it at 13,105 LSB / −7.96 dB. An earlier run of the identical
-command measured the floor at **1 LSB (−130.043 dB)** with the subject at **1 LSB (−127.033 dB)** —
-so the honest statement is that the floor is **at most 1 LSB** and the baseline-vs-new difference is
-**within it** in both runs. The new code's effect on a project with no VST3 instrument is therefore
-unmeasurable, and it is structurally unreachable (§3, item 1).
+identical): the measurement sees it at 13,105 LSB / −7.96 dB.
+
+The floor is not a constant on this box, and the number above is the good case. Four runs of the
+identical command:
+
+| run | repeats | same-build floor | baseline vs new (subject) | control |
+| --- | --- | --- | --- | --- |
+| A | 3 | 1 LSB / −130.043 dB | 1 LSB / −127.033 dB | 13105 LSB / −7.964 dB |
+| B | 3 | 0 LSB / −inf | 0 LSB / −inf | 13105 LSB / −7.964 dB |
+| C | 3 | 275 LSB / −56.059 dB | 326 LSB / −53.136 dB | 13105 LSB / −7.964 dB |
+| D | 5 | 1 LSB / −131.505 dB | 0 LSB / −inf | 13105 LSB / −7.964 dB |
+
+Run C was taken while this box was under concurrent load from sibling lanes (a build and a render at
+the same time); A, B and D were not. So the honest reading is:
+
+- With the box to itself the floor is **0–1 LSB** and the subject is **at or below it** — the
+  pre-feature binary and this binary produce the same samples for a project with no VST3 instrument.
+- Under heavy concurrent load the render stops being reproducible at the ~275 LSB (−56 dB) level
+  **for one binary alone**, and the subject tracks the floor (326 vs 275 LSB, same order): a
+  difference of that size on this project is not attributable to the code.
+- The control sits at 13,105 LSB in every run — 40x the worst floor and 13,000x the best — so the
+  measurement demonstrably resolves an audible change.
+
+**Limitation, stated rather than buried:** on a loaded box this measurement cannot resolve small
+render differences at all, so the float-level claim rests on the *structural* argument as well: for
+a project with no VST3 instrument the new code is unreachable (no plugin instance exists, and the
+effect path's `ProcessData::inputEvents` stays `nullptr` exactly as before — §3, item 1).
 
 ---
 
@@ -358,3 +390,45 @@ CTEST_EXIT=0
 host sources itself) and `Vst3InstrumentIntegrationTest` (product level, 8 cases, loads the real
 `.so` through the plug-in factory). Both are opt-in behind `WANT_VST3_TEST_INSTRUMENT`, like the
 fixture they need.
+
+**Gates** (`bash tests/run-all-gates.sh --no-mutation`, `RUN_ALL_GATES_EXIT=0`):
+
+```
+gate   name                     result
+1      ctest                    PASS
+2      coverage                 SKIP   (needs --with-coverage; not run here)
+3      no-tautology             PASS
+4      complexity               PASS
+5      mutation                 SKIP   (--no-mutation, as the brief's budget requires)
+6      upstream-regression      PASS
+7      file-length              PASS
+8      duplication              PASS
+RESULT: PASS — every executed gate passed
+```
+
+`tests/no-upstream-regression-gate.sh` alone: `GATE6_EXIT=0`.
+
+**Gate 9 (`tests/fork-sources-gate.sh`) does not exist on this branch** — as the brief said, it only
+exists on lanes descended from `post-alpha/gate-debt`. No result is claimed for it. The new sources
+are nevertheless registered in `tests/fork-sources.txt`, which is what that gate consumes elsewhere.
+
+**Two ratchets were re-anchored, deliberately and with the reason recorded in the baseline file**
+(`--reanchor` is the gates' own mechanism for accepting an increase):
+
+```
+REGRESSION: plugins/Vst3Effect/Vst3Host.cpp grew 714 -> 800 lines
+REGRESSION: lmms::vst3::HostedPlugin::load CCN rose 25 -> 27
+REGRESSION: lmms::vst3::HostedPlugin::prepare CCN rose 13 -> 14
+REGRESSION: lmms::vst3::HostedPlugin::process CCN rose 12 -> 13
+```
+
+The first draft of this work grew `Vst3Host.cpp` to 1046 lines with `load` at CCN 34. The ring and
+the MIDI-to-event mapping were therefore extracted into `Vst3MidiQueue.h` / `Vst3MidiEvent.{h,cpp}`,
+which leaves +86 lines and +1..+2 CCN as the irreducible cost of the feature in the shared host:
+four new public accessors, the event-bus call in `load()`, the wiring in `prepare()`/`release()`, and
+one drain call in `process()`. Both gates re-check clean afterwards (`GATE7_CHECK_EXIT=0`,
+`GATE4_CHECK_EXIT=0`).
+
+**One flake observed, unrelated to this work:** a full `ctest` run failed `PdcMixerTest`
+("Subprocess aborted"). It passes 3/3 standalone and the full suite passes 28/28 on re-run; nothing
+in this change touches the mixer or PDC.

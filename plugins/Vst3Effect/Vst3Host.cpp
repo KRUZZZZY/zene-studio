@@ -25,14 +25,12 @@
 #include "Vst3Host.h"
 
 #include <algorithm>
-#include <array>
-#include <atomic>
 #include <cstring>
 #include <limits>
 
 #include <QDebug>
 
-#include "Midi.h"
+#include "Vst3MidiEvent.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
@@ -166,205 +164,6 @@ auto readFromStream(IBStream* stream) -> QByteArray
 		if (result != kResultOk || numRead <= 0) { break; }
 	}
 	return out;
-}
-
-/**
- * Bounded, lock free thread safe queue of MidiEventIn.
- *
- * The MIDI path pushes from wherever LMMS delivers the event - the audio
- * thread (a NotePlayHandle built during the current period calls
- * InstrumentTrack::processOutEvent at its own sample offset) and the MIDI/GUI
- * thread for live input - while HostedPlugin::process() pops on the audio
- * thread. That is a multi-producer / single-consumer mix, so a
- * single-producer ring would be wrong and a lock is not allowed on the audio
- * path. This is the standard bounded ring with a per-slot sequence number:
- * every operation is one compare-exchange, one plain store and one release
- * store. It allocates nothing, never grows, never blocks and never spins
- * unboundedly - a full queue refuses the event, and the caller counts it.
- */
-class MidiQueue
-{
-public:
-	MidiQueue()
-	{
-		// A cell's sequence number says which lap of the ring it belongs to:
-		// cell i starts at i so that the very first push to any slot in the
-		// first lap is recognised as "this slot is free for position i".
-		// Leaving them all at zero would make every slot after the first
-		// report "full" until the ring wrapped once.
-		for (std::size_t i = 0; i < m_cells.size(); ++i)
-		{
-			m_cells[i].sequence.store(static_cast<std::uint32_t>(i),
-				std::memory_order_relaxed);
-		}
-	}
-
-	//! @returns false when the queue is full (the event is dropped)
-	auto push(const MidiEventIn& event) -> bool
-	{
-		auto position = m_enqueue.load(std::memory_order_relaxed);
-		while (true)
-		{
-			auto& cell = m_cells[position & kMask];
-			const auto sequence = cell.sequence.load(std::memory_order_acquire);
-			const auto difference = static_cast<std::int32_t>(sequence) -
-				static_cast<std::int32_t>(position);
-			if (difference == 0)
-			{
-				if (m_enqueue.compare_exchange_weak(position, position + 1,
-						std::memory_order_relaxed))
-				{
-					cell.event = event;
-					cell.sequence.store(position + 1, std::memory_order_release);
-					return true;
-				}
-			}
-			else if (difference < 0)
-			{
-				return false;
-			}
-			else
-			{
-				position = m_enqueue.load(std::memory_order_relaxed);
-			}
-		}
-	}
-
-	auto pop(MidiEventIn* event) -> bool
-	{
-		auto position = m_dequeue.load(std::memory_order_relaxed);
-		while (true)
-		{
-			auto& cell = m_cells[position & kMask];
-			const auto sequence = cell.sequence.load(std::memory_order_acquire);
-			const auto difference = static_cast<std::int32_t>(sequence) -
-				static_cast<std::int32_t>(position + 1);
-			if (difference == 0)
-			{
-				if (m_dequeue.compare_exchange_weak(position, position + 1,
-						std::memory_order_relaxed))
-				{
-					*event = cell.event;
-					cell.sequence.store(position + kMidiQueueCapacity,
-						std::memory_order_release);
-					return true;
-				}
-			}
-			else if (difference < 0)
-			{
-				return false;
-			}
-			else
-			{
-				position = m_dequeue.load(std::memory_order_relaxed);
-			}
-		}
-	}
-
-private:
-	static constexpr std::uint32_t kMask =
-		static_cast<std::uint32_t>(kMidiQueueCapacity) - 1;
-
-public:
-	//! GUI thread only, and only while the audio thread cannot be popping
-	//! (prepare() calls it): forget everything queued.
-	void reset()
-	{
-		// Same initial state as the constructor: cell i's sequence is i.
-		for (std::size_t i = 0; i < m_cells.size(); ++i)
-		{
-			m_cells[i].sequence.store(static_cast<std::uint32_t>(i),
-				std::memory_order_relaxed);
-		}
-		m_enqueue.store(0, std::memory_order_relaxed);
-		m_dequeue.store(0, std::memory_order_relaxed);
-	}
-
-private:
-	struct Cell
-	{
-		std::atomic<std::uint32_t> sequence{0};
-		MidiEventIn event{};
-	};
-
-	std::array<Cell, kMidiQueueCapacity> m_cells;
-	std::atomic<std::uint32_t> m_enqueue{0};
-	std::atomic<std::uint32_t> m_dequeue{0};
-};
-
-/**
- * Translates one MIDI event into the VST3 event the plug-in's input event bus
- * expects. Returns false for event types this slice does not carry (SysEx,
- * program change, channel pressure, pitch bend).
- *
- * The mapping follows the SDK's own samples (samples/vst-hosting/audiohost/
- * source/media/miditovst.h at the pinned commit): a note-on with velocity 0 is
- * the MIDI idiom for a note-off, and both note events carry noteId -1 because
- * the host does not track note identities.
- */
-auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> bool
-{
-	*event = Event{};
-	event->busIndex = busIndex;
-	event->sampleOffset = midi.frameOffset;
-	event->ppqPosition = 0.0;
-
-	const auto channel = static_cast<int16>(midi.channel);
-	const auto key = static_cast<int16>(midi.data0);
-	const auto value = static_cast<float>(midi.data1) / 127.f;
-
-	switch (midi.type)
-	{
-		case MidiNoteOn:
-			if (midi.data1 == 0)
-			{
-				event->type = Event::kNoteOffEvent;
-				event->noteOff.channel = channel;
-				event->noteOff.pitch = key;
-				event->noteOff.velocity = 0.f;
-				event->noteOff.noteId = -1;
-				event->noteOff.tuning = 0.f;
-				return true;
-			}
-			event->type = Event::kNoteOnEvent;
-			event->noteOn.channel = channel;
-			event->noteOn.pitch = key;
-			event->noteOn.tuning = 0.f;
-			event->noteOn.velocity = value;
-			// No length: the host does not guess a note duration, the matching
-			// note-off always follows (SDK ivstevents.h:50).
-			event->noteOn.length = 0;
-			event->noteOn.noteId = -1;
-			return true;
-
-		case MidiNoteOff:
-			event->type = Event::kNoteOffEvent;
-			event->noteOff.channel = channel;
-			event->noteOff.pitch = key;
-			event->noteOff.velocity = value;
-			event->noteOff.noteId = -1;
-			event->noteOff.tuning = 0.f;
-			return true;
-
-		case MidiKeyPressure:
-			event->type = Event::kPolyPressureEvent;
-			event->polyPressure.channel = channel;
-			event->polyPressure.pitch = key;
-			event->polyPressure.pressure = value;
-			event->polyPressure.noteId = -1;
-			return true;
-
-		case MidiControlChange:
-			event->type = Event::kLegacyMIDICCOutEvent;
-			event->midiCCOut.controlNumber = midi.data0;
-			event->midiCCOut.channel = static_cast<int8>(midi.channel);
-			event->midiCCOut.value = static_cast<int8>(midi.data1);
-			event->midiCCOut.value2 = 0;
-			return true;
-
-		default:
-			return false;
-	}
 }
 
 } // namespace
@@ -562,34 +361,12 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 	// An instrument receives MIDI as events on a kEvent input bus, so the host
 	// has to know which bus to fill. The policy for a plug-in that declares
 	// more than one: drive the first bus that is active by default, and
-	// deactivate the rest, which is stated in docs/VST3-INSTRUMENT-HOSTING.md.
+	// deactivate the rest (Vst3MidiEvent.cpp, docs/VST3-INSTRUMENT-HOSTING.md).
 	// Effects are deliberately left alone - their event buses and
 	// ProcessData::inputEvents are exactly what they were before this path
 	// existed, so an existing project's render cannot change because of it.
-	d.eventInputBusIndex = -1;
-	d.midiEnabled = false;
-	if (d.instrument && d.component)
-	{
-		const auto eventInputCount = d.component->getBusCount(kEvent, kInput);
-		int32 chosen = -1;
-		for (int32 i = 0; i < eventInputCount; ++i)
-		{
-			BusInfo info{};
-			if (d.component->getBusInfo(kEvent, kInput, i, info) != kResultOk) { continue; }
-			if ((info.flags & BusInfo::kDefaultActive) == 0) { continue; }
-			chosen = i;
-			break;
-		}
-		if (chosen < 0 && eventInputCount > 0) { chosen = 0; }
-		if (chosen >= 0)
-		{
-			for (int32 i = 0; i < eventInputCount; ++i)
-			{
-				d.component->activateBus(kEvent, kInput, i, i == chosen);
-			}
-			d.eventInputBusIndex = chosen;
-		}
-	}
+	d.eventInputBusIndex = d.instrument ? resolveEventInputBus(d.component.get()) : -1;
+	if (d.eventInputBusIndex < 0) { d.midiQueue.reset(); }
 
 	// parameters
 	if (d.controller)
@@ -853,7 +630,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	// MIDI: the event list is already sized (its constructor did it), the
 	// ordering scratch is sized here, and the queue starts empty. All three
 	// are pre-allocated so process() never touches the allocator.
-	d.midiEnabled = d.instrument && d.eventInputBusIndex >= 0;
+	d.midiEnabled = d.eventInputBusIndex >= 0;
 	d.midiQueue.reset();
 	d.droppedMidi = 0;
 	d.midiEvents.assign(static_cast<std::size_t>(kMaxMidiEventsPerBlock), MidiEventIn{});
@@ -947,31 +724,8 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 	if (d.processData.inputEvents != nullptr)
 	{
 		d.inputEvents.clear();
-		const auto capacity = d.midiEvents.size();
-		std::size_t count = 0;
-		MidiEventIn midi;
-		while (count < capacity && d.midiQueue.pop(&midi))
-		{
-			// Insertion sort by sample offset: stable, bounded, allocation
-			// free, and effectively linear because the MIDI path delivers
-			// events in order in the common case (a clip's notes).
-			std::size_t position = count;
-			while (position > 0 &&
-				d.midiEvents[position - 1].frameOffset > midi.frameOffset)
-			{
-				d.midiEvents[position] = d.midiEvents[position - 1];
-				--position;
-			}
-			d.midiEvents[position] = midi;
-			++count;
-		}
-		for (std::size_t i = 0; i < count; ++i)
-		{
-			Event event{};
-			if (!midiToVst3Event(d.midiEvents[i], d.eventInputBusIndex, &event)) { continue; }
-			event.sampleOffset = std::clamp(d.midiEvents[i].frameOffset, 0, frames);
-			d.inputEvents.addEvent(event);
-		}
+		drainMidiIntoEventList(d.midiQueue, d.midiEvents, d.inputEvents,
+			d.eventInputBusIndex, frames);
 	}
 
 	// 1. parameter changes: lock free, queues were sized in prepare()

@@ -79,6 +79,9 @@ plugins/Vst3Effect/Vst3Effect.cpp
 plugins/Vst3Effect/Vst3Effect.h
 plugins/Vst3Effect/Vst3Host.cpp
 plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3MidiEvent.cpp
+plugins/Vst3Effect/Vst3MidiEvent.h
+plugins/Vst3Effect/Vst3MidiQueue.h
 plugins/Vst3Effect/Vst3ParamDescriptor.h
 plugins/Vst3Effect/Vst3Parameter.cpp
 plugins/Vst3Effect/Vst3Parameter.h

@@ -4,7 +4,7 @@ src/core/ScriptBindings.cpp	1217
 include/AudioPorts.h	992
 src/core/ScriptEngine.cpp	910
 plugins/ClapEffect/ClapHost.cpp	875
-plugins/Vst3Effect/Vst3Host.cpp	714
+plugins/Vst3Effect/Vst3Host.cpp	800
 src/wasm/WasmSandbox.cpp	597
 src/core/AudioPortsModel.cpp	549
 src/gui/PinConnector.cpp	529

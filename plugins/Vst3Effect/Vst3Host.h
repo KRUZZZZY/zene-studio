@@ -27,12 +27,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <cstddef>
 #include <vector>
 
 #include <QByteArray>
 #include <QString>
 
 #include "Vst3BusMap.h"
+#include "Vst3MidiQueue.h"
 #include "Vst3ParamDescriptor.h"
 
 namespace lmms::vst3
@@ -51,28 +53,9 @@ struct Vst3ClassInfo
 //! Enumerates the audio classes of a VST3 module. GUI thread, allocates.
 auto listClasses(const QString& modulePath, QString* error) -> std::vector<Vst3ClassInfo>;
 
-//! One MIDI event on its way from LMMS' MIDI path to a plug-in's input event
-//! bus. Plain data by design: the queue between the two is a fixed-size array
-//! of these, so an audio block that carries MIDI never allocates.
-struct MidiEventIn
-{
-	std::uint8_t type = 0;        //!< lmms::MidiEventTypes (0x80 .. 0xEF)
-	std::uint8_t channel = 0;     //!< 0 .. 15
-	std::uint8_t data0 = 0;       //!< note key / controller number
-	std::uint8_t data1 = 0;       //!< note velocity / controller value
-	std::int32_t frameOffset = 0; //!< frames from the start of the block
-};
-
-//! How many MIDI events one audio block can carry. Fixed at compile time so
-//! the audio thread sizes its VST3 event list once, in prepare(), and never
-//! grows it while processing.
-inline constexpr int kMaxMidiEventsPerBlock = 256;
-
-//! Bound on the queue between the MIDI path and the audio thread. A power of
-//! two: the ring masks its index. A full queue drops the event and counts it
-//! (see droppedMidiEvents()) instead of growing or blocking.
-inline constexpr std::size_t kMidiQueueCapacity = 1024;
-
+//! The MIDI queue every instrument's events travel through, and the plain data
+//! they are made of (Vst3MidiQueue.h). The queue itself is an implementation
+//! detail: callers only need pushMidiEvent().
 /**
  * Hosts one VST3 audio class in-process.
  *

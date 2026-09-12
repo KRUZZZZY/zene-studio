@@ -37,6 +37,7 @@ SET(LMMS_VST3_INSTRUMENT_SOURCES
 	Vst3InstrumentView.cpp
 	${LMMS_VST3_HOST_DIR}/Vst3BusMap.cpp
 	${LMMS_VST3_HOST_DIR}/Vst3Host.cpp
+	${LMMS_VST3_HOST_DIR}/Vst3MidiEvent.cpp
 	${LMMS_VST3_HOST_DIR}/Vst3Parameter.cpp
 	${LMMS_VST3_HOST_DIR}/Vst3SubPluginFeatures.cpp
 )

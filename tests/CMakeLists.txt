@@ -654,6 +654,7 @@ if(TARGET lmms_vst3_sdk)
 			src/plugins/Vst3InstrumentTest.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
 		)
 		add_test(NAME Vst3InstrumentTest COMMAND Vst3InstrumentTest)
 		target_include_directories(Vst3InstrumentTest PRIVATE
