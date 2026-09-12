@@ -697,8 +697,13 @@ Resolved against the tree and the binary at `post-alpha/release-prep` base `34c1
    engineer (`scripts/release-verify.sh`); until that run has been observed, item 4 is not Done.** Checked line
    by line in `docs/RELEASE-PREP-0.2.0.md` §4.
 5. **Have an independent reader compare this text against the built binary, not against the plans.**
-   **Not done here, and it is not this lane's to do.** This lane is the author of the resolutions above; an
-   independent reader is a second party, and the parent should nominate one before the tag.
+   **Done — `docs/INDEPENDENT-NOTES-READ.md`.** An independent reader read this file and the limitations page
+   claim by claim against `build-coverage/zene`, `build/zene` and the tree: **127 claims, 108 TRUE, 12 FALSE and
+   6 UNVERIFIABLE by its own header count** (its table lists seven UNVERIFIABLE rows, because it counts the two
+   policy statements as one item). Its findings are applied to this file and to `docs/KNOWN-LIMITATIONS.md`,
+   and the per-item record of the application — what changed, the command run, and its output — is
+   `docs/AUDIT-FIX-PASS.md`. **One item stays open on purpose**: freeze item 4's enforcement half is pending the
+   release-configuration run, and both documents now say so instead of claiming a green.
 6. **Delete any claim not represented in `tests/advertised-features.tsv`.** See item 4: the manifest's scope is
    compile-time capability, stated in its own header ("the build options that must hold for that claim to be
    true"), and its five-column schema has no room for a runtime feature. Read as a command to delete every
