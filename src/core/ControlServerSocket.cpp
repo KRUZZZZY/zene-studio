@@ -191,24 +191,6 @@ PathState classifySocketPath(const char* nativePath, QString* found, QString* pr
 	return PathState::Conflict;
 }
 
-//! The refusal a launcher can read when there is no socket to answer on: the
-//! surface's OWN typed error, in the exact shape the protocol uses on the wire
-//! ({"id":-1,"ok":false,"error":{"kind":"...","message":"..."}}; -1 is the id
-//! the server itself gives a reply that belongs to no request), on stderr.
-void reportTypedError(ControlErrorKind kind, const QString& message)
-{
-	QJsonObject error;
-	error.insert(QStringLiteral("kind"), controlErrorKindName(kind));
-	error.insert(QStringLiteral("message"), message);
-	QJsonObject reply;
-	reply.insert(QStringLiteral("id"), -1);
-	reply.insert(QStringLiteral("ok"), false);
-	reply.insert(QStringLiteral("error"), error);
-	const QByteArray line = QJsonDocument(reply).toJson(QJsonDocument::Compact);
-	// "%s": the message is a path, which may contain '%'.
-	qWarning("control socket: %s", line.constData());
-}
-
 //! Pin the socket file to mode 0600 (verified) and listen, non-blocking.
 bool pinAndListen(int fd, const char* nativePath, QString* error)
 {
@@ -232,19 +214,6 @@ bool pinAndListen(int fd, const char* nativePath, QString* error)
 	// pending connection, and a blocking accept() there would freeze the UI thread.
 	::fcntl(fd, F_SETFL, O_NONBLOCK);
 	return true;
-}
-
-//! The invalid_args refusal for a path listen() cannot accept, or an empty
-//! string when the path is usable. \p listening is whether this instance already
-//! holds a listener, and \p bound is the path it holds.
-QString pathValidationError(const QString& path, bool listening, const QString& bound)
-{
-	if (path.isEmpty() || !path.startsWith(QLatin1Char('/')))
-	{
-		return QStringLiteral("the control socket path must be absolute");
-	}
-	if (listening) { return QStringLiteral("already listening on %1").arg(bound); }
-	return QString();
 }
 
 //! Decide whether the path may be bound. Returns false with the typed refusal in
@@ -324,6 +293,54 @@ BoundInode boundInodeState(const char* nativePath, quint64 device, quint64 inode
 
 } // namespace
 #endif
+
+// ---- the two helpers listen() needs on EVERY platform --------------------------------
+// The socket itself is POSIX-only, but the refusal path is not: listen() validates its
+// path and reports a typed error BEFORE it reaches the #if !defined(Q_OS_UNIX) branch
+// below. Both helpers it uses for that lived inside the Q_OS_UNIX block above, so on
+// Windows MSVC compiled those call sites with no definitions in scope and failed the
+// release build:
+//   ControlServerSocket.cpp(338): error C3861: 'reportTypedError': identifier not found
+//   ControlServerSocket.cpp(342): error C3861: 'pathValidationError': identifier not found
+// gcc and clang never saw it: Q_OS_UNIX is defined on both, so the definitions were in
+// scope for every local build and every other CI job. Neither helper uses a POSIX
+// interface -- one builds a JSON line for stderr, the other is pure QString -- so they
+// belong outside the guard, where every platform that compiles listen() can see them.
+namespace
+{
+
+//! The refusal a launcher can read when there is no socket to answer on: the
+//! surface's OWN typed error, in the exact shape the protocol uses on the wire
+//! ({"id":-1,"ok":false,"error":{"kind":"...","message":"..."}}; -1 is the id
+//! the server itself gives a reply that belongs to no request), on stderr.
+void reportTypedError(ControlErrorKind kind, const QString& message)
+{
+	QJsonObject error;
+	error.insert(QStringLiteral("kind"), controlErrorKindName(kind));
+	error.insert(QStringLiteral("message"), message);
+	QJsonObject reply;
+	reply.insert(QStringLiteral("id"), -1);
+	reply.insert(QStringLiteral("ok"), false);
+	reply.insert(QStringLiteral("error"), error);
+	const QByteArray line = QJsonDocument(reply).toJson(QJsonDocument::Compact);
+	// "%s": the message is a path, which may contain '%'.
+	qWarning("control socket: %s", line.constData());
+}
+
+//! The invalid_args refusal for a path listen() cannot accept, or an empty
+//! string when the path is usable. \p listening is whether this instance already
+//! holds a listener, and \p bound is the path it holds.
+QString pathValidationError(const QString& path, bool listening, const QString& bound)
+{
+	if (path.isEmpty() || !path.startsWith(QLatin1Char('/')))
+	{
+		return QStringLiteral("the control socket path must be absolute");
+	}
+	if (listening) { return QStringLiteral("already listening on %1").arg(bound); }
+	return QString();
+}
+
+} // namespace
 
 bool ControlServer::listen(const QString& path, QString* error)
 {

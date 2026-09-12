@@ -178,6 +178,27 @@ while IFS=$'	' read -r feature option required module claim platforms; do
 	checked=$((checked + 1))
 	platforms="${platforms:-*}"
 
+	# The platform field is validated, not trusted. A typo or a stray space ('Linux',
+	# 'linux,macos ' with a trailing space) would move a row that documents a feature as
+	# PRESENT into the inverse branch below and let it pass while the build does not contain
+	# it -- the v0.1.0-alpha failure this gate exists to prevent, reintroduced by a typo. A
+	# malformed field is a manifest error (exit 2), exactly like the other five fields.
+	if [ "$platforms" != "*" ]; then
+		case "$platforms" in
+			*[[:space:]]*)
+				echo "release-honesty-gate: manifest line $lineno: the platforms field contains whitespace ('$platforms')" >&2
+				exit 2 ;;
+		esac
+		IFS=',' read -r -a _plats <<< "$platforms"
+		for _p in "${_plats[@]}"; do
+			case "$_p" in
+				linux|macos|windows) : ;;
+				*)	echo "release-honesty-gate: manifest line $lineno: unknown platform '$_p' (allowed: linux, macos, windows)" >&2
+					exit 2 ;;
+			esac
+		done
+	fi
+
 	verdict="PASS"
 	detail=""
 
@@ -193,8 +214,14 @@ while IFS=$'	' read -r feature option required module claim platforms; do
 		if [ -n "$bad" ]; then
 			verdict="FAIL"
 			detail="$option='${bad# }' on $PLATFORM, but this release documents the feature as absent there (listed for: $platforms)"
+		elif [ -z "$values" ]; then
+			# Absence of the option is not evidence of the feature's absence. The present
+			# branch fails on "not reported at all" for the same reason; without this, a row
+			# whose option vanished from the build would pass by default here.
+			verdict="FAIL"
+			detail="$option is not reported by this build at all, so the absence this row documents on $PLATFORM cannot be demonstrated"
 		else
-			detail="$(printf '%s' "${values:-not reported}" | tr '\n' ',' | sed 's/,$//') — documented absent on $PLATFORM"
+			detail="$(printf '%s' "$values" | tr '\n' ',' | sed 's/,$//') — documented absent on $PLATFORM"
 		fi
 
 		if [ "$verdict" = "PASS" ] && [ -n "$ARTIFACTS" ] && [ "$module" != "-" ]; then

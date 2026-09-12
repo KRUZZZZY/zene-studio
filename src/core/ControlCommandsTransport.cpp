@@ -84,7 +84,7 @@ void registerTransportCommands(ControlRegistry& registry)
 		// engine is running on the dummy device - the refusal names the backend.
 		// Everything else stays usable headless: the model, render and save
 		// (task #626).
-		cmd.requiresDecl = {QStringLiteral("device")};
+		cmd.requiresDecl = QStringList{QStringLiteral("device")};
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},

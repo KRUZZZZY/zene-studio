@@ -245,7 +245,7 @@ void registerTelemetryCommands(ControlRegistry& registry)
 		// property "consent is a human act" needs. `display` is declared too
 		// because the implementation opens a dialog, so a headless run is told
 		// about the screen rather than about the human first.
-		cmd.requiresDecl = {QStringLiteral("display"), QStringLiteral("human")};
+		cmd.requiresDecl = QStringList{QStringLiteral("display"), QStringLiteral("human")};
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = consentScreenProperties();
 		cmd.handler = [](const QJsonObject&) { return openTelemetryConsentScreen(); };
