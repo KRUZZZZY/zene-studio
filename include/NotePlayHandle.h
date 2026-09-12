@@ -26,6 +26,7 @@
 #ifndef LMMS_NOTE_PLAY_HANDLE_H
 #define LMMS_NOTE_PLAY_HANDLE_H
 
+#include <cmath>
 #include <memory>
 
 #include "BasicFilters.h"
@@ -289,6 +290,15 @@ public:
 	 *  of a slide glide from \a fromKey to \a toKey. Linear in pitch, i.e.
 	 *  exponential in Hz. Pure math, unit-tested in SlideNotesTest. */
 	static float slidePitchOffset( int fromKey, int toKey, float progress );
+
+	/*! Frequency ratio an MPE bend of \a pitchCents applies to a note
+	 *  (task #601): 2^(cents/1200), i.e. exponential in Hz like every other
+	 *  pitch offset here. updateFrequency() multiplies the instrument
+	 *  frequency by this; pure math, unit-tested in MpeExpressionTest. */
+	static float mpePitchRatio( int pitchCents )
+	{
+		return std::exp2( pitchCents / ( 100.f * 12.f ) );
+	}
 
 private:
 	class BaseDetuning

@@ -34,6 +34,7 @@
 #include "Midi.h"
 #include "MidiEventProcessor.h"
 #include "MidiPort.h"
+#include "MpeExpression.h"
 #include "NotePlayHandle.h"
 #include "Piano.h"
 #include "Plugin.h"
@@ -74,6 +75,23 @@ public:
 
 	void processInEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
 	void processOutEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
+
+	/*! MPE per-note expression capture (task #601).
+	 *
+	 *  The per-channel expression state of this track's MIDI input. Only fed
+	 *  while MpeExpression::isEnabled(); with MPE off it stays untouched and
+	 *  the input path behaves exactly as before. */
+	MpeExpression& mpeExpression() { return m_mpeExpression; }
+	const MpeExpression& mpeExpression() const { return m_mpeExpression; }
+
+	/*! The live note handle playing \a key, or nullptr. Readback for the
+	 *  captured expression (and what a piano-roll expression editor would
+	 *  read while the note sounds). */
+	NotePlayHandle* playingNote( int key ) const
+	{
+		return ( key >= 0 && key < NumKeys ) ? m_notes[key] : nullptr;
+	}
+
 	// silence all running notes played by this track
 	void silenceAllNotes( bool removeIPH = false );
 
@@ -269,7 +287,14 @@ protected slots:
 private:
 	void processCCEvent(int controller);
 
+	// MPE capture (task #601). Both run on the MIDI-input thread and only
+	// touch fixed arrays plus plain int writes on live note handles.
+	bool trackMpeInputEvent( const MidiEvent& event );
+	void loadMpeExpressionOntoChannelNotes( int channel );
+
 	MidiPort m_midiPort;
+
+	MpeExpression m_mpeExpression;
 
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;

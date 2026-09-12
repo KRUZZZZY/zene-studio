@@ -583,12 +583,21 @@ void NotePlayHandle::updateFrequency()
 		m_unpitchedFrequency = DefaultBaseFreq * std::exp2(pitch);
 	}
 
+	// MPE per-note pitch (task #601). The note's own bend offset, applied as a
+	// frequency ratio like the per-note detuning above, but *not* folded into
+	// m_unpitchedFrequency - that one is documented as pitch-wheel-free.
+	// Nothing runs when the note carries no expression (every note of every
+	// project saved before this feature), so such a render stays bit-identical.
+	if (mpePitchCents() != 0)
+	{
+		m_frequency *= mpePitchRatio(mpePitchCents());
+	}
+
 	for (auto it : m_subNotes)
 	{
 		it->updateFrequency();
 	}
 }
-
 
 
 

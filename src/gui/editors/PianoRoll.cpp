@@ -4527,6 +4527,14 @@ void PianoRoll::finishRecordNote(const Note & n )
 							it->key(), it->getVolume(),
 							it->getPanning(), n.detuning());
 
+					// MPE (task #601): n is the live note handle, so it carries
+					// the expression captured on this note's own MIDI channel
+					// while it was held - record it with the note.
+					if( n.hasMpeExpression() )
+					{
+						n1.setMpeExpression( n.mpeExpression() );
+					}
+
 					if (m_doAutoQuantization)
 					{
 						n1.quantizeLength(quantization());

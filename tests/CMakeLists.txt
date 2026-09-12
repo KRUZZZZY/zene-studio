@@ -27,6 +27,9 @@ set(LMMS_TESTS
 	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerConcurrencyTest.cpp
 	src/core/MixerRoutingBackwardCompatTest.cpp
+	src/core/MpeExpressionTest.cpp
+	src/core/MpeInputPathTest.cpp
+	src/core/MpeNoteStorageTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp

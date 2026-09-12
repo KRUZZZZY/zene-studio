@@ -139,6 +139,7 @@ include/LoudnessReport.h
 include/LufsMeter.h
 include/MidiLearn.h
 include/MidiLearnGui.h
+include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NoteRandom.h
 include/NoteTransform.h
@@ -259,6 +260,7 @@ src/core/StemTrackBuilder.cpp
 src/core/VcaGroup.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
+src/core/midi/MpeExpression.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
 src/gui/StemSplitController.cpp

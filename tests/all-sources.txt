@@ -243,6 +243,7 @@ include/MixerView.h
 include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
+include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NStateButton.h
 include/NoCopyNoMove.h
@@ -990,6 +991,7 @@ src/core/midi/MidiOss.cpp
 src/core/midi/MidiPort.cpp
 src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
+src/core/midi/MpeExpression.cpp
 src/gui/ActionGroup.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
@@ -1153,6 +1155,9 @@ tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
+tests/src/core/MpeExpressionTest.cpp
+tests/src/core/MpeInputPathTest.cpp
+tests/src/core/MpeNoteStorageTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
