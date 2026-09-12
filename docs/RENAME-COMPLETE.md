@@ -1,7 +1,7 @@
 # Zene Studio rename — complete (report)
 
 **Branch:** `post-alpha/rename-complete` · **Base:** `post-alpha/wave-r-rename` (`0e3596a5d`) ·
-**Tip:** `c30c93082` (three layer commits + the documentation commit that carries this file).
+**Tip:** this documentation commit, on top of the three layer commits below.
 
 **Verdict.** The rename is pushed through the user-visible surface, the user state (with migration, not
 orphaning), and the project/preset format (read-both / write-new). The code-identifier layer
