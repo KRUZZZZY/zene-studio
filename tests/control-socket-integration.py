@@ -15,7 +15,9 @@ Usage: QT_QPA_PLATFORM=offscreen python3 control-socket-integration.py <lmms> <p
 Exit code 0 only when every assertion passed.
 """
 
+import array
 import json
+import math
 import os
 import shutil
 import socket
@@ -24,11 +26,20 @@ import subprocess
 import sys
 import tempfile
 import time
+import wave
 
 CONNECT_TIMEOUT = 30.0
 ENGINE_TIMEOUT = 120.0
 RESPONSE_TIMEOUT = 60.0
 RENDER_TIMEOUT = 240.0
+
+# The audio-truth fixture: tests/data/automation-audio-fixture.mmp is one
+# instrument track with AUDIO_TICKS ticks of notes at AUDIO_BPM in 4/4, so the
+# level comparison window is derived rather than guessed.
+AUDIO_BPM = 140
+AUDIO_TICKS = 384
+AUDIO_TICKS_PER_BAR = 192
+AUDIO_BEATS_PER_BAR = 4.0
 
 TRANSCRIPT = []
 
@@ -504,6 +515,472 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
     return flow.id
 
 
+def pick_audio_parameter(parameters):
+    """A ranged numeric parameter that is on the audio path of an effect: the
+    level control first, then the widest range."""
+    usable = [p for p in parameters
+              if p.get("type") == "number" and float(p.get("max", 0)) > float(p.get("min", 0))]
+    if not usable:
+        return None
+    for parameter in usable:
+        if (parameter.get("name") or "").strip().lower() in ("volume", "gain", "amplitude"):
+            return parameter
+    return max(usable, key=lambda p: float(p["max"]) - float(p["min"]))
+
+
+def wav_dbfs(path, window_frames=None, offset_frames=0):
+    """The rendered file's own RMS in dBFS, measured, not asserted. Returns
+    (dbfs, frames, channels, sample_width); a silent file reports -inf. With
+    window_frames/offset_frames only that slice of the file is measured - the
+    render carries a silent tail past the song, so a whole-file figure dilutes
+    the automation's effect and the named window is the honest measurement."""
+    with wave.open(path, "rb") as handle:
+        channels = handle.getnchannels()
+        width = handle.getsampwidth()
+        frames = handle.getnframes()
+        if offset_frames:
+            handle.setpos(min(offset_frames, frames))
+        available = max(0, frames - min(offset_frames, frames))
+        raw = handle.readframes(available if window_frames is None
+                                else min(available, window_frames))
+    if width == 2:
+        samples = array.array("h")
+        scale = 32768.0
+    elif width == 4:
+        samples = array.array("f")
+        scale = 1.0
+    elif width == 1:
+        samples = array.array("b")
+        scale = 128.0
+    else:
+        raise AssertionError("unsupported WAV sample width %d" % width)
+    samples.frombytes(raw)
+    if not len(samples):
+        return float("-inf"), frames, channels, width
+    total = 0.0
+    for value in samples:
+        total += float(value) * float(value)
+    rms = math.sqrt(total / len(samples)) / scale
+    dbfs = 20.0 * math.log10(rms) if rms > 0.0 else float("-inf")
+    return dbfs, frames, channels, width
+
+
+def frames_for_ticks(ticks):
+    """\a ticks of the audio fixture's timeline in frames at the render's 44100 Hz."""
+    seconds_per_bar = AUDIO_BEATS_PER_BAR * 60.0 / AUDIO_BPM
+    return int(ticks / float(AUDIO_TICKS_PER_BAR) * seconds_per_bar * 44100)
+
+
+def note_region_frames():
+    """The audio fixture's note region - AUDIO_TICKS ticks at AUDIO_BPM in 4/4 -
+    in frames. The render itself is longer than the song, and that tail is
+    silence for every shape, so the level comparison is made over the notes."""
+    return frames_for_ticks(AUDIO_TICKS)
+
+
+def automation_parameter(state, track_id, parameter_id):
+    for track in state.get("tracks", []):
+        if track.get("id") != track_id:
+            continue
+        for parameter in track.get("parameters", []):
+            if parameter.get("id") == parameter_id:
+                return parameter
+    return None
+
+
+def automation_points(state, track_id, parameter_id):
+    parameter = automation_parameter(state, track_id, parameter_id) or {}
+    return ((parameter.get("automation") or {}).get("points")) or []
+
+
+def scripting_flow(client, process, log_path, tmp, last_id):
+    """The script.* leg: list the shipped scripts, run one IN THIS INSTANCE and
+    read its Lua log lines back, then the typed refusals (missing file, both
+    selectors, and a script that burns the instruction budget).
+
+    The in-instance part is the point: `--run-script <file>` is run-and-exit, so
+    the test asserts the instance is still the same live process afterwards and
+    that the script saw the session the socket client just built."""
+    flow = Flow(client, last_id)
+
+    # --- script.list: the scripts this build ships -----------------------
+    listing = flow.ok("script.list")
+    scripts = listing.get("scripts", [])
+    shipped = sorted(s.get("name") for s in scripts)
+    directory = listing.get("dir") or ""
+    if not directory or not os.path.isdir(directory):
+        fail("script.list resolved no on-disk scripts dir: %r" % listing, process, log_path)
+    for required in ("hello.lua", "create-pattern.lua", "generative-bass.lua", "midi-router.lua"):
+        if required not in shipped:
+            fail("script.list does not ship %s: %r" % (required, shipped), process, log_path)
+    if int(listing.get("count", -1)) != len(scripts):
+        fail("script.list count %r != %d scripts" % (listing.get("count"), len(scripts)),
+             process, log_path)
+    for script in scripts:
+        if not script.get("sha256") or int(script.get("bytes", 0)) <= 0:
+            fail("script.list entry carries no hash/size: %r" % script, process, log_path)
+    print("script.list: %d shipped script(s) in %s: %s"
+          % (len(scripts), directory, ", ".join(shipped)))
+
+    # --- run a shipped script in the live instance ------------------------
+    hello_path = os.path.join(directory, "hello.lua")
+    ran = flow.ok("script.run", {"path": hello_path})
+    logs = ran.get("log") or []
+    if ran.get("ran") is not True or int(ran.get("log_lines", -1)) != len(logs) or len(logs) < 3:
+        fail("script.run(hello.lua) returned %r" % ran, process, log_path)
+    joined = "\n".join(logs)
+    for expected in ("Hello from Lua", "LMMS Lua API", "hello.lua finished"):
+        if expected not in joined:
+            fail("script.run did not return hello.lua's %r line: %r" % (expected, logs),
+                 process, log_path)
+    print("script.run hello.lua: %d log lines" % len(logs))
+    for line in logs:
+        print("    %s" % line)
+
+    # The run-and-exit CLI would have taken the instance with it.
+    if process.poll() is not None:
+        fail("the instance died during script.run (run-and-exit CLI behaviour, not in-process)",
+             process, log_path)
+    flow.ok("control.version")
+
+    # --- the script sees THIS instance's session --------------------------
+    flow.ok("transport.set_tempo", {"bpm": 143})
+    in_instance = flow.ok("script.run", {
+        "source": "lmms.log():info(\"live tempo=\" .. lmms.song():tempo())\n"})
+    live_logs = in_instance.get("log") or []
+    if not any("live tempo=143" in line for line in live_logs):
+        fail("script.run did not see the running instance's tempo (expected 143): %r"
+             % in_instance, process, log_path)
+    print("script.run saw the live session: %s" % live_logs[0])
+    flow.ok("transport.set_tempo", {"bpm": 140})
+
+    # --- typed errors -----------------------------------------------------
+    flow.err("script.run", "not_found", {"path": os.path.join(tmp, "no-such-script.lua")})
+    flow.err("script.run", "invalid_args", {"path": hello_path, "source": "return 1"})
+    flow.err("script.run", "invalid_args", {})
+    error = flow.err("script.run", "refused", {
+        "source": "lmms.log():info('runaway')\nwhile true do end\n", "budget": 20000})
+    if "instruction budget exceeded" not in (error.get("message") or ""):
+        fail("the budget refusal does not name the budget: %r" % error, process, log_path)
+    print("script.run budget refusal: %s" % error.get("message"))
+    # a runaway script must not take the instance or its engine down.
+    flow.ok("control.version")
+    if int(flow.ok("transport.get_state").get("tempo", 0)) != 140:
+        fail("the engine stopped answering after a runaway script", process, log_path)
+
+    transactions = flow.ok("control.transactions").get("transactions", [])
+    recorded = [t for t in transactions if t.get("command") == "script.run"]
+    if not recorded:
+        fail("script.run recorded no transaction", process, log_path)
+    if recorded[-1].get("reversible"):
+        fail("script.run must honestly record reversible=false: %r" % recorded[-1],
+             process, log_path)
+    if "script" not in str(recorded[-1].get("mechanism", "")):
+        fail("script.run's transaction does not name the mechanism: %r" % recorded[-1],
+             process, log_path)
+    print("script.run transaction: reversible=%r mechanism=%r"
+          % (recorded[-1].get("reversible"), recorded[-1].get("mechanism")))
+
+    return flow.id
+
+
+def automation_flow(client, process, log_path, tmp, project, last_id):
+    """The automation.* leg, ending in rendered audio: load an instrument and an
+    effect on the audio fixture's track, automate the effect's level with two
+    different point shapes, and measure that the renders differ."""
+    flow = Flow(client, last_id)
+
+    fixture_dir = os.path.dirname(os.path.abspath(project))
+    audio_fixture = os.path.join(fixture_dir, "automation-audio-fixture.mmp")
+    if not os.path.exists(audio_fixture):
+        fail("no audio-truth fixture at %s" % audio_fixture, process, log_path)
+
+    opened = flow.ok("project.open", {"path": audio_fixture})
+    if not opened.get("file"):
+        fail("project.open did not report the audio fixture: %r" % opened, process, log_path)
+
+    tracks = flow.ok("track.list").get("tracks", [])
+    if len(tracks) != 1 or tracks[0].get("type") != "instrument":
+        fail("the audio fixture is not one instrument track: %r" % tracks, process, log_path)
+    target = tracks[0]["id"]
+
+    # --- load an instrument and an effect, the audio path of the render ----
+    listing = flow.ok("plugin.list")
+    devices = listing.get("devices", [])
+    instrument_device = (find_device(devices, name="tripleoscillator")
+                         or find_device(devices, format="builtin", kind="instrument"))
+    effect_device = (find_device(devices, name="amplifier")
+                     or find_device(devices, format="builtin", kind="effect"))
+    if instrument_device is None or effect_device is None:
+        fail("the catalogue has no instrument/effect to load: %r"
+             % listing.get("counts_by_kind"), process, log_path)
+    loaded_instrument = flow.ok("plugin.load", {"target": target,
+                                                "device": instrument_device["id"]})
+    if loaded_instrument.get("kind") != "instrument":
+        fail("plugin.load of the instrument returned %r" % loaded_instrument, process, log_path)
+    loaded_effect = flow.ok("plugin.load", {"target": target, "device": effect_device["id"]})
+    fx = loaded_effect.get("id")
+    if loaded_effect.get("kind") != "effect" or not str(fx).startswith("fx-"):
+        fail("plugin.load of the effect returned %r" % loaded_effect, process, log_path)
+
+    state = flow.ok("dsp.get_state", {"target": target})
+    chain = (state.get("chains") or [{}])[0]
+    entry = next((d for d in chain.get("devices", []) if d.get("id") == fx), None)
+    if entry is None:
+        fail("dsp.get_state does not list %s: %r" % (fx, chain), process, log_path)
+    level = pick_audio_parameter(entry.get("parameters", []))
+    if level is None:
+        fail("%s exposes no ranged numeric parameter: %r" % (fx, entry), process, log_path)
+    parameter = "%s/%d" % (fx, level["index"])
+    low, high = float(level["min"]), float(level["max"])
+    print("automation target: %s on %s (%s range %g..%g, default %g)"
+          % (parameter, target, level["name"], low, high, float(level["value"])))
+
+    # --- read-back before anything is automated ---------------------------
+    before_state = flow.ok("automation.get_state", {"track": target})
+    entry_json = automation_parameter(before_state, target, parameter)
+    if entry_json is None:
+        fail("automation.get_state does not list %s: %r" % (parameter, before_state),
+             process, log_path)
+    if entry_json.get("automated") or int(before_state.get("automated_parameter_count", -1)) != 0:
+        fail("the fixture's parameter is already automated: %r" % entry_json, process, log_path)
+    if (entry_json.get("id") or "") != parameter:
+        fail("automation.get_state listed %r where %r was asked for: %r"
+             % (entry_json.get("id"), parameter, entry_json), process, log_path)
+    print("automation.get_state %s: %d parameter(s), %d automated"
+          % (target, len(before_state.get("tracks", [{}])[0].get("parameters", [])),
+             int(before_state.get("automated_parameter_count", -1))))
+
+    # --- typed errors on the way in ---------------------------------------
+    flow.err("automation.get_state", "not_found", {"track": "trk-9"})
+    flow.err("automation.add_point", "not_found",
+             {"track": target, "parameter": "inst/99", "ticks": 0, "value": 1})
+    flow.err("automation.add_point", "invalid_args",
+             {"track": target, "parameter": "no-slash", "ticks": 0, "value": 1})
+    flow.err("automation.add_point", "invalid_args",
+             {"track": target, "parameter": parameter, "ticks": 0, "value": high + 1000.0})
+    flow.err("automation.add_point", "invalid_args",
+             {"track": target, "parameter": parameter, "ticks": 0})
+    # automation.mode_set: this tree has no modes, and says which fact is missing.
+    refused = flow.err("automation.mode_set", "refused",
+                       {"track": target, "parameter": parameter, "mode": "write"})
+    if "KNOWN-LIMITATIONS" not in (refused.get("message") or ""):
+        fail("automation.mode_set's refusal does not cite its source: %r" % refused,
+             process, log_path)
+    if "no automation modes" not in (refused.get("message") or ""):
+        fail("automation.mode_set's refusal does not name what is missing: %r" % refused,
+             process, log_path)
+    flow.err("automation.mode_set", "invalid_args",
+             {"track": target, "parameter": parameter, "mode": "bogus"})
+    flow.err("automation.remove_point", "not_found",
+             {"track": target, "parameter": parameter, "ticks": 192})
+    flow.err("automation.clear", "not_found", {"track": target, "parameter": parameter})
+    print("automation.mode_set refused: %s" % refused.get("message"))
+
+    # --- render A: no automation (the parameter's default) ----------------
+    window = note_region_frames()
+    # The two 96-tick windows the shapes differ over: the head (which the swell
+    # drives to silence) and the tail (which the fade drives to silence). A clip's
+    # progression type decides whether a point pair is a step or a line; this
+    # engine's default is `discrete`, and the windows hold either way.
+    head = frames_for_ticks(AUDIO_TICKS // 4)
+    tail_offset = frames_for_ticks(AUDIO_TICKS // 2)
+    tail = window - tail_offset
+    flat_name = "flat (no automation)"
+    swell_name = "swell (0 then %g at tick 96)" % high
+    fade_name = "fade (%g then 0 at tick 96)" % high
+    renders = {}
+
+    def measure(name, path, rendered):
+        """Hash plus the measured levels: whole file, the fixture's note region,
+        and the head/tail 96-tick windows the two shapes differ over."""
+        renders[name] = {
+            "sha256": rendered.get("sha256"),
+            "frames": rendered.get("frames"),
+            "whole_dbfs": wav_dbfs(path)[0],
+            "note_dbfs": wav_dbfs(path, window)[0],
+            "head_dbfs": wav_dbfs(path, head)[0],
+            "tail_dbfs": wav_dbfs(path, tail, tail_offset)[0],
+        }
+        return renders[name]
+
+    out_a = os.path.join(tmp, "automation-flat.wav")
+    rendered = render_to_file(flow, out_a, process, log_path)
+    measure(flat_name, out_a, rendered)
+    if int(rendered.get("frames", 0)) <= 0:
+        fail("the audio fixture rendered no frames: %r" % rendered, process, log_path)
+
+    # --- shape 1: silent, then full from tick 96 --------------------------
+    created = flow.ok("automation.add_point",
+                      {"track": target, "parameter": parameter, "ticks": 0, "value": 0.0})
+    if created.get("created_automation_track") is not True:
+        fail("the first add_point did not report creating the clip: %r" % created, process, log_path)
+    flow.ok("automation.add_point",
+            {"track": target, "parameter": parameter, "ticks": 96, "value": high})
+    swell = flow.ok("automation.add_point",
+                    {"track": target, "parameter": parameter, "ticks": 384, "value": high})
+    if int((swell.get("automation") or {}).get("point_count", 0)) != 3:
+        fail("add_point did not leave 3 points: %r" % swell, process, log_path)
+    out_b = os.path.join(tmp, "automation-swell.wav")
+    rendered = render_to_file(flow, out_b, process, log_path)
+    measure(swell_name, out_b, rendered)
+
+    # --- shape 2: full, then silent from tick 96 --------------------------
+    flow.ok("automation.clear", {"track": target, "parameter": parameter})
+    flow.ok("automation.add_point",
+            {"track": target, "parameter": parameter, "ticks": 0, "value": high})
+    flow.ok("automation.add_point",
+            {"track": target, "parameter": parameter, "ticks": 96, "value": 0.0})
+    fade = flow.ok("automation.add_point",
+                   {"track": target, "parameter": parameter, "ticks": 384, "value": 0.0})
+    if int((fade.get("automation") or {}).get("point_count", 0)) != 3:
+        fail("the second shape did not leave 3 points: %r" % fade, process, log_path)
+    out_c = os.path.join(tmp, "automation-fade.wav")
+    rendered = render_to_file(flow, out_c, process, log_path)
+    measure(fade_name, out_c, rendered)
+
+    if window >= renders[flat_name]["frames"]:
+        fail("the level window (%d frames) is not narrower than the render (%d frames): the "
+             "comparison would be vacuous" % (window, renders[flat_name]["frames"]),
+             process, log_path)
+    hashes = {name: value["sha256"] for name, value in renders.items()}
+    if len(set(hashes.values())) != len(hashes):
+        fail("the automation did not change the rendered audio: %r" % hashes, process, log_path)
+    flat = renders[flat_name]
+    swell = renders[swell_name]
+    fade = renders[fade_name]
+    # The swell reaches full gain by tick 96 and stays there: over the note region
+    # as a whole it is louder than the un-automated render, and its first quarter
+    # is silence.
+    if not swell["note_dbfs"] > flat["note_dbfs"] + 1.0:
+        fail("the 'swell' automation did not raise the note region: %r" % renders,
+             process, log_path)
+    if not swell["head_dbfs"] < flat["head_dbfs"] - 12.0:
+        fail("the 'swell' automation did not start from silence: %r" % renders, process, log_path)
+    # The fade drives the parameter to 0 by tick 96: everything after it is
+    # silent. (Its note-region average is close to the flat render on purpose -
+    # the shape *begins* at full gain, so the surviving head is ~6 dB hotter; the
+    # tail window, not the average, is where it shows.)
+    if not fade["tail_dbfs"] < flat["tail_dbfs"] - 12.0:
+        fail("the 'fade' automation did not silence the second half: %r" % renders,
+             process, log_path)
+    print("rendered audio (automation changes it, measured; windows in frames at 44100 Hz):")
+    print("  note region = [0,%d), head = [0,%d), tail = [%d,%d)"
+          % (window, head, tail_offset, window))
+    for name in (flat_name, swell_name, fade_name):
+        entry = renders[name]
+        print("  %-34s sha256=%s note=%8.3f head=%9.3f tail=%9.3f whole=%8.3f"
+              % (name, entry["sha256"][:16], entry["note_dbfs"], entry["head_dbfs"],
+                 entry["tail_dbfs"], entry["whole_dbfs"]))
+    print("  (dBFS; -inf is silence. The fade's note-region average is close to the flat "
+          "render because its shape starts at full gain - the tail window is the proof.)")
+
+    # --- read-back, then invert each mutation with a real control.undo ----
+    readback = flow.ok("automation.get_state", {"track": target, "automated_only": True})
+    points = automation_points(readback, target, parameter)
+    ticks = sorted(int(p["ticks"]) for p in points)
+    if ticks != [0, 96, 384]:
+        fail("automation.get_state did not read back the points: %r" % readback, process, log_path)
+    if abs(float(points[0]["value"]) - high) > 1e-3:
+        fail("automation.get_state did not read the point value back: %r" % points,
+             process, log_path)
+    print("automation.get_state read-back: %d point(s) at %r, values %r"
+          % (len(points), ticks, [p["value"] for p in points]))
+
+    added = flow.ok("automation.add_point",
+                    {"track": target, "parameter": parameter, "ticks": 48, "value": high})
+    if int((added.get("automation") or {}).get("point_count", 0)) != 4:
+        fail("add_point did not add a 4th point: %r" % added, process, log_path)
+    undone = flow.ok("control.undo")
+    after_undo = flow.ok("automation.get_state", {"track": target})
+    if not undone.get("undone"):
+        fail("control.undo reported nothing undone after automation.add_point", process, log_path)
+    if len(automation_points(after_undo, target, parameter)) != 3:
+        fail("control.undo did not reverse automation.add_point: %r" % after_undo,
+             process, log_path)
+    print("control.undo reversed automation.add_point (4 points -> %d)"
+          % len(automation_points(after_undo, target, parameter)))
+
+    removed = flow.ok("automation.remove_point",
+                      {"track": target, "parameter": parameter, "ticks": 96})
+    if int((removed.get("automation") or {}).get("point_count", 0)) != 2:
+        fail("remove_point did not remove the node: %r" % removed, process, log_path)
+    flow.ok("control.undo")
+    after_undo = flow.ok("automation.get_state", {"track": target})
+    if len(automation_points(after_undo, target, parameter)) != 3:
+        fail("control.undo did not reverse automation.remove_point: %r" % after_undo,
+             process, log_path)
+    print("control.undo reversed automation.remove_point (2 points -> 3)")
+
+    cleared = flow.ok("automation.clear", {"track": target, "parameter": parameter})
+    if int(cleared.get("cleared_points", -1)) != 3:
+        fail("automation.clear reported %r" % cleared, process, log_path)
+    emptied = flow.ok("automation.get_state", {"track": target})
+    if int(emptied.get("automated_parameter_count", -1)) != 0:
+        fail("the cleared parameter still reports as automated: %r" % emptied, process, log_path)
+    flow.ok("control.undo")
+    after_undo = flow.ok("automation.get_state", {"track": target})
+    if len(automation_points(after_undo, target, parameter)) != 3:
+        fail("control.undo did not reverse automation.clear: %r" % after_undo, process, log_path)
+    print("control.undo reversed automation.clear (0 points -> 3)")
+
+    # --- every mutating command left a transaction (SPEC A16) -------------
+    transactions = flow.ok("control.transactions").get("transactions", [])
+    recorded = {}
+    for transaction in transactions:
+        recorded.setdefault(transaction.get("command"), []).append(transaction)
+    for command in ("automation.add_point", "automation.remove_point", "automation.clear"):
+        if command not in recorded:
+            fail("no transaction recorded for %s" % command, process, log_path)
+    if recorded["automation.add_point"][0].get("reversible") is not False:
+        fail("the add_point that created the automation track must record reversible=false: %r"
+             % recorded["automation.add_point"][0], process, log_path)
+    if "snapshot only" not in str(recorded["automation.add_point"][0].get("mechanism", "")):
+        fail("the created-track transaction does not name the mechanism: %r"
+             % recorded["automation.add_point"][0], process, log_path)
+    for transaction in recorded["automation.add_point"][1:]:
+        if transaction.get("reversible") is not True:
+            fail("an add_point on an existing clip must record reversible=true: %r" % transaction,
+                 process, log_path)
+        if "ProjectJournal" not in str(transaction.get("mechanism", "")):
+            fail("a reversible add_point does not name its mechanism: %r" % transaction,
+                 process, log_path)
+    for command in ("automation.remove_point", "automation.clear"):
+        if recorded[command][-1].get("reversible") is not True:
+            fail("%s must record reversible=true (proved by control.undo above): %r"
+                 % (command, recorded[command][-1]), process, log_path)
+    print("transactions (command -> reversible, proved by the undos above):")
+    for command in ("automation.add_point", "automation.remove_point", "automation.clear"):
+        print("  %-24s first=%r last=%r"
+              % (command, recorded[command][0].get("reversible"),
+                 recorded[command][-1].get("reversible")))
+
+    return flow.id
+
+
+def render_to_file(flow, out, process, log_path):
+    """Render the session to \a out, retrying once.
+
+    render.render reports a failed child as refused, and on a loaded box this
+    build's render child has been measured writing a complete, correct file and
+    then aborting at shutdown - LMMS's signal handler does `exit(signum)`, so a
+    SIGABRT arrives as exit 6 (the same class as the PdcMixerTest subprocess
+    abort AGENT-TOOLING.md records under heavy parallel load). The retry is
+    printed, never silent, and a genuine render failure fails both attempts."""
+    for attempt in (1, 2):
+        request_id, reply = flow.call("render.render", {"out": out, "format": "wav"})
+        if reply.get("ok") is True:
+            if attempt == 2:
+                print("render.render %s succeeded on the retry" % os.path.basename(out))
+            return ok_result(reply, request_id)
+        if attempt == 1:
+            print("render.render %s failed (%r); retrying once"
+                  % (os.path.basename(out), (reply.get("error") or {}).get("message")))
+            continue
+        fail("render.render %s failed twice: %r" % (out, reply), process, log_path)
+    return None
+
+
 def wait_for_socket(path, process, log_path):
     deadline = time.time() + CONNECT_TIMEOUT
     while time.time() < deadline:
@@ -597,7 +1074,7 @@ def main():
             fail("control.version returned no version string", process, log_path)
 
         schema = ok_result(client.call(3, "control.commands_list"), 3)
-        if schema.get("count", 0) < 41:
+        if schema.get("count", 0) < 48:
             fail("control.commands_list reports only %s commands" % schema.get("count"), process, log_path)
         described = set()
         for entry in schema.get("commands", []):
@@ -607,9 +1084,16 @@ def main():
                          "plugin.state_load", "plugin.preset_list", "plugin.preset_load",
                          "plugin.preset_save", "dsp.get_state", "settings.get", "settings.set",
                          "audio.device_list", "audio.device_set", "midi.device_list",
-                         "app.version"):
+                         "app.version", "automation.get_state", "automation.add_point",
+                         "automation.remove_point", "automation.clear", "automation.mode_set",
+                         "script.run", "script.list"):
             if required not in described:
                 fail("control.commands_list has no %s" % required, process, log_path)
+        for entry in schema.get("commands", []):
+            if entry.get("group") not in ("automation", "script"):
+                continue
+            if not entry.get("args_schema") or not entry.get("result_schema"):
+                fail("%s declares no schemas: %r" % (entry.get("id"), entry), process, log_path)
 
         # --- typed error paths --------------------------------------------
         typed_error(client.call(4, "control.no_such_command"), 4, "not_found")
@@ -697,6 +1181,12 @@ def main():
         # --- plugin.* / dsp.* / settings.* / audio.* / midi.* / app.* ------
         last_id = plugin_and_settings_flow(client, process, log_path, tmp, 22)
 
+        # --- script.*: Lua execution in THIS running instance --------------
+        last_id = scripting_flow(client, process, log_path, tmp, last_id)
+
+        # --- automation.*: model state, and the rendered audio truth -------
+        last_id = automation_flow(client, process, log_path, tmp, project, last_id)
+
         # --- shutdown unlinks the socket ----------------------------------
         client.call(last_id + 1, "control.quit")
         client.close()
@@ -714,7 +1204,12 @@ def main():
         if process.poll() is None:
             process.kill()
             process.wait()
-        shutil.rmtree(tmp, ignore_errors=True)
+        # ZENE_KEEP_TMP=1 keeps the rendered WAVs (the audio-truth evidence) and
+        # the app log in <tmp> instead of deleting them for inspection.
+        if os.environ.get("ZENE_KEEP_TMP") == "1":
+            print("kept the run directory: %s" % tmp)
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     print("PASS: control socket integration (offscreen, external client)")
     print("\n---- request/response transcript ----")

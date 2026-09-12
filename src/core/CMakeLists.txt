@@ -36,6 +36,9 @@ set(LMMS_SRCS
 	core/Clipboard.cpp
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
+	core/ControlAutomationSupport.cpp
+	core/ControlCommandsAutomation.cpp
+	core/ControlCommandsAutomationEdit.cpp
 	core/ControlCommandsControl.cpp
 	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp
@@ -44,6 +47,7 @@ set(LMMS_SRCS
 	core/ControlCommandsPluginPreset.cpp
 	core/ControlCommandsPluginState.cpp
 	core/ControlCommandsProject.cpp
+	core/ControlCommandsScript.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsTransport.cpp
 	core/ControlDeviceCatalogue.cpp

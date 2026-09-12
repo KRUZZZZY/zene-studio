@@ -142,3 +142,17 @@ src/core/ControlCommandsSettings.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
+
+# ---- Agent control surface: automation + scripting command groups ----
+# Lane post-alpha/cmd-automation off post-alpha/cmd-plugins. The automation.*
+# group (read-back, the point edits, and the registered-but-refused
+# automation.mode_set, because this tree has no automation modes) and the
+# script.* group (script.run drives the embedded ScriptEngine in the running
+# instance; script.list reports the scripts the build ships). Registered as
+# fork-NEW so the fork-scoped ratchets measure them.
+include/ControlAutomationSupport.h
+src/core/ControlAutomationSupport.cpp
+src/core/ControlCommandsAutomation.cpp
+src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsScript.cpp
+tests/src/core/ControlAutomationScriptTest.cpp
