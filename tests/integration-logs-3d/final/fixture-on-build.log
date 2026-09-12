@@ -1,0 +1,52 @@
+[  0%] Built target ringbuffer
+[  0%] Built target weakjack
+[ 10%] Built target lua
+[ 15%] Built target lmms_vst3_sdk
+[ 15%] Built target lmmsobjs_autogen_timestamp_deps
+[ 15%] Built target vst3-test-instrument-sdkbase_autogen_timestamp_deps
+[ 15%] Automatic MOC for target vst3-test-instrument-sdkbase
+[ 15%] Built target vst3-test-instrument-sdkbase_autogen
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/common/pluginview.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/vst3-test-instrument-sdkbase_autogen/mocs_compilation.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/main/linuxmain.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/main/moduleinit.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/main/pluginfactory.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/vst/vstbus.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/vst/vstcomponentbase.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/vst/vstparameters.cpp.o
+[ 15%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument-sdkbase.dir/__/__/__/vst3sdk/public.sdk/source/vst/vstsinglecomponenteffect.cpp.o
+[ 15%] Built target vst3-test-instrument-sdkbase
+[ 15%] Built target vst3-test-instrument_autogen_timestamp_deps
+[ 21%] Automatic MOC for target vst3-test-instrument
+[ 21%] Built target vst3-test-instrument_autogen
+[ 21%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument.dir/vst3-test-instrument_autogen/mocs_compilation.cpp.o
+[ 21%] Building CXX object tests/data/vst3-test-instrument/CMakeFiles/vst3-test-instrument.dir/vst3-test-instrument.cpp.o
+[ 21%] Linking CXX shared module vst3-test-instrument.so
+Laying out the vst3-test-instrument.vst3 bundle
+[ 21%] Built target vst3-test-instrument
+[ 21%] Built target lmmsobjs_autogen
+[ 21%] Generating qrc_lmms.cpp
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ConfigManager.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/CrashReporter.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/DataFile.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Telemetry.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/GuiApplication.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MicrotunerConfig.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/AboutDialog.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/lmmsobjs.dir/qrc_lmms.cpp.o
+[ 89%] Built target lmmsobjs
+[ 89%] Built target zene_autogen_timestamp_deps
+[ 89%] Built target zene_autogen
+[ 94%] Building CXX object src/CMakeFiles/zene.dir/core/main.cpp.o
+[ 94%] Linking CXX executable ../zene
+[ 94%] Built target zene
+[100%] Built target vst3instrument
+[100%] Built target Vst3InstrumentIntegrationTest_autogen_timestamp_deps
+[100%] Automatic MOC for target Vst3InstrumentIntegrationTest
+[100%] Built target Vst3InstrumentIntegrationTest_autogen
+[100%] Building CXX object tests/CMakeFiles/Vst3InstrumentIntegrationTest.dir/Vst3InstrumentIntegrationTest_autogen/mocs_compilation.cpp.o
+[100%] Building CXX object tests/CMakeFiles/Vst3InstrumentIntegrationTest.dir/src/plugins/Vst3InstrumentIntegrationTest.cpp.o
+[100%] Linking CXX executable Vst3InstrumentIntegrationTest
+[100%] Built target Vst3InstrumentIntegrationTest
+BUILD_TARGET_EXIT=0

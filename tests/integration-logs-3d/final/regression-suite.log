@@ -1,0 +1,30 @@
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of lmms::Vst3InstrumentIntegrationTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 112 msecs.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+QINFO  : lmms::Vst3InstrumentIntegrationTest::initTestCase() engine: sampleRate=44100 framesPerPeriod=256
+QINFO  : lmms::Vst3InstrumentIntegrationTest::initTestCase() plugin-scan: 64 file(s), 0 quarantined, 52 served from cache, 7 known-bad skipped, 5 scanned, 57 plugin(s)
+PASS   : lmms::Vst3InstrumentIntegrationTest::initTestCase()
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testTheInstalledInstrumentLoadsAndIsMidiBased() instrument: Zene VST3 Test Instrument, 1 parameter(s), first is "Level"
+PASS   : lmms::Vst3InstrumentIntegrationTest::testTheInstalledInstrumentLoadsAndIsMidiBased()
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy() instrument: midiBased=1 singleStreamed=1 portsModel=0x565c7348c480 parameters=1
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy() clip-driven render: s0=0.5000 s127=0.5000 s128=0.5000 s255=0.5000 rms=0.500000
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy() clip -> track -> instrument: RMS=0.500000, sample[127]=0.000000, sample[128]=0.500000
+PASS   : lmms::Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy()
+PASS   : lmms::Vst3InstrumentIntegrationTest::testDistinctInputGivesDistinctOutput()
+PASS   : lmms::Vst3InstrumentIntegrationTest::testTheLevelParameterReachesTheInstrument()
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile() project round trip: saved 0.750000, reloaded 0.750000 (identical render)
+PASS   : lmms::Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile()
+PASS   : lmms::Vst3InstrumentIntegrationTest::testAGuiLessInstrumentExposesItsParameters()
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow() instrument view built without an instrument window: model=0x565c7348c3d0 parent=0x7ffecd23ea10 window=0x0
+PASS   : lmms::Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow()
+LocklessAllocator: Destroying with elements still allocated
+PASS   : lmms::Vst3InstrumentIntegrationTest::cleanupTestCase()
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 2156ms
+********* Finished testing of lmms::Vst3InstrumentIntegrationTest *********
+REGRESSION_SUITE_EXIT=0

@@ -1,0 +1,8 @@
+--- [1/6] build + ctest (tools/local-ci.sh --build-dir build --jobs 4) ---
+--- [2/6] Gate 9 (fork-sources) ---
+--- [3/6] Gate 6 (no upstream regression) ---
+--- [4/6] run-all-gates.sh (ten gates) ---
+--- [5/6] manifest re-derivation at HEAD ---
+--- [6/6] tree state after the gates (a mutant left behind shows here) ---
+TREE-CLEAN (no tracked modification left by any gate)
+DONE

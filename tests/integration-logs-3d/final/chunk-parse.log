@@ -1,0 +1,4 @@
+file: tests/integration-logs-3d/final/render-final-1.wav size: 2177120
+fmt  chunk: size=16 format=1 channels=2 rate=44100 bitrate=176400 blockalign=4 bits=16
+LIST chunk: INFOISFT Zene Studio (libsndfile-1.2.2)
+data chunk: size=2177024 sha256=b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca

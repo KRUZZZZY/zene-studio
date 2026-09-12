@@ -1,0 +1,152 @@
+diff --git a/plugins/Vst3Effect/Vst3Host.cpp b/plugins/Vst3Effect/Vst3Host.cpp
+index 4c8882349..994170f1b 100644
+--- a/plugins/Vst3Effect/Vst3Host.cpp
++++ b/plugins/Vst3Effect/Vst3Host.cpp
+@@ -30,12 +30,15 @@
+ 
+ #include <QDebug>
+ 
++#include "Vst3MidiEvent.h"
+ #include "pluginterfaces/vst/ivstaudioprocessor.h"
+ #include "pluginterfaces/vst/ivstcomponent.h"
+ #include "pluginterfaces/vst/ivsteditcontroller.h"
++#include "pluginterfaces/vst/ivstevents.h"
+ #include "pluginterfaces/vst/ivsthostapplication.h"
+ #include "pluginterfaces/vst/ivstprocesscontext.h"
+ #include "public.sdk/source/common/memorystream.h"
++#include "public.sdk/source/vst/hosting/eventlist.h"
+ #include "public.sdk/source/vst/hosting/hostclasses.h"
+ #include "public.sdk/source/vst/hosting/module.h"
+ #include "public.sdk/source/vst/hosting/parameterchanges.h"
+@@ -179,6 +182,21 @@ struct HostedPlugin::Impl
+ 	QString vendor;
+ 	bool instrument = false;
+ 
++	//! The input event bus this host drives, or -1. Only ever set for an
++	//! instrument: an effect's event buses are left exactly as they were.
++	int32 eventInputBusIndex = -1;
++	//! true when MIDI pushed into midiQueue reaches the plug-in
++	bool midiEnabled = false;
++	//! MIDI path -> audio thread. Bounded, lock free, never grows.
++	MidiQueue midiQueue;
++	//! Events dropped because midiQueue was full
++	std::uint64_t droppedMidi = 0;
++	//! The event list handed to the plug-in as ProcessData::inputEvents.
++	//! Sized once, in its constructor; cleared and refilled per block.
++	EventList inputEvents{kMaxMidiEventsPerBlock};
++	//! Audio thread scratch for ordering the drained events by sample offset
++	std::vector<MidiEventIn> midiEvents;
++
+ 	std::vector<Vst3ParamDescriptor> params;
+ 	std::vector<std::pair<std::uint32_t, std::size_t>> indexById; // sorted by id
+ 	std::unique_ptr<std::atomic<float>[]> paramValues;
+@@ -338,6 +356,18 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
+ 	}
+ 	d.layout = mapBuses(buses);
+ 
++	// event input bus - the MIDI path
++	//
++	// An instrument receives MIDI as events on a kEvent input bus, so the host
++	// has to know which bus to fill. The policy for a plug-in that declares
++	// more than one: drive the first bus that is active by default, and
++	// deactivate the rest (Vst3MidiEvent.cpp, docs/VST3-INSTRUMENT-HOSTING.md).
++	// Effects are deliberately left alone - their event buses and
++	// ProcessData::inputEvents are exactly what they were before this path
++	// existed, so an existing project's render cannot change because of it.
++	d.eventInputBusIndex = d.instrument ? resolveEventInputBus(d.component.get()) : -1;
++	if (d.eventInputBusIndex < 0) { d.midiQueue.reset(); }
++
+ 	// parameters
+ 	if (d.controller)
+ 	{
+@@ -410,6 +440,33 @@ auto HostedPlugin::isLoaded() const -> bool
+ 	return m_impl->component != nullptr && m_impl->processor != nullptr;
+ }
+ 
++auto HostedPlugin::receivesMidi() const -> bool
++{
++	return m_impl->midiEnabled;
++}
++
++auto HostedPlugin::eventInputBusIndex() const -> int
++{
++	return static_cast<int>(m_impl->eventInputBusIndex);
++}
++
++void HostedPlugin::pushMidiEvent(const MidiEventIn& event)
++{
++	auto& d = *m_impl;
++	// Nothing would ever drain the queue if the plug-in has no instrument
++	// event input, so refuse rather than let events pile up unread.
++	if (!d.midiEnabled) { return; }
++	if (!d.midiQueue.push(event))
++	{
++		++d.droppedMidi;
++	}
++}
++
++auto HostedPlugin::droppedMidiEvents() const -> std::uint64_t
++{
++	return m_impl->droppedMidi;
++}
++
+ void HostedPlugin::setParamNormalized(std::uint32_t id, float normalized)
+ {
+ 	auto& d = *m_impl;
+@@ -570,6 +627,14 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error)
+ 	d.inputParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
+ 	d.lastParamValues.assign(d.params.size(), std::numeric_limits<float>::lowest());
+ 
++	// MIDI: the event list is already sized (its constructor did it), the
++	// ordering scratch is sized here, and the queue starts empty. All three
++	// are pre-allocated so process() never touches the allocator.
++	d.midiEnabled = d.eventInputBusIndex >= 0;
++	d.midiQueue.reset();
++	d.droppedMidi = 0;
++	d.midiEvents.assign(static_cast<std::size_t>(kMaxMidiEventsPerBlock), MidiEventIn{});
++
+ 	d.processData = ProcessData{};
+ 	d.processData.processMode = kRealtime;
+ 	d.processData.symbolicSampleSize = kSample32;
+@@ -578,6 +643,9 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error)
+ 	d.processData.outputs = d.outputBuses.empty() ? nullptr : d.outputBuses.data();
+ 	d.processData.numOutputs = static_cast<int32>(d.outputBuses.size());
+ 	d.processData.inputParameterChanges = &d.inputParamChanges;
++	// Instruments with an input event bus get one; effects keep nullptr, which
++	// is what every effect has always been given.
++	d.processData.inputEvents = d.midiEnabled ? &d.inputEvents : nullptr;
+ 	d.processData.processContext = &d.context;
+ 
+ 	// Transport state is reported per block through setTransportPlaying() and
+@@ -610,6 +678,13 @@ void HostedPlugin::release()
+ 	d.outputChannelPtrs.clear();
+ 	d.silence.clear();
+ 	d.scratchOutput.clear();
++	// No stale MIDI may survive into the next prepare(): a note-on that was
++	// queued but never processed would otherwise sound on the first block
++	// after a sample-rate change, or after the project is reloaded.
++	d.midiEnabled = false;
++	d.midiQueue.reset();
++	d.inputEvents.clear();
++	d.midiEvents.clear();
+ }
+ 
+ auto HostedPlugin::isPrepared() const -> bool
+@@ -642,6 +717,17 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
+ 	auto& d = *m_impl;
+ 	if (!d.prepared || !d.processor) { return; }
+ 
++	// 0. MIDI: drain the queue into the plug-in's event list, in sample order.
++	//    Only an instrument with an input event bus has an event list here;
++	//    for everything else processData.inputEvents is nullptr and none of
++	//    this runs, so the effect path is untouched.
++	if (d.processData.inputEvents != nullptr)
++	{
++		d.inputEvents.clear();
++		drainMidiIntoEventList(d.midiQueue, d.midiEvents, d.inputEvents,
++			d.eventInputBusIndex, frames);
++	}
++
+ 	// 1. parameter changes: lock free, queues were sized in prepare()
+ 	d.inputParamChanges.clearQueue();
+ 	int32 queueIndex = 0;

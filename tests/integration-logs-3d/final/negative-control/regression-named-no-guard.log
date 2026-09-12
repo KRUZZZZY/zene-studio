@@ -1,0 +1,23 @@
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of lmms::Vst3InstrumentIntegrationTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 113 msecs.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+QINFO  : lmms::Vst3InstrumentIntegrationTest::initTestCase() engine: sampleRate=44100 framesPerPeriod=256
+QINFO  : lmms::Vst3InstrumentIntegrationTest::initTestCase() plugin-scan: 64 file(s), 0 quarantined, 52 served from cache, 7 known-bad skipped, 5 scanned, 57 plugin(s)
+PASS   : lmms::Vst3InstrumentIntegrationTest::initTestCase()
+QWARN  : lmms::Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow() Error loading icon pixmap "vst3instrument/logo": "File not found"
+Received signal 11 (SIGSEGV), code 1, for address 0x0000000000000008
+         testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow function time: 6ms, total time: 1374ms
+
+=== Stack trace ===
+Could not attach to process.  If your uid matches the uid of the target
+process, check the setting of /proc/sys/kernel/yama/ptrace_scope, or try
+again as the root user.  For more details, see /etc/sysctl.d/10-ptrace.conf
+ptrace: Inappropriate ioctl for device.
+=== End of stack trace ===
+REGRESSION_NO_GUARD_EXIT=139

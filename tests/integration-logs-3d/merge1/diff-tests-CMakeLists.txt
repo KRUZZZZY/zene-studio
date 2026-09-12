@@ -1,0 +1,82 @@
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 46f4da711..0d0608268 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -819,5 +819,76 @@ if(TARGET lmms_vst3_sdk)
+ 		)
+ 		add_dependencies(Vst3InstrumentFixtureProbe vst3-test-instrument)
+ 		add_test(NAME Vst3InstrumentFixtureProbe COMMAND Vst3InstrumentFixtureProbe)
+-	endif()
++	
++		# Host-level proof of the MIDI event path: the host fills
++		# ProcessData::inputEvents from pushMidiEvent(), and the timing is sample
++		# accurate. It compiles the host sources itself, exactly as ClapHostTest
++		# does for the CLAP host, so it exercises the shipped Vst3Host.
++		add_executable(Vst3InstrumentTest
++			src/plugins/Vst3InstrumentTest.cpp
++			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
++			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
++			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
++		)
++		add_test(NAME Vst3InstrumentTest COMMAND Vst3InstrumentTest)
++		target_include_directories(Vst3InstrumentTest PRIVATE
++			${CMAKE_SOURCE_DIR}/include
++			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect
++			# tests/src/core/AllocationProbe.h - the allocation counter the
++			# real-time assertion uses; the tests beside it include it by
++			# name, so this test does too.
++			${CMAKE_CURRENT_SOURCE_DIR}/src/core
++		)
++		target_compile_features(Vst3InstrumentTest PRIVATE cxx_std_20)
++		target_link_libraries(Vst3InstrumentTest PRIVATE
++			${QT_LIBRARIES}
++			${QT_QTTEST_LIBRARY}
++			lmms_vst3_sdk
++			${CMAKE_DL_LIBS}
++		)
++		target_compile_definitions(Vst3InstrumentTest PRIVATE
++			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}"
++		)
++		add_dependencies(Vst3InstrumentTest vst3-test-instrument)
++
++		# Product-level proof: a MidiClip drives the real vst3instrument MODULE
++		# through the track's MIDI path, and the instrument's state survives the
++		# project file. It needs the plug-in target, which exists only where VST3
++		# hosting is enabled at all.
++		if(TARGET vst3instrument)
++			add_executable(Vst3InstrumentIntegrationTest
++				src/plugins/Vst3InstrumentIntegrationTest.cpp
++			)
++			add_test(NAME Vst3InstrumentIntegrationTest
++				COMMAND Vst3InstrumentIntegrationTest)
++			# It constructs a full Engine and opens the instrument's generated
++			# view, so it needs a Qt platform plugin even when headless.
++			set_tests_properties(Vst3InstrumentIntegrationTest PROPERTIES
++				ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
++			target_include_directories(Vst3InstrumentIntegrationTest PRIVATE
++				$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
++			)
++			target_static_libraries(Vst3InstrumentIntegrationTest PRIVATE lmmsobjs)
++			target_link_libraries(Vst3InstrumentIntegrationTest PRIVATE
++				${QT_LIBRARIES}
++				${QT_QTTEST_LIBRARY}
++				${CMAKE_DL_LIBS}
++			)
++			target_compile_features(Vst3InstrumentIntegrationTest PRIVATE cxx_std_20)
++			target_compile_definitions(Vst3InstrumentIntegrationTest PRIVATE
++				LMMS_TESTING
++				VST3_INSTRUMENT_PLUGIN_PATH="$<TARGET_FILE:vst3instrument>"
++				VST3_INSTRUMENT_PLUGIN_DIR="$<TARGET_FILE_DIR:vst3instrument>"
++				VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}"
++			)
++			# The module resolves LMMS core symbols from the host process, exactly
++			# like the real lmms binary (src/CMakeLists.txt sets ENABLE_EXPORTS ON)
++			# and like PluginPortsMigrationTest does.
++			set_target_properties(Vst3InstrumentIntegrationTest PROPERTIES
++				ENABLE_EXPORTS ON)
++			add_dependencies(Vst3InstrumentIntegrationTest
++				vst3instrument
++				vst3-test-instrument)
++		endif()
++endif()
+ endif()

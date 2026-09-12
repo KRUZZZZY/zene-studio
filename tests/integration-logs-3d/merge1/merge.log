@@ -1,0 +1,9 @@
+Auto-merging cmake/modules/Vst3Sdk.cmake
+Auto-merging tests/CMakeLists.txt
+Auto-merging tests/all-sources.txt
+CONFLICT (content): Merge conflict in tests/all-sources.txt
+Auto-merging tests/file-length-baseline.tsv
+Auto-merging tests/fork-sources.txt
+CONFLICT (content): Merge conflict in tests/fork-sources.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1

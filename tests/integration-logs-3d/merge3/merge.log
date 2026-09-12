@@ -1,0 +1,7 @@
+Auto-merging CMakeLists.txt
+Auto-merging README.md
+Auto-merging tests/run-all-gates.sh
+Auto-merging tests/upstream-modifications.txt
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1

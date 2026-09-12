@@ -1,0 +1,24 @@
+M  cmake/modules/PluginList.cmake
+M  cmake/modules/Vst3Sdk.cmake
+A  docs/VST3-INSTRUMENT-HOSTING.md
+M  plugins/Vst3Effect/CMakeLists.txt
+M  plugins/Vst3Effect/Vst3Host.cpp
+M  plugins/Vst3Effect/Vst3Host.h
+A  plugins/Vst3Effect/Vst3MidiEvent.cpp
+A  plugins/Vst3Effect/Vst3MidiEvent.h
+A  plugins/Vst3Effect/Vst3MidiQueue.h
+A  plugins/Vst3Instrument/CMakeLists.txt
+A  plugins/Vst3Instrument/Vst3Instrument.cpp
+A  plugins/Vst3Instrument/Vst3Instrument.h
+A  plugins/Vst3Instrument/Vst3InstrumentView.cpp
+A  plugins/Vst3Instrument/Vst3InstrumentView.h
+A  plugins/Vst3Instrument/logo.png
+ M src/core/RoutingGraph.cpp
+M  tests/CMakeLists.txt
+M  tests/all-sources.txt
+M  tests/complexity-baseline.tsv
+M  tests/file-length-baseline.tsv
+M  tests/fork-sources.txt
+A  tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
+A  tests/src/plugins/Vst3InstrumentTest.cpp
+A  tests/vst3-instrument-render-proof.sh

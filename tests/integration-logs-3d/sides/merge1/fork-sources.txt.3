@@ -1,0 +1,125 @@
+# Sources added by this fork on top of upstream master (4e677cb6c).
+# Regenerate with:
+#   git diff --name-only --diff-filter=A origin/master HEAD -- src include plugins \
+#     | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#     | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)'
+#
+# Vendored third-party trees are excluded on purpose (524 files): src/3rdparty
+# (lua, luabridge), plugins/NeuralAmp/rtneural (RTNeural), plugins/NeuralAmp/nam
+# (Neural Amp Modeler), plugins/NeuralAmp/tests, plugins/RnnoiseDenoiser/rnnoise
+# (RNNoise). They are not this fork's code and these gates never refactor them.
+#
+# lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
+# resolves this file's directory to the repo root).
+# plugins/Vst3Instrument/logo.png is listed as well: the regeneration command above
+# filters for source extensions, but every path this fork adds under plugins/ has to be
+# declared for Gate 6, and a new plug-in's logo asset is one of them.
+include/AudioBus.h
+include/AudioPlugin.h
+include/AudioPorts.h
+include/AudioPortsModel.h
+include/AudioPortsSettings.h
+include/DpiHelper.h
+include/LatencyCompensation.h
+include/LmmsPolyfill.h
+include/MultiTrackRecorder.h
+include/PinConnector.h
+include/PluginAudioPorts.h
+include/RecordRingBuffer.h
+include/RemotePluginAudioPorts.h
+include/RoutingGraph.h
+include/RoutingNode.h
+include/RoutingNodes.h
+include/ScriptBindings.h
+include/ScriptEngine.h
+include/StemSeparation/ExternalProcessStemSeparator.h
+include/StemSeparation/OnnxRuntimeStemSeparator.h
+include/StemSeparation/StemJobManager.h
+include/StemSeparation/StemModelStore.h
+include/StemSeparation/StemSeparator.h
+include/StemSeparation/StemTrackBuilder.h
+include/StemSeparation/StemTypes.h
+include/StemSplitController.h
+include/TrackRecorder.h
+plugins/ClapEffect/ClapBusMap.cpp
+plugins/ClapEffect/ClapBusMap.h
+plugins/ClapEffect/ClapEffectControlDialog.cpp
+plugins/ClapEffect/ClapEffectControlDialog.h
+plugins/ClapEffect/ClapEffectControls.cpp
+plugins/ClapEffect/ClapEffectControls.h
+plugins/ClapEffect/ClapEffect.cpp
+plugins/ClapEffect/ClapEffect.h
+plugins/ClapEffect/ClapHost.cpp
+plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapParamDescriptor.h
+plugins/ClapEffect/ClapParameter.cpp
+plugins/ClapEffect/ClapParameter.h
+plugins/ClapEffect/ClapSubPluginFeatures.cpp
+plugins/ClapEffect/ClapSubPluginFeatures.h
+plugins/NeuralAmp/NeuralAmpControlDialog.cpp
+plugins/NeuralAmp/NeuralAmpControlDialog.h
+plugins/NeuralAmp/NeuralAmpControls.cpp
+plugins/NeuralAmp/NeuralAmpControls.h
+plugins/NeuralAmp/NeuralAmpEffect.cpp
+plugins/NeuralAmp/NeuralAmpEffect.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+plugins/Vst3Effect/Vst3BusMap.cpp
+plugins/Vst3Effect/Vst3BusMap.h
+plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+plugins/Vst3Effect/Vst3EffectControlDialog.h
+plugins/Vst3Effect/Vst3EffectControls.cpp
+plugins/Vst3Effect/Vst3EffectControls.h
+plugins/Vst3Effect/Vst3Effect.cpp
+plugins/Vst3Effect/Vst3Effect.h
+plugins/Vst3Effect/Vst3Host.cpp
+plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3MidiEvent.cpp
+plugins/Vst3Effect/Vst3MidiEvent.h
+plugins/Vst3Effect/Vst3MidiQueue.h
+plugins/Vst3Effect/Vst3ParamDescriptor.h
+plugins/Vst3Effect/Vst3Parameter.cpp
+plugins/Vst3Effect/Vst3Parameter.h
+plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+plugins/Vst3Effect/Vst3SubPluginFeatures.h
+plugins/Vst3Instrument/Vst3Instrument.cpp
+plugins/Vst3Instrument/Vst3Instrument.h
+plugins/Vst3Instrument/Vst3InstrumentView.cpp
+plugins/Vst3Instrument/Vst3InstrumentView.h
+plugins/Vst3Instrument/logo.png
+plugins/WasmEffect/WasmEffectControlDialog.cpp
+plugins/WasmEffect/WasmEffectControlDialog.h
+plugins/WasmEffect/WasmEffectControls.cpp
+plugins/WasmEffect/WasmEffectControls.h
+plugins/WasmEffect/WasmEffect.cpp
+plugins/WasmEffect/WasmEffect.h
+src/core/AudioBus.cpp
+src/core/audio/MultiTrackRecorder.cpp
+src/core/AudioPortsModel.cpp
+src/core/audio/TrackRecorder.cpp
+src/core/ExternalProcessStemSeparator.cpp
+src/core/LatencyCompensation.cpp
+src/core/OnnxRuntimeStemSeparator.cpp
+src/core/RoutingGraph.cpp
+src/core/RoutingNode.cpp
+src/core/RoutingNodes.cpp
+src/core/ScriptBindings.cpp
+src/core/ScriptEngine.cpp
+src/core/StemJobManager.cpp
+src/core/StemModelStore.cpp
+src/core/StemTrackBuilder.cpp
+src/gui/PinConnector.cpp
+src/gui/StemSplitController.cpp
+src/wasm/WasmAbi.h
+src/wasm/WasmSandbox.cpp
+src/wasm/WasmSandbox.h
+src/wasm/WasmSpscRingBuffer.h
+src/wasm/WasmWorker.cpp
+src/wasm/WasmWorker.h
+tools/local-ci.sh
+

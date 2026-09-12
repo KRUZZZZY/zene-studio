@@ -1,0 +1,2 @@
+  tests/all-sources.txt: 1208 entries (ours 1199, theirs 1108, theirs-only 9, ours-only 100); ours' header kept
+  tests/fork-sources.txt: 175 entries (ours 167, theirs 108, theirs-only 8, ours-only 67); ours' header kept
