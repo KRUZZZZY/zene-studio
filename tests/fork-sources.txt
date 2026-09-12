@@ -6,7 +6,7 @@
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
 #   } | LC_ALL=C sort
 #
@@ -15,7 +15,7 @@
 #        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
@@ -23,15 +23,19 @@
 # product command cannot derive on its own. Each is named here with its reason, so no entry in
 # this file is a hand-edit nobody can account for:
 #   * tests/src/core, tests/src/tracks - the pathspec's two tests/ additions (added with them,
-#     not before) - this file holds exactly seven fork-authored TEST
-#     sources (LufsMeterTest, MidiLearnTest, SessionModelTest, StemExportTest,
-#     StemExportTestSupport.h, ClipSerialisationTest, SampleClipWindowTest.cpp): three
+#     not before) - this file holds exactly nine fork-authored TEST
+#     sources (ClipSerialisationTest, DataFileSaveIntegrityTest, LufsMeterTest, MidiLearnTest,
+#     ProjectOpenIntegrityTest, SampleClipWindowTest.cpp, SessionModelTest, StemExportTest,
+#     StemExportTestSupport.h): three
 #     registered by a42c68f24 (the integration fix that made Gate 9 green), two by 117068e76
-#     (stem export), and two landed at integration on 2026-09-12 (ClipSerialisationTest by
-#     post-alpha/clip-slice0, SampleClipWindowTest.cpp by the same lane). They are the suites of
-#     fork-NEW features, so the fork ratchets look at them. The other ~100 tests/src sources
+#     (stem export), two landed at integration on 2026-09-12 from post-alpha/clip-slice0
+#     (ClipSerialisationTest, SampleClipWindowTest.cpp), and two more arrived with
+#     post-alpha/saveload-integrity the same night (DataFileSaveIntegrityTest, ProjectOpenIntegrityTest
+#     - the lane registered them here itself, and they are kept rather than moved to
+#     tests/all-sources.txt for the same no-narrowing reason). They are the suites of fork-NEW
+#     features, so the fork ratchets look at them. The other ~100 tests/src sources
 #     added since the fork point are whole-tree material and live in tests/all-sources.txt only -
-#     the awk filter admits exactly these seven. A new fork test source belongs in
+#     the awk filter admits exactly these nine. A new fork test source belongs in
 #     tests/all-sources.txt by default; add it to the awk pattern above only if it must carry the
 #     fork ratchets too, and then re-run this command.
 #
@@ -224,8 +228,10 @@ src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiLearnTest.cpp
+tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h

@@ -16,6 +16,7 @@ set(LMMS_TESTS
 	src/core/LufsMeterTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/AutomationModesTest.cpp
+	src/core/DataFileSaveIntegrityTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
@@ -26,6 +27,7 @@ set(LMMS_TESTS
 	src/core/NoteTransformTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
+	src/core/ProjectOpenIntegrityTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordClipTest.cpp

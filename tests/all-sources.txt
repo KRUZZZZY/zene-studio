@@ -1130,6 +1130,7 @@ tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/CrashReporterTest.cpp
+tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MathTest.cpp
@@ -1149,6 +1150,7 @@ tests/src/core/PhaseDSidechainTest.cpp
 tests/src/core/PhaseFChannelScaleTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
+tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/RecordClipTest.cpp

@@ -531,6 +531,12 @@ private:
 
 #ifdef LMMS_HAVE_SESSION_VIEW
 	SessionModel m_sessionModel;
+#else
+	//! Raw XML of a <session> block loaded by a build without the Session View
+	//! reader (WANT_SESSION_VIEW=OFF), re-emitted verbatim on save so this
+	//! build cannot silently drop another build's feature data. Merged into
+	//! post-alpha/integration with PR #594 - see docs/SAVELOAD-INTEGRITY.md.
+	QString m_preservedSessionXml;
 #endif
 
 	friend class Engine;
