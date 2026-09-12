@@ -48,7 +48,7 @@ case "$SCOPE" in
 	      FORMAT_ARGS=(--format cpp --formats-exts "cpp:cpp,c,h,hpp,cc,cxx") ;;
 	all)  SCOPEFILE="$HERE/all-sources.txt"
 	      FORMAT_ARGS=(--format cpp --formats-exts "cpp:cpp,c,h,hpp,cc,cxx")
-	      echo "duplication-gate: whole-tree scope (1,095 first-party files)" ;;
+	      echo "duplication-gate: whole-tree scope (every source in tests/all-sources.txt)" ;;
 	tools) SCOPEFILE="$HERE/tools-sources.txt"
 	       FORMAT_ARGS=(--format python --format cpp --formats-exts "python:py,cpp:cpp,c,h,hpp,cc,cxx")
 	       echo "duplication-gate: tools scope (fork-owned tooling; jscpd has no shell format, so the .sh entries are counted by Gates 4 and 7 only)" ;;

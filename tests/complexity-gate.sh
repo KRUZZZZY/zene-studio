@@ -21,7 +21,9 @@
 #   bash tests/complexity-gate.sh --check                  # CI: never writes the baseline, STILL fails on regressions
 #   bash tests/complexity-gate.sh --strict                 # also fail if ANY function is over the target
 #   bash tests/complexity-gate.sh --reanchor "reason"      # deliberate, recorded baseline refresh
-#   bash tests/complexity-gate.sh --scope all              # whole tree (1,095 files) instead of the fork scope
+#   bash tests/complexity-gate.sh --reanchor-file <path> "reason"
+#                                                          # ONE file's entries, everything else untouched
+#   bash tests/complexity-gate.sh --scope all              # whole tree (every source in tests/all-sources.txt)
 #   bash tests/complexity-gate.sh --scope tools            # the fork's own tooling under tools/ (own baseline)
 
 set -uo pipefail
@@ -35,14 +37,22 @@ TOLERANCE="${COMPLEXITY_TOLERANCE:-0}"   # allowed CCN rise before failing
 
 MODE="ratchet"
 REASON=""
+TARGET=""
 SCOPE="${GATE_SCOPE:-fork}"
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--check)    MODE="check"; shift ;;
 		--strict)   MODE="strict"; shift ;;
 		--reanchor) MODE="reanchor"; REASON="${2:-}"; shift 2 ;;
+		--reanchor-file)
+			MODE="reanchor-file"
+			shift
+			if [[ $# -lt 2 ]]; then
+				echo "usage: $0 --reanchor-file <path> \"reason\"" >&2; exit 2
+			fi
+			TARGET="$1"; REASON="$2"; shift 2 ;;
 		--scope)    SCOPE="${2:-}"; shift 2 ;;
-		*) echo "usage: $0 [--check|--strict|--reanchor \"reason\"] [--scope fork|all]" >&2; exit 2 ;;
+		*) echo "usage: $0 [--check|--strict|--reanchor \"reason\"|--reanchor-file <path> \"reason\"] [--scope fork|all|tools]" >&2; exit 2 ;;
 	esac
 done
 case "$SCOPE" in
@@ -50,7 +60,7 @@ case "$SCOPE" in
 	      BASELINE_NOTE="fork-NEW code" ;;
 	all)  SOURCES="$HERE/all-sources.txt";  BASELINE="$HERE/complexity-baseline-all.tsv"
 	      BASELINE_NOTE="the whole tree (upstream + fork-NEW code)"
-	      echo "complexity-gate: whole-tree scope (1,095 first-party files; upstream code is grandfathered, see docs/CONVENTIONS.md)" ;;
+	      echo "complexity-gate: whole-tree scope (every source in tests/all-sources.txt; upstream code is grandfathered, see docs/CONVENTIONS.md)" ;;
 	tools) SOURCES="$HERE/tools-sources.txt"; BASELINE="$HERE/complexity-baseline-tools.tsv"
 	      BASELINE_NOTE="the fork's own tooling under tools/"
 	      echo "complexity-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)" ;;
@@ -59,6 +69,10 @@ esac
 if [[ "$MODE" == "reanchor" && -z "${REASON// /}" ]]; then
 	echo "usage: $0 --reanchor \"reason\" — an unrecorded re-anchor is not allowed" >&2
 	exit 2
+fi
+if [[ "$MODE" == "reanchor-file" ]]; then
+	[[ -n "${TARGET// /}" ]] || { echo "usage: $0 --reanchor-file <path> \"reason\"" >&2; exit 2; }
+	[[ -n "${REASON// /}" ]] || { echo "usage: $0 --reanchor-file <path> \"reason\" — an unrecorded re-anchor is not allowed" >&2; exit 2; }
 fi
 
 if ! python3 -c "import lizard" 2>/dev/null; then
@@ -142,6 +156,56 @@ write_baseline() {
 		| sort -k2,2nr; } > "$BASELINE"
 }
 
+# A single-file re-anchor. `--reanchor` rewrites the WHOLE baseline, so it is only usable
+# for a reviewed, scope-wide reconciliation, and using it for one function would grandfather
+# every other over-target function in the scope unreviewed. This mode moves exactly the
+# entries for one PATH: every other key in the baseline is carried over unchanged, each
+# changed key prints its old and new CCN, and a path with no over-target function (or one
+# that is not in the scope manifest) is refused rather than quietly entered.
+reanchor_one() { # <path> <reason>
+	local path="$1" reason="$2" out
+	out="$(python3 - "$BASELINE" "$path" "${tmp}.over" <<'REANCHOR_PY'
+import sys
+baseline, path, over = sys.argv[1], sys.argv[2], sys.argv[3]
+header, old, entries, new = [], {}, {}, []
+for raw in open(baseline):
+    line = raw.rstrip("\n")
+    if line.lstrip().startswith("#") or not line.strip():
+        header.append(line)
+        continue
+    k, ccn = line.split("\t")[:2]
+    if k.endswith("@" + path):
+        old[k] = max(old.get(k, 0), int(ccn))   # the gate's reader keeps the worst value
+        continue
+    if k not in entries or int(ccn) > entries[k]:
+        entries[k] = int(ccn)
+for raw in open(over):
+    key, ccn = raw.rstrip("\n").split("\t")[:2]
+    if key.endswith("@" + path):
+        new.append((key, int(ccn)))
+if not new:
+    sys.stderr.write("reanchor-file: no over-target function in '%s' after filtering "
+                     "(is the path in this scope's manifest?)\n" % path)
+    sys.exit(2)
+for k, ccn in new:
+    sys.stderr.write("RE-ANCHORED (single file): %s %s -> CCN %d\n"
+                     % (k, ("CCN %s" % old[k]) if k in old else "new entry", ccn))
+    entries[k] = ccn
+for line in header:
+    print(line)
+for k, ccn in sorted(entries.items(), key=lambda kv: -kv[1]):
+    print("%s\t%d" % (k, ccn))
+REANCHOR_PY
+)" || exit 2
+	printf '%s\n' "$out" > "$BASELINE"
+	echo "reason: ${reason}"
+}
+
+declare -A measured
+while IFS=$'\t' read -r key ccn nloc length location; do
+	measured["$key"]=1
+done < "${tmp}.over"
+
 regressed=0
 while IFS=$'\t' read -r key ccn nloc length location; do
 	if [[ -z "${base[$key]:-}" ]]; then
@@ -152,6 +216,16 @@ while IFS=$'\t' read -r key ccn nloc length location; do
 		regressed=1
 	fi
 done < "${tmp}.over"
+
+# The other direction, reported like Gate 7 reports its ratchet-down: a key in the baseline
+# whose function is no longer over the target is dead weight, and worse, it masks a future
+# rise up to its recorded value. The gate never pruned these, so until 2026-09-12 an entry
+# grandfathered at CCN 15 silently allowed that function to climb back to 15.
+for key in "${!base[@]}"; do
+	if [[ -z "${measured[$key]:-}" ]]; then
+		echo "improved: $key is no longer over CCN ${CCN_TARGET} (baseline entry is dead weight; remove it deliberately)"
+	fi
+done
 
 rc=0
 case "$MODE" in
@@ -166,6 +240,9 @@ reanchor)
 	write_baseline
 	echo "RE-ANCHORED: baseline rewritten from the current tree (${over_count} over-target function(s))"
 	echo "reason: ${REASON}"
+	;;
+reanchor-file)
+	reanchor_one "$TARGET" "$REASON"
 	;;
 check|ratchet)
 	if [[ "$regressed" -eq 1 ]]; then

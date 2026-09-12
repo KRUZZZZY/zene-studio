@@ -24,10 +24,19 @@
 # tests/coverage-entry-floor-exempt.txt follow. An exemption changes nothing
 # else - not the limit, not any other file, not any other scope.
 #
-# Current exemptions: NONE. Every file over 500 lines in every scope today is a
+# THIS FILE IS A REQUIRED INPUT. tests/file-length-gate.sh exits 2 if it is missing, because
+# a gate that cannot tell "no exemptions" from "the exemption home is gone" cannot enforce the
+# exemptions it is supposed to hold. That tolerance was the real defect behind this file's
+# absence: the gate and tests/QA-GATES.md both named it for weeks while it did not exist, and
+# `--check` passed throughout.
+#
+# Current exemptions: NONE on this branch. Every file over 500 lines in every scope today is a
 # hand-written source that is grandfathered in its scope's baseline
-# (tests/file-length-baseline*.tsv) with the growth decision recorded, or is
-# this fork's own code measured by the same rule as everything else. The file
-# exists because the gate and tests/QA-GATES.md both name it as the exemption
-# home, and a documented fail-closed input that is absent is a fail-closed
-# violation. It is empty of entries on purpose, not by omission.
+# (tests/file-length-baseline*.tsv) with the growth decision recorded one file at a time, or is
+# this fork's own code measured by the same rule as everything else. It is empty of entries on
+# purpose, not by omission.
+#
+# Reconcile, do not duplicate: a sibling lane (mixer concurrency) adds the first entry to this
+# file - a 677-line tests/src/core/MixerConcurrencyTest.cpp - with its own reason in its own
+# commit, which is exactly what the contract above asks for. Where the two versions of this file
+# meet, the union is this header plus that entry line.
