@@ -49,6 +49,7 @@ set(LMMS_TESTS
 	src/core/RoutingGraphLiveTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
+	src/core/VcaGroupTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/ScriptStabilisationTest.cpp
@@ -193,6 +194,11 @@ set_target_properties(PhaseDSidechainTest PROPERTIES ENABLE_EXPORTS ON)
 target_compile_definitions(RoutingGraphLiveTest PRIVATE
 	ROUTING_GRAPH_LIVE_REFERENCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/reference/routing-graph-live-render.raw"
 )
+
+# VcaGroupTest (#622) constructs a full Engine and drives Mixer::masterMix()
+# synchronously, the same shape as the Phase D harnesses.
+set_tests_properties(VcaGroupTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.

@@ -379,6 +379,7 @@ include/TrackRecorder.h
 include/TrackRenameLineEdit.h
 include/TrackView.h
 include/ValueBuffer.h
+include/VcaGroup.h
 include/VersionedSaveDialog.h
 include/VstSyncController.h
 include/VstSyncData.h
@@ -942,6 +943,7 @@ src/core/TrackContainer.cpp
 src/core/UpgradeExtendedNoteRange.cpp
 src/core/UpgradeExtendedNoteRange.h
 src/core/ValueBuffer.cpp
+src/core/VcaGroup.cpp
 src/core/VstSyncController.cpp
 src/core/audio/AudioAlsa.cpp
 src/core/audio/AudioDevice.cpp
@@ -1187,6 +1189,7 @@ tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
+tests/src/core/VcaGroupTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
