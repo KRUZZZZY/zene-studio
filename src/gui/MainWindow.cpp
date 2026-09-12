@@ -79,12 +79,6 @@
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
-#ifdef ZENE_TELEMETRY_ENABLED
-	// Only included when the dialog is compiled. An unconditional include makes
-	// AUTOMOC emit moc for a Q_OBJECT whose .cpp the kill switch removed, and
-	// the link then fails on the moc'd slots (found by the OFF configure).
-	#include "TelemetryConsentDialog.h"
-#endif
 #include "TextFloat.h"
 #include "ToolButton.h"
 #include "ToolPlugin.h"
@@ -427,9 +421,23 @@ void MainWindow::finalize()
 	help_menu->addSeparator();
 	QAction * telemetryAction = help_menu->addAction( embed::getIconPixmap( "setup" ),
 				  tr( "Telemetry - what we send..." ) );
-	connect( telemetryAction, &QAction::triggered, this, [this] {
-		TelemetryConsentDialog dialog( this );
-		dialog.exec();
+	// A11/A15: the action declares the registry command it implements, and the
+	// slot below opens the SAME consent screen that command implements
+	// (lmms::openTelemetryConsentScreen) - one implementation for the menu item
+	// and the agent surface, so the two cannot drift into two screens. The
+	// declaration goes in the dynamic property "controlCommand" rather than
+	// objectName() (load-bearing for this action elsewhere) or data() (the
+	// declaration channel of last resort: the gate accepts it only when it
+	// already resolves; see tests/agent-surface-gate.py).
+	//
+	// telemetry.consent declares `requires: display, human`, so the registry
+	// refuses it for any unattended caller before the handler runs: an agent can
+	// read the telemetry state with telemetry.status but can never consent on
+	// the user's behalf, and can never open a modal screen nobody is there to
+	// answer.
+	telemetryAction->setProperty( "controlCommand", QStringLiteral( "telemetry.consent" ) );
+	connect( telemetryAction, &QAction::triggered, this, [] {
+		openTelemetryConsentScreen();
 	} );
 #endif
 

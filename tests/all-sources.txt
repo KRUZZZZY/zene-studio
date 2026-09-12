@@ -887,6 +887,7 @@ src/core/ControlCommandsProjectFiles.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
+src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp

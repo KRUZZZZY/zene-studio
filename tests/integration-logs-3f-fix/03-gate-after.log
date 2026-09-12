@@ -1,0 +1,84 @@
+agent_surface gate (SPEC A15) - baseline=agent-surface-baseline.txt
+   control.surface_report: 46 reflected actions
+   control.commands_list: 74 registered commands
+   app.version                  ok            0.0s  args={}
+   arrangement.get_state        ok            0.0s  args={}
+   audio.device_list            ok            0.0s  args={}
+   audio.device_set             typed_error   0.0s  not_found
+   automation.add_point         typed_error   0.0s  invalid_args
+   automation.clear             typed_error   0.0s  invalid_args
+   automation.get_state         ok            0.0s  args={}
+   automation.mode_set          typed_error   0.0s  invalid_args
+   automation.remove_point      typed_error   0.0s  invalid_args
+   clip.add                     typed_error   0.0s  invalid_args
+   clip.delete                  typed_error   0.0s  invalid_args
+   clip.duplicate               typed_error   0.0s  invalid_args
+   clip.move                    typed_error   0.0s  invalid_args
+   clip.resize                  typed_error   0.0s  invalid_args
+   clip.select                  ok            0.0s  args={"clip": ""}
+   clip.split                   typed_error   0.0s  invalid_args
+   control.commands_list        ok            0.0s  args={}
+   control.ping                 ok            0.0s  args={}
+   control.redo                 ok            0.0s  args={}
+   control.surface_report       ok            0.0s  args={}
+   control.transactions         ok            0.0s  args={}
+   control.undo                 ok            0.0s  args={}
+   control.version              ok            0.0s  args={}
+   dsp.get_state                ok            0.0s  args={}
+   midi.device_list             ok            0.0s  args={}
+   midi.learn_toggle            ok            0.0s  args={}
+   mixer.add_channel            ok            0.0s  args={}
+   mixer.get_state              ok            0.0s  args={}
+   mixer.remove_channel         ok            0.0s  args={"channel": "ch-1"}
+   mixer.set_pan                typed_error   0.0s  refused
+   mixer.set_volume             ok            0.0s  args={"channel": "ch-0", "volume": 1.0}
+   note.add                     typed_error   0.0s  invalid_args
+   note.move                    typed_error   0.0s  invalid_args
+   note.remove                  typed_error   0.0s  invalid_args
+   note.resize                  typed_error   0.0s  invalid_args
+   note.select                  typed_error   0.0s  invalid_args
+   note.velocity_set            typed_error   0.0s  invalid_args
+   plugin.bypass                typed_error   0.0s  invalid_args
+   plugin.list                  ok            0.0s  args={}
+   plugin.load                  typed_error   0.0s  invalid_args
+   plugin.param_get             typed_error   0.0s  invalid_args
+   plugin.param_set             typed_error   0.0s  invalid_args
+   plugin.preset_list           typed_error   0.0s  invalid_args
+   plugin.preset_load           typed_error   0.0s  invalid_args
+   plugin.preset_save           typed_error   0.0s  invalid_args
+   plugin.state_load            typed_error   0.0s  invalid_args
+   plugin.state_save            typed_error   0.0s  invalid_args
+   plugin.unload                typed_error   0.0s  invalid_args
+   project.get_state            ok            0.0s  args={}
+   project.open                 ok            0.0s  args={"path": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/data/agent-control-fixture.mmp"}
+   project.restore_revision     typed_error   0.0s  not_found
+   project.save                 ok            0.0s  args={"path": "/tmp/zsurface-1pv09y87/sweep-save.mmp"}
+   render.render                ok            0.7s  args={"out": "/tmp/zsurface-1pv09y87/sweep-render.wav", "format": "wav"}
+   roll.get_state               typed_error   0.0s  invalid_args
+   script.list                  ok            0.0s  args={}
+   script.run                   typed_error   0.0s  invalid_args
+   settings.get                 typed_error   0.0s  invalid_args
+   settings.set                 typed_error   0.0s  invalid_args
+   telemetry.status             ok            0.0s  args={}
+   track.add                    ok            0.0s  args={}
+   track.get_state              ok            0.0s  args={"track": "trk-0"}
+   track.list                   ok            0.0s  args={}
+   track.remove                 typed_error   0.0s  invalid_args
+   track.rename                 typed_error   0.0s  invalid_args
+   track.set_arm                typed_error   0.0s  invalid_args
+   track.set_mute               typed_error   0.0s  invalid_args
+   track.set_solo               typed_error   0.0s  invalid_args
+   transport.get_state          ok            0.0s  args={}
+   transport.play               ok            0.0s  args={}
+   transport.seek               ok            0.0s  args={"ticks": 0}
+   transport.set_tempo          ok            0.0s  args={"bpm": 120}
+   transport.stop               ok            0.0s  args={}
+
+agent_surface: 46 reflected, 0 exempt (generated menus)
+  reflection : 4 registered, 42 unregistered (42 grandfathered, 0 new)
+  ratchet    : baseline 42 entries, 0 stale
+  reverse    : 74 commands, 73 swept, 1 allowlisted
+  budget     : 2.9 s of 120 s
+
+PASS: agent surface gate (reflection + ratchet + reverse completeness + headless sweep)
+EXIT=0

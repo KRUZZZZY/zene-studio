@@ -77,6 +77,7 @@ set(LMMS_SRCS
 	core/ControlCommandsScript.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
+	core/ControlCommandsTelemetry.cpp
 	core/ControlCommandsTransport.cpp
 	core/ControlDeviceCatalogue.cpp
 	core/ControlDeviceHosted.cpp

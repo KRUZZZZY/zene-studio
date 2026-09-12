@@ -1,0 +1,10 @@
+commands_list: 74 commands; telemetry.* ->
+  telemetry.consent    requires=['display', 'human'] mutating=False
+      Open the telemetry consent screen - the Help menu's "Telemetry - what we send..." action, with the live previe
+  telemetry.status     requires=[] mutating=False
+      Read-only: whether telemetry is compiled in, whether consent is on, which groups are on, and the exact payload
+surface_report: 46 actions, 42 unregistered; consent action ->
+  surface=menu container=Help class=QMenu
+  text='Telemetry - what we send...' object_name='' command='telemetry.consent' declared_unknown=False
+EVIDENCE OK: the Help menu consent action resolves to telemetry.consent
+control.quit: ok

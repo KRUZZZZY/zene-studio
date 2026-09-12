@@ -100,6 +100,12 @@ private slots:
 			QStringLiteral("audio.device_set"),
 			QStringLiteral("midi.device_list"),
 			QStringLiteral("app.version"),
+			// telemetry.* (SPEC A15). The Help menu's "Telemetry - what we
+			// send..." action declares telemetry.consent through the dynamic
+			// property "controlCommand", so this command existing is what makes
+			// the agent-surface gate see that menu item as reachable at all.
+			QStringLiteral("telemetry.consent"),
+			QStringLiteral("telemetry.status"),
 		};
 		for (const QString& id : required)
 		{
@@ -415,6 +421,50 @@ private slots:
 		QVERIFY(!result.ok);
 		QCOMPARE(result.errorKind, ControlErrorKind::Refused);
 		QCOMPARE(controlErrorKindName(result.errorKind), QStringLiteral("refused"));
+	}
+
+	//! The telemetry command group (SPEC A15, the Help menu's "Telemetry - what
+	//! we send..." action). Two properties the agent-surface gate relies on and
+	//! cannot check by itself: that telemetry.consent declares `requires:
+	//! human` (its tests/agent-surface-allowlist.txt entry only counts with a
+	//! declared excuse) and that telemetry.status declares NONE (a command with
+	//! no excuse has to be exercised by the headless sweep). The screen itself
+	//! is not opened here - the registry refuses before the handler runs, which
+	//! is the behaviour under test.
+	void telemetryCommandsSplitConsentFromVisibility()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+
+		const ControlCommand* status = registry->command(QStringLiteral("telemetry.status"));
+		QVERIFY2(status != nullptr, "telemetry.status is not registered");
+		QVERIFY2(status->requiresDecl.isEmpty(),
+			"telemetry.status must stay headless-safe: a declared requires is the only thing "
+			"that can justify an allowlist entry, and the read-only report has no excuse");
+		QVERIFY2(!status->mutating, "telemetry.status writes nothing");
+
+		// It answers, typed, with no display and no human - the property that
+		// lets the headless sweep account for it. The consent VALUES are not
+		// asserted (they come from the machine's own config file); the shape is.
+		const ControlResult report = registry->invoke(QStringLiteral("telemetry.status"));
+		QVERIFY2(report.ok, qPrintable(report.errorMessage));
+		QVERIFY2(report.result.contains(QStringLiteral("enabled")),
+			"telemetry.status must report whether consent is on");
+		QVERIFY2(report.result.contains(QStringLiteral("payload_json")),
+			"telemetry.status must report the payload that would be sent");
+
+		const ControlCommand* consent = registry->command(QStringLiteral("telemetry.consent"));
+		QVERIFY2(consent != nullptr, "telemetry.consent is not registered");
+		QVERIFY2(consent->requiresDecl.contains(QStringLiteral("human")),
+			"telemetry.consent opens a modal screen: it must declare `requires: human`, because "
+			"an agent must never be able to consent on the user's behalf");
+		QVERIFY2(!consent->mutating, "telemetry.consent records no transaction");
+
+		// The registry refuses it for every automated caller, before the handler,
+		// so an unattended run can never block on the consent screen.
+		const ControlResult refused = registry->invoke(QStringLiteral("telemetry.consent"));
+		QVERIFY2(!refused.ok, "an automated caller reached the consent screen");
+		QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+		QCOMPARE(controlErrorKindName(refused.errorKind), QStringLiteral("requires"));
 	}
 };
 

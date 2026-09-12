@@ -1,0 +1,11 @@
+Lv2 plugin SUMMARY: 73 of 87  loaded in 113 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+plugin-scan: 64 file(s), 0 quarantined, 52 served from cache, 7 known-bad skipped, 5 scanned, 57 plugin(s)
+|-----------------                                 |     32%   |  |------------------------------------              |     70%   /  PERFLOG |       Project Render | 0.51user, 0.00system 0.51elapsed
+Loading project...
+Done
+

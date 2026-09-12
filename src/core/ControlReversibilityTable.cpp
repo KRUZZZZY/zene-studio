@@ -386,6 +386,18 @@ const ReversibilityRow kRows[] = {
 		"nothing to reverse: calling midi.learn_toggle again is the operation a "
 		"client calls, and setArmed() keeps the Edit menu tick in step",
 		""),
+	R("telemetry.consent", RC::NotMutating, false,
+		"it OPENS A SCREEN, it does not edit the project: the Help menu's "
+		"\"Telemetry - what we send...\" action declares it and the menu slot and "
+		"the registry handler are one function (openTelemetryConsentScreen), and "
+		"the consent record is written by the screen through "
+		"Telemetry::saveConsent() when - and only when - the human there clicks "
+		"Save, which is the human's act and not a project edit",
+		"nothing to reverse, and nothing an agent could reverse: the command "
+		"declares `requires: display, human`, so the registry refuses it before "
+		"the handler runs and no automated caller can reach it or change the "
+		"consent record at all",
+		""),
 	R("render.render", RC::NotMutating, false,
 		"it writes an OUTPUT ARTEFACT; the session it renders is not modified "
 		"(it serialises to a temp file and removes it)",
@@ -413,6 +425,8 @@ const ReversibilityRow kRows[] = {
 	R("roll.get_state", RC::NotMutating, false, "reads the note list", "no write", ""),
 	R("script.list", RC::NotMutating, false, "reads the scripts directory", "no write", ""),
 	R("settings.get", RC::NotMutating, false, "reads one config value", "no write", ""),
+	R("telemetry.status", RC::NotMutating, false,
+		"reads the consent record and the payload builder", "no write", ""),
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),

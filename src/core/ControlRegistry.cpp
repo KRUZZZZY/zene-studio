@@ -452,6 +452,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
 	registerSurfaceCommands(registry);
+	registerTelemetryCommands(registry);
 
 	registerArrangementCommands(registry);
 	registerClipCommands(registry);

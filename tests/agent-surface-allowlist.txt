@@ -15,3 +15,16 @@
 # `requires` anywhere, so every one of its commands is exercised by the sweep.
 # The file exists so the next command that honestly needs a display has an
 # obvious, reviewed place to say so.
+#
+# NOT EMPTY ANY MORE (2026-09-12) - the first command that honestly needs a
+# human, and the only entry:
+#
+#   telemetry.consent opens a MODAL consent screen (the Help menu's "Telemetry
+#   - what we send..." action; the menu slot and the registry handler are one
+#   function). It declares `requires: display, human`, so the registry refuses
+#   it before the handler runs and the sweep would only ever measure the
+#   refusal - it cannot exercise the screen, and it must not: consent is a
+#   human act, and an unattended run must never block on a dialog nobody can
+#   answer (include/UnattendedRun.h, task #625). The read-only half of the
+#   feature, telemetry.status, declares no `requires` and IS swept.
+telemetry.consent	requires: display, human - it opens the modal consent screen, so it cannot be exercised headlessly (the sweep would only measure the typed `requires` refusal). Reverse completeness is still accounted for: telemetry.status covers the readable half of the feature and is swept like any other headless-safe command.

@@ -70,6 +70,27 @@ legitimate; no individual marketing profile is ever built from telemetry.
 * No third-party dependency was added. Qt Network is used (already a conditional dependency in this
   tree for the stem-separation model downloader); no MIT/BSD licence check was needed.
 
+### 2.5 The agent surface — `telemetry.consent` and `telemetry.status`
+
+Added after v1 by the agent-surface fix (`docs/AGENT-SURFACE-TELEMETRY-FIX.md`). The Help-menu
+action had no registered command, which the `agent_surface` gate (SPEC A15) fails on, correctly: an
+action with no command is, to an agent, a feature that does not exist. The group splits along the one
+line that matters — **consent is a human act, visibility is not**:
+
+* `telemetry.consent` opens the consent screen. It declares **`requires: display, human`**, so
+  `ControlRegistry::checkRequires()` refuses it for every automated caller *before the handler runs*:
+  no agent can consent on the user's behalf, and none can open a modal screen in an unattended run
+  (the `include/UnattendedRun.h` rule, task #625). It is the first and only entry in
+  `tests/agent-surface-allowlist.txt`, which is where a command that genuinely needs a human says so.
+* `telemetry.status` is **read-only**: `compiled_in`, the consent record, and the exact
+  `Telemetry::buildPayload()` bytes `submit()` would send — the same object §2.2's preview renders,
+  so there is still only one payload description in the tree. It declares no `requires`, so the
+  headless sweep exercises it rather than an allowlist excusing it.
+
+Both are registered whatever `-DZENE_TELEMETRY` says; with the kill switch off they answer a typed
+"not in this build" rather than disappearing, so "telemetry is off" and "telemetry is not compiled
+in" stay distinguishable to a client.
+
 ## 3. The payload allowlist (24 keys, closed)
 
 Hardware / platform group (17):
@@ -240,12 +261,14 @@ not by reading it.
 New: `include/Telemetry.h`, `include/TelemetryNetworkTransport.h`,
 `include/TelemetryConsentDialog.h`, `src/core/Telemetry.cpp`,
 `src/core/TelemetryNetworkTransport.cpp`, `src/gui/TelemetryConsentDialog.cpp`,
-`tests/src/core/TelemetryTest.cpp`.
+`tests/src/core/TelemetryTest.cpp`. Added later by §2.5: `src/core/ControlCommandsTelemetry.cpp`.
 
 Touched: `CMakeLists.txt` (option + Qt Network), `src/lmmsconfig.h.in` (switch define),
 `src/core/CMakeLists.txt`, `src/gui/CMakeLists.txt`, `tests/CMakeLists.txt`,
 `src/gui/MainWindow.cpp` (Help-menu entry), `tests/fork-sources.txt`, `tests/all-sources.txt`,
-`tests/upstream-modifications.txt`.
+`tests/upstream-modifications.txt` — and, for §2.5, `include/ControlRegistry.h`,
+`src/core/ControlRegistry.cpp`, `src/core/ControlReversibilityTable.cpp`,
+`tests/agent-surface-allowlist.txt`, `tests/src/core/ControlRegistryTest.cpp`.
 
 ## 7. What is NOT done (and is not pretended to be)
 

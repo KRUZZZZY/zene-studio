@@ -282,6 +282,20 @@ LMMS_EXPORT void registerProjectFilesCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerArrangementStateCommands(ControlRegistry& registry);
 //! control.surface_report - the live menu/toolbar reflection (SPEC A15).
 LMMS_EXPORT void registerSurfaceCommands(ControlRegistry& registry);
+//! telemetry.consent (display+human, opens the consent screen) and
+//! telemetry.status (read-only: is it compiled in, is consent on, what would
+//! be sent). Registered whatever -DZENE_TELEMETRY says; the handlers answer a
+//! typed "not in this build" when the kill switch removed the client.
+LMMS_EXPORT void registerTelemetryCommands(ControlRegistry& registry);
+/*! Open the telemetry consent screen - the ONE implementation behind both the
+ *  Help menu's "Telemetry - what we send..." action (which declares
+ *  telemetry.consent via the dynamic property "controlCommand") and that
+ *  command's registry handler. SPEC A11: one action, one implementation.
+ *
+ *  Refuses, typed, in an unattended run (include/UnattendedRun.h): the screen
+ *  is modal, and a dialog nobody can answer is a hang, not a consent.
+ */
+LMMS_EXPORT ControlResult openTelemetryConsentScreen();
 
 //! track.add/remove/rename/set_mute/set_solo/set_arm and arrangement.get_state
 LMMS_EXPORT void registerArrangementCommands(ControlRegistry& registry);
