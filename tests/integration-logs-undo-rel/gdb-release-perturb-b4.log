@@ -1,0 +1,80 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+control socket listening on /tmp/zene-control-test-2cx8i3qn/zene.sock
+[New Thread 0x7ffff054f6c0 (LWP 3550515)]
+[New Thread 0x7fffefd4e6c0 (LWP 3550516)]
+[New Thread 0x7fffef54d6c0 (LWP 3550517)]
+[New Thread 0x7fffeed4c6c0 (LWP 3550518)]
+[Thread 0x7fffeed4c6c0 (LWP 3550518) exited]
+[Thread 0x7fffef54d6c0 (LWP 3550517) exited]
+[Thread 0x7ffff054f6c0 (LWP 3550515) exited]
+[Thread 0x7fffefd4e6c0 (LWP 3550516) exited]
+[New Thread 0x7fffeed4c6c0 (LWP 3550519)]
+[New Thread 0x7fffef54d6c0 (LWP 3550520)]
+[New Thread 0x7fffefd4e6c0 (LWP 3550521)]
+[New Thread 0x7ffff054f6c0 (LWP 3550522)]
+[New Thread 0x7fffee4c96c0 (LWP 3550523)]
+[New Thread 0x7fffedcc86c0 (LWP 3550524)]
+[New Thread 0x7fffed4c76c0 (LWP 3550525)]
+[New Thread 0x7fffeccc66c0 (LWP 3550526)]
+[New Thread 0x7fffcffff6c0 (LWP 3550527)]
+[New Thread 0x7fffcf7fe6c0 (LWP 3550528)]
+[New Thread 0x7fffceffd6c0 (LWP 3550529)]
+[New Thread 0x7fffce7fc6c0 (LWP 3550530)]
+[New Thread 0x7fffcdffb6c0 (LWP 3550531)]
+[New Thread 0x7fffcd7fa6c0 (LWP 3550532)]
+[New Thread 0x7fffccff96c0 (LWP 3550533)]
+[New Thread 0x7fffaffff6c0 (LWP 3550534)]
+[New Thread 0x7fffaf7fe6c0 (LWP 3550535)]
+[New Thread 0x7fffaeffd6c0 (LWP 3550536)]
+[New Thread 0x7fffae7fc6c0 (LWP 3550537)]
+Lv2 plugin SUMMARY: 73 of 87  loaded in 135 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+[New Thread 0x7fffad5ff6c0 (LWP 3550540)]
+[New Thread 0x7fffacdfe6c0 (LWP 3550541)]
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+[New Thread 0x7fff8d5946c0 (LWP 3550641)]
+[New Thread 0x7fff84bff6c0 (LWP 3550642)]
+[New Thread 0x7fff8cd936c0 (LWP 3550643)]
+[New Thread 0x7fff87fff6c0 (LWP 3550644)]
+[New Thread 0x7fff877fe6c0 (LWP 3550645)]
+[New Thread 0x7fff86ffd6c0 (LWP 3550646)]
+
+Thread 1 "zene" received signal SIGSEGV, Segmentation fault.
+0x000055555568e086 in lmms::gui::InstrumentTrackView::~InstrumentTrackView (this=0x55555751ddd0, __in_chrg=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/src/gui/tracks/InstrumentTrackView.cpp:178
+178		delete model()->m_midiPort.m_readablePortsMenu;
+
+===== STOPPED =====
+Last stopped for thread 1 (Thread 0x7ffff15b8c80 (LWP 3550481)).
+	Using the running image of child process 3550481.
+Program stopped at 0x55555568e086.
+It stopped with signal SIGSEGV, Segmentation fault.
+$1 = (void *) 0x308
+#0  0x000055555568e086 in lmms::gui::InstrumentTrackView::~InstrumentTrackView (this=0x55555751ddd0, __in_chrg=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/src/gui/tracks/InstrumentTrackView.cpp:178
+178		delete model()->m_midiPort.m_readablePortsMenu;
+$2 = 0x55555751ddd0
+$3 = 0x555557a24a70
+
+--- the outer vptr of the object the view still calls its model ---
+$4 = 0x0
+No symbol matches *(void**)((lmms::gui::TrackView*)this)->m_track.
+
+--- the string at that vptr-8, if it is a vtable ---
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/tests/integration-logs-undo-rel/gdb-vptr.gdb:15: Error in sourced command file:
+Cannot access memory at address 0xfffffffffffffff8

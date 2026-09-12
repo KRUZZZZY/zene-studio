@@ -156,6 +156,14 @@ public slots:
 	lmms::gui::TrackView * createTrackView( lmms::Track * _t );
 	void deleteTrackView( lmms::gui::TrackView * _tv );
 
+	/*! Take every view of this container down, now, without touching the
+	 * tracks. Handles TrackContainer::aboutToClearTracks(), which a
+	 * serialization restore emits before it deletes the tracks: a TrackView is
+	 * otherwise deleted from a deferred event once its track dies, and its
+	 * destructor reads the model it views (docs/UNDO-RELEASE-CONFIG.md).
+	 */
+	void removeAllTrackViews();
+
 	void dropEvent( QDropEvent * _de ) override;
 	void dragEnterEvent( QDragEnterEvent * _dee ) override;
 

@@ -119,6 +119,21 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 	connect( m_tc, SIGNAL(trackAdded(lmms::Track*)),
 			this, SLOT(createTrackView(lmms::Track*)),
 			Qt::QueuedConnection );
+	// A serialization restore deletes the container's tracks wholesale; the
+	// views must be gone before that happens (see the slot and
+	// docs/UNDO-RELEASE-CONFIG.md). Direct connection on purpose: the tracks
+	// are deleted by the very next statement in TrackContainer::loadSettings.
+	connect( m_tc, SIGNAL(aboutToClearTracks()),
+			this, SLOT(removeAllTrackViews()) );
+}
+
+
+void TrackContainerView::removeAllTrackViews()
+{
+	while( !m_trackViews.empty() )
+	{
+		delete m_trackViews.takeLast();
+	}
 }
 
 

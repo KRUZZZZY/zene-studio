@@ -1,0 +1,6 @@
+debug                  empty-minimal      FAIL undo_ok=True alive_1s=False rc=-11
+debug                  fixture-minimal    PASS undo_ok=True alive_1s=True rc=None
+debug                  empty-probe        FAIL undo_ok=True alive_1s=False rc=-11
+debug                  fixture-probe      PASS undo_ok=True alive_1s=True rc=None
+# /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/tests/integration-logs-undo-rel/matrix-debug.jsonl
+MATRIX_EXIT=1

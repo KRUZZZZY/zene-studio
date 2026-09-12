@@ -1,0 +1,96 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+control socket listening on /tmp/zene-control-test-re92m0m9/zene.sock
+[New Thread 0x7ffff054f6c0 (LWP 3508798)]
+[New Thread 0x7fffefd4e6c0 (LWP 3508799)]
+[New Thread 0x7fffef54d6c0 (LWP 3508800)]
+[New Thread 0x7fffeed4c6c0 (LWP 3508801)]
+[Thread 0x7fffeed4c6c0 (LWP 3508801) exited]
+[Thread 0x7fffef54d6c0 (LWP 3508800) exited]
+[Thread 0x7ffff054f6c0 (LWP 3508798) exited]
+[Thread 0x7fffefd4e6c0 (LWP 3508799) exited]
+[New Thread 0x7fffeed4c6c0 (LWP 3508802)]
+[New Thread 0x7fffef54d6c0 (LWP 3508803)]
+[New Thread 0x7fffefd4e6c0 (LWP 3508804)]
+[New Thread 0x7ffff054f6c0 (LWP 3508805)]
+[New Thread 0x7fffee4c96c0 (LWP 3508806)]
+[New Thread 0x7fffedcc86c0 (LWP 3508807)]
+[New Thread 0x7fffed4c76c0 (LWP 3508808)]
+[New Thread 0x7fffeccc66c0 (LWP 3508809)]
+[New Thread 0x7fffcffff6c0 (LWP 3508810)]
+[New Thread 0x7fffcf7fe6c0 (LWP 3508811)]
+[New Thread 0x7fffceffd6c0 (LWP 3508812)]
+[New Thread 0x7fffce7fc6c0 (LWP 3508813)]
+[New Thread 0x7fffcdffb6c0 (LWP 3508814)]
+[New Thread 0x7fffcd7fa6c0 (LWP 3508815)]
+[New Thread 0x7fffccff96c0 (LWP 3508816)]
+[New Thread 0x7fffaffff6c0 (LWP 3508817)]
+[New Thread 0x7fffaf7fe6c0 (LWP 3508818)]
+[New Thread 0x7fffaeffd6c0 (LWP 3508819)]
+[New Thread 0x7fffae7fc6c0 (LWP 3508820)]
+Lv2 plugin SUMMARY: 73 of 87  loaded in 112 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+[New Thread 0x7fffad5ff6c0 (LWP 3508821)]
+[New Thread 0x7fffacdfe6c0 (LWP 3508822)]
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+[New Thread 0x7fff8d5946c0 (LWP 3508853)]
+[New Thread 0x7fff8cd936c0 (LWP 3508854)]
+[New Thread 0x7fff7ffff6c0 (LWP 3508855)]
+[New Thread 0x7fff87fff6c0 (LWP 3508856)]
+[New Thread 0x7fff877fe6c0 (LWP 3508857)]
+[New Thread 0x7fff86ffd6c0 (LWP 3508858)]
+[New Thread 0x7fff867fc6c0 (LWP 3508859)]
+
+Thread 1 "zene" received signal SIGSEGV, Segmentation fault.
+0x000055555568e086 in lmms::gui::InstrumentTrackView::~InstrumentTrackView (this=0x555556a3b700, __in_chrg=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/src/gui/tracks/InstrumentTrackView.cpp:178
+178		delete model()->m_midiPort.m_readablePortsMenu;
+
+===== SIGNAL =====
+Last stopped for thread 1 (Thread 0x7ffff15b8c80 (LWP 3508779)).
+	Using the running image of child process 3508779.
+Program stopped at 0x55555568e086.
+It stopped with signal SIGSEGV, Segmentation fault.
+$1 = (void *) 0x308
+$2 = (void (*)(void)) 0x55555568e086 <lmms::gui::InstrumentTrackView::~InstrumentTrackView()-3491642>
+$3 = 0x0
+$4 = 0x0
+$5 = 0x555556a3b700
+
+===== the faulting statement, disassembled =====
+name of destructor must equal name of class
+
+===== frame =====
+#0  0x000055555568e086 in lmms::gui::InstrumentTrackView::~InstrumentTrackView (this=0x555556a3b700, __in_chrg=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/src/gui/tracks/InstrumentTrackView.cpp:178
+#1  0x00005555559e2b3d in lmms::gui::InstrumentTrackView::~InstrumentTrackView (this=0x555556a3b700, __in_chrg=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/src/gui/tracks/InstrumentTrackView.cpp:180
+#2  0x00007ffff697640b in QObject::event(QEvent*) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#3  0x00007ffff798b3b0 in QApplicationPrivate::notify_helper(QObject*, QEvent*) () at /lib/x86_64-linux-gnu/libQt6Widgets.so.6
+#4  0x00007ffff6938448 in QCoreApplication::notifyInternal2(QObject*, QEvent*) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#5  0x00007ffff6938635 in QCoreApplicationPrivate::sendPostedEvents(QObject*, int, QThreadData*) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#0  0x000055555568e086 in lmms::gui::InstrumentTrackView::~InstrumentTrackView (this=0x555556a3b700, __in_chrg=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/src/gui/tracks/InstrumentTrackView.cpp:178
+178		delete model()->m_midiPort.m_readablePortsMenu;
+$6 = 0x555556a3b700
+$7 = 0x555557a28730
+There is no member or method named m_window.
+$8 = 93825022452688
+
+===== the Song's live tracks (is the dead track's address in here?) =====
+Cannot evaluate function -- may be inlined
+
+===== and the song's own pointer =====
+Cannot evaluate function -- may be inlined
