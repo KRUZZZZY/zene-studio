@@ -1,5 +1,5 @@
-name: Alpha feedback (v0.2.0-alpha)
-description: Report a bug, a crash, or something confusing in the v0.2.0-alpha build
+name: Alpha feedback (v0.2.1-alpha)
+description: Report a bug, a crash, or something confusing in the v0.2.1-alpha build
 title: "[alpha] "
 labels: ["alpha-feedback"]
 body:
@@ -24,9 +24,10 @@ body:
       label: Build
       description: |
         Which file did you download, and what does Help > About (or --version) say? A package from
-        the release tag reports 0.2.0-alpha; a package built from an untagged commit reports the last
-        tag plus the commit count and hash (for example 0.1.0-alpha.123+34c1f4f).
-      placeholder: "e.g. Linux AppImage x86_64, 0.2.0-alpha"
+        the release tag reports 0.2.1-alpha; a package built from an untagged commit reports the last
+        tag plus the commit count and hash (for example 0.2.0-alpha.12+b099fd6, from the superseded
+        v0.2.0-alpha tag — its build failed on every platform and 0.2.1-alpha replaces it).
+      placeholder: "e.g. Linux AppImage x86_64, 0.2.1-alpha"
     validations:
       required: true
 

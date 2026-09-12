@@ -9,10 +9,12 @@ DSP — while keeping project files portable and the whole stack open source.
 
 ## Download
 
-**Zene Studio 0.2.0-alpha is the current public alpha** — [get it from the releases
-page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.2.0-alpha) (the 0.2.0-alpha
+**Zene Studio 0.2.1-alpha is the current public alpha** — [get it from the releases
+page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.2.1-alpha) (the 0.2.1-alpha
 page appears when the release is published; until then the previous release is
-[v0.1.0-alpha](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.1.0-alpha)). Packages
+[v0.1.0-alpha](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.1.0-alpha) — the
+`v0.2.0-alpha` tag was cut but its build failed on every platform, and 0.2.1-alpha supersedes
+it, so there is no 0.2.0-alpha download). Packages
 exist for Linux (x86_64 and aarch64, AppImage), macOS (Apple Silicon and Intel,
 `.dmg`) and Windows (x64 — two installers — and Windows on Arm), and only platforms
 whose build job is green have a package.

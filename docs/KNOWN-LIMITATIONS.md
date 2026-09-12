@@ -1,11 +1,16 @@
-# Zene Studio 0.2.0-alpha: known limitations
+# Zene Studio 0.2.1-alpha: known limitations
 
 What this alpha does **not** do, in the order you are most likely to hit it. If something here surprises you,
 that is this page's fault — report it and it gets added.
 
+> **Version.** This page ships with the 0.2.1-alpha re-cut of the 0.2.0-alpha release; the feature set is
+> unchanged and the number moved because the `v0.2.0-alpha` tag's build failed 7 of 7 jobs and a `v*` tag is
+> never re-pointed. References below to `0.2.0` as the release that was prepared, and to the `v0.2.0-alpha`
+> tag, are to that superseded tag and stay as written; the `0.1.0-alpha` references are shipped history.
+
 > **Verification convention.** `[VERIFY AT FREEZE]` marks a claim that must be re-checked against the built
 > artefact before it ships; nothing carrying it goes out unverified, and no unverified claim goes out without
-> one. This page's path is `docs/KNOWN-LIMITATIONS.md` — there is no version-suffixed 0.2.0 limitations file.
+> one. This page's path is `docs/KNOWN-LIMITATIONS.md` — there is no version-suffixed 0.2.1 limitations file.
 > Applied verbatim from `drafts/KNOWN-LIMITATIONS-v0.2.0-alpha-DRAFT.md` (reviewed) on
 > `post-alpha/release-prep` (base `post-alpha/integration` @ `34c1f4f86`) except for the marker resolutions
 > noted inline; the resolution table is `docs/RELEASE-PREP-0.2.0.md` §3.
@@ -18,7 +23,7 @@ that is this page's fault — report it and it gets added.
 - **The builds are unsigned.** Windows SmartScreen and macOS Gatekeeper will warn about an unknown developer.
   Do not answer either warning by turning protection off.
   **The pointer that used to sit here — "the one-time steps are in the release notes" — is deleted, not
-  repaired.** The 0.2.0 release notes carry no per-platform first-run steps, and neither does this page, so the
+  repaired.** The 0.2.1 release notes carry no per-platform first-run steps, and neither does this page, so the
   pointer led nowhere. The 0.1.0 page's "Getting it running" section (Linux: FUSE 2 /
   `--appimage-extract-and-run`, no menu entry; Windows: More info → Run anyway; macOS: Privacy & Security →
   Open Anyway, and the macOS 15 note that right-click-Open no longer works) was preserved as

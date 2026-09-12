@@ -64,7 +64,7 @@ SET(PROJECT_DESCRIPTION "Zene Studio - free and open-source digital audio workst
 SET(PROJECT_COPYRIGHT   "2008-${PROJECT_YEAR} LMMS Developers, ${PROJECT_YEAR} Zene Studio contributors")
 SET(VERSION_MAJOR       "0")
 SET(VERSION_MINOR       "2")
-SET(VERSION_RELEASE     "0")
+SET(VERSION_RELEASE     "1")
 SET(VERSION_STAGE       "alpha")
 SET(VERSION_BUILD       "")
 SET(VERSION             "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_RELEASE}")
