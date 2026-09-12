@@ -38,6 +38,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "OutputSettings.h"
+#include "ProjectIds.h"
 #include "ProjectRenderer.h"
 #include "Song.h"
 
@@ -185,6 +186,14 @@ void registerProjectOpen(ControlRegistry& registry)
 			{QStringLiteral("items"), objectSchema({
 				{QStringLiteral("message"), stringProperty()},
 				{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}}})}}},
+		// The id upgrade, reported rather than silent (SPEC-stable-ids.md 7, Q1).
+		// `ids_assigned` counts the objects this load had to give an id to because
+		// the file carried none (plus any duplicate-id repair); `format_upgraded`
+		// is that count above zero. The upgrade is content-preserving and happens
+		// in memory only - the file changes on the next project.save, which is
+		// exactly why the caller is told.
+		{QStringLiteral("ids_assigned"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		{QStringLiteral("format_upgraded"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -224,6 +233,12 @@ void registerProjectOpen(ControlRegistry& registry)
 		result.insert(QStringLiteral("errors"), errors);
 		result.insert(QStringLiteral("error_count"), errors.size());
 		result.insert(QStringLiteral("loaded_with_errors"), !errors.isEmpty());
+		// SPEC-stable-ids.md 7 Q1 (owner decision): a legacy file's first load is
+		// a content-preserving one-time id UPGRADE, and the caller must be told
+		// so rather than discover it when the file changes on the next save.
+		const int idsAssigned = ProjectIds::loadAssignments();
+		result.insert(QStringLiteral("ids_assigned"), idsAssigned);
+		result.insert(QStringLiteral("format_upgraded"), idsAssigned > 0);
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"), QJsonObject());
 		transaction.insert(QStringLiteral("inverse"),
@@ -319,7 +334,7 @@ void registerProjectGetState(ControlRegistry& registry)
 		QJsonArray trackIds;
 		for (int i = 0; i < static_cast<int>(song->tracks().size()); ++i)
 		{
-			trackIds.append(control::trackId(i));
+			trackIds.append(control::trackIdOf(song->tracks()[i]));
 		}
 		result.insert(QStringLiteral("tracks"), trackIds);
 		return ControlResult::success(result);

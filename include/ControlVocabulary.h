@@ -36,6 +36,8 @@
 namespace lmms
 {
 
+class Track;
+
 namespace control
 {
 
@@ -75,6 +77,15 @@ LMMS_EXPORT QJsonObject tickProperty();
 
 //! "trk-<n>" for a Song track index or track id (see SPEC-stable-ids.md).
 LMMS_EXPORT QString trackId(int index);
+/*! The stable "trk-<n>" id of \a track.
+ *
+ * This is the form every state emitter must use: since SPEC-stable-ids.md the
+ * number is the track's creation-assigned id (Track::id()), NOT its position in
+ * Song::tracks(). Deriving it from a loop index is the defect the spec exists to
+ * remove, so the conversion lives in one place and callers pass the object.
+ * A nullptr answers an empty string (an object with no track).
+ */
+LMMS_EXPORT QString trackIdOf(const Track* track);
 //! "clip-<n>" for a clip's arrangement ordinal.
 LMMS_EXPORT QString clipId(int ordinal);
 //! "note-<n>" for a note's index in its clip's note list.

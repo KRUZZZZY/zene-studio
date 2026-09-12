@@ -63,12 +63,12 @@ QString trackTypeName(Track::Type type)
 }
 
 //! The parameters of one song track, honouring the automated_only filter.
-QJsonArray parameterListJson(int trackIndex, bool automatedOnly, int* automatedCount)
+QJsonArray parameterListJson(Track* track, bool automatedOnly, int* automatedCount)
 {
 	QJsonArray parameters;
 	ControlTarget target;
 	ControlResult error;
-	const QString id = control::trackId(trackIndex);
+	const QString id = control::trackIdOf(track);
 	if (!resolveControlTarget(id, &target, &error)) { return parameters; }
 
 	for (const AutomationParameter& parameter : control::automationParameters(target))
@@ -90,14 +90,14 @@ QJsonArray parameterListJson(int trackIndex, bool automatedOnly, int* automatedC
 QJsonObject trackState(Track* track, int index, bool automatedOnly, int* automatedCount)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), control::trackId(index));
+	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
 	entry.insert(QStringLiteral("index"), index);
 	entry.insert(QStringLiteral("name"), track->name());
 	entry.insert(QStringLiteral("type"), trackTypeName(track->type()));
 	entry.insert(QStringLiteral("device_chain"), dynamic_cast<InstrumentTrack*>(track) != nullptr ||
 		track->type() == Track::Type::Sample);
 	entry.insert(QStringLiteral("parameters"),
-		parameterListJson(index, automatedOnly, automatedCount));
+		parameterListJson(track, automatedOnly, automatedCount));
 	return entry;
 }
 
@@ -114,7 +114,7 @@ ControlResult automationGetState(const QJsonObject& args)
 	bool matched = filter.isEmpty();
 	for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
 	{
-		if (!filter.isEmpty() && filter != control::trackId(i)) { continue; }
+		if (!filter.isEmpty() && filter != control::trackIdOf(tracks[i])) { continue; }
 		matched = true;
 		QJsonObject entry = trackState(tracks[i], i, automatedOnly, &automatedCount);
 		if (automatedOnly && entry.value(QStringLiteral("parameters")).toArray().isEmpty())

@@ -120,21 +120,28 @@ QVector<ClipRef> enumerateClips()
 
 Track* resolveTrack(const QString& id, ControlResult* error)
 {
-	const int index = idToIndex(id, QStringLiteral("trk-"));
-	if (index < 0)
+	const int wanted = idToIndex(id, QStringLiteral("trk-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a track id of the form trk-<n>").arg(id));
 		return nullptr;
 	}
+	// Resolve the OBJECT the id names. Since SPEC-stable-ids.md the number is the
+	// track's creation-assigned id (Track::id()), not its position in the
+	// container, so adding or removing a sibling cannot move it (the defect of
+	// section 1.2(a)). There is deliberately NO positional fallback: every Track
+	// carries an id from construction, so a fallback could only ever resolve a
+	// stale position - exactly the silent mis-resolution this change removes.
+	// A well-formed id naming no live track is the typed not_found below.
 	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
-	if (index >= static_cast<int>(tracks.size()))
+	for (Track* track : tracks)
 	{
-		*error = ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("no track %1 (the song has %2)").arg(id).arg(tracks.size()));
-		return nullptr;
+		if (track->id() == wanted) { return track; }
 	}
-	return tracks[index];
+	*error = ControlResult::failure(ControlErrorKind::NotFound,
+		QStringLiteral("no track %1 (the song has %2)").arg(id).arg(tracks.size()));
+	return nullptr;
 }
 
 bool resolveClip(const QString& id, ClipRef* ref, ControlResult* error)
@@ -248,7 +255,7 @@ QJsonObject clipState(const ClipRef& ref)
 {
 	QJsonObject entry;
 	entry.insert(QStringLiteral("id"), clipId(ref.ordinal));
-	entry.insert(QStringLiteral("track"), trackId(ref.trackIndex));
+	entry.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	entry.insert(QStringLiteral("index_in_track"), ref.indexInTrack);
 	entry.insert(QStringLiteral("name"), ref.clip->name());
 	entry.insert(QStringLiteral("position"), ref.clip->startPosition().getTicks());

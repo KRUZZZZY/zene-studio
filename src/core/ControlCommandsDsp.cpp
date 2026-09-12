@@ -86,7 +86,7 @@ void appendTrackChains(QJsonArray* chains, bool withDevicesOnly)
 	{
 		ControlTarget target;
 		ControlResult ignored;
-		if (!resolveControlTarget(control::trackId(i), &target, &ignored)) { continue; }
+		if (!resolveControlTarget(control::trackIdOf(tracks[i]), &target, &ignored)) { continue; }
 		if (withDevicesOnly && target.chain->effects().empty() &&
 			target.instrumentTrack == nullptr)
 		{

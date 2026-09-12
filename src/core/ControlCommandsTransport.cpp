@@ -24,6 +24,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 
 #include "ControlVocabulary.h"
@@ -58,7 +59,7 @@ QString trackTypeName(Track::Type type)
 QJsonObject trackState(Track* track, int index)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), control::trackId(index));
+	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
 	entry.insert(QStringLiteral("index"), index);
 	entry.insert(QStringLiteral("name"), track->name());
 	entry.insert(QStringLiteral("type"), trackTypeName(track->type()));
@@ -223,7 +224,10 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("track.list");
 		cmd.group = QStringLiteral("track");
 		cmd.verb = QStringLiteral("list");
-		cmd.description = QStringLiteral("Every track in the song container, with its stable trk-<n> id.");
+		cmd.description = QStringLiteral("Every track in the song container, with its stable trk-<n> id. "
+			"The id is assigned at creation and persists in the project file. Addressing is scoped to "
+			"the SONG container: a track inside a nested container (the <trackcontainer> a pattern "
+			"track carries) is not reachable by id, exactly as it is not addressable by index.");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
@@ -249,7 +253,10 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("track.get_state");
 		cmd.group = QStringLiteral("track");
 		cmd.verb = QStringLiteral("get_state");
-		cmd.description = QStringLiteral("One track addressed by its trk-<n> id.");
+		cmd.description = QStringLiteral("One track addressed by its trk-<n> id: the number the track "
+			"was given at creation, which it keeps until it is deleted. A malformed id is "
+			"invalid_args; a well-formed id naming no live track is not_found. Addressing is scoped "
+			"to the SONG container, so a track inside a nested container is not reachable by id.");
 		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")});
 		cmd.resultSchema = objectSchema({
@@ -259,19 +266,18 @@ void registerTransportCommands(ControlRegistry& registry)
 		});
 		cmd.handler = [](const QJsonObject& args) {
 			const QString id = args.value(QStringLiteral("track")).toString();
-			const int index = control::idToIndex(id, QStringLiteral("trk-"));
+			// One resolver for every trk-<n> consumer: a malformed id is typed
+			// invalid_args and a well-formed id that names no live track is
+			// typed not_found, never a positional guess (SPEC-stable-ids.md).
+			ControlResult error;
+			Track* track = control::resolveTrack(id, &error);
+			if (track == nullptr) { return error; }
 			const TrackContainer::TrackList& list = Engine::getSong()->tracks();
-			if (index < 0)
+			for (int i = 0; i < static_cast<int>(list.size()); ++i)
 			{
-				return ControlResult::failure(ControlErrorKind::InvalidArgs,
-					QStringLiteral("'%1' is not a track id of the form trk-<n>").arg(id));
+				if (list[i] == track) { return ControlResult::success(trackState(track, i)); }
 			}
-			if (index >= static_cast<int>(list.size()))
-			{
-				return ControlResult::failure(ControlErrorKind::NotFound,
-					QStringLiteral("no track %1 (the song has %2)").arg(id).arg(list.size()));
-			}
-			return ControlResult::success(trackState(list[index], index));
+			return ControlResult::success(trackState(track, -1));
 		};
 		registry.registerCommand(cmd);
 	}

@@ -147,6 +147,13 @@ src/core/ControlSession.cpp
 # per-file anonymous-namespace copies are gone.
 include/ControlVocabulary.h
 src/core/ControlVocabulary.cpp
+# ---- Stable track ids (SPEC-stable-ids.md slice 1, lane post-alpha/stable-ids) ----
+# The project-scoped monotonic id counter behind every stable id (one counter, one
+# root attribute, one repair rule) and its acceptance test.
+include/ProjectIds.h
+src/core/ProjectIds.cpp
+tests/src/core/StableTrackIdsTest.cpp
+tests/control-stable-ids.py
 # The #626 tests: both shutdown reproductions, the documented readiness order, the
 # no-audio-device report, and the negative controls that prove each of those can
 # fail (a check that cannot fail is not evidence).

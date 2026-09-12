@@ -40,6 +40,8 @@
 
 #include <utility>
 
+#include "Track.h"  // trackIdOf(): the id lives on the track object
+
 namespace lmms
 {
 
@@ -110,6 +112,11 @@ QJsonObject tickProperty()
 QString trackId(int index)
 {
 	return QStringLiteral("trk-%1").arg(index);
+}
+
+QString trackIdOf(const Track* track)
+{
+	return track == nullptr ? QString() : trackId(track->id());
 }
 
 QString clipId(int ordinal)

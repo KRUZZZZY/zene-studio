@@ -272,7 +272,8 @@ QJsonObject automationJson(AutomationClip* clip, const AutomatableModel* model)
 	QJsonArray points = automationPointsJson(clip, model);
 
 	QJsonObject out;
-	out.insert(QStringLiteral("track"), index >= 0 ? trackId(index) : QString());
+	out.insert(QStringLiteral("track"),
+		index >= 0 ? trackIdOf(clip->getTrack()) : QString());
 	out.insert(QStringLiteral("clip_index"), clipIndexInTrack(clip));
 	out.insert(QStringLiteral("clip_type"), clip->nodeName());
 	out.insert(QStringLiteral("progression"), progressionName(clip->progressionType()));
