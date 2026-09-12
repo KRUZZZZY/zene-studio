@@ -240,6 +240,13 @@ LMMS_EXPORT void registerProjectCommands(ControlRegistry& registry);
 //! control.surface_report - the live menu/toolbar reflection (SPEC A15).
 LMMS_EXPORT void registerSurfaceCommands(ControlRegistry& registry);
 
+//! track.add/remove/rename/set_mute/set_solo/set_arm and arrangement.get_state
+LMMS_EXPORT void registerArrangementCommands(ControlRegistry& registry);
+//! clip.add/move/resize/split/delete/duplicate/select
+LMMS_EXPORT void registerClipCommands(ControlRegistry& registry);
+//! note.add/remove/move/resize/velocity_set/select and roll.get_state
+LMMS_EXPORT void registerNoteCommands(ControlRegistry& registry);
+
 //! Shared helpers for the command groups.
 namespace control
 {

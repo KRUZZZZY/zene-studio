@@ -160,3 +160,14 @@ src/core/ControlCommandsSurface.cpp
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
 
+# ---- Notes / clips / tracks command group (SPEC A11-A16, lane post-alpha/cmd-notes) ----
+# The piano-roll and song-editor half of AGENT-TOOLING.md section 5: note.*,
+# roll.get_state, clip.*, track.add/remove/rename/set_mute/set_solo/set_arm and
+# arrangement.get_state, plus the helpers they share. Registered as fork-NEW so
+# the fork-scoped ratchets measure them.
+include/ControlEdit.h
+src/core/ControlCommandsArrangement.cpp
+src/core/ControlCommandsClip.cpp
+src/core/ControlCommandsNotes.cpp
+src/core/ControlEditSupport.cpp
+tests/src/core/ControlEditCommandsTest.cpp

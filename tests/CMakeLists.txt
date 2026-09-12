@@ -11,6 +11,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
+	src/core/ControlEditCommandsTest.cpp
 	src/core/ControlRegistryTest.cpp
 	src/core/MathTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
@@ -718,3 +719,8 @@ else()
 	message(STATUS "python3 not found: agent_surface is not registered")
 endif()
 
+# The notes / clips / tracks command group edits real Song model objects
+# (tracks, MidiClips, notes) rather than only reading them, so it needs a Qt
+# platform plugin even though the assertions never open a window.
+set_tests_properties(ControlEditCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
