@@ -74,108 +74,135 @@ def track_ids(client, transcript, request_id):
     return [entry.get("id") for entry in result.get("tracks", [])]
 
 
-def main():
-    if len(sys.argv) < 2:
+def parse_args(argv):
+    """argv[1] is the lmms binary. Returns its absolute path, or None for usage."""
+    if len(argv) < 2:
         print(USAGE)
-        return 2
-    binary = os.path.abspath(sys.argv[1])
+        return None
+    binary = os.path.abspath(argv[1])
     if not os.path.exists(binary):
         print(USAGE)
-        return 2
+        return None
+    return binary
 
-    tmp = tempfile.mkdtemp(prefix="zids-", dir="/tmp")
-    failures = []
-    try:
-        saved = os.path.join(tmp, "with-ids.mmp")
-        legacy = os.path.join(tmp, "legacy.mmp")
-        with open(legacy, "w") as handle:
-            handle.write(LEGACY_PROJECT)
-        with open(legacy, "rb") as handle:
-            legacy_bytes = handle.read()
 
-        # ---- 1. add-track -> project.save -----------------------------------
-        transcript = Transcript()
-        instance, client = open_instance(binary, transcript, "instance 1: create and save")
-        added = ok_result(client.call(1, "track.add", {"type": "instrument"},
-                                      timeout=PING_TIMEOUT, transcript=transcript), 1)
-        track_id = added.get("track")
-        print("track.add answered: track=%s index=%s" % (track_id, added.get("index")))
-        if not track_id or not str(track_id).startswith("trk-"):
-            fail("track.add did not answer a trk-<n> id: %r" % (added,), instance, transcript)
+def write_legacy_project(path):
+    """Write the id-less project (phase 3/4's input) and return its bytes."""
+    with open(path, "w") as handle:
+        handle.write(LEGACY_PROJECT)
+    with open(path, "rb") as handle:
+        return handle.read()
 
-        saved_reply = ok_result(client.call(2, "project.save", {"path": saved},
-                                            timeout=PING_TIMEOUT, transcript=transcript), 2)
-        print("project.save answered: %r" % (saved_reply,))
-        quit_instance(instance, client, transcript, 3)
-        transcript.dump()
 
-        with open(saved, "r") as handle:
-            saved_xml = handle.read()
-        number = str(track_id).split("-", 1)[1]
-        if not any('id="%s"' % number in line for line in saved_xml.splitlines()):
-            failures.append("the saved file does not carry id=\"%s\" on a track element"
-                            % number)
-        if "next-id=" not in saved_xml:
-            failures.append("the saved file does not carry next-id on the root")
+def phase_create_and_save(binary, saved, failures):
+    """Phase 1: add-track -> project.save. Returns the id track.add answered with.
 
-        # ---- 2. a fresh instance addresses the track by that id -------------
-        transcript = Transcript()
-        instance, client = open_instance(binary, transcript, "instance 2: fresh load, address by id")
-        opened = ok_result(client.call(1, "project.open", {"path": saved},
-                                       timeout=PING_TIMEOUT, transcript=transcript), 1)
-        print("project.open: ids_assigned=%s format_upgraded=%s"
-              % (opened.get("ids_assigned"), opened.get("format_upgraded")))
-        if opened.get("ids_assigned") != 0:
-            failures.append("a file written by this build still needed id assignment: %r"
-                            % opened.get("ids_assigned"))
-        if opened.get("format_upgraded") is not False:
-            failures.append("a file written by this build reported an upgrade")
+    A missing or non-`trk-` id is fatal here - every later phase addresses the
+    track by that id - so it fails the run through `fail()` rather than being
+    accumulated.
+    """
+    transcript = Transcript()
+    instance, client = open_instance(binary, transcript, "instance 1: create and save")
+    added = ok_result(client.call(1, "track.add", {"type": "instrument"},
+                                  timeout=PING_TIMEOUT, transcript=transcript), 1)
+    track_id = added.get("track")
+    print("track.add answered: track=%s index=%s" % (track_id, added.get("index")))
+    if not track_id or not str(track_id).startswith("trk-"):
+        fail("track.add did not answer a trk-<n> id: %r" % (added,), instance, transcript)
 
-        state = ok_result(client.call(2, "track.get_state", {"track": track_id},
-                                      timeout=PING_TIMEOUT, transcript=transcript), 2)
-        print("track.get_state %s answered id=%s index=%s name=%r"
-              % (track_id, state.get("id"), state.get("index"), state.get("name")))
-        if state.get("id") != track_id:
-            failures.append("the id changed across save+load: %r -> %r"
-                            % (track_id, state.get("id")))
-        ids_after = track_ids(client, transcript, 3)
-        if track_id not in ids_after:
-            failures.append("%s is not in track.list after the reload: %r" % (track_id, ids_after))
-        quit_instance(instance, client, transcript, 4)
-        transcript.dump()
+    saved_reply = ok_result(client.call(2, "project.save", {"path": saved},
+                                        timeout=PING_TIMEOUT, transcript=transcript), 2)
+    print("project.save answered: %r" % (saved_reply,))
+    quit_instance(instance, client, transcript, 3)
+    transcript.dump()
+    return track_id
 
-        # ---- 3 + 4. two loads of an id-less legacy project ------------------
-        loads = []
-        for index, request_id in enumerate((1, 2)):
-            transcript = Transcript()
-            instance, client = open_instance(
-                binary, transcript, "instance %d: load the id-less legacy project" % (index + 3))
-            opened = ok_result(client.call(1, "project.open", {"path": legacy},
-                                           timeout=PING_TIMEOUT, transcript=transcript), 1)
-            print("legacy load %d: track_count=%s ids_assigned=%s format_upgraded=%s"
-                  % (index + 1, opened.get("track_count"), opened.get("ids_assigned"),
-                     opened.get("format_upgraded")))
-            if opened.get("format_upgraded") is not True:
-                failures.append("the legacy load did not report the one-time id upgrade")
-            if opened.get("ids_assigned") != 3:
-                failures.append("the legacy load assigned %r ids, expected 3"
-                                % opened.get("ids_assigned"))
-            loads.append(track_ids(client, transcript, 2))
-            quit_instance(instance, client, transcript, 3)
-            transcript.dump()
 
-        print("\nlegacy load 1 ids: %r\nlegacy load 2 ids: %r" % (loads[0], loads[1]))
-        if loads[0] != loads[1]:
-            failures.append("two loads of the same id-less project gave different ids: %r vs %r"
-                            % (loads[0], loads[1]))
-        if loads[0] != ["trk-0", "trk-1", "trk-2"]:
-            failures.append("legacy ids are not assigned in document order: %r" % (loads[0],))
-        with open(legacy, "rb") as handle:
-            if handle.read() != legacy_bytes:
-                failures.append("the load WROTE to the legacy file (it must be in-memory only)")
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+def phase_persisted_file(saved, track_id, failures):
+    """Phase 1b: the id is on the track element and `next-id` is on the root."""
+    with open(saved, "r") as handle:
+        saved_xml = handle.read()
+    number = str(track_id).split("-", 1)[1]
+    if not any('id="%s"' % number in line for line in saved_xml.splitlines()):
+        failures.append("the saved file does not carry id=\"%s\" on a track element"
+                        % number)
+    if "next-id=" not in saved_xml:
+        failures.append("the saved file does not carry next-id on the root")
 
+
+def phase_reload_and_address(binary, saved, track_id, failures):
+    """Phase 2: a fresh instance loads that file and addresses the track by id.
+
+    With no positional guess and no renumbering, and with the open reporting no
+    id assignment and no upgrade (this build wrote the file).
+    """
+    transcript = Transcript()
+    instance, client = open_instance(binary, transcript, "instance 2: fresh load, address by id")
+    opened = ok_result(client.call(1, "project.open", {"path": saved},
+                                   timeout=PING_TIMEOUT, transcript=transcript), 1)
+    print("project.open: ids_assigned=%s format_upgraded=%s"
+          % (opened.get("ids_assigned"), opened.get("format_upgraded")))
+    if opened.get("ids_assigned") != 0:
+        failures.append("a file written by this build still needed id assignment: %r"
+                        % opened.get("ids_assigned"))
+    if opened.get("format_upgraded") is not False:
+        failures.append("a file written by this build reported an upgrade")
+
+    state = ok_result(client.call(2, "track.get_state", {"track": track_id},
+                                  timeout=PING_TIMEOUT, transcript=transcript), 2)
+    print("track.get_state %s answered id=%s index=%s name=%r"
+          % (track_id, state.get("id"), state.get("index"), state.get("name")))
+    if state.get("id") != track_id:
+        failures.append("the id changed across save+load: %r -> %r"
+                        % (track_id, state.get("id")))
+    ids_after = track_ids(client, transcript, 3)
+    if track_id not in ids_after:
+        failures.append("%s is not in track.list after the reload: %r" % (track_id, ids_after))
+    quit_instance(instance, client, transcript, 4)
+    transcript.dump()
+
+
+def legacy_load(binary, legacy, failures, index):
+    """Phases 3+4, one load: the id-less project reports its one-time upgrade."""
+    transcript = Transcript()
+    instance, client = open_instance(
+        binary, transcript, "instance %d: load the id-less legacy project" % (index + 3))
+    opened = ok_result(client.call(1, "project.open", {"path": legacy},
+                                   timeout=PING_TIMEOUT, transcript=transcript), 1)
+    print("legacy load %d: track_count=%s ids_assigned=%s format_upgraded=%s"
+          % (index + 1, opened.get("track_count"), opened.get("ids_assigned"),
+             opened.get("format_upgraded")))
+    if opened.get("format_upgraded") is not True:
+        failures.append("the legacy load did not report the one-time id upgrade")
+    if opened.get("ids_assigned") != 3:
+        failures.append("the legacy load assigned %r ids, expected 3"
+                        % opened.get("ids_assigned"))
+    ids = track_ids(client, transcript, 2)
+    quit_instance(instance, client, transcript, 3)
+    transcript.dump()
+    return ids
+
+
+def phase_legacy_determinism(binary, legacy, failures):
+    """Phases 3+4: two loads agree, and the ids are assigned in document order."""
+    loads = [legacy_load(binary, legacy, failures, index) for index in range(2)]
+    print("\nlegacy load 1 ids: %r\nlegacy load 2 ids: %r" % (loads[0], loads[1]))
+    if loads[0] != loads[1]:
+        failures.append("two loads of the same id-less project gave different ids: %r vs %r"
+                        % (loads[0], loads[1]))
+    if loads[0] != ["trk-0", "trk-1", "trk-2"]:
+        failures.append("legacy ids are not assigned in document order: %r" % (loads[0],))
+
+
+def phase_legacy_file_untouched(legacy, legacy_bytes, failures):
+    """The legacy file on disk is byte-identical: the upgrade is in-memory only."""
+    with open(legacy, "rb") as handle:
+        if handle.read() != legacy_bytes:
+            failures.append("the load WROTE to the legacy file (it must be in-memory only)")
+
+
+def report(failures):
+    """Exit code: 0 only when every phase passed."""
     if failures:
         print("\n=== FAIL ===")
         for item in failures:
@@ -183,6 +210,42 @@ def main():
         return 1
     ok("stable ids: creation-assigned, persisted, deterministic on load, reported on upgrade")
     return 0
+
+
+# One helper per phase (2026-09-12, Gate 4): `main` was 109 lines at CCN 21,
+# over the CCN <= 10 target. The phases were already separated by their section
+# banners, so each became a function that takes the running `failures` list and
+# appends to it, exactly as the flat body did. No assertion, message or printed
+# evidence line was dropped, weakened or reordered: the refactor was checked by
+# running the pre-refactor file and this one against the same binary and diffing
+# every evidence line (identical) and both exit codes (0). `main` is now the
+# sequence of phases plus the exit code.
+def main():
+    binary = parse_args(sys.argv)
+    if binary is None:
+        return 2
+
+    tmp = tempfile.mkdtemp(prefix="zids-", dir="/tmp")
+    failures = []
+    try:
+        saved = os.path.join(tmp, "with-ids.mmp")
+        legacy = os.path.join(tmp, "legacy.mmp")
+        legacy_bytes = write_legacy_project(legacy)
+
+        # ---- 1. add-track -> project.save -----------------------------------
+        track_id = phase_create_and_save(binary, saved, failures)
+        phase_persisted_file(saved, track_id, failures)
+
+        # ---- 2. a fresh instance addresses the track by that id -------------
+        phase_reload_and_address(binary, saved, track_id, failures)
+
+        # ---- 3 + 4. two loads of an id-less legacy project ------------------
+        phase_legacy_determinism(binary, legacy, failures)
+        phase_legacy_file_untouched(legacy, legacy_bytes, failures)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return report(failures)
 
 
 if __name__ == "__main__":

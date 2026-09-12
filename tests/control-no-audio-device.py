@@ -32,9 +32,11 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from control_socket_flows import (  # noqa: E402
+    check_audio_fallback, check_ping_shape, check_requires_device_refusal,
+)
 from control_socket_harness import (  # noqa: E402
-    BROKEN_DEVICE, BROKEN_DEVICE_ENV, Client, Instance, Problems, Timeout,
-    check_audio_fallback, check_ping_shape, check_requires_device_refusal, dump,
+    BROKEN_DEVICE, BROKEN_DEVICE_ENV, Client, Instance, Problems, Timeout, dump,
     finish,
 )
 
