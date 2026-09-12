@@ -22,7 +22,7 @@ limitations before you install.
 > **Digests.** The publish step appends the SHA-256 block generated from the published release
 > (`docs/RELEASING.md`, "The publish sequence", steps 4–5). Digests are never typed into this file.
 
-## The two headlines
+## The three headlines
 
 **1. It is called Zene Studio now.** The application, the packages, the desktop entry, the manual page and
 the file paths carry the product's own name instead of the upstream project's. What deliberately does *not*
@@ -106,6 +106,212 @@ Three more things belong next to that
 claim rather than in a footnote: **no third-party VST3 instrument has been tested by us** — the only instrument
 this release is proven against is a purpose-built test instrument that ships in the source tree — there is **no
 multi-out**, no preset management, and **no instrument latency compensation in PDC**.
+
+**3. Another program can drive a running Zene Studio.** You can start Zene Studio so that a program
+instead of a person drives the open session. Launch it with `--control-socket <path>` and it listens on
+that local socket — a file, mode `0600`, in the working directory, with nothing listening on the network
+— and answers named commands: set the tempo, start and stop, add a track, write notes into a clip, load a
+plugin, move a fader, save the project, render it. It is opt-in and off by default, and the opt-in is
+invisible: an instance that was not started that way has no socket at all, and nothing in the interface
+reports one that is open (owner decision, `ableton-gap/AGENT-TOOLING.md` §9.1 — the only reader of
+`isAgentInstance()` is `UnattendedRun` itself). Every command is a normal edit that the application
+already knows how to do — the registry and the menus call the same implementation — and it lands on the
+same undo history as the GUI's Ctrl+Z, which is what makes the rest of this section possible.
+
+**Technically**, it is three things. A **registry of named commands** (`include/ControlRegistry.h`,
+`src/core/ControlRegistry.cpp`): each command is a `group.verb` id with a JSON schema for its arguments,
+a schema for its result, a `requires` declaration naming any of display, audio device or human it needs,
+and a handler that runs on the UI thread. A **server** (`ControlServer`) that accepts line-delimited
+JSON-RPC over a local UNIX socket; every message carries an integer `proto` and a failure carries
+`error.kind` from a closed set — `not_found | requires | invalid_args | busy | refused | irreversible`
+(`include/ControlRegistry.h`). And **unattended operation** (`include/UnattendedRun.h`):
+`isAgentInstance()` is true when the process was started with `--control-socket`, and `isUnattendedRun()`
+is true when it was started that way *or* when Qt is running on a platform with no display (offscreen,
+minimal, VNC). In that state the application opens no modal dialog — a dialog nobody can answer is a
+hang, and that was measured rather than reasoned about: the instance stays alive, answers `control.ping`
+with `engine_ready: false`, and never becomes usable (task #625, measured on base commit `6b01b98eb`; the
+recovery-file prompt is gated on this at `src/core/main.cpp:1128`).
+
+### What you can do with it
+
+The registered commands fall into these families; the module list is `src/core/CMakeLists.txt:61-93` and
+each family's ids are in its own `Control*.cpp` file.
+
+- **Transport** — play, stop, seek, read the play head, read and set the tempo.
+- **Tracks and arrangement** — list tracks, read one track, read the whole arrangement with its clips,
+  add, remove, rename, mute, solo. Record-arm is registered but **refuses** (below).
+- **Clips and notes** — add, move, resize, split, delete and duplicate a clip; add, remove, move,
+  resize and set the velocity of a note; read a clip's note list; select clips and notes.
+- **Mixer** — read the channels, add and remove a channel, read and set a fader. Channel pan is
+  registered but **refuses** (below).
+- **Plugins** — list the device catalogue, load, unload, bypass; read and set a parameter; list, load
+  and save a preset; save and load a device's whole state.
+- **Project and files** — read project state, open, save, restore a previous file revision, and render.
+  The render path is callable headlessly and returns a hash, so a caller can prove the audio changed
+  rather than assert it (`AGENT-TOOLING.md` §8).
+- **Automation and scripting** — read automation state; add, remove and clear points; `script.run`
+  executes Lua inside the running instance.
+- **Settings, audio, MIDI, DSP** — read and set a config value, list audio devices (and set one, which
+  applies on next start), list MIDI devices, toggle MIDI learn, read the build identity, read the DSP
+  device chains.
+- **Control, telemetry and reflection** — ping, version, list every command, read the transaction
+  record, undo, redo, quit, report the menu/toolbar surface; and the two `telemetry.*` commands —
+  `telemetry.status` reports whether telemetry is compiled in, the consent record, and the exact payload
+  `submit()` would send, while `telemetry.consent` opens the consent screen and refuses every automated
+  caller, because it declares `requires: display, human`.
+
+Commands address objects by string ids — `trk-<n>`, `clip-<n>`, `note-<n>`, `ch-<n>`, `dev-<n>`.
+**`trk-<n>` is assigned at creation and written into the project file**, so a track keeps its id across a
+save and reload (`src/core/Track.cpp:232`, `:323`; `tests/src/core/StableTrackIdsTest.cpp`). **The others
+are index-derived and are not written into the project file** (`include/ControlVocabulary.h:89-95`), so an
+id is good for the session that returned it and not for the next one (`AGENT-TOOLING.md` §4).
+
+### The reversibility contract
+
+The owner's decision was *no confirmation prompts on destructive commands; make them reversible
+instead* (`AGENT-TOOLING.md` §9.3, boarded as task #623). The first thing that decision needs is the
+truth about what was reversible **then**, so it was measured rather than read from the code: a scratch
+copy of the test fixture was opened in a headless instance of the merged surface
+(`post-alpha/agent-surface-integration` @ `059bf6bad`, 70 commands in 18 groups), driven over raw
+JSON-RPC, with the transaction list read at the end. **36 mutating commands were exercised; all 36
+recorded a transaction; 17 are `reversible: true`** — the other 19 record a before-state snapshot and a
+stated reason but no automatic inverse (`ableton-gap/A16-STATUS-MEASURED.md` line 35, the measured
+baseline this release's contract reconciles against; carried in `docs/A16-REVERSIBILITY.md` §2).
+
+**Reversibility here is a declared classification plus a per-call record, not a promise.** Every
+registered command has one row in a table shipped as data in `src/core/ControlReversibilityTable.cpp`,
+in one of four classes, and an anti-drift test (`tests/src/core/ReversibilityContractTest.cpp`) checks
+the table and the registry against each other in both directions — every registered command has a row,
+and every row names a registered command. The four classes, in the report's own terms:
+
+- **`true_inverse`** — a live checkpoint on the engine's own undo stack. The call that unwinds it is
+  `ProjectJournal::undo()`, the same call the GUI's Edit→Undo makes, so an agent's edit and a person's
+  edit share one history at one granularity. Three flavours of the same checkpoint: one object's
+  serialized XML; a **composite** checkpoint that restores several objects in one pop, so a command that
+  writes N objects still costs one Ctrl+Z; and an **action** checkpoint that runs a recorded inverse
+  operation, for a change with no live state to put back (a created or deleted object, a scalar in a
+  subsystem the engine does not journal, a file revision).
+- **`snapshot`** — the recorded state is a manual fallback rather than a live object: an undo attempt is
+  **refused, typed, and the refusal names the fallback** instead of pretending.
+- **`irreversible`** — no inverse exists for this command by its nature. Undo fails with the typed
+  `irreversible` error naming the command, its class, the engine's own reason and the documented
+  fallback, and **the journal is not touched**, so an irreversible command can never make `control.undo`
+  silently unwind an older one.
+- **`not_mutating`** — the command writes nothing: read-only inspectors, the three handlers that refuse
+  every call, the two selection commands, undo and redo themselves, the transport run state, and
+  `render.render`, which writes an output artefact and leaves the session alone.
+
+**How many commands there are depends on what you count, so here is each number with its method.** The
+live registry in this build holds **74** commands — that is what `control.commands_list` returns and what
+the agent-surface gate sweeps (**73 swept + 1 allowlisted**, the allowlisted one being `telemetry.consent`,
+which needs a display and a human) — and the same **74** ids are registered in
+`src/core/ControlCommands*.cpp`. It held **72** before the telemetry fix that added the two `telemetry.*`
+commands. The table that ships as data in `src/core/ControlReversibilityTable.cpp` has **74 rows** today,
+one per registered command: 30 `true_inverse`, 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`. The
+A16 contract's **classified table has 72 rows** (30 + 5 + 3 + 34) — a different thing that coincides with
+the pre-fix registry size, which is exactly why a command count has to name what it was counted over. The
+bridge's committed snapshot holds **70** (it is deliberately stale — a command missing from it is not
+missing from the DAW). And **87** is what a wider surface branch registers by its own method (71 + 16,
+the sixteen being tail groups such as `record.*`, `import.*` and `export.*` that this release line does
+not carry). **Quote a count with the thing it was counted over.**
+
+Every successful mutating command records one transaction naming the command, the class (stamped from
+the table, never from the handler), the before-state, the inverse descriptor, the call's own `reversible`
+verdict, the mechanism and a byte count. The bounds are stated and enforced: 100 records — deliberately
+the same depth as the undo stack, so a record never outlives the step it describes — 256 KiB in total, a
+64 KiB ceiling on a captured device state or track XML, and FIFO eviction whose evictions are **counted
+and reported** rather than hidden (`include/ControlReversibility.h:143,149`;
+`src/core/ControlCommandsArrangement.cpp:53`). The record does not survive a restart, and neither does
+the undo history.
+
+**One agent command is one undoable step**, and the mechanism for that was found by measurement, not
+assumed: `AutomatableModel::setValue()` pushes a checkpoint of its own on every non-automated write
+(`src/core/AutomatableModel.cpp:305`), so a command that writes N models leaves N checkpoints and the
+handler's own checkpoint is buried under them. Before the registry merged a command's window into one
+step, one `control.undo` after `track.set_solo` restored exactly one track's mute and left the rest of
+the action in place — the contract test caught it with all three tracks still muted.
+
+**File-level saves are the one deliberate asymmetry.** `project.save` keeps a bounded previous revision
+(policy `keep-3`: `<file>.rev0/.rev1/.rev2`, 8 MiB each, 24 MiB per project; a project over the
+per-revision cap is not copied at all, because a truncated revision is worse than none) and its inverse
+is a **command**, `project.restore_revision`, which `control.undo` dispatches. File-level commands are
+not put on the GUI undo stack on purpose: a file is not project state, and reverting someone's file
+behind their back on a Ctrl+Z would be a surprise. So `control.undo` after an agent save restores the
+previous revision, while a GUI Ctrl+Z after the same save behaves exactly as it did before.
+
+**Against the measured baseline, the report reconciles the rows the implementation changes, one by one.**
+`track.add`, `track.remove`, `mixer.add_channel`, `automation.add_point` (on the call that creates the
+automation clip) and `track.set_solo` move `false` → `true_inverse`; `project.save` moves `false` →
+`snapshot` **and reversible** (it now keeps the revision above); `clip.select` and `note.select` move to
+`not_mutating`, because they now record no transaction at all and so cannot shadow or block the undo of
+a real edit. What the remaining non-reversible mutating commands do instead: the `snapshot` ones record
+a bounded before-state and refuse automatic undo with a named manual fallback — `plugin.load` of an
+**instrument** is destructive (the replaced instrument's parameter values are gone) and is recorded
+`reversible: false` even though the command's declared class is `snapshot`, while loading an **effect**
+is reversible because the instance it creates carries only defaults; `plugin.state_save` and
+`plugin.preset_save` write a file outside the project, so their previous bytes are recorded and the
+fallback is to write them back. The three `irreversible` ones — `project.open`, `script.run`,
+`plugin.unload` — each name a fallback instead of an inverse: reopen the file the record names, take a
+checkpoint inside the script, or reload the device and restore its captured state XML (the chain order
+is not restored). `automation.mode_set`, `mixer.set_pan` and `track.set_arm` are registered with full
+schemas and **refuse every call**, recording no transaction, rather than inventing a flag the project
+format does not have.
+
+### What the surface does not do
+
+**It is opt-in, and the opt-in is invisible.** A build of this release contains the surface but no
+socket: the socket exists only when the process was started with `--control-socket`, and nothing in the
+interface reports one that is open — the only reader of `isAgentInstance()` is `UnattendedRun` itself
+(`AGENT-TOOLING.md` §9.1).
+
+**Headless operation has a floor.** The engine still needs an audio device that opens: the documented
+recipe is an offscreen Qt platform plus a config whose audio device string matches
+`AudioDummy::name()` exactly, with `HOME` and the `XDG_*` variables pointed at a temp directory, and
+then polling `control.ping` until `engine_ready` is true. The socket exists before the engine does, and
+until it is ready every engine command answers the typed `busy` error with the reason
+(`AGENT-TOOLING.md` §4). `automation.mode_set`'s refusal cites `docs/KNOWN-LIMITATIONS.md:84` for
+"this build has no automation modes" — **but that file, in this tree, says at line 185 that the
+Read/Touch/Latch/Write modes work, and its line 84 is a save/open-integrity paragraph.** The behaviour
+is honest (register the command, refuse, do not fake a write); the reason it cites is stale, and it is
+not repeated here as a fact.
+
+**The contract's own limits, listed rather than implied** (`docs/A16-REVERSIBILITY.md` §8): undo depth
+is 100 steps for both the model stack and the record, and neither survives a restart. `track.remove`'s
+inverse is bounded at 64 KiB of track XML and refuses a larger track rather than keeping a truncated
+one. `track.add`'s inverse does not rewind the project id counter, so a re-added track gets a fresh id.
+`track.set_solo` does not restore one transient C++ field (`Track::mutedBeforeSolo`). A revision restore
+rewrites the file but does not reload the session — the in-memory session is untouched until
+`project.open`. `plugin.unload` cannot be replayed by the registry even though its state XML is
+captured. `mixer.remove_channel`, `automation.mode_set`, `track.set_arm` and `mixer.set_pan` were not
+exercised by the measured baseline at all; their rows are this lane's measurement. And a merged step is
+only as good as the window it merges: work a command spawns outside its handler would land above the
+merged step and cost a second undo — nothing in the current surface does that, but it is a property to
+keep, not one the engine can enforce.
+
+One smaller gap worth the same breath. `project.restore_revision` is in the tree and the table and is
+described in the baseline's own header as *used by nobody yet* — it is the inverse of `project.save`,
+not a command anyone has asked for. The surface's own tests run on the **Dummy** device (the documented
+headless recipe), and `tests/control-no-audio-device.py` deliberately makes the device unopenable to
+prove the fallback; no test drives the surface against a real audio backend.
+
+### Where the detail lives
+
+- `docs/A16-REVERSIBILITY.md` — the contract: the classification table with a row and a reason per
+  command, the reconciliation with the measured baseline row by row, the transaction record's shape and
+  bounds, and the honest-limits list. **In this tree.**
+- `ableton-gap/A16-STATUS-MEASURED.md` — the measured baseline: 36 mutating commands exercised, 17
+  reversible, with the method (how to start the instance headless and read `control.transactions`) and
+  the list of what was not exercised. In the program workspace, not in this repository — the contract doc
+  cites it as its baseline, and it is the one reference in this section a reader of the product repo
+  alone cannot open.
+- `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` — the notes/clips/tracks lane's report and a verbatim
+  request/response transcript over the socket, including the transaction list and the typed errors. In
+  the repository root.
+- `docs/VERSIONING.md` — the numbering rule, which names this surface as the reason `0.2.0` is a MINOR
+  rather than a patch, and separates the product version from the control protocol version.
+- `ableton-gap/AGENT-TOOLING.md` — the surface contract (A11–A15), the headless start recipe, the
+  readiness order a client must follow, the per-group command tables, the acceptance gates, and the
+  owner decisions including the opt-in consent model. In the program workspace.
 
 ## What else is new
 
@@ -295,6 +501,34 @@ multi-out**, no preset management, and **no instrument latency compensation in P
   lane `post-alpha/saveload-integrity` is an ancestor of this tip. This bullet and the "Saving no longer reports
   success when it failed" bullet that used to sit above it made the same claim twice — the two are merged here,
   and the second copy is gone.
+
+- **`control.undo` could kill the application — and the GUI's own Ctrl+Z reached the same fault.**
+  `control.undo` over the control socket did not merely drop the client's connection: it **SIGSEGV'd the
+  DAW** (`returncode -11`), and every client died with the process. The fault was a null dereference in
+  `PatternStore::updateComboBox()` (`src/core/PatternStore.cpp:203`) reached from
+  `ProjectJournal::undo()` — *below* the call the GUI's Edit ▸ Undo makes, because the GUI's Ctrl+Z **is**
+  `Engine::projectJournal()->undo()` (`src/gui/MainWindow.cpp:1417-1420`), the identical call the socket
+  path makes. The mechanism in one line: a pattern-track destructor erased its entry from a static
+  registry, and a GUI slot then read that registry with `QMap::operator[]`, **which inserts a fabricated
+  entry for the dying track**; the allocator reused that address for the replacement track, which derived
+  its pattern number from the registry's size, leaving index 0 vacant while the count said 1 — so the
+  first loop iteration dereferenced a null. Fixed by every registry read becoming `QMap::value()` rather
+  than `operator[]` (five in `src/tracks/PatternTrack.cpp`, one in `include/PatternTrack.h`, two in
+  `src/gui/tracks/PatternTrackView.cpp`) plus a null guard in `updateComboBox()`; declared in
+  `tests/upstream-modifications.txt`, one entry per file. **The GUI equivalence is by code identity, not
+  by a measured Ctrl+Z run** — the diagnosing lane is headless (`QT_QPA_PLATFORM=offscreen`), did not
+  click Ctrl+Z, and said so; the two paths share both the entry point and the ghost-producing view, and
+  the faulting frame sits below both. Verified against this tree: `docs/CONTROL-UNDO-CONNECTION-DROP.md`
+  §2 is the gdb stack (`#0 lmms::PatternStore::updateComboBox ... PatternStore.cpp:203`, `pt = 0x0`,
+  `numOfPatterns() == 1`) and §7 is the after-state — the probe's `control.undo` answers `ok` on a live
+  connection, restores the recorded inverse tempo (140), the process stays alive, and the test render is
+  unchanged (`943e3238…`, the same `data` chunk `b37cefc5…` as the train before it).
+- **An optional MCP bridge ships for the control surface.** `tools/mcp-zene-control/` is a stdio MCP
+  server that exposes a *running* instance to an MCP client (`tools/mcp-zene-control/README.md`). It is a
+  **client**: the control socket exists without it, and the bridge holds no command knowledge of its own —
+  its tool list is generated from the instance's live registry, so it cannot advertise a command the DAW
+  lacks, and with no instance reachable it serves the last-known list (a cache, then a committed
+  snapshot) so an agent can see what exists before launching anything.
 
 ## Known limitations
 
