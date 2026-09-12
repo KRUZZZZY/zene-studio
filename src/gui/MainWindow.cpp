@@ -24,6 +24,8 @@
 
 #include "MainWindow.h"
 
+#include <cstdio>
+
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDateTime>
@@ -38,7 +40,11 @@
 #include <QSplitter>
 
 #include "AboutDialog.h"
+#include "AudioEngine.h"
 #include "AutomationEditor.h"
+#include "AudioEngine.h"
+#include "ControlRegistry.h"
+#include "UnattendedRun.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -349,6 +355,9 @@ void MainWindow::finalize()
 	m_redoAction = addAction(edit_menu, "edit_redo", tr("Redo"),
 		QKeySequence::Redo, &MainWindow::redo);
 
+	// A11/A15: these two actions declare the registry commands they implement.
+	m_undoAction->setData(QStringLiteral("control.undo"));
+	m_redoAction->setData(QStringLiteral("control.redo"));
 	m_undoAction->setShortcutContext(Qt::ApplicationShortcut);
 	m_redoAction->setShortcutContext(Qt::ApplicationShortcut);
 
@@ -363,6 +372,10 @@ void MainWindow::finalize()
 		this, SLOT(toggleMidiLearn()));
 	m_midiLearnAction->setCheckable(true);
 	m_midiLearnAction->setToolTip(tr("Arm MIDI learn, then touch a control and move a hardware knob"));
+	// A11/A15: the action declares the registry command it implements, and
+	// toggleMidiLearn() below invokes that same command - one implementation for
+	// the menu item, the shortcut and the agent surface (SPEC-zene-studio.md A11).
+	m_midiLearnAction->setData(QStringLiteral("midi.learn_toggle"));
 	MidiLearnGui::instance()->setAction(m_midiLearnAction);
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateMidiLearnAction()));
 
@@ -500,12 +513,31 @@ void MainWindow::finalize()
 	m_toolBarLayout->setColumnStretch( 100, 1 );
 
 	// setup-dialog opened before?
+	//
+	// Both dialogs below are questions for a human, asked BEFORE app->exec().
+	// In an unattended run (--control-socket, or no display at all) nobody can
+	// answer them, so Qt parks the startup path in a nested event loop: the
+	// instance stays alive, keeps answering `control.ping` with
+	// engine_ready=false, and never becomes usable (task #625, measured on
+	// 6b01b98eb). Ask only when a human is actually there; otherwise say it on
+	// stderr, where the log and the operator can see it.
+	const bool interactive = !lmms::isUnattendedRun();
+
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
 	{
 		ConfigManager::inst()->setValue( "app", "configured", "1" );
 		// no, so show it that user can setup everything
-		SetupDialog sd;
-		sd.exec();
+		if( interactive )
+		{
+			SetupDialog sd;
+			sd.exec();
+		}
+		else
+		{
+			fprintf( stderr, "MainWindow: unattended run: skipping the first-run setup dialog; "
+				"configure audio and MIDI in the --config file\n" );
+			fflush( stderr );
+		}
 	}
 	// look whether the audio engine failed to start the audio device selected by the
 	// user and is using AudioDummy as a fallback
@@ -513,12 +545,38 @@ void MainWindow::finalize()
 	else if( Engine::audioEngine()->audioDevStartFailed() || !AudioEngine::isAudioDevNameValid(
 		ConfigManager::inst()->value( "audioengine", "audiodev" ) ) )
 	{
-		QMessageBox::critical(nullptr, "Audio device setup failed",
-			tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart Zene Studio."));
 
-		// if so, offer the audio settings section of the setup dialog
-		SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
-		sd.exec();
+		if( interactive )
+		{
+			QMessageBox::critical(nullptr, "Audio device setup failed",
+				tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart Zene Studio."));
+
+			// if so, offer the audio settings section of the setup dialog
+			SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
+			sd.exec();
+		}
+		else
+		{
+			// The engine already fell back to the dummy device and keeps working
+			// (render, edit, save); an agent needs the reason, not a prompt. Two lines,
+			// both from this one event, because they serve two readers:
+			//   1. the sentence control.ping reports as audio.message (agent-facing, one source);
+			//   2. the structured diagnostic the headless no-audio-device test parses
+			//      (backend / start-failed / name-known / device), which is what makes the
+			//      fallback auditable from a log rather than only from the socket.
+			// Merge reconciliation of #625 x #626, 2026-09-12: both contracts are kept.
+			const QString requested = ConfigManager::inst()->value( "audioengine", "audiodev" );
+			const bool failed = Engine::audioEngine()->audioDevStartFailed();
+			const bool known = AudioEngine::isAudioDevNameValid( requested );
+			fprintf( stderr, "MainWindow: audio device setup failed: %s\n",
+				Engine::audioEngine()->audioDevStartReason().toUtf8().constData() );
+			fprintf( stderr, "MainWindow: audio-device-setup backend=\"%s\" "
+				"device_start_failed=%d name_known=%d device=\"%s\" "
+				"(unattended run: no dialog, the engine continues)\n",
+				requested.toUtf8().constData(), failed ? 1 : 0, known ? 1 : 0,
+				Engine::audioEngine()->audioDevName().toUtf8().constData() );
+			fflush( stderr );
+		}
 	}
 
 	// Add editor subwindows
@@ -637,6 +695,27 @@ bool MainWindow::mayChangeProject(bool stopPlayback)
 
 	if( !Engine::getSong()->isModified() && getSession() != SessionState::Recover )
 	{
+		return( true );
+	}
+
+	// A control-surface quit (control.quit) has nobody to ask. It states its
+	// intent up front, so answer the same question the dialog below would ask
+	// exactly as a user would, minus the dialog. Without this the question blocks
+	// in a nested event loop that nothing can dismiss, and the process never
+	// finishes quitting - the whole of reproduction (a) in task #626 (the stack
+	// was QCoreApplication::quit -> QApplication::closeAllWindows ->
+	// MainWindow::closeEvent -> this dialog).
+	const ControlRegistry::QuitPromptAnswer quitAnswer = ControlRegistry::quitPromptAnswer();
+	if( quitAnswer != ControlRegistry::QuitPromptAnswer::Ask )
+	{
+		if( quitAnswer == ControlRegistry::QuitPromptAnswer::Save )
+		{
+			return( saveProject() );
+		}
+		if( getSession() == SessionState::Recover )
+		{
+			sessionCleanup();
+		}
 		return( true );
 	}
 
@@ -1302,8 +1381,18 @@ void MainWindow::updateUndoRedoButtons()
 
 void MainWindow::toggleMidiLearn()
 {
-	// Armed state lives in MidiLearn; the action is the GUI handle for it.
-	MidiLearnGui::instance()->setArmed(m_midiLearnAction->isChecked());
+	// A11: the menu item drives the SAME registry command an agent calls, so the
+	// mode has one implementation rather than two that can drift. The handler
+	// arms MidiLearnGui and syncs this action's tick (MidiLearnGui holds it).
+	const ControlResult result = ControlRegistry::instance()->invoke(
+		QStringLiteral("midi.learn_toggle"));
+	if( !result.ok )
+	{
+		// Nothing armed - there is no GUI yet, or the engine is still starting.
+		// Qt has already flipped the tick, so put it back where the real state
+		// is: the menu must never claim a mode that was not armed.
+		updateMidiLearnAction();
+	}
 }
 
 

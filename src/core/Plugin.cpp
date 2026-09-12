@@ -30,6 +30,7 @@
 
 #include "embed.h"
 #include "Engine.h"
+#include "UnattendedRun.h"
 #include "GuiApplication.h"
 #include "DummyPlugin.h"
 #include "AutomatableModel.h"
@@ -213,13 +214,21 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 	Plugin* inst;
 	if( pi.isNull() )
 	{
-		if (gui::getGUI() != nullptr)
+		// An agent instance (--control-socket) cannot answer a modal, and a
+		// project that references a missing plugin loads with it (task #625):
+		// the reason goes to stderr, where a headless operator reads it.
+		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 		{
 			QMessageBox::information( nullptr,
 				tr( "Plugin not found" ),
 				tr( "The plugin \"%1\" wasn't found or could not be loaded!\nReason: \"%2\"" ).
 						arg( pluginName ).arg( getPluginFactory()->errorString(pluginName) ),
 				QMessageBox::Ok | QMessageBox::Default );
+		}
+		else
+		{
+			qWarning() << tr( "The plugin \"%1\" wasn't found or could not be loaded! Reason: \"%2\"" ).
+					arg( pluginName ).arg( getPluginFactory()->errorString(pluginName) );
 		}
 		inst = new DummyPlugin();
 	}
@@ -235,12 +244,16 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 		}
 		else
 		{
-			if (gui::getGUI() != nullptr)
+			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 			{
 				QMessageBox::information( nullptr,
 					tr( "Error while loading plugin" ),
 					tr( "Failed to load plugin \"%1\"!").arg( pluginName ),
 					QMessageBox::Ok | QMessageBox::Default );
+			}
+			else
+			{
+				qWarning() << tr( "Failed to load plugin \"%1\"!" ).arg( pluginName );
 			}
 			inst = new DummyPlugin();
 		}

@@ -25,13 +25,12 @@
 #ifndef LMMS_GUI_MIDI_LEARN_GUI_H
 #define LMMS_GUI_MIDI_LEARN_GUI_H
 
+#include <QAction>
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
 
 #include "lmms_export.h"
-
-class QAction;
 
 namespace lmms::gui
 {

@@ -37,6 +37,7 @@
 #include "AutomationClip.h"
 #include "ValueBuffer.h"
 #include "Song.h"
+#include "UnattendedRun.h"
 
 #include "embed.h"
 
@@ -451,17 +452,36 @@ void LadspaEffect::pluginInstantiation()
 	m_descriptor = manager->getDescriptor( m_key );
 	if( m_descriptor == nullptr )
 	{
-		QMessageBox::warning( 0, "Effect",
-			"Can't get LADSPA descriptor function: " + m_key.second,
-			QMessageBox::Ok, QMessageBox::NoButton );
+		// This runs while a project that references the plugin loads: a modal
+		// here would leave project.open unanswered in an agent instance
+		// (task #625), so the reason goes to stderr instead.
+		const QString reason = QStringLiteral( "Can't get LADSPA descriptor function: %1" )
+				.arg( m_key.second );
+		if( lmms::isUnattendedRun() )
+		{
+			qWarning() << reason;
+		}
+		else
+		{
+			QMessageBox::warning( 0, "Effect", reason,
+				QMessageBox::Ok, QMessageBox::NoButton );
+		}
 		setOkay( false );
 		return;
 	}
 	if( m_descriptor->run == nullptr )
 	{
-		QMessageBox::warning( 0, "Effect",
-			"Plugin has no processor: " + m_key.second,
-			QMessageBox::Ok, QMessageBox::NoButton );
+		const QString reason = QStringLiteral( "Plugin has no processor: %1" )
+				.arg( m_key.second );
+		if( lmms::isUnattendedRun() )
+		{
+			qWarning() << reason;
+		}
+		else
+		{
+			QMessageBox::warning( 0, "Effect", reason,
+				QMessageBox::Ok, QMessageBox::NoButton );
+		}
 		setDontRun( true );
 	}
 	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
@@ -469,9 +489,17 @@ void LadspaEffect::pluginInstantiation()
 		LADSPA_Handle effect = manager->instantiate(m_key, Engine::audioEngine()->outputSampleRate());
 		if( effect == nullptr )
 		{
-			QMessageBox::warning( 0, "Effect",
-				"Can't get LADSPA instance: " + m_key.second,
-				QMessageBox::Ok, QMessageBox::NoButton );
+			const QString reason = QStringLiteral( "Can't get LADSPA instance: %1" )
+				.arg( m_key.second );
+			if( lmms::isUnattendedRun() )
+			{
+				qWarning() << reason;
+			}
+			else
+			{
+				QMessageBox::warning( 0, "Effect", reason,
+					QMessageBox::Ok, QMessageBox::NoButton );
+			}
 			setOkay( false );
 			return;
 		}
@@ -489,9 +517,17 @@ void LadspaEffect::pluginInstantiation()
 						port,
 						pp->buffer ) )
 			{
-				QMessageBox::warning( 0, "Effect",
-				"Failed to connect port: " + m_key.second,
-				QMessageBox::Ok, QMessageBox::NoButton );
+				const QString reason = QStringLiteral( "Failed to connect port: %1" )
+					.arg( m_key.second );
+				if( lmms::isUnattendedRun() )
+				{
+					qWarning() << reason;
+				}
+				else
+				{
+					QMessageBox::warning( 0, "Effect", reason,
+						QMessageBox::Ok, QMessageBox::NoButton );
+				}
 				setDontRun( true );
 				return;
 			}

@@ -44,6 +44,7 @@
 #include "MainWindow.h"
 #include "TimePos.h"
 #include "Song.h"
+#include "UnattendedRun.h"
 
 #include "plugin_export.h"
 
@@ -92,7 +93,9 @@ bool MidiImport::tryImport(TrackContainer* tc)
 	if (!openFile()) { return false; }
 
 #ifdef LMMS_HAVE_FLUIDSYNTH
-	if (gui::getGUI() != nullptr && ConfigManager::inst()->sf2File().isEmpty())
+	// Import runs on the startup path (--import) and from the file browser: in
+	// an unattended run nobody can answer this box (task #625).
+	if (gui::getGUI() != nullptr && !lmms::isUnattendedRun() && ConfigManager::inst()->sf2File().isEmpty())
 	{
 		QMessageBox::information(gui::getGUI()->mainWindow(),
 			tr("Setup incomplete"),
@@ -104,7 +107,7 @@ bool MidiImport::tryImport(TrackContainer* tc)
 				"settings dialog and try again."));
 	}
 #else
-	if (gui::getGUI() != nullptr)
+	if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 	{
 		QMessageBox::information(gui::getGUI()->mainWindow(),
 			tr("Setup incomplete"),

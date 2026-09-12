@@ -16,6 +16,10 @@ set(LMMS_TESTS
 	src/core/ClipSerialisationTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp
+	src/core/ControlAutomationScriptTest.cpp
+	src/core/ControlDeviceCatalogueTest.cpp
+	src/core/ControlEditCommandsTest.cpp
+	src/core/ControlRegistryTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
@@ -48,6 +52,8 @@ set(LMMS_TESTS
 	src/core/RecordRingBufferTest.cpp
 	src/core/RecordingRealtimeTest.cpp
 	src/core/RelativePathsTest.cpp
+	src/core/ReversibilityContractTest.cpp
+	src/core/ReversibilityUndoTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
@@ -59,6 +65,7 @@ set(LMMS_TESTS
 	src/core/ScriptEngineTest.cpp
 	src/core/ScriptStabilisationTest.cpp
 	src/core/SlideNotesTest.cpp
+	src/core/StableTrackIdsTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
 	src/core/TimelineTest.cpp
@@ -153,7 +160,19 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# build tree to prove the Lua Instrument binding (spec G4). Plugin modules
 	# resolve LMMS core symbols from the host process at load time, so the test
 	# binary must export its symbols exactly like the zene executable does.
-	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest")
+	# Tests that need the build tree's plugin modules (they resolve LMMS core
+	# symbols from the host process at load time, exactly like the zene
+	# executable) get ENABLE_EXPORTS and the plugin directory. ScriptEngineTest
+	# does it for the Lua Instrument binding; ControlDeviceCatalogueTest does it
+	# so PluginFactory discovers lv2effect/lv2instrument and the LV2 half of the
+	# device catalogue is real rather than empty.  PluginScanCacheTest drives the
+	# scan cache against a copy of the built tripleoscillator module;
+	# ReversibilityContractTest/ReversibilityUndoTest load the real binary's
+	# plugins to prove the A16 inverses (#623).
+	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
+		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
+		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -891,4 +910,152 @@ if(TARGET lmms_vst3_sdk)
 				vst3-test-instrument)
 		endif()
 endif()
+endif()
+# ---------------------------------------------------------------------------
+# Agent control surface (SPEC A12/A16). The ControlRegistryTest unit test runs
+# in the LMMS_TESTS loop above; this one starts the real binary with
+# --control-socket under QT_QPA_PLATFORM=offscreen and drives it from an
+# EXTERNAL Python client over the AF_UNIX socket, so the socket, the wire
+# framing and the command groups are exercised end to end.
+# ---------------------------------------------------------------------------
+find_program(PYTHON3_EXECUTABLE NAMES python3)
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlSocketIntegration
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-integration.py
+			$<TARGET_FILE:zene>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+	)
+	set_tests_properties(ControlSocketIntegration PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+else()
+	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
+endif()
+
+# ---------------------------------------------------------------------------
+# Task #626: the shutdown and readiness defects of the control surface.
+#
+# ControlShutdown         - a clean shutdown for BOTH reproductions (undo/redo
+#                           leaves the project modified -> the quit prompt used to
+#                           block; an audio device that cannot open -> the startup
+#                           audio dialog used to block before app->exec()).
+# ControlReadiness        - connects BEFORE readiness and asserts the documented
+#                           order: connect -> poll control.ping -> wait for
+#                           engine_ready -> issue engine commands.
+# ControlNoAudioDevice    - a started instance with no usable audio device reports
+#                           the reason instead of answering `busy` forever.
+# ControlNegativeControl  - proves each of those can fail: the pre-fix artefacts
+#                           and real SIGKILL/SIGSTOP symptoms must be detected, so
+#                           none of the checks above is a tautology.
+#
+# All four are bounded by ctest's TIMEOUT and by deadlines inside each script: a
+# hang counts as a failure, never as a wait.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlShutdown
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-shutdown.py
+			$<TARGET_FILE:zene>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+	)
+	add_test(NAME ControlReadiness
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-readiness.py
+			$<TARGET_FILE:zene>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+	)
+	add_test(NAME ControlNoAudioDevice
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-no-audio-device.py
+			$<TARGET_FILE:zene>
+	)
+	add_test(NAME ControlNegativeControl
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
+		ControlNegativeControl PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 420
+	)
+else()
+	message(STATUS "python3 not found: the #626 shutdown/readiness tests are not registered")
+endif()
+
+# ---------------------------------------------------------------------------
+# agent_surface (SPEC A15 / task #620). The anti-drift gate: it reflects the
+# LIVE menu/toolbar surface over the control socket, fails on any action that
+# has no registered command (grandfathering the ones that do not, in
+# tests/agent-surface-baseline.txt, under a shrink-only ratchet), checks that
+# every declared command is either swept headless or allowlisted with a reason,
+# and then sweeps each non-allowlisted command to a typed result under
+# QT_QPA_PLATFORM=offscreen with a throwaway HOME.
+#
+# The gate is a Python file rather than a test binary on purpose: the reflection
+# it needs lives in the running process (control.surface_report walks the real
+# MainWindow), so the test drives a real instance exactly like an agent would.
+# --check is passed explicitly: this gate must never rewrite its own baseline
+# during a test run; only a deliberate --reanchor "reason" does that.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME agent_surface
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/agent-surface-gate.py
+			$<TARGET_FILE:zene>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+			--check
+			--report ${CMAKE_CURRENT_BINARY_DIR}/agent-surface-report.json
+	)
+	set_tests_properties(agent_surface PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+else()
+	message(STATUS "python3 not found: agent_surface is not registered")
+endif()
+
+# The notes / clips / tracks command group edits real Song model objects
+# (tracks, MidiClips, notes) rather than only reading them, so it needs a Qt
+# platform plugin even though the assertions never open a window.
+set_tests_properties(ControlEditCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The stable-id tests construct a full Engine and drive project.open/save through
+# the control registry, so they need a Qt platform plugin even though nothing
+# opens a window.
+set_tests_properties(StableTrackIdsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
+# instance started with --control-socket.
+#
+# Each test starts the real binary under QT_QPA_PLATFORM=offscreen, drives it
+# from an external client, and treats a HANG as a failure: every wait is
+# bounded. Each also has an `--expect-blocked` mode that asserts the pre-fix
+# defect (the startup path parked inside a modal's nested event loop), so the
+# tests cannot pass by accident. Reproductions against the base commit
+# 6b01b98eb are recorded in the lane's evidence.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	foreach(HEADLESS_TEST
+			"ControlHeadlessProjectOpen|control-headless-project-open.py|${CMAKE_SOURCE_DIR}/data/projects/tutorials/editing_note_volumes.mmp ${CMAKE_CURRENT_SOURCE_DIR}/data/error-carrying-project.mmp"
+			"ControlHeadlessWorkingDirectory|control-headless-working-directory.py|"
+			"ControlHeadlessNoAudioDevice|control-headless-no-audio-device.py|")
+		string(REPLACE "|" ";" FIELDS "${HEADLESS_TEST}")
+		list(GET FIELDS 0 TEST_NAME)
+		list(GET FIELDS 1 TEST_SCRIPT)
+		list(GET FIELDS 2 TEST_ARGS)
+		separate_arguments(TEST_ARGS_LIST UNIX_COMMAND "${TEST_ARGS}")
+		add_test(NAME ${TEST_NAME}
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/${TEST_SCRIPT}
+				$<TARGET_FILE:zene>
+				${TEST_ARGS_LIST}
+		)
+		set_tests_properties(${TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+		)
+	endforeach()
 endif()

@@ -132,6 +132,13 @@ public:
 
 	void clear();
 
+	//! Every effect in the chain, in processing order. Control thread only.
+	//! Added for the agent control surface (plugin.* / dsp.get_state, SPEC
+	//! A11-A14): m_effects is the true order, while QObject child order can
+	//! diverge from it after moveUp()/moveDown(), so an id resolved by index
+	//! must come from here.
+	auto effects() const -> const std::vector<Effect*>& { return m_effects; }
+
 
 private:
 	using EffectList = std::vector<Effect*>;

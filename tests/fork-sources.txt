@@ -6,8 +6,9 @@
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -15,8 +16,9 @@
 #        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -164,11 +166,43 @@
 # wave-3C paragraph) and was missing 67 entries ours has - ours is kept, and the entry set
 # is the union of both sides, 175 entries, which the regeneration run reports as
 # REPRODUCES with 0 duplicates.
+# ---------------------------------------------------------------------------
+# Merged 2026-09-12 (merge train 3F, unit 1 = post-alpha/agent-surface-onto-integration
+# f8715fa42).  This file's entry list is the byte-exact output of the command under
+# "Regenerate with", over the merged tree.  The incoming unit's copy of this file was
+# a hand-built union of 216 entries that its OWN command could not produce (the command
+# printed 195 of them - its header says so and names the 21 hand-registered entries, and
+# this train verified the number by running that command against the pinned commit).
+#
+# Carrying 216 here would have made this file stop reproducing, which is the one thing
+# its own header forbids, so the 21 entries are ADMITTED instead - the same resolution
+# this header already records for tests/src/tracks/SampleClipWindowTest.cpp ("The awk
+# allow-list above was extended by exactly those two names, and the file now reproduces
+# from the command under 'Regenerate with'").  Nothing is dropped and nothing is
+# silently widened; the ratchets now measure 21 more files, which is what the incoming
+# programme registered them for ("Both halves are registered so the ratchets measure
+# both - a split that hides half the code from the gate would be a dodge"):
+#   * the awk allow-list gained the eight fork-NEW tests/src/core sources of the agent
+#     control surface (ControlAutomationScriptTest, ControlDeviceCatalogueTest,
+#     ControlEditCommandsTest, ControlRegistryTest, ReversibilityContractTest,
+#     ReversibilityUndoTest, StableTrackIdsTest) and ReversibilityTestSupport.h;
+#   * a THIRD explicit pathspec line admits the thirteen tests/*.py control-surface
+#     harnesses by name - the same "admitted by name rather than by widening the
+#     extension filter" shape the tools/ line above uses, because widening the
+#     extension filter would also admit every other tests/ script.
+# Verified after the merge: the file reproduces (0 added, 0 removed, 0 duplicates).
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
+include/ControlAutomationSupport.h
+include/ControlDeviceSupport.h
+include/ControlEdit.h
+include/ControlRegistry.h
+include/ControlReversibility.h
+include/ControlServer.h
+include/ControlVocabulary.h
 include/CrashReporter.h
 include/DpiHelper.h
 include/LatencyCompensation.h
@@ -186,7 +220,9 @@ include/NoteTransform.h
 include/PinConnector.h
 include/PluginAudioPorts.h
 include/PluginScanCache.h
+include/ProjectIds.h
 include/ProjectRecovery.h
+include/ProjectRevisions.h
 include/Rack.h
 include/RackNodes.h
 include/RecordRingBuffer.h
@@ -218,6 +254,7 @@ include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
 include/TrackRecorder.h
+include/UnattendedRun.h
 include/VcaGroup.h
 include/WarpMarkers.h
 plugins/ClapEffect/ClapBusMap.cpp
@@ -279,6 +316,38 @@ plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 src/core/AudioBus.cpp
 src/core/AudioPortsModel.cpp
+src/core/ControlAutomationSupport.cpp
+src/core/ControlCommandsArrangement.cpp
+src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAutomation.cpp
+src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsClip.cpp
+src/core/ControlCommandsControl.cpp
+src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsPlugin.cpp
+src/core/ControlCommandsPluginParams.cpp
+src/core/ControlCommandsPluginPreset.cpp
+src/core/ControlCommandsPluginState.cpp
+src/core/ControlCommandsProject.cpp
+src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsScript.cpp
+src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsSurface.cpp
+src/core/ControlCommandsTransport.cpp
+src/core/ControlDeviceCatalogue.cpp
+src/core/ControlDeviceHosted.cpp
+src/core/ControlDeviceState.cpp
+src/core/ControlDeviceSupport.cpp
+src/core/ControlEditSupport.cpp
+src/core/ControlRegistry.cpp
+src/core/ControlReversibility.cpp
+src/core/ControlReversibilityTable.cpp
+src/core/ControlSchema.cpp
+src/core/ControlServer.cpp
+src/core/ControlSession.cpp
+src/core/ControlVocabulary.cpp
 src/core/CrashReporter.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
@@ -291,7 +360,9 @@ src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/PluginScanCache.cpp
+src/core/ProjectIds.cpp
 src/core/ProjectRecovery.cpp
+src/core/ProjectRevisions.cpp
 src/core/Rack.cpp
 src/core/RackNodes.cpp
 src/core/RoutingChainNodes.cpp
@@ -313,6 +384,7 @@ src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
+src/core/UnattendedRun.cpp
 src/core/VcaGroup.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
@@ -327,13 +399,34 @@ src/wasm/WasmSandbox.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
+tests/agent-surface-gate.py
+tests/agent_surface_lib.py
+tests/control-headless-no-audio-device.py
+tests/control-headless-project-open.py
+tests/control-headless-working-directory.py
+tests/control-negative-control.py
+tests/control-no-audio-device.py
+tests/control-readiness.py
+tests/control-reversibility-transcript.py
+tests/control-shutdown.py
+tests/control-stable-ids.py
+tests/control_socket_flows.py
+tests/control_socket_harness.py
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ControlAutomationScriptTest.cpp
+tests/src/core/ControlDeviceCatalogueTest.cpp
+tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlRegistryTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
+tests/src/core/ReversibilityContractTest.cpp
+tests/src/core/ReversibilityTestSupport.h
+tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/SessionModelTest.cpp
+tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/tracks/SampleClipWindowTest.cpp

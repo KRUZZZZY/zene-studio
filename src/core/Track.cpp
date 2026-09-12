@@ -39,6 +39,7 @@
 #include "InstrumentTrack.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
+#include "ProjectIds.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
@@ -60,13 +61,36 @@ Track::Track( Type type, TrackContainer * tc ) :
 	Model( tc ),                   /*!< The track Model */
 	m_trackContainer( tc ),        /*!< The track container object */
 	m_type( type ),                /*!< The track type */
+	// The stable id, handed out once, here, at creation (SPEC-stable-ids.md
+	// 2.1). It is the number in trk-<n> and it never changes while the track
+	// lives, so a client that was told trk-7 keeps trk-7 when a sibling is
+	// added or removed. loadTrack() overrides it with the file's value on a
+	// project load, and a file element with no id keeps this one - which is
+	// what makes legacy assignment deterministic, because the load walks the
+	// containers in document order.
+	m_id( ProjectIds::allocate() ),
 	m_name(),                       /*!< The track's name */
+	m_mutedBeforeSolo( false ),     /*!< Transient pre-solo mute state; written to
+	                                 * the file by saveTrack as an int, so an
+	                                 * uninitialised value made every save
+	                                 * nondeterministic (measured: the same fresh
+	                                 * track saved as mutedBeforeSolo=1 in one run
+	                                 * and 48 in the next, which StableTrackIdsTest
+	                                 * compares). */
 	m_mutedModel( false, this, tr( "Mute" ) ), /*!< For controlling track muting */
 	m_soloModel( false, this, tr( "Solo" ) ), /*!< For controlling track soloing */
 	m_clips()        /*!< The clips (segments) */
 {	
 	m_trackContainer->addTrack( this );
 	m_height = -1;
+}
+
+void Track::setId(int id)
+{
+	m_id = id;
+	// Never let the counter hand this number to anything else, even if the file
+	// that carried it had no (or a stale) next-id.
+	ProjectIds::observe(id);
 }
 
 
@@ -193,6 +217,14 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	}
 	element.setAttribute( "type", static_cast<int>(type()) );
 	element.setAttribute( "name", name() );
+	if (!presetMode)
+	{
+		// SPEC-stable-ids.md 3.1: an ATTRIBUTE on the track's own element,
+		// never a child element - Track::loadTrack turns an unrecognised child
+		// element into a real Clip, so an id element would make every track
+		// grow a phantom clip on load, on every track, in every project.
+		element.setAttribute( "id", m_id );
+	}
 	m_mutedModel.saveSettings( doc, element, "muted" );
 	m_soloModel.saveSettings( doc, element, "solo" );
 	// Save the mutedBeforeSolo value so we can recover the muted state if any solo was active (issue 5562)
@@ -274,6 +306,24 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		}
 
 		return;
+	}
+
+	// The stable id (SPEC-stable-ids.md rules R1/R2). A file that carries one
+	// keeps it; a legacy file that does not gets the number the constructor
+	// already handed out, which is deterministic because Song::loadProject walks
+	// the containers in document order. Either way ProjectIds::loadAssignments()
+	// counts it, and project.open reports the count as `ids_assigned`, so a
+	// legacy file's one-time upgrade is stated rather than silent.
+	if (element.hasAttribute("id"))
+	{
+		bool ok = false;
+		const int stored = element.attribute("id").toInt(&ok);
+		if (ok && stored >= 0) { setId(stored); }
+		else { ProjectIds::noteLoadAssignment(); }
+	}
+	else
+	{
+		ProjectIds::noteLoadAssignment();
 	}
 
 	{

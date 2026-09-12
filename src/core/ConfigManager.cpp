@@ -31,6 +31,7 @@
 #include <QStandardPaths>
 #include <QTextStream>
 
+#include "UnattendedRun.h"
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -536,7 +537,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		#endif
 			setBackgroundPicFile(value("paths", "backgroundtheme"));
 		}
-		else if (gui::getGUI() != nullptr)
+		else if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 		{
 			QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"),
 									gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
@@ -685,11 +686,18 @@ void ConfigManager::saveConfigFile()
 					"the directory containing the "
 					"file and try again!"
 						).arg(m_configFile);
-		if (gui::getGUI() != nullptr)
+		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 		{
 			QMessageBox::critical(nullptr, title, message,
 						QMessageBox::Ok,
 						QMessageBox::NoButton);
+		}
+		else
+		{
+			// Reachable from a command: loading a project adds it to the recent
+			// list and saving that list writes this file.  An agent instance
+			// must not stop for a dialog here (task #625).
+			qWarning() << title << message;
 		}
 		return;
 	}
