@@ -1,8 +1,21 @@
-# Zene Studio 0.2.0-alpha
+# Zene Studio 0.2.1-alpha
 
 **The first release under the product's own name.** This is an early alpha — expect crashes, missing features
 and rough edges. It is for testing and feedback, not for music you cannot afford to lose. Read the known
 limitations before you install.
+
+> **This is the 0.2.1-alpha re-cut of the 0.2.0-alpha release notes: the version moved for a build reason, not
+> a product reason.** The feature set below is the 0.2.0 one, unchanged — `0.2.1` is a **PATCH** under
+> `docs/VERSIONING.md` (no new capability, no project-format change, no protocol change). What moved is the
+> release: the `v0.2.0-alpha` tag was created and its build run came back **7 of 7 jobs red** across all four
+> platforms (`tests/integration-logs-ci-fix/README.md` is that record), the five causes were fixed at
+> `ba24a9578`, and because a `v*` tag is never re-pointed (`docs/VERSIONING.md`, rule 2 — the repo ruleset
+> blocks it for everyone), the fix ships as the next number, **`v0.2.1-alpha`**. Every `v0.2.0-alpha`
+> reference below is therefore a reference to a **superseded tag** and stays as written; the `0.1.0-alpha`
+> references are history too — that release shipped. This file was named
+> `docs/RELEASE-NOTES-v0.2.0-alpha.md` until the 0.2.1 bump, which renamed it in the same commit that changed
+> the H1; the provenance block below names the drafts and paths it was assembled from, and those names are
+> the ones those artefacts actually carry.
 
 > **Verification convention.** `[VERIFY AT FREEZE]` marks a claim that must be re-checked against the built
 > artefact before this text ships; nothing carrying that marker may be published as-is, and no unverified
@@ -19,8 +32,9 @@ limitations before you install.
 > last of those describes code the frozen tip does not contain at all.**
 > `include/ControlVocabulary.h`, `include/ControlRegistry.h` and `src/core/ControlCommands*.cpp` arrive with
 > the control surface, after `2239f3cb6`: `git show 2239f3cb6:include/ControlVocabulary.h` answers `fatal:
-> path 'include/ControlVocabulary.h' does not exist`. `git log --oneline -- docs/RELEASE-NOTES-v0.2.0-alpha.md`
-> is the edit list. The marker resolutions are the applied copy's, taken at `post-alpha/release-prep`; which
+> path 'include/ControlVocabulary.h' does not exist`. `git log --oneline -- docs/RELEASE-NOTES-v0.2.1-alpha.md`
+> is the edit list (`--follow` reaches back through the 0.2.1 rename to `…-v0.2.0-alpha.md`). The marker
+> resolutions are the applied copy's, taken at `post-alpha/release-prep`; which
 > markers, and why — `docs/RELEASE-PREP-0.2.0.md`, §3.
 > **This file was then re-checked claim by claim against the tree at `0834e40f1`** (the tip this pass ran on)
 > and the two build directories item 2 names, and **every line number this file still carries was re-derived at
@@ -592,7 +606,7 @@ prove the fallback; no test drives the surface against a real audio backend.
 ## Known limitations
 
 This is an alpha and the list is long; a separate **known limitations** page covers it in detail — that page
-is `docs/KNOWN-LIMITATIONS.md`, and **there is no version-suffixed 0.2.0 limitations file** (the 0.1.0 page,
+is `docs/KNOWN-LIMITATIONS.md`, and **there is no version-suffixed 0.2.1 limitations file** (the 0.1.0 page,
 `docs/KNOWN-LIMITATIONS-v0.1.0-alpha.md`, is the one it replaced), so a process looking for the suffixed name
 will not find the page this text points at. The short
 version: no instrument editor; instrument hosting is one-per-track and proven only against our own test
@@ -665,7 +679,7 @@ Resolved against the tree and the binary at `post-alpha/release-prep` base `34c1
 
 1. **Replace every `[VERIFY AT FREEZE]` with a verified fact — or delete the claim.** *Done.* **The file
    carries no live marker, and that is a command, not an impression:** `grep -n "VERIFY AT FREEZE"
-   docs/RELEASE-NOTES-v0.2.0-alpha.md` returns three hits and every one is this convention being described, not
+   docs/RELEASE-NOTES-v0.2.1-alpha.md` returns three hits and every one is this convention being described, not
    a marker on a claim (the limitations page has one, of the same kind). **No marker count is stated here.**
    None is derivable: no marker list survives in this file's history that a reader could count against, and the
    per-marker table this item cites — `docs/RELEASE-PREP-0.2.0.md` §3 — is the record of a *different* pass, at
@@ -684,9 +698,12 @@ Resolved against the tree and the binary at `post-alpha/release-prep` base `34c1
    box to read one from** — a build directory's header reports whatever commit that directory was last
    configured from, not the base this item is about. For the record of what is on the box: `build/lmmsversion.h`
    reads `0.1.0-alpha.247+f68cf8e`, and `build-coverage/lmmsversion.h` read `0.1.0-alpha.315+6daed30` when this
-   pass checked it (it is rewritten by every configure). The string that ships, `Zene Studio 0.2.0-alpha`, needs
-   the `v0.2.0-alpha` tag to exist at the release commit — **that tag does not exist yet and nothing is tagged
-   by this pass** (`git tag -l 'v0.2.0-alpha'` → empty) — or the `-DFORCE_VERSION=internal` configure. Exact
+   pass checked it (it is rewritten by every configure). The string that ships is `Zene Studio 0.2.1-alpha`, and
+   it needs the `v0.2.1-alpha` tag to exist at the release commit (the owner creates it at freeze; nothing is
+   tagged by this pass — `git ls-remote --tags product | grep v0.2.1-alpha` is empty) or the
+   `-DFORCE_VERSION=internal` configure. **Settled since this item was written:** the `v0.2.0-alpha` tag *was*
+   created — it is in the product repository at `b099fd6c` — and its build run failed 7 of 7 jobs, which is why
+   this re-cut exists; that tag is superseded and is neither moved nor deleted. Exact
    output and the two configure lines: `docs/RELEASE-PREP-0.2.0.md` §1.
 3. **Add the artefact list and the SHA-256 digests block, generated from the published release rather than
    typed.** *Pending by design — needs the published artefacts.* The digests are appended by the publish step
@@ -696,7 +713,7 @@ Resolved against the tree and the binary at `post-alpha/release-prep` base `34c1
    box, configured at `f68cf8e` — sets `CPACK_PACKAGE_FILE_NAME` to
    `zene-0.1.0-alpha.247+f68cf8e-linux-x86_64` (and its source pair to `zene-0.1.0-alpha.247+f68cf8e`), and
    `build/lmmsversion.h` reports the same commit. So the release's assets are
-   `zene-0.2.0-alpha-<platform>.<ext>`; the per-platform extension list is the release job's upload glob
+   `zene-0.2.1-alpha-<platform>.<ext>`; the per-platform extension list is the release job's upload glob
    (`.github/workflows/build.yml`, `.AppImage` / `.dmg` / `.exe`).
 4. **Cross-check every capability line against `tests/advertised-features.tsv`.** *Done, and the enforcement
    half is green on the release configuration.*

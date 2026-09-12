@@ -1,5 +1,6 @@
-> **This page describes the tree as verified on 2026-09-11 (the v0.1.0-alpha line).** For the 0.2.0-alpha
-> release see [`docs/RELEASE-NOTES-v0.2.0-alpha.md`](RELEASE-NOTES-v0.2.0-alpha.md) and
+> **This page describes the tree as verified on 2026-09-11 (the v0.1.0-alpha line).** For the release that
+> ships the 0.2 feature set — **0.2.1-alpha**, the re-cut of the failed `v0.2.0-alpha` tag — see
+> [`docs/RELEASE-NOTES-v0.2.1-alpha.md`](RELEASE-NOTES-v0.2.1-alpha.md) and
 > [`docs/KNOWN-LIMITATIONS.md`](KNOWN-LIMITATIONS.md).
 
 # Zene Studio — status

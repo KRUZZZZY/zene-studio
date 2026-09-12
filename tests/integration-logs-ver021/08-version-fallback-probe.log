@@ -1,0 +1,12 @@
+### the tag-derived path (what this branch reports today), unpiped:
+v0.2.0-alpha-9-g0de9f3b8d
+EXIT=0
+#define LMMS_VERSION "0.2.0-alpha.8+f0a88a0"
+
+### the CMakeLists fallback path: -DFORCE_VERSION=internal (what a source tarball or a checkout with no reachable tag reports)
+CONFIGURE EXIT=0
+#define LMMS_VERSION "0.2.1-alpha"
+
+### restore the cache to the tag-derived path (unset FORCE_VERSION)
+CONFIGURE EXIT=0
+#define LMMS_VERSION "0.2.0-alpha.9+0de9f3b"

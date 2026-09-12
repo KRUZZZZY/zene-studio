@@ -34,7 +34,7 @@ what made the `0.1.0-alpha` version string ambiguous at release time.
 
 ## Release mechanics (non-negotiable)
 
-1. `CMakeLists.txt` `VERSION_MAJOR/MINOR/PATCH/STAGE` is bumped in the release commit, so a tagless CI
+1. `CMakeLists.txt` `VERSION_MAJOR/MINOR/RELEASE/STAGE` is bumped in the release commit, so a tagless CI
    build reports the same string as the tagged one.
 2. A published tag is never re-pointed (the `v*` ruleset forbids it, no bypass). A bad release is fixed
    by cutting the **next** number — the release is deleted, the tag stays.
@@ -49,7 +49,7 @@ what made the `0.1.0-alpha` version string ambiguous at release time.
 |---|---|
 | `0.1.0-alpha` | first public alpha (history — the six-item install gate) |
 | **`0.2.0`** | **adds the in-app agent control surface: new capability + a new protocol → MINOR** |
-| `0.2.1` | fixes a control-socket framing bug; nothing new |
+| **`0.2.1`** | **fixes only: the `v0.2.0-alpha` tag's build came back red on 7 of 7 jobs, and because a published tag is never re-pointed the fix ships as the next number — nothing new, nothing added** |
 | `0.3.0` | Session View (wave W1) lands → MINOR |
 | `0.4.0` | warp (W2) → MINOR |
 | `0.9.0` | the project-format stability promise is written and enforced → last MINOR before 1.0 |

@@ -280,6 +280,22 @@ this change touches, so per the brief they are reported rather than fixed:
   is not an option for a shim other tooling needs. **Recommend** adding
   `tools/ncpu-shim.c` to that list in the checker, in a change that says so.
 
+### Closed: all four, at the 0.2.1 re-cut
+
+The four above are **fixed**, on `chore/version-0.2.1-alpha` (the last two mechanical jobs before this
+release is re-run and published as **0.2.1-alpha** — see `docs/VERSION-0.2.1-ALPHA.md`):
+
+- `src/core/ControlDeviceHosted.cpp:139` and `:245` now carry `#endif // LMMS_HAVE_LV2`, the convention
+  comment this page called trivial and correct. The concern that blocked it here — a comment-only edit
+  conflicting with the live LV2 lanes — did not materialise: the lanes merged, and the fix is two comment
+  edits with no code change.
+- `include/ScriptLuaQtTypes.h` and `tools/ncpu-shim.c` are on the checker's own
+  `known_no_namespace_lmms` allowance, each with a reason. The header's namespace is `luabridge` by
+  necessity (it declares only `luabridge::Stack<>` specialisations, which C++ requires to live in the
+  namespace of the template they specialise) — so wrapping it in `lmms` was never the fix — and the shim
+  is C. **The allowance list grew; the rule did not change**, and the negative control in
+  `docs/VERSION-0.2.1-ALPHA.md` §3 shows the check still fails a new file with no namespace.
+
 ### Not investigated further
 
 - The **release-honesty guard** and other steps of the tag's jobs ran on some

@@ -1,0 +1,13 @@
+=== $ bash tests/release-version-gate.sh ===
+=== release version: the tree, its documents and its tag must name the same release ===
+repo             : /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021
+declared version : 0.2.1-alpha
+
+  [PASS] tree: CMakeLists.txt declares 0.2.1-alpha
+  [PASS] docs: docs/RELEASE-NOTES-v0.2.1-alpha.md, H1 "Zene Studio 0.2.1-alpha"
+  [PASS] README: the Download section links releases/tag/v0.2.1-alpha
+  [PASS] README: the Download section names 0.2.1-alpha
+  [skip] tag: no v0.2.1-alpha tag exists yet (the owner creates it at freeze, Block C/F)
+
+RESULT: PASS — 0.2.1-alpha is the tree's, its release notes' and its download link's version
+EXIT=0
