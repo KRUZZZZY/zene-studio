@@ -32,9 +32,12 @@
 # scheduler that builds on it are IN THE TREE BUT NOT IN THIS BUILD. Recording it
 # as a row means the release CANNOT drift into claiming a clip launcher it does not
 # contain: the day a build turns the option on, this gate fails and the notes have
-# to be updated first. Even with the flag ON the audit found no consumer (no scene
-# launcher, no clip grid), so the honest description of 0.2.0-alpha is that the
-# session data layer exists in the source and ships disabled.
+# to be updated first. CORRECTED 2026-09-12: the wording here used to say "even with the flag ON the audit
+# found no consumer", which was true when that audit ran and is true no longer — the launch scheduler
+# (src/core/SessionScheduler.cpp, merged in this release) is a consumer behind this flag. What remains
+# accurate, and is the claim this row protects: there is still no CLIP LAUNCHER — no scene launcher and no
+# clip grid, both being UI the scheduler does not have. So the honest description of 0.2.0-alpha is that the
+# session data layer AND its launch scheduler exist in the source, ship disabled, and are not operable.
 #
 # WHY THERE IS NO ROW FOR TELEMETRY, THOUGH THE RELEASE DOCUMENTS IT.
 # The gate can only judge what the binary REPORTS, and the build-options string is assembled by
