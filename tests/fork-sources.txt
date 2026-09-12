@@ -1,28 +1,63 @@
 # Sources added by this fork on top of upstream master 4e677cb6c6ab.
 #
+# The entry list below is the byte-exact output of the command under "Regenerate with".
+#
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
-#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins \
-#     | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
-#     | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)'
+#   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core \
+#       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ { next } { print }' ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh ; \
+#   } | LC_ALL=C sort
+#
+# Verify it - this must print REPRODUCES and nothing else:
+#   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
+#        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core \
+#            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ { next } { print }' ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh ; \
+#        } | LC_ALL=C sort) && echo REPRODUCES
+#
+# The pathspec is `src include plugins` (this fork's product code) plus three extras the
+# product command cannot derive on its own. Each is named here with its reason, so no entry in
+# this file is a hand-edit nobody can account for:
+#   * tests/src/core - this file holds exactly five fork-authored TEST sources
+#     (LufsMeterTest, MidiLearnTest, SessionModelTest, StemExportTest,
+#     StemExportTestSupport.h): three registered by a42c68f24 (the integration fix that made
+#     Gate 9 green), two by 117068e76 (stem export). They are the suites of fork-NEW features,
+#     so the fork ratchets look at them. The other ~100 tests/src sources added since the fork
+#     point are whole-tree material and live in tests/all-sources.txt only - the awk filter
+#     admits exactly these five. A new fork test source belongs in tests/all-sources.txt by
+#     default; add it to the awk pattern above only if it must carry the fork ratchets too, and
+#     then re-run this command.
+#   * tools/local-ci.sh - a shell script, so outside the C/C++ extension set of the product
+#     command; it is admitted by the second, explicit pathspec line above. Its extension is
+#     deliberately NOT added to the first line's grep: doing so also admits five fork-authored
+#     .sh harness scripts under plugins/RnnoiseDenoiser/testdata/, which would widen the fork
+#     scope onto shell tooling that belongs in tests/tools-sources.txt if anywhere. It is
+#     registered HERE rather than in tests/tools-sources.txt because the fork-scoped ratchets
+#     already measured it when that list was added, and moving it would narrow the fork scope.
+#     That reason is recorded in tests/tools-sources.txt's header too.
+#   * tools/stem-export-demo.py used to be a second hand-added tools/ entry in this file. It was
+#     moved to tests/tools-sources.txt on 2026-09-12 (gate hygiene): tooling has one home, and
+#     that list is the home tests/tools-sources.txt itself declares for tools/. It is not in the
+#     command above any more, and this file no longer carries it.
 #
 # Why the base is a fixed commit and not `origin/master`. `origin` in this clone is
 # upstream LMMS/lmms; this repo never pushes to it, and its `master` ref tracks whatever
-# upstream publishes — on 2026-09-11 it was 518a7e8ef, which is NOT an ancestor of the
-# fork point (verified: `git merge-base --is-ancestor origin/master 4e677cb6c6ab` → 1).
+# upstream publishes - on 2026-09-11 it was 518a7e8ef, which is NOT an ancestor of the
+# fork point (verified: `git merge-base --is-ancestor origin/master 4e677cb6c6ab` -> 1).
 # The old command as written (`... --diff-filter=A origin/master HEAD ...`) therefore
-# listed **116** files instead of 109: it reclassified seven upstream files this fork
-# never authored as fork-new — include/AudioOss.h, include/AudioSoundIo.h,
+# listed 116 files instead of 109: it reclassified seven upstream files this fork
+# never authored as fork-new - include/AudioOss.h, include/AudioSoundIo.h,
 # include/MidiOss.h, plugins/Sf2Player/fluidsynthshims.h, src/core/audio/AudioOss.cpp,
-# src/core/audio/AudioSoundIo.cpp, src/core/midi/MidiOss.cpp — all of which exist at
+# src/core/audio/AudioSoundIo.cpp, src/core/midi/MidiOss.cpp - all of which exist at
 # 4e677cb6c6ab (`git cat-file -e 4e677cb6c6ab:<path>`). The fork point is a fixed commit,
 # so the corrected command needs no remote state at all. Verify it is in the clone first:
 #   git cat-file -e 4e677cb6c6ab^{commit} && echo ok
-# (`git merge-base origin/master HEAD` returns the same commit — 4e677cb6c6ab — but only
+# (`git merge-base origin/master HEAD` returns the same commit - 4e677cb6c6ab - but only
 # while origin has been fetched; the literal commit is the base that cannot drift.)
-#
-# `tools/` is outside this command's pathspec on purpose: tools/local-ci.sh below is
-# hand-added, and the rest of the fork's own tooling is registered in
-# tests/tools-sources.txt, which carries its own regeneration command and baselines.
 #
 # Vendored third-party trees are excluded on purpose (524 files): src/3rdparty
 # (lua, luabridge), plugins/NeuralAmp/rtneural (RTNeural), plugins/NeuralAmp/nam
@@ -31,7 +66,11 @@
 #
 # lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
 # resolves this file's directory to the repo root).
-
+#
+# The collation is pinned to C for the same reason tests/all-sources.txt's is: plain `sort`
+# follows the caller's locale, so an unpinned command does not reproduce this file on a
+# machine with a different one, and the tail entries appended by merge lanes ended up out of
+# order for the same reason.
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
@@ -158,7 +197,6 @@ src/wasm/WasmWorker.h
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/SessionModelTest.cpp
-tools/local-ci.sh
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
-tools/stem-export-demo.py
+tools/local-ci.sh
