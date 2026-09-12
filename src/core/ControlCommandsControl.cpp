@@ -30,6 +30,7 @@
 
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "Song.h"
@@ -202,18 +203,109 @@ void registerTransactionsCommand(ControlRegistry& registry)
 	cmd.id = QStringLiteral("control.transactions");
 	cmd.group = QStringLiteral("control");
 	cmd.verb = QStringLiteral("transactions");
-	cmd.description = QStringLiteral("The transactions recorded for mutating commands (SPEC A16 hook).");
+	cmd.description = QStringLiteral("The transactions recorded for mutating commands (SPEC A16 "
+		"hook), each with the contract table's class and the serialised size of the record, "
+		"plus the bounds they are kept within (cap_records/cap_bytes, retained_bytes, "
+		"evicted, capped).");
 	cmd.requiresEngine = false;
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("transactions"), arrayProperty()},
+		{QStringLiteral("count"), integerProperty()},
+		{QStringLiteral("retained_bytes"), integerProperty()},
+		{QStringLiteral("cap_records"), integerProperty()},
+		{QStringLiteral("cap_bytes"), integerProperty()},
+		{QStringLiteral("evicted"), integerProperty()},
+		{QStringLiteral("capped"), booleanProperty()},
 	});
 	cmd.handler = [&registry](const QJsonObject&) {
-		QJsonObject result;
-		result.insert(QStringLiteral("transactions"), registry.transactions());
-		return ControlResult::success(result);
+		return ControlResult::success(registry.transactionsReport());
 	};
 	registry.registerCommand(cmd);
+}
+
+//! The message a refused undo carries: which command, why it has no inverse,
+//! and what to do instead. A refusal that does not name the fallback is a dead
+//! end for an agent, so the fallback is not optional here.
+QString irreversibleUndoMessage(const ControlRegistry::Transaction& tx,
+	const control::ReversibilityEntry* entry)
+{
+	QString message = QStringLiteral("cannot undo '%1' (class '%2'): ").arg(tx.command, tx.cls);
+	message += (entry != nullptr && !entry->reason.isEmpty())
+		? entry->reason
+		: QStringLiteral("no inverse is recorded for it");
+	if (!tx.mechanism.isEmpty()) { message += QStringLiteral(" [") + tx.mechanism + QLatin1Char(']'); }
+	const QString fallback = entry == nullptr ? QString() : entry->fallback;
+	message += fallback.isEmpty()
+		? QStringLiteral("; there is no fallback: the change cannot be reversed")
+		: QStringLiteral("; instead: ") + fallback;
+	return message;
+}
+
+//! Unwinds one step of the engine's own undo stack.
+ControlResult undoThroughJournal(const QString& command)
+{
+	ProjectJournal* journal = Engine::projectJournal();
+	bool undone = false;
+	if (journal != nullptr && journal->canUndo())
+	{
+		journal->undo();
+		undone = true;
+	}
+	QJsonObject result;
+	result.insert(QStringLiteral("undone"), undone);
+	result.insert(QStringLiteral("undone_command"), command);
+	result.insert(QStringLiteral("mechanism"), QStringLiteral("lmms::ProjectJournal"));
+	result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
+	result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
+	if (!undone)
+	{
+		result.insert(QStringLiteral("reason"), QStringLiteral("the engine's undo stack is empty"));
+	}
+	return ControlResult::success(result);
+}
+
+/*! control.undo: undo THE LAST AGENT COMMAND, or refuse typed.
+ *
+ * Three cases, in this order, and the order is the contract:
+ *  1. no mutating command has been recorded -> unwind the engine journal.
+ *  2. the last recorded command is not reversible -> TYPED failure naming the
+ *     command, its class and its documented fallback. The journal is NOT
+ *     touched: silently undoing an older command while the last one cannot be
+ *     undone is the pretending SPEC A16 exists to remove.
+ *  3. otherwise undo it - by dispatching the recorded inverse command when the
+ *     inverse is a command (a file revision, say), else by unwinding the
+ *     engine's own ProjectJournal, which the GUI's Ctrl+Z drives too.
+ */
+ControlResult undoLastCommand(ControlRegistry& registry)
+{
+	const ControlRegistry::Transaction* top = registry.lastTransaction();
+	if (top == nullptr)
+	{
+		return undoThroughJournal(QString());
+	}
+	if (!top->reversible)
+	{
+		return ControlResult::failure(ControlErrorKind::Irreversible,
+			irreversibleUndoMessage(*top, control::ReversibilityTable::instance().lookup(top->command)));
+	}
+
+	const QJsonObject inverse = top->inverse;
+	const QString op = inverse.value(QStringLiteral("op")).toString();
+	const QString applies = inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
+	if (applies == QLatin1String("command") && registry.hasCommand(op))
+	{
+		const ControlResult applied = registry.invoke(op, inverse.value(QStringLiteral("args")).toObject());
+		if (!applied.ok) { return applied; }
+		QJsonObject result;
+		result.insert(QStringLiteral("undone"), true);
+		result.insert(QStringLiteral("undone_command"), top->command);
+		result.insert(QStringLiteral("class"), top->cls);
+		result.insert(QStringLiteral("restored_by"), op);
+		result.insert(QStringLiteral("inverse_result"), applied.result);
+		return ControlResult::success(result);
+	}
+	return undoThroughJournal(top->command);
 }
 
 void registerUndoCommand(ControlRegistry& registry)
@@ -222,29 +314,23 @@ void registerUndoCommand(ControlRegistry& registry)
 	cmd.id = QStringLiteral("control.undo");
 	cmd.group = QStringLiteral("control");
 	cmd.verb = QStringLiteral("undo");
-	cmd.description = QStringLiteral("Undo the last journal checkpoint through the engine's ProjectJournal.");
+	cmd.description = QStringLiteral("Undo the last agent command: the engine's own "
+		"ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the "
+		"recorded inverse command when the change is file-level. If the last recorded command "
+		"has no inverse, this FAILS with the typed 'irreversible' error and names the "
+		"documented fallback instead of undoing an older command.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("undone"), booleanProperty()},
+		{QStringLiteral("undone_command"), stringProperty()},
+		{QStringLiteral("class"), stringProperty()},
+		{QStringLiteral("restored_by"), stringProperty()},
 		{QStringLiteral("can_undo"), booleanProperty()},
 		{QStringLiteral("can_redo"), booleanProperty()},
 		{QStringLiteral("mechanism"), stringProperty()},
+		{QStringLiteral("reason"), stringProperty()},
 	});
-	cmd.handler = [](const QJsonObject&) {
-		auto* journal = Engine::projectJournal();
-		bool undone = false;
-		if (journal != nullptr && journal->canUndo())
-		{
-			journal->undo();
-			undone = true;
-		}
-		QJsonObject result;
-		result.insert(QStringLiteral("undone"), undone);
-		result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
-		result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
-		result.insert(QStringLiteral("mechanism"), QStringLiteral("lmms::ProjectJournal"));
-		return ControlResult::success(result);
-	};
+	cmd.handler = [&registry](const QJsonObject&) { return undoLastCommand(registry); };
 	registry.registerCommand(cmd);
 }
 
@@ -254,7 +340,9 @@ void registerRedoCommand(ControlRegistry& registry)
 	cmd.id = QStringLiteral("control.redo");
 	cmd.group = QStringLiteral("control");
 	cmd.verb = QStringLiteral("redo");
-	cmd.description = QStringLiteral("Redo the last undone journal checkpoint.");
+	cmd.description = QStringLiteral("Redo the last undone journal checkpoint. A structural "
+		"step whose inverse was a one-way action has nothing to redo, and says so: the redo "
+		"stack is emptied at that point rather than replaying an older step.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("redone"), booleanProperty()},

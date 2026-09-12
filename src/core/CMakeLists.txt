@@ -49,7 +49,9 @@ set(LMMS_SRCS
 	core/ControlCommandsPluginParams.cpp
 	core/ControlCommandsPluginPreset.cpp
 	core/ControlCommandsPluginState.cpp
+	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
+	core/ControlCommandsProjectFiles.cpp
 	core/ControlCommandsScript.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
@@ -60,6 +62,8 @@ set(LMMS_SRCS
 	core/ControlDeviceSupport.cpp
 	core/ControlEditSupport.cpp
 	core/ControlRegistry.cpp
+	core/ControlReversibility.cpp
+	core/ControlReversibilityTable.cpp
 	core/ControlSchema.cpp
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
@@ -117,6 +121,7 @@ set(LMMS_SRCS
 	core/ProjectJournal.cpp
 	core/ProjectIds.cpp
 	core/ProjectRenderer.cpp
+	core/ProjectRevisions.cpp
 	core/ProjectVersion.cpp
 	core/RemotePlugin.cpp
 	core/RenderManager.cpp

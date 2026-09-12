@@ -22,13 +22,17 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <memory>
+
 #include <QJsonArray>
 #include <QJsonObject>
 
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "JournallingObject.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "Track.h"
@@ -43,19 +47,27 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
-QJsonObject trackEditState(Track* track, int index)
+//! The per-revision cap on a captured track's XML (SPEC A16: a bounded
+//! snapshot). A track larger than this refuses the inverse rather than keeping
+//! a truncated one.
+constexpr int MaxTrackSnapshotChars = 65536;
+
+//! The Track::Type a track.add type name selects - the same mapping the
+//! creation below uses, so the undo step's redo cannot disagree with it.
+Track::Type trackTypeForName(const QString& typeName)
 {
-	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
-	entry.insert(QStringLiteral("index"), index);
-	entry.insert(QStringLiteral("name"), track->name());
-	entry.insert(QStringLiteral("type"), control::trackTypeNameOf(track->type()));
-	entry.insert(QStringLiteral("muted"), track->isMuted());
-	entry.insert(QStringLiteral("soloed"), track->isSolo());
-	entry.insert(QStringLiteral("clip_count"), track->numOfClips());
-	return entry;
+	if (typeName == QLatin1String("pattern")) { return Track::Type::Pattern; }
+	if (typeName == QLatin1String("sample")) { return Track::Type::Sample; }
+	if (typeName == QLatin1String("automation")) { return Track::Type::Automation; }
+	return Track::Type::Instrument;
 }
 
+//! The product's own track creation for \p type.
+Track* createTrackOfType(Track::Type type, Song* song)
+{
+	if (type == Track::Type::Pattern) { song->addPatternTrack(); return song->tracks().back(); }
+	return Track::create(type, song);
+}
 //! Index of \p track in its container, or -1 when it is not in it.
 int trackIndexInContainer(Track* track)
 {
@@ -67,14 +79,11 @@ int trackIndexInContainer(Track* track)
 	return -1;
 }
 
-//! The snapshot a transaction carries when the journal has no inverse (SPEC A16).
-QJsonObject trackSnapshot(const QJsonObject& before, const QString& inverseOp)
+//! The snapshot a transaction carries for a structural track change (SPEC A16).
+QJsonObject trackSnapshot(const QJsonObject& before, const QString& inverseOp,
+	const QString& mechanism, bool reversible)
 {
-	return control::transactionPayload(before, inverseOp, QJsonObject(), false,
-		QStringLiteral("snapshot only: the product's own track add/remove path keeps no journal "
-			"checkpoint (TrackContainerView::createTrackView / deleteTrackView have theirs "
-			"commented out in this tree), so the ProjectJournal cannot create or destroy a track; "
-			"the before-state is recorded so the change can be re-applied by hand"));
+	return control::transactionPayload(before, inverseOp, QJsonObject(), reversible, mechanism);
 }
 
 //! The new track is the last one the container holds (TrackContainer::addTrack
@@ -114,6 +123,7 @@ void registerTrackAdd(ControlRegistry& registry)
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
 		const QString typeName = args.value(QStringLiteral("type")).toString(QStringLiteral("instrument"));
+		const Track::Type type = trackTypeForName(typeName);
 		Song* song = Engine::getSong();
 		const int before = static_cast<int>(song->tracks().size());
 		QJsonArray beforeIds;
@@ -122,43 +132,48 @@ void registerTrackAdd(ControlRegistry& registry)
 		beforeState.insert(QStringLiteral("track_count"), before);
 		beforeState.insert(QStringLiteral("tracks"), beforeIds);
 
+		// SPEC A16 deliverable 5: a created track has no before-state to
+		// restore, so the inverse is the OPERATION. ONE action step is recorded
+		// BEFORE the creation, so one control.undo - and one Ctrl+Z, which
+		// unwinds the same ProjectJournal - removes the track again. The holder
+		// keeps the pointer alive across the two lambdas without either of them
+		// outliving a stack frame.
+		const QString name = args.value(QStringLiteral("name")).toString();
+		auto holder = std::make_shared<Track*>(nullptr);
+		control::addUndoStep(
+			[holder]() {
+				if (*holder != nullptr) { control::removeTrack(*holder); *holder = nullptr; }
+			},
+			[song, type, name, holder]() {
+				*holder = createTrackOfType(type, song);
+				if (*holder != nullptr && !name.isEmpty()) { (*holder)->setName(name); }
+			});
+
 		// The product's own entry points where they are callable from outside
 		// (Song::addPatternTrack is public; addSampleTrack/addAutomationTrack are
 		// private slots, so those two take the same public Track::create() path
 		// they themselves call - see Song.cpp).
-		if (typeName == QLatin1String("pattern")) { song->addPatternTrack(); }
-		else if (typeName == QLatin1String("sample")) { Track::create(Track::Type::Sample, song); }
-		else if (typeName == QLatin1String("automation")) { Track::create(Track::Type::Automation, song); }
-		else { Track::create(Track::Type::Instrument, song); }
-
-		Track* track = song->tracks().back();
-		if (!args.value(QStringLiteral("name")).toString().isEmpty())
-		{
-			track->setName(args.value(QStringLiteral("name")).toString());
-		}
+		Track* track = createTrackOfType(type, song);
+		*holder = track;
+		if (!name.isEmpty()) { track->setName(name); }
 		QJsonObject result = trackAddResult(track, song);
 		result.insert(QStringLiteral("__transaction"),
-			trackSnapshot(beforeState, QStringLiteral("UNIMPLEMENTED: remove the created track")));
+			trackSnapshot(beforeState, QStringLiteral("remove the created track"),
+				QStringLiteral("action checkpoint: the recorded undo step removes the created "
+					"track through the product's own TrackContainerView::deleteTrackView path, "
+					"and a fresh track carries only defaults, so removing it restores the "
+					"container. LIMIT: the project's id counter is monotonic and is not rewound, "
+					"so a re-add gets a fresh trk-<n>"),
+				true));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
 }
 
-//! Remove \p track the way the product does. TrackContainerView::deleteTrackView
-//! removes the view, deletes it, and only then deletes the track; deleting the
-//! track directly leaves its view pointing at freed memory, which was measured as
-//! a SIGSEGV right after the command answered. A guiless instance has no view.
-void removeTrack(Track* track)
-{
-	gui::SongEditor* editor = gui::getGUI() == nullptr || gui::getGUI()->songEditor() == nullptr
-		? nullptr : gui::getGUI()->songEditor()->m_editor;
-	if (editor == nullptr) { delete track; return; }
-	for (gui::TrackView* view : editor->trackViews())
-	{
-		if (view->getTrack() == track) { editor->deleteTrackView(view); return; }
-	}
-	delete track;
-}
+//! Removes \p track the way the product does. The implementation moved to
+//! control::removeTrack (ControlEditSupport.cpp) so the undo step of track.add
+//! and the creating call of automation.add_point use the same one.
+void removeTrack(Track* track) { control::removeTrack(track); }
 
 void registerTrackRemove(ControlRegistry& registry)
 {
@@ -194,21 +209,54 @@ void registerTrackRemove(ControlRegistry& registry)
 			preview.insert(QStringLiteral("dry_run"), true);
 			preview.insert(QStringLiteral("__transaction"),
 				control::transactionPayload(snapshot,
-					QStringLiteral("UNIMPLEMENTED: restore a deleted track"), QJsonObject(), false,
+					QStringLiteral("recreate the track from its captured XML"), QJsonObject(), true,
 					QStringLiteral("dry_run preview: nothing was changed")));
 			return ControlResult::success(preview);
 		}
 		const QString id = args.value(QStringLiteral("track")).toString();
-		const Song* song = Engine::getSong();
+		Song* song = Engine::getSong();
 		const int before = static_cast<int>(song->tracks().size());
+
+		// SPEC A16 deliverable 5: a deleted track cannot be restored in place -
+		// its journal id resolves to nullptr the moment it is freed - so the
+		// inverse is the OPERATION: capture the track's own XML first, then
+		// recreate it through Track::create(element, song), the call
+		// TrackContainer::loadSettings makes. Bounded: a track whose XML is
+		// over MaxTrackSnapshotChars refuses the inverse rather than keeping a
+		// truncated (corrupt) one.
+		QString capturedXml;
+		auto holder = std::make_shared<Track*>(track);
+		const bool captured = control::captureTrackXml(track, &capturedXml, MaxTrackSnapshotChars);
+		if (captured)
+		{
+			control::addUndoStep(
+				[song, capturedXml, holder]() {
+					*holder = control::restoreTrackFromXml(capturedXml, song);
+				},
+				[holder]() {
+					if (*holder != nullptr) { control::removeTrack(*holder); *holder = nullptr; }
+				});
+		}
 		removeTrack(track);
+		*holder = nullptr;
 
 		QJsonObject result;
 		result.insert(QStringLiteral("removed"), id);
 		result.insert(QStringLiteral("track_count"), before - 1);
 		result.insert(QStringLiteral("dry_run"), false);
 		result.insert(QStringLiteral("__transaction"),
-			trackSnapshot(snapshot, QStringLiteral("UNIMPLEMENTED: restore a deleted track")));
+			captured
+				? trackSnapshot(snapshot, QStringLiteral("recreate the track from its captured XML"),
+					QStringLiteral("action checkpoint: the track's own XML (Track::saveState) is "
+						"captured before the delete and the recorded undo step recreates it with "
+						"Track::create(element, song), the same call the project loader makes"),
+					true)
+				: trackSnapshot(snapshot, QStringLiteral("UNIMPLEMENTED for this track"),
+					QStringLiteral("snapshot only: this track's serialized state is larger than the "
+						"%1-character cap, and a truncated track is a corrupt track, so no inverse "
+						"was recorded - the before-state names what was removed")
+						.arg(MaxTrackSnapshotChars),
+					false));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
@@ -327,7 +375,15 @@ ControlResult setTrackSolo(const QJsonObject& args)
 	// keeps the action identical with and without a display (SPEC A13). Calling it
 	// ourselves in the GUI case too would apply it twice and corrupt
 	// mutedBeforeSolo, hence the branch.
-	track->addJournalCheckPoint();
+	//
+	// SPEC A16 deliverable 3: the action writes MORE THAN ONE OBJECT - the solo
+	// flag plus every other track's mute - so a single-object checkpoint would
+	// make one agent command cost N Ctrl+Z presses. Every song track goes into
+	// ONE composite checkpoint instead, so one undo (control.undo or the GUI's
+	// own stack, which is the same stack) restores the whole action.
+	QVector<JournallingObject*> step;
+	for (Track* songTrack : Engine::getSong()->tracks()) { step.append(songTrack); }
+	control::addUndoStep(step);
 	track->setSolo(value);
 	if (gui::getGUI() == nullptr) { track->toggleSolo(); }
 
@@ -339,12 +395,13 @@ ControlResult setTrackSolo(const QJsonObject& args)
 		control::transactionPayload(before, QStringLiteral("track.set_solo"),
 			QJsonObject{{QStringLiteral("track"), args.value(QStringLiteral("track")).toString()},
 				{QStringLiteral("solo"), !value}},
-			false,
-			QStringLiteral("partial: the ProjectJournal (Track checkpoint) reverses this track's solo "
-				"flag, but the same action writes the mute state of every track (the solo model's "
-				"dataChanged is connected to Track::toggleSolo by TrackView) and one checkpoint covers "
-				"one object, so a single control.undo does not reverse the whole action; the before-state "
-				"recorded here is a snapshot of every track")));
+			true,
+			QStringLiteral("composite checkpoint: every track of the song container is recorded "
+				"as ONE undo step, so the solo flag and the mute state of every other track "
+				"(which Track::toggleSolo writes from the solo model's dataChanged) are restored "
+				"together by one control.undo or one Ctrl+Z. LIMIT: Track::mutedBeforeSolo is "
+				"transient and is not part of the project file, so it is not restored - it is "
+				"re-derived on the next solo action")));
 	return ControlResult::success(result);
 }
 
@@ -391,88 +448,6 @@ void registerTrackSetSolo(ControlRegistry& registry)
 	cmd.handler = [](const QJsonObject& args) { return setTrackSolo(args); };
 	registry.registerCommand(cmd);
 }
-
-void registerTrackSetArm(ControlRegistry& registry)
-{
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("track.set_arm");
-	cmd.group = QStringLiteral("track");
-	cmd.verb = QStringLiteral("set_arm");
-	cmd.description = QStringLiteral("Arm or disarm a track for recording. Refused: this tree has no "
-		"record-arm on a song track.");
-	cmd.argsSchema = control::objectSchema({
-		{QStringLiteral("track"), control::stringProperty()},
-		{QStringLiteral("armed"), control::booleanProperty()},
-	}, {QStringLiteral("track"), QStringLiteral("armed")});
-	cmd.resultSchema = control::objectSchema({});
-	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject& args) {
-		// Honest refusal, not a fake success. Record-arm in this tree lives on the
-		// prototype MultiTrackRecorder (AudioEngine::recorder(), two capture
-		// streams keyed by input channel, task #556) and not on lmms::Track: there
-		// is no per-track armed flag to write, and inventing one would add a field
-		// to the track serialization format.
-		ControlResult error;
-		Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
-		if (track == nullptr) { return error; }
-		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("no record-arm exists on a %1 track in this build: arm state lives on the "
-				"prototype MultiTrackRecorder (AudioEngine::recorder(), input-channel keyed), not on the "
-				"song model").arg(control::trackTypeNameOf(track->type())));
-	};
-	registry.registerCommand(cmd);
-}
-
-void registerArrangementGetState(ControlRegistry& registry)
-{
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("arrangement.get_state");
-	cmd.group = QStringLiteral("arrangement");
-	cmd.verb = QStringLiteral("get_state");
-	cmd.description = QStringLiteral("Every track with its clips, addressed by the stable trk-<n> and "
-		"clip-<n> ids. The trk-<n> number is assigned at creation and persists in the project file. "
-		"Addressing is scoped to the SONG container: a track inside a nested container (the "
-		"<trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not "
-		"addressable by index.");
-	cmd.argsSchema = control::objectSchema({});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-		{QStringLiteral("clips"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-		{QStringLiteral("track_count"), control::integerProperty(0, MaxSongLength)},
-		{QStringLiteral("clip_count"), control::integerProperty(0, MaxSongLength)},
-	});
-	cmd.handler = [](const QJsonObject&) {
-		const QVector<control::ClipRef> refs = control::enumerateClips();
-		QJsonArray clips;
-		for (const control::ClipRef& ref : refs) { clips.append(control::clipState(ref)); }
-
-		QJsonArray tracks;
-		const TrackContainer::TrackList& list = Engine::getSong()->tracks();
-		for (int i = 0; i < static_cast<int>(list.size()); ++i)
-		{
-			QJsonObject entry = trackEditState(list[i], i);
-			QJsonArray clipIds;
-			for (const control::ClipRef& ref : refs)
-			{
-				if (ref.trackIndex == i) { clipIds.append(control::clipId(ref.ordinal)); }
-			}
-			entry.insert(QStringLiteral("clips"), clipIds);
-			entry.insert(QStringLiteral("selected"), control::selectedClipId().isEmpty() ? false
-				: clipIds.contains(control::selectedClipId()));
-			tracks.append(entry);
-		}
-
-		QJsonObject result;
-		result.insert(QStringLiteral("tracks"), tracks);
-		result.insert(QStringLiteral("clips"), clips);
-		result.insert(QStringLiteral("track_count"), tracks.size());
-		result.insert(QStringLiteral("clip_count"), clips.size());
-		result.insert(QStringLiteral("selected_clip"), control::selectedClipId());
-		return ControlResult::success(result);
-	};
-	registry.registerCommand(cmd);
-}
-
 } // namespace
 
 void registerArrangementCommands(ControlRegistry& registry)
@@ -482,8 +457,9 @@ void registerArrangementCommands(ControlRegistry& registry)
 	registerTrackRename(registry);
 	registerTrackSetMute(registry);
 	registerTrackSetSolo(registry);
-	registerTrackSetArm(registry);
-	registerArrangementGetState(registry);
+	// track.set_arm and arrangement.get_state live in
+	// ControlCommandsArrangementState.cpp (the 500-line ratchet).
+	registerArrangementStateCommands(registry);
 }
 
 } // namespace lmms

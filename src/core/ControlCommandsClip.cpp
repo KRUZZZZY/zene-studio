@@ -420,8 +420,15 @@ void registerClipSelect(ControlRegistry& registry)
 	}, {QStringLiteral("clip")});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("selected_clip"), control::stringProperty()},
+		{QStringLiteral("previous_clip"), control::stringProperty()},
 	});
-	cmd.mutating = true;
+	// SPEC A16: selection is control-surface VIEW state, not project state. The
+	// command is therefore NOT mutating: it records no transaction, so it cannot
+	// shadow or block the undo of a real edit (before this, a select left a
+	// reversible:false transaction on top of the record and control.undo
+	// refused). The previous selection travels in the result instead, so a
+	// client that wants the view restored has what it needs.
+	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {
 		const QString previous = control::selectedClipId();
 		const QString id = args.value(QStringLiteral("clip")).toString();
@@ -432,14 +439,7 @@ void registerClipSelect(ControlRegistry& registry)
 
 		QJsonObject result;
 		result.insert(QStringLiteral("selected_clip"), id);
-		QJsonObject before;
-		before.insert(QStringLiteral("selected_clip"), previous);
-		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(before, QStringLiteral("clip.select"),
-				QJsonObject{{QStringLiteral("clip"), previous}}, false,
-				QStringLiteral("selection is control-surface state, not project state: the GUI keeps its "
-					"selection in views (QGraphicsItem state) and the project file has no field for it, so "
-					"the ProjectJournal has no checkpoint to reverse")));
+		result.insert(QStringLiteral("previous_clip"), previous);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

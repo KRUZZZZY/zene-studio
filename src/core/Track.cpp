@@ -70,6 +70,13 @@ Track::Track( Type type, TrackContainer * tc ) :
 	// containers in document order.
 	m_id( ProjectIds::allocate() ),
 	m_name(),                       /*!< The track's name */
+	m_mutedBeforeSolo( false ),     /*!< Transient pre-solo mute state; written to
+	                                 * the file by saveTrack as an int, so an
+	                                 * uninitialised value made every save
+	                                 * nondeterministic (measured: the same fresh
+	                                 * track saved as mutedBeforeSolo=1 in one run
+	                                 * and 48 in the next, which StableTrackIdsTest
+	                                 * compares). */
 	m_mutedModel( false, this, tr( "Mute" ) ), /*!< For controlling track muting */
 	m_soloModel( false, this, tr( "Solo" ) ), /*!< For controlling track soloing */
 	m_clips()        /*!< The clips (segments) */

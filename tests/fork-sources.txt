@@ -241,3 +241,31 @@ src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsScript.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
+
+# ---- SPEC A16 reversibility contract (#623, lane post-alpha/reversibility) ----
+# New sources only. The command files this lane touches were already fork-NEW;
+# the two UPSTREAM-inherited files it extends (include/ProjectJournal.h,
+# src/core/ProjectJournal.cpp) are declared in tests/upstream-modifications.txt.
+#   ControlReversibility.{h,cpp}      the contract: class lookup + undo-step helper
+#   ControlReversibilityTable.cpp     THE classification table, one row per command
+#   ProjectRevisions.{h,cpp}          the keep-3 previous-revision set of project.save
+#   ReversibilityContractTest.cpp     apply -> undo -> read back, and the typed refusal
+include/ControlReversibility.h
+src/core/ControlReversibility.cpp
+src/core/ControlReversibilityTable.cpp
+include/ProjectRevisions.h
+src/core/ProjectRevisions.cpp
+# Split out of ControlCommandsProject.cpp / ControlCommandsArrangement.cpp so no
+# file crosses the 500-line ratchet (Gate 7) and the file-level commands are
+# readable next to each other.
+src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsArrangementState.cpp
+# Split so no test file crosses the 500-line ratchet either (Gate 7).
+tests/src/core/ReversibilityContractTest.cpp
+tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/ReversibilityTestSupport.h
+
+# ---- SPEC A16 acceptance transcript (#623, lane post-alpha/reversibility) ----
+# The raw apply -> undo -> read back transcript for one command of each class,
+# driven over the socket against the real binary (usage in its own docstring).
+tests/control-reversibility-transcript.py

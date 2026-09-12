@@ -23,6 +23,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <memory>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -31,7 +33,9 @@
 #include "AutomationClip.h"
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 
 namespace lmms
 {
@@ -85,9 +89,24 @@ ControlResult automationAddPoint(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 
 	const QJsonArray before = control::automationPointsJson(clip, parameter.model);
-	// SPEC A16: the clip is a JournallingObject, so this checkpoint is the
-	// inverse the engine's own undo stack replays.
-	clip->addJournalCheckPoint();
+	if (created)
+	{
+		// SPEC A16 deliverable 5: this call created a whole AutomationTrack,
+		// which no clip checkpoint can take back (the clip lives inside it). ONE
+		// action step, recorded before the point is written, removes the track
+		// again - so the first point is one undoable step like every later one.
+		// No redo is offered: re-issue automation.add_point instead.
+		auto holder = std::make_shared<Track*>(clip->getTrack());
+		control::addUndoStep([holder]() {
+			if (*holder != nullptr) { control::removeTrack(*holder); *holder = nullptr; }
+		});
+	}
+	else
+	{
+		// SPEC A16: the clip is a JournallingObject, so this checkpoint is the
+		// inverse the engine's own undo stack replays.
+		clip->addJournalCheckPoint();
+	}
 	const tick_t ticks = ticksArg(args);
 	// The wire value is the model's own unit; the clip stores the model's
 	// inverse-scaled value, because Song::processAutomations() applies

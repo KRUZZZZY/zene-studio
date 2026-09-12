@@ -21,6 +21,8 @@ set(LMMS_TESTS
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RelativePathsTest.cpp
+	src/core/ReversibilityContractTest.cpp
+	src/core/ReversibilityUndoTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RoutingGraphTest.cpp
@@ -101,7 +103,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# does it for the Lua Instrument binding; ControlDeviceCatalogueTest does it
 	# so PluginFactory discovers lv2effect/lv2instrument and the LV2 half of the
 	# device catalogue is real rather than empty.
-	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest")
+	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
+		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
+		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")

@@ -114,6 +114,17 @@ ControlResult controlRestoreDeviceState(const ControlDeviceHandle& handle, const
 	return ControlResult::success(result);
 }
 
+ControlResult controlRestoreCapturedState(const QString& targetId, const QString& pluginId,
+	const QByteArray& bytes)
+{
+	ControlTarget target;
+	ControlResult error;
+	if (!resolveControlTarget(targetId, &target, &error)) { return error; }
+	ControlDeviceHandle handle;
+	if (!resolveControlDevice(target, pluginId, &handle, &error)) { return error; }
+	return controlRestoreDeviceState(handle, bytes);
+}
+
 QString controlUserPresetDir(const ControlDeviceHandle& handle)
 {
 	return ConfigManager::inst()->userPresetsDir() + handle.folder + QLatin1Char('/');

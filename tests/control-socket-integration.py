@@ -901,12 +901,12 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
     for command in expected:
         if command not in recorded:
             fail("no transaction recorded for %s" % command, process, log_path)
-    for command in ("plugin.param_set", "plugin.bypass"):
+    for command in ("plugin.param_set", "plugin.bypass", "plugin.load",
+                    "plugin.state_load", "plugin.preset_load", "settings.set",
+                    "audio.device_set"):
         if not recorded[command][-1].get("reversible"):
             fail("%s must record reversible=true" % command, process, log_path)
-    for command in ("plugin.load", "plugin.unload", "plugin.state_save", "plugin.state_load",
-                    "plugin.preset_save", "plugin.preset_load", "settings.set",
-                    "audio.device_set"):
+    for command in ("plugin.unload", "plugin.state_save", "plugin.preset_save"):
         if recorded[command][-1].get("reversible"):
             fail("%s must honestly record reversible=false" % command, process, log_path)
     if recorded["plugin.load"][0].get("inverse", {}).get("op") != "plugin.unload":
@@ -1345,10 +1345,11 @@ def automation_flow(client, process, log_path, tmp, project, last_id):
     for command in ("automation.add_point", "automation.remove_point", "automation.clear"):
         if command not in recorded:
             fail("no transaction recorded for %s" % command, process, log_path)
-    if recorded["automation.add_point"][0].get("reversible") is not False:
-        fail("the add_point that created the automation track must record reversible=false: %r"
+    if recorded["automation.add_point"][0].get("reversible") is not True:
+        fail("the add_point that created the automation track must record reversible=true "
+             "(SPEC A16 #623: the created track is one undoable step): %r"
              % recorded["automation.add_point"][0], process, log_path)
-    if "snapshot only" not in str(recorded["automation.add_point"][0].get("mechanism", "")):
+    if "action checkpoint" not in str(recorded["automation.add_point"][0].get("mechanism", "")):
         fail("the created-track transaction does not name the mechanism: %r"
              % recorded["automation.add_point"][0], process, log_path)
     for transaction in recorded["automation.add_point"][1:]:
@@ -1603,8 +1604,9 @@ def main():
                 fail("no transaction recorded for %s" % expected, process, log_path)
         if not commands_recorded["mixer.set_volume"].get("reversible"):
             fail("mixer.set_volume was not recorded as reversible", process, log_path)
-        if commands_recorded["mixer.add_channel"].get("reversible"):
-            fail("mixer.add_channel must honestly report itself as not reversible", process, log_path)
+        if not commands_recorded["mixer.add_channel"].get("reversible"):
+            fail("mixer.add_channel must record reversible=true (SPEC A16 #623: the created "
+                 "channel is one undoable step, proved by the undo above)", process, log_path)
 
         # --- the editing flow: notes / clips / tracks (SPEC A16) ----------
         # The fixture ships one pattern track with one clip. Its clip is a
@@ -1831,14 +1833,20 @@ def main():
                 fail("no transaction recorded for %s" % expected, process, log_path)
             if not entry.get("reversible"):
                 fail("%s was not recorded as reversible" % expected, process, log_path)
-        for expected in ("track.add", "clip.select", "note.select", "track.set_solo"):
+        for expected in ("track.add", "track.set_solo"):
             entry = by_command.get(expected)
             if entry is None:
                 fail("no transaction recorded for %s" % expected, process, log_path)
-            if entry.get("reversible"):
-                fail("%s must honestly report itself as not reversible" % expected, process, log_path)
-            if not entry.get("mechanism"):
-                fail("%s recorded no reason for being irreversible" % expected, process, log_path)
+            if not entry.get("reversible"):
+                fail("%s must be recorded as reversible (SPEC A16 #623): %r"
+                     % (expected, entry), process, log_path)
+        # Selection is VIEW state, not project state. Since SPEC A16 these
+        # commands are not mutating at all, so they record NO transaction and
+        # cannot shadow or block the undo of a real edit.
+        for view_only in ("clip.select", "note.select"):
+            if by_command.get(view_only) is not None:
+                fail("%s must not record a transaction (view state, not project state)"
+                     % view_only, process, log_path)
 
         # --- track.remove, the one destructive command of the group --------
         # (dry_run previews it; the real call is exercised here and its
@@ -1865,8 +1873,15 @@ def main():
         if len(removals) != 2:
             fail("expected a dry_run and a real transaction for track.remove, got %r" % removals,
                  process, log_path)
-        if removals[0].get("reversible") or removals[-1].get("reversible"):
-            fail("track.remove must honestly report itself as not reversible: %r" % removals,
+        if not removals[-1].get("reversible"):
+            fail("track.remove must record reversible=true (SPEC A16 #623: the track's own "
+                 "XML is captured and the undo step recreates it): %r" % removals[-1],
+                 process, log_path)
+        if "recreate" not in str(removals[-1].get("mechanism", "")):
+            fail("track.remove does not name its inverse mechanism: %r" % removals[-1],
+                 process, log_path)
+        if "nothing was changed" not in str(removals[0].get("mechanism", "")):
+            fail("the dry_run preview does not say it changed nothing: %r" % removals[0],
                  process, log_path)
 
 

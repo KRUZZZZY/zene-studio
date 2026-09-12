@@ -31,6 +31,7 @@
 #include "ControlVocabulary.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "Engine.h"
 #include "MidiClient.h"
 #include "lmmsversion.h"
@@ -169,6 +170,26 @@ void registerSettingsSet(ControlRegistry& registry)
 
 		bool present = false;
 		const QString previous = configValue(cls, attribute, &present);
+		// SPEC A16: ConfigManager is not a JournallingObject, but the inverse is
+		// a bounded scalar, so it becomes ONE action step on the engine's own
+		// undo stack - and a key that did not exist is deleted again rather than
+		// left behind with an empty value.
+		control::addUndoStep(
+			[cls, attribute, previous, present]() {
+				if (present)
+				{
+					ConfigManager::inst()->setValue(cls, attribute, previous);
+				}
+				else
+				{
+					ConfigManager::inst()->deleteValue(cls, attribute);
+				}
+				ConfigManager::inst()->saveConfigFile();
+			},
+			[cls, attribute, value]() {
+				ConfigManager::inst()->setValue(cls, attribute, value);
+				ConfigManager::inst()->saveConfigFile();
+			});
 		ConfigManager::inst()->setValue(cls, attribute, value);
 		ConfigManager::inst()->saveConfigFile();
 
@@ -182,18 +203,15 @@ void registerSettingsSet(ControlRegistry& registry)
 				{QStringLiteral("value"), previous},
 				{QStringLiteral("present"), present}});
 		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), present ? QStringLiteral("settings.set")
-													   : QStringLiteral("UNIMPLEMENTED: unset "
-														   "the key (ConfigManager::deleteValue "
-														   "has no command)")},
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("settings.set")},
 				{QStringLiteral("args"),
 					QJsonObject{{QStringLiteral("key"), key},
 						{QStringLiteral("value"), previous}}}});
-		transaction.insert(QStringLiteral("reversible"), false);
+		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot only: ConfigManager is not a JournallingObject, so "
-				"control.undo cannot apply the recorded inverse; the config file itself is "
-				"rewritten in place"));
+			QStringLiteral("action checkpoint: the recorded undo step writes the previous value "
+				"back (or deletes the key when it did not exist) and saves the config file, "
+				"exactly as this command does"));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};
@@ -283,6 +301,19 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		bool present = false;
 		const QString previous = configValue(QStringLiteral("audioengine"),
 			QStringLiteral("audiodev"), &present);
+		// SPEC A16: the same action-step inverse settings.set uses - a bounded
+		// scalar in a subsystem the engine does not journal.
+		control::addUndoStep(
+			[previous]() {
+				ConfigManager::inst()->setValue(QStringLiteral("audioengine"),
+					QStringLiteral("audiodev"), previous);
+				ConfigManager::inst()->saveConfigFile();
+			},
+			[device]() {
+				ConfigManager::inst()->setValue(QStringLiteral("audioengine"),
+					QStringLiteral("audiodev"), device);
+				ConfigManager::inst()->saveConfigFile();
+			});
 		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("audiodev"),
 			device);
 		ConfigManager::inst()->saveConfigFile();
@@ -301,10 +332,11 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		transaction.insert(QStringLiteral("inverse"),
 			QJsonObject{{QStringLiteral("op"), QStringLiteral("audio.device_set")},
 				{QStringLiteral("args"), QJsonObject{{QStringLiteral("device"), previous}}}});
-		transaction.insert(QStringLiteral("reversible"), false);
+		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot only: the preference is written to the config file, which "
-				"is not journalled; the running device is unchanged until the next start"));
+			QStringLiteral("action checkpoint: the recorded undo step writes the previous device "
+				"name back and saves the config file; the RUNNING device is unchanged either way "
+				"(a live switch happens only at the next start)"));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};
