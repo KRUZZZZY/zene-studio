@@ -25,8 +25,11 @@
 #include <QDir>
 #include <QRegularExpression>
 
+#include <algorithm>
+
 #include "RenderManager.h"
 
+#include "Engine.h"
 #include "PatternStore.h"
 #include "Song.h"
 
@@ -56,6 +59,7 @@ void RenderManager::abortProcessing()
 		m_activeRenderer->abortProcessing();
 	}
 	restoreMutedState();
+	endStemExport();
 }
 
 // Called to render each new track when rendering tracks individually.
@@ -67,6 +71,7 @@ void RenderManager::renderNextTrack()
 	{
 		// nothing left to render
 		restoreMutedState();
+		endStemExport();
 		emit finished();
 	}
 	else
@@ -81,43 +86,56 @@ void RenderManager::renderNextTrack()
 			track->setMuted(track != renderTrack);
 		}
 
-		// for multi-render, prefix each output file with a different number
-		int trackNum = m_tracksToRender.size() + 1;
+		QString path;
+		if (m_exportingStems)
+		{
+			// Stems are queued in track order (see exportStems), so the counter
+			// gives each file the number of the track it came from.
+			path = pathForStem(renderTrack, ++m_stemsRendered, m_stemTotal);
+		}
+		else
+		{
+			// for multi-render, prefix each output file with a different number
+			int trackNum = m_tracksToRender.size() + 1;
+			path = pathForTrack(renderTrack, trackNum);
+		}
 
-		render( pathForTrack(renderTrack, trackNum) );
+		render( path );
+	}
+}
+
+// Collect every unmuted Instrument/Sample track, from the song editor and from
+// the beat/bassline containers, into the rendering queue. Used by both the
+// legacy per-track export and the stem export.
+void RenderManager::collectTracksToRender()
+{
+	m_unmuted.clear();
+
+	const TrackContainer::TrackList* containers[] = {
+		&Engine::getSong()->tracks(),
+		&Engine::patternStore()->tracks()
+	};
+
+	for (const auto* tl : containers)
+	{
+		for (const auto& tk : *tl)
+		{
+			Track::Type type = tk->type();
+
+			// Don't render automation tracks
+			if ( tk->isMuted() == false &&
+					( type == Track::Type::Instrument || type == Track::Type::Sample ) )
+			{
+				m_unmuted.push_back(tk);
+			}
+		}
 	}
 }
 
 // Render the song into individual tracks
 void RenderManager::renderTracks()
 {
-	const TrackContainer::TrackList& tl = Engine::getSong()->tracks();
-
-	// find all currently unnmuted tracks -- we want to render these.
-	for (const auto& tk : tl)
-	{
-		Track::Type type = tk->type();
-
-		// Don't render automation tracks
-		if ( tk->isMuted() == false &&
-				( type == Track::Type::Instrument || type == Track::Type::Sample ) )
-		{
-			m_unmuted.push_back(tk);
-		}
-	}
-
-	const TrackContainer::TrackList& t2 = Engine::patternStore()->tracks();
-	for (const auto& tk : t2)
-	{
-		Track::Type type = tk->type();
-
-		// Don't render automation tracks
-		if ( tk->isMuted() == false &&
-				( type == Track::Type::Instrument || type == Track::Type::Sample ) )
-		{
-			m_unmuted.push_back(tk);
-		}
-	}
+	collectTracksToRender();
 
 	// copy the list of unmuted tracks into our rendering queue.
 	// we need to remember which tracks were unmuted to restore state at the end.
@@ -125,6 +143,57 @@ void RenderManager::renderTracks()
 
 	renderNextTrack();
 }
+
+// Render each unmuted track into its own file as a stem.
+void RenderManager::exportStems(const StemExportOptions& options)
+{
+	m_stemOptions = options;
+	collectTracksToRender();
+
+	if (m_unmuted.empty())
+	{
+		// Nothing to export: behave like an empty render queue rather than
+		// leaving the Song's render settings modified.
+		emit finished();
+		return;
+	}
+
+	// Nothing is muted yet, so this is the whole-project length -- the length the
+	// mix renders to. Freeze it now: the per-stem mute pass below would otherwise
+	// shrink `updateLength()` to the single track being rendered.
+	Engine::getSong()->updateLength();
+	m_stemLengthBars = Engine::getSong()->length();
+
+	m_exportingStems = true;
+	m_stemTotal = static_cast<int>(m_unmuted.size());
+	m_stemsRendered = 0;
+
+	// renderNextTrack() pops from the back, so reverse to render (and number) the
+	// stems in track order.
+	m_tracksToRender.assign(m_unmuted.rbegin(), m_unmuted.rend());
+
+	auto* song = Engine::getSong();
+	if (m_stemOptions.alignToProjectLength && m_stemLengthBars > 0)
+	{
+		song->setExportLengthOverrideBars(m_stemLengthBars);
+	}
+	song->setExportTailBars(std::max(m_stemOptions.tailBars, 0));
+
+	renderNextTrack();
+}
+
+// Put the Song's render-length settings back to the whole-project defaults.
+void RenderManager::endStemExport()
+{
+	if (!m_exportingStems) { return; }
+
+	m_exportingStems = false;
+
+	auto* song = Engine::getSong();
+	song->setExportLengthOverrideBars(0);
+	song->setExportTailBars(1);
+}
+
 
 // Render the song into a single track
 void RenderManager::renderProject()
@@ -176,6 +245,45 @@ QString RenderManager::pathForTrack(const Track *track, int num)
 	name = QString( "%1_%2%3" ).arg( num ).arg( name ).arg( extension );
 	return QDir(m_outputPath).filePath(name);
 }
+
+// Stem file name: `<index>_<track name><extension>`, index zero-padded so that a
+// directory listing sorts in track order. The index is what keeps two tracks that
+// share a name (or an empty name) from overwriting each other.
+QString RenderManager::stemFileName(const QString& trackName, int index, int total,
+		const QString& extension)
+{
+	// Track::FILENAME_FILTER is a PCRE-incompatible pattern, so
+	// QRegularExpression rejects it and QString::replace() with it is a silent
+	// no-op (see docs/STEM-EXPORT.md, "Defects found"). Filter the characters
+	// explicitly instead: it is also cheaper than a regex per stem.
+	static const QString illegal = QStringLiteral("\"*/:<>?\\|");
+	QString name;
+	name.reserve(trackName.size());
+	for (const QChar c : trackName)
+	{
+		if (c.unicode() < 0x20 || c.unicode() == 0x7f || illegal.contains(c)) { continue; }
+		name.append(c);
+	}
+	name = name.trimmed();
+	if (name.isEmpty()) { name = QStringLiteral("track"); }
+
+	// At least two digits, wider when the project has more than 99 tracks.
+	const int digits = static_cast<int>(QString::number(std::max(total, 1)).size());
+	const int width = std::max(2, digits);
+
+	return QStringLiteral("%1_%2%3")
+		.arg(index, width, 10, QLatin1Char('0'))
+		.arg(name)
+		.arg(extension);
+}
+
+// Determine the output path for a stem
+QString RenderManager::pathForStem(const Track *track, int index, int total) const
+{
+	return QDir(m_outputPath).filePath(stemFileName(track->name(), index, total,
+			ProjectRenderer::getFileExtensionFromFormat(m_format)));
+}
+
 
 void RenderManager::updateConsoleProgress()
 {

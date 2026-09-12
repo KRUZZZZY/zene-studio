@@ -157,3 +157,6 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/SessionModelTest.cpp
 tools/local-ci.sh
+tests/src/core/StemExportTest.cpp
+tests/src/core/StemExportTestSupport.h
+tools/stem-export-demo.py

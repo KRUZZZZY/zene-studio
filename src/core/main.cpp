@@ -29,6 +29,7 @@
 
 #include <QDebug>
 #include <QDesktopServices>
+#include <QDir>
 #include <QFileInfo>
 #include <QLocale>
 #include <QTimer>
@@ -170,6 +171,7 @@ void printHelp()
 		"  compress <in>                         Compress file <in>\n"
 		"  render <project> [options...]         Render given project file\n"
 		"  rendertracks <project> [options...]   Render each track to a different file\n"
+		"  exportstems <project> [options...]    Export each track as its own stem file\n"
 		"  upgrade <in> [out]                    Upgrade file <in> and save as <out>\n"
 		"                                        Standard out is used if no output file\n"
 		"                                        is specified\n"
@@ -188,7 +190,7 @@ void printHelp()
 		"          geometry is <xsizexysize+xoffset+yoffsety>.\n"
 		"      --import <in> [-e]         Import MIDI or Hydrogen file <in>.\n"
 		"          If -e is specified zene exits after importing the file.\n"
-		"\nOptions for \"render\" and \"rendertracks\":\n"
+		"\nOptions for \"render\", \"rendertracks\" and \"exportstems\":\n"
 		"  -a, --float                    Use 32bit float bit depth\n"
 		"  -b, --bitrate <bitrate>        Specify output bitrate in KBit/s\n"
 		"          Default: 160.\n"
@@ -204,8 +206,12 @@ void printHelp()
 		"  -o, --output <path>            Render into <path>\n"
 		"          For \"render\", provide a file path\n"
 		"          For \"rendertracks\", provide a directory path\n"
+		"          For \"exportstems\", provide a directory path (required)\n"
 		"          If not specified, render will overwrite the input file\n"
 		"          For \"rendertracks\", this might be required\n"
+		"      --tail-bars <bars>         Bars rendered past the project end so an\n"
+		"          effect tail is not truncated. Default: 1 (the whole-project\n"
+		"          render's convention). \"exportstems\" only.\n"
 		"  -p, --profile <out>            Dump profiling information to file <out>\n"
 		"      --run-script <file>        Run the Lua script <file> headless and exit\n"
 		"          Prints the script's LuaLog output to stdout\n"
@@ -260,6 +266,9 @@ int main( int argc, char * * argv )
 	bool allowRoot = false;
 	bool renderLoop = false;
 	bool renderTracks = false;
+	bool renderStems = false;
+	int stemTailBars = 1;
+	bool outputSpecified = false;
 	int scriptExitCode = EXIT_SUCCESS;
 	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile,
 			scriptFile;
@@ -287,6 +296,11 @@ int main( int argc, char * * argv )
 		{
 			coreOnly = true;
 			renderTracks = true;
+		}
+		else if (arg == "exportstems" || arg == "--exportstems")
+		{
+			coreOnly = true;
+			renderStems = true;
 		}
 		else if (arg == "--run-script")
 		{
@@ -484,7 +498,8 @@ int main( int argc, char * * argv )
 			return EXIT_SUCCESS;
 		}
 		else if( arg == "render" || arg == "--render" || arg == "-r" ||
-			arg == "rendertracks" || arg == "--rendertracks" )
+			arg == "rendertracks" || arg == "--rendertracks" ||
+			arg == "exportstems" || arg == "--exportstems" )
 		{
 			++i;
 
@@ -512,6 +527,24 @@ int main( int argc, char * * argv )
 
 
 			renderOut = QString::fromLocal8Bit( argv[i] );
+			outputSpecified = true;
+		}
+		else if( arg == "--tail-bars" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No tail length specified" );
+			}
+
+			bool ok = false;
+			const int bars = QString( argv[i] ).toInt( &ok );
+			if( !ok || bars < 0 )
+			{
+				return usageError( QString( "Invalid tail length %1" ).arg( argv[i] ) );
+			}
+			stemTailBars = bars;
 		}
 		else if( arg == "--format" || arg == "-f" )
 		{
@@ -772,10 +805,24 @@ int main( int argc, char * * argv )
 
 		// when rendering multiple tracks, renderOut is a directory
 		// otherwise, it is a file, so we need to append the file extension
-		if ( !renderTracks )
+		if ( !renderTracks && !renderStems )
 		{
 			renderOut = baseName( renderOut ) +
 				ProjectRenderer::getFileExtensionFromFormat(eff);
+		}
+
+		if ( renderStems )
+		{
+			// A stem export writes many files, so the destination must be a
+			// directory the user asked for -- never a guess next to the project.
+			if ( !outputSpecified )
+			{
+				return usageError( "exportstems needs an output directory (-o <dir>)" );
+			}
+			if ( !QDir().mkpath( renderOut ) )
+			{
+				return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
+			}
 		}
 
 		// create renderer
@@ -795,7 +842,13 @@ int main( int argc, char * * argv )
 		}
 
 		// start now!
-		if ( renderTracks )
+		if ( renderStems )
+		{
+			StemExportOptions stemOptions;
+			stemOptions.tailBars = stemTailBars;
+			r->exportStems( stemOptions );
+		}
+		else if ( renderTracks )
 		{
 			r->renderTracks();
 		}

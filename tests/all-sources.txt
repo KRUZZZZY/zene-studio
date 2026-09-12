@@ -1098,6 +1098,8 @@ tests/src/core/ScriptEngineTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SlideNotesTest.cpp
+tests/src/core/StemExportTest.cpp
+tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp

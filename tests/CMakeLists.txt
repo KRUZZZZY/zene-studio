@@ -29,6 +29,7 @@ set(LMMS_TESTS
 	src/core/ScriptEngineTest.cpp
 	src/core/ScriptStabilisationTest.cpp
 	src/core/SlideNotesTest.cpp
+	src/core/StemExportTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/tracks/AutomationTrackTest.cpp
@@ -164,6 +165,12 @@ endif()
 # it needs a Qt platform plugin even though it is guiless (same reason as
 # PluginPortsMigrationTest).
 set_tests_properties(RemotePluginClientE2ETest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# StemExportTest drives the real render path (Engine + RenderManager +
+# ProjectRenderer + AudioFileWave) on a project it writes to a temporary
+# directory, so it needs the same headless Qt platform as the test above.
+set_tests_properties(StemExportTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
