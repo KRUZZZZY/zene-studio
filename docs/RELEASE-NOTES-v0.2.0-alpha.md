@@ -39,13 +39,15 @@ work under GPL-2.0-or-later and keeping them is a condition of the licence, not 
 **The residue is narrower than earlier drafts of this text claimed, and several things once listed here are
 renamed rather than kept** — verified against this tree:
 - **Kept deliberately, because renaming it is an ABI break**: the `lmms_plugin_main` entry symbol
-  (`src/core/Plugin.cpp:228`). That symbol is *why* existing native plugins still load unchanged; renaming it
+  (`src/core/Plugin.cpp`, the `pi.library->resolve("lmms_plugin_main")` lookup). That symbol is *why* existing native plugins still load unchanged; renaming it
   would be a deliberate break and would be announced as one. Alongside it, the internal identifiers no user
   sees — the `lmms::` namespace, the `LMMS_*` macros and file names such as `lmmsconfig.h` — which were assessed
   with their size and cost and deliberately not attempted.
-- **Backwards compatibility, not residue**: `DataFile.cpp` **writes** `<zene-project>`
-  (`src/core/DataFile.cpp:128/136/313`) and its **reader still accepts** the old `<lmms-project>` root
-  (`:1741-1742`), so old files open and new files are unambiguous.
+- **Backwards compatibility, not residue**: `DataFile.cpp` **writes** `<zene-project>` (the string occurs
+  three times in `src/core/DataFile.cpp`: the document/root construction, the root element creation and
+  `documentElement().setTagName`) and its **reader still accepts** the old `<lmms-project>` root (the
+  `firstChildElement("lmms-project")` fallback beside `firstChildElement("zene-project")`), so old files open
+  and new files are unambiguous.
 - **No longer true, and corrected here**: the plugin-logo resource key is **`zene-plugin-logo`**, not
   `lmms-plugin-logo`; and the **JACK and PulseAudio client identity is `Zene Studio`**
   (`AudioPulseAudio.cpp` names the stream `Zene Studio`), not `lmms`.
@@ -58,9 +60,10 @@ record is left as it was written; **the limitations page's "The name, honestly" 
 **Files we write identify us now, not upstream.** The WAV files this build renders carry
 `Zene Studio (libsndfile-…)` in their software tag where they used to credit LMMS. It is a metadata string, not
 audio — the rendered samples are provably identical, and we checked that specifically — but it is the kind of
-trace that should not survive a rename. Verified against this tree: the tag is set at
-`src/core/audio/AudioFileWave.cpp:91` and `:85` of the FLAC writer (`sf_set_string(m_sf, SF_STR_SOFTWARE,
-"Zene Studio")`), and the chunk was read back out of a real render — `tests/integration-logs-3d/final/chunk-parse.log`
+trace that should not survive a rename. Verified against this tree: the tag is the
+`sf_set_string(m_sf, SF_STR_SOFTWARE, "Zene Studio")` call in the WAV writer
+(`src/core/audio/AudioFileWave.cpp`) and its twin in the FLAC writer (`src/core/audio/AudioFileFlac.cpp`), and
+the chunk was read back out of a real render — `tests/integration-logs-3d/final/chunk-parse.log`
 records `LIST chunk: INFOISFT Zene Studio (libsndfile-1.2.2)` where the earlier merge train's render held
 `LMMS (libsndfile-1.2.2)`, the two files differing in that chunk and nothing else (`docs/INTEGRATION-MERGES-3B.md`,
 the `INFOISFT` comparison).
@@ -80,7 +83,7 @@ provisioned and compiled in, and **instrument** hosting works: load a VST3 instr
 into it, hear audio, save the project, reload it and find the instrument and its state intact.
 The witness is verified in this tree: the only instrument this release is proven against is the
 purpose-built MIT VST3 fixture that ships in the source, `tests/data/vst3-test-instrument/`, with the
-standalone probe `Vst3InstrumentFixtureProbe` (`tests/CMakeLists.txt:806-821`) and the SDK's own validator
+standalone probe `Vst3InstrumentFixtureProbe` (its `add_executable` target in `tests/CMakeLists.txt`) and the SDK's own validator
 result recorded in `docs/VST3-INSTRUMENT-FIXTURE.md` §0 (47 tests passed, 0 failed, including *"No bypass
 parameter found. This is an instrument."*) and §5 (the fixture consumes MIDI from `ProcessData::inputEvents`
 and renders audio in response: 16/16 checks).
@@ -91,7 +94,7 @@ and its state survives save/reload of the project"), and the lane `post-alpha/in
 wrote it is an ancestor of this tip (`git merge-base --is-ancestor post-alpha/instrument-hosting-impl
 2239f3cb6` → 0). The end-to-end claim is therefore settled here rather than owed to the freeze. **The
 in-tree regression test for that load path is not run by CI** — it lives behind
-`WANT_VST3_TEST_INSTRUMENT` (default `OFF`), as the paragraph below states.
+the `WANT_VST3_TEST_INSTRUMENT` option (`tests/CMakeLists.txt`, default `OFF`), as the paragraph below states.
 
 **The instrument's own editor does not open yet** — but the instrument window does, and we ran it rather than
 assuming: load a VST3 instrument, and a window opens listing that plugin's controls in the host's generated
@@ -105,8 +108,8 @@ Verified against this tree: the shipped-binary run is in the tree —
 instrument track on the "Bass" track, on the pre-fix and the post-fix binary alike: the window opens, the
 process stays alive, and the window contains *"Controls for Zene VST3 Test Instrument"*, a `Level` knob and the
 disclosure line. Two qualifications belong with it, and both were checked. **That run is out of band, not
-CI**: the two VST3 instrument suites sit behind `WANT_VST3_TEST_INSTRUMENT` (`tests/CMakeLists.txt:796`,
-default `OFF`), so the default CI configuration neither builds nor runs them — the guard was proven by running
+CI**: the two VST3 instrument suites sit behind the `WANT_VST3_TEST_INSTRUMENT` option
+(`tests/CMakeLists.txt`, default `OFF`), so the default CI configuration neither builds nor runs them — the guard was proven by running
 the suite out of band, green with the guard and `SIGSEGV` exit 139 at address `0x8` without it
 (`docs/INSTRUMENT-VIEW-SAFETY.md` §4). And **no physical display was used** — offscreen and Xvfb only (§6.1
 names what a desktop session would still add).
@@ -394,8 +397,10 @@ prove the fallback; no test drives the surface against a real audio backend.
 - **Auto-mastering on the command line** (`zene master`): one render, several measured candidates scored
   against a named loudness target with integrated LUFS, short-term maximum and true peak. It **generates and
   measures; it does not pick a "best"** — there is no preference scorer.
-  Verified against this tree: the subcommand is `master` (alias `--master`) in `src/core/main.cpp:371`, with its
-  usage line at `:177` and its options at `:230-237`, and the run prints one line per candidate (`:281-286`).
+  Verified against this tree: the subcommand is `master` (alias `--master`), dispatched from the argument
+  parser in `src/core/main.cpp`; its usage line is in that file's usage text, its options under
+  `Options for "master":`, and the run prints one line per candidate (the `Auto-mastering: %d candidates`
+  header, then a row each).
   The candidate list too: `docs/AUTO-MASTERING.md` §0 is the lane's measured wave 1 — **one** project render
   feeds **five** mastering candidates, each scored with the merged BS.1770-4 meter against a named target, and
   explicitly not ranked. Lane `post-alpha/auto-mastering` is an ancestor of this tip.
@@ -501,10 +506,10 @@ prove the fallback; no test drives the surface against a real audio backend.
   cannot be saved also no longer leaves the document in a **degraded state that disabled autosave and undo
   until restart**.
   Verified against this tree: the two renames that publish a saved project are now checked and their failures
-  propagated. `src/core/DataFile.cpp:461-490` carries the checked sequence the pre-fix code discarded (the
-  comment there records that the old code "returned true unconditionally"), the move to `.bak` at `:494`, the
-  rename into place at `:510` and its rollback at `:516` are each failure-checked, and `writeFile()` returns
-  `false` on every failure path (`:485`, `:494`, `:510`, `:523`). `docs/SAVELOAD-INTEGRITY.md` §1 lists this as
+  propagated. `DataFile::writeFile()` in `src/core/DataFile.cpp` carries the checked sequence the pre-fix code
+  discarded (the comment there records that the old code "returned true unconditionally"): the move to `.bak`,
+  the rename into place and its rollback are each failure-checked, and `writeFile()` returns `false` on every
+  failure path. `docs/SAVELOAD-INTEGRITY.md` §1 lists this as
   D3 ("rename failures discarded, `writeFile` returned `true` regardless") with the tests that cover it; the
   lane `post-alpha/saveload-integrity` is an ancestor of this tip. This bullet and the "Saving no longer reports
   success when it failed" bullet that used to sit above it made the same claim twice — the two are merged here,
@@ -559,11 +564,11 @@ not open a 0.2 project in an older build. Each save also writes a `.bak` file ne
 location is documented below. The version of the application that wrote a project is stamped into the file,
 and that is what drives the behaviour above.
 Verified against this tree: the `.bak` is `<project file>.bak`, beside the project —
-`src/core/DataFile.cpp:347` composes `fullName + ".bak"` and `:435` moves the current file there before the
-new one is renamed into place at `:438` (skipped when `app/disablebackup` is set, `:427`) —
-and `creatorversion` is the project-root attribute recording the version of the build that wrote the file
-(written at `:140` and `:2105`, read back at `:2179`), which drives both the "Version difference" notice and
-the selection of the upgrade routine to run (`legacyFileVersion()`, `:2226-2238`).
+`src/core/DataFile.cpp` composes `fullName + ".bak"` and moves the current file there before the new one is
+renamed into place, skipped when `app/disablebackup` is set — and `creatorversion` is the project-root
+attribute recording the version of the build that wrote the file (set from `LMMS_VERSION` wherever that file
+creates the root, read back on load), which drives both the "Version difference" notice and the selection of
+the upgrade routine to run (`DataFile::legacyFileVersion()`).
 
 ## Coming from 0.1.0-alpha
 
@@ -579,12 +584,13 @@ unchanged, so existing native plugins still load.** The licence headers, copyrig
 from LMMS" attribution also stay, because this is a derivative work under GPL-2.0-or-later and keeping them is
 a condition of the licence.
 Verified against this tree: the adoption is real code, not a promise —
-`ConfigMigration::adoptConfigFile` and `adoptWorkingDir` (`src/core/ConfigManager.cpp:790`, `:823`, called from
-`:709-790`) rename the legacy file/directory into the new name where that is possible, copy where it is not,
-and as a last resort keep reading the legacy path so the user's settings are never orphaned; it is exercised by
-`tests/src/core/ConfigMigrationTest.cpp` and declared in `include/ConfigManager.h:319-336`. Read-both is in the
-reader (`src/core/DataFile.cpp:1739`, "Read-both: files written before the rename carry the legacy root name")
-and write-new in the writer (`:2277`, "files written by this build say Zene Studio"). This is commit
+`ConfigMigration::adoptConfigFile` and `adoptWorkingDir` (`src/core/ConfigManager.cpp`, defined in
+`ConfigMigration` and called from `ConfigManager`'s constructor) rename the legacy file/directory into the new
+name where that is possible, copy where it is not, and as a last resort keep reading the legacy path so the
+user's settings are never orphaned; it is exercised by `tests/src/core/ConfigMigrationTest.cpp` and declared in
+`include/ConfigManager.h`. Read-both is in the reader (`src/core/DataFile.cpp`, "Read-both: files written
+before the rename carry the legacy root name") and write-new in the writer (same file, "files written by this
+build say Zene Studio"). This is commit
 `6c1ff660c` ("user state is migrated, not orphaned"), on lane `post-alpha/rename-complete`, which is an
 ancestor of this tip.
 

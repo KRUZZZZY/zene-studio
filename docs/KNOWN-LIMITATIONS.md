@@ -38,17 +38,17 @@ that is this page's fault — report it and it gets added.
   everything else in that edit is either already carried above in a newer form or deliberately excluded — see
   `tests/integration-logs-3f/`.*
 - **Every save writes a `.bak` next to your project.** Verified in the tree: the backup is
-  `<project file>.bak`, beside the project — `src/core/DataFile.cpp:347` composes `fullName + ".bak"` and
-  `:435` moves the current file there before the new one is renamed into place at `:438`. It is not written
-  when the `app/disablebackup` setting is on (`:427`).
+  `<project file>.bak`, beside the project — `src/core/DataFile.cpp` composes `fullName + ".bak"` and moves the
+  current file there before the new one is renamed into place. It is not written when the `app/disablebackup`
+  setting is on.
 
 ## Files, formats and older builds — read this before you trust a project file
 
 - **The version of the application that wrote a project is stamped into the file** (`creatorversion`), and that
   is what drives the behaviour below. Verified in the tree: `creatorversion` is an attribute of the project
-  root, written as the writing build's version string (`src/core/DataFile.cpp:140`, `:2105`) and read back on
-  load (`:2179`), where it drives both the "Version difference" notice and the choice of upgrade routine to
-  run (`legacyFileVersion()`, `:2226-2238`).
+  root, written as the writing build's version string (`LMMS_VERSION`, set wherever `src/core/DataFile.cpp`
+  creates the root) and read back on load, where it drives both the "Version difference" notice and the choice
+  of upgrade routine to run (`DataFile::legacyFileVersion()`).
   The behaviour half is checked at source level, which is the strongest check available here: the elements an
   older reader has no code path for, it cannot keep. `git show origin/master:src/core/Song.cpp` matches the
   child element names `controllers`, `keymaps`, `scales`, `track` and `trackcontainer` and **nothing else**;
@@ -74,9 +74,9 @@ that is this page's fault — report it and it gets added.
   file the platform refuses to rename over), the save is refused **and you are told**, rather than reporting
   success.
   Verified in the tree: the two renames that publish a saved project are now checked and their failures
-  propagated — `src/core/DataFile.cpp:461-490` is the checked sequence the pre-fix code replaced with an
-  unconditional `true`, the rename into place at `:510` and its rollback at `:516` are each failure-checked, and
-  `writeFile()` returns `false` on every failure path (`:485`, `:494`, `:510`, `:523`). `docs/SAVELOAD-INTEGRITY.md`
+  propagated — `DataFile::writeFile()` in `src/core/DataFile.cpp` is the checked sequence the pre-fix code
+  replaced with an unconditional `true`, the rename into place and its rollback are each failure-checked, and
+  `writeFile()` returns `false` on every failure path. `docs/SAVELOAD-INTEGRITY.md`
   §1 (D3) is the lane's report and names the tests that cover it; the lane is an ancestor of this tip.
 
   Related and **fixed in this release too**: a failed *open* used to leave modified-tracking, undo journalling
@@ -103,8 +103,8 @@ that is this page's fault — report it and it gets added.
   `docs/INSTRUMENT-VIEW-SAFETY.md` §3 drove the shipped binary under Xvfb against a project carrying a VST3
   instrument track on the "Bass" track — pre-fix and post-fix the window opens, the process stays alive, and
   the window shows *"Controls for Zene VST3 Test Instrument"*, a `Level` knob and the disclosure line. The
-  suite that guards the entry point sits behind `WANT_VST3_TEST_INSTRUMENT` (`tests/CMakeLists.txt:796`, default
-  `OFF`), so the default CI configuration does not build or run it; the guard was proven by running it out of
+  suite that guards the entry point sits behind the `WANT_VST3_TEST_INSTRUMENT` option
+  (`tests/CMakeLists.txt`, default `OFF`), so the default CI configuration does not build or run it; the guard was proven by running it out of
   band, green with it and `SIGSEGV` exit 139 at address `0x8` without it (§4).
 - **Instrument hosting is new and narrow.** One instrument per track, MIDI in to audio out. **No third-party
   VST3 instrument has been tested by us** — the only instrument this release has been proven against is a
@@ -232,7 +232,7 @@ that is this page's fault — report it and it gets added.
   **24 keys and closed** (§3), the mutator refuses anything outside it, the consent state defaults to all-false,
   and the preview renders the exact bytes produced; the packager kill switch is `option(ZENE_TELEMETRY … ON)`
   (`CMakeLists.txt:140`), whose `OFF` compiles the client and its networking code out (proved in that
-  document's §5 and listed in `src/CMakeLists.txt:376`). `src/core/Telemetry.cpp`,
+  document's §5 and listed in the root `CMakeLists.txt` (`IF(ZENE_TELEMETRY_ENABLED)`)). `src/core/Telemetry.cpp`,
   `src/core/TelemetryNetworkTransport.cpp` and `src/gui/TelemetryConsentDialog.cpp` are present. The lane
   `post-alpha/telemetry` is an ancestor of this tip.
 - **Telemetry v1 is inert: there is no server to send to yet.** The client is complete and refuses to open a
@@ -245,10 +245,11 @@ This release renames the product to Zene Studio: the application name, the packa
 page, the configuration and project paths (migrated from the old ones, so your settings are adopted rather than
 orphaned), the MIME types, the names other audio software sees us by, and the plugin logo.
 Verified in the tree: the migration is real code, not the sentence's assumption —
-`ConfigMigration::adoptConfigFile` and `adoptWorkingDir` (`src/core/ConfigManager.cpp:790`, `:823`, called from
-`:709-790`) rename the legacy config file and working directory into the new names where that is possible, copy
-where it is not, and as a last resort keep reading the legacy path so nothing is orphaned; they are exercised by
-`tests/src/core/ConfigMigrationTest.cpp` and declared in `include/ConfigManager.h:319-336` (commit `6c1ff660c`,
+`ConfigMigration::adoptConfigFile` and `adoptWorkingDir` (`src/core/ConfigManager.cpp`, defined in
+`ConfigMigration` and called from `ConfigManager`'s constructor) rename the legacy config file and working
+directory into the new names where that is possible, copy where it is not, and as a last resort keep reading the
+legacy path so nothing is orphaned; they are exercised by `tests/src/core/ConfigMigrationTest.cpp` and declared
+in `include/ConfigManager.h` (commit `6c1ff660c`,
 lane `post-alpha/rename-complete`, an ancestor of this tip). **This sentence used to carry a marker saying it was
 contradicted by the tree, and at the release-prep base it was:** at `34c1f4f86` there was no migration code,
 `docs/WAVE-R-RENAME.md` §6 ("User state") recorded that `~/.lmmsrc.xml`, `~/Documents/lmms/` and the
