@@ -39,11 +39,20 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsControl.cpp
+	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp
 	core/ControlCommandsNotes.cpp
+	core/ControlCommandsPlugin.cpp
+	core/ControlCommandsPluginParams.cpp
+	core/ControlCommandsPluginPreset.cpp
+	core/ControlCommandsPluginState.cpp
 	core/ControlCommandsProject.cpp
+	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
 	core/ControlCommandsTransport.cpp
+	core/ControlDeviceCatalogue.cpp
+	core/ControlDeviceState.cpp
+	core/ControlDeviceSupport.cpp
 	core/ControlEditSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlSchema.cpp

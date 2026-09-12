@@ -171,3 +171,21 @@ src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlEditSupport.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+
+# ---- Agent control surface: plugin/dsp + settings command groups ----
+# Lane post-alpha/cmd-plugins off post-alpha/agent-control-surface. The device
+# catalogue and device support shared by plugin.list / dsp.get_state, the
+# plugin.* device+parameter+state+preset commands, and the settings.*/audio.*/
+# midi.*/app.* group. Registered as fork-NEW so the fork-scoped ratchets measure
+# them.
+include/ControlDeviceSupport.h
+src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsPlugin.cpp
+src/core/ControlCommandsPluginParams.cpp
+src/core/ControlCommandsPluginPreset.cpp
+src/core/ControlCommandsPluginState.cpp
+src/core/ControlCommandsSettings.cpp
+src/core/ControlDeviceCatalogue.cpp
+src/core/ControlDeviceState.cpp
+src/core/ControlDeviceSupport.cpp
+
