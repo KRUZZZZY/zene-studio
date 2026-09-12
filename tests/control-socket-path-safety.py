@@ -16,8 +16,14 @@ the other. The data loss is the whole reason this surface exists to be readable.
 
 The rule this test pins down (docs/CONTROL-SOCKET-PATH-SAFETY.md):
   * nothing at the path        -> bind normally;
-  * a socket file at the path  -> a stale socket from a crashed run: unlinking it
+  * a socket NOTHING is
+    listening on               -> a stale socket from a crashed run: unlinking it
                                   is the only way to bind, so do it - and SAY SO;
+  * a socket something IS
+    listening on               -> refuse, typed `refused`: unlinking a LIVE
+                                  socket orphans its listener, and a third-party
+                                  socket (an ssh-agent's, docker.sock, an X11
+                                  socket) is not ours to replace;
   * anything else (regular
     file, symlink, FIFO)       -> refuse, typed `refused`, naming the path: do not
                                   unlink, do not bind, do not start the server;
@@ -25,6 +31,9 @@ The rule this test pins down (docs/CONTROL-SOCKET-PATH-SAFETY.md):
                                   never be a socket path, and nothing is at risk of
                                   being deleted (see the doc for why the two kinds
                                   differ here).
+It also pins the other half of "who owns the path": on exit, the server unlinks
+only the inode IT bound -- if the path was replaced while it was listening, that
+socket belongs to someone else and is left alone, audibly.
 
 The refusal is read where an agent can read it: an instance that refused to start
 has no socket to answer on, so the process writes the surface's OWN typed error to
@@ -35,7 +44,9 @@ Cases: (1) a regular file survives byte-identical, the refusal names it and
 nothing listens; (2) a stale socket is still cleaned up and the instance listens;
 (3) a free path still binds, with no unlink line and no refusal; (4) a directory
 is `invalid_args` and survives with its contents; (5) a symlink is `refused` and
-BOTH the link and its target survive; (6) a request line over
+BOTH the link and its target survive; (6) a LIVE foreign listener is `refused` and
+its socket is not touched (same inode, still accepting); (7) a socket that replaced
+ours while we listened survives our clean exit; (8) a request line over
 `ControlServer::MaxRequestLineBytes` is refused, typed, and the connection is
 retired (drained, then closed) instead of buffering without bound.
 
@@ -54,9 +65,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from control_socket_harness import (  # noqa: E402
-    PING_TIMEOUT, Blocked, Instance, Problems, Timeout, connect, finish, ok,
-    start_instance,
+    PING_TIMEOUT, QUIT_TIMEOUT, READY_TIMEOUT, Blocked, Instance, Problems,
+    Timeout, Transcript, connect, finish, ok, start_instance, wait_ready,
 )
+
+# A refusal is immediate (measured: exit 1 within a second); this bound is for the
+# PRE-FIX binary, which does not refuse at all and keeps running: the control run
+# pays this per refusal case, so it is seconds, not the 60 a healthy instance gets.
+REFUSAL_TIMEOUT = 25.0
 
 # The cap in include/ControlServer.h (ControlServer::MaxRequestLineBytes).
 REQUEST_LINE_CAP = 1024 * 1024
@@ -79,21 +95,36 @@ class PathInstance(Instance):
 
 
 def digest(path):
-    with open(path, "rb") as handle:
-        return hashlib.sha256(handle.read()).hexdigest()
+    """sha256 of a file, or a marker saying why it could not be read at all.
+
+    A socket cannot be read (`ENXIO`, "No such device or address"): that is the
+    defect this test is for, so it has to come back as a FAILED CHECK with
+    evidence, not as a traceback that hides the other cases.
+    """
+    try:
+        with open(path, "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError as error:
+        return "<unreadable: %s>" % error
 
 
 def typed_errors(text):
-    """Every typed error the process wrote, decoded from the wire-shaped line."""
+    """Every typed error the process wrote, decoded from the wire-shaped line.
+
+    Key order is NOT assumed: `QJsonDocument::Compact` serialises an object with
+    its keys sorted, so the line starts with `"error"`, not `"id"`.
+    """
     found = []
     for line in text.splitlines():
-        start = line.find('{"id"')
+        start = line.find("{")
         if start < 0:
             continue
         try:
-            found.append(json.loads(line[start:]))
+            reply = json.loads(line[start:])
         except ValueError:
             continue
+        if isinstance(reply, dict) and "ok" in reply and "error" in reply:
+            found.append(reply)
     return found
 
 
@@ -144,10 +175,11 @@ def assert_no_listener(path, problems):
 
 
 def outcome(name, problems):
+    """(name, ok, problems) for finish(); finish() wants the LIST, not the object."""
     if not problems.report(name):
-        return name, False, problems
+        return name, False, problems.items
     ok(name)
-    return name, True, problems
+    return name, True, problems.items
 
 
 def case_regular_file(binary):
@@ -161,7 +193,7 @@ def case_regular_file(binary):
             handle.write(PAYLOAD)
         before, size_before = digest(path), os.path.getsize(path)
         instance.spawn()
-        code = exit_code(instance, 60.0, problems)
+        code = exit_code(instance, REFUSAL_TIMEOUT, problems)
         if code is not None and code == 0:
             problems.add("the instance exited 0 with a project file at the socket path; it must "
                          "fail (measured exit %s)" % code)
@@ -255,7 +287,7 @@ def case_directory(binary):
             handle.write(PAYLOAD)
         before = digest(keeper)
         instance.spawn()
-        code = exit_code(instance, 60.0, problems)
+        code = exit_code(instance, REFUSAL_TIMEOUT, problems)
         if code is not None and code == 0:
             problems.add("the instance exited 0 with a directory at the socket path")
         if not os.path.isdir(path):
@@ -281,7 +313,7 @@ def case_symlink(binary):
         os.symlink(target, path)
         before = digest(target)
         instance.spawn()
-        code = exit_code(instance, 60.0, problems)
+        code = exit_code(instance, REFUSAL_TIMEOUT, problems)
         if code is not None and code == 0:
             problems.add("the instance exited 0 with a symlink at the socket path")
         if not os.path.islink(path):
@@ -304,7 +336,13 @@ def case_request_line_cap(binary):
         client.sock.sendall(b"x" * (REQUEST_LINE_CAP * 2))
         # The harness's own reader, not a request: call() would have to SEND on a
         # connection the server is retiring, which is the thing being tested.
-        line = client._read_line(PING_TIMEOUT)  # noqa: SLF001 (harness reader)
+        try:
+            line = client._read_line(PING_TIMEOUT)  # noqa: SLF001 (harness reader)
+        except Timeout as nothing:
+            problems.add("no refusal arrived for an over-cap request line inside %.0fs: %s "
+                         "(the line was buffered instead of capped)" % (PING_TIMEOUT, nothing))
+            client.close()
+            return outcome(name, problems)
         reply = json.loads(line.decode("utf-8", "replace"))
         error = reply.get("error") or {}
         if reply.get("ok") is not False or error.get("kind") != "invalid_args":
@@ -333,6 +371,85 @@ def case_request_line_cap(binary):
     return outcome(name, problems)
 
 
+def case_live_socket(binary):
+    """A LIVE listener at the path: refuse, and touch nothing (fuzz audit F1/F2)."""
+    name = "a live listener at --control-socket is refused, and the listener survives"
+    problems = Problems()
+    instance = PathInstance(binary)
+    try:
+        path = instance.socket_path
+        live = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        live.bind(path)
+        live.listen(8)
+        before = os.lstat(path).st_ino
+        instance.spawn()
+        code = exit_code(instance, REFUSAL_TIMEOUT, problems)
+        if code is not None and code == 0:
+            problems.add("the instance exited 0 with a FOREIGN live socket at the socket path")
+        if not os.path.lexists(path):
+            problems.add("the live socket at the path was UNLINKED")
+        elif not stat.S_ISSOCK(os.lstat(path).st_mode):
+            problems.add("the live socket was replaced by a different kind of file")
+        elif os.lstat(path).st_ino != before:
+            problems.add("the socket at the path is a different inode: the live socket was "
+                         "replaced (inode %s -> %s)" % (before, os.lstat(path).st_ino))
+        refused_error(instance.stderr_text(), problems, "refused", path)
+        live.settimeout(5.0)
+        try:
+            accepted, _ = live.accept()
+        except OSError as error:
+            problems.add("the foreign listener can no longer accept connections: %s" % error)
+        else:
+            accepted.close()
+        live.close()
+    finally:
+        instance.close()
+    return outcome(name, problems)
+
+
+def case_exit_ownership(binary):
+    """close() must not unlink a path it no longer owns (fuzz audit F1, the deletion half)."""
+    name = "a socket that replaced ours survives our clean exit"
+    problems = Problems()
+    instance = start_instance(binary)
+    try:
+        path = instance.socket_path
+        transcript = Transcript()
+        try:
+            client = connect(instance)
+            wait_ready(instance, client, transcript, seconds=READY_TIMEOUT)
+        except (Blocked, Timeout) as error:
+            problems.add("the instance never became ready: %s" % error)
+            transcript.dump()
+            return outcome(name, problems)
+        # F1's mechanism, in the open: while this instance is listening, somebody
+        # else unlinks its socket file and binds their own at the same path.
+        os.unlink(path)
+        replacement = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        replacement.bind(path)
+        replacement.listen(8)
+        replaced_inode = os.lstat(path).st_ino
+        reply = client.call(90, "control.quit", timeout=QUIT_TIMEOUT)
+        client.close()
+        exited, _, elapsed = instance.wait_for_exit(QUIT_TIMEOUT)
+        if not exited:
+            problems.add("control.quit (answered %r) did not end the instance within %.0fs"
+                         % (reply, QUIT_TIMEOUT))
+        if not os.path.lexists(path):
+            problems.add("the instance's exit UNLINKED the replacement socket at the path: a live "
+                         "listener there is now unreachable with isListening() still true (F1)")
+        elif os.lstat(path).st_ino != replaced_inode:
+            problems.add("the replacement socket was replaced during the exit")
+        log = instance.read_log()
+        if "not unlinking" not in log or path not in log:
+            problems.add("the exit neither unlinked nor said it was leaving the replacement alone: "
+                         "%r" % log[-600:])
+        replacement.close()
+    finally:
+        instance.close()
+    return outcome(name, problems)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -347,6 +464,8 @@ def main():
         case_free_path(binary),
         case_directory(binary),
         case_symlink(binary),
+        case_live_socket(binary),
+        case_exit_ownership(binary),
         case_request_line_cap(binary),
     ])
 

@@ -49,8 +49,10 @@ namespace lmms
 //! nothing ever listens on the network (SPEC A12 / AGENT-TOOLING.md #9.1).
 //!
 //! The bind is destructive to the path it uses, so it is refused rather than
-//! performed when the path already holds something that is not a socket; see
-//! listen() and docs/CONTROL-SOCKET-PATH-SAFETY.md.
+//! performed when the path already holds something that is not a socket, or
+//! holds a socket something is still listening on (a liveness probe separates a
+//! crashed run's leftover from a live listener; see listen()); close() unlinks
+//! only the socket THIS instance bound. See docs/CONTROL-SOCKET-PATH-SAFETY.md.
 //!
 //! Implemented with POSIX sockets plus QSocketNotifier rather than Qt Network,
 //! so the audio application gains no new Qt module dependency.
@@ -118,6 +120,11 @@ private:
 	QSocketNotifier* m_notifier = nullptr;
 	QString m_path;
 	ControlErrorKind m_lastErrorKind = ControlErrorKind::None;
+	//! The (device, inode) this instance bound with listen(), so close() can tell
+	//! its own socket file from a replacement at the same path. quint64 rather than
+	//! dev_t/ino_t: this header is cross-platform and those types are POSIX.
+	quint64 m_boundDevice = 0;
+	quint64 m_boundInode = 0;
 	QHash<int, Client> m_clients;
 };
 

@@ -156,11 +156,51 @@ int openBoundSocket(const QByteArray& nativePath, bool unlinkStale, QString* err
 	return fd;
 }
 
+//! True when something is LISTENING at \p nativePath.
+//!
+//! A socket file at the path is only evidence that a socket was once created
+//! there. `connect()` is what separates a crashed run's leftover from a live
+//! listener: a stale socket refuses the connection (`ECONNREFUSED`), a live one
+//! accepts it. The probe connection is closed immediately; the listener sees a
+//! client that connected and went away, which is what a liveness probe looks like
+//! — this repo's own `tests/control_socket_harness.py` waits for a socket the same
+//! way.
+//!
+//! Only `ECONNREFUSED` (and `ENOENT`: the socket vanished under us) mean "nothing
+//! is listening". EVERY other outcome is treated as LIVE, because the two ways to
+//! be wrong are not symmetric: refusing to start costs an exit code, while
+//! unlinking a live socket costs a running program its control channel:
+//!   * `EACCES` — a socket owned by another user (`/var/run/docker.sock`, an X11
+//!     socket, an ssh-agent's): that is a live foreign socket, not our leftover;
+//!   * `EAGAIN`/`EINPROGRESS` — a listener whose accept backlog is full;
+//!   * `socket()` failing at all — we cannot even probe.
+//! The probe is non-blocking for the same reason: a blocking `connect()` to a
+//! listener with a full backlog would HANG the instance at start-up.
+bool socketHasLiveListener(const char* nativePath)
+{
+	const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0) { return true; }
+	::fcntl(fd, F_SETFD, FD_CLOEXEC);
+	::fcntl(fd, F_SETFL, O_NONBLOCK);
+
+	sockaddr_un address;
+	std::memset(&address, 0, sizeof(address));
+	address.sun_family = AF_UNIX;
+	std::memcpy(address.sun_path, nativePath, std::strlen(nativePath));
+
+	const int connected = ::connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+	const int probeErrno = errno;
+	::close(fd);
+	if (connected == 0) { return true; }
+	return probeErrno != ECONNREFUSED && probeErrno != ENOENT;
+}
+
 //! What the path handed to --control-socket already holds.
 enum class PathState
 {
 	Free,        //!< nothing there: bind normally
-	StaleSocket, //!< a socket a crashed instance left behind: unlink, then bind
+	StaleSocket, //!< a socket nothing is listening on: unlink, then bind
+	LiveSocket,  //!< a socket something IS listening on: REFUSE, touch nothing
 	Conflict,    //!< a regular file, a device, a FIFO or a symlink: REFUSE
 	Directory,   //!< a directory: it can never be a socket path
 };
@@ -179,7 +219,11 @@ PathState classifySocketPath(const char* nativePath, QString* found, QString* pr
 		if (problem) { *problem = QString::fromLocal8Bit(std::strerror(errno)); }
 		return PathState::Conflict;
 	}
-	if (S_ISSOCK(info.st_mode)) { return PathState::StaleSocket; }
+	if (S_ISSOCK(info.st_mode))
+	{
+		if (found) { *found = QStringLiteral("a socket"); }
+		return socketHasLiveListener(nativePath) ? PathState::LiveSocket : PathState::StaleSocket;
+	}
 	if (S_ISDIR(info.st_mode))
 	{
 		if (found) { *found = QStringLiteral("a directory"); }
@@ -282,8 +326,13 @@ bool ControlServer::listen(const QString& path, QString* error)
 
 	// The bind UNLINKS the path. Before it does, establish what is there:
 	//   - nothing            -> bind normally;
-	//   - a socket file      -> a stale socket from a crashed instance: unlinking
-	//                           it is the only way to bind, so do it, and say so;
+	//   - a stale socket     -> a socket NOTHING is listening on (a crashed
+	//                           instance's leftover): unlinking it is the only way
+	//                           to bind, so do it, and say so;
+	//   - a live socket      -> someone IS listening there: REFUSE, touch nothing.
+	//                           Unlinking it would leave that instance reachable by
+	//                           nobody while it still believes it is listening
+	//                           (docs/CONTROL-SURFACE-FUZZ.md F1/F2);
 	//   - a directory        -> a socket can never live at a directory's path, so
 	//                           the argument itself is wrong (invalid_args) and
 	//                           nothing is or was at risk of being deleted;
@@ -291,6 +340,13 @@ bool ControlServer::listen(const QString& path, QString* error)
 	QString found;
 	QString examineError;
 	const PathState state = classifySocketPath(nativePath.constData(), &found, &examineError);
+	if (state == PathState::LiveSocket)
+	{
+		return fail(ControlErrorKind::Refused,
+			QStringLiteral("refusing to use %1 as the control socket: a live socket is already "
+				"listening there (another instance, or another program); pass a different path, or "
+				"stop that process first").arg(path));
+	}
 	if (state == PathState::Conflict)
 	{
 		if (!examineError.isEmpty())
@@ -328,6 +384,17 @@ bool ControlServer::listen(const QString& path, QString* error)
 
 	m_listenFd = fd;
 	m_path = path;
+	// Remember WHICH inode this instance bound, so close() can refuse to unlink a
+	// path that no longer holds it: if the socket at the path has been replaced
+	// while we were listening, the replacement belongs to someone else, and
+	// removing it would leave that instance listening where nothing can reach it
+	// (docs/CONTROL-SURFACE-FUZZ.md F1).
+	struct stat bound;
+	if (::lstat(nativePath.constData(), &bound) == 0)
+	{
+		m_boundDevice = static_cast<quint64>(bound.st_dev);
+		m_boundInode = static_cast<quint64>(bound.st_ino);
+	}
 	m_registry->addShutdownHook([this]() { close(); });
 	m_notifier = new QSocketNotifier(m_listenFd, QSocketNotifier::Read, this);
 	connect(m_notifier, &QSocketNotifier::activated, this, &ControlServer::onNewConnection);
@@ -359,7 +426,23 @@ void ControlServer::close()
 	}
 	if (!m_path.isEmpty())
 	{
-		::unlink(m_path.toLocal8Bit().constData());
+		const QByteArray nativePath = m_path.toLocal8Bit();
+		struct stat info;
+		const bool present = ::lstat(nativePath.constData(), &info) == 0;
+		if (present && static_cast<quint64>(info.st_dev) == m_boundDevice
+			&& static_cast<quint64>(info.st_ino) == m_boundInode)
+		{
+			::unlink(nativePath.constData());
+		}
+		else if (present)
+		{
+			// The path was replaced while we were listening: that socket is somebody
+			// else's, and unlinking it would leave them listening where nothing can
+			// reach them (docs/CONTROL-SURFACE-FUZZ.md F1). Say so instead.
+			qWarning("control socket: not unlinking %s: the path now holds a different file "
+				"(it was replaced while this instance was listening)",
+				qPrintable(m_path));
+		}
 		m_path.clear();
 	}
 #endif
