@@ -350,6 +350,11 @@ and "Do not try"; the truth the audit found is worse, and the operative word is 
   degrade it, so keep the original and do not save over it.
 ```
 
+*Basis for the wording: the older reader's source as reviewed in the audit — `Mixer.cpp` at the
+fork point matches only `<send>` and has no branch for the Phase D elements, and `Note` has no
+`slide` reader — not an execution of a 1.3.0-alpha binary (none was run here). The current build's
+own round trip of those elements is executed and passes (§5).*
+
 **(c) The version string is stamped into every project as `creatorversion`** — insert after (b).
 This is the causal link between the version string the notes already document (`## Platforms`,
 lines 150–153) and the corruption/silent-drop they only hint at:
