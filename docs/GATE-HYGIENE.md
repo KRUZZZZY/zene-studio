@@ -39,7 +39,7 @@ Every code below is from an unpiped run (`cmd > log 2>&1; echo EXIT=$?`), commit
 | 6 upstream divergence | `bash tests/no-upstream-regression-gate.sh` | 0 | **0** |
 | runner | `bash tests/run-all-gates.sh` | 3 | **3** (`PASS-WITH-SKIPS`; gate 2 not requested) |
 | runner | `bash tests/run-all-gates.sh --no-mutation` | 3 | **3** |
-| 1 unit tests | `cd build/tests && ctest` | 36 pass / 0 fail (1 registered-but-never-built suite, below) | **37 pass / 0 fail** |
+| 1 unit tests | `cd build/tests && ctest` | 36 pass / 0 fail (1 registered-but-never-built suite, below) | **37 pass / 0 fail** — see the `PdcMixerTest` teardown abort under "Limits" |
 | 2 coverage | needs an instrumented build | **not run** | **not run** |
 | 5 mutation | needs a build + relink | not run via the runner | **not run** (skipped by `--no-mutation`) |
 
@@ -378,6 +378,20 @@ build tree, so discovery is exercised end to end, not stubbed.
   its numbers therefore remain stale — see the audit's §5 (S-1). Neither were
   `docs/KNOWN-LIMITATIONS.md`, the release notes, or any other lane's `docs/` file.
 - Nothing was pushed, no PR or issue was touched, and `origin`/`messmerd` remotes were not contacted.
+- **`PdcMixerTest` aborted once, in teardown, under the parallel ctest run — reported, not
+  smoothed over.** The second runner invocation (`run-all-gates.sh --no-mutation --whole-tree`,
+  `tests/gate-hygiene-logs/after/run-all-gates-whole-tree.log:49,82-88`) ended with
+  `97% tests passed, 1 tests failed out of 37`: `PdcMixerTest` printed all 11 of its results as
+  PASS, then `Finished testing of PdcMixerTest`, then `Received signal 6 (SIGABRT)` inside
+  `cleanupTestCase` (`cleanupTestCase function time: 501ms`). The preceding full run was clean
+  (`after-ctest.log`: `100% tests passed, 0 tests failed out of 37`) and the run before that too
+  (`after/run-all-gates.log`), so this is **1 abort in 3 suite runs**, and it does not reproduce
+  alone: **4/4 isolated runs pass, `Totals: 11 passed, 0 failed` each**
+  (`tests/gate-hygiene-logs/after-pdcmixertest-flake.log`). It is a teardown-time crash under
+  parallel load, not an assertion failure, and it is **not** attributable to this pass — the only
+  product code changed here is `src/core/PluginFactory.cpp`/`include/PluginFactory.h`, and every
+  PdcMixerTest test passed before the abort. Untriaged and outstanding: it makes "ctest green" a
+  claim that holds most of the time, and it should be chased on its own lane.
 - Two further small gate changes came with the per-file work and are worth naming:
   `tests/complexity-gate.sh` now **reports** baseline keys whose function is no longer over target
   (the file-length gate already ratcheted down; this one silently kept dead entries, and a dead
