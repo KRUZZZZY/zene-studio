@@ -6,61 +6,61 @@ Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/z
       Start  2: AudioBufferTest
  2/28 Test  #2: AudioBufferTest ..................   Passed    0.03 sec
       Start  3: AudioBusHandleTest
- 3/28 Test  #3: AudioBusHandleTest ...............   Passed    1.44 sec
+ 3/28 Test  #3: AudioBusHandleTest ...............   Passed    2.06 sec
       Start  4: AudioBusTest
- 4/28 Test  #4: AudioBusTest .....................   Passed    1.41 sec
+ 4/28 Test  #4: AudioBusTest .....................   Passed    1.55 sec
       Start  5: AudioPortsModelTest
- 5/28 Test  #5: AudioPortsModelTest ..............   Passed    1.34 sec
+ 5/28 Test  #5: AudioPortsModelTest ..............   Passed    1.47 sec
       Start  6: AudioPortsTest
- 6/28 Test  #6: AudioPortsTest ...................   Passed    1.42 sec
+ 6/28 Test  #6: AudioPortsTest ...................   Passed    1.48 sec
       Start  7: AutomatableModelTest
- 7/28 Test  #7: AutomatableModelTest .............   Passed    1.35 sec
+ 7/28 Test  #7: AutomatableModelTest .............   Passed    1.68 sec
       Start  8: ConfigMigrationTest
  8/28 Test  #8: ConfigMigrationTest ..............   Passed    0.03 sec
       Start  9: DataFileFormatTest
- 9/28 Test  #9: DataFileFormatTest ...............   Passed    0.02 sec
+ 9/28 Test  #9: DataFileFormatTest ...............   Passed    0.03 sec
       Start 10: MathTest
 10/28 Test #10: MathTest .........................   Passed    0.02 sec
       Start 11: MultiTrackRecorderTest
-11/28 Test #11: MultiTrackRecorderTest ...........   Passed    0.02 sec
+11/28 Test #11: MultiTrackRecorderTest ...........   Passed    0.03 sec
       Start 12: PluginLogoResourceTest
-12/28 Test #12: PluginLogoResourceTest ...........   Passed    0.04 sec
+12/28 Test #12: PluginLogoResourceTest ...........   Passed    0.05 sec
       Start 13: PluginAudioPortsTest
-13/28 Test #13: PluginAudioPortsTest .............   Passed    1.34 sec
+13/28 Test #13: PluginAudioPortsTest .............   Passed    1.45 sec
       Start 14: ProjectVersionTest
 14/28 Test #14: ProjectVersionTest ...............   Passed    0.02 sec
       Start 15: RecordRingBufferTest
 15/28 Test #15: RecordRingBufferTest .............   Passed    0.03 sec
       Start 16: RelativePathsTest
-16/28 Test #16: RelativePathsTest ................   Passed    0.02 sec
+16/28 Test #16: RelativePathsTest ................   Passed    0.03 sec
       Start 17: RemotePluginAudioPortsTest
-17/28 Test #17: RemotePluginAudioPortsTest .......   Passed    1.96 sec
+17/28 Test #17: RemotePluginAudioPortsTest .......   Passed    2.15 sec
       Start 18: RemotePluginClientE2ETest
-18/28 Test #18: RemotePluginClientE2ETest ........   Passed    1.51 sec
+18/28 Test #18: RemotePluginClientE2ETest ........   Passed    1.74 sec
       Start 19: RoutingGraphTest
 19/28 Test #19: RoutingGraphTest .................   Passed    0.03 sec
       Start 20: PdcMixerTest
-20/28 Test #20: PdcMixerTest .....................   Passed    1.37 sec
+20/28 Test #20: PdcMixerTest .....................   Passed    1.81 sec
       Start 21: ScriptBindingsTest
-21/28 Test #21: ScriptBindingsTest ...............   Passed    1.34 sec
+21/28 Test #21: ScriptBindingsTest ...............   Passed    1.50 sec
       Start 22: ScriptEngineTest
-22/28 Test #22: ScriptEngineTest .................   Passed    1.49 sec
+22/28 Test #22: ScriptEngineTest .................   Passed    1.60 sec
       Start 23: SlideNotesTest
 23/28 Test #23: SlideNotesTest ...................   Passed    0.03 sec
       Start 24: TimelineTest
-24/28 Test #24: TimelineTest .....................   Passed    1.38 sec
+24/28 Test #24: TimelineTest .....................   Passed    1.52 sec
       Start 25: TwoTrackRecordingHarness
-25/28 Test #25: TwoTrackRecordingHarness .........   Passed    2.04 sec
+25/28 Test #25: TwoTrackRecordingHarness .........   Passed    2.03 sec
       Start 26: AutomationTrackTest
-26/28 Test #26: AutomationTrackTest ..............   Passed    1.34 sec
+26/28 Test #26: AutomationTrackTest ..............   Passed    1.53 sec
       Start 27: PluginPortsMigrationTest
-27/28 Test #27: PluginPortsMigrationTest .........   Passed    4.28 sec
+27/28 Test #27: PluginPortsMigrationTest .........   Passed    5.04 sec
       Start 28: AudioPluginTest
-28/28 Test #28: AudioPluginTest ..................   Passed    1.37 sec
+28/28 Test #28: AudioPluginTest ..................   Passed    1.82 sec
 
 100% tests passed, 0 tests failed out of 28
 
-Total Test time (real) =  26.67 sec
+Total Test time (real) =  30.77 sec
 
 ================ Gate 2: coverage ratchet ================
 skipped (pass --with-coverage)

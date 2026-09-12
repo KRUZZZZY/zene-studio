@@ -335,22 +335,28 @@ def main() -> int:
 
 
 def check() -> int:
-    """Re-render in memory and compare against the committed bytes."""
-    import io
+    """Re-render in memory and compare against the committed bytes.
+
+    Qt's QImage.save() wants a file name or a QIODevice, not a Python buffer, so this
+    renders into a temporary directory rather than into the repo.
+    """
+    import tempfile
     bad = []
     expect = {}
     for d, px in ICON_DIRS.items():
         expect[f"cmake/linux/icons/{d}/apps/zene.png"] = render_svg(APP_SVG, px)
         expect[f"cmake/linux/icons/{d}/mimetypes/application-x-lmms-project.png"] = \
             render_svg(MIME_SVG, px)
-    for rel, img in expect.items():
-        buf = io.BytesIO()
-        img.save(buf, "PNG")
-        wanted = png_with_text(buf.getvalue(), "Description", PLACEHOLDER_NOTE)
-        with open(os.path.join(ROOT, rel), "rb") as fh:
-            got = fh.read()
-        if got != wanted:
-            bad.append(rel)
+    with tempfile.TemporaryDirectory() as td:
+        for rel, img in expect.items():
+            tmp = os.path.join(td, "r.png")
+            img.save(tmp, "PNG")
+            with open(tmp, "rb") as fh:
+                wanted = png_with_text(fh.read(), "Description", PLACEHOLDER_NOTE)
+            with open(os.path.join(ROOT, rel), "rb") as fh:
+                got = fh.read()
+            if got != wanted:
+                bad.append(rel)
     print(f"checked {len(expect)} rendered PNGs; {len(bad)} differ")
     for b in bad:
         print("  DIFFERS: " + b)

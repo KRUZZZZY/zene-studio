@@ -452,6 +452,13 @@ guessed at:
   control is in §3b. Registered in `tests/fork-sources.txt`.
 * **`tests/evidence/brand-placeholders/verify-placeholders.py`** — new. The dimension/metadata/container/byte-identity
   checks of §3c.
-* **`tools/brand/rasterise-placeholders.py --check`** — new. The negative-capable control: exit 0
-  only if the committed rasters are exactly what the SVGs produce, so a hand-edited or stale bitmap
-  fails.
+* **`tools/brand/rasterise-placeholders.py --check`** — new. The negative-capable control for the
+  rasters: it re-renders the three SVGs and exits 0 **only** if every committed bitmap is exactly
+  what they produce, so a hand-edited or stale raster fails. Demonstrated in
+  `tests/evidence/brand-placeholders/gen-check.txt`: exit **0** as committed → append one byte to
+  `cmake/linux/icons/64x64/apps/zene.png` → exit **1**, naming that file → restore → exit **0**.
+
+  (`QImage.save()` takes a file name or a QIODevice, not a Python buffer; the first version of
+  `--check` passed it a `BytesIO` and raised instead of checking. Its exit code was read through a
+  pipe at the time and looked green — the exact laundering the workspace's unpiped-exit-code rule
+  exists to catch. It is fixed and now measured unpiped.)
