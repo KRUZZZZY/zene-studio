@@ -97,6 +97,12 @@ private:
 		int fd = -1;
 		QSocketNotifier* notifier = nullptr;
 		QByteArray buffer;
+		//! True after an over-cap request line was refused: the rest of what the
+		//! peer sends is read and DISCARDED (bounded, per chunk) until EOF, so the
+		//! connection closes with nothing queued. Closing while unread bytes sit on
+		//! the socket sends RST, and an RST makes the peer's kernel throw away the
+		//! typed refusal already in its receive buffer.
+		bool draining = false;
 	};
 
 	void onNewConnection();

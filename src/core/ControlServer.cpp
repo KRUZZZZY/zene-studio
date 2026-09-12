@@ -396,6 +396,21 @@ void ControlServer::onClientReadable(int fd)
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
 
+	if (it->draining)
+	{
+		// The rest of an over-cap request line: read it and keep none of it, so the
+		// close below is a clean FIN (see Client::draining).
+		char sink[8192];
+		while (true)
+		{
+			const ssize_t got = ::read(fd, sink, sizeof(sink));
+			if (got > 0) { continue; }
+			if (got < 0 && errno == EINTR) { continue; }
+			if (got == 0) { dropClient(fd); }
+			return; // EAGAIN: wait for the next activation
+		}
+	}
+
 	QByteArray& buffer = it->buffer;
 	char chunk[4096];
 	bool closed = false;
@@ -435,15 +450,26 @@ void ControlServer::onClientReadable(int fd)
 	}
 
 	// Every complete line is gone, so a buffer still over the cap is ONE request
-	// line that never ended. Refuse it in the surface's own vocabulary and drop
-	// the connection: the bytes already read cannot become a valid request.
+	// line that never ended. Refuse it in the surface's own vocabulary, then
+	// retire the connection: resynchronising would mean buffering the rest of a
+	// line of unknown length, which is exactly what the cap refuses to do.
 	if (buffer.size() > MaxRequestLineBytes)
 	{
 		const QByteArray refusal = errorLine(-1, ControlErrorKind::InvalidArgs,
 			QStringLiteral("the request line exceeds the %1-byte limit and was refused")
 				.arg(MaxRequestLineBytes));
+		// The refusal goes out BEFORE the drain, and the drain is why it arrives:
+		// see Client::draining.
 		writeAll(fd, refusal + '\n');
-		dropClient(fd);
+		it->draining = true;
+		buffer.clear();
+		buffer.squeeze();
+		if (closed)
+		{
+			// EOF is already in hand and everything read has been discarded: the
+			// close is clean.
+			dropClient(fd);
+		}
 		return;
 	}
 

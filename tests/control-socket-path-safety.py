@@ -37,7 +37,7 @@ nothing listens; (2) a stale socket is still cleaned up and the instance listens
 is `invalid_args` and survives with its contents; (5) a symlink is `refused` and
 BOTH the link and its target survive; (6) a request line over
 `ControlServer::MaxRequestLineBytes` is refused, typed, and the connection is
-dropped instead of buffering without bound.
+retired (drained, then closed) instead of buffering without bound.
 
 Usage:
   QT_QPA_PLATFORM=offscreen python3 control-socket-path-safety.py <lmms>
@@ -295,30 +295,38 @@ def case_symlink(binary):
 
 
 def case_request_line_cap(binary):
-    """One line, no newline, twice the cap: refused typed, then the connection drops."""
-    name = "an over-cap request line is refused typed and the connection is dropped"
+    """One line, no newline, twice the cap: refused typed, then the connection is retired."""
+    name = "an over-cap request line is refused typed and the connection is retired"
     problems = Problems()
     instance = start_instance(binary)
     try:
         client = connect(instance)
         client.sock.sendall(b"x" * (REQUEST_LINE_CAP * 2))
         # The harness's own reader, not a request: call() would have to SEND on a
-        # connection the server is about to drop, which is the thing being tested.
+        # connection the server is retiring, which is the thing being tested.
         line = client._read_line(PING_TIMEOUT)  # noqa: SLF001 (harness reader)
         reply = json.loads(line.decode("utf-8", "replace"))
-        if reply.get("ok") is not False or (reply.get("error") or {}).get("kind") != "invalid_args":
+        error = reply.get("error") or {}
+        if reply.get("ok") is not False or error.get("kind") != "invalid_args":
             problems.add("an over-cap request line answered %r, expected a typed invalid_args "
                          "refusal" % reply)
-        if str(REQUEST_LINE_CAP) not in ((reply.get("error") or {}).get("message") or ""):
+        if str(REQUEST_LINE_CAP) not in (error.get("message") or ""):
             problems.add("the refusal does not name the %d-byte cap: %r"
-                         % (REQUEST_LINE_CAP, reply.get("error")))
+                         % (REQUEST_LINE_CAP, error))
+        if reply.get("id") != -1:
+            problems.add("the refusal carries id %r: an over-cap line must not be dispatched as "
+                         "a request" % reply.get("id"))
+        # Retired, not silently buffered: a well-formed request sent now gets no
+        # reply inside the bound. (Before the cap existed the junk was buffered,
+        # spliced into the next line and answered as a malformed request - which is
+        # why this check discriminates rather than merely waiting.)
         try:
-            client._read_line(5.0)  # noqa: SLF001
-            problems.add("the connection still answered after an over-cap line: the buffer is "
-                         "not capped")
-        except Blocked as closed:
-            if "closed the connection" not in str(closed):
-                problems.add("the connection did not close after the refusal: %s" % closed)
+            quiet = client.call(7, "control.ping", timeout=5.0)
+        except Timeout as no_reply:
+            print("no reply to a request sent after the over-cap line (expected): %s" % no_reply)
+        else:
+            problems.add("the connection is still serving requests after an over-cap line: it "
+                         "answered %r, so the line was buffered rather than capped" % quiet)
         client.close()
     finally:
         instance.close()
