@@ -207,6 +207,8 @@ include/Lv2ViewBase.h
 include/Lv2Worker.h
 include/MainApplication.h
 include/MainWindow.h
+include/MasteringChain.h
+include/MasteringJob.h
 include/MeterDialog.h
 include/MeterModel.h
 include/Metronome.h
@@ -877,6 +879,8 @@ src/core/LmmsSemaphore.cpp
 src/core/LocklessAllocator.cpp
 src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
+src/core/MasteringChain.cpp
+src/core/MasteringJob.cpp
 src/core/MeterModel.cpp
 src/core/Metronome.cpp
 src/core/MicroTimer.cpp
@@ -1156,6 +1160,8 @@ tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
+tests/src/core/MasteringTest.cpp
+tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp

@@ -147,6 +147,8 @@ include/LatencyCompensation.h
 include/LmmsPolyfill.h
 include/LoudnessReport.h
 include/LufsMeter.h
+include/MasteringChain.h
+include/MasteringJob.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MpeExpression.h
@@ -246,6 +248,8 @@ src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
 src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
+src/core/MasteringChain.cpp
+src/core/MasteringJob.cpp
 src/core/MidiLearn.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp

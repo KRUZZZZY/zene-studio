@@ -82,6 +82,8 @@ set(LMMS_SRCS
 	core/LatencyCompensation.cpp
 	core/LoudnessReport.cpp
 	core/LufsMeter.cpp
+	core/MasteringChain.cpp
+	core/MasteringJob.cpp
 	core/LadspaManager.cpp
 	core/LfoController.cpp
 	core/LinkedModelGroups.cpp

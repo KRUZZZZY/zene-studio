@@ -21,6 +21,7 @@ set(LMMS_TESTS
 	src/core/DataFileSaveIntegrityTest.cpp
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
+	src/core/MasteringTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
@@ -211,6 +212,12 @@ target_compile_definitions(RoutingGraphLiveTest PRIVATE
 # VcaGroupTest (#622) constructs a full Engine and drives Mixer::masterMix()
 # synchronously, the same shape as the Phase D harnesses.
 set_tests_properties(VcaGroupTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# MasteringTest drives a real Engine and the project render path, so it needs a
+# Qt platform plugin even though the test itself is guiless (same reason as
+# PluginScanCacheTest above).
+set_tests_properties(MasteringTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

@@ -68,6 +68,14 @@ public:
 	//! when it is destroyed, and moc would instantiate the deleter from here.
 	~ProjectRenderer() override;
 
+	//! Projects rendered in this process across every instance: run() increments
+	//! it once per render it starts. Instrumentation only - it changes nothing
+	//! about what a render produces - and it is what lets a caller prove that N
+	//! mastered outputs cost one project render instead of asserting it.
+	static int renderCount();
+	//! Puts the counter back to zero, so a caller can bracket one measurement.
+	static void resetRenderCount();
+
 	bool isReady() const
 	{
 		return m_fileDev != nullptr;
