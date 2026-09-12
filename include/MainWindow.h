@@ -100,7 +100,7 @@ public:
 					value( "ui", "saveinterval" ).toInt()
 						* 60 * 1000 )
 	{
-		if( msec < m_autoSaveShortTime ) // No 'saveinterval' in .lmmsrc.xml
+		if( msec < m_autoSaveShortTime ) // No 'saveinterval' in .zenestudio.xml
 		{
 			msec = DEFAULT_AUTO_SAVE_INTERVAL;
 		}

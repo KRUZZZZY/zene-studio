@@ -420,10 +420,10 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 	// Allow configuration file override through --config commandline option
 	if (!configFile.isEmpty())
 	{
-		m_lmmsRcFile = configFile;
+		m_configFile = configFile;
 	}
 
-	QFile cfg_file(m_lmmsRcFile);
+	QFile cfg_file(m_configFile);
 	QDomDocument dom_tree;
 
 	if(cfg_file.open(QIODevice::ReadOnly))
@@ -631,12 +631,12 @@ void ConfigManager::saveConfigFile()
 #endif
 	setValue("paths", "backgroundtheme", m_backgroundPicFile);
 
-	QDomDocument doc("lmms-config-file");
+	QDomDocument doc("zene-config-file");
 
-	QDomElement lmms_config = doc.createElement("lmms");
-	lmms_config.setAttribute("version", m_version);
-	lmms_config.setAttribute("configversion", m_configVersion);
-	doc.appendChild(lmms_config);
+	QDomElement zene_config = doc.createElement("zene");
+	zene_config.setAttribute("version", m_version);
+	zene_config.setAttribute("configversion", m_configVersion);
+	doc.appendChild(zene_config);
 
 	for (auto it = m_settings.begin(); it != m_settings.end(); ++it)
 	{
@@ -645,7 +645,7 @@ void ConfigManager::saveConfigFile()
 		{
 			n.setAttribute(first, second);
 		}
-		lmms_config.appendChild(n);
+		zene_config.appendChild(n);
 	}
 
 	QDomElement recent_files = doc.createElement("recentfiles");
@@ -656,7 +656,7 @@ void ConfigManager::saveConfigFile()
 		n.setAttribute("path", PathUtil::toShortestRelative(recentlyOpenedProject));
 		recent_files.appendChild(n);
 	}
-	lmms_config.appendChild(recent_files);
+	zene_config.appendChild(recent_files);
 
 	QDomElement favorite_items = doc.createElement("favoriteitems");
 
@@ -667,11 +667,11 @@ void ConfigManager::saveConfigFile()
 		favorite_items.appendChild(n);
 	}
 
-	lmms_config.appendChild(favorite_items);
+	zene_config.appendChild(favorite_items);
 
 	QString xml = "<?xml version=\"1.0\"?>\n" + doc.toString(2);
 
-	QFile outfile(m_lmmsRcFile);
+	QFile outfile(m_configFile);
 	if(!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
 	{
 		using gui::MainWindow;
@@ -684,7 +684,7 @@ void ConfigManager::saveConfigFile()
 					"permission to the file and "
 					"the directory containing the "
 					"file and try again!"
-						).arg(m_lmmsRcFile);
+						).arg(m_configFile);
 		if (gui::getGUI() != nullptr)
 		{
 			QMessageBox::critical(nullptr, title, message,
@@ -701,17 +701,43 @@ void ConfigManager::saveConfigFile()
 void ConfigManager::initPortableWorkingDir()
 {
 	QString applicationPath = qApp->applicationDirPath();
-	m_workingDir = applicationPath + "/lmms-workspace/";
-	m_lmmsRcFile = applicationPath + "/.lmmsrc.xml";
+	// A portable install (a `portable_mode.txt` marker beside the executable)
+	// keeps its state in the application directory.  The pre-rename workspace
+	// directory and config file are adopted here too, otherwise upgrading a
+	// portable install on a memory stick would look like a fresh install.
+	m_workingDir = applicationPath + "/zene-workspace/";
+	m_workingDir = ConfigMigration::adoptWorkingDir( m_workingDir,
+			applicationPath + "/lmms-workspace/" );
+	m_configFile = ConfigMigration::adoptConfigFile(
+			applicationPath + "/.zenestudio.xml",
+			applicationPath + "/.lmmsrc.xml" );
 }
 
 void ConfigManager::initInstalledWorkingDir()
 {
-	m_workingDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/lmms/";
-	m_lmmsRcFile = QDir::home().absolutePath() +"/.lmmsrc.xml";
-	// Detect < 1.2.0 working directory as a courtesy
-	if ( QFileInfo( QDir::home().absolutePath() + "/lmms/projects/" ).exists() )
-		m_workingDir = QDir::home().absolutePath() + "/lmms/";
+	const QString home = QDir::home().absolutePath();
+	const QString docs =
+		QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+
+	m_workingDir = docs + "/Zene Studio/";
+	m_configFile = ConfigMigration::adoptConfigFile(
+			home + "/.zenestudio.xml", home + "/.lmmsrc.xml" );
+
+	// Precedence is unchanged from before the rename: the pre-1.2.0 layout
+	// directly under $HOME wins when it holds projects, otherwise the Documents
+	// location.  Either way the legacy directory is adopted -- renamed into the
+	// new name where that is possible, and otherwise used where it already is,
+	// so the user's projects stay found.
+	if ( QFileInfo( home + "/lmms/projects/" ).exists() )
+	{
+		m_workingDir = ConfigMigration::adoptWorkingDir(
+				home + "/zene/", home + "/lmms/" );
+	}
+	else
+	{
+		m_workingDir = ConfigMigration::adoptWorkingDir(
+				docs + "/Zene Studio/", docs + "/lmms/" );
+	}
 }
 
 void ConfigManager::initDevelopmentWorkingDir()
@@ -743,8 +769,11 @@ void ConfigManager::initDevelopmentWorkingDir()
 				done++;
 			}
 			if (line.startsWith("zene_BINARY_DIR:") || line.startsWith("lmms_BINARY_DIR:")) {
-				m_lmmsRcFile = line.section('=', -1).trimmed() +  QDir::separator() +
-							   ".lmmsrc.xml";
+				const QString buildDir = line.section('=', -1).trimmed();
+				// A build tree configured before the rename keeps its settings.
+				m_configFile = ConfigMigration::adoptConfigFile(
+						buildDir + QDir::separator() + ".zenestudio.xml",
+						buildDir + QDir::separator() + ".lmmsrc.xml" );
 				done++;
 			}
 			if (done == 2)
@@ -755,6 +784,75 @@ void ConfigManager::initDevelopmentWorkingDir()
 
 		cmakeCache.close();
 	}
+}
+
+
+QString ConfigMigration::adoptConfigFile( const QString & newFile, const QString & legacyFile )
+{
+	if( newFile.isEmpty() || QFileInfo::exists( newFile ) )
+	{
+		// The new location either already holds the state or was not named.
+		return newFile;
+	}
+	if( legacyFile.isEmpty() || !QFileInfo::exists( legacyFile ) )
+	{
+		// Nothing to adopt: a fresh install.
+		return newFile;
+	}
+
+	// Rename, so the user keeps their settings AND the old name goes away.
+	if( QFile::rename( legacyFile, newFile ) )
+	{
+		return newFile;
+	}
+
+	// Cross-device or permission failure: copy instead of rename, and read the
+	// new file.  The legacy file is what the user actually had, so it is left
+	// where it is rather than being deleted.
+	if( QFile::copy( legacyFile, newFile ) )
+	{
+		return newFile;
+	}
+
+	// Neither possible: keep reading the file that holds the user's settings.
+	// Orphaning them is the one outcome that is not acceptable.
+	return legacyFile;
+}
+
+
+QString ConfigMigration::adoptWorkingDir( const QString & newDir, const QString & legacyDir )
+{
+	if( newDir.isEmpty() || QDir( newDir ).exists() )
+	{
+		// The new location wins whenever it exists; when both exist the user is
+		// responsible for which one holds what, so the legacy directory is left
+		// strictly alone.
+		return newDir;
+	}
+	if( legacyDir.isEmpty() || !QDir( legacyDir ).exists() )
+	{
+		return newDir;
+	}
+
+	const QFileInfo newInfo( QDir::cleanPath( newDir ) );
+	const QFileInfo legacyInfo( QDir::cleanPath( legacyDir ) );
+
+	// Moving the directory is only attempted when both live under the same
+	// parent -- which is the normal case and makes it a cheap atomic rename on
+	// one filesystem instead of a copy that could fail halfway through.
+	if( newInfo.absolutePath() == legacyInfo.absolutePath() )
+	{
+		QDir parent( newInfo.absolutePath() );
+		if( parent.rename( legacyInfo.fileName(), newInfo.fileName() ) )
+		{
+			return newDir;
+		}
+	}
+
+	// Could not move it.  The legacy directory holds the user's projects, so the
+	// right failure mode is to keep using it where it is -- not to point the
+	// product at an empty new folder and have every project appear to vanish.
+	return legacyDir;
 }
 
 // If configversion is not present, we will convert the LMMS version to the appropriate

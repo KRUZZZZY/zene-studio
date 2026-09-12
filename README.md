@@ -127,7 +127,9 @@ all say Zene Studio, and the release packages are named `zene-*` (the release wo
 globs were updated in the same commit).
 
 Two things are kept from LMMS on purpose: the `lmms::` C++ namespace and the `.mmp`/`.mmpz`
-project format, plus the licence headers, the `~/.lmmsrc.xml` config file and the
-`~/Documents/lmms/` working folder. Renaming the last two would orphan the settings and projects
-of an existing install. The full list of deliberate residuals is in
-[docs/WAVE-R-RENAME.md](docs/WAVE-R-RENAME.md).
+project format, plus the licence headers. The config file is now `~/.zenestudio.xml` and the
+working folder `~/Documents/Zene Studio/`; both were **adopted** rather than re-pointed — on first
+run the pre-rename file and folder are moved into the new names, and if that is not possible the
+old location keeps being used, so nothing is orphaned for an existing install. The full list of
+deliberate residuals is in [docs/WAVE-R-RENAME.md](docs/WAVE-R-RENAME.md) and
+[docs/RENAME-COMPLETE.md](docs/RENAME-COMPLETE.md).
