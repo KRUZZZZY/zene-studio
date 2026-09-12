@@ -167,11 +167,23 @@ def check_ratchet(baseline, unregistered, seen):
     return problems, len(set(baseline) - unregistered)
 
 
-def check_allowlist(commands, allowlist):
-    """An allowlist entry must name a live command AND be justified by `requires`."""
-    problems, allowed = [], 0
+def check_allowlist(commands, allowlist, compiled_out=frozenset()):
+    """An allowlist entry must name a live command AND be justified by `requires`.
+
+    `compiled_out` is the set of command ids this build's configuration removed
+    at compile time (today: telemetry.consent, in a -DZENE_TELEMETRY=OFF build).
+    Such an id is expected to be ABSENT from the registry, so its allowlist
+    entry is accounted for by the switch instead of being called stale - and the
+    flag is checked in both directions: a name declared compiled out that the
+    registry DOES declare is a problem, because the flag would otherwise hide a
+    stale entry behind a lie.
+    """
+    problems, allowed, switched = [], 0, 0
     for command, reason in sorted(allowlist.items()):
         if command not in commands:
+            if command in compiled_out:
+                switched += 1
+                continue
             problems.append("allowlist names '%s', which the registry does not declare "
                             "(stale entry: %s)" % (command, reason))
             continue
@@ -181,7 +193,12 @@ def check_allowlist(commands, allowlist):
                             "(reason given: %s)" % (command, reason))
             continue
         allowed += 1
-    return problems, allowed
+    for command in sorted(compiled_out):
+        if command in commands:
+            problems.append("'%s' was declared compiled out, but the registry declares it: "
+                            "the flag is wrong for this binary, and an allowlist entry it "
+                            "excuses would go unchecked" % command)
+    return problems, allowed, switched
 
 
 def sweep_problem(command, outcome, timeout):
@@ -213,14 +230,16 @@ def check_sweep(commands, allowlist, sweep, timeout):
     return problems, swept
 
 
-def evaluate(surface, commands, baseline, allowlist, exempt, sweep, timeout):
+def evaluate(surface, commands, baseline, allowlist, exempt, sweep, timeout,
+             compiled_out=frozenset()):
     """Return (problems, stats). The single place a verdict is decided."""
     reflect_problems, stats, unregistered, seen = check_reflection(surface, baseline, exempt)
     ratchet_problems, stale = check_ratchet(baseline, unregistered, seen)
-    allow_problems, allowlisted = check_allowlist(commands, allowlist)
+    allow_problems, allowlisted, switched = check_allowlist(commands, allowlist, compiled_out)
     sweep_problems, swept = check_sweep(commands, allowlist, sweep, timeout)
     stats.update({"stale": stale, "allowlisted": allowlisted, "swept": swept,
-                  "commands": len(commands), "baseline": len(baseline)})
+                  "commands": len(commands), "baseline": len(baseline),
+                  "compiled_out": switched})
     return reflect_problems + ratchet_problems + allow_problems + sweep_problems, stats
 
 
@@ -341,6 +360,7 @@ def emit_report(stats, sweep, problems, elapsed, budget, path, print_line=print)
         "commands": stats["commands"],
         "swept": stats["swept"],
         "allowlisted": stats["allowlisted"],
+        "compiled_out": stats.get("compiled_out", 0),
         "sweep": {k: {kk: vv for kk, vv in v.items() if kk != "args"}
                   for k, v in sorted(sweep.items())},
         "problems": problems,
@@ -353,8 +373,9 @@ def emit_report(stats, sweep, problems, elapsed, budget, path, print_line=print)
                   stats["unregistered"] - stats["grandfathered"]))
     print_line("  ratchet    : baseline %d entries, %d stale"
                % (stats["baseline"], stats["stale"]))
-    print_line("  reverse    : %d commands, %d swept, %d allowlisted"
-               % (stats["commands"], stats["swept"], stats["allowlisted"]))
+    print_line("  reverse    : %d commands, %d swept, %d allowlisted, %d compiled out"
+               % (stats["commands"], stats["swept"], stats["allowlisted"],
+                  stats.get("compiled_out", 0)))
     print_line("  budget     : %.1f s of %.0f s" % (elapsed, budget))
     if path:
         with open(path, "w", encoding="utf-8") as handle:

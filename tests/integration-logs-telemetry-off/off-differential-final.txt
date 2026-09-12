@@ -1,0 +1,3 @@
+OFF nm: 0
+OFF stripped strings: 0
+OFF raw strings: 385 (all on this checkout's path)

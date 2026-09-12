@@ -1001,6 +1001,17 @@ endif()
 # during a test run; only a deliberate --reanchor "reason" does that.
 # ---------------------------------------------------------------------------
 if(PYTHON3_EXECUTABLE)
+	# -DZENE_TELEMETRY=OFF: the telemetry.* group is compiled out with the
+	# client, so this binary has no telemetry.consent for the allowlist entry to
+	# name. The gate is told which ids the configuration removed instead of
+	# being handed a second allowlist, and it checks the flag in both
+	# directions - a name that the registry DOES declare is a failure, so the
+	# flag cannot be used to excuse a real command (docs/TELEMETRY-KILL-SWITCH.md).
+	if(ZENE_TELEMETRY_ENABLED)
+		set(ZENE_AGENT_SURFACE_COMPILED_OUT "")
+	else()
+		set(ZENE_AGENT_SURFACE_COMPILED_OUT --compiled-out telemetry.consent)
+	endif()
 	add_test(NAME agent_surface
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/agent-surface-gate.py
@@ -1008,6 +1019,7 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
 			--check
 			--report ${CMAKE_CURRENT_BINARY_DIR}/agent-surface-report.json
+			${ZENE_AGENT_SURFACE_COMPILED_OUT}
 	)
 	set_tests_properties(agent_surface PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

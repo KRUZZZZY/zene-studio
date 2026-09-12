@@ -1,0 +1,19 @@
+tools/diagnostics/abort-trace.c                          NOT IN tests/fork-sources.txt
+                                                         (and not in tests/all-sources.txt or tests/tools-sources.txt)
+
+scanned 1299 tracked source file(s) under src/, include/, plugins/, tests/, tools/, modules/;
+  242 fork-sources entry(ies), 1036 all-sources (whole-tree),
+  34 tools-sources (fork tooling), 0 stale entry(ies).
+
+FAIL: 1 tracked source file(s) are not in tests/fork-sources.txt
+      (and are not known upstream in tests/all-sources.txt):
+  tools/diagnostics/abort-trace.c
+
+A file in no scope list is measured by no gate. For each file above:
+  - new code this product adds -> add it to tests/fork-sources.txt, then re-run
+    the ratchets it widens (complexity, file-length, duplication — each has its
+    own per-scope baseline);
+  - inherited from upstream master -> add it to tests/all-sources.txt;
+  - the fork's own tooling under tools/ -> add it to tests/tools-sources.txt
+    (measured by gates 4, 7 and 8 with --scope tools; never put it in
+    tests/upstream-modifications.txt, which is the upstream-divergence ledger).

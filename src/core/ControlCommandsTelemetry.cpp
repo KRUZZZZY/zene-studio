@@ -33,11 +33,11 @@
  * being able to change it. Consent stays a human act; visibility does not
  * require one (docs/TELEMETRY-V1.md).
  *
- * Both commands are registered whatever -DZENE_TELEMETRY says. With the kill
- * switch off the handlers answer a typed, honest "not in this build" instead of
- * vanishing from the registry: a client should be able to ask the question, and
- * "the registry has no telemetry.* group" or "the registry has it but nothing
- * answers" would both be worse than an answer.
+ * Names are not "registered whatever -DZENE_TELEMETRY says": with the packager
+ * kill switch off the client does not exist, so the registry must not advertise
+ * commands that could answer for it. The whole group is compiled out with the
+ * client and the two ids are absent from the registry (74 commands ON, 72 OFF);
+ * see docs/TELEMETRY-KILL-SWITCH.md for the differential evidence.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -58,21 +58,21 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301 USA.
  */
-
+#include "lmmsconfig.h"  // the packager kill switch: ZENE_TELEMETRY_ENABLED lives here
 #include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
-
+#ifdef ZENE_TELEMETRY_ENABLED  // the packager kill switch: this whole file is the client
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Telemetry.h"
 #include "UnattendedRun.h"
 
-#ifdef ZENE_TELEMETRY_ENABLED
+// The consent screen, its host window and the app singleton: the GUI half of the client.
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "TelemetryConsentDialog.h"
-#endif
+// This guard runs to the end of the file: off means none of the client compiles.
 
 namespace lmms
 {
@@ -272,3 +272,15 @@ void registerTelemetryCommands(ControlRegistry& registry)
 }
 
 } // namespace lmms
+
+#else // !ZENE_TELEMETRY_ENABLED
+
+// The packager kill switch (v0.2.0-alpha fix). With -DZENE_TELEMETRY=OFF the
+// client does not exist, so neither does this command group: everything above
+// compiles to nothing, telemetry.consent and telemetry.status are ABSENT from
+// the registry (72 commands instead of 74), and there is no handler left that
+// could answer for a client the packager removed. Registering them anyway and
+// answering "not in this build" would have kept two command ids that describe a
+// feature the binary does not contain. See docs/TELEMETRY-KILL-SWITCH.md.
+
+#endif // ZENE_TELEMETRY_ENABLED

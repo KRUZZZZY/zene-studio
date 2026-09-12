@@ -397,7 +397,7 @@ def connect_session(options, tmp):
 def verdict(options, started, surface, commands, sweep, baseline, allowlist, exempt, changed):
     """Judge the collected evidence and say so."""
     problems, stats = evaluate(surface, commands, baseline, allowlist, exempt, sweep,
-                              COMMAND_TIMEOUT)
+                              COMMAND_TIMEOUT, frozenset(options.compiled_out))
     if changed:
         problems.append("the gate wrote to its own fixture project (%s); every sweep argument "
                         "that names a file must point into the temp directory"
@@ -451,6 +451,10 @@ def parse_args(argv):
     parser.add_argument("--baseline", default=DEFAULT_BASELINE)
     parser.add_argument("--allowlist", default=DEFAULT_ALLOWLIST)
     parser.add_argument("--exempt", default=DEFAULT_EXEMPT)
+    parser.add_argument("--compiled-out", action="append", default=[], metavar="COMMAND_ID",
+                        help="a command id this configuration compiled out; its allowlist entry "
+                             "is accounted for by the switch, refused if the registry declares "
+                             "it. tests/CMakeLists.txt passes it for -DZENE_TELEMETRY=OFF.")
     parser.add_argument("--budget", type=float, default=BUDGET_SECONDS)
     parser.add_argument("--report", default=None)
     return parser.parse_args(argv)

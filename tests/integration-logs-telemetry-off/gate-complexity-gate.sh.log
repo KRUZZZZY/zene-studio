@@ -1,0 +1,51 @@
+#TOTAL	2118	23
+complexity-gate: 2118 functions in the fork scope; 23 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  41       198    214    lmms::ExternalProcessStemSeparator::separate@238-451@src/core/ExternalProcessStemSeparator.cpp
+  31       158    168    lmms::clap::HostedPlugin::load@469-636@plugins/ClapEffect/ClapHost.cpp
+  29       100    119    lmms::ScriptEngine::applyCommand@438-556@src/core/ScriptEngine.cpp
+  27       124    144    lmms::vst3::HostedPlugin::load@268-411@plugins/Vst3Effect/Vst3Host.cpp
+  27       135    151    lmms::OnnxRuntimeStemSeparator::separate@91-241@src/core/OnnxRuntimeStemSeparator.cpp
+  23       64     91     lmms::AudioPortsModel::updateDirectRouting@247-337@src/core/AudioPortsModel.cpp
+  18       36     36     lmms::vst3::HostedPlugin::loadState@528-563@plugins/Vst3Effect/Vst3Host.cpp
+  17       80     85     lmms::AudioBus::update@195-279@src/core/AudioBus.cpp
+  15       58     64     main@20-83@plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+  15       64     80     lmms::AudioBus::sanitize@96-175@src/core/AudioBus.cpp
+  15       35     38     lmms::RoutingGraph::connect@90-127@src/core/RoutingGraph.cpp
+  15       42     53     lmms::RoutingGraph::rebuildPlan@310-362@src/core/RoutingGraph.cpp
+  15       75     85     lmms::wasm::WasmSandbox::loadModuleBytes@336-420@src/wasm/WasmSandbox.cpp
+  14       80     98     lmms::vst3::HostedPlugin::prepare@565-662@plugins/Vst3Effect/Vst3Host.cpp
+  14       44     48     lmms::ScriptEngine::resolveProjectPath@714-761@src/core/ScriptEngine.cpp
+  14       96     130    lmms::gui::PinConnector::paintEvent@184-313@src/gui/PinConnector.cpp
+  13       84     94     lmms::clap::HostedPlugin::process@741-834@plugins/ClapEffect/ClapHost.cpp
+  13       59     72     lmms::vst3::HostedPlugin::process@714-785@plugins/Vst3Effect/Vst3Host.cpp
+  12       68     80     lmms::wasm::WasmWorker::processSlot@155-234@src/wasm/WasmWorker.cpp
+  11       22     22     lmms::clap::describe@65-86@plugins/ClapEffect/ClapHost.cpp
+  11       35     41     lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp
+  11       71     80     lmms::StemModelStore::download@203-282@src/core/StemModelStore.cpp
+  11       58     65     lmms::wasm::WasmWorker::run@89-153@src/wasm/WasmWorker.cpp
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::load has 158 NLOC, 31 CCN, 1385 token, 3 PARAM, 168 length, 0 ND
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::process has 84 NLOC, 13 CCN, 840 token, 5 PARAM, 94 length, 0 ND
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c: main has 58 NLOC, 15 CCN, 575 token, 2 PARAM, 64 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::load has 124 NLOC, 27 CCN, 1216 token, 3 PARAM, 144 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::loadState has 36 NLOC, 18 CCN, 288 token, 2 PARAM, 36 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::prepare has 80 NLOC, 14 CCN, 789 token, 3 PARAM, 98 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::process has 59 NLOC, 13 CCN, 530 token, 5 PARAM, 72 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::sanitize has 64 NLOC, 15 CCN, 401 token, 1 PARAM, 80 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::update has 80 NLOC, 17 CCN, 468 token, 2 PARAM, 85 length, 0 ND
+src/core/AudioPortsModel.cpp: lmms::AudioPortsModel::updateDirectRouting has 64 NLOC, 23 CCN, 369 token, 0 PARAM, 91 length, 0 ND
+src/core/ExternalProcessStemSeparator.cpp: lmms::ExternalProcessStemSeparator::separate has 198 NLOC, 41 CCN, 1183 token, 6 PARAM, 214 length, 0 ND
+src/core/OnnxRuntimeStemSeparator.cpp: lmms::OnnxRuntimeStemSeparator::separate has 135 NLOC, 27 CCN, 1284 token, 6 PARAM, 151 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::connect has 35 NLOC, 15 CCN, 257 token, 5 PARAM, 38 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::rebuildPlan has 42 NLOC, 15 CCN, 380 token, 0 PARAM, 53 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::applyCommand has 100 NLOC, 29 CCN, 666 token, 1 PARAM, 119 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::resolveProjectPath has 44 NLOC, 14 CCN, 269 token, 3 PARAM, 48 length, 0 ND
+src/gui/PinConnector.cpp: lmms::gui::PinConnector::paintEvent has 96 NLOC, 14 CCN, 1026 token, 0 PARAM, 130 length, 0 ND
+src/wasm/WasmSandbox.cpp: lmms::wasm::WasmSandbox::loadModuleBytes has 75 NLOC, 15 CCN, 418 token, 3 PARAM, 85 length, 0 ND
+src/wasm/WasmWorker.cpp: lmms::wasm::WasmWorker::processSlot has 68 NLOC, 12 CCN, 530 token, 2 PARAM, 80 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)

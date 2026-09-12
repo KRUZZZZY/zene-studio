@@ -1,0 +1,23 @@
+On branch fix/telemetry-kill-switch
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   include/ControlRegistry.h
+	modified:   include/Telemetry.h
+	modified:   src/core/ControlCommandsTelemetry.cpp
+	modified:   src/core/ControlRegistry.cpp
+	modified:   src/core/ControlReversibilityTable.cpp
+	modified:   src/core/Telemetry.cpp
+	modified:   tests/CMakeLists.txt
+	modified:   tests/agent-surface-allowlist.txt
+	modified:   tests/agent-surface-gate.py
+	modified:   tests/agent_surface_lib.py
+	modified:   tests/src/core/ControlRegistryTest.cpp
+	modified:   tests/src/core/TelemetryTest.cpp
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	tests/integration-logs-telemetry-off/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Dropped refs/stash@{0} (30d4b5b493326cab826d3d45eaf85db5c2272eea)

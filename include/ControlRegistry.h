@@ -284,8 +284,8 @@ LMMS_EXPORT void registerArrangementStateCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerSurfaceCommands(ControlRegistry& registry);
 //! telemetry.consent (display+human, opens the consent screen) and
 //! telemetry.status (read-only: is it compiled in, is consent on, what would
-//! be sent). Registered whatever -DZENE_TELEMETRY says; the handlers answer a
-//! typed "not in this build" when the kill switch removed the client.
+//! be sent). Declared here whatever -DZENE_TELEMETRY says, but DEFINED, and
+//! registered, only when the client is compiled in (ZENE_TELEMETRY_ENABLED).
 LMMS_EXPORT void registerTelemetryCommands(ControlRegistry& registry);
 /*! Open the telemetry consent screen - the ONE implementation behind both the
  *  Help menu's "Telemetry - what we send..." action (which declares

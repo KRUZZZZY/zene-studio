@@ -16,15 +16,31 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
-# Opt-in telemetry (see docs/TELEMETRY-V1.md). The consent model, the payload
-# allowlist and the "what we send" builder are pure Qt and always compiled so
-# callers need no #ifdef and the feature can be tested directly; the networking
-# transport exists only when the packager left the kill switch on.
-SET(LMMS_TELEMETRY_SRCS
-	core/Telemetry.cpp
-)
+# Opt-in telemetry (see docs/TELEMETRY-V1.md). The whole client is compiled only
+# when the packager left the kill switch on. The consent model, the payload
+# allowlist, the "what we send" builder and the networking transport are one
+# client: -DZENE_TELEMETRY=OFF (the root CMakeLists.txt option) removes all of
+# them from the build, so no translation unit of the client is compiled and the
+# binary carries no telemetry symbol and no telemetry string. The sources are
+# guarded by ZENE_TELEMETRY_ENABLED as well (see src/core/Telemetry.cpp and
+# src/core/ControlCommandsTelemetry.cpp); this condition is what keeps the file
+# - and its debug-info file name - out of the OFF build in the first place.
+# Verified end to end by tests/telemetry-off-build.sh and
+# docs/TELEMETRY-KILL-SWITCH.md.
+SET(LMMS_TELEMETRY_SRCS)
 IF(ZENE_TELEMETRY_ENABLED)
-	LIST(APPEND LMMS_TELEMETRY_SRCS core/TelemetryNetworkTransport.cpp)
+	LIST(APPEND LMMS_TELEMETRY_SRCS
+		core/Telemetry.cpp
+		core/TelemetryNetworkTransport.cpp
+	)
+ENDIF()
+
+# The telemetry.* command group is the client's agent surface, so it travels with
+# the client (SPEC A15). Kept in its own variable so the big source list below
+# keeps the position it has always had.
+SET(LMMS_TELEMETRY_COMMAND_SRCS)
+IF(ZENE_TELEMETRY_ENABLED)
+	LIST(APPEND LMMS_TELEMETRY_COMMAND_SRCS core/ControlCommandsTelemetry.cpp)
 ENDIF()
 
 # Session View data layer (opt-in, see include/SessionModel.h). Pure Qt: the
@@ -77,7 +93,7 @@ set(LMMS_SRCS
 	core/ControlCommandsScript.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
-	core/ControlCommandsTelemetry.cpp
+	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
 	core/ControlDeviceCatalogue.cpp
 	core/ControlDeviceHosted.cpp

@@ -1018,6 +1018,36 @@ shipped neither. Nothing failed and every test passed, because a host whose depe
 absent is compiled out with a `STATUS` line rather than an error. See
 [`docs/PLUGIN-HOSTING-IN-RELEASE.md`](../docs/PLUGIN-HOSTING-IN-RELEASE.md).
 
+## Packager kill-switch build guard (`telemetry-off-build.sh`) — 2026-09-12, release path
+
+**Command**:
+
+```sh
+bash tests/telemetry-off-build.sh build-off        # add --jobs N to cap parallelism
+```
+
+**Pass criterion**: exit 0. The script configures `-DZENE_TELEMETRY=OFF` on top of the release flag
+set (`-DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_WERROR=ON -DTARGET_UARCH=official
+-DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON`), builds, and then measures the resulting binary:
+`nm -C build-off/zene | grep -ci telemetry` and `strings build-off/zene | grep -ci telemetry` must
+both be **0**. `-Werror` is load-bearing and is always passed: without it the original defect is a
+warning and the configuration builds while shipping the client. When `build-off/tests/
+ControlRegistryTest` exists the script also runs it, which asserts the registry half (72 commands,
+no `telemetry.*` id).
+
+**Why it is not a numbered gate in `run-all-gates.sh`**: it needs a full CMake configure and build
+of the tree, so it cannot run inside the default suite; it belongs on the release path beside the
+release-honesty guard, and it fetches nothing (it uses the pinned VST3/CLAP checkouts only if the
+build directory already has them, and prints a deviation when it does not).
+
+**Why it exists**: the kill switch was built once (recorded in `docs/TELEMETRY-V1.md` §5, which
+also records the link failure it caught) and then stopped building when the agent control surface
+merged `src/core/ControlCommandsTelemetry.cpp` — a file that names the client's types — with no
+guard, so `-DUSE_WERROR=ON` made the OFF configuration fatal on that translation unit. No gate
+noticed, because the release-honesty guard reads the build OPTIONS a binary reports, not whether a
+configuration builds. See [`docs/TELEMETRY-KILL-SWITCH.md`](../docs/TELEMETRY-KILL-SWITCH.md) for
+both configurations' differential evidence and the unchanged-ON proof.
+
 ## Running all gates
 
 ```sh

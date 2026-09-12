@@ -32,6 +32,14 @@
 
 #include "Telemetry.h"
 
+// The compiled-out half of this file asserts on the command registry, which is
+// where the absence of the client is observable (see the #else slot below).
+// It has to be included here, at file scope: an #include inside the class body
+// would nest the header's declarations inside the class.
+#ifndef ZENE_TELEMETRY_ENABLED
+#include "ControlRegistry.h"
+#endif
+
 #include <QtTest>
 
 using lmms::Telemetry;
@@ -280,11 +288,21 @@ private slots:
 	}
 #else
 	// --- the packager kill switch (compiled-out build) ---------------------
-	// This is the whole suite in a -DZENE_TELEMETRY=OFF build: the client does
-	// not exist, so there is nothing to send with and nothing to test.
+	// The client is not in this build, so its API does not exist to call: there
+	// is nothing to send with and no client type to hold. What IS observable in
+	// a compiled-out build is where the absence would show - the command
+	// registry. The telemetry.* group travels with the client, so this build
+	// must not declare it at all (72 commands, not 74); the count and the ids
+	// are pinned by ControlRegistryTest::telemetryCommandsAreAbsentWhenThe-
+	// ClientIsCompiledOut, and the binary-level half (no symbol, no string) is
+	// in docs/TELEMETRY-KILL-SWITCH.md.
 	void killSwitchStateMatchesTheBuild()
 	{
-		QVERIFY(!Telemetry::isCompiledIn());
+		lmms::ControlRegistry* registry = lmms::ControlRegistry::instance();
+		QVERIFY2(registry->command(QStringLiteral("telemetry.status")) == nullptr,
+			"a compiled-out build still declares telemetry.status");
+		QVERIFY2(registry->command(QStringLiteral("telemetry.consent")) == nullptr,
+			"a compiled-out build still declares telemetry.consent");
 	}
 #endif
 };

@@ -6,6 +6,16 @@ consent)"*, research-note, 2026-09-11). This document is the implementation repo
 of that article. Every decision below is the design's, not a new one; where the design states a
 rationale it is quoted rather than paraphrased.
 
+> **SUPERSEDED IN TWO PLACES, 2026-09-12 — read `docs/TELEMETRY-KILL-SWITCH.md` first.** The
+> packager kill switch `-DZENE_TELEMETRY=OFF` **did not build**: the agent control surface merged
+> `src/core/ControlCommandsTelemetry.cpp` (which names the client's types) unguarded, and nothing
+> re-checks that configuration, so `-DUSE_WERROR=ON` made the OFF build fatal on its first
+> translation unit. Two claims in this document were falsified by that and are corrected in place
+> below: §2.3's "`Telemetry.cpp` compiles to one symbol" and §2.5's "registered whatever
+> `-DZENE_TELEMETRY` says". The differential evidence for both configurations, the unchanged-ON
+> proof, and a runnable guard (`tests/telemetry-off-build.sh`) are in the new document. §4.5's
+> numbers are kept as the historical record of the state they measured, with a note saying so.
+
 ## 1. What the design said, and what was taken from it
 
 | Design decision | Taken as |
@@ -55,9 +65,16 @@ legitimate; no individual marketing profile is ever built from telemetry.
   * `src/gui/TelemetryConsentDialog.cpp` is not compiled and the Help-menu entry is not added;
   * `src/core/Telemetry.cpp` compiles to **one symbol**, `Telemetry::isCompiledIn()` returning
     `false`. There is no payload builder, no consent store, no `submit()`, no transport, no send
-    path in the object at all.
+    path in the object at all. **(Corrected 2026-09-12: that one symbol is gone too. Both
+    `src/core/Telemetry.cpp` and `src/core/ControlCommandsTelemetry.cpp` now compile to nothing at
+    all, so the binary carries no `telemetry` symbol and no `telemetry` string — `nm -C` 99 → 0 and
+    `strings` 690 → 0, measured in `docs/TELEMETRY-KILL-SWITCH.md` §4. A predicate whose whole job
+    is to report that the client is absent is still a symbol from the client, and the differential
+    a packager can actually run is "is it there?", not "is it unused?".)**
 * The tests that exercise the client are compiled out with it (they cannot exist without it); what
-  remains in that build is the assertion that the feature is not present.
+  remains in that build is the assertion that the feature is not present — and the stronger half
+  of the same property, that the `telemetry.*` ids are absent from the registry (72 commands, not
+  74), is asserted by `ControlRegistryTest::telemetryCommandsAreAbsentWhenTheClientIsCompiledOut`.
 
 ### 2.4 No network in tests, ever
 
@@ -87,9 +104,16 @@ line that matters — **consent is a human act, visibility is not**:
   so there is still only one payload description in the tree. It declares no `requires`, so the
   headless sweep exercises it rather than an allowlist excusing it.
 
-Both are registered whatever `-DZENE_TELEMETRY` says; with the kill switch off they answer a typed
-"not in this build" rather than disappearing, so "telemetry is off" and "telemetry is not compiled
-in" stay distinguishable to a client.
+Both are registered only in a build that contains the client. **(Superseded 2026-09-12: an earlier
+revision registered them whatever `-DZENE_TELEMETRY` said and answered a typed "not in this build",
+so that "telemetry is off" and "telemetry is not compiled in" would stay distinguishable to a
+client. That is a registry advertising a feature the binary does not contain: the agent-surface
+gate then has to sweep or allowlist an id that cannot do anything, and a client that lists the
+surface is told telemetry exists when it does not. With the kill switch off the whole group is
+absent — 74 commands ON, 72 OFF, which is the release notes' own pre-telemetry count. The
+allowlist entry for `telemetry.consent` is accounted for in that build by
+`--compiled-out telemetry.consent`, passed by `tests/CMakeLists.txt` and checked in both directions
+by the gate. See `docs/TELEMETRY-KILL-SWITCH.md` §3 and §5.)**
 
 ## 3. The payload allowlist (24 keys, closed)
 
@@ -191,6 +215,13 @@ With the switch off there is no transport type, no `submit()`, and no Qt network
 from the telemetry client: the only surviving telemetry symbol is the one that answers "is this
 feature present?" with `false`.
 
+> **CORRECTED 2026-09-12 — these numbers are the pre-regression record, not the contract.**
+> They were true when measured. The table above is what the switch was repaired *to* in this
+> revision of the tree; the OFF build then rotted (see the note on §5) and the current contract is
+> stricter: **0** symbols and **0** strings, because the last surviving symbol was a member of the
+> client too. The current, measured numbers for both configurations are in
+> `docs/TELEMETRY-KILL-SWITCH.md` §4, and `tests/telemetry-off-build.sh` re-measures them.
+
 `ctest -R TelemetryTest` in the OFF build: `OFF_CTEST_EXIT=0`, 1/1 — and the **full** suite also
 passes in the OFF configuration (26 passed, 0 failed; that build is the one the pre-restore cache
 held, recorded here because it is useful evidence that the switch does not break the tree).
@@ -255,6 +286,29 @@ header was still moc'd while the kill switch had removed the dialog's `.cpp`. Fi
 is needed) and by making the OFF build define exactly one telemetry symbol. This is recorded because
 it is the kind of defect the switch exists to surface, and it was found by *building* the OFF path,
 not by reading it.
+
+### 5.1 And then it broke again, silently (2026-09-12)
+
+The switch was repaired, and then the **agent control surface** merge added
+`src/core/ControlCommandsTelemetry.cpp` — a file that names `TelemetryConsent`, `Telemetry`,
+`TelemetryPayload` and `TelemetryHardware` — with no guard at all. Its OFF path had survived by
+answering "not in this build" from types that no longer existed in that configuration, so the OFF
+build failed at its first translation unit:
+
+```
+src/core/ControlCommandsTelemetry.cpp:87:13: error: 'QJsonObject lmms::{anonymous}::consentState(
+        const lmms::TelemetryConsent&)' defined but not used [-Werror=unused-function]
+cc1plus: all warnings being treated as errors
+```
+
+Nothing noticed for as long as it was broken, because **nothing built that configuration**:
+`tests/release-honesty-gate.sh` reads the build OPTIONS a binary reports, not whether a
+configuration builds, and §4.5's one-off run was not wired into anything runnable. That is the
+structural part of the defect, and it is fixed rather than documented:
+`tests/telemetry-off-build.sh` configures and builds the OFF configuration with `-DUSE_WERROR=ON`
+and fails unless the resulting binary carries **0** telemetry symbols and **0** telemetry strings.
+The repair, the unchanged-ON proof and both differentials are in
+`docs/TELEMETRY-KILL-SWITCH.md`.
 
 ## 6. Files
 
