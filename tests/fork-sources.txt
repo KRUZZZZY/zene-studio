@@ -111,3 +111,7 @@ src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tools/local-ci.sh
+# Test sources are this fork's code too, and a new one is a new source. The
+# regeneration command in the header only walks src/include/plugins, so this
+# entry has to be added by hand (and re-added if that command is ever re-run).
+tests/src/core/MixerConcurrencyTest.cpp
