@@ -141,6 +141,9 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_name(),
 	m_lock(),
 	m_queued( false ),
+	// D1 (mixer concurrency audit): initialise the mute latch explicitly. It
+	// used to be left indeterminate until the first masterMix().
+	m_muted( false ),
 	m_sidechainBuffer( Engine::audioEngine()->framesPerPeriod(), 2 ),
 	m_postFaderBuffer( Engine::audioEngine()->framesPerPeriod(), 2 ),
 	m_sidechainSends(),
@@ -165,9 +168,13 @@ MixerChannel::~MixerChannel()
 
 inline void MixerChannel::processed()
 {
+	// D1 (mixer concurrency audit): the latch is read by workers, so it is
+	// loaded atomically. Relaxed is enough: the value published for this
+	// period reaches a worker through the job queue's release/acquire pair
+	// (see m_muted in include/Mixer.h).
 	for( const MixerRoute * receiverRoute : m_sends )
 	{
-		if( receiverRoute->receiver()->m_muted == false )
+		if( receiverRoute->receiver()->m_muted.load(std::memory_order_relaxed) == false )
 		{
 			receiverRoute->receiver()->incrementDeps();
 		}
@@ -183,7 +190,7 @@ inline void MixerChannel::processed()
 		{
 			continue;
 		}
-		if( receiverRoute->receiver()->m_muted == false )
+		if( receiverRoute->receiver()->m_muted.load(std::memory_order_relaxed) == false )
 		{
 			receiverRoute->receiver()->incrementDeps();
 		}
@@ -412,7 +419,7 @@ void MixerChannel::doProcessing()
 {
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
 
-	if( m_muted == false )
+	if( m_muted.load(std::memory_order_relaxed) == false )
 	{
 		for( MixerRoute * senderRoute : m_receives )
 		{
@@ -563,6 +570,15 @@ Mixer::~Mixer()
 
 int Mixer::createChannel()
 {
+	// D3 (mixer concurrency audit): growing m_mixerChannels reallocates the
+	// container the render thread iterates (masterMix, mixToChannel), and the
+	// latency scratch follows it (resizeLatencyScratch -> updateLatencyCompensation,
+	// resolveLatency). Hold the same change mutex every other topology writer in
+	// this file holds, so the period boundary is the only place the containers
+	// can change. The mutex is recursive, so the nested requestChangeInModel()
+	// inside clearChannel() -> createChannelSend() -> createRoute() is fine.
+	Engine::audioEngine()->requestChangeInModel();
+
 	const int index = m_mixerChannels.size();
 	// create new channel
 	m_mixerChannels.push_back( new MixerChannel( index, this ) );
@@ -578,6 +594,8 @@ int Mixer::createChannel()
 		m_mixerChannels[index]->m_muteBeforeSolo = m_mixerChannels[index]->m_muteModel.value();
 		m_mixerChannels[index]->m_muteModel.setValue(true);
 	}
+
+	Engine::audioEngine()->doneChangeInModel();
 
 	return index;
 }
@@ -752,6 +770,15 @@ void Mixer::moveChannelLeft( int index )
 	{
 		return;
 	}
+
+	// D4 (mixer concurrency audit): the swap below and the renumbering that
+	// follows it change state the render thread reads under its period mutex -
+	// masterMix's latch loop walks m_mixerChannels, and updateLatencyCompensation
+	// reaches the same order and each channel's index through
+	// MixerRoute::senderIndex(). Take the change mutex for the whole operation,
+	// as deleteChannel() does, so a reorder can only happen between periods.
+	Engine::audioEngine()->requestChangeInModel();
+
 	// channels to swap
 	int a = index - 1, b = index;
 
@@ -802,6 +829,8 @@ void Mixer::moveChannelLeft( int index )
 	// Update m_channelIndex of both channels
 	m_mixerChannels[index]->setIndex(index);
 	m_mixerChannels[index - 1]->setIndex(index - 1);
+
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 
@@ -868,6 +897,13 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 int Mixer::createBusChannel()
 {
 	const int index = createChannel();
+
+	// D3 (mixer concurrency audit): setIsBus() is read by the render thread
+	// (mixToChannel) and by updateLatencyCompensation, so it takes the same
+	// change mutex. createChannel() has already released it, hence the
+	// re-acquire here; both windows end at a period boundary.
+	Engine::audioEngine()->requestChangeInModel();
+
 	m_mixerChannels[index]->setIsBus(true);
 	m_mixerChannels[index]->m_name = tr("Bus %1").arg(index);
 	m_mixerChannels[index]->m_volumeModel.setDisplayName(
@@ -876,6 +912,9 @@ int Mixer::createBusChannel()
 			m_mixerChannels[index]->m_name + ">" + tr("Mute"));
 	m_mixerChannels[index]->m_soloModel.setDisplayName(
 			m_mixerChannels[index]->m_name + ">" + tr("Solo"));
+
+	Engine::audioEngine()->doneChangeInModel();
+
 	return index;
 }
 
@@ -1368,10 +1407,27 @@ void Mixer::masterMix( SampleFrame* _buf )
 	// about their senders, and can just increment the deps of their
 	// recipients right away.
 	AudioEngineWorkerThread::resetJobQueue( AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic );
+
+	// D1 (mixer concurrency audit): latch the whole mixer's mute state for this
+	// period *before* acting on any channel. processed() below reads the latch
+	// of the channels this one sends to, so a single fused pass tested a
+	// higher-indexed receiver against the previous period's value: an unmuted
+	// receiver of a muted sender was never counted, was therefore never
+	// queued, and the period that un-mutes it (or un-solos a set of channels)
+	// came out silent - a deterministic one-period dropout. Splitting the pass
+	// also means no channel is in the job queue while the latches are being
+	// written, so a worker can only ever observe the value this period decided.
 	for( MixerChannel * ch : m_mixerChannels )
 	{
-		ch->m_muted = ch->m_muteModel.value();
-		if( ch->m_muted ) // instantly "process" muted channels
+		// Relaxed: this period's value reaches a worker through the job
+		// queue's release/acquire pair (ThreadableJob::queue() / process()),
+		// which orders every store made here before the job becomes visible.
+		ch->m_muted.store( ch->m_muteModel.value(), std::memory_order_relaxed );
+	}
+
+	for( MixerChannel * ch : m_mixerChannels )
+	{
+		if( ch->m_muted.load(std::memory_order_relaxed) ) // instantly "process" muted channels
 		{
 			// PDC (#605 audit C7): a muted channel never runs doProcessing(),
 			// so the incoming delay lines would freeze for the whole mute and
@@ -1384,6 +1440,18 @@ void Mixer::masterMix( SampleFrame* _buf )
 			for( MixerSidechainRoute * route : ch->m_sidechainReceives )
 			{
 				route->advanceSilence(fpp);
+			}
+			// D2(ii)/(iii) (mixer concurrency audit): the other half of the C7
+			// fix. A muted channel writes no sidechain taps, so its outgoing
+			// intermediates keep the last block they were given; doProcessing()
+			// - which is where they would be cleared by the receiver - never
+			// runs. Clear them here instead. Without this a receiver sums a
+			// stale tap (D2(ii)), and because prepareMasterMix() re-commits a
+			// deferred route's intermediate every period, a deferred receiver
+			// loops the same stale block forever (D2(iii)).
+			for( MixerSidechainRoute * route : ch->m_sidechainSends )
+			{
+				route->clearIntermediate();
 			}
 			ch->processed();
 			ch->done();

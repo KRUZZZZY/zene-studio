@@ -84,7 +84,14 @@ public:
 	QString m_name;
 	QMutex m_lock;
 	bool m_queued; // are we queued up for rendering yet?
-	bool m_muted; // are we muted? updated per period so we don't have to call m_muteModel.value() twice
+	//! Are we muted? Updated per period by Mixer::masterMix so the render
+	//! thread and the workers do not call m_muteModel.value() repeatedly.
+	//! Atomic because workers read it (MixerChannel::processed(),
+	//! doProcessing()) while the render thread writes it; the value a worker
+	//! sees for the current period is ordered by the job queue's
+	//! release/acquire pair (ThreadableJob::queue() / process()), which
+	//! happens after the latch pass in masterMix (D1, mixer concurrency audit).
+	std::atomic<bool> m_muted;
 
 	// pointers to other channels that this one sends to
 	MixerRouteVector m_sends;
