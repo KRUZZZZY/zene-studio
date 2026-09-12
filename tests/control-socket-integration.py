@@ -705,10 +705,20 @@ def main():
         # PatternClip: a real clip with a real id, but no note list, so the piano
         # roll refuses it by type instead of pretending it is empty.
         arrangement = ok_result(client.call(24, "arrangement.get_state"), 24)
-        if arrangement.get("track_count") != 1 or arrangement.get("clip_count") != 1:
+        # The shared fixture has grown since this leg was written (the plugin lane added an
+        # instrument track to it), so assert the SHAPE this leg depends on - trk-0 is the
+        # pattern track and carries clip-0, the PatternClip - rather than exact totals that
+        # belong to no single lane. Repaired by the integrating parent, 2026-09-12.
+        if arrangement.get("track_count", 0) < 1 or arrangement.get("clip_count", 0) < 1:
             fail("the fixture's arrangement is %r" % arrangement, process, log_path)
-        fixture_track = arrangement["tracks"][0]
-        fixture_clip = arrangement["clips"][0]
+        pattern_tracks = [t for t in arrangement["tracks"] if t.get("type") == "pattern"]
+        if not pattern_tracks:
+            fail("the fixture has no pattern track: %r" % arrangement, process, log_path)
+        fixture_track = pattern_tracks[0]
+        fixture_clip = next((c for c in arrangement["clips"]
+                             if c.get("track") == fixture_track.get("id")), None)
+        if fixture_clip is None:
+            fail("the pattern track carries no clip: %r" % arrangement, process, log_path)
         if fixture_track.get("id") != "trk-0" or fixture_clip.get("id") != "clip-0":
             fail("stable ids are not trk-<n>/clip-<n>: %r %r" % (fixture_track, fixture_clip), process, log_path)
         if fixture_clip.get("note_count") is not None:
@@ -759,16 +769,25 @@ def main():
             fail("undo of track.set_mute did not restore the unmuted state: %r" % after_undo_mute,
                  process, log_path)
 
+        # Counts are read RELATIVE to whatever the shared fixture holds: the plugin lane added a
+        # track and a clip of its own to this fixture, so an absolute expectation belongs to no
+        # single lane. Request ids 66/67 sit in the free band (the legs use 1-65, 261-269, 311+).
+        # Repaired by the integrating parent, 2026-09-12.
+        before_add = ok_result(client.call(66, "arrangement.get_state"), 66).get("clip_count")
         first_clip = ok_result(client.call(27, "clip.add", {"track": track, "position": 0, "length": 192}), 27)
         clip = first_clip.get("clip")
         if not clip or not clip.startswith("clip-"):
             fail("clip.add returned %r" % first_clip, process, log_path)
+        added = ok_result(client.call(67, "arrangement.get_state"), 67).get("clip_count")
+        if added != (before_add or 0) + 1:
+            fail("clip.add did not add exactly one clip: %r -> %r" % (before_add, added), process, log_path)
         # clip.add is claimed reversible (Track checkpoint): prove it with a real undo.
         if not ok_result(client.call(28, "control.undo"), 28).get("undone"):
             fail("control.undo reported nothing undone after clip.add", process, log_path)
         after_undo = ok_result(client.call(29, "arrangement.get_state"), 29)
-        if after_undo.get("clip_count") != 1:
-            fail("undo of clip.add left %r clips" % after_undo.get("clip_count"), process, log_path)
+        if after_undo.get("clip_count") != before_add:
+            fail("undo of clip.add left %r clips, expected the %r it started from"
+                 % (after_undo.get("clip_count"), before_add), process, log_path)
 
         # Create it again, then arrange two notes into it.
         clip = ok_result(client.call(30, "clip.add", {"track": track, "position": 0, "length": 192}), 30).get("clip")
@@ -836,16 +855,20 @@ def main():
             fail("undo of note.remove did not restore the note: %r" % roll, process, log_path)
 
         # Delete the clip, undo, read the arrangement back.
+        before_delete = ok_result(client.call(68, "arrangement.get_state"), 68).get("clip_count")
         ok_result(client.call(43, "clip.delete", {"clip": clip}), 43)
         after_delete = ok_result(client.call(44, "arrangement.get_state"), 44)
-        if after_delete.get("clip_count") != 1:
-            fail("clip.delete left %r clips" % after_delete.get("clip_count"), process, log_path)
+        if after_delete.get("clip_count") != (before_delete or 0) - 1:
+            fail("clip.delete left %r clips, expected one fewer than %r"
+                 % (after_delete.get("clip_count"), before_delete), process, log_path)
         if not ok_result(client.call(45, "control.undo"), 45).get("undone"):
             fail("control.undo reported nothing undone after clip.delete", process, log_path)
         after_restore = ok_result(client.call(46, "arrangement.get_state"), 46)
-        if after_restore.get("clip_count") != 2:
+        if after_restore.get("clip_count") != before_delete:
             fail("undo of clip.delete did not restore the clip: %r" % after_restore, process, log_path)
-        clip = [c.get("id") for c in after_restore.get("clips", []) if c.get("id") != "clip-0"][0]
+        # re-find this leg's OWN clip by its track: the shared fixture now carries clips that
+        # other lanes added, so "everything except clip-0" is no longer this leg's clip.
+        clip = [c.get("id") for c in after_restore.get("clips", []) if c.get("track") == track][0]
 
         # --- clip.move / clip.resize / clip.split / clip.duplicate --------
         moved_clip = ok_result(client.call(47, "clip.move", {"clip": clip, "position": 192}), 47)
@@ -864,9 +887,10 @@ def main():
             fail("clip.duplicate returned %r" % duplicated, process, log_path)
 
         arrangement = ok_result(client.call(52, "arrangement.get_state"), 52)
-        if arrangement.get("clip_count") != 4:
-            fail("after split+duplicate the arrangement has %r clips: %r"
-                 % (arrangement.get("clip_count"), arrangement), process, log_path)
+        # this leg has added a net 3 clips since before_add: add, undo, add, split, duplicate
+        if arrangement.get("clip_count") != (before_add or 0) + 3:
+            fail("after split+duplicate the arrangement has %r clips, expected %r: %r"
+                 % (arrangement.get("clip_count"), (before_add or 0) + 3, arrangement), process, log_path)
         copy_roll = ok_result(client.call(53, "roll.get_state", {"clip": duplicated["clip"]}), 53)
         if copy_roll.get("note_count") != 2:
             fail("clip.duplicate did not copy the notes: %r" % copy_roll, process, log_path)
@@ -912,20 +936,23 @@ def main():
         # --- track.remove, the one destructive command of the group --------
         # (dry_run previews it; the real call is exercised here and its
         # transaction is checked in a second read of the list.)
+        tracks_before_remove = ok_result(client.call(69, "arrangement.get_state"), 69).get("track_count")
         preview = ok_result(client.call(60, "track.remove", {"track": track, "dry_run": True}), 60)
         if not preview.get("dry_run"):
             fail("track.remove did not honour dry_run: %r" % preview, process, log_path)
         still_there = ok_result(client.call(61, "arrangement.get_state"), 61)
-        if still_there.get("track_count") != 2:
+        if still_there.get("track_count") != tracks_before_remove:
             fail("a dry_run removed the track anyway: %r" % still_there, process, log_path)
 
         removed_track = ok_result(client.call(62, "track.remove", {"track": track}), 62)
         if removed_track.get("removed") != track:
             fail("track.remove returned %r" % removed_track, process, log_path)
         final = ok_result(client.call(63, "arrangement.get_state"), 63)
-        if final.get("track_count") != 1 or final.get("clip_count") != 1:
-            fail("track.remove left %r / %r" % (final.get("track_count"), final.get("clip_count")),
-                 process, log_path)
+        if final.get("track_count") != (tracks_before_remove or 0) - 1:
+            fail("track.remove left %r of %r tracks"
+                 % (final.get("track_count"), tracks_before_remove), process, log_path)
+        if any(c.get("track") == track for c in final.get("clips", [])):
+            fail("track.remove left clips of the removed track behind: %r" % final, process, log_path)
         transactions = ok_result(client.call(64, "control.transactions"), 64).get("transactions", [])
         removals = [t for t in transactions if t.get("command") == "track.remove"]
         if len(removals) != 2:
