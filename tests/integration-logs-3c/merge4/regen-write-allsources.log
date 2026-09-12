@@ -1,0 +1,6 @@
+all-sources.txt      rev=INDEX entries=1186 duplicates=0 +4 -0 DOES-NOT-REPRODUCE
+   + include/WarpMarkers.h
+   + tests/src/core/ClipWarpPersistenceTest.cpp
+   + tests/src/core/WarpMarkersTest.cpp
+   + tests/src/tracks/SampleClipWarpTest.cpp
+VERIFY RESULT: MISMATCH
