@@ -1,6 +1,6 @@
 <?xml version='1.0'?>
 <!DOCTYPE multimedia-project>
-<multimedia-project version="1.0" creator="LMMS" creatorversion="1.0.93" type="instrumenttracksettings">
+<multimedia-project version="1.0" creator="Zene Studio" creatorversion="1.0.93" type="instrumenttracksettings">
   <head/>
   <instrumenttracksettings>
     <instrumenttrack mixch="0" surpos-x="0" surpos-y="0" basenote="75" name="Oh Synth" vol="102" tab="0">

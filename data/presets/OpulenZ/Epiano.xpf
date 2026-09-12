@@ -1,6 +1,6 @@
 <?xml version='1.0'?>
 <!DOCTYPE multimedia-project>
-<multimedia-project version="1.0" creator="LMMS" creatorversion="1.0.93" type="instrumenttracksettings">
+<multimedia-project version="1.0" creator="Zene Studio" creatorversion="1.0.93" type="instrumenttracksettings">
   <head/>
   <instrumenttracksettings muted="0" type="0" name="Piano" solo="0">
     <instrumenttrack pan="0" mixch="0" pitchrange="1" pitch="0" basenote="57" vol="100">

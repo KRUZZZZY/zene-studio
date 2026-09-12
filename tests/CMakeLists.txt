@@ -11,8 +11,11 @@ set(LMMS_TESTS
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
+	src/core/ConfigMigrationTest.cpp
+	src/core/DataFileFormatTest.cpp
 	src/core/MathTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
+	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordRingBufferTest.cpp
@@ -130,6 +133,14 @@ endif()
 # it needs a Qt platform plugin even though it is guiless (same reason as
 # PluginPortsMigrationTest).
 set_tests_properties(RemotePluginClientE2ETest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# PluginLogoResourceTest loads a QPixmap through the product's own artwork search
+# path, so it needs a QGuiApplication and therefore a Qt platform plugin.  It
+# exists because a resource that does not resolve is silent: embed::loadSvgPixmap
+# warns and returns a 1x1 transparent pixmap, so nothing fails while every plugin
+# dialog renders blank.
+set_tests_properties(PluginLogoResourceTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

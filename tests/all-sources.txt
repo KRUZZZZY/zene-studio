@@ -1067,10 +1067,13 @@ tests/src/core/AudioBusTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
+tests/src/core/ConfigMigrationTest.cpp
+tests/src/core/DataFileFormatTest.cpp
 tests/src/core/MathTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
+tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp
 tests/src/core/PdcMixerTest.cpp
 tests/src/core/PhaseDMixerTestSupport.h
