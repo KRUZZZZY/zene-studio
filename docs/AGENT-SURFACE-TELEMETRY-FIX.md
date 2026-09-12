@@ -42,6 +42,18 @@ Both are always registered, whatever `-DZENE_TELEMETRY` says. With the kill swit
 answer a typed "not in this build" instead of disappearing from the registry, so a client never has
 to guess whether an empty `telemetry.*` group means "off" or "not compiled in".
 
+> **SUPERSEDED 2026-09-12 — this is what the file did, and it is why the OFF build stopped
+> building.** `src/core/ControlCommandsTelemetry.cpp` names `TelemetryConsent`, `Telemetry`,
+> `TelemetryPayload` and `TelemetryHardware`, none of which exist in a
+> `-DZENE_TELEMETRY=OFF` build; its OFF path compiled only because the client's *header* was still
+> there, and the moment `Telemetry.cpp` was compiled out the file failed on its own signatures
+> (unused `consentState`, fatal under `-Werror`) — see `docs/TELEMETRY-V1.md` §5.1. The group is now
+> guarded by `ZENE_TELEMETRY_ENABLED` and is **absent from the registry** in that configuration
+> (72 commands, not 74): a command id that describes a feature the binary does not contain is worse
+> than an absent one, because the agent-surface gate then has to sweep or allowlist it.
+> `docs/TELEMETRY-KILL-SWITCH.md` is the repair's report. The design argument in the rest of this
+> document — the `display, human` split, the read-only half being swept — stands unchanged.
+
 **Why the split.** Consent is a human act, visibility is not:
 
 * `telemetry.consent` is the modal screen, so it declares `requires: display, human`.

@@ -1,0 +1,7 @@
+Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsTelemetry.cpp.o
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-next-telemetry-off/src/core/ControlCommandsTelemetry.cpp:87:13: error: ‘QJsonObject lmms::{anonymous}::consentState(const lmms::TelemetryConsent&)’ defined but not used [-Werror=unused-function]
+   87 | QJsonObject consentState(const TelemetryConsent& consent)
+      |             ^~~~~~~~~~~~
+cc1plus: all warnings being treated as errors
+gmake[1]: *** [src/CMakeFiles/lmmsobjs.dir/build.make:626: src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsTelemetry.cpp.o] Error 1
+gmake: *** [Makefile:1209: core/ControlCommandsTelemetry.cpp.o] Error 2

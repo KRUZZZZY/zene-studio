@@ -1,0 +1,23 @@
+=== telemetry-off-build: -DZENE_TELEMETRY=OFF must configure, build, and contain nothing telemetry ===
+repo        : /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-next-telemetry-off
+build dir   : build-off (jobs=4)
+cmake opts  : -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_WERROR=ON -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON -DZENE_TELEMETRY=OFF -DWANT_VST3=ON -DWANT_CLAP=ON -DWANT_QT6=ON
+  deviation : no Qt5 development files on this machine: added -DWANT_QT6=ON
+
+--- [1/3] configure ---
+configure EXIT=0   (log: build-off/telemetry-off-configure.log)
+  ZENE_TELEMETRY:BOOL=OFF
+--- [2/3] build (-j4) ---
+build EXIT=0   (log: build-off/telemetry-off-build.log)
+--- [3/3] differential on build-off/zene ---
+  nm -C build-off/zene | grep -ci telemetry        = 0
+  strings (debug-stripped) | grep -ci telemetry = 0
+  raw strings (DWARF build paths included)  = 385  (of which on this checkout's path: 385)
+--- registry assertion (build-off/tests/ControlRegistryTest) ---
+ControlRegistryTest EXIT=0   (log: build-off/telemetry-off-registry-test.log)
+
+PASS: -DZENE_TELEMETRY=OFF configures, builds, and its binary carries
+      0 telemetry symbol(s) and 0 telemetry string line(s)
+      once the debug info (which embeds this checkout's own path) is stripped.
+      (docs/TELEMETRY-KILL-SWITCH.md has the ON-side evidence: byte-identical
+      object hash, ctest 86/86, unchanged render.)

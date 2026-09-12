@@ -248,9 +248,12 @@ that is this page's fault — report it and it gets added.
   Verified in the tree: `docs/TELEMETRY-V1.md` is the implementing lane's report — the allowlist is
   **24 keys and closed** (§3), the mutator refuses anything outside it, the consent state defaults to all-false,
   and the preview renders the exact bytes produced; the packager kill switch is `option(ZENE_TELEMETRY … ON)`
-  (`CMakeLists.txt:140`), whose `OFF` compiles the client and its networking code out (proved in that
-  document's §5 and listed in the root `CMakeLists.txt` (`IF(ZENE_TELEMETRY_ENABLED)`)). `src/core/Telemetry.cpp`,
-  `src/core/TelemetryNetworkTransport.cpp` and `src/gui/TelemetryConsentDialog.cpp` are present. The lane
+  (`CMakeLists.txt:140`), whose `OFF` compiles the client, its consent screen and its networking code out —
+  **the whole client, so the binary carries no `telemetry` symbol and no `telemetry` string, and the
+  `telemetry.*` commands are absent from the registry (72 commands instead of 74)**. Verified in the tree:
+  `docs/TELEMETRY-KILL-SWITCH.md` is the repair's report — both configurations measured, the ON object
+  byte-identical, ctest 86/86, the render sha256 unchanged — and `tests/telemetry-off-build.sh` re-runs the
+  OFF build and the two counts, so the switch cannot rot again in silence. The lane
   `post-alpha/telemetry` is an ancestor of this tip.
 - **Telemetry v1 is inert: there is no server to send to yet.** The client is complete and refuses to open a
   connection; even switched on, **nothing leaves your machine**. That is stated plainly because a privacy
