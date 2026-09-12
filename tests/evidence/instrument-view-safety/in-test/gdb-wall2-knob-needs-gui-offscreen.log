@@ -1,0 +1,70 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of lmms::Vst3InstrumentIntegrationTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+[New Thread 0x7ffff27966c0 (LWP 486580)]
+[New Thread 0x7ffff1f956c0 (LWP 486581)]
+[New Thread 0x7ffff17946c0 (LWP 486582)]
+[New Thread 0x7ffff0f936c0 (LWP 486583)]
+[Thread 0x7ffff0f936c0 (LWP 486583) exited]
+[Thread 0x7ffff1f956c0 (LWP 486581) exited]
+[Thread 0x7ffff17946c0 (LWP 486582) exited]
+[Thread 0x7ffff27966c0 (LWP 486580) exited]
+[New Thread 0x7ffff0f936c0 (LWP 486592)]
+[New Thread 0x7ffff17946c0 (LWP 486593)]
+[New Thread 0x7ffff1f956c0 (LWP 486594)]
+[New Thread 0x7ffff27966c0 (LWP 486595)]
+[New Thread 0x7fffe3fff6c0 (LWP 486596)]
+[New Thread 0x7fffe37fe6c0 (LWP 486597)]
+[New Thread 0x7fffe2ffd6c0 (LWP 486598)]
+[New Thread 0x7fffe27fc6c0 (LWP 486599)]
+[New Thread 0x7fffe1ffb6c0 (LWP 486600)]
+[New Thread 0x7fffe17fa6c0 (LWP 486601)]
+[New Thread 0x7fffe0ff96c0 (LWP 486602)]
+[New Thread 0x7fffc3fff6c0 (LWP 486603)]
+[New Thread 0x7fffc37fe6c0 (LWP 486604)]
+[New Thread 0x7fffc2ffd6c0 (LWP 486605)]
+[New Thread 0x7fffc27fc6c0 (LWP 486606)]
+[New Thread 0x7fffc1ffb6c0 (LWP 486607)]
+[New Thread 0x7fffc17fa6c0 (LWP 486608)]
+[New Thread 0x7fffc0ff96c0 (LWP 486609)]
+[New Thread 0x7fffa3fff6c0 (LWP 486610)]
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 194 msecs.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+[New Thread 0x7fffa2dff6c0 (LWP 486660)]
+QINFO  : lmms::Vst3InstrumentIntegrationTest::initTestCase() engine: sampleRate=44100 framesPerPeriod=256
+[Thread 0x7fffa2dff6c0 (LWP 486660) exited]
+PASS   : lmms::Vst3InstrumentIntegrationTest::initTestCase()
+
+Thread 1 "Vst3InstrumentI" received signal SIGSEGV, Segmentation fault.
+0x00005555558e1954 in lmms::gui::SimpleTextFloat::SimpleTextFloat (this=this@entry=0x555556b456c0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/include/GuiApplication.h:65
+65		MainWindow* mainWindow() { return m_mainWindow; }
+#0  0x00005555558e1954 in lmms::gui::SimpleTextFloat::SimpleTextFloat (this=this@entry=0x555556b456c0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/include/GuiApplication.h:65
+#1  0x00005555558d011d in lmms::gui::FloatModelEditorBase::initUi (this=0x555556468e30, name=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/src/gui/widgets/FloatModelEditorBase.cpp:76
+#2  0x00005555558d1af6 in lmms::gui::FloatModelEditorBase::FloatModelEditorBase (this=this@entry=0x555556468e30, directionOfManipulation=directionOfManipulation@entry=lmms::gui::FloatModelEditorBase::DirectionOfManipulation::Vertical, parent=<optimized out>, name=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/src/gui/widgets/FloatModelEditorBase.cpp:68
+#3  0x00005555558d9777 in lmms::gui::Knob::Knob (this=0x555556468e30, _knob_num=lmms::gui::KnobType::Bright26, _parent=<optimized out>, _name=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/src/gui/widgets/Knob.cpp:47
+#4  0x00005555558d98fc in lmms::gui::Knob::Knob (this=this@entry=0x555556468e30, knobNum=knobNum@entry=lmms::gui::KnobType::Bright26, labelText=..., parent=parent@entry=0x555556b440b0, labelRendering=labelRendering@entry=lmms::gui::Knob::LabelRendering::WidgetFont, name=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/src/gui/widgets/Knob.cpp:53
+#5  0x00007fffe02b6ed9 in lmms::gui::Vst3InstrumentView::Vst3InstrumentView (this=this@entry=0x555556b440b0, instrument=instrument@entry=0x55555676bcc0, parent=parent@entry=0x7fffffffcd80) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/plugins/Vst3Instrument/Vst3InstrumentView.cpp:64
+#6  0x00007fffe02b1af9 in lmms::Vst3Instrument::instantiateView (this=0x55555676bcc0, parent=0x7fffffffcd80) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/plugins/Vst3Instrument/Vst3Instrument.cpp:341
+#7  0x0000555555738642 in lmms::Plugin::createView (this=this@entry=0x55555676bcc0, parent=parent@entry=0x7fffffffcd80) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/src/core/Plugin.cpp:265
+#8  0x000055555566f810 in lmms::Vst3InstrumentIntegrationTest::testAGuiLessInstrumentExposesItsParameters (this=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/tests/src/plugins/Vst3InstrumentIntegrationTest.cpp:560
+#9  0x00007ffff634700d in QMetaMethod::invoke(QObject*, Qt::ConnectionType, QGenericReturnArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument) const () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#10 0x00007ffff77675b0 in ??? () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#11 0x00007ffff7774ecf in QTest::qRun() () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#12 0x00007ffff776a397 in QTest::qExec(QObject*, int, char**) () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#13 0x000055555565f7a7 in main (argc=<optimized out>, argv=0x7fffffffd7d8) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/tests/src/plugins/Vst3InstrumentIntegrationTest.cpp:603
+rax            0x0                 0
+rbx            0x555556b456c0      93825015240384
+rdi            0x555556b456c0      93825015240384
+rsi            0x48                72

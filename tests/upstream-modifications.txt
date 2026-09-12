@@ -548,3 +548,9 @@ src/core/NotePlayHandle.cpp	#601 MPE: updateFrequency() multiplies the instrumen
 # C/C++ scope of tests/fork-sources.txt, and registering them there was measured to break the file-length
 # and complexity ratchets. A future gate-config change should give tools/ its own category; until then this
 # is the honest place to record them. Reasons are factual descriptions, not justifications of divergence.
+
+# (2026-09-12) post-alpha/instrument-view-safety lane (merge train 3D, merge #2):
+# the guarded window-icon call in InstrumentView::setModel(). The branch's own declaration,
+# kept verbatim; its copy of this file predates 2026-09-12's expansions, so ours is kept and
+# only this one path is added - the entry set is the union of both sides (438).
+src/gui/instrument/InstrumentView.cpp	InstrumentView::setModel() guards the window-icon call on instrumentTrackWindow(): the view is built outside an InstrumentTrackWindow by every caller that is not InstrumentTrackWindow::updateInstrumentView(), and the unguarded call was a null-pointer dereference inside QWidget::setWindowIcon (docs/INSTRUMENT-VIEW-SAFETY.md; regression test testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow)

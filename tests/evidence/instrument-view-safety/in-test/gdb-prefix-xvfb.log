@@ -1,0 +1,57 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[New Thread 0x7ffff26576c0 (LWP 728027)]
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of lmms::Vst3InstrumentIntegrationTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+[New Thread 0x7ffff1e566c0 (LWP 728274)]
+[New Thread 0x7ffff16556c0 (LWP 728278)]
+[New Thread 0x7ffff0e546c0 (LWP 728279)]
+[New Thread 0x7fffebfff6c0 (LWP 728280)]
+[Thread 0x7fffebfff6c0 (LWP 728280) exited]
+[Thread 0x7ffff16556c0 (LWP 728278) exited]
+[Thread 0x7ffff0e546c0 (LWP 728279) exited]
+[Thread 0x7ffff1e566c0 (LWP 728274) exited]
+[New Thread 0x7fffebfff6c0 (LWP 728320)]
+[New Thread 0x7ffff0e546c0 (LWP 728321)]
+[New Thread 0x7ffff16556c0 (LWP 728322)]
+[New Thread 0x7ffff1e566c0 (LWP 728323)]
+[New Thread 0x7fffeb7fe6c0 (LWP 728324)]
+[New Thread 0x7fffeaffd6c0 (LWP 728325)]
+[New Thread 0x7fffea7fc6c0 (LWP 728326)]
+[New Thread 0x7fffe9ffb6c0 (LWP 728327)]
+[New Thread 0x7fffe97fa6c0 (LWP 728328)]
+[New Thread 0x7fffe8ff96c0 (LWP 728329)]
+[New Thread 0x7fffbbfff6c0 (LWP 728330)]
+[New Thread 0x7fffc3fff6c0 (LWP 728331)]
+[New Thread 0x7fffc37fe6c0 (LWP 728332)]
+[New Thread 0x7fffc2ffd6c0 (LWP 728333)]
+[New Thread 0x7fffc27fc6c0 (LWP 728334)]
+[New Thread 0x7fffc1ffb6c0 (LWP 728335)]
+[New Thread 0x7fffc17fa6c0 (LWP 728336)]
+[New Thread 0x7fffc0ff96c0 (LWP 728337)]
+[New Thread 0x7fffbb7fe6c0 (LWP 728339)]
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 111 msecs.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : lmms::Vst3InstrumentIntegrationTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+[New Thread 0x7fffba5ff6c0 (LWP 728459)]
+QINFO  : lmms::Vst3InstrumentIntegrationTest::initTestCase() engine: sampleRate=44100 framesPerPeriod=256
+[Thread 0x7fffba5ff6c0 (LWP 728459) exited]
+PASS   : lmms::Vst3InstrumentIntegrationTest::initTestCase()
+QWARN  : lmms::Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow() Error loading icon pixmap "vst3instrument/logo": "File not found"
+
+Thread 1 "Vst3InstrumentI" received signal SIGSEGV, Segmentation fault.
+0x00007ffff79c2b9b in QWidget::setWindowIcon(QIcon const&) () from /lib/x86_64-linux-gnu/libQt6Widgets.so.6
+#0  0x00007ffff79c2b9b in QWidget::setWindowIcon(QIcon const&) () at /lib/x86_64-linux-gnu/libQt6Widgets.so.6
+#1  0x000055555589173d in lmms::gui::InstrumentView::setModel (this=this@entry=0x7fffffffcd40, _model=_model@entry=0x5555568bed80) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/src/gui/instrument/InstrumentView.cpp:61
+#2  0x0000555555891876 in lmms::gui::InstrumentView::InstrumentView (this=this@entry=0x7fffffffcd40, _Instrument=_Instrument@entry=0x5555568bed80, _parent=_parent@entry=0x7fffffffcd10) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/src/gui/instrument/InstrumentView.cpp:38
+#3  0x00005555556709f1 in lmms::(anonymous namespace)::BareInstrumentView::BareInstrumentView (parent=0x7fffffffcd10, instrument=0x5555568bed80, this=0x7fffffffcd40) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/tests/src/plugins/Vst3InstrumentIntegrationTest.cpp:148

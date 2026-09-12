@@ -1,0 +1,24 @@
+### case toplevel (offscreen)
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+case toplevel: setWindowIcon on a top-level QWidget
+case toplevel: ok
+probe finished without a crash
+EXIT=0
+### case child (offscreen)
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+case child: setWindowIcon on a NON-top-level child widget
+case child: ok
+probe finished without a crash
+EXIT=0
+### case stacked (offscreen)
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+case stacked: setWindowIcon two levels down
+case stacked: ok
+probe finished without a crash
+EXIT=0
+### case null (offscreen)
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+case null: dynamic_cast of a widget that is not an InstrumentTrackWindow
+case null: derived window pointer = QWidget(0x0)
+/usr/bin/bash: line 5: 266173 Segmentation fault      (core dumped) QT_QPA_PLATFORM=offscreen ./probe-setwindowicon $c
+EXIT=139

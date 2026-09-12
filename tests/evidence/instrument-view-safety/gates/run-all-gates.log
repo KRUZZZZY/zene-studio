@@ -1,0 +1,326 @@
+
+================ Gate 1: unit tests (ctest) ================
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/build/tests
+      Start  1: ArrayVectorTest
+ 1/28 Test  #1: ArrayVectorTest ..................   Passed    0.03 sec
+      Start  2: AudioBufferTest
+ 2/28 Test  #2: AudioBufferTest ..................   Passed    0.03 sec
+      Start  3: AudioBusHandleTest
+ 3/28 Test  #3: AudioBusHandleTest ...............   Passed    1.50 sec
+      Start  4: AudioBusTest
+ 4/28 Test  #4: AudioBusTest .....................   Passed    1.48 sec
+      Start  5: AudioPortsModelTest
+ 5/28 Test  #5: AudioPortsModelTest ..............   Passed    1.34 sec
+      Start  6: AudioPortsTest
+ 6/28 Test  #6: AudioPortsTest ...................   Passed    1.71 sec
+      Start  7: AutomatableModelTest
+ 7/28 Test  #7: AutomatableModelTest .............   Passed    1.77 sec
+      Start  8: MathTest
+ 8/28 Test  #8: MathTest .........................   Passed    0.04 sec
+      Start  9: MultiTrackRecorderTest
+ 9/28 Test  #9: MultiTrackRecorderTest ...........   Passed    0.04 sec
+      Start 10: PluginAudioPortsTest
+10/28 Test #10: PluginAudioPortsTest .............   Passed    2.16 sec
+      Start 11: ProjectVersionTest
+11/28 Test #11: ProjectVersionTest ...............   Passed    0.03 sec
+      Start 12: RecordRingBufferTest
+12/28 Test #12: RecordRingBufferTest .............   Passed    0.04 sec
+      Start 13: RelativePathsTest
+13/28 Test #13: RelativePathsTest ................   Passed    0.03 sec
+      Start 14: RemotePluginAudioPortsTest
+14/28 Test #14: RemotePluginAudioPortsTest .......   Passed    2.34 sec
+      Start 15: RemotePluginClientE2ETest
+15/28 Test #15: RemotePluginClientE2ETest ........   Passed    1.71 sec
+      Start 16: RoutingGraphTest
+16/28 Test #16: RoutingGraphTest .................   Passed    0.03 sec
+      Start 17: PdcMixerTest
+17/28 Test #17: PdcMixerTest .....................   Passed    1.47 sec
+      Start 18: ScriptBindingsTest
+18/28 Test #18: ScriptBindingsTest ...............   Passed    1.55 sec
+      Start 19: ScriptEngineTest
+19/28 Test #19: ScriptEngineTest .................   Passed    2.04 sec
+      Start 20: SlideNotesTest
+20/28 Test #20: SlideNotesTest ...................   Passed    0.03 sec
+      Start 21: TimelineTest
+21/28 Test #21: TimelineTest .....................   Passed    1.57 sec
+      Start 22: TwoTrackRecordingHarness
+22/28 Test #22: TwoTrackRecordingHarness .........   Passed    2.04 sec
+      Start 23: AutomationTrackTest
+23/28 Test #23: AutomationTrackTest ..............   Passed    1.52 sec
+      Start 24: PluginPortsMigrationTest
+24/28 Test #24: PluginPortsMigrationTest .........   Passed    4.68 sec
+      Start 25: AudioPluginTest
+25/28 Test #25: AudioPluginTest ..................   Passed    1.45 sec
+      Start 26: Vst3InstrumentFixtureProbe
+26/28 Test #26: Vst3InstrumentFixtureProbe .......   Passed    0.00 sec
+      Start 27: Vst3InstrumentTest
+27/28 Test #27: Vst3InstrumentTest ...............   Passed    0.01 sec
+      Start 28: Vst3InstrumentIntegrationTest
+28/28 Test #28: Vst3InstrumentIntegrationTest ....   Passed    2.30 sec
+
+100% tests passed, 0 tests failed out of 28
+
+Total Test time (real) =  32.95 sec
+
+================ Gate 2: coverage ratchet ================
+skipped (pass --with-coverage)
+
+================ Gate 3: no tautological tests ================
+test file                                      slots    asserts taut    verdict
+src/core/ArrayVectorTest.cpp                   173      148     0       ok
+src/core/AudioBufferTest.cpp                   229      217     0       ok
+src/core/AudioBusHandleTest.cpp                22       15      0       ok
+src/core/AudioBusTest.cpp                      133      119     0       ok
+src/core/AudioPortsModelTest.cpp               124      123     0       ok
+src/core/AudioPortsTest.cpp                    59       40      0       ok
+src/core/AutomatableModelTest.cpp              27       22      0       ok
+src/core/MathTest.cpp                          13       12      0       ok
+src/core/MultiTrackRecorderTest.cpp            17       16      0       ok
+src/core/PdcMixerTest.cpp                      129      57      0       ok
+src/core/PluginAudioPortsTest.cpp              82       72      0       ok
+src/core/ProjectVersionTest.cpp                27       25      0       ok
+src/core/RecordRingBufferTest.cpp              57       41      0       ok
+src/core/RelativePathsTest.cpp                 12       11      0       ok
+src/core/RemotePluginAudioPortsTest.cpp        113      92      0       ok
+src/core/RemotePluginClientE2ETest.cpp         57       38      0       ok
+src/core/RoutingGraphTest.cpp                  172      150     0       ok
+src/core/ScriptBindingsTest.cpp                270      249     0       ok
+src/core/ScriptEngineTest.cpp                  137      85      0       ok
+src/core/SlideNotesTest.cpp                    49       45      0       ok
+src/core/TimelineTest.cpp                      17       10      0       ok
+src/tracks/AutomationTrackTest.cpp             39       38      0       ok
+
+Out of scope (helper executables, not QTest classes):
+  tests/src/core/TwoTrackAlsaCaptureProbe.cpp
+  tests/src/core/TwoTrackRecordingHarness.cpp
+  tests/src/plugins/PluginPortsMigrationReference.cpp
+
+PASS: every registered test file has test slots and real assertions, no literal tautologies
+
+================ Gate 4: per-method complexity ================
+#TOTAL	835	23
+complexity-gate: 835 functions in fork sources; 23 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  41       198    214    lmms::ExternalProcessStemSeparator::separate@238-451@src/core/ExternalProcessStemSeparator.cpp
+  31       158    168    lmms::clap::HostedPlugin::load@469-636@plugins/ClapEffect/ClapHost.cpp
+  29       100    119    lmms::ScriptEngine::applyCommand@485-603@src/core/ScriptEngine.cpp
+  27       124    144    lmms::vst3::HostedPlugin::load@268-411@plugins/Vst3Effect/Vst3Host.cpp
+  27       135    151    lmms::OnnxRuntimeStemSeparator::separate@91-241@src/core/OnnxRuntimeStemSeparator.cpp
+  23       64     91     lmms::AudioPortsModel::updateDirectRouting@247-337@src/core/AudioPortsModel.cpp
+  18       36     36     lmms::vst3::HostedPlugin::loadState@528-563@plugins/Vst3Effect/Vst3Host.cpp
+  17       80     85     lmms::AudioBus::update@195-279@src/core/AudioBus.cpp
+  15       58     64     main@20-83@plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+  15       64     80     lmms::AudioBus::sanitize@96-175@src/core/AudioBus.cpp
+  15       35     38     lmms::RoutingGraph::connect@90-127@src/core/RoutingGraph.cpp
+  15       42     53     lmms::RoutingGraph::rebuildPlan@310-362@src/core/RoutingGraph.cpp
+  15       75     85     lmms::wasm::WasmSandbox::loadModuleBytes@336-420@src/wasm/WasmSandbox.cpp
+  14       80     98     lmms::vst3::HostedPlugin::prepare@565-662@plugins/Vst3Effect/Vst3Host.cpp
+  14       44     48     lmms::ScriptEngine::resolveProjectPath@744-791@src/core/ScriptEngine.cpp
+  14       96     130    lmms::gui::PinConnector::paintEvent@184-313@src/gui/PinConnector.cpp
+  13       84     94     lmms::clap::HostedPlugin::process@741-834@plugins/ClapEffect/ClapHost.cpp
+  13       59     72     lmms::vst3::HostedPlugin::process@714-785@plugins/Vst3Effect/Vst3Host.cpp
+  12       68     80     lmms::wasm::WasmWorker::processSlot@155-234@src/wasm/WasmWorker.cpp
+  11       22     22     lmms::clap::describe@65-86@plugins/ClapEffect/ClapHost.cpp
+  11       35     41     lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp
+  11       71     80     lmms::StemModelStore::download@203-282@src/core/StemModelStore.cpp
+  11       58     65     lmms::wasm::WasmWorker::run@89-153@src/wasm/WasmWorker.cpp
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::load has 158 NLOC, 31 CCN, 1385 token, 3 PARAM, 168 length, 0 ND
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::process has 84 NLOC, 13 CCN, 840 token, 5 PARAM, 94 length, 0 ND
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c: main has 58 NLOC, 15 CCN, 575 token, 2 PARAM, 64 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::load has 124 NLOC, 27 CCN, 1216 token, 3 PARAM, 144 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::loadState has 36 NLOC, 18 CCN, 288 token, 2 PARAM, 36 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::prepare has 80 NLOC, 14 CCN, 789 token, 3 PARAM, 98 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::process has 59 NLOC, 13 CCN, 530 token, 5 PARAM, 72 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::sanitize has 64 NLOC, 15 CCN, 401 token, 1 PARAM, 80 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::update has 80 NLOC, 17 CCN, 468 token, 2 PARAM, 85 length, 0 ND
+src/core/AudioPortsModel.cpp: lmms::AudioPortsModel::updateDirectRouting has 64 NLOC, 23 CCN, 369 token, 0 PARAM, 91 length, 0 ND
+src/core/ExternalProcessStemSeparator.cpp: lmms::ExternalProcessStemSeparator::separate has 198 NLOC, 41 CCN, 1183 token, 6 PARAM, 214 length, 0 ND
+src/core/OnnxRuntimeStemSeparator.cpp: lmms::OnnxRuntimeStemSeparator::separate has 135 NLOC, 27 CCN, 1284 token, 6 PARAM, 151 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::connect has 35 NLOC, 15 CCN, 257 token, 5 PARAM, 38 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::rebuildPlan has 42 NLOC, 15 CCN, 380 token, 0 PARAM, 53 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::applyCommand has 100 NLOC, 29 CCN, 666 token, 1 PARAM, 119 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::resolveProjectPath has 44 NLOC, 14 CCN, 269 token, 3 PARAM, 48 length, 0 ND
+src/gui/PinConnector.cpp: lmms::gui::PinConnector::paintEvent has 96 NLOC, 14 CCN, 1026 token, 0 PARAM, 130 length, 0 ND
+src/wasm/WasmSandbox.cpp: lmms::wasm::WasmSandbox::loadModuleBytes has 75 NLOC, 15 CCN, 418 token, 3 PARAM, 85 length, 0 ND
+src/wasm/WasmWorker.cpp: lmms::wasm::WasmWorker::processSlot has 68 NLOC, 12 CCN, 530 token, 2 PARAM, 80 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)
+
+================ Gate 5: mutation testing (src/core/RoutingGraph.cpp) ================
+skipped (--no-mutation)
+
+================ Gate 6: no upstream behavioural regressions ================
+changed file                                             verdict
+Brewfile                                                 declared divergence -> #609 CI: brew "mda-lv2" so the macOS runners have the LV2 bundle PluginPortsMigrationTest renders by URI (3d87d33ca)
+CMakeLists.txt                                           build/config (allowed)
+cmake/modules/InstallHelpers.cmake                       build/config (allowed)
+cmake/modules/PluginList.cmake                           build/config (allowed)
+cmake/modules/Vst3Sdk.cmake                              build/config (allowed)
+docs/CONVENTIONS.md                                      docs (allowed)
+docs/INSTRUMENT-HOSTING-SPEC.md                          docs (allowed)
+docs/KNOWN-LIMITATIONS.md                                docs (allowed)
+docs/LOCAL-CI.md                                         docs (allowed)
+DOCS-NAMING.md                                           docs (allowed)
+docs/phase-f/CRITERIA-TO-EVIDENCE.md                     docs (allowed)
+docs/phase-f/PER-BRANCH-REVIEWABILITY.md                 docs (allowed)
+docs/phase-f/RELEASE-NOTES-mixer-v2.md                   docs (allowed)
+docs/RELEASE-NOTES-v0.1.0-alpha.md                       docs (allowed)
+docs/STATUS.md                                           docs (allowed)
+doc/STEM-SPLIT.md                                        docs (allowed)
+docs/VST3-INSTRUMENT-FIXTURE.md                          docs (allowed)
+docs/VST3-INSTRUMENT-HOSTING.md                          docs (allowed)
+.github/ISSUE_TEMPLATE/alpha-feedback.yml                CI config (allowed, non-runtime)
+.github/workflows/build.yml                              CI config (allowed, non-runtime)
+.github/workflows/deps-ubuntu-24.04-gcc.txt              CI config (allowed, non-runtime)
+.github/workflows/quality-gates.yml                      CI config (allowed, non-runtime)
+.gitignore                                               build/config (allowed)
+include/AudioBuffer.h                                    declared divergence -> #608 memory correctness: the channel access buffer (pointer table) is process-local, never allocated from a shared memory resource (746f6bd0e)
+include/AudioBusHandle.h                                 declared divergence -> #605 PDC: latency-reporting surface read by the mixer's compensation graph
+include/AudioEngine.h                                    declared divergence -> #605 PDC: latency accessor surface used by the compensation graph
+include/AudioPlugin.h                                    fork-NEW (allowed)
+include/EffectChain.h                                    declared divergence -> #605 PDC: cached chain latency read by the mixer's PDC graph
+include/Effect.h                                         declared divergence -> #605 PDC: latency accessor on the effect interface
+include/LatencyCompensation.h                            fork-NEW (allowed)
+include/Mixer.h                                          declared divergence -> #605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+include/RecordRingBuffer.h                               fork-NEW (allowed)
+include/RemotePluginAudioPorts.h                         fork-NEW (allowed)
+include/RemotePluginBase.h                               declared divergence -> #589 planar-ports migration: single-channel count ids retired in place (kept numeric to refuse a stale pre-#589 client loudly)
+include/RemotePluginClient.h                             declared divergence -> #589 planar-ports migration: client process() over the host's planar shared block (const float* / float*)
+include/RemotePlugin.h                                   declared divergence -> #589 planar-ports migration: sole ports-taking ctor, no-arg process(), planar updateAudioBuffer() layout contract
+plugins/GigPlayer/CMakeLists.txt                         build/config (allowed)
+plugins/MidiImport/CMakeLists.txt                        build/config (allowed)
+plugins/NeuralAmp/CMakeLists.txt                         build/config (allowed)
+plugins/NeuralAmp/tests/CMakeLists.txt                   build/config (allowed)
+plugins/Oscilloscope/OscilloscopeGraph.cpp               declared divergence -> compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+plugins/RnnoiseDenoiser/CMakeLists.txt                   build/config (allowed)
+plugins/Vestige/Vestige.cpp                              declared divergence -> #589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin
+plugins/Vestige/Vestige.h                                declared divergence -> #589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports
+plugins/Vst3Effect/CMakeLists.txt                        build/config (allowed)
+plugins/Vst3Effect/Vst3Host.cpp                          fork-NEW (allowed)
+plugins/Vst3Effect/Vst3Host.h                            fork-NEW (allowed)
+plugins/Vst3Effect/Vst3MidiEvent.cpp                     fork-NEW (allowed)
+plugins/Vst3Effect/Vst3MidiEvent.h                       fork-NEW (allowed)
+plugins/Vst3Effect/Vst3MidiQueue.h                       fork-NEW (allowed)
+plugins/Vst3Instrument/CMakeLists.txt                    build/config (allowed)
+plugins/Vst3Instrument/logo.png                          fork-NEW (allowed)
+plugins/Vst3Instrument/Vst3Instrument.cpp                fork-NEW (allowed)
+plugins/Vst3Instrument/Vst3Instrument.h                  fork-NEW (allowed)
+plugins/Vst3Instrument/Vst3InstrumentView.cpp            fork-NEW (allowed)
+plugins/Vst3Instrument/Vst3InstrumentView.h              fork-NEW (allowed)
+plugins/VstBase/RemoteVstPlugin.cpp                      declared divergence -> #589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize()
+plugins/VstBase/VstPlugin.cpp                            declared divergence -> #589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings
+plugins/VstBase/VstPlugin.h                              declared divergence -> #589 planar-ports migration: VstPlugin takes the ports controller instead of configuring split channels
+plugins/VstEffect/VstEffect.cpp                          declared divergence -> #589 planar-ports migration: no-arg process(), planar wet/dry mixing, lock moved to processLock/processUnlock
+plugins/VstEffect/VstEffect.h                            declared divergence -> #589 planar-ports migration: VstEffect is an AudioPlugin with dynamic planar ports
+plugins/WasmEffect/WasmEffect.cpp                        fork-NEW (allowed)
+plugins/WasmEffect/WasmEffect.h                          fork-NEW (allowed)
+plugins/Xpressive/CMakeLists.txt                         build/config (allowed)
+plugins/ZynAddSubFx/LocalZynAddSubFx.cpp                 declared divergence -> #589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
+plugins/ZynAddSubFx/LocalZynAddSubFx.h                   declared divergence -> #589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
+plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp                declared divergence -> #589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+plugins/ZynAddSubFx/ZynAddSubFx.cpp                      declared divergence -> #589 planar-ports migration: play() -> processImpl(); setBufferType()/activate() on the local path; ports controller passed to the remote plugin
+plugins/ZynAddSubFx/ZynAddSubFx.h                        declared divergence -> #589 planar-ports migration: instrument is a ConfigurableAudioPorts AudioPlugin (remote/local buffer switch)
+README.md                                                docs (allowed)
+src/core/AudioBuffer.cpp                                 declared divergence -> #608 memory correctness: access buffer always from the default resource; allocationSize() no longer reserves it in the shared region (746f6bd0e)
+src/core/AudioBusHandle.cpp                              declared divergence -> #605 PDC: delay each track output to its alignment point (9e12a68f5)
+src/core/AudioPortsModel.cpp                             fork-NEW (allowed)
+src/core/CMakeLists.txt                                  build/config (allowed)
+src/core/EffectChain.cpp                                 declared divergence -> #605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
+src/core/Effect.cpp                                      declared divergence -> #605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
+src/core/LatencyCompensation.cpp                         fork-NEW (allowed)
+src/core/Mixer.cpp                                       declared divergence -> #605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/core/RemotePlugin.cpp                                declared divergence -> #589 planar-ports migration: ports allocate the shared block; counts owned by the ports model; removed count ids refused loudly
+src/core/ScriptBindings.cpp                              fork-NEW (allowed)
+src/core/ScriptEngine.cpp                                fork-NEW (allowed)
+src/gui/editors/PianoRoll.cpp                            declared divergence -> compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+src/gui/MainWindow.cpp                                   declared divergence -> compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)
+tests/all-sources.txt                                    tests (allowed)
+tests/CMakeLists.txt                                     tests (allowed)
+tests/complexity-baseline-all.tsv                        tests (allowed)
+tests/complexity-baseline.tsv                            tests (allowed)
+tests/complexity-gate.sh                                 tests (allowed)
+tests/coverage-baseline-all.tsv                          tests (allowed)
+tests/coverage-baseline.tsv                              tests (allowed)
+tests/coverage-gate.sh                                   tests (allowed)
+tests/data/vst3-test-instrument/CMakeLists.txt           tests (allowed)
+tests/data/vst3-test-instrument/vst3-test-instrument.cpp tests (allowed)
+tests/duplication-gate.sh                                tests (allowed)
+tests/file-length-baseline-all.tsv                       tests (allowed)
+tests/file-length-baseline.tsv                           tests (allowed)
+tests/file-length-gate.sh                                tests (allowed)
+tests/fork-sources.txt                                   tests (allowed)
+tests/gate-base.txt                                      tests (allowed)
+tests/mutation-gate.sh                                   tests (allowed)
+tests/no-tautology-gate.sh                               tests (allowed)
+tests/no-upstream-regression-gate.sh                     tests (allowed)
+tests/QA-GATES.md                                        tests (allowed)
+tests/reference/plugin_export.h                          tests (allowed)
+tests/run-all-gates.sh                                   tests (allowed)
+tests/run-coverage.sh                                    tests (allowed)
+tests/scripted/check-namespace                           tests (allowed)
+tests/src/core/AudioBufferTest.cpp                       tests (allowed)
+tests/src/core/AudioBusTest.cpp                          tests (allowed)
+tests/src/core/AudioPortsModelTest.cpp                   tests (allowed)
+tests/src/core/MultiTrackRecorderTest.cpp                tests (allowed)
+tests/src/core/PdcMixerTest.cpp                          tests (allowed)
+tests/src/core/PhaseDMixerTestSupport.h                  tests (allowed)
+tests/src/core/PluginAudioPortsTest.cpp                  tests (allowed)
+tests/src/core/RemotePluginAudioPortsTest.cpp            tests (allowed)
+tests/src/core/RemotePluginClientE2ETest.cpp             tests (allowed)
+tests/src/core/RoutingGraphTest.cpp                      tests (allowed)
+tests/src/core/ScriptBindingsTest.cpp                    tests (allowed)
+tests/src/core/ScriptEngineTest.cpp                      tests (allowed)
+tests/src/core/TwoTrackRecordingHarness.cpp              tests (allowed)
+tests/src/plugins/AudioPluginTest.cpp                    tests (allowed)
+tests/src/plugins/ClapEffectIntegrationTest.cpp          tests (allowed)
+tests/src/plugins/FakeRemotePluginClient.cpp             tests (allowed)
+tests/src/plugins/PluginPortsHarness.h                   tests (allowed)
+tests/src/plugins/PluginPortsMigrationReference.cpp      tests (allowed)
+tests/src/plugins/PluginPortsMigrationTest.cpp           tests (allowed)
+tests/src/plugins/SyntheticAudioPlugin.cpp               tests (allowed)
+tests/src/plugins/Vst3InstrumentFixtureProbe.cpp         tests (allowed)
+tests/src/plugins/Vst3InstrumentIntegrationTest.cpp      tests (allowed)
+tests/src/plugins/Vst3InstrumentTest.cpp                 tests (allowed)
+tests/src/wasm/WasmSandboxTest.cpp                       tests (allowed)
+tests/upstream-modifications.txt                         tests (allowed)
+tests/vst3-instrument-render-proof.sh                    tests (allowed)
+tools/local-ci.sh                                        fork-NEW (allowed)
+
+PASS: every change to upstream-inherited code since 01148947ea4d8bdb05c237942758d61acc867223 is declared (31 file(s) in the ledger)
+
+================ Gate 7: per-file length (<=500 ratchet) ================
+file-length-gate: 108 fork sources measured; 8 exceed 500 lines
+
+  lines  file
+  1217   src/core/ScriptBindings.cpp
+  992    include/AudioPorts.h
+  910    src/core/ScriptEngine.cpp
+  875    plugins/ClapEffect/ClapHost.cpp
+  800    plugins/Vst3Effect/Vst3Host.cpp
+  597    src/wasm/WasmSandbox.cpp
+  549    src/core/AudioPortsModel.cpp
+  529    src/gui/PinConnector.cpp
+
+PASS (check mode: no regressions; baseline not written)
+
+================ Gate 8: token duplication (<5%) ================
+duplication-gate: scanning 108 fork sources (min-lines 25, min-tokens 120, threshold 5%)
+
+PASS: duplicated lines 1.15% (budget 5%)
+
+================ SUMMARY ================
+gate   name                     result
+1      ctest                    PASS
+2      coverage                 SKIP
+3      no-tautology             PASS
+4      complexity               PASS
+5      mutation                 SKIP
+6      upstream-regression      PASS
+7      file-length              PASS
+8      duplication              PASS
+
+RESULT: PASS — every executed gate passed

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!DOCTYPE lmms-config-file>
+<lmms version="0.1.0-alpha.5+5c69b51" configversion="3">
+  <app configured="1"/>
+  <audioengine samplerate="44100" mididev="ALSA-Sequencer (Advanced Linux Sound Architecture)" audiodev="Dummy (no sound output)" framesperaudiobuffer="256"/>
+  <paths backgroundtheme="" gigdir="/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/logs/gui-click/workingdir/gig/" workingdir="/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/logs/gui-click/workingdir/" defaultsf2="" theme="data:/themes/default/" vstdir="/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/logs/gui-click/workingdir/vst/" ladspadir="/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/logs/gui-click/workingdir/ladspa/" sf2dir="/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/logs/gui-click/workingdir/sf2/"/>
+  <recentfiles>
+    <file path="../logs/gui-click/vst3-instrument.mmp"/>
+    <file path="/tmp/rackproof/no-rack.mmp"/>
+    <file path="data/projects/tutorials/editing_note_volumes.mmp"/>
+    <file path="/tmp/rackproof/rack-parallel.mmp"/>
+  </recentfiles>
+  <favoriteitems/>
+</lmms>

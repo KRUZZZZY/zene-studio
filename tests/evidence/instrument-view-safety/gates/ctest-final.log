@@ -1,0 +1,61 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-instrview/build/tests
+      Start 24: PluginPortsMigrationTest
+      Start 28: Vst3InstrumentIntegrationTest
+ 1/28 Test #28: Vst3InstrumentIntegrationTest ....   Passed    2.21 sec
+      Start 14: RemotePluginAudioPortsTest
+ 2/28 Test #14: RemotePluginAudioPortsTest .......   Passed    2.09 sec
+      Start 10: PluginAudioPortsTest
+ 3/28 Test #24: PluginPortsMigrationTest .........   Passed    4.30 sec
+      Start 19: ScriptEngineTest
+ 4/28 Test #10: PluginAudioPortsTest .............   Passed    1.39 sec
+      Start 22: TwoTrackRecordingHarness
+ 5/28 Test #19: ScriptEngineTest .................   Passed    1.50 sec
+      Start  7: AutomatableModelTest
+ 6/28 Test  #7: AutomatableModelTest .............   Passed    1.37 sec
+      Start  6: AudioPortsTest
+ 7/28 Test #22: TwoTrackRecordingHarness .........   Passed    2.03 sec
+      Start 15: RemotePluginClientE2ETest
+ 8/28 Test  #6: AudioPortsTest ...................   Passed    1.40 sec
+      Start 21: TimelineTest
+ 9/28 Test #15: RemotePluginClientE2ETest ........   Passed    1.52 sec
+      Start 18: ScriptBindingsTest
+10/28 Test #21: TimelineTest .....................   Passed    1.39 sec
+      Start 23: AutomationTrackTest
+11/28 Test #18: ScriptBindingsTest ...............   Passed    1.44 sec
+      Start  3: AudioBusHandleTest
+12/28 Test #23: AutomationTrackTest ..............   Passed    1.42 sec
+      Start  4: AudioBusTest
+13/28 Test  #3: AudioBusHandleTest ...............   Passed    1.38 sec
+      Start 17: PdcMixerTest
+14/28 Test  #4: AudioBusTest .....................   Passed    1.42 sec
+      Start 25: AudioPluginTest
+15/28 Test #17: PdcMixerTest .....................   Passed    1.41 sec
+      Start  5: AudioPortsModelTest
+16/28 Test #25: AudioPluginTest ..................   Passed    1.45 sec
+      Start 12: RecordRingBufferTest
+17/28 Test #12: RecordRingBufferTest .............   Passed    0.03 sec
+      Start  8: MathTest
+18/28 Test  #8: MathTest .........................   Passed    0.02 sec
+      Start  9: MultiTrackRecorderTest
+19/28 Test  #9: MultiTrackRecorderTest ...........   Passed    0.03 sec
+      Start 16: RoutingGraphTest
+20/28 Test #16: RoutingGraphTest .................   Passed    0.03 sec
+      Start 20: SlideNotesTest
+21/28 Test #20: SlideNotesTest ...................   Passed    0.02 sec
+      Start 13: RelativePathsTest
+22/28 Test #13: RelativePathsTest ................   Passed    0.03 sec
+      Start 11: ProjectVersionTest
+23/28 Test #11: ProjectVersionTest ...............   Passed    0.02 sec
+      Start  2: AudioBufferTest
+24/28 Test  #2: AudioBufferTest ..................   Passed    0.03 sec
+      Start  1: ArrayVectorTest
+25/28 Test  #1: ArrayVectorTest ..................   Passed    0.02 sec
+      Start 27: Vst3InstrumentTest
+26/28 Test #27: Vst3InstrumentTest ...............   Passed    0.01 sec
+      Start 26: Vst3InstrumentFixtureProbe
+27/28 Test #26: Vst3InstrumentFixtureProbe .......   Passed    0.00 sec
+28/28 Test  #5: AudioPortsModelTest ..............   Passed    1.43 sec
+
+100% tests passed, 0 tests failed out of 28
+
+Total Test time (real) =  14.91 sec

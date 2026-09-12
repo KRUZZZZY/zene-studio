@@ -58,7 +58,17 @@ void InstrumentView::setModel( Model * _model, bool )
 	if( dynamic_cast<Instrument *>( _model ) != nullptr )
 	{
 		ModelView::setModel( _model );
-		instrumentTrackWindow()->setWindowIcon( model()->logo()->pixmap() );
+		// The window icon belongs to the instrument window, and that window is
+		// only reachable while this view is parented inside one
+		// (InstrumentTrackWindow -> m_tabWidget -> view). Any other parent
+		// leaves instrumentTrackWindow() null, and the unconditional call that
+		// used to be here dereferenced it and killed the process inside
+		// QWidget::setWindowIcon. Skipping the icon costs nothing that matters:
+		// the view itself is still built and shown.
+		if( auto * window = instrumentTrackWindow() )
+		{
+			window->setWindowIcon( model()->logo()->pixmap() );
+		}
 		connect( model(), SIGNAL(destroyed(QObject*)), this, SLOT(close()));
 	}
 }

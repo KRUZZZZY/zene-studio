@@ -64,6 +64,7 @@
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "InstrumentView.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NotePlayHandle.h"
@@ -132,6 +133,24 @@ auto maxDifference(const std::vector<float>& a, const std::vector<float>& b) -> 
 	return worst;
 }
 
+//! The base instrument view and nothing else: constructing it runs the exact
+//! entry point under test (InstrumentView's ctor -> setModel -> the window
+//! icon) without the plug-in's own widget grid. That grid is deliberately not
+//! built here: a Knob needs getGUI() to be a live GuiApplication, because
+//! SimpleTextFloat::SimpleTextFloat() is
+//! QWidget(getGUI()->mainWindow(), Qt::ToolTip), and this binary initialises a
+//! render-only Engine (no MainWindow). The grid itself is verified against the
+//! running product under Xvfb instead - docs/INSTRUMENT-VIEW-SAFETY.md, "wall
+//! 2" (§5) and the product run (§3).
+class BareInstrumentView : public gui::InstrumentView
+{
+public:
+	BareInstrumentView(Instrument* instrument, QWidget* parent) :
+		gui::InstrumentView(instrument, parent)
+	{
+	}
+};
+
 } // namespace
 
 class Vst3InstrumentIntegrationTest : public QObject
@@ -148,6 +167,7 @@ private slots:
 	void testTheLevelParameterReachesTheInstrument();
 	void testStateSurvivesTheProjectFile();
 	void testAGuiLessInstrumentExposesItsParameters();
+	void testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -538,23 +558,55 @@ void Vst3InstrumentIntegrationTest::testAGuiLessInstrumentExposesItsParameters()
 	auto instrument = makeInstrument(track.get());
 	QVERIFY(instrument != nullptr);
 
-	// The fixture implements no IPlugView at all - it has no GUI - so what a
-	// user gets for it is LMMS' own generated parameter view, built from
-	// exactly this surface. That surface is asserted here, and it is what
-	// testTheLevelParameterReachesTheInstrument then drives.
+	// What a user gets for a GUI-less instrument is LMMS' own generated
+	// parameter view, built from exactly this surface. That surface is asserted
+	// here, and it is what testTheLevelParameterReachesTheInstrument then drives.
 	QCOMPARE(instrument->parameterCount(), 1);
 	QCOMPARE(instrument->parameterName(0), QStringLiteral("Level"));
 	auto* level = instrument->parameterModel(0);
 	QVERIFY(level != nullptr);
 	QVERIFY(!level->displayName().isEmpty());
 
-	// NOT asserted, and named here rather than glossed: constructing the view
-	// itself (Plugin::createView -> Vst3InstrumentView) crashes inside Qt's
-	// QWidget::setWindowIcon, reached from InstrumentView::setModel, on both
-	// the offscreen platform and under Xvfb - the plug-in's logo pixmap does
-	// not resolve in a test binary ("vst3instrument/logo: File not found"),
-	// which is a harness limitation and needs a live GUI session to settle.
-	// See docs/VST3-INSTRUMENT-HOSTING.md.
+	// The view's own construction is NOT asserted in this binary, and the
+	// reason is a harness limit, measured rather than guessed:
+	// Plugin::createView -> Vst3InstrumentView builds a Knob per parameter, and
+	// a Knob needs a live GuiApplication - SimpleTextFloat::SimpleTextFloat()
+	// is QWidget(getGUI()->mainWindow(), Qt::ToolTip) and getGUI() is null
+	// because this binary runs a render-only Engine (Engine::init(true)).
+	// That wall sits *behind* the entry point this lane was asked about:
+	// InstrumentView::setModel()'s window-icon dereference, which is what the
+	// next test covers. The generated grid is verified in the running product
+	// under Xvfb - docs/INSTRUMENT-VIEW-SAFETY.md §3 and §5.
+}
+
+// The entry point the instrument window uses. InstrumentView's constructor
+// calls setModel(), which used to dereference the InstrumentTrackWindow it
+// expects to be parented inside, unconditionally: with any other parent that is
+// a null pointer, and the process died inside Qt's QWidget::setWindowIcon
+// (reproduced here against the pre-fix build - docs/INSTRUMENT-VIEW-SAFETY.md
+// §2.1). A view's parent is a plain widget for every caller that is not
+// InstrumentTrackWindow::updateInstrumentView(), which is exactly what a test
+// harness or a future embedding looks like.
+void Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow()
+{
+	auto track = makeTrack();
+	auto instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+
+	QWidget parent;
+	BareInstrumentView view{instrument, &parent};
+
+	// We get past the entry point: the model was set and the view is real...
+	QVERIFY2(view.model() == instrument, "setModel() did not take the instrument");
+	QVERIFY2(view.parentWidget() == &parent, "the view was reparented");
+	// ...and the window it would icon genuinely does not exist here, so the
+	// guarded call is the branch this test is exercising.
+	QVERIFY2(view.instrumentTrackWindow() == nullptr,
+		"the view unexpectedly found an instrument window to icon");
+
+	qInfo("instrument view built without an instrument window: model=%p parent=%p window=%p",
+		static_cast<void*>(view.model()), static_cast<void*>(view.parentWidget()),
+		static_cast<void*>(view.instrumentTrackWindow()));
 }
 
 } // namespace lmms
