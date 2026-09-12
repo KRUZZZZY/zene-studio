@@ -19,12 +19,29 @@
 #   - CI config           -> allowed, non-runtime (.github/**)
 #   - *.md                -> allowed (documentation)
 #   - fork-NEW sources    -> allowed (listed in tests/fork-sources.txt)
-#   - fork TOOLING        -> allowed (listed in tests/tools-sources.txt). tools/ does not
-#     exist at the fork point (`git ls-tree -r --name-only 4e677cb6c6ab -- tools` is empty),
-#     so every path under it is fork-authored by construction and cannot be a divergence of
-#     inherited code. Before this category existed, a tools/ file had to be declared in
-#     tests/upstream-modifications.txt to get past this gate, which made the ledger say
-#     something untrue about it; those entries have been removed.
+#   - tools/**            -> allowed BY CONSTRUCTION, whatever the file is. tools/ does not
+#     exist at the fork point, so every path under it — source, fixture, JSON, .gitignore —
+#     is fork-authored and cannot be a divergence of inherited code. Verified for this
+#     commit with both of these, and they must print nothing:
+#       git ls-tree -r --name-only 4e677cb6c6ab -- tools      # the upstream base commit
+#       git ls-tree -r --name-only origin/master -- tools      # upstream master today
+#     (4e677cb6c6ab is the upstream commit this fork is based on, named in the header of
+#     tests/fork-sources.txt; the manifest header of tests/tools-sources.txt records the
+#     same two commands and the same result.)
+#     tests/tools-sources.txt remains the SCOPE manifest for gates 4, 7 and 8 (the file
+#     length/CCN/duplication ratchets measure tools/ with `--scope tools`), and Gate 9
+#     still requires every tools/ source to be named there or in another scope list. It is
+#     NOT a declaration this gate may demand, and demanding it here was a defect, because
+#     that manifest's documented candidate command admits only SOURCE extensions:
+#       git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools \
+#         | grep -E '\.(py|sh|cpp|c|h|hpp|cc|cxx)$' | LC_ALL=C sort
+#     so a non-source file under tools/ (a fixture, a JSON snapshot, a .gitignore) can
+#     never be listed in it, could never be classified as allowed here, and was reported
+#     as "VIOLATION: undeclared change to upstream-inherited code" — a false statement
+#     about a file upstream has never had. Three such files had already been reported
+#     (tools/mcp-zene-control/{.gitignore,tests/data/agent-control-fixture.mmp,
+#     zene_control/commands_snapshot.json}); the class of defect, not those three paths,
+#     is what this rule fixes.
 #   - any other production source -> allowed ONLY if listed in
 #     tests/upstream-modifications.txt with a non-empty reason
 #
@@ -48,13 +65,10 @@ mapfile -t CHANGED < <(git diff --name-only "$BASE"..HEAD | sort -u)
 [[ ${#CHANGED[@]} -eq 0 ]] && { echo "PASS: no changes since $BASE"; exit 0; }
 
 FORK_NEW="$(grep -vE '^\s*(#|$)' tests/fork-sources.txt | sort -u)"
-# Fork-authored tooling under tools/ has its own manifest (see the header). Read it here so
-# a registered tools/ source is classified as fork tooling instead of being pushed into the
-# upstream-divergence ledger, where it would be a false statement.
-TOOL_SOURCES=""
-if [[ -f tests/tools-sources.txt ]]; then
-	TOOL_SOURCES="$(grep -vE '^\s*(#|$)' tests/tools-sources.txt | sort -u)"
-fi
+# tools/ needs no manifest read: a tools/ path is allowed by construction (see the header).
+# tests/tools-sources.txt is the SCOPE manifest for gates 4, 7 and 8, not a declaration
+# this gate may demand — its candidate command admits source extensions only, so a fixture,
+# a JSON snapshot or a .gitignore under tools/ could never appear in it.
 
 # --- ledger: every entry needs a non-empty reason ---------------------------
 declare -A ALLOW REASON
@@ -82,11 +96,10 @@ for f in "${CHANGED[@]}"; do
 		CMakeLists.txt|.gitignore|*.cmake|*/CMakeLists.txt) verdict="build/config (allowed)" ;;
 		.github/*) verdict="CI config (allowed, non-runtime)" ;;
 		*.md) verdict="docs (allowed)" ;;
+		tools/*) verdict="fork tooling (allowed by construction: tools/ does not exist upstream)" ;;
 		*)
 			if grep -qxF "$f" <<< "$FORK_NEW"; then
 				verdict="fork-NEW (allowed)"
-			elif [[ "$f" == tools/* ]] && grep -qxF "$f" <<< "$TOOL_SOURCES"; then
-				verdict="fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)"
 			elif [[ -n "${ALLOW[$f]:-}" ]]; then
 				verdict="declared divergence -> ${REASON[$f]}"
 				declared=$((declared + 1))
