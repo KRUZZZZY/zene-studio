@@ -36,12 +36,30 @@
 # launcher, no clip grid), so the honest description of 0.2.0-alpha is that the
 # session data layer exists in the source and ships disabled.
 #
-# WHY THERE IS NO ROW FOR THE VST3 TEST-INSTRUMENT FIXTURE, though the temptation is obvious:
-# `WANT_VST3_TEST_INSTRUMENT` is declared inside tests/CMakeLists.txt under a condition, so it never
-# reaches the generated header. This gate FAILS any option the build does not report at all ("not
-# reported by this build at all, so the feature cannot be in it"), and that rule is right: a row for an
-# option the release build never mentions would be a permanent false failure. The fixture's status is
-# documentation, not a contract term — the job of this file is to bind the artefacts.
+# WHY THERE IS NO ROW FOR TELEMETRY, THOUGH THE RELEASE DOCUMENTS IT.
+# The gate can only judge what the binary REPORTS, and the build-options string is assembled by
+# src/CMakeLists.txt from variables matching `^WANT|LMMS_(HAVE|DEBUG)`. The telemetry kill switch is
+# `ZENE_TELEMETRY` (default ON) and it matches neither pattern, so it never reaches `lmms --version` —
+# and a row for an option the build does not report is a FAIL by this gate's own rule. Two ways to close
+# it, both post-release: expose a `LMMS_HAVE_TELEMETRY` flag into the dump (which also lets a user tell
+# whether their binary contains the client), or widen the CMake pattern. Until then telemetry is
+# documented in prose and guarded by its own tests, not by this contract.
+# WHY THERE IS NO ROW FOR THE VST3 TEST-INSTRUMENT FIXTURE — and the reason is NOT what this note first said.
+# The first version claimed the option "is declared inside tests/CMakeLists.txt under a condition, so it never
+# reaches the generated header". A merge train proved that FALSE on 2026-09-12: its tree's `build/lmmsversion.h`
+# reports `WANT_VST3_TEST_INSTRUMENT='OFF'`. The real mechanism is subtler and worse. The dump is assembled in
+# `src/CMakeLists.txt` through `get_cmake_property(_define_vars VARIABLES)`, which runs BEFORE
+# `ADD_SUBDIRECTORY(tests)` — so on a FRESH configure the option does not exist yet and is absent from the dump;
+# but `option()` writes a CACHE variable, so on any later configure of the same build directory it is already
+# defined at that point and DOES land in the dump. Consequence: **the same source tree can export two different
+# `LMMS_BUILD_OPTIONS` strings depending on the build directory's history.** A row for this option would
+# therefore pass or fail according to how many times a directory had been configured, which is worse than having
+# no row — the guard's job is to describe the build, not the build directory's biography. The fixture is a test
+# asset documented in prose; that is the whole claim.
+# GENERAL CAVEAT THIS EXPOSES, which belongs with the guard rather than only here: the dump is a function of the
+# source tree AND the build directory's configure history. All six rows below use options declared at the TOP
+# LEVEL of `CMakeLists.txt`, so they are present either way — but any future row for a nested or conditionally
+# declared option must be verified on a FRESH configure before it is trusted.
 # Columns (TAB separated):
 #   1 feature   stable id, printed by the gate
 #   2 option    the WANT_* option the binary reports in its "Build options:" dump
