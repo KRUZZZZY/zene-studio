@@ -30,12 +30,12 @@
 #include <QString>
 #include <QVector>
 
+#include "ControlRegistry.h"
+
 class QSocketNotifier;
 
 namespace lmms
 {
-
-class ControlRegistry;
 
 //! A local (AF_UNIX) socket speaking line-delimited JSON-RPC, one request and
 //! one response per line:
@@ -48,17 +48,33 @@ class ControlRegistry;
 //! file is mode 0600, is unlinked on exit, and the listener is AF_UNIX only:
 //! nothing ever listens on the network (SPEC A12 / AGENT-TOOLING.md #9.1).
 //!
+//! The bind is destructive to the path it uses, so it is refused rather than
+//! performed when the path already holds something that is not a socket; see
+//! listen() and docs/CONTROL-SOCKET-PATH-SAFETY.md.
+//!
 //! Implemented with POSIX sockets plus QSocketNotifier rather than Qt Network,
 //! so the audio application gains no new Qt module dependency.
 class ControlServer : public QObject
 {
 	Q_OBJECT
 public:
+	//! Largest request LINE accepted, in bytes. The per-client buffer used to be
+	//! unbounded: a client that never sent a newline could make the instance
+	//! allocate without limit. Over the cap the request is refused with
+	//! `invalid_args` and the connection is dropped.
+	static constexpr int MaxRequestLineBytes = 1024 * 1024;
+
 	explicit ControlServer(ControlRegistry* registry, QObject* parent = nullptr);
 	~ControlServer() override;
 
 	//! Listen on \p path (must be absolute). Returns false and sets \p error on failure.
 	bool listen(const QString& path, QString* error);
+
+	//! The typed error kind of the last listen() that FAILED; ControlErrorKind::None
+	//! after a success. It is the same closed set the protocol answers with, and
+	//! listen() reports the refusal on stderr in the wire shape, so a launcher that
+	//! never got a socket (and so can never send a request) can still read why.
+	ControlErrorKind lastErrorKind() const { return m_lastErrorKind; }
 
 	//! Stop listening, drop every client and unlink the socket file. Idempotent.
 	void close();
@@ -86,12 +102,16 @@ private:
 	void onNewConnection();
 	void onClientReadable(int fd);
 	void dropClient(int fd);
+	//! Write every byte of \p bytes or fail. A caller MUST drop the client when
+	//! this returns false: the bytes already written are a TRUNCATED line, and
+	//! writing the next reply after them would make the two read as one line.
 	bool writeAll(int fd, const QByteArray& bytes);
 
 	ControlRegistry* m_registry;
 	int m_listenFd = -1;
 	QSocketNotifier* m_notifier = nullptr;
 	QString m_path;
+	ControlErrorKind m_lastErrorKind = ControlErrorKind::None;
 	QHash<int, Client> m_clients;
 };
 

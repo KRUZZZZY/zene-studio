@@ -8,7 +8,7 @@
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
-#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -18,7 +18,7 @@
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -410,6 +410,7 @@ tests/control-no-audio-device.py
 tests/control-readiness.py
 tests/control-reversibility-transcript.py
 tests/control-shutdown.py
+tests/control-socket-path-safety.py
 tests/control-stable-ids.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py

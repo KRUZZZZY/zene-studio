@@ -1071,3 +1071,28 @@ if(PYTHON3_EXECUTABLE)
 		)
 	endforeach()
 endif()
+
+# ---------------------------------------------------------------------------
+# ControlSocketPathSafety (data loss, 2026-09-12). `--control-socket <path>` used
+# to UNLINK whatever was already at <path> before bind(), so pointing it at a
+# project destroyed that project and said nothing (reproduced on the release
+# configuration, commit ba24a9578). The test starts the real binary with the path
+# already occupied - a regular file, a directory, a symlink, a stale socket - and
+# asserts the typed refusal the process now writes to stderr (the surface's own
+# wire shape, since an instance that refused to start has no socket to answer on),
+# that the file is byte-identical afterwards, that a stale socket is still
+# replaced, and that a request line over ControlServer::MaxRequestLineBytes is
+# refused instead of buffering without bound.
+# See docs/CONTROL-SOCKET-PATH-SAFETY.md.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlSocketPathSafety
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-path-safety.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(ControlSocketPathSafety PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+endif()
