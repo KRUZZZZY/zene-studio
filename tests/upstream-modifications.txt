@@ -10,11 +10,9 @@
 # down. Every entry here is deliberate and reviewed; anything NOT listed is still a
 # violation. Keep each change minimal and local, and ship a test beside it (the gate's
 # rule: fork-NEW fixes need a regression test in the same change).
-#
 # Reasons reference the task/commit that made the change, so a future rebase onto upstream
 # can see what this repo owes. When upstream's copy of a file is taken wholesale, delete
 # its entry here — an entry that no longer differs from the base is dead weight.
-#
 # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
@@ -51,3 +49,20 @@ plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
 src/core/main.cpp	#A11/A12: --control-socket flag starts the opt-in in-app JSON-RPC control server and documents it in --help (post-alpha/agent-control-surface); #626: apply a quit requested before readiness once the engine is ready, and unlink the control socket as soon as the event loop returns (post-alpha/control-hardening)
+include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
+include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
+include/Effect.h	#605 PDC: latency accessor on the effect interface
+src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4); #625 headless load: the first-run setup dialog and the 'Audio device setup failed' box are not opened in an unattended run
+src/core/main.cpp	#A11/A12: --control-socket flag starts the opt-in in-app JSON-RPC control server and documents it in --help; it also marks the process as agent-driven (ControlRegistry::setAgentInstance) so no modal dialog is opened, and the project-recovery prompt is answered without a dialog (#625) (post-alpha/agent-control-surface, post-alpha/headless-load)
+include/Song.h	#625 headless load: errors()/loadRefusal() accessors, so project.open answers with the per-item error list and a typed refusal instead of a dialog
+src/core/Song.cpp	#625 headless load: the 'Aborting project load' and 'LMMS Error report' boxes are not opened in an unattended run; the refusal reason and the per-item errors are recorded (post-alpha/headless-load)
+src/core/ConfigManager.cpp	#625 headless load: the config parse-error and config-write-failure boxes are not opened in an unattended run (saveConfigFile is reachable from project.open via the recent-projects list)
+src/core/DataFile.cpp	#625 headless load: the 'Could not open file', bundle write-failure, LADSPA upgrade and 'Error in file' boxes are not opened in an unattended run
+src/core/SampleBuffer.cpp	#625 headless load: the 'Failed to load sample' boxes are not opened in an unattended run (they fire while a project loads)
+src/core/Plugin.cpp	#625 headless load: the 'Plugin not found' and 'Error while loading plugin' boxes are not opened in an unattended run
+src/core/PeakController.cpp	#625 headless load: the 'Peak Controller Bug' box (raised from the project-load path) is not opened in an unattended run
+src/core/ImportFilter.cpp	#625 headless load: the import-path boxes are not opened in an unattended run (reachable with --import)
+src/gui/GuiApplication.cpp	#625 headless load: the missing-working-directory prompt is answered by creating the directory when no human can click it (post-alpha/headless-load)
+plugins/LadspaEffect/LadspaEffect.cpp	#625 headless load: the 'Can't get LADSPA descriptor function' and 'Plugin has no processor' boxes are not opened in an unattended run (they fire while a project that references the plugin loads)
+plugins/MidiImport/MidiImport.cpp	#625 headless load: the 'Setup incomplete' boxes are not opened in an unattended run (the import path is reachable from --import at startup)
+src/core/TrackContainer.cpp	#625 headless load: the application-modal 'Loading project...' progress window is not created in an unattended run (its Cancel button is the only way to stop a load)

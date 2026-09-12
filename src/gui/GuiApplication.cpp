@@ -50,6 +50,10 @@
 #include <QSplashScreen>
 #include <QSocketNotifier>
 
+#include <cstdio>
+
+#include "UnattendedRun.h"
+
 #ifdef LMMS_BUILD_WIN32
 #include <io.h>
 #include <stdio.h>
@@ -91,16 +95,42 @@ GuiApplication::GuiApplication()
 	// Immediately register our SIGINT handler
 	createSocketNotifier();
 
-	// prompt the user to create the LMMS working directory (e.g. ~/Documents/lmms) if it doesn't exist
-	if ( !ConfigManager::inst()->hasWorkingDir() &&
-		QMessageBox::question( nullptr,
+	// Prompt the user to create the LMMS working directory (e.g. ~/Documents/lmms)
+	// if it doesn't exist. In an unattended run (--control-socket, or no
+	// display at all) there is nobody to answer the prompt and Qt would park
+	// the constructor in a nested event loop, so the instance would never
+	// reach app->exec() (task #625). Take the prompt's own default answer -
+	// "Yes, create it" - and say so on stderr; if creation fails, name the
+	// path in a typed line rather than waiting on a click.
+	if ( !ConfigManager::inst()->hasWorkingDir() )
+	{
+		const QString workingDir = ConfigManager::inst()->workingDir();
+		const bool unattended = lmms::isUnattendedRun();
+		if ( unattended ||
+			QMessageBox::question( nullptr,
 				tr( "Working directory" ),
 				tr( "The LMMS working directory %1 does not "
-				"exist. Create it now? You can change the directory "
-				"later via Edit -> Settings." ).arg( ConfigManager::inst()->workingDir() ),
+					"exist. Create it now? You can change the directory "
+					"later via Edit -> Settings." ).arg( workingDir ),
 					QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes ) == QMessageBox::Yes)
-	{
-		ConfigManager::inst()->createWorkingDir();
+		{
+			ConfigManager::inst()->createWorkingDir();
+			if ( unattended )
+			{
+				if ( ConfigManager::inst()->hasWorkingDir() )
+				{
+					fprintf( stderr, "GuiApplication: working-directory path=%s "
+						"state=created (unattended run: the prompt's default answer)\n",
+						workingDir.toUtf8().constData() );
+				}
+				else
+				{
+					fprintf( stderr, "GuiApplication: working-directory-error path=%s "
+						"reason=create-failed\n", workingDir.toUtf8().constData() );
+				}
+				fflush( stderr );
+			}
+		}
 	}
 	// Init style and palette
 	QDir::addSearchPath("artwork", ConfigManager::inst()->themeDir());

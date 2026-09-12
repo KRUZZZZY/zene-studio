@@ -731,3 +731,35 @@ endif()
 # platform plugin even though the assertions never open a window.
 set_tests_properties(ControlEditCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
+# instance started with --control-socket.
+#
+# Each test starts the real binary under QT_QPA_PLATFORM=offscreen, drives it
+# from an external client, and treats a HANG as a failure: every wait is
+# bounded. Each also has an `--expect-blocked` mode that asserts the pre-fix
+# defect (the startup path parked inside a modal's nested event loop), so the
+# tests cannot pass by accident. Reproductions against the base commit
+# 6b01b98eb are recorded in the lane's evidence.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	foreach(HEADLESS_TEST
+			"ControlHeadlessProjectOpen|control-headless-project-open.py|${CMAKE_SOURCE_DIR}/data/projects/tutorials/editing_note_volumes.mmp ${CMAKE_CURRENT_SOURCE_DIR}/data/error-carrying-project.mmp"
+			"ControlHeadlessWorkingDirectory|control-headless-working-directory.py|"
+			"ControlHeadlessNoAudioDevice|control-headless-no-audio-device.py|")
+		string(REPLACE "|" ";" FIELDS "${HEADLESS_TEST}")
+		list(GET FIELDS 0 TEST_NAME)
+		list(GET FIELDS 1 TEST_SCRIPT)
+		list(GET FIELDS 2 TEST_ARGS)
+		separate_arguments(TEST_ARGS_LIST UNIX_COMMAND "${TEST_ARGS}")
+		add_test(NAME ${TEST_NAME}
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/${TEST_SCRIPT}
+				$<TARGET_FILE:lmms>
+				${TEST_ARGS_LIST}
+		)
+		set_tests_properties(${TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+		)
+	endforeach()
+endif()

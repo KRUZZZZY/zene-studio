@@ -40,6 +40,7 @@
 
 #include "base64.h"
 #include "ConfigManager.h"
+#include "UnattendedRun.h"
 #include "DeprecationHelper.h"
 #include "Effect.h"
 #include "embed.h"
@@ -163,7 +164,9 @@ DataFile::DataFile( const QString & _fileName ) :
 	QFile inFile( _fileName );
 	if( !inFile.open( QIODevice::ReadOnly ) )
 	{
-		if (gui::getGUI() != nullptr)
+		// A modal here would leave project.open unanswered in an agent
+		// instance (task #625): below, the same sentence goes to stderr.
+		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 		{
 			QMessageBox::critical( nullptr,
 				gui::SongEditor::tr( "Could not open file" ),
@@ -172,6 +175,11 @@ DataFile::DataFile( const QString & _fileName ) :
 						"file.\n Please make sure to have at "
 						"least read permissions to the file "
 						"and try again." ).arg( _fileName ) );
+		}
+		else
+		{
+			qWarning() << "Could not open file" << _fileName
+				<< "- no read permission or not a file";
 		}
 
 		return;
@@ -316,7 +324,7 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 {
 	// Small lambda function for displaying errors
 	auto showError = [](QString title, QString body){
-		if (gui::getGUI() != nullptr)
+		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 		{
 			QMessageBox mb;
 			mb.setWindowTitle(title);
@@ -2061,8 +2069,17 @@ void DataFile::findProblematicLadspaPlugins()
 
 	if (numberOfProblematicPlugins > 0)
 	{
-		QMessageBox::warning(nullptr, QObject::tr("LADSPA plugins"),
-			QObject::tr("The project contains %1 LADSPA plugin(s) which might have not been restored correctly! Please check the project.").arg(numberOfProblematicPlugins));
+		// This runs inside the load path; an unattended run must not stop to
+		// ask about it (task #625) - say it on stderr instead.
+		if (!lmms::isUnattendedRun())
+		{
+			QMessageBox::warning(nullptr, QObject::tr("LADSPA plugins"),
+				QObject::tr("The project contains %1 LADSPA plugin(s) which might have not been restored correctly! Please check the project.").arg(numberOfProblematicPlugins));
+		}
+		else
+		{
+			qWarning() << QObject::tr("The project contains %1 LADSPA plugin(s) which might have not been restored correctly! Please check the project.").arg(numberOfProblematicPlugins);
+		}
 	}
 }
 
@@ -2145,7 +2162,7 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 			using gui::SongEditor;
 
 			qWarning() << "at line" << line << "column" << errorMsg;
-			if (gui::getGUI() != nullptr)
+			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 			{
 				QMessageBox::critical( nullptr,
 					SongEditor::tr( "Error in file" ),

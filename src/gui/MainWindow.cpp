@@ -39,9 +39,11 @@
 #include <QSplitter>
 
 #include "AboutDialog.h"
+#include "AudioEngine.h"
 #include "AutomationEditor.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
+#include "UnattendedRun.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -485,15 +487,14 @@ void MainWindow::finalize()
 
 	// setup-dialog opened before?
 	//
-	// Every dialog below is a QUESTION FOR A HUMAN. In a run with no display
-	// nobody can answer it, and Qt blocks in that dialog's nested event loop -
-	// before app->exec() is ever reached. That is the second half of the #626
-	// reproductions: with the audio device failing to open, this box used to
-	// block here forever, so the control surface never became ready and answered
-	// `busy` to everything (measured 92 s and still going). Ask the questions
-	// only when there is a display; otherwise say it on stderr, where the log and
-	// the agent's `control.ping` report both see it.
-	const bool interactive = !isHeadlessRun();
+	// Both dialogs below are questions for a human, asked BEFORE app->exec().
+	// In an unattended run (--control-socket, or no display at all) nobody can
+	// answer them, so Qt parks the startup path in a nested event loop: the
+	// instance stays alive, keeps answering `control.ping` with
+	// engine_ready=false, and never becomes usable (task #625, measured on
+	// 6b01b98eb). Ask only when a human is actually there; otherwise say it on
+	// stderr, where the log and the operator can see it.
+	const bool interactive = !lmms::isUnattendedRun();
 
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
 	{
@@ -506,8 +507,8 @@ void MainWindow::finalize()
 		}
 		else
 		{
-			fprintf( stderr, "MainWindow: headless run: skipping the setup dialog; "
-				"configure the audio and MIDI devices in the --config file\n" );
+			fprintf( stderr, "MainWindow: unattended run: skipping the first-run setup dialog; "
+				"configure audio and MIDI in the --config file\n" );
 			fflush( stderr );
 		}
 	}
@@ -517,6 +518,7 @@ void MainWindow::finalize()
 	else if( Engine::audioEngine()->audioDevStartFailed() || !AudioEngine::isAudioDevNameValid(
 		ConfigManager::inst()->value( "audioengine", "audiodev" ) ) )
 	{
+
 		if( interactive )
 		{
 			QMessageBox::critical(nullptr, "Audio device setup failed",
@@ -529,10 +531,23 @@ void MainWindow::finalize()
 		else
 		{
 			// The engine already fell back to the dummy device and keeps working
-			// (render, edit, save); an agent needs the reason, not a prompt. The
-			// same sentence is what control.ping reports as audio.message.
+			// (render, edit, save); an agent needs the reason, not a prompt. Two lines,
+			// both from this one event, because they serve two readers:
+			//   1. the sentence control.ping reports as audio.message (agent-facing, one source);
+			//   2. the structured diagnostic the headless no-audio-device test parses
+			//      (backend / start-failed / name-known / device), which is what makes the
+			//      fallback auditable from a log rather than only from the socket.
+			// Merge reconciliation of #625 x #626, 2026-09-12: both contracts are kept.
+			const QString requested = ConfigManager::inst()->value( "audioengine", "audiodev" );
+			const bool failed = Engine::audioEngine()->audioDevStartFailed();
+			const bool known = AudioEngine::isAudioDevNameValid( requested );
 			fprintf( stderr, "MainWindow: audio device setup failed: %s\n",
 				Engine::audioEngine()->audioDevStartReason().toUtf8().constData() );
+			fprintf( stderr, "MainWindow: audio-device-setup backend=\"%s\" "
+				"device_start_failed=%d name_known=%d device=\"%s\" "
+				"(unattended run: no dialog, the engine continues)\n",
+				requested.toUtf8().constData(), failed ? 1 : 0, known ? 1 : 0,
+				Engine::audioEngine()->audioDevName().toUtf8().constData() );
 			fflush( stderr );
 		}
 	}

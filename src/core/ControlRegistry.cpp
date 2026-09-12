@@ -22,6 +22,7 @@
  */
 
 #include "ControlRegistry.h"
+#include "UnattendedRun.h"
 
 
 #include <QCoreApplication>
@@ -94,7 +95,7 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	// Headless = no display a human could answer a dialog on. One place decides
 	// (HeadlessMode.h), because MainWindow asks the same question before the
 	// registry exists.
-	m_headless = isHeadlessRun();
+	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
 }
 
 ControlRegistry* ControlRegistry::instance()

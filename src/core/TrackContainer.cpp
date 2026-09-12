@@ -36,6 +36,7 @@
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "Song.h"
+#include "UnattendedRun.h"
 
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -91,7 +92,11 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 
 	static QProgressDialog * pd = nullptr;
 	bool was_null = ( pd == nullptr );
-	if (!journalRestore && gui::getGUI() != nullptr)
+	// The progress window is application-modal and its Cancel button is the
+	// only way to stop a load. In an unattended run nobody can click it (task
+	// #625), so the load runs without the window - it never blocked, but it left
+	// an unclosable modal widget over a socket-driven load.
+	if (!journalRestore && gui::getGUI() != nullptr && !lmms::isUnattendedRun())
 	{
 		if( pd == nullptr )
 		{

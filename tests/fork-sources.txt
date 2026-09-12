@@ -201,3 +201,15 @@ src/core/ControlDeviceSupport.cpp
 # in-process catalogue test.
 src/core/ControlDeviceHosted.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
+# ---- Headless load path (task #625: no modal may block an agent instance) ----
+# The tests that hold the startup/load path to SPEC A13 ("every command runs
+# with no display and no audio device"). Registered as fork-NEW so the
+# fork-scoped gates measure them. The fixture they use is
+# tests/data/error-carrying-project.mmp (documented in
+# tests/data/README-error-fixtures.md): it carries two load errors on purpose.
+include/UnattendedRun.h
+src/core/UnattendedRun.cpp
+tests/headless_load_harness.py
+tests/control-headless-project-open.py
+tests/control-headless-working-directory.py
+tests/control-headless-no-audio-device.py

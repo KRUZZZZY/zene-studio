@@ -22,6 +22,7 @@
  */
 
 #include "HeadlessMode.h"
+#include "UnattendedRun.h"
 
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -61,7 +62,11 @@ bool isHeadlessName(const QString& name)
 
 bool isHeadlessRun()
 {
-	return isHeadlessName(platformName());
+	// DEPRECATED ALIAS (merge 2026-09-12): isUnattendedRun() is the single predicate -
+	// it is true for an agent instance (--control-socket) OR a displayless platform,
+	// which is a superset of this function's old meaning. Delete this file once no
+	// caller remains.
+	return isUnattendedRun();
 }
 
 QString headlessPlatformName()
