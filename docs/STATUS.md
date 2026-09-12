@@ -1,3 +1,7 @@
+> **This page describes the tree as verified on 2026-09-11 (the v0.1.0-alpha line).** For the 0.2.0-alpha
+> release see [`docs/RELEASE-NOTES-v0.2.0-alpha.md`](RELEASE-NOTES-v0.2.0-alpha.md) and
+> [`docs/KNOWN-LIMITATIONS.md`](KNOWN-LIMITATIONS.md).
+
 # Zene Studio — status
 
 **Verified 2026-09-11** against `main` @ `b61e14c75` for the measurements, and `4f1acd5e6` (the

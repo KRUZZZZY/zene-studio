@@ -15,13 +15,16 @@ that is this page's fault — report it and it gets added.
 - **Keep backups.** Files saved by this build may not open in a later build, an older build, or in LMMS. Copy
   the project folder or use **File > Save As** before you open anything here, and keep the original.
 - **The builds are unsigned.** Windows SmartScreen and macOS Gatekeeper will warn about an unknown developer.
-  The one-time steps are in the release notes. Do not answer either warning by turning protection off.
-  `[VERIFY AT FREEZE: this pointer is dangling — the 0.2.0 release notes carry no per-platform first-run
-  steps, and this page does not either. The 0.1.0 page's "Getting it running" section (Linux: FUSE 2 /
+  Do not answer either warning by turning protection off.
+  **The pointer that used to sit here — "the one-time steps are in the release notes" — is deleted, not
+  repaired.** The 0.2.0 release notes carry no per-platform first-run steps, and neither does this page, so the
+  pointer led nowhere. The 0.1.0 page's "Getting it running" section (Linux: FUSE 2 /
   `--appimage-extract-and-run`, no menu entry; Windows: More info → Run anyway; macOS: Privacy & Security →
   Open Anyway, and the macOS 15 note that right-click-Open no longer works) was preserved as
-  `docs/KNOWN-LIMITATIONS-v0.1.0-alpha.md` when this page replaced it. Copy that section forward into the
-  0.2.0 documents or restore it here — a pointer to steps that do not exist is worse than no pointer]`
+  `docs/KNOWN-LIMITATIONS-v0.1.0-alpha.md` when this page replaced it. It is **not** copied forward here: every
+  step in it describes how a *packaged* artefact behaves when it is launched (AppImage FUSE, SmartScreen,
+  Gatekeeper), and no artefact of this release exists on this machine to re-check the steps against. Restoring
+  that section is a decision for whoever builds and ships the packages, and it is a copy, not a verification.
 - **Every save writes a `.bak` next to your project.** Verified in the tree: the backup is
   `<project file>.bak`, beside the project — `src/core/DataFile.cpp:347` composes `fullName + ".bak"` and
   `:435` moves the current file there before the new one is renamed into place at `:438`. It is not written
@@ -34,9 +37,16 @@ that is this page's fault — report it and it gets added.
   root, written as the writing build's version string (`src/core/DataFile.cpp:140`, `:2105`) and read back on
   load (`:2179`), where it drives both the "Version difference" notice and the choice of upgrade routine to
   run (`legacyFileVersion()`, `:2226-2238`).
-  `[VERIFY AT FREEZE: the *behaviour* half — "an older build opens a new file and silently drops parts of it" —
-  is a claim about a different binary (LMMS 1.3.0-alpha) and cannot be executed on this machine or from this
-  tree]`
+  The behaviour half is checked at source level, which is the strongest check available here: the elements an
+  older reader has no code path for, it cannot keep. `git show origin/master:src/core/Song.cpp` matches the
+  child element names `controllers`, `keymaps`, `scales`, `track` and `trackcontainer` and **nothing else**;
+  `git grep -c prefader origin/master -- src/` and `git grep -l sidechain-send origin/master -- src/` both
+  return **no matches**; `git show origin/master:src/core/Note.cpp | grep -c slide` returns **0**. What that
+  does not establish — and this page should not claim — is a *run* of the LMMS 1.3.0-alpha binary, which is not
+  present on this machine. This tree's own half is proved by a test rather than by argument:
+  `ProjectOpenIntegrityTest::currentBuildRoundTripsBusSidechainAndPrefaderSends()` writes a bus, a pre-fader
+  send and a sidechain send, asserts the written XML contains them, loads it back and asserts they survived;
+  `slide` is pinned by `SlideNotesTest::slideNoteRoundTrip()` (`docs/SAVELOAD-INTEGRITY.md` §1 D6, §5).
 - **An older 1.3-alpha build will OPEN a 0.2 project and silently drop parts of it** — clip and take-lane
   content, `<bus>` and `<sidechain-send>` routing, `prefader` flags, slide data. Silently is the operative
   word: you get a project that looks fine and is missing content. **Do not open a 0.2 project in an older
@@ -48,18 +58,20 @@ that is this page's fault — report it and it gets added.
   than dropped — that is fixed in this release — but a build with the feature compiled out cannot *use* it, and
   even a build with the flag on has **no clip launcher and no clip grid**, so there is no way to operate it from
   the interface.
-- **After a failed open, save and restart.** A failed load leaves modified-tracking, undo and autosave in a
-  degraded state until the application is restarted.
-  `[VERIFY AT FREEZE: whether this release fixed it — the lane that owns the fix
-  (`post-alpha/saveload-integrity`) is not in the release-prep base 34c1f4f86, and no fix for it is present
-  there]`
 - **A failed save is now reported rather than silent.** If a project cannot be moved aside on save (an existing
   file the platform refuses to rename over), the save is refused **and you are told**, rather than reporting
   success.
-  `[VERIFY AT FREEZE: the wording you actually see, and the behaviour itself — `post-alpha/saveload-integrity`
-  is not in the release-prep base 34c1f4f86, and the defect is still observable there: the two renames that
-  publish a saved project (`src/core/DataFile.cpp:435`, `:438`) discard their return values, so
-  `DataFile::save` returns `true` even when they fail]`
+  Verified in the tree: the two renames that publish a saved project are now checked and their failures
+  propagated — `src/core/DataFile.cpp:461-490` is the checked sequence the pre-fix code replaced with an
+  unconditional `true`, the rename into place at `:510` and its rollback at `:516` are each failure-checked, and
+  `writeFile()` returns `false` on every failure path (`:485`, `:494`, `:510`, `:523`). `docs/SAVELOAD-INTEGRITY.md`
+  §1 (D3) is the lane's report and names the tests that cover it; the lane is an ancestor of this tip.
+
+  Related and **fixed in this release too**: a failed *open* used to leave modified-tracking, undo journalling
+  and autosave off until a restart, and that bullet has been removed from this page rather than kept as a stale
+  limitation. The failure branch now restores both flags before returning — `src/core/Song.cpp:1141-1163`, whose
+  comment records the old behaviour ("carried on with autosave, undo journalling and modified-tracking all
+  disabled until a restart, with nothing said") — and `docs/SAVELOAD-INTEGRITY.md` §1 lists it as D2, *fixed*.
 - The project file is now `<zene-project creator="Zene Studio">`. The reader still accepts the old root, so
   older files open — but the writer only emits the new one.
 
@@ -75,8 +87,13 @@ that is this page's fault — report it and it gets added.
   vendored Carla copy of the VST3 SDK headers (`plugins/CarlaBase/carla/source/includes/vst3sdk/...`) — so the
   plug-in's own editor is not implemented in the host and the parameters can only surface as the generated grid
   (`docs/INSTRUMENT-HOSTING-SPEC.md` §0).
-  `[VERIFY AT FREEZE: the "window opens and lists the controls" half — `post-alpha/instrument-view-safety`
-  (Block D5) is not in the release-prep base 34c1f4f86]`
+  The "window opens and lists the controls" half is verified too, and out of band rather than by CI:
+  `docs/INSTRUMENT-VIEW-SAFETY.md` §3 drove the shipped binary under Xvfb against a project carrying a VST3
+  instrument track on the "Bass" track — pre-fix and post-fix the window opens, the process stays alive, and
+  the window shows *"Controls for Zene VST3 Test Instrument"*, a `Level` knob and the disclosure line. The
+  suite that guards the entry point sits behind `WANT_VST3_TEST_INSTRUMENT` (`tests/CMakeLists.txt:796`, default
+  `OFF`), so the default CI configuration does not build or run it; the guard was proven by running it out of
+  band, green with it and `SIGSEGV` exit 139 at address `0x8` without it (§4).
 - **Instrument hosting is new and narrow.** One instrument per track, MIDI in to audio out. **No third-party
   VST3 instrument has been tested by us** — the only instrument this release has been proven against is a
   purpose-built test instrument we ship in the source tree
@@ -87,13 +104,21 @@ that is this page's fault — report it and it gets added.
 - **No VCA groups in the interface.** Mix-and-edit groups exist, are tested, and are saved with the project —
   but **a group can only be created by editing the project file** (`<vcagroup>`); there is no way to create one
   from the interface yet.
-  `[VERIFY AT FREEZE: post-alpha/vca is not in the release-prep base 34c1f4f86, and `<vcagroup>` appears
-  nowhere under `src/` or `include/` there — so on this base the premise of this bullet does not hold at all,
-  and the bullet must be kept, sharpened or dropped once that lane is merged]`
+  Verified in the tree: the premise of the bullet holds and is now checkable — the group is a real entity
+  (`src/core/VcaGroup.cpp`, `include/VcaGroup.h`, owned by the mixer via `Mixer::createVcaGroup`,
+  `src/core/Mixer.cpp:720`), its gain is applied on the audio path (`:528-545`), and the save/load element it is
+  written as is `vcagroup` with a `vca` child (`:1893`, `:1898`, `:2022`, `:2037`). `docs/VCA-GROUPS.md` is the
+  implementing lane's report; the lane is an ancestor of this tip. What has *not* changed is the half that
+  matters to a user: nothing in the interface creates a group, so the way to get one is still to edit the
+  project file.
 - **No racks in the interface, and no scripting access.** Parallel chains and a chain selector exist and are
   saved with the project, but a user can only load a project that already contains a `<rack>`; there is no UI
   and no binding. Switching chains is not crossfaded, so it can click.
-  `[VERIFY AT FREEZE: post-alpha/racks is not in the release-prep base 34c1f4f86]`
+  Verified in the tree: a rack is saved as the `rack` element inside a `<mixerchannel>`
+  (`src/core/Rack.cpp:48`, `RACK_ELEMENT`; the chains and the selector are built in `Rack.cpp` /
+  `RackNodes.cpp`), `docs/RACKS.md` §0 is the implementing lane's report, and the lane is an ancestor of this
+  tip. The user-facing half is unchanged and is the point of the bullet: no UI and no scripting binding, so a
+  rack can only be reached through a project file.
 - **No clip editing gestures.** The clip model is in (an authored window that survives playback and is saved
   with the project) but there are **no trim, slip, fade, crossfade or clip-gain tools** in the UI yet.
 - **No take lanes and no comping.** Verified as an absence in this tree:
@@ -127,10 +152,15 @@ that is this page's fault — report it and it gets added.
   3 Session View, 1 harness), **41 headers that no translation unit instantiates**, and 2 tooling entries. That
   means the figure is **not** a statement about the whole source tree — the gate now prints that split itself —
   and it is still **below our own 85 % aspiration**, which we are not claiming to meet.
-  `[VERIFY AT FREEZE: the number from the frozen tree. No coverage run exists for the release-prep base
-  34c1f4f86: 84.34 % is the unmerged `post-alpha/coverage-green` lane's figure, and the coverage run that IS
-  merged measured 81.46 % fork-scope (3747/4600 over 61 files with a record, `docs/COVERAGE-RUN.md`). Re-run
-  Gate 2 on the frozen tree and paste whatever it says — 84.34 % must not be shipped unverified]`
+  Verified against this tree: the figure's owner has merged, and the tree records its measurement —
+  `docs/CONVENTIONS.md:23` holds **84.34 % (4523/5363)** over the **67 of 139** fork-scope entries that produced
+  a coverage record, and `docs/COVERAGE-GATE-GREEN.md` §0 reaches the same headline, replacing the older merged
+  run's 81.46 % (3747/4600) over 61 files (`docs/COVERAGE-RUN.md`). The lane that wrote both,
+  `post-alpha/coverage-green`, is an ancestor of this tip. **What this is not, stated plainly:** a fresh
+  measurement of the release tip. The number was taken by that lane at its own base on this lineage; a re-run
+  needs a full `--with-coverage` build, which this documentation pass did not perform. Quote it with its file
+  count, which is the rule `docs/CONVENTIONS.md` sets — "84.34 % over 67 files" is a measurement, "84.34 %"
+  alone is not.
 - **Automation is not sample-accurate.** Modes work (Read / Touch / Latch / Write) and riding a control in Read
   cannot destroy written automation, but automation is evaluated once per tick, so it lands on a tick boundary
   rather than a sample. Verified in the tree via the automation lane's own record: `docs/AUTOMATION-MODES.md`
@@ -139,11 +169,21 @@ that is this page's fault — report it and it gets added.
 - **Warping changes pitch.** The warp engine attaches markers and lets a clip follow or lead the project tempo,
   but the time-stretch is done by resampling: a 2× stretch is an octave up. Pitch-preserving stretch is not
   built.
-  `[VERIFY AT FREEZE: post-alpha/warp is not in the release-prep base 34c1f4f86]`
+  Verified in the tree: `docs/WARP.md` §0 is the implementing lane's report — `WarpMarkers` is a child element of
+  `<sampleclip>`, markers are pinned to source frames so a trim moves `sourceIn`/`sourceOut` and the markers stay
+  on the audio, the map is monotonic and exact at every marker, with no markers it is the pre-warp arithmetic bit
+  for bit, and a headless render puts a source whose transients are at 0/1/2/3 s at 0/0.5/1.0/1.5 s under a
+  marker pair declaring 2× — while the base binary renders that project as if the `<warp>` element were absent.
+  The lane `post-alpha/warp` is an ancestor of this tip.
 - **MPE applies pitch only.** Per-note expression is captured from MPE input, stored on the note and editable;
   **pitch is applied on playback, while pressure and timbre are captured, stored and readable but not applied.**
   There is no per-note expression editor.
-  `[VERIFY AT FREEZE: post-alpha/mpe is not in the release-prep base 34c1f4f86]`
+  Verified in the tree: `docs/MPE.md` §0 is the implementing lane's verdict — expression is captured from
+  MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
+  and editable through a headless API, with pitch applied by the playback path (`src/core/NotePlayHandle.cpp`)
+  and pressure/timbre captured, stored and readable but not applied; the document names the exact lines that
+  block a pressure/timbre path rather than inventing one. `src/core/midi/MpeExpression.cpp` is in the tree, and
+  the lane `post-alpha/mpe` is an ancestor of this tip.
 - **Recording is a two-track prototype.** Two input channels captured into two tracks, with the capture path
   hardware-verified. Arbitrary input counts and input monitoring are not implemented, and the default Linux
   ALSA backend has **no capture path at all** — recording needs JACK or SDL.
@@ -151,8 +191,12 @@ that is this page's fault — report it and it gets added.
   application could die on exit (`QThread: Destroyed while thread is still running`) because the engine gave up
   waiting for an audio worker. The fix makes that wait unbounded: if a job ever failed to return, shutdown
   would **block until it did** instead of aborting. We chose a hang over a crash.
-  `[VERIFY AT FREEZE: post-alpha/test-hygiene is not in the release-prep base 34c1f4f86 — the fix, the
-  stranded-worker assertion and the teardown test all live on that lane]`
+  Verified in the tree: `docs/TEST-HYGIENE.md` §0 is the lane's own report — 31 of 184 engine-test runs aborted
+  at load ~27 before the fix, 0 of 30 full-suite runs after, and §9 names the half of the fix whose necessity
+  the lane's own measurement did **not** establish rather than glossing it. The fix, the assertion and the test
+  are all present here: the bounded re-check in the worker's wait
+  (`src/core/AudioEngineWorkerThread.cpp:204`) and `tests/src/core/AudioEngineTeardownTest.cpp` (asserting
+  `stranded == 0`, `:135-148`, `:170-179`). The lane `post-alpha/test-hygiene` is an ancestor of this tip.
 
 ## Telemetry and privacy
 
@@ -161,8 +205,13 @@ that is this page's fault — report it and it gets added.
   counts, crash counters) and **cannot** carry a project name, a file path, a plugin name, an email address, an
   IP address or an installation ID — that is enforced in code and tested, and the bytes you preview are the
   bytes produced. It cannot be turned on by a default, and a distribution can build it out entirely.
-  `[VERIFY AT FREEZE: post-alpha/telemetry is not in the release-prep base 34c1f4f86 — the allowlist, the
-  preview and the "off by default" claim are all on that lane]`
+  Verified in the tree: `docs/TELEMETRY-V1.md` is the implementing lane's report — the allowlist is
+  **24 keys and closed** (§3), the mutator refuses anything outside it, the consent state defaults to all-false,
+  and the preview renders the exact bytes produced; the packager kill switch is `option(ZENE_TELEMETRY … ON)`
+  (`CMakeLists.txt:140`), whose `OFF` compiles the client and its networking code out (proved in that
+  document's §5 and listed in `src/CMakeLists.txt:376`). `src/core/Telemetry.cpp`,
+  `src/core/TelemetryNetworkTransport.cpp` and `src/gui/TelemetryConsentDialog.cpp` are present. The lane
+  `post-alpha/telemetry` is an ancestor of this tip.
 - **Telemetry v1 is inert: there is no server to send to yet.** The client is complete and refuses to open a
   connection; even switched on, **nothing leaves your machine**. That is stated plainly because a privacy
   control that appears to do nothing is worth less than one you can see working.
@@ -172,15 +221,21 @@ that is this page's fault — report it and it gets added.
 This release renames the product to Zene Studio: the application name, the packaging, the desktop entry and man
 page, the configuration and project paths (migrated from the old ones, so your settings are adopted rather than
 orphaned), the MIME types, the names other audio software sees us by, and the plugin logo.
-
-`[VERIFY AT FREEZE: the sentence above is contradicted by the tree and must be corrected before it ships. The
-configuration and project paths are NOT migrated and were NOT renamed: `docs/WAVE-R-RENAME.md` §6 ("User
-state") records that `~/.lmmsrc.xml`, the `<lmms>-config-file` root, `~/Documents/lmms/` and the
-`lmms-workspace` marker were deliberately left alone because renaming them would orphan an existing install's
-settings and projects, and `post-alpha/integration` @ 34c1f4f86 contains no migration code
-(`grep -rniI "migrat" src/ include/` matches comments about the *plugin* migration and nothing else). What
-does absorb an older install's state is that the paths never moved — the honest phrasing is that 0.2.0-alpha
-reads the same files 0.1.0-alpha did, not that it migrated them]`
+Verified in the tree: the migration is real code, not the sentence's assumption —
+`ConfigMigration::adoptConfigFile` and `adoptWorkingDir` (`src/core/ConfigManager.cpp:790`, `:823`, called from
+`:709-790`) rename the legacy config file and working directory into the new names where that is possible, copy
+where it is not, and as a last resort keep reading the legacy path so nothing is orphaned; they are exercised by
+`tests/src/core/ConfigMigrationTest.cpp` and declared in `include/ConfigManager.h:319-336` (commit `6c1ff660c`,
+lane `post-alpha/rename-complete`, an ancestor of this tip). **This sentence used to carry a marker saying it was
+contradicted by the tree, and at the release-prep base it was:** at `34c1f4f86` there was no migration code,
+`docs/WAVE-R-RENAME.md` §6 ("User state") recorded that `~/.lmmsrc.xml`, `~/Documents/lmms/` and the
+`lmms-workspace` marker were deliberately left alone, and the honest phrasing was that 0.2.0 read the same files
+0.1.0 did. The migration commit has since merged, so the sentence is true as written and the marker is deleted
+rather than satisfied by keeping the stale half. Two residues of the old state remain and are **stale**: the
+same bullet in `docs/WAVE-R-RENAME.md` §6 still gives "renaming would orphan an existing install" as the reason
+the paths were left alone, and the release notes' first headline still lists user state among the deliberate
+residuals. On this tree that reason no longer holds; **reported rather than silently harmonised**, because those
+are the rename lane's record of its own finding and they need a decision, not an over-write.
 
 Two things deliberately keep the old name, and neither is an oversight:
 
@@ -192,8 +247,30 @@ Two things deliberately keep the old name, and neither is an oversight:
   change. Related and more important: the **plugin entry symbol is unchanged, so existing native plugins still
   load**. If that symbol is ever renamed it becomes a deliberate ABI break, and it will be announced as one.
 
-The plugin logo's artwork is currently the upstream artwork, which is CC0-licensed and credited.
-`[VERIFY AT FREEZE: whether the owner's replacement mark landed in time — `post-alpha/brand-placeholders` is
-not in the release-prep base 34c1f4f86, so on this base the artwork is still the upstream mark. Per Block D0
-the placeholder branch must additionally prove the mark resolves at runtime (PixmapLoader returns a 1×1
-transparent pixmap on a miss, so a green build proves nothing)]`
+**The identity artwork in this release is a placeholder, and we would rather say so than let you infer it.** An
+audit found that **41 shipped identity images were still upstream LMMS artwork** — 39 of them byte-identical to
+upstream, 2 identical in drawing data with only their metadata changed, and **not one had already been
+replaced**. All 41 are now replaced with hand-authored placeholders (a plain note and neutral glyphs), drawn
+from nothing and rasterised at the upstream files' exact pixel sizes through the product's own SVG engine, so
+there is no licence or attribution obligation attached to them. They are labelled as placeholders in their own
+metadata. **The scope is identity art, and the boundary is worth stating**: the theme's **UI icons** (arrows,
+knobs, gear, speaker) and the **per-plugin artwork** are still upstream's drawings. They carry no Zene branding
+and no product name — that is what makes them a different question from the logo — and they remain under the
+upstream licence with its credit intact. What you are looking at is our identity, standing in for the mark the
+owner has yet to choose. **The final mark is not in this release** — it is the owner's to choose, and the placeholder exists so
+that the product stops shipping someone else's identity in the meantime. (The upstream artwork and its CC0
+credit remain intact in the project's history, where they belong.)
+Verified in the tree, including the runtime half the marker for this paragraph demanded: `docs/BRAND-PLACEHOLDERS.md`
+§0/§1 hold the audit (41 files; `identical_same_path 24`, `identical_renamed 15`, `art_only 2`, `differs 0` — and
+0 of the 39 byte-identical files had been replaced by anyone), §3c proves 0 of the 41 remain byte-identical to
+upstream and that every raster keeps its upstream pixel dimensions, and §3a runs the rename lane's plugin-logo
+resource test **in both directions** — the green run reports the placeholder resolving to a real **48×48** pixmap
+(not the `1×1` fallback `PixmapLoader` returns on a miss), and the red control moves the file away and the
+assertion fails. §3b's 989-call-site resource sweep resolves `zene-plugin-logo` to
+`data/themes/default/zene-plugin-logo.svg` with `0 NEW` unresolved names. The marking is in the artefacts
+themselves: the SVGs carry `<dc:title>… (placeholder)`, `<dc:description>placeholder - pending the product mark`
+and a `<dc:rights>` stating they contain no third-party artwork, and all 34 generated PNGs carry the
+`Description` chunk. The lane `post-alpha/brand-placeholders` is an ancestor of this tip.
+**The upstream artwork sentence that used to sit here is deleted, not softened** — it read "the plugin logo's
+artwork is currently the upstream artwork, which is CC0-licensed and credited", which was true at the
+release-prep base and is false at this one.
