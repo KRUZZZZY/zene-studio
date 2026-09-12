@@ -323,7 +323,7 @@ configuration to point it at, not a green result to report.
 - **`docs/RELEASE-NOTES-v0.1.0-alpha.md`, `docs/WAVE-R-RENAME.md`, `docs/phase-f/**`, the integration-merge
   records and `tests/QA-GATES.md`** were left alone: they are dated records of what happened, and
   `RELEASE-PREP-0.2.0.md` §5 already names them as deliberately kept.
-- **Untracked files that are not mine** (`docs/release-verification-0.2.0-alpha/`,
+- **Untracked files that are not mine** (`tests/integration-logs-release-verify/`,
   `tests/integration-logs-3d/final/f3c-pre-foreign-verify.log`) were left untracked and uncommitted.
 
 ---
