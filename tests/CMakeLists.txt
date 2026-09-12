@@ -19,7 +19,10 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
+	src/core/MidiProbabilityPersistenceTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
+	src/core/NoteRandomTest.cpp
+	src/core/NoteTransformTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
 	src/core/ProjectRecoveryTest.cpp

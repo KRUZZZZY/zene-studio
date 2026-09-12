@@ -46,6 +46,8 @@ include/LufsMeter.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MultiTrackRecorder.h
+include/NoteRandom.h
+include/NoteTransform.h
 include/PinConnector.h
 include/PluginAudioPorts.h
 include/ProjectRecovery.h
@@ -126,6 +128,8 @@ src/core/AudioPortsModel.cpp
 src/core/CrashReporter.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
+src/core/NoteRandom.cpp
+src/core/NoteTransform.cpp
 src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
 src/core/MidiLearn.cpp

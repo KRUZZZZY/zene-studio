@@ -1079,10 +1079,13 @@ tests/src/core/CrashReporterTest.cpp
 tests/src/core/MathTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
+tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp
+tests/src/core/NoteRandomTest.cpp
+tests/src/core/NoteTransformTest.cpp
 tests/src/core/PdcMixerTest.cpp
 tests/src/core/PhaseDMixerTestSupport.h
 tests/src/core/PhaseDPerfBench.cpp

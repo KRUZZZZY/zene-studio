@@ -83,6 +83,8 @@ set(LMMS_SRCS
 	core/ModelVisitor.cpp
 	core/Note.cpp
 	core/NotePlayHandle.cpp
+	core/NoteRandom.cpp
+	core/NoteTransform.cpp
 	core/Oscillator.cpp
 	core/PathUtil.cpp
 	core/PatternClip.cpp
