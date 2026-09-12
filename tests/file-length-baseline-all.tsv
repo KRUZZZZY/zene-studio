@@ -17,9 +17,9 @@ plugins/GigPlayer/GigPlayer.cpp	1288
 plugins/Watsyn/Watsyn.cpp	1286
 plugins/Sf2Player/Sf2Player.cpp	1245
 src/core/AutomationClip.cpp	1230
-src/core/ScriptBindings.cpp	1217
 plugins/Vestige/Vestige.cpp	1213
 tests/src/plugins/PluginPortsHarness.h	1196
+src/core/ScriptBindings.cpp	1169
 src/core/main.cpp	1155
 src/gui/editors/SongEditor.cpp	1155
 src/tracks/InstrumentTrack.cpp	1116
@@ -36,8 +36,8 @@ src/core/DrumSynth.cpp	933
 src/core/lv2/Lv2Proc.cpp	931
 include/BasicFilters.h	917
 plugins/Nes/Nes.cpp	913
-src/core/ScriptEngine.cpp	910
 plugins/Xpressive/Xpressive.cpp	895
+src/core/ScriptEngine.cpp	880
 plugins/OpulenZ/OpulenZ.cpp	877
 plugins/ClapEffect/ClapHost.cpp	875
 plugins/SpectrumAnalyzer/SaSpectrumView.cpp	845
@@ -79,7 +79,6 @@ src/core/audio/AudioJack.cpp	657
 src/gui/MicrotunerConfig.cpp	654
 include/RemotePluginBase.h	649
 include/PianoRoll.h	647
-src/core/RemotePlugin.cpp	644
 tests/src/core/RoutingGraphTest.cpp	641
 plugins/Patman/Patman.cpp	638
 src/core/midi/MidiApple.cpp	635
@@ -90,6 +89,7 @@ src/gui/widgets/Knob.cpp	622
 plugins/Compressor/Compressor.cpp	615
 plugins/Organic/Organic.cpp	615
 include/ladspa.h	603
+src/core/RemotePlugin.cpp	601
 src/wasm/WasmSandbox.cpp	597
 plugins/MidiImport/MidiImport.cpp	595
 src/gui/MixerView.cpp	592
