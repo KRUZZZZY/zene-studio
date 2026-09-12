@@ -1,0 +1,452 @@
+[  0%] Built target weakjack
+[  0%] Built target ringbuffer
+[  0%] Built target carla_native-plugin
+[  1%] Built target lua
+[  2%] Built target tap_autopan
+[  2%] Built target tap_chorusflanger
+[  2%] Built target tap_deesser
+[  3%] Built target caps
+[  3%] Built target tap_doubler
+[  3%] Built target tap_dynamics_m
+[  3%] Built target tap_echo
+[  3%] Built target tap_dynamics_st
+[  3%] Built target tap_eq
+[  3%] Built target tap_eqbw
+[  3%] Built target tap_pinknoise
+[  3%] Built target tap_limiter
+[  4%] Built target tap_reflector
+[  4%] Built target tap_pitch
+[  4%] Built target tap_rotspeak
+[  4%] Built target tap_reverb
+[  4%] Built target tap_sigmoid
+[  4%] Built target tap_tremolo
+[  4%] Built target tap_tubewarmth
+[  4%] Built target tap_vibrato
+[  4%] Building C object plugins/LadspaEffect/swh/CMakeFiles/alias_1407.dir/ladspa/alias_1407.c.o
+[  4%] Building C object plugins/LadspaEffect/swh/CMakeFiles/allpass_1895.dir/ladspa/allpass_1895.c.o
+[  5%] Linking C shared module ../../ladspa/allpass_1895.so
+[  5%] Linking C shared module ../../ladspa/alias_1407.so
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/am_pitchshift_1433.dir/ladspa/am_pitchshift_1433.c.o
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/amp_1181.dir/ladspa/amp_1181.c.o
+[  5%] Linking C shared module ../../ladspa/am_pitchshift_1433.so
+[  5%] Linking C shared module ../../ladspa/amp_1181.so
+[  5%] Built target alias_1407
+[  5%] Built target allpass_1895
+[  5%] Built target am_pitchshift_1433
+[  5%] Built target amp_1181
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/blo.dir/ladspa/util/blo.c.o
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/iir.dir/ladspa/util/iir.c.o
+[  5%] Linking C static library libiir.a
+[  5%] Linking C static library libblo.a
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bode_shifter_cv_1432.dir/ladspa/bode_shifter_cv_1432.c.o
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bode_shifter_1431.dir/ladspa/bode_shifter_1431.c.o
+[  6%] Linking C shared module ../../ladspa/bode_shifter_1431.so
+[  6%] Linking C shared module ../../ladspa/bode_shifter_cv_1432.so
+[  6%] Built target blo
+[  6%] Built target iir
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/chebstortion_1430.dir/ladspa/chebstortion_1430.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/comb_1190.dir/ladspa/comb_1190.c.o
+[  6%] Built target bode_shifter_1431
+[  6%] Built target bode_shifter_cv_1432
+[  6%] Linking C shared module ../../ladspa/chebstortion_1430.so
+[  6%] Linking C shared module ../../ladspa/comb_1190.so
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/comb_1887.dir/ladspa/comb_1887.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/comb_splitter_1411.dir/ladspa/comb_splitter_1411.c.o
+[  6%] Linking C shared module ../../ladspa/comb_splitter_1411.so
+[  6%] Linking C shared module ../../ladspa/comb_1887.so
+[  6%] Built target chebstortion_1430
+[  6%] Built target comb_1190
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/const_1909.dir/ladspa/const_1909.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/crossover_dist_1404.dir/ladspa/crossover_dist_1404.c.o
+[  6%] Built target comb_splitter_1411
+[  6%] Linking C shared module ../../ladspa/const_1909.so
+[  6%] Built target comb_1887
+[  6%] Linking C shared module ../../ladspa/crossover_dist_1404.so
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dc_remove_1207.dir/ladspa/dc_remove_1207.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/debug_1184.dir/ladspa/debug_1184.c.o
+[  6%] Linking C shared module ../../ladspa/dc_remove_1207.so
+[  6%] Linking C shared module ../../ladspa/debug_1184.so
+[  6%] Built target const_1909
+[  6%] Built target crossover_dist_1404
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/decay_1886.dir/ladspa/decay_1886.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/decimator_1202.dir/ladspa/decimator_1202.c.o
+[  6%] Linking C shared module ../../ladspa/decay_1886.so
+[  6%] Built target dc_remove_1207
+[  6%] Linking C shared module ../../ladspa/decimator_1202.so
+[  6%] Built target debug_1184
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/declip_1195.dir/ladspa/declip_1195.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/delay_1898.dir/ladspa/delay_1898.c.o
+[  6%] Linking C shared module ../../ladspa/declip_1195.so
+[  6%] Linking C shared module ../../ladspa/delay_1898.so
+[  6%] Built target decimator_1202
+[  6%] Built target decay_1886
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/delayorama_1402.dir/ladspa/delayorama_1402.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/diode_1185.dir/ladspa/diode_1185.c.o
+[  6%] Built target declip_1195
+[  6%] Linking C shared module ../../ladspa/delayorama_1402.so
+[  6%] Linking C shared module ../../ladspa/diode_1185.so
+[  6%] Built target delay_1898
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/divider_1186.dir/ladspa/divider_1186.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dj_eq_1901.dir/ladspa/dj_eq_1901.c.o
+[  6%] Linking C shared module ../../ladspa/divider_1186.so
+[  6%] Linking C shared module ../../ladspa/dj_eq_1901.so
+[  6%] Built target diode_1185
+[  6%] Built target delayorama_1402
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dj_flanger_1438.dir/ladspa/dj_flanger_1438.c.o
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dyson_compress_1403.dir/ladspa/dyson_compress_1403.c.o
+[  6%] Built target divider_1186
+[  6%] Linking C shared module ../../ladspa/dyson_compress_1403.so
+[  6%] Linking C shared module ../../ladspa/dj_flanger_1438.so
+[  6%] Built target dj_eq_1901
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/fad_delay_1192.dir/ladspa/fad_delay_1192.c.o
+[  6%] Linking C shared module ../../ladspa/fad_delay_1192.so
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/fast_lookahead_limiter_1913.dir/ladspa/fast_lookahead_limiter_1913.c.o
+[  6%] Linking C shared module ../../ladspa/fast_lookahead_limiter_1913.so
+[  6%] Built target dj_flanger_1438
+[  6%] Built target dyson_compress_1403
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/flanger_1191.dir/ladspa/flanger_1191.c.o
+[  6%] Built target fad_delay_1192
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/fm_osc_1415.dir/ladspa/fm_osc_1415.c.o
+[  6%] Linking C shared module ../../ladspa/flanger_1191.so
+[  6%] Built target fast_lookahead_limiter_1913
+[  6%] Linking C shared module ../../ladspa/fm_osc_1415.so
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/foldover_1213.dir/ladspa/foldover_1213.c.o
+[  6%] Linking C shared module ../../ladspa/foldover_1213.so
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/foverdrive_1196.dir/ladspa/foverdrive_1196.c.o
+[  6%] Linking C shared module ../../ladspa/foverdrive_1196.so
+[  6%] Built target flanger_1191
+[  6%] Built target fm_osc_1415
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gate_1410.dir/ladspa/gate_1410.c.o
+[  7%] Built target foldover_1213
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/freq_tracker_1418.dir/ladspa/freq_tracker_1418.c.o
+[  7%] Built target foverdrive_1196
+[  7%] Linking C shared module ../../ladspa/freq_tracker_1418.so
+[  7%] Linking C shared module ../../ladspa/gate_1410.so
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gate_1921.dir/ladspa/gate_1921.c.o
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/giant_flange_1437.dir/ladspa/giant_flange_1437.c.o
+[  7%] Linking C shared module ../../ladspa/gate_1921.so
+[  7%] Linking C shared module ../../ladspa/giant_flange_1437.so
+[  7%] Built target freq_tracker_1418
+[  7%] Built target gate_1410
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gong_beater_1439.dir/ladspa/gong_beater_1439.c.o
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gong_1424.dir/ladspa/gong_1424.c.o
+[  7%] Built target gate_1921
+[  7%] Built target giant_flange_1437
+[  7%] Linking C shared module ../../ladspa/gong_beater_1439.so
+[  7%] Linking C shared module ../../ladspa/gong_1424.so
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gverb.dir/ladspa/gverb/gverb.c.o
+[  8%] Built target gsm
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gverb.dir/ladspa/gverb/gverbdsp.c.o
+[  8%] Linking C static library libgverb.a
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/hard_limiter_1413.dir/ladspa/hard_limiter_1413.c.o
+[  8%] Built target gong_1424
+[  8%] Built target gong_beater_1439
+[  8%] Linking C shared module ../../ladspa/hard_limiter_1413.so
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/harmonic_gen_1220.dir/ladspa/harmonic_gen_1220.c.o
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/hermes_filter_1200.dir/ladspa/hermes_filter_1200.c.o
+[  8%] Built target gverb
+[  9%] Linking C shared module ../../ladspa/harmonic_gen_1220.so
+[  9%] Linking C shared module ../../ladspa/hermes_filter_1200.so
+[  9%] Built target hard_limiter_1413
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/highpass_iir_1890.dir/ladspa/highpass_iir_1890.c.o
+[  9%] Linking C shared module ../../ladspa/highpass_iir_1890.so
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/hilbert_1440.dir/ladspa/hilbert_1440.c.o
+[  9%] Linking C shared module ../../ladspa/hilbert_1440.so
+[  9%] Built target harmonic_gen_1220
+[  9%] Built target hermes_filter_1200
+[  9%] Built target highpass_iir_1890
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/imp_1199.dir/ladspa/imp_1199.c.o
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/impulse_1885.dir/ladspa/impulse_1885.c.o
+[  9%] Linking C shared module ../../ladspa/imp_1199.so
+[  9%] Linking C shared module ../../ladspa/impulse_1885.so
+[  9%] Built target hilbert_1440
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/inv_1429.dir/ladspa/inv_1429.c.o
+[  9%] Linking C shared module ../../ladspa/inv_1429.so
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/karaoke_1409.dir/ladspa/karaoke_1409.c.o
+[  9%] Linking C shared module ../../ladspa/karaoke_1409.so
+[  9%] Built target imp_1199
+[  9%] Built target impulse_1885
+[  9%] Built target inv_1429
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/lcr_delay_1436.dir/ladspa/lcr_delay_1436.c.o
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/latency_1914.dir/ladspa/latency_1914.c.o
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/lowpass_iir_1891.dir/ladspa/lowpass_iir_1891.c.o
+[ 10%] Built target karaoke_1409
+[ 10%] Linking C shared module ../../ladspa/lcr_delay_1436.so
+[ 10%] Linking C shared module ../../ladspa/latency_1914.so
+[ 10%] Linking C shared module ../../ladspa/lowpass_iir_1891.so
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/ls_filter_1908.dir/ladspa/ls_filter_1908.c.o
+[ 10%] Linking C shared module ../../ladspa/ls_filter_1908.so
+[ 10%] Built target latency_1914
+[ 10%] Built target lcr_delay_1436
+[ 11%] Built target lowpass_iir_1891
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/matrix_ms_st_1421.dir/ladspa/matrix_ms_st_1421.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/matrix_st_ms_1420.dir/ladspa/matrix_st_ms_1420.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/matrix_spatialiser_1422.dir/ladspa/matrix_spatialiser_1422.c.o
+[ 11%] Built target ls_filter_1908
+[ 11%] Linking C shared module ../../ladspa/matrix_ms_st_1421.so
+[ 11%] Linking C shared module ../../ladspa/matrix_spatialiser_1422.so
+[ 11%] Linking C shared module ../../ladspa/matrix_st_ms_1420.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/mbeq_1197.dir/ladspa/mbeq_1197.c.o
+[ 11%] Linking C shared module ../../ladspa/mbeq_1197.so
+[ 11%] Built target matrix_ms_st_1421
+[ 11%] Built target matrix_spatialiser_1422
+[ 11%] Built target matrix_st_ms_1420
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/mod_delay_1419.dir/ladspa/mod_delay_1419.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/multivoice_chorus_1201.dir/ladspa/multivoice_chorus_1201.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/notch_iir_1894.dir/ladspa/notch_iir_1894.c.o
+[ 11%] Linking C shared module ../../ladspa/mod_delay_1419.so
+[ 11%] Built target mbeq_1197
+[ 11%] Linking C shared module ../../ladspa/multivoice_chorus_1201.so
+[ 11%] Linking C shared module ../../ladspa/notch_iir_1894.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/phasers_1217.dir/ladspa/phasers_1217.c.o
+[ 11%] Linking C shared module ../../ladspa/phasers_1217.so
+[ 11%] Built target notch_iir_1894
+[ 11%] Built target mod_delay_1419
+[ 11%] Built target multivoice_chorus_1201
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pitchscale.dir/ladspa/util/pitchscale.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/plate_1423.dir/ladspa/plate_1423.c.o
+[ 11%] Linking C shared module ../../ladspa/plate_1423.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pointer_cast_1910.dir/ladspa/pointer_cast_1910.c.o
+[ 11%] Linking C static library libpitchscale.a
+[ 11%] Built target phasers_1217
+[ 11%] Linking C shared module ../../ladspa/pointer_cast_1910.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/rate_shifter_1417.dir/ladspa/rate_shifter_1417.c.o
+[ 11%] Built target pitchscale
+[ 11%] Linking C shared module ../../ladspa/rate_shifter_1417.so
+[ 11%] Built target plate_1423
+[ 11%] Built target pointer_cast_1910
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/retro_flange_1208.dir/ladspa/retro_flange_1208.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/revdelay_1605.dir/ladspa/revdelay_1605.c.o
+[ 11%] Linking C shared module ../../ladspa/retro_flange_1208.so
+[ 11%] Linking C shared module ../../ladspa/revdelay_1605.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/ringmod_1188.dir/ladspa/ringmod_1188.c.o
+[ 11%] Built target rate_shifter_1417
+[ 11%] Linking C shared module ../../ladspa/ringmod_1188.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/satan_maximiser_1408.dir/ladspa/satan_maximiser_1408.c.o
+[ 11%] Built target retro_flange_1208
+[ 11%] Built target revdelay_1605
+[ 11%] Linking C shared module ../../ladspa/satan_maximiser_1408.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/db.dir/ladspa/util/db.c.o
+[ 11%] Built target rms
+[ 11%] Built target ringmod_1188
+[ 11%] Linking C static library libdb.a
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/shaper_1187.dir/ladspa/shaper_1187.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sifter_1210.dir/ladspa/sifter_1210.c.o
+[ 11%] Linking C shared module ../../ladspa/shaper_1187.so
+[ 11%] Built target satan_maximiser_1408
+[ 11%] Linking C shared module ../../ladspa/sifter_1210.so
+[ 11%] Built target db
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sin_cos_1881.dir/ladspa/sin_cos_1881.c.o
+[ 11%] Linking C shared module ../../ladspa/sin_cos_1881.so
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/single_para_1203.dir/ladspa/single_para_1203.c.o
+[ 12%] Built target shaper_1187
+[ 12%] Linking C shared module ../../ladspa/single_para_1203.so
+[ 12%] Built target sifter_1210
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sinus_wavewrapper_1198.dir/ladspa/sinus_wavewrapper_1198.c.o
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/smooth_decimate_1414.dir/ladspa/smooth_decimate_1414.c.o
+[ 12%] Linking C shared module ../../ladspa/sinus_wavewrapper_1198.so
+[ 12%] Built target sin_cos_1881
+[ 12%] Linking C shared module ../../ladspa/smooth_decimate_1414.so
+[ 12%] Built target single_para_1203
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/split_1406.dir/ladspa/split_1406.c.o
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/step_muxer_1212.dir/ladspa/step_muxer_1212.c.o
+[ 12%] Built target sinus_wavewrapper_1198
+[ 12%] Linking C shared module ../../ladspa/split_1406.so
+[ 12%] Built target smooth_decimate_1414
+[ 12%] Linking C shared module ../../ladspa/step_muxer_1212.so
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/surround_encoder_1401.dir/ladspa/surround_encoder_1401.c.o
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/svf_1214.dir/ladspa/svf_1214.c.o
+[ 12%] Linking C shared module ../../ladspa/surround_encoder_1401.so
+[ 12%] Linking C shared module ../../ladspa/svf_1214.so
+[ 12%] Built target split_1406
+[ 12%] Built target step_muxer_1212
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/tape_delay_1211.dir/ladspa/tape_delay_1211.c.o
+[ 12%] Built target surround_encoder_1401
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/transient_1206.dir/ladspa/transient_1206.c.o
+[ 12%] Linking C shared module ../../ladspa/tape_delay_1211.so
+[ 12%] Built target svf_1214
+[ 12%] Linking C shared module ../../ladspa/transient_1206.so
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/triple_para_1204.dir/ladspa/triple_para_1204.c.o
+[ 12%] Linking C shared module ../../ladspa/triple_para_1204.so
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/valve_1209.dir/ladspa/valve_1209.c.o
+[ 12%] Linking C shared module ../../ladspa/valve_1209.so
+[ 12%] Built target transient_1206
+[ 12%] Built target tape_delay_1211
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/valve_rect_1405.dir/ladspa/valve_rect_1405.c.o
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/vocoder_1337.dir/ladspa/vocoder_1337.c.o
+[ 12%] Built target triple_para_1204
+[ 12%] Linking C shared module ../../ladspa/valve_rect_1405.so
+[ 12%] Linking C shared module ../../ladspa/vocoder_1337.so
+[ 12%] Built target valve_1209
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/vynil_1905.dir/ladspa/vynil_1905.c.o
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/wave_terrain_1412.dir/ladspa/wave_terrain_1412.c.o
+[ 12%] Linking C shared module ../../ladspa/vynil_1905.so
+[ 12%] Linking C shared module ../../ladspa/wave_terrain_1412.so
+[ 12%] Built target valve_rect_1405
+[ 12%] Built target vocoder_1337
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/xfade_1915.dir/ladspa/xfade_1915.c.o
+[ 12%] Built target vynil_1905
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/zm1_1428.dir/ladspa/zm1_1428.c.o
+[ 12%] Linking C shared module ../../ladspa/xfade_1915.so
+[ 12%] Linking C shared module ../../ladspa/zm1_1428.so
+[ 12%] Built target wave_terrain_1412
+[ 13%] Built target cmt
+[ 13%] Built target adplug
+[ 13%] Built target xfade_1915
+[ 13%] Built target zm1_1428
+[ 14%] Built target veal
+[ 14%] Built target rnnoise_vendored
+[ 15%] Built target gme
+[ 15%] Performing build step for 'NativeLinuxRemoteVstPlugin64'
+[ 16%] Built target resid_objects
+[ 17%] Built target zynaddsubfx_nio
+[ 18%] Built target lmms_vst3_sdk
+[ 20%] Building CXX object CMakeFiles/NativeLinuxRemoteVstPlugin64.dir/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/plugins/VstBase/RemoteVstPlugin.cpp.o
+[ 18%] Built target FakeRemotePluginClient_autogen_timestamp_deps
+[ 20%] Built target zynaddsubfx_synth
+[ 40%] Building CXX object CMakeFiles/NativeLinuxRemoteVstPlugin64.dir/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/src/common/RemotePluginBase.cpp.o
+[ 60%] Building CXX object CMakeFiles/NativeLinuxRemoteVstPlugin64.dir/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/src/common/SharedMemory.cpp.o
+[ 22%] Built target zynaddsubfx_gui
+[ 22%] Built target ClapBusMapTest_autogen_timestamp_deps
+[ 80%] Building CXX object CMakeFiles/NativeLinuxRemoteVstPlugin64.dir/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/src/common/SystemSemaphore.cpp.o
+[ 22%] Built target clap-test-gain_autogen_timestamp_deps
+[ 22%] Built target lmmsobjs_autogen_timestamp_deps
+[ 22%] Building C object plugins/LadspaEffect/swh/CMakeFiles/analogue_osc_1416.dir/ladspa/analogue_osc_1416.c.o
+[ 22%] Linking C shared module ../../ladspa/analogue_osc_1416.so
+[ 22%] Built target analogue_osc_1416
+[ 22%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bandpass_a_iir_1893.dir/ladspa/bandpass_a_iir_1893.c.o
+[ 22%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bandpass_iir_1892.dir/ladspa/bandpass_iir_1892.c.o
+[ 22%] Linking C shared module ../../ladspa/bandpass_a_iir_1893.so
+[ 22%] Linking C shared module ../../ladspa/bandpass_iir_1892.so
+[ 22%] Built target bandpass_a_iir_1893
+[ 22%] Built target bandpass_iir_1892
+[ 22%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gsm_1215.dir/ladspa/gsm_1215.c.o
+[ 22%] Building C object plugins/LadspaEffect/swh/CMakeFiles/butterworth_1902.dir/ladspa/butterworth_1902.c.o
+[ 22%] Linking C shared module ../../ladspa/butterworth_1902.so
+[ 22%] Linking C shared module ../../ladspa/gsm_1215.so
+[ 22%] Built target butterworth_1902
+[ 22%] Built target gsm_1215
+[ 22%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gverb_1216.dir/ladspa/gverb_1216.c.o
+[ 22%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pitch_scale_1193.dir/ladspa/pitch_scale_1193.c.o
+[ 22%] Linking C shared module ../../ladspa/gverb_1216.so
+[ 23%] Linking C shared module ../../ladspa/pitch_scale_1193.so
+[ 23%] Built target gverb_1216
+[ 23%] Built target pitch_scale_1193
+[ 23%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pitch_scale_1194.dir/ladspa/pitch_scale_1194.c.o
+[ 23%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc1_1425.dir/ladspa/sc1_1425.c.o
+[ 23%] Linking C shared module ../../ladspa/pitch_scale_1194.so
+[ 23%] Linking C shared module ../../ladspa/sc1_1425.so
+[ 23%] Built target pitch_scale_1194
+[ 23%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc2_1426.dir/ladspa/sc2_1426.c.o
+[ 23%] Built target sc1_1425
+[ 23%] Linking C shared module ../../ladspa/sc2_1426.so
+[ 23%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc3_1427.dir/ladspa/sc3_1427.c.o
+[ 23%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc4_1882.dir/ladspa/sc4_1882.c.o
+[ 23%] Linking C shared module ../../ladspa/sc3_1427.so
+[ 23%] Linking C shared module ../../ladspa/sc4_1882.so
+[ 23%] Built target sc2_1426
+[ 24%] Built target sc3_1427
+[ 24%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc4m_1916.dir/ladspa/sc4m_1916.c.o
+[ 24%] Built target sc4_1882
+[ 24%] Linking C shared module ../../ladspa/sc4m_1916.so
+[ 24%] Building C object plugins/LadspaEffect/swh/CMakeFiles/se4_1883.dir/ladspa/se4_1883.c.o
+[ 24%] Linking C shared module ../../ladspa/se4_1883.so
+[ 24%] Building CXX object plugins/ZynAddSubFx/CMakeFiles/ZynAddSubFxCore.dir/LocalZynAddSubFx.cpp.o
+[ 24%] Built target sc4m_1916
+[ 24%] Built target se4_1883
+[ 24%] Built target FakeRemotePluginClient_autogen
+[ 24%] Built target clap-test-gain_autogen
+[ 24%] Automatic MOC for target ClapBusMapTest
+[ 24%] Linking CXX static library libZynAddSubFxCore.a
+[ 24%] Built target ZynAddSubFxCore
+[ 24%] Built target FakeRemotePluginClient
+[ 24%] Built target clap-test-gain
+[ 24%] Building CXX object plugins/ZynAddSubFx/CMakeFiles/RemoteZynAddSubFx.dir/RemoteZynAddSubFx.cpp.o
+[ 24%] Building CXX object plugins/ZynAddSubFx/CMakeFiles/RemoteZynAddSubFx.dir/__/__/src/common/RemotePluginBase.cpp.o
+[ 24%] Built target ClapBusMapTest_autogen
+[ 24%] Built target ClapHostTest_autogen_timestamp_deps
+[ 24%] Building CXX object plugins/ZynAddSubFx/CMakeFiles/RemoteZynAddSubFx.dir/__/__/src/common/SharedMemory.cpp.o
+[ 24%] Building CXX object plugins/ZynAddSubFx/CMakeFiles/RemoteZynAddSubFx.dir/__/__/src/common/SystemSemaphore.cpp.o
+[ 24%] Building CXX object tests/CMakeFiles/ClapBusMapTest.dir/ClapBusMapTest_autogen/mocs_compilation.cpp.o
+[ 24%] Building CXX object tests/CMakeFiles/ClapBusMapTest.dir/src/plugins/ClapBusMapTest.cpp.o
+[ 24%] Linking CXX executable ../RemoteZynAddSubFx
+[ 24%] Built target RemoteZynAddSubFx
+[ 24%] Built target ClapHostTest_autogen
+[ 24%] Building CXX object tests/CMakeFiles/ClapBusMapTest.dir/__/plugins/ClapEffect/ClapBusMap.cpp.o
+[ 24%] Building CXX object tests/CMakeFiles/ClapHostTest.dir/ClapHostTest_autogen/mocs_compilation.cpp.o
+[ 24%] Building CXX object tests/CMakeFiles/ClapHostTest.dir/src/plugins/ClapHostTest.cpp.o
+[100%] Linking CXX executable /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/plugins/NativeLinuxRemoteVstPlugin64
+[100%] Built target NativeLinuxRemoteVstPlugin64
+[ 25%] No install step for 'NativeLinuxRemoteVstPlugin64'
+[ 25%] Completed 'NativeLinuxRemoteVstPlugin64'
+[ 25%] Built target NativeLinuxRemoteVstPlugin64
+[ 25%] Building CXX object tests/CMakeFiles/ClapHostTest.dir/__/plugins/ClapEffect/ClapBusMap.cpp.o
+[ 25%] Building CXX object tests/CMakeFiles/ClapHostTest.dir/__/plugins/ClapEffect/ClapHost.cpp.o
+[ 25%] Linking CXX executable ClapBusMapTest
+[ 25%] Built target ClapBusMapTest
+[ 25%] Linking CXX executable ClapHostTest
+[ 25%] Built target ClapHostTest
+[ 25%] Automatic MOC and UIC for target lmmsobjs
+AutoMoc: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/include/AudioSoundIo.h:0:1: note: No relevant classes found. No output generated.
+AutoMoc: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/include/MidiApple.h:0:1: note: No relevant classes found. No output generated.
+AutoMoc: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/include/MidiWinMM.h:0:1: note: No relevant classes found. No output generated.
+[ 25%] Built target lmmsobjs_autogen
+[ 25%] Generating qrc_lmms.cpp
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioBus.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/lmmsobjs_autogen/mocs_compilation.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioBuffer.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioBusHandle.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioEngine.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioEngineProfiler.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioEngineWorkerThread.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioPortsModel.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioResampler.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AutomatableModel.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AutomationClip.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AutomationNode.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/BandLimitedWave.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/base64.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/BufferManager.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Clipboard.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ComboBoxModel.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ConfigManager.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/CrashReporter.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsArrangement.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsClip.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlAutomationSupport.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsAutomation.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsAutomationEdit.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsControl.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsDsp.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsMixer.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsNotes.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPlugin.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPluginParams.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPluginPreset.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPluginState.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsArrangementState.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsProject.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsProjectFiles.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsScript.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsSettings.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsSurface.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsTelemetry.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsTransport.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceCatalogue.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceHosted.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceState.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceSupport.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlEditSupport.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlRegistry.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlReversibility.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlReversibilityTable.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlSchema.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlVocabulary.cpp.o
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/src/core/ControlCommandsTelemetry.cpp:87:13: error: ‘QJsonObject lmms::{anonymous}::consentState(const lmms::TelemetryConsent&)’ defined but not used [-Werror=unused-function]
+   87 | QJsonObject consentState(const TelemetryConsent& consent)
+      |             ^~~~~~~~~~~~
+cc1plus: all warnings being treated as errors
+gmake[2]: *** [src/CMakeFiles/lmmsobjs.dir/build.make:626: src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsTelemetry.cpp.o] Error 1
+gmake[2]: *** Waiting for unfinished jobs....
+gmake[1]: *** [CMakeFiles/Makefile2:2758: src/CMakeFiles/lmmsobjs.dir/all] Error 2
+gmake: *** [Makefile:156: all] Error 2

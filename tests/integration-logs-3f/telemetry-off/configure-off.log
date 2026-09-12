@@ -1,0 +1,166 @@
+
+Checking submodules...
+-- Checking qt5-x11embed...
+--   Found src/3rdparty/qt5-x11embed/CMakeLists.txt
+-- Checking zynaddsubfx...
+--   Found plugins/ZynAddSubFx/zynaddsubfx/CMakeLists.txt
+-- Checking game-music-emu...
+--   Found plugins/FreeBoy/game-music-emu/CMakeLists.txt
+-- Checking adplug...
+--   Found plugins/OpulenZ/adplug/Makefile.am
+-- Checking veal...
+--   Found plugins/LadspaEffect/calf/veal/CMakeLists.txt
+-- Checking exprtk...
+--   Found plugins/Xpressive/exprtk/Makefile
+-- Checking ladspa...
+--   Found plugins/LadspaEffect/swh/ladspa/Makefile.am
+-- Checking tap-plugins...
+--   Found plugins/LadspaEffect/tap/tap-plugins/Makefile
+-- Checking weakjack...
+--   Found src/3rdparty/weakjack/weakjack/.gitignore
+-- Checking wiki...
+--   Found doc/wiki/Home.md
+-- Checking ringbuffer...
+--   Found src/3rdparty/ringbuffer/CMakeLists.txt
+-- Checking carla...
+--   Found plugins/CarlaBase/carla/Makefile
+-- Checking resid...
+--   Found plugins/Sid/resid/resid/Makefile.am
+-- Checking jack2...
+--   Found src/3rdparty/jack2/.gitignore
+-- Checking cmt...
+--   Found plugins/LadspaEffect/cmt/cmt/.gitignore
+-- Checking hiir...
+--   Found src/3rdparty/hiir/hiir/license.txt
+-- Checking portsmf...
+--   Found plugins/MidiImport/portsmf/CMakeLists.txt
+-- Done validating submodules.
+
+
+Configuring ZENE
+--------------------------
+* Project version             : 0.1.0-alpha.326+f60cd6c
+*   Major version             : 0
+*   Minor version             : 1
+*   Release version           : 0
+*   Stage version             : alpha
+*   Build version             : 326+f60cd6c
+*
+
+Optional Version Usage:
+--------------------------
+*   Override version:           -DFORCE_VERSION=x.x.x-x
+*   Ignore Git information:     -DFORCE_VERSION=internal
+
+PROCESSOR: x86_64
+Machine: x86_64-linux-gnu
+
+-- Target host is 64 bit, Intel
+-- Setting target microarchitecture to 'official'
+-- Found Qt translations in /usr/share/qt6/translations
+-- Checking for module 'suil-0'
+--   Package 'suil-0', required by 'virtual:world', not found
+-- Checking for module 'carla-native-plugin'
+--   Package 'carla-native-plugin', required by 'virtual:world', not found
+-- Checking for module 'carla-standalone>=1.9.5'
+--   Package 'carla-standalone', required by 'virtual:world', not found
+-- Could NOT find STK (missing: STK_RAWWAVE_ROOT) 
+-- Could NOT find Portaudio (missing: Portaudio_LIBRARY Portaudio_INCLUDE_DIRS) 
+-- Could NOT find SoundIo (missing: SOUNDIO_LIBRARY SOUNDIO_INCLUDE_DIR) 
+-- Could NOT find Lame (missing: Lame_LIBRARY Lame_INCLUDE_DIRS) 
+-- Found ALSA: /usr/lib/x86_64-linux-gnu/libasound.so
+-- Could NOT find Wine (missing: WINE_CXX WINE_INCLUDE_DIRS) 
+--   WINE_INCLUDE_DIR:     WINE_INCLUDE_DIR-NOTFOUND
+--   WINE_CXX:             WINE_CXX-NOTFOUND
+--   WINE_GCC:             WINE_GCC-NOTFOUND
+--   WINE_32_FLAGS:        
+--   WINE_64_FLAGS:        
+--   WINE_VERSION:         
+--   WINE_ASLR_ENABLED:    
+-- Using Git to generate the CONTRIBUTORS file
+-- Using /home/kruzzzzy/.local/bin/ccache for compiler caching
+-- Could NOT find Wasmtime (missing: Wasmtime_LIBRARY Wasmtime_INCLUDE_DIR) 
+-- Found CLAP 1.2.10 headers (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/clap/include
+-- Found VST3 SDK 3.8 (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/vst3sdk
+-- Found VST3 SDK 3.8 (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/vst3sdk
+CMake Warning at data/locale/CMakeLists.txt:10 (MESSAGE):
+  Cannot generate locales
+
+
+
+Installation Summary
+--------------------
+* Install Directory           : /usr/local
+
+Supported audio interfaces
+--------------------------
+* ALSA                        : OK
+* JACK                        : OK (weak linking enabled)
+* OSS                         : OK
+* Sndio                       : OK
+* PortAudio                   : not found, please install portaudio19-dev (or similar, version >= 1.9) ;if you require PortAudio support
+* libsoundio                  : not found, please install libsoundio if you require libsoundio support
+* PulseAudio                  : OK
+* SDL                         : OK
+
+Supported MIDI interfaces
+-------------------------
+* ALSA                        : OK
+* OSS                         : OK
+* Sndio                       : OK
+* JACK                        : OK (weak linking enabled)
+* WinMM                       : <not supported on this platform>
+* AppleMidi                   : <not supported on this platform>
+
+Supported file formats for project export
+-----------------------------------------
+* WAVE                        : OK
+* FLAC                        : OK
+* OGG/VORBIS                  : OK
+* MP3/Lame                    : not found, please install libmp3lame-dev (or similar)
+
+Optional plugins
+----------------
+* Lv2 plugins                 : OK
+* SUIL for plugin UIs         : not found, install it or set PKG_CONFIG_PATH appropriately
+* ZynAddSubFX instrument      : OK
+* Carla Patchbay & Rack       : OK (weak linking enabled)
+* SoundFont2 player           : OK
+* Sid instrument              : OK
+* Stk Mallets                 : not found, please install libstk-dev or libstk0-dev (or similar);if you require the Mallets instrument
+* VST plugin host             : OK
+  * 32-bit Windows host       : not found, please install (lib)wine-dev (or similar) - 64 bit systems additionally need gcc-multilib and g++-multilib
+  * 64-bit Windows host       : not found, please install (lib)wine-dev (or similar) - 64 bit systems additionally need gcc-multilib and g++-multilib
+* CALF LADSPA plugins         : OK
+* CAPS LADSPA plugins         : OK
+* CMT LADSPA plugins          : OK
+* TAP LADSPA plugins          : OK
+* SWH LADSPA plugins          : OK
+* GIG player                  : OK
+
+Developer options
+-----------------------------------------
+* Debug FP exceptions               : Disabled
+* Debug using AddressSanitizer      : Disabled
+* Debug using ThreadSanitizer       : Disabled
+* Debug using MemorySanitizer       : Disabled
+* Debug using UBSanitizer           : Disabled
+* Debug packaging commands          : Enabled
+* Profile using GNU profiler        : Disabled 
+* Test coverage instrumentation     : Disabled
+* Debug assertions                  : Disabled
+* Experimental Qt6 support          : Enabled
+* WASM DSP sandbox                  : Disabled (wasmtime C API not found; set WASMTIME_ROOT)
+
+
+-----------------------------------------------------------------
+IMPORTANT:
+after installing missing packages, remove CMakeCache.txt before
+running cmake again!
+-----------------------------------------------------------------
+
+
+
+-- Configuring done (1.2s)
+-- Generating done (1.4s)
+-- Build files have been written to: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build

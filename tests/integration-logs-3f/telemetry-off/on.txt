@@ -1,0 +1,4 @@
+ON binary (release configuration, as built for F3):
+  nm telemetry symbols : 99
+  strings 'telemetry'  : 305
+  endpoints in source  : https://lmms.io 
