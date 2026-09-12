@@ -33,7 +33,6 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
-#include "HeadlessMode.h"
 #include "Mixer.h"
 #include "Song.h"
 
@@ -93,7 +92,7 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	m_headless(false)
 {
 	// Headless = no display a human could answer a dialog on. One place decides
-	// (HeadlessMode.h), because MainWindow asks the same question before the
+	// (UnattendedRun.h), because MainWindow asks the same question before the
 	// registry exists.
 	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
 }

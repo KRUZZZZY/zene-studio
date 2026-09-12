@@ -30,7 +30,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from control_harness import (  # noqa: E402
+from control_socket_harness import (  # noqa: E402
     FATAL_GUARD_MARKER, LEGACY_WATCHDOG_LINE, BROKEN_DEVICE, Client, Instance,
     Problems, Timeout, check_audio_fallback, check_busy_carries_reason,
     check_clean_shutdown, check_ping_shape, check_readiness_reason,

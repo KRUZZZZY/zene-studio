@@ -43,7 +43,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from headless_load_harness import (  # noqa: E402
+from control_socket_harness import (  # noqa: E402
     PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, diagnose_block, fail,
     healthy_control, ok, parse_args, report_pre_fix, start_instance, wait_ready,
 )
@@ -87,7 +87,7 @@ def expect_blocked(binary, missing):
         transcript.dump()
         return 0
     finally:
-        instance.kill()
+        instance.close()
 
 
 def expect_fixed(binary, missing):
@@ -121,7 +121,7 @@ def expect_fixed(binary, missing):
            "instance; it was created and reported")
         return 0
     finally:
-        instance.kill()
+        instance.close()
 
 
 def main():

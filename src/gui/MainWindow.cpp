@@ -52,7 +52,6 @@
 #include "ExportProjectDialog.h"
 #include "FileBrowser.h"
 #include "FileDialog.h"
-#include "HeadlessMode.h"
 #include "Metronome.h"
 #include "MixerView.h"
 #include "GuiApplication.h"

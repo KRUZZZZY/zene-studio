@@ -32,7 +32,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from control_harness import (  # noqa: E402
+from control_socket_harness import (  # noqa: E402
     BROKEN_DEVICE, BROKEN_DEVICE_ENV, Client, Instance, Problems, Timeout,
     check_audio_fallback, check_ping_shape, check_requires_device_refusal, dump,
     finish,

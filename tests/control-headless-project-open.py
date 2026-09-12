@@ -43,7 +43,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from headless_load_harness import (  # noqa: E402
+from control_socket_harness import (  # noqa: E402
     OPEN_TIMEOUT, PING_TIMEOUT, Blocked, Transcript, connect, fail, ok, ok_result,
     parse_args, report_pre_fix, start_instance, wait_ready,
 )
@@ -136,7 +136,7 @@ def expect_blocked(binary, tutorial, fixture):
         transcript.dump()
         return 0
     finally:
-        instance.kill()
+        instance.close()
 
 
 def stalled_open_diagnosis(client, transcript):
@@ -179,7 +179,7 @@ def expect_fixed(binary, tutorial, fixture):
            "inside the %.0fs bound" % OPEN_TIMEOUT)
         return 0
     finally:
-        instance.kill()
+        instance.close()
 
 
 def check_instance_survived(instance, client, transcript):
