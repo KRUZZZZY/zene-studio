@@ -24,6 +24,10 @@
 
 
 #include <memory>
+// qWarning() << ... below needs the complete QDebug; <QtGlobal> only forward-declares
+// the class, and Qt5's widget headers do not drag it in (see
+// docs/QDEBUG-CLASS-AND-MIME-RENAME.md).
+#include <QDebug>
 #include <QMessageBox>
 
 #include "ImportFilter.h"
