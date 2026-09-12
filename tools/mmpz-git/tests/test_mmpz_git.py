@@ -697,7 +697,11 @@ class LargeAssets(unittest.TestCase):
 
 
 class PureAudioMaths(unittest.TestCase):
-    """The audible-diff measurement itself, without needing a built binary."""
+    """The audible-diff measurement itself, without needing a built binary.
+
+    One test in here shells out to the CLI (the input-validation check); it skips
+    when no renderer exists, because only then does it reach the code path it asserts.
+    """
 
     def _wav(self, path, samples, rate=44100):
         import wave as _wave
@@ -776,6 +780,24 @@ class PureAudioMaths(unittest.TestCase):
         self.assertAlmostEqual(mono[-1], -0.5, places=3)
 
     def test_missing_renderer_is_an_error_not_a_crash(self):
+        """Two files that do not exist must be rejected by name, exit 2.
+
+        audible-diff refuses in two different places. With no renderer anywhere it
+        exits 2 early, printing "no renderer found" - before it ever looks at the
+        paths this test passes. That first refusal is the built-artifact dependency
+        the rest of this suite skips on, so this test skips on the same condition
+        rather than failing on a message that describes a different refusal.
+
+        The condition is the tool's own find_renderer(), not a hardcoded path, so
+        the skip disappears exactly when audible-diff would get past it: a local
+        build (build/zene, build/lmms), $MMPZ_GIT_RENDERER, --renderer, or a
+        zene/lmms on $PATH.
+        """
+        if M.find_renderer() is None:
+            self.skipTest("no renderer found (build/zene or build/lmms, $MMPZ_GIT_RENDERER, "
+                          "--renderer, or zene/lmms on $PATH): audible-diff exits before its "
+                          "input check, so the assertion below cannot run "
+                          "(see docs/MMPZ-GIT-DEPTH.md)")
         rc = subprocess.run([sys.executable, TOOL, "audible-diff",
                              "/nonexistent-a.mmpz", "/nonexistent-b.mmpz"],
                             capture_output=True, text=True)
