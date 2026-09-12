@@ -1,49 +1,84 @@
-# per-file fork-code line coverage baseline (percentage)
+# per-file fork-code line coverage baseline
 # maintained by tests/coverage-gate.sh; do not edit by hand
-include/AudioBus.h	100.00
-include/AudioPlugin.h	85.48
-include/AudioPorts.h	91.43
-include/AudioPortsModel.h	100.00
-include/DpiHelper.h	0.00
-include/LmmsPolyfill.h	0.00
-include/MultiTrackRecorder.h	100.00
-include/PinConnector.h	0.00
-include/PluginAudioPorts.h	100.00
-include/RecordRingBuffer.h	100.00
-include/RemotePluginAudioPorts.h	100.00
-include/RoutingGraph.h	100.00
-include/RoutingNode.h	100.00
-include/RoutingNodes.h	100.00
-include/ScriptBindings.h	85.71
-include/ScriptEngine.h	100.00
-include/StemSeparation/StemSeparator.h	100.00
-include/StemSeparation/StemTypes.h	85.71
-include/StemSplitController.h	0.00
-include/TrackRecorder.h	100.00
-plugins/NeuralAmp/NeuralAmpControlDialog.cpp	0.00
-plugins/NeuralAmp/NeuralAmpControlDialog.h	0.00
-plugins/NeuralAmp/NeuralAmpControls.cpp	0.00
-plugins/NeuralAmp/NeuralAmpControls.h	0.00
-plugins/NeuralAmp/NeuralAmpEffect.cpp	0.00
-plugins/NeuralAmp/NeuralAmpEffect.h	0.00
-plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp	0.00
-plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h	0.00
-plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp	0.00
-plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h	0.00
-plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp	0.00
-plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h	0.00
-src/core/AudioBus.cpp	95.77
-src/core/AudioPortsModel.cpp	99.22
-src/core/ExternalProcessStemSeparator.cpp	71.30
-src/core/RoutingGraph.cpp	100.00
-src/core/RoutingNode.cpp	100.00
-src/core/RoutingNodes.cpp	96.10
-src/core/ScriptBindings.cpp	97.52
-src/core/ScriptEngine.cpp	90.40
-src/core/StemJobManager.cpp	89.24
-src/core/StemModelStore.cpp	62.02
-src/core/StemTrackBuilder.cpp	90.00
-src/core/audio/MultiTrackRecorder.cpp	100.00
-src/core/audio/TrackRecorder.cpp	90.62
-src/gui/PinConnector.cpp	0.00
-src/gui/StemSplitController.cpp	0.00
+# <path><TAB><pct|n/a><TAB><instrumented lines|-><TAB><sha256-16 of the file|->
+# n/a = present in the tracefile with 0 instrumented lines (unmeasurable);
+# new files enter at >= 50.00% (COVERAGE_ENTRY_FLOOR) unless declared in
+# coverage-entry-floor-exempt.txt with a reason.
+# LF and the fingerprint exist so a percentage that moved because the COMPILED
+# TRANSLATION-UNIT SET changed is not read as a coverage regression; see the
+# gate's header. A file that still exists but produced no record keeps its entry.
+include/AudioBus.h	100.00	18	6cfa256b56d9706c
+include/AudioPlugin.h	71.43	98	b49071921494ec58
+include/AudioPorts.h	56.65	233	953dd2c4907d52b2
+include/AudioPortsModel.h	100.00	27	d9d690116284deaf
+include/DpiHelper.h	0.00	7	c164c7676b272865
+include/LatencyCompensation.h	100.00	1	978d1fb23555e4a2
+include/LmmsPolyfill.h	0.00	2	4a73db362a69fda6
+include/LoudnessReport.h	100.00	8	202026c3cfef4748
+include/LufsMeter.h	100.00	2	a217184704432941
+include/MultiTrackRecorder.h	100.00	1	2c73716a7094e77c
+include/PinConnector.h	0.00	5	8b4e7edc513709a2
+include/PluginAudioPorts.h	100.00	83	a11737ff25311bb1
+include/PluginScanCache.h	100.00	5	7706a5ca1f88c486
+include/ProjectRecovery.h	100.00	1	923051fda0a9d6ef
+include/RecordRingBuffer.h	100.00	51	d3dbab9899fd44de
+include/RemotePluginAudioPorts.h	79.52	83	ea9e4fc794e3e0f0
+include/RoutingGraph.h	100.00	9	2dbd93c88f75e38f
+include/RoutingNode.h	100.00	8	2d0551e34cbc5f64
+include/RoutingNodes.h	100.00	14	74cb2370a2dfa054
+include/SampleWindow.h	100.00	12	6e223bc649260c9e
+include/ScriptBindings.h	85.71	42	20b4cafc577f9994
+include/ScriptEngine.h	100.00	1	14f966d70beda5ea
+include/ScriptLuaQtTypes.h	86.67	15	93e1c01f90a7dca0
+include/ScriptPackage.h	100.00	1	98367a840b02041a
+include/StemSeparation/StemSeparator.h	100.00	-	-
+include/StemSeparation/StemTypes.h	85.71	-	-
+include/StemSplitController.h	0.00	-	-
+include/TrackRecorder.h	100.00	5	4b9fa0f6dc75c3c2
+plugins/NeuralAmp/NeuralAmpControlDialog.cpp	0.00	43	7cb7660f0e0f980f
+plugins/NeuralAmp/NeuralAmpControlDialog.h	0.00	2	91f3a218815836a7
+plugins/NeuralAmp/NeuralAmpControls.cpp	0.00	17	33eb11cc599e2cf8
+plugins/NeuralAmp/NeuralAmpControls.h	0.00	6	0e385a333f5a5a67
+plugins/NeuralAmp/NeuralAmpEffect.cpp	0.00	88	cba0f534e9d7fe4b
+plugins/NeuralAmp/NeuralAmpEffect.h	0.00	2	04b07e5fb0e514e8
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp	0.00	4	a06852926a4481be
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h	0.00	1	cf97dd86c72a56c0
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp	0.00	7	fa28b4293b010683
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h	0.00	6	07db477813308bc5
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp	0.00	37	899a63957bf021a3
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h	0.00	2	cebef7fe98b0abd9
+src/core/AudioBus.cpp	95.77	142	88a7c6525994729a
+src/core/AudioPortsModel.cpp	99.22	258	d76687c49c55a817
+src/core/CrashReporter.cpp	80.93	215	a41c545a67b6264a
+src/core/ExternalProcessStemSeparator.cpp	71.30	-	-
+src/core/LatencyCompensation.cpp	86.59	82	1093deb18c5da1ba
+src/core/LoudnessReport.cpp	85.56	90	368ef30ff190802f
+src/core/LufsMeter.cpp	100.00	164	e4edf1ceccc5f6d8
+src/core/MidiLearn.cpp	95.95	74	6d4ecf3467466782
+src/core/NoteRandom.cpp	100.00	30	cd30dc5e1b3ccaba
+src/core/NoteTransform.cpp	97.39	115	bbba717fbc1f9f83
+src/core/PluginScanCache.cpp	88.55	166	61363e835a7767de
+src/core/ProjectRecovery.cpp	96.43	140	b3154ab5d1b3f54e
+src/core/RoutingGraph.cpp	100.00	194	1fc2d8fb3fe015e9
+src/core/RoutingNode.cpp	100.00	41	3d81d080df314066
+src/core/RoutingNodes.cpp	96.10	77	4856e375cf93baaa
+src/core/ScriptApiVersion.cpp	100.00	10	99d994664b484b1e
+src/core/ScriptBindings.cpp	97.80	635	97e26d086f8ba59c
+src/core/ScriptCommandQueue.cpp	100.00	23	862cc379c655251f
+src/core/ScriptConsole.cpp	100.00	9	0e32351fa4061709
+src/core/ScriptEngine.cpp	90.98	410	64d904bea723463a
+src/core/ScriptPackage.cpp	98.08	52	d62597b7f5d82789
+src/core/StemJobManager.cpp	89.24	-	-
+src/core/StemModelStore.cpp	62.02	-	-
+src/core/StemTrackBuilder.cpp	90.00	-	-
+src/core/audio/MultiTrackRecorder.cpp	100.00	24	82b31b9dd443d283
+src/core/audio/TrackRecorder.cpp	90.62	64	a73fe3cea02fa9c4
+src/gui/MidiLearnGui.cpp	86.00	50	1fcf4e1e3178d0e4
+src/gui/PinConnector.cpp	0.00	269	4ed9357c6980709b
+src/gui/StemSplitController.cpp	0.00	-	-
+tests/src/core/ClipSerialisationTest.cpp	98.89	180	20753a4adf55f2d3
+tests/src/core/LufsMeterTest.cpp	99.47	189	4a4d986f43627af5
+tests/src/core/MidiLearnTest.cpp	98.31	118	028b4608aacc0127
+tests/src/core/StemExportTest.cpp	100.00	132	03d7d38fbea71321
+tests/src/core/StemExportTestSupport.h	94.71	227	c248f9b51a82b041
+tests/src/tracks/SampleClipWindowTest.cpp	100.00	236	2e67ee112653462a
