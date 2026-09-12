@@ -156,6 +156,17 @@ task #625, whose base commit `6b01b98eb` is a real commit (`git cat-file -t 6b01
 per-run figures above are that lane's record, not a measurement taken for this file. The gate that
 suppresses the dialog in the unattended case is the `isUnattendedRun()` check in `src/core/main.cpp`.
 
+**On a headless host, set `QT_QPA_PLATFORM=offscreen` before `--control-socket`.** The requirement is the same
+one the tree already writes into its own test properties — *"needs a Qt platform plugin even though the test
+is guiless"* (`tests/CMakeLists.txt`) — because this build links the GUI, so Qt needs a platform plugin
+even with nobody looking at it. The release session hit the failure for real while smoke-testing the shipping
+binary on a headless box: the process dies before it opens the socket, with
+`qt.qpa.plugin: Could not load the Qt platform plugin "xcb"`. Some recovery-prompt paths need a real X server
+instead — `docs/AUTOSAVE-RECOVERY.md` uses `xvfb-run` there and records that the `offscreen` QPA platform was
+not enough for them. Note what the requirement is keyed to: **agent-instance status comes from
+`--control-socket` alone** (`isAgentInstance()` above); there is no `--unattended` flag — an unknown option
+gets `Invalid option …` and exit 1 (`usageError` in `src/core/main.cpp`), not a headless switch.
+
 ### What you can do with it
 
 The registered commands fall into these families; the module list is `src/core/CMakeLists.txt:61-93` and
