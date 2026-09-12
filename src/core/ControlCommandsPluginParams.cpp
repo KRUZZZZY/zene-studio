@@ -26,6 +26,8 @@
 #include <QJsonObject>
 
 #include "AutomatableModel.h"
+
+#include "ControlVocabulary.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "Effect.h"
@@ -35,42 +37,19 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject indexProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}};
-}
-
-QJsonObject numericProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}};
-}
-
 QJsonObject parameterSchema()
 {
-	return schemaObject({
-		{QStringLiteral("index"), indexProperty()},
+	return objectSchema({
+		{QStringLiteral("index"), integerProperty()},
 		{QStringLiteral("name"), stringProperty()},
-		{QStringLiteral("value"), numericProperty()},
-		{QStringLiteral("min"), numericProperty()},
-		{QStringLiteral("max"), numericProperty()},
+		{QStringLiteral("value"), numberProperty()},
+		{QStringLiteral("min"), numberProperty()},
+		{QStringLiteral("max"), numberProperty()},
 		{QStringLiteral("type"), stringProperty()},
 	});
 }
@@ -125,13 +104,13 @@ void registerParamGet(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Read one device parameter by 'name' or by 'index'. "
 		"'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range "
 		"reported is the engine's own model range.");
-	cmd.argsSchema = schemaObject({
+	cmd.argsSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("name"), stringProperty()},
-		{QStringLiteral("index"), indexProperty()},
+		{QStringLiteral("index"), integerProperty()},
 	}, {QStringLiteral("target"), QStringLiteral("plugin")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("parameter"), parameterSchema()},
@@ -178,18 +157,18 @@ void registerParamSet(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Set one device parameter by 'name' or by 'index' with the "
 		"engine's own range enforcement: a value outside the model's min..max is refused with "
 		"invalid_args rather than silently clamped. Reversible through the ProjectJournal.");
-	cmd.argsSchema = schemaObject({
+	cmd.argsSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("name"), stringProperty()},
-		{QStringLiteral("index"), indexProperty()},
-		{QStringLiteral("value"), numericProperty()},
+		{QStringLiteral("index"), integerProperty()},
+		{QStringLiteral("value"), numberProperty()},
 	}, {QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("value")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("parameter"), parameterSchema()},
-		{QStringLiteral("previous"), numericProperty()},
+		{QStringLiteral("previous"), numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

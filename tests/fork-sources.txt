@@ -139,6 +139,14 @@ src/core/HeadlessMode.cpp
 # shutdown intent). Both were already fork-NEW inside ControlRegistry.cpp.
 src/core/ControlSchema.cpp
 src/core/ControlSession.cpp
+# ---- Shared command-surface vocabulary (lane post-alpha/stable-ids, step 0) ----
+# Four merge repairs each re-derived the same small helpers; the last was four
+# schema helpers defined identically in two translation units (a duplicate-symbol
+# link failure). objectSchema + the property helpers + the trk-/clip-/note-/ch-/
+# fx-/dev- id grammar now have one header and one definition, and the twelve
+# per-file anonymous-namespace copies are gone.
+include/ControlVocabulary.h
+src/core/ControlVocabulary.cpp
 # The #626 tests: both shutdown reproductions, the documented readiness order, the
 # no-audio-device report, and the negative controls that prove each of those can
 # fail (a check that cannot fail is not evidence).

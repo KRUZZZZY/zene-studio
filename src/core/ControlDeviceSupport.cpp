@@ -46,6 +46,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 

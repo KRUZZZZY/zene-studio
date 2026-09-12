@@ -36,6 +36,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
@@ -179,14 +181,14 @@ void registerAutomationEditCommands(ControlRegistry& registry)
 			"against the model's own min..max. Creates the automation clip when the parameter has "
 			"none yet, and says so: that first call is the one control.undo cannot fully reverse "
 			"(the new AutomationTrack has no journal checkpoint). Later calls are reversible.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("ticks"), control::tickProperty()},
 			{QStringLiteral("value"), control::numberProperty()},
 		}, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("ticks"),
 			QStringLiteral("value")});
-		cmd.resultSchema = control::schemaObject({
+		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("ticks"), control::tickProperty()},
@@ -207,12 +209,12 @@ void registerAutomationEditCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("Remove the automation point at an exact tick. The node "
 			"list is a map keyed by tick, so the tick must match one. Reversible through the "
 			"ProjectJournal.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("ticks"), control::tickProperty()},
 		}, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("ticks")});
-		cmd.resultSchema = control::schemaObject({
+		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("removed"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
@@ -231,11 +233,11 @@ void registerAutomationEditCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("Remove every automation point from a parameter's clip, "
 			"leaving the clip bound to the model (an empty clip no longer drives the parameter). "
 			"Reversible through the ProjectJournal.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 		}, {QStringLiteral("track"), QStringLiteral("parameter")});
-		cmd.resultSchema = control::schemaObject({
+		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("cleared_points"),

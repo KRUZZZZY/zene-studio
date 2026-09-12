@@ -30,6 +30,7 @@
 #include <QString>
 #include <QVector>
 
+#include "ControlVocabulary.h" // the shared schema + id vocabulary
 #include "Track.h" // Track::Type, for trackTypeNameOf() and the ClipRef ids
 #include "lmms_export.h"
 
@@ -44,15 +45,9 @@ struct ControlResult;
 namespace control
 {
 
-// ---------------------------------------------------------------------------
-// JSON-schema helpers. The registry validates a deliberately small subset
-// (type, properties, required, additionalProperties, minimum, maximum, enum).
-// ---------------------------------------------------------------------------
-QJsonObject objectSchema(QJsonObject properties, QJsonArray required = {});
-QJsonObject stringProperty();
-QJsonObject integerProperty(int minimum, int maximum);
-QJsonObject numberProperty();
-QJsonObject booleanProperty();
+// The JSON-schema helpers and the id formatters (objectSchema,
+// stringProperty, clipId, noteId, ...) live in ControlVocabulary.h - one
+// definition for the whole surface. See that header's comment for why.
 
 // ---------------------------------------------------------------------------
 // Stable ids (AGENT-TOOLING.md #4): trk-<n> / clip-<n> / note-<n>.

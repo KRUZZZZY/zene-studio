@@ -26,6 +26,8 @@
 #include <QJsonObject>
 
 #include "ControlDeviceSupport.h"
+
+#include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -35,42 +37,14 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
 // Bounds the state XML a transaction keeps. SPEC A16's fallback is a *bounded*
 // snapshot, not an unbounded one.
 constexpr int MaxSnapshotChars = 65536;
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject booleanProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}};
-}
-
-QJsonObject arrayProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}};
-}
-
-QJsonObject intProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}};
-}
 
 //! Which catalogue entries plugin.list returns for the given filters. The id
 //! reported is the entry's index in the *whole* catalogue, never in the
@@ -108,7 +82,7 @@ void registerPluginList(ControlRegistry& registry)
 		"index, not a persisted project id, and 'loadable' says whether plugin.load accepts the "
 		"entry. Format order is built-in, then LADSPA, then LV2, so adding a host does not "
 		"renumber the ids of the formats that were already there.");
-	cmd.argsSchema = schemaObject({
+	cmd.argsSchema = objectSchema({
 		{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("builtin"), QStringLiteral("ladspa"),
 				QStringLiteral("lv2")}}}},
@@ -117,13 +91,13 @@ void registerPluginList(ControlRegistry& registry)
 				QStringLiteral("instrument"), QStringLiteral("tool"), QStringLiteral("other")}}}},
 		{QStringLiteral("loadable_only"), booleanProperty()},
 	});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("devices"), arrayProperty()},
-		{QStringLiteral("count"), intProperty()},
-		{QStringLiteral("total"), intProperty()},
-		{QStringLiteral("loadable_count"), intProperty()},
-		{QStringLiteral("counts_by_format"), schemaObject({})},
-		{QStringLiteral("counts_by_kind"), schemaObject({})},
+		{QStringLiteral("count"), integerProperty()},
+		{QStringLiteral("total"), integerProperty()},
+		{QStringLiteral("loadable_count"), integerProperty()},
+		{QStringLiteral("counts_by_format"), objectSchema({})},
+		{QStringLiteral("counts_by_kind"), objectSchema({})},
 	});
 	cmd.handler = [](const QJsonObject& args) {
 		const QString format = args.value(QStringLiteral("format")).toString();
@@ -265,11 +239,11 @@ void registerPluginLoad(ControlRegistry& registry)
 		"declares no 'requires' at all, because no editor is created here - neither a built-in "
 		"plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully "
 		"parametrisable through plugin.param_get / plugin.param_set on a display-less instance.");
-	cmd.argsSchema = schemaObject(
+	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("device"), stringProperty()}},
 		{QStringLiteral("target"), QStringLiteral("device")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("kind"), stringProperty()},
 		{QStringLiteral("id"), stringProperty()},
@@ -309,14 +283,14 @@ void registerPluginUnload(ControlRegistry& registry)
 		"mixer channel. The removed device's full state XML is recorded in the transaction's "
 		"'before' snapshot so it can be rebuilt: write that XML to a file, load the same dev-<n> "
 		"again and issue plugin.state_load.");
-	cmd.argsSchema = schemaObject(
+	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("plugin"), stringProperty()}},
 		{QStringLiteral("target"), QStringLiteral("plugin")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("removed"), stringProperty()},
-		{QStringLiteral("count"), intProperty()},
+		{QStringLiteral("count"), integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -373,12 +347,12 @@ void registerPluginBypass(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Switch a device instance off or on. This drives the same "
 		"enabled control the rack's On/Off LED drives, so a bypassed device reports "
 		"processing=false in dsp.get_state. Reversible through the ProjectJournal.");
-	cmd.argsSchema = schemaObject(
+	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("plugin"), stringProperty()},
 			{QStringLiteral("bypass"), booleanProperty()}},
 		{QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("bypass")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("enabled"), booleanProperty()},

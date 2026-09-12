@@ -35,6 +35,7 @@
 #include <QStringList>
 #include <QVector>
 
+#include "ControlVocabulary.h"
 #include "lmms_export.h"
 
 class QTimer;
@@ -271,16 +272,9 @@ LMMS_EXPORT void registerScriptCommands(ControlRegistry& registry);
 //! Shared helpers for the command groups.
 namespace control
 {
-//! "trk-<n>" for a Song track index.
-QString trackId(int index);
-//! "ch-<n>" for a mixer channel index.
-QString channelId(int index);
-//! "dev-<n>" for an index in the build's device catalogue (plugin.list).
-QString deviceId(int index);
-//! "fx-<n>" for a device instance's index in its target's chain.
-QString effectId(int index);
-//! Parses "trk-<n>" / "ch-<n>"; returns -1 when malformed.
-int idToIndex(const QString& id, const QString& prefix);
+// The id formatters and idToIndex() (trackId, clipId, noteId, channelId,
+// deviceId, effectId) live in ControlVocabulary.h - one definition for the
+// whole surface. See that header's comment for why.
 //! A fresh "mutating command is not undone by itself" transaction record.
 ControlRegistry::Transaction makeTransaction(const QString& command, QJsonObject before,
 	QJsonObject inverse, bool reversible, const QString& mechanism);

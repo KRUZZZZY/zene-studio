@@ -31,6 +31,7 @@
 #include <QString>
 
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -43,17 +44,8 @@ struct ControlTarget;
 namespace control
 {
 
-// ---------------------------------------------------------------------------
-// the small JSON-schema subset every group uses
-// ---------------------------------------------------------------------------
-
-LMMS_EXPORT QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {});
-LMMS_EXPORT QJsonObject stringProperty();
-LMMS_EXPORT QJsonObject numberProperty();
-LMMS_EXPORT QJsonObject booleanProperty();
-LMMS_EXPORT QJsonObject integerProperty(int minimum, int maximum);
-//! A tick position: an integer that cannot be negative.
-LMMS_EXPORT QJsonObject tickProperty();
+// The JSON-schema subset (objectSchema, stringProperty, tickProperty, ...)
+// lives in ControlVocabulary.h - one definition for the whole surface.
 
 // ---------------------------------------------------------------------------
 // parameter addressing

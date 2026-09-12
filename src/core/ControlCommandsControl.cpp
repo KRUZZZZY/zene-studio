@@ -27,6 +27,8 @@
 #include <QJsonObject>
 
 #include "AudioEngine.h"
+
+#include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
@@ -35,6 +37,8 @@
 
 namespace lmms
 {
+
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
 namespace
 {
@@ -92,46 +96,6 @@ QJsonObject pingResult()
 	return result;
 }
 
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject noArgsSchema()
-{
-	return schemaObject({});
-}
-
-QJsonObject booleanSchema()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}};
-}
-
-QJsonObject stringSchema()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject objectSchema()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}};
-}
-
-QJsonObject integerSchema()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}};
-}
-
-QJsonObject arraySchema()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}};
-}
-
 //! control.quit's handler. Split out of the registration below so the CCN
 //! ratchet measures the decision, not the declaration.
 ControlResult handleQuit(const QJsonObject& args)
@@ -178,16 +142,16 @@ void registerPingCommand(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Liveness probe; also reports whether the engine is addressable "
 		"yet, and why not when it is not.");
 	cmd.requiresEngine = false;
-	cmd.argsSchema = noArgsSchema();
-	cmd.resultSchema = schemaObject({
-		{QStringLiteral("pong"), booleanSchema()},
-		{QStringLiteral("engine_ready"), booleanSchema()},
-		{QStringLiteral("version"), stringSchema()},
-		{QStringLiteral("proto"), integerSchema()},
+	cmd.argsSchema = objectSchema();
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("pong"), booleanProperty()},
+		{QStringLiteral("engine_ready"), booleanProperty()},
+		{QStringLiteral("version"), stringProperty()},
+		{QStringLiteral("proto"), integerProperty()},
 		// present only while engine_ready is false: {code, message}
-		{QStringLiteral("reason"), objectSchema()},
+		{QStringLiteral("reason"), objectProperty()},
 		// always present: the device actually in use and whether it makes sound
-		{QStringLiteral("audio"), objectSchema()},
+		{QStringLiteral("audio"), objectProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) { return ControlResult::success(pingResult()); };
 	registry.registerCommand(cmd);
@@ -201,10 +165,10 @@ void registerVersionCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("version");
 	cmd.description = QStringLiteral("The product version string and the control protocol version.");
 	cmd.requiresEngine = false;
-	cmd.argsSchema = noArgsSchema();
-	cmd.resultSchema = schemaObject({
-		{QStringLiteral("version"), stringSchema()},
-		{QStringLiteral("proto"), integerSchema()},
+	cmd.argsSchema = objectSchema();
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("version"), stringProperty()},
+		{QStringLiteral("proto"), integerProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		QJsonObject result;
@@ -223,10 +187,10 @@ void registerCommandsListCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("commands_list");
 	cmd.description = QStringLiteral("Every registered command with its schemas and requires declaration.");
 	cmd.requiresEngine = false;
-	cmd.argsSchema = noArgsSchema();
-	cmd.resultSchema = schemaObject({
-		{QStringLiteral("commands"), arraySchema()},
-		{QStringLiteral("count"), integerSchema()},
+	cmd.argsSchema = objectSchema();
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("commands"), arrayProperty()},
+		{QStringLiteral("count"), integerProperty()},
 	});
 	cmd.handler = [&registry](const QJsonObject&) { return ControlResult::success(registry.describeAll()); };
 	registry.registerCommand(cmd);
@@ -240,9 +204,9 @@ void registerTransactionsCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("transactions");
 	cmd.description = QStringLiteral("The transactions recorded for mutating commands (SPEC A16 hook).");
 	cmd.requiresEngine = false;
-	cmd.argsSchema = noArgsSchema();
-	cmd.resultSchema = schemaObject({
-		{QStringLiteral("transactions"), arraySchema()},
+	cmd.argsSchema = objectSchema();
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("transactions"), arrayProperty()},
 	});
 	cmd.handler = [&registry](const QJsonObject&) {
 		QJsonObject result;
@@ -259,12 +223,12 @@ void registerUndoCommand(ControlRegistry& registry)
 	cmd.group = QStringLiteral("control");
 	cmd.verb = QStringLiteral("undo");
 	cmd.description = QStringLiteral("Undo the last journal checkpoint through the engine's ProjectJournal.");
-	cmd.argsSchema = noArgsSchema();
-	cmd.resultSchema = schemaObject({
-		{QStringLiteral("undone"), booleanSchema()},
-		{QStringLiteral("can_undo"), booleanSchema()},
-		{QStringLiteral("can_redo"), booleanSchema()},
-		{QStringLiteral("mechanism"), stringSchema()},
+	cmd.argsSchema = objectSchema();
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("undone"), booleanProperty()},
+		{QStringLiteral("can_undo"), booleanProperty()},
+		{QStringLiteral("can_redo"), booleanProperty()},
+		{QStringLiteral("mechanism"), stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		auto* journal = Engine::projectJournal();
@@ -291,11 +255,11 @@ void registerRedoCommand(ControlRegistry& registry)
 	cmd.group = QStringLiteral("control");
 	cmd.verb = QStringLiteral("redo");
 	cmd.description = QStringLiteral("Redo the last undone journal checkpoint.");
-	cmd.argsSchema = noArgsSchema();
-	cmd.resultSchema = schemaObject({
-		{QStringLiteral("redone"), booleanSchema()},
-		{QStringLiteral("can_undo"), booleanSchema()},
-		{QStringLiteral("can_redo"), booleanSchema()},
+	cmd.argsSchema = objectSchema();
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("redone"), booleanProperty()},
+		{QStringLiteral("can_undo"), booleanProperty()},
+		{QStringLiteral("can_redo"), booleanProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		auto* journal = Engine::projectJournal();
@@ -323,16 +287,16 @@ void registerQuitCommand(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Ask the instance to run its normal shutdown (the reply is sent "
 		"first). Unsaved changes are discarded unless save is true.");
 	cmd.requiresEngine = false;
-	cmd.argsSchema = schemaObject({
+	cmd.argsSchema = objectSchema({
 		// false (the default): discard unsaved changes. true: save the current
 		// project to its existing file first (refused when it has none).
-		{QStringLiteral("save"), booleanSchema()},
+		{QStringLiteral("save"), booleanProperty()},
 	});
-	cmd.resultSchema = schemaObject({
-		{QStringLiteral("quitting"), booleanSchema()},
-		{QStringLiteral("save_requested"), booleanSchema()},
-		{QStringLiteral("project_modified"), booleanSchema()},
-		{QStringLiteral("unsaved_changes"), stringSchema()},
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("quitting"), booleanProperty()},
+		{QStringLiteral("save_requested"), booleanProperty()},
+		{QStringLiteral("project_modified"), booleanProperty()},
+		{QStringLiteral("unsaved_changes"), stringProperty()},
 	});
 	cmd.handler = handleQuit;
 	registry.registerCommand(cmd);

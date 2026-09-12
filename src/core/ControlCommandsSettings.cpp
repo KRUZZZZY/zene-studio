@@ -27,6 +27,8 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
+
+#include "ControlVocabulary.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -35,6 +37,8 @@
 
 namespace lmms
 {
+
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
 namespace
 {
@@ -46,26 +50,6 @@ constexpr int ControlProtocolVersion = 1;
 //! Never a real config value (a config value comes from an XML attribute), so
 //! it distinguishes "unset" from "set to the empty string".
 const QString UnsetSentinel = QStringLiteral("\u0001unset\u0001");
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject intProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}};
-}
 
 //! Splits a config key "<class>/<attribute>"; false when malformed.
 bool splitKey(const QString& key, QString* cls, QString* attribute, ControlResult* error)
@@ -134,9 +118,9 @@ void registerSettingsGet(ControlRegistry& registry)
 		"uses, '<class>/<attribute>' (for example audioengine/audiodev, ui/saveinterval, "
 		"app/configured). 'value' is the config file's own string form and 'present' says "
 		"whether the key is set at all rather than defaulted.");
-	cmd.argsSchema = schemaObject({{QStringLiteral("key"), stringProperty()}},
+	cmd.argsSchema = objectSchema({{QStringLiteral("key"), stringProperty()}},
 		{QStringLiteral("key")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("key"), stringProperty()},
 		{QStringLiteral("value"), stringProperty()},
 		{QStringLiteral("present"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
@@ -164,11 +148,11 @@ void registerSettingsSet(ControlRegistry& registry)
 		"startup (audioengine/audiodev, samplerate, ...) take effect on the next start. The "
 		"write is recorded with the previous value as its inverse, but ConfigManager is not "
 		"journalled, so control.undo cannot reverse it.");
-	cmd.argsSchema = schemaObject({
+	cmd.argsSchema = objectSchema({
 		{QStringLiteral("key"), stringProperty()},
 		{QStringLiteral("value"), stringProperty()},
 	}, {QStringLiteral("key"), QStringLiteral("value")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("key"), stringProperty()},
 		{QStringLiteral("value"), stringProperty()},
 		{QStringLiteral("previous"), stringProperty()},
@@ -255,10 +239,10 @@ void registerAudioDeviceList(ControlRegistry& registry)
 	cmd.description = QStringLiteral("The audio backends this build knows, with the one that is "
 		"running and the one the config file selects. Requires no audio device: the running "
 		"name is whatever the engine opened, the dummy device when nothing else would open.");
-	cmd.argsSchema = schemaObject({});
-	cmd.resultSchema = schemaObject({
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("devices"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-		{QStringLiteral("count"), intProperty()},
+		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("current"), stringProperty()},
 		{QStringLiteral("configured"), stringProperty()},
 	});
@@ -278,9 +262,9 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		"AudioEngine::initDevices() during startup and the product's own settings dialog also "
 		"only stores the preference and warns that a restart is needed. The result says so "
 		"explicitly with applied=\"next_start\".");
-	cmd.argsSchema = schemaObject({{QStringLiteral("device"), stringProperty()}},
+	cmd.argsSchema = objectSchema({{QStringLiteral("device"), stringProperty()}},
 		{QStringLiteral("device")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("device"), stringProperty()},
 		{QStringLiteral("previous"), stringProperty()},
 		{QStringLiteral("applied"), stringProperty()},
@@ -337,13 +321,13 @@ void registerMidiDeviceList(ControlRegistry& registry)
 		"file selects, and every readable/writable port it exposes. With no MIDI backend open "
 		"the client is the dummy one and both port lists are empty, which is reported as such "
 		"rather than as an error.");
-	cmd.argsSchema = schemaObject({});
-	cmd.resultSchema = schemaObject({
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("client"), stringProperty()},
 		{QStringLiteral("configured"), stringProperty()},
 		{QStringLiteral("readable"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 		{QStringLiteral("writable"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-		{QStringLiteral("count"), intProperty()},
+		{QStringLiteral("count"), integerProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		AudioEngine* engine = Engine::audioEngine();
@@ -376,11 +360,11 @@ void registerAppVersion(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("version");
 	cmd.description = QStringLiteral("The product name, the version string, the control protocol "
 		"version and the build options the binary was compiled with.");
-	cmd.argsSchema = schemaObject({});
-	cmd.resultSchema = schemaObject({
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("product"), stringProperty()},
 		{QStringLiteral("version"), stringProperty()},
-		{QStringLiteral("proto"), intProperty()},
+		{QStringLiteral("proto"), integerProperty()},
 		{QStringLiteral("build_options"), stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {

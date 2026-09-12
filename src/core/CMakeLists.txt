@@ -61,6 +61,7 @@ set(LMMS_SRCS
 	core/ControlEditSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlSchema.cpp
+	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
 	core/ControlSession.cpp
 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).

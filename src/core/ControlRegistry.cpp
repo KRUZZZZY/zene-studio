@@ -329,38 +329,13 @@ void ControlRegistry::runShutdownHooks()
 
 // ---------------------------------------------------------------------------
 // shared helpers
+//
+// The id formatters and idToIndex() moved to ControlVocabulary.cpp
+// (2026-09-12): one definition for the whole surface.
 // ---------------------------------------------------------------------------
 
 namespace control
 {
-
-QString trackId(int index)
-{
-	return QStringLiteral("trk-%1").arg(index);
-}
-
-QString channelId(int index)
-{
-	return QStringLiteral("ch-%1").arg(index);
-}
-
-QString deviceId(int index)
-{
-	return QStringLiteral("dev-%1").arg(index);
-}
-
-QString effectId(int index)
-{
-	return QStringLiteral("fx-%1").arg(index);
-}
-
-int idToIndex(const QString& id, const QString& prefix)
-{
-	if (!id.startsWith(prefix)) { return -1; }
-	bool ok = false;
-	const int index = id.mid(prefix.size()).toInt(&ok);
-	return ok && index >= 0 ? index : -1;
-}
 
 ControlRegistry::Transaction makeTransaction(const QString& command, QJsonObject before,
 	QJsonObject inverse, bool reversible, const QString& mechanism)

@@ -27,38 +27,17 @@
 #include <QJsonObject>
 
 #include "ControlDeviceSupport.h"
+
+#include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject booleanProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}};
-}
-
-QJsonObject intProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}};
-}
 
 //! The device state as a bounded snapshot record for the transaction.
 QString boundedState(const QByteArray& bytes, bool* truncated)
@@ -79,15 +58,15 @@ void registerStateSave(ControlRegistry& registry)
 		"this fork's zenepluginstate document; an instrument ('inst') writes the product's own "
 		"instrument-track preset document, the one the browser loads. An existing file is "
 		"refused unless \"overwrite\":true, so a save cannot silently destroy a state file.");
-	cmd.argsSchema = schemaObject({
+	cmd.argsSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("overwrite"), booleanProperty()},
 	}, {QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("path")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
-		{QStringLiteral("bytes"), intProperty()},
+		{QStringLiteral("bytes"), integerProperty()},
 		{QStringLiteral("sha256"), stringProperty()},
 		{QStringLiteral("replaced"), booleanProperty()},
 	});
@@ -157,12 +136,12 @@ void registerStateLoad(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Restore a device's state from a file written by "
 		"plugin.state_save. A document written for a different device is refused, so a state "
 		"file cannot be pushed into the wrong plugin.");
-	cmd.argsSchema = schemaObject({
+	cmd.argsSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("path"), stringProperty()},
 	}, {QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("path")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("restored"), booleanProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("path"), stringProperty()},

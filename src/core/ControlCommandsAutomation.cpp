@@ -39,6 +39,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
@@ -179,11 +181,11 @@ void registerAutomationCommands(ControlRegistry& registry)
 			"stable '<plugin>/<index>' id and, for each automated one, its clip's points. A "
 			"point's 'value' is the model's own unit (what plugin.param_get reports); "
 			"'raw_value' is what the clip stores. 'automated_only' trims the inventory.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("automated_only"), control::booleanProperty()},
 		});
-		cmd.resultSchema = control::schemaObject({
+		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 			{QStringLiteral("track_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
@@ -201,14 +203,14 @@ void registerAutomationCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("mode_set");
 		cmd.description = QStringLiteral("Set a parameter's automation mode. Refused: this build "
 			"has no automation modes (docs/KNOWN-LIMITATIONS.md:84), so no write is faked.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("mode"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 				{QStringLiteral("enum"), QJsonArray{QStringLiteral("off"), QStringLiteral("read"),
 					QStringLiteral("touch"), QStringLiteral("latch"), QStringLiteral("write")}}}},
 		}, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("mode")});
-		cmd.resultSchema = control::schemaObject({});
+		cmd.resultSchema = control::objectSchema({});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return automationModeSet(args); };
 		registry.registerCommand(cmd);

@@ -34,6 +34,8 @@
 #include <QtEndian>
 
 #include "ControlRegistry.h"
+
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "OutputSettings.h"
 #include "ProjectRenderer.h"
@@ -42,23 +44,10 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
 
 bool formatFromName(const QString& name, ProjectRenderer::ExportFileFormat* format)
 {
@@ -181,19 +170,19 @@ void registerProjectOpen(ControlRegistry& registry)
 	cmd.group = QStringLiteral("project");
 	cmd.verb = QStringLiteral("open");
 	cmd.description = QStringLiteral("Load a project file into this running instance.");
-	cmd.argsSchema = schemaObject({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
+	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
 	// SPEC A13: the load path must work with no display. A project that loads
 	// with errors returns the per-item list here instead of stopping on the
 	// "LMMS Error report" box, which in an agent instance nobody can click
 	// (task #625).
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("file"), stringProperty()},
 		{QStringLiteral("track_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("loaded_with_errors"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		{QStringLiteral("error_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("errors"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
-			{QStringLiteral("items"), schemaObject({
+			{QStringLiteral("items"), objectSchema({
 				{QStringLiteral("message"), stringProperty()},
 				{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}}})}}},
 	});
@@ -261,8 +250,8 @@ void registerProjectSave(ControlRegistry& registry)
 	cmd.group = QStringLiteral("project");
 	cmd.verb = QStringLiteral("save");
 	cmd.description = QStringLiteral("Save the session. With no path, saves over the project's own file.");
-	cmd.argsSchema = schemaObject({{QStringLiteral("path"), stringProperty()}});
-	cmd.resultSchema = schemaObject({
+	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}});
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("file"), stringProperty()},
 		{QStringLiteral("saved"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 	});
@@ -312,8 +301,8 @@ void registerProjectGetState(ControlRegistry& registry)
 	cmd.group = QStringLiteral("project");
 	cmd.verb = QStringLiteral("get_state");
 	cmd.description = QStringLiteral("Project file, modified flag, tempo and track count.");
-	cmd.argsSchema = schemaObject({});
-	cmd.resultSchema = schemaObject({
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("file"), stringProperty()},
 		{QStringLiteral("modified"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
@@ -435,13 +424,13 @@ void registerRenderRender(ControlRegistry& registry)
 	cmd.group = QStringLiteral("render");
 	cmd.verb = QStringLiteral("render");
 	cmd.description = QStringLiteral("Render the current session to a file and return its hash (headless).");
-	cmd.argsSchema = schemaObject(
+	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("out"), stringProperty()},
 			{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 				{QStringLiteral("enum"), QJsonArray{QStringLiteral("wav"), QStringLiteral("flac"),
 					QStringLiteral("ogg"), QStringLiteral("mp3")}}}}},
 		{QStringLiteral("out")});
-	cmd.resultSchema = schemaObject({
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("frames"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("sha256"), stringProperty()},

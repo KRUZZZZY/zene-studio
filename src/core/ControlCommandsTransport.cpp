@@ -25,6 +25,8 @@
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
 #include "Track.h"
@@ -32,31 +34,10 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject intProperty(int minimum, int maximum)
-{
-	QJsonObject property{{QStringLiteral("type"), QStringLiteral("integer")}};
-	property.insert(QStringLiteral("minimum"), minimum);
-	property.insert(QStringLiteral("maximum"), maximum);
-	return property;
-}
 
 QString trackTypeName(Track::Type type)
 {
@@ -102,8 +83,8 @@ void registerTransportCommands(ControlRegistry& registry)
 		// Everything else stays usable headless: the model, render and save
 		// (task #626).
 		cmd.requiresDecl = {QStringLiteral("device")};
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		});
 		cmd.handler = [](const QJsonObject&) {
@@ -122,8 +103,8 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("stop");
 		cmd.description = QStringLiteral("Stop playback.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		});
 		cmd.handler = [](const QJsonObject&) {
@@ -142,9 +123,9 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("seek");
 		cmd.description = QStringLiteral("Move the play head to an absolute position in ticks.");
-		cmd.argsSchema = schemaObject(
-			{{QStringLiteral("ticks"), intProperty(0, 0x7fffffff)}}, {QStringLiteral("ticks")});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("ticks"), integerProperty(0, 0x7fffffff)}}, {QStringLiteral("ticks")});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("position_ticks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.mutating = true;
@@ -181,9 +162,9 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("set_tempo");
 		cmd.description = QStringLiteral("Set the song tempo in BPM.");
-		cmd.argsSchema = schemaObject(
-			{{QStringLiteral("bpm"), intProperty(MinTempo, MaxTempo)}}, {QStringLiteral("bpm")});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("bpm"), integerProperty(MinTempo, MaxTempo)}}, {QStringLiteral("bpm")});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.mutating = true;
@@ -217,8 +198,8 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("get_state");
 		cmd.description = QStringLiteral("Playback position and transport flags.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 			{QStringLiteral("paused"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 			{QStringLiteral("position_ticks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
@@ -243,8 +224,8 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("track");
 		cmd.verb = QStringLiteral("list");
 		cmd.description = QStringLiteral("Every track in the song container, with its stable trk-<n> id.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
@@ -269,9 +250,9 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("track");
 		cmd.verb = QStringLiteral("get_state");
 		cmd.description = QStringLiteral("One track addressed by its trk-<n> id.");
-		cmd.argsSchema = schemaObject(
+		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")});
-		cmd.resultSchema = schemaObject({
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("id"), stringProperty()},
 			{QStringLiteral("name"), stringProperty()},
 			{QStringLiteral("type"), stringProperty()},

@@ -24,6 +24,8 @@
 
 #include "ControlEdit.h"
 
+#include "ControlVocabulary.h"
+
 #include <algorithm>
 
 #include "Clip.h"
@@ -37,6 +39,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace control
 {
 
@@ -44,52 +48,9 @@ namespace control
 // schemas
 // ---------------------------------------------------------------------------
 
-QJsonObject objectSchema(QJsonObject properties, QJsonArray required)
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject integerProperty(int minimum, int maximum)
-{
-	QJsonObject property{{QStringLiteral("type"), QStringLiteral("integer")}};
-	property.insert(QStringLiteral("minimum"), minimum);
-	property.insert(QStringLiteral("maximum"), maximum);
-	return property;
-}
-
-QJsonObject booleanProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}};
-}
-
-QJsonObject numberProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}};
-}
-
 // ---------------------------------------------------------------------------
-// ids
+// track types (the id formatters moved to ControlVocabulary.cpp, 2026-09-12)
 // ---------------------------------------------------------------------------
-
-QString clipId(int ordinal)
-{
-	return QStringLiteral("clip-%1").arg(ordinal);
-}
-
-QString noteId(int index)
-{
-	return QStringLiteral("note-%1").arg(index);
-}
 
 QString trackTypeNameOf(Track::Type type)
 {
