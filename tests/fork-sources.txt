@@ -11,6 +11,9 @@
 #
 # lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
 # resolves this file's directory to the repo root).
+# plugins/Vst3Instrument/logo.png is listed as well: the regeneration command above
+# filters for source extensions, but every path this fork adds under plugins/ has to be
+# declared for Gate 6, and a new plug-in's logo asset is one of them.
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
@@ -81,6 +84,11 @@ plugins/Vst3Effect/Vst3Parameter.cpp
 plugins/Vst3Effect/Vst3Parameter.h
 plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
 plugins/Vst3Effect/Vst3SubPluginFeatures.h
+plugins/Vst3Instrument/Vst3Instrument.cpp
+plugins/Vst3Instrument/Vst3Instrument.h
+plugins/Vst3Instrument/Vst3InstrumentView.cpp
+plugins/Vst3Instrument/Vst3InstrumentView.h
+plugins/Vst3Instrument/logo.png
 plugins/WasmEffect/WasmEffectControlDialog.cpp
 plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
@@ -111,3 +119,4 @@ src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tools/local-ci.sh
+
