@@ -148,9 +148,13 @@ JSON-RPC over a local UNIX socket; every message carries an integer `proto` and 
 `isAgentInstance()` is true when the process was started with `--control-socket`, and `isUnattendedRun()`
 is true when it was started that way *or* when Qt is running on a platform with no display (offscreen,
 minimal, VNC). In that state the application opens no modal dialog — a dialog nobody can answer is a
-hang, and that was measured rather than reasoned about: the instance stays alive, answers `control.ping`
-with `engine_ready: false`, and never becomes usable (task #625, measured on base commit `6b01b98eb`; the
-recovery-file prompt is gated on this at `src/core/main.cpp:1128`).
+hang, and that was measured rather than reasoned about: in the recorded run a modal "audio device setup
+failed" box blocked the application before it was usable, leaving `engine_ready` false and every command on
+the typed `busy` error for 92 s and counting (`ableton-gap/AGENT-TOOLING.md` §4 — program workspace; the
+reproducer, `tests/control-no-audio-device.py`, is in this tree). The requirement this section implements is
+task #625, whose base commit `6b01b98eb` is a real commit (`git cat-file -t 6b01b98eb` → `commit`); the
+per-run figures above are that lane's record, not a measurement taken for this file. The gate that
+suppresses the dialog in the unattended case is the `isUnattendedRun()` check in `src/core/main.cpp`.
 
 ### What you can do with it
 
@@ -231,9 +235,12 @@ one per registered command: 30 `true_inverse`, 5 `snapshot`, 3 `irreversible`, 3
 A16 contract's **classified table has 72 rows** (30 + 5 + 3 + 34) — a different thing that coincides with
 the pre-fix registry size, which is exactly why a command count has to name what it was counted over. The
 bridge's committed snapshot holds **70** (it is deliberately stale — a command missing from it is not
-missing from the DAW). And **87** is what a wider surface branch registers by its own method (71 + 16,
+missing from the DAW). And a wider surface line counts **87** by its own method (71 + 16,
 the sixteen being tail groups such as `record.*`, `import.*` and `export.*` that this release line does
-not carry). **Quote a count with the thing it was counted over.**
+not carry). **That figure is that line's own tally, carried in the program workspace
+(`POST-ALPHA-PLAN.md`: "`registered ids in ControlCommands*.cpp | 87 | 71 + 16`") and is not measurable from
+this tree**, which is why it is named as a record rather than quoted as a count of the same kind as the ones
+above. **Quote a count with the thing it was counted over.**
 
 Every successful mutating command records one transaction naming the command, the class (stamped from
 the table, never from the handler), the before-state, the inverse descriptor, the call's own `reversible`
@@ -442,10 +449,12 @@ prove the fallback; no test drives the surface against a real audio backend.
   the worker's wait (`src/core/AudioEngineWorkerThread.cpp:204`) and the teardown assertion
   (`tests/src/core/AudioEngineTeardownTest.cpp:135-148`, `:170-179`, asserting `stranded == 0`). Lane
   `post-alpha/test-hygiene` is an ancestor of this tip.
-- **A use-after-free in the MIDI-learn notification tool.** `MidiLearnGui` held a raw `QAction*` and
-  dereferenced it after the object that owned it had gone (a segfault at `0x188`). It was found by turning the
-  coverage gate on for the first time: the tool's own test **crashed**, which is why the file had no coverage
-  record at all. Fixed with a guarded pointer; the test passes and the file now measures 86 %.
+- **A use-after-free in the MIDI-learn notification tool.** `MidiLearnGui` is a function-local static that
+  outlives the window owning its `QAction`, and it held that action as a raw `QAction*`, so `setArmed()` could
+  dereference freed memory. It was found by turning the coverage gate on for the first time: the tool's own
+  test **crashed** (`SIGSEGV` in `MidiLearnGui::setArmed`, `EXIT=139`), which is why the file had no coverage
+  record at all. Fixed with a guarded pointer (`QPointer<QAction>`); the test passes and the file then measures
+  **86.00 %** — `docs/COVERAGE-GATE-GREEN.md` §1 carries the crash frame, the backtrace log and the figure.
 - **Four test sources that could never run now do, and a new gate stops the fifth.** They were in the tree and
   invisible: one could not even compile (its compressor-library definition was undefined), and three others were
   never registered, so the suite reported fewer tests than it appeared to contain. The suite went **41 → 46**,
@@ -460,19 +469,21 @@ prove the fallback; no test drives the surface against a real audio backend.
   both items share one owner, which is why they are adjacent here.
 
 - **Renders are now reproducible — which they were not.** Rendering the same project twice used to produce
-  different audio: measured on the nine projects this repository bundles, **six differed on every run and a
+  different audio: measured on **the nine projects the determinism sweep covers** — this repository ships
+  **68** `.mmp`/`.mmpz` files (`git ls-files '*.mmp' '*.mmpz' | wc -l` → 68), and nine is the sweep's sample, not
+  the repository's project count — **six differed on every run and a
   seventh intermittently**, the worst on 98.3 % of its frames. Loudness never moved, so no level, RMS or LUFS
   reading could see it — only a sample-level comparison could. The cause was the offline renderer spreading each
   period's work across a worker pool, so which thread ran which job was a scheduling decision. Exports now render
-  on one thread: **7 of the 9 bundled projects are bit-reproducible**, five subsequent renders of the test project
+  on one thread: **7 of those nine are bit-reproducible**, five subsequent renders of the test project
   being byte-identical to the single-threaded answer. Two remain non-deterministic and are **not** the fix's
   fault — for both, pinning to one CPU, disabling ASLR, a fixed `rand()` and a frozen clock *each* still produce
   different files, so their cause is in the instruments rather than the renderer, and it is named in our notes.
   Live playback is unaffected (the pool still runs it). Stock LMMS has this defect too — this is a fix we made
   that upstream has not, and we made it because it corrupted our own testing evidence.
-  The two are named in the tree: `demos/StrictProduction-DearJonDoe.mmp` and
-  `shorties/Root84-TrancyLoop.mmpz` (`docs/RENDER-DETERMINISM.md` §9, "2 of 9 bundled projects are still not
-  reproducible"; §10 is the six falsification experiments — CPU pinned, ASLR disabled, `rand()` fixed, clock
+  The two are named as the tree ships them: `data/projects/demos/StrictProduction-DearJonDoe.mmp` and
+  `data/projects/shorties/Root84-TrancyLoop.mmpz` (`docs/RENDER-DETERMINISM.md` §9, "2 of 9 bundled projects are
+  still not reproducible"; §10 is the six falsification experiments — CPU pinned, ASLR disabled, `rand()` fixed, clock
   frozen, a mute bisection and a per-track isolation pass — that place the cause inside those projects'
   instruments rather than in the renderer). The post-fix sweep is that lane's measured result, recorded in
   §7 of the same document; it was not re-run for this file.
@@ -564,8 +575,8 @@ This is an alpha and the list is long; a separate **known limitations** page cov
 version: no instrument editor; instrument hosting is one-per-track and proven only against our own test
 instrument; no clip editing gestures, take lanes or comping; no plugin-scanning interface worth the name; no
 stable project format; no measured crash-free rate (the reporter is new); VCA groups and racks exist in the
-project format but **cannot be created from the interface**; and **renders are reproducible for 7 of the 9
-bundled projects, with two still not** — those two are named in the limitations page, along with the reason
+project format but **cannot be created from the interface**; and **renders are reproducible for 7 of the nine
+projects the determinism sweep covers, with two still not** — those two are named in the limitations page, along with the reason
 the cause is inside their instruments rather than in the renderer.
 A **reported defect that is not fixed in this release**: a sample whose rate differs from the project's plays
 at the wrong pitch (a 48 kHz sample in a 44.1 kHz project is about 8.8 % sharp). It is recorded here rather

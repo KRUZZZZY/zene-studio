@@ -149,19 +149,29 @@ that is this page's fault — report it and it gets added.
   **offline HTDemucs stem separation** (opt-in at configure time). Both report `OFF` in the binary's own build
   options, re-stated from the build this page was applied against:
   `WANT_WASM='OFF'`, `WANT_STEM_SPLIT='OFF'` (`build/lmmsversion.h`, the same text the binary prints on its
-  `Build options:` line). Everything in the release notes is present in this build — the release-honesty check
-  enforces that — but these two are deliberately absent.
+  `Build options:` line). **What enforces "everything the release notes document as present is in this build"
+  is `tests/release-honesty-gate.sh`, and its result on the shipping build is not asserted here.** The guard's
+  mechanism is the checkable half, and it is what is claimed: it fails a documented-present feature when the
+  build under test does not report that option `ON` (`AUTO` is not `ON` — the script's own header says so), it
+  exits 1 on any mismatch, and the six build jobs in `.github/workflows/build.yml` run it against the binary
+  they have just built. Run against the two binaries on this box it does **not** pass (3 of 6 rows on
+  `build-coverage/zene`, 1 of 6 on `build/zene`), and the release-configuration build whose options would let it
+  read six of six is being run by the release engineer (`scripts/release-verify.sh`). Until that run is
+  observed, read this as the claim the guard exists to test, not as a green. The two features above are
+  deliberately absent either way.
 
 ## Where the quality bars are not met yet
 
 - **Renders are reproducible — with two exceptions.** Exports now render on a single thread, so for **7 of the
-  9 bundled projects two renders are byte-identical**. **Two are not**: `Root84` and `StrictProduction` differ
+  nine projects the determinism sweep covers two renders are byte-identical** (the tree ships **68**
+  `.mmp`/`.mmpz` files; nine is the sweep's sample, not the repository's count —
+  `docs/RENDER-DETERMINISM.md`). **Two are not**: `Root84` and `StrictProduction` differ
   even with the CPU pinned, ASLR disabled, `rand()` fixed and the clock frozen, and for `Root84` bypassing all
   twelve of its effect chains changes nothing — the cause is inside those instruments, not the renderer, and it
   is named in our notes. In practice: treat a render as reproducible for most projects, and verify rather than
   assume for those two. (Stock LMMS 1.3.0-alpha.2 is non-reproducible for the same demos, so this is a fix we
-  carry that upstream does not.) The two, named exactly as the tree ships them:
-  `demos/StrictProduction-DearJonDoe.mmp` and `shorties/Root84-TrancyLoop.mmpz` —
+  carry that upstream does not.) The two, named as the tree ships them:
+  `data/projects/demos/StrictProduction-DearJonDoe.mmp` and `data/projects/shorties/Root84-TrancyLoop.mmpz` —
   `docs/RENDER-DETERMINISM.md` §9 and §10.
 - **No measured crash-free rate.** The crash reporter is new in this release; until there is a body of reports
   the "how often does it crash" number does not exist. That number is the point of shipping an alpha.
@@ -297,8 +307,11 @@ Verified in the tree, including the runtime half the marker for this paragraph d
 upstream and that every raster keeps its upstream pixel dimensions, and §3a runs the rename lane's plugin-logo
 resource test **in both directions** — the green run reports the placeholder resolving to a real **48×48** pixmap
 (not the `1×1` fallback `PixmapLoader` returns on a miss), and the red control moves the file away and the
-assertion fails. §3b's 989-call-site resource sweep resolves `zene-plugin-logo` to
-`data/themes/default/zene-plugin-logo.svg` with `0 NEW` unresolved names. The marking is in the artefacts
+assertion fails. §3b's resource sweep — `python3 tests/brand-resource-sweep.py`, exit 0 — scans **993** call
+sites, leaves 3 unresolved (all three pinned as pre-existing: `arp_down_on`, `arp_up_on`, `logo`), resolves
+`zene-plugin-logo` to `data/themes/default/zene-plugin-logo.svg`, and reports **0 NEW** unresolved names. The
+command is quoted and exits 0 on this tree, so the figures can be re-run; the earlier text here said 989, the
+count before the control-surface merge added its call sites. The marking is in the artefacts
 themselves: the SVGs carry `<dc:title>… (placeholder)`, `<dc:description>placeholder - pending the product mark`
 and a `<dc:rights>` stating they contain no third-party artwork, and all 34 generated PNGs carry the
 `Description` chunk. The lane `post-alpha/brand-placeholders` is an ancestor of this tip.
