@@ -25,6 +25,12 @@
 #include "ConfigManager.h"
 
 #include <QApplication>
+// qWarning() returns a QDebug, and <QtGlobal> only forward-declares the class:
+// without the complete type `qWarning() << title << message` below is
+// "invalid use of incomplete type 'class QDebug'" (Qt5 on the CI's linux
+// jobs; Qt6 drags QDebug in through <QApplication>).  Include it by name
+// rather than relying on a transitive include.
+#include <QDebug>
 #include <QDir>
 #include <QDomElement>
 #include <QMessageBox>

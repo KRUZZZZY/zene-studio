@@ -129,6 +129,25 @@ ENDIF()
 LIST(TRANSFORM LMMS_VST3_SDK_SOURCES PREPEND "${LMMS_VST3_SDK_PATH}/")
 
 IF(APPLE)
+	# module_mac.mm refuses to compile without ARC (it opens with
+	#   #if !__has_feature(objc_arc)
+	#   #error this file needs to be compiled with automatic reference counting enabled
+	# so the macOS x86_64 CI job died on it before compiling anything else):
+	#   build/vst3sdk/public.sdk/source/vst/hosting/module_mac.mm:22:2:
+	#   error: this file needs to be compiled with automatic reference counting enabled
+	# This is the SDK's own way of satisfying it -- its sample hosts set the same
+	# property on the same file (public.sdk/samples/vst-hosting/audiohost/
+	# CMakeLists.txt: set_source_files_properties(... module_mac.mm PROPERTIES
+	# COMPILE_FLAGS "-fobjc-arc")).  Per-file, so the other two Objective-C++
+	# translation units in this target keep their current (non-ARC) mode.
+	# UNVERIFIED ON macOS: this box cannot build Darwin targets, so the
+	# verification is the macOS CI job.
+	SET_SOURCE_FILES_PROPERTIES(
+		"${LMMS_VST3_SDK_PATH}/public.sdk/source/vst/hosting/module_mac.mm"
+		PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+ENDIF()
+
+IF(APPLE)
 	# module_mac.mm, systemclipboard_mac.mm and threadchecker_mac.mm are
 	# Objective-C++ and this project enables no other .mm source anywhere, so
 	# CMake cannot pick a compiler (or a link language) for the target without
