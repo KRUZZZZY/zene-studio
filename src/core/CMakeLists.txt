@@ -106,6 +106,7 @@ set(LMMS_SRCS
 	core/ControlSchema.cpp
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
+	core/ControlServerSocket.cpp
 	core/ControlSession.cpp
 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).
 	${CMAKE_SOURCE_DIR}/include/ControlEdit.h

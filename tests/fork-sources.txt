@@ -347,6 +347,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
+src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
 src/core/ControlVocabulary.cpp
 src/core/CrashReporter.cpp

@@ -109,11 +109,25 @@ private:
 
 	void onNewConnection();
 	void onClientReadable(int fd);
+	//! Dispatch every complete line already in \p buffer. Returns false when a
+	//! reply could not be written in full and the client was dropped (see
+	//! writeAll's contract).
+	bool dispatchPendingLines(int fd, QByteArray& buffer);
+	//! Refuse the ONE request line left in the buffer that passed
+	//! MaxRequestLineBytes without ending, then retire the connection: \p closed
+	//! says EOF is already in hand, so the client can be dropped at once.
+	void refuseOverCapLine(int fd, bool closed);
 	void dropClient(int fd);
 	//! Write every byte of \p bytes or fail. A caller MUST drop the client when
 	//! this returns false: the bytes already written are a TRUNCATED line, and
 	//! writing the next reply after them would make the two read as one line.
 	bool writeAll(int fd, const QByteArray& bytes);
+
+	//! Take ownership of a fd that is bound, pinned to mode 0600 and listening:
+	//! record the inode this instance bound (so close() unlinks only that one),
+	//! register the shutdown hook and start the accept notifier. Defined in
+	//! ControlServerSocket.cpp beside listen().
+	bool adoptListener(int fd, const QString& path, const QByteArray& nativePath);
 
 	ControlRegistry* m_registry;
 	int m_listenFd = -1;
