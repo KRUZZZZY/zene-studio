@@ -138,8 +138,8 @@ def refused_error(text, problems, expected_kind, path):
     """Assert the log carries a typed error of `expected_kind` naming `path`."""
     error = typed_error(text)
     if error is None:
-        problems.add("no typed refusal on stderr (looked for a line carrying '{\"id\"'); the "
-                     "process said: %r" % text[-600:])
+        problems.add("no typed refusal on stderr (a line carrying the protocol's own "
+                     '{"ok":false,"error":{...}} object); the process said: %r' % text[-600:])
         return None
     if error.get("kind") != expected_kind:
         problems.add("the refusal kind is %r, expected %r: %r"
