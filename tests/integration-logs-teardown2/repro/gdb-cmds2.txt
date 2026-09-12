@@ -1,0 +1,23 @@
+set pagination off
+set confirm off
+set width 0
+handle SIGABRT stop nopass
+handle SIGPIPE nostop nopass
+run poolModeStillRunsEveryJobExactlyOnce
+echo \n==== BACKTRACE ====\n
+bt
+echo \n==== THREADS ====\n
+info threads
+echo \n==== frame 7 (libQt6Core QThread dtor) ====\n
+frame 7
+info frame
+echo \n==== frame 8 (the test slot) ====\n
+frame 8
+info locals
+p total
+p poolWorker
+p poolWorker.QThread::QObject::isRunning()
+echo \n==== all threads bt ====\n
+thread apply all bt
+kill
+quit

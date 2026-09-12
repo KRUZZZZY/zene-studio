@@ -1,0 +1,3 @@
+loopL2 passed=0 failed=20
+loopL1 passed=4 failed=16
+TOTAL passed=4 failed=36 abort_rate=90.0%

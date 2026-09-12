@@ -1,0 +1,102 @@
+try 1 no abort
+try 2 no abort
+try 3 no abort
+try 4 no abort
+try 5 no abort
+try 6 no abort
+try 7 no abort
+try 8 no abort
+try 9 no abort
+try 10 no abort
+try 11 no abort
+try 12 no abort
+try 13 no abort
+try 14 no abort
+try 15 no abort
+try 16 no abort
+try 17 no abort
+try 18 no abort
+try 19 no abort
+try 20 no abort
+try 21 no abort
+try 22 no abort
+try 23 no abort
+CAUGHT ON TRY 24
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+********* Start testing of RenderJobQueueTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+[New Thread 0x7ffff0bff6c0 (LWP 2832538)]
+PASS   : RenderJobQueueTest::initTestCase()
+[New Thread 0x7fffe81ff6c0 (LWP 2832539)]
+FAIL!  : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() Compared values are not the same
+   Actual   (total): 63
+   Expected (64)   : 64
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/src/core/RenderJobQueueTest.cpp(264)]
+QFATAL : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() QThread: Destroyed while thread is still running
+FAIL!  : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() Received a fatal error.
+Totals: 1 passed, 1 failed, 0 skipped, 0 blacklisted, 35ms
+********* Finished testing of RenderJobQueueTest *********
+
+Thread 1 "RenderJobQueueT" received signal SIGABRT, Aborted.
+__pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+warning: 44	./nptl/pthread_kill.c: No such file or directory
+
+==== BACKTRACE ====
+#0  __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+#1  __pthread_kill_internal (signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:78
+#2  __GI___pthread_kill (threadid=<optimized out>, signo=signo@entry=6) at ./nptl/pthread_kill.c:89
+#3  0x00007ffff584527e in __GI_raise (sig=sig@entry=6) at ../sysdeps/posix/raise.c:26
+#4  0x00007ffff58288ff in __GI_abort () at ./stdlib/abort.c:79
+#5  0x00007ffff60a8e5f in qAbort() () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff60a9232 in QMessageLogger::fatal(char const*, ...) const () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff60c2c57 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x0000555555665908 in RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce (this=<optimized out>) at /usr/include/c++/13/bits/allocator.h:184
+#9  RenderJobQueueTest::qt_static_metacall (_o=<optimized out>, _id=<optimized out>, _a=<optimized out>, _c=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/tests/RenderJobQueueTest_autogen/include/RenderJobQueueTest.moc:154
+#10 0x00007ffff614700d in QMetaMethod::invoke(QObject*, Qt::ConnectionType, QGenericReturnArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument) const () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#11 0x00007ffff75d05b0 in ??? () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#12 0x00007ffff75ddecf in QTest::qRun() () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#13 0x00007ffff75d3397 in QTest::qExec(QObject*, int, char**) () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#14 0x00005555556593d4 in main (argc=<optimized out>, argv=0x7fffffffd848) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/src/core/RenderJobQueueTest.cpp:292
+
+==== THREADS ====
+  Id   Target Id                                             Frame 
+* 1    Thread 0x7ffff1c14180 (LWP 2832526) "RenderJobQueueT" __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+  2    Thread 0x7ffff0bff6c0 (LWP 2832538) "lmms::AudioEngi" 0x00007ffff5898e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7ffff0bfe830, op=137, expected=0, futex_word=0x555556228064) at ./nptl/futex-internal.c:57
+  3    Thread 0x7fffe81ff6c0 (LWP 2832539) "lmms::AudioEngi" 0x00007ffff5898e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffe81fe830, op=137, expected=0, futex_word=0x555556228064) at ./nptl/futex-internal.c:57
+
+==== frame 7 (libQt6Core QThread dtor) ====
+#7  0x00007ffff60c2c57 in ?? () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+Stack level 7, frame at 0x7fffffffcda0:
+ rip = 0x7ffff60c2c57; saved rip = 0x555555665908
+ called by frame at 0x7fffffffce70, caller of frame at 0x7fffffffcd40
+ Arglist at 0x7fffffffcd38, args: 
+ Locals at 0x7fffffffcd38, Previous frame's sp is 0x7fffffffcda0
+ Saved registers:
+  rbx at 0x7fffffffcd78, rbp at 0x7fffffffcd90, r12 at 0x7fffffffcd80, r13 at 0x7fffffffcd88, rip at 0x7fffffffcd98
+
+==== frame 8 (the test slot) ====
+#8  0x0000555555665908 in RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce (this=<optimized out>) at /usr/include/c++/13/bits/allocator.h:184
+184	      ~allocator() _GLIBCXX_NOTHROW { }
+poolWorker = {<QThread> = {<No data fields>}, static staticMetaObject = {d = {superdata = {direct = 0x7ffff64f99c0 <QThread::staticMetaObject>}, stringdata = 0x555555a38900 <(anonymous namespace)::qt_meta_stringdata_lmms__AudioEngineWorkerThread>, data = 0x555555a388c0 <qt_meta_data_lmms__AudioEngineWorkerThread>, static_metacall = 0x555555670b80 <lmms::AudioEngineWorkerThread::qt_static_metacall(QObject*, QMetaObject::Call, int, void**)>, relatedMetaObjects = 0x0, metaTypes = 0x555555b188c8 <qt_incomplete_metaTypeArray<(anonymous namespace)::qt_meta_stringdata_lmms__AudioEngineWorkerThread_t, QtPrivate::TypeAndForceComplete<lmms::AudioEngineWorkerThread, std::integral_constant<bool, true> > >>, extradata = 0x0}}, m_quit = false}
+total = 63
+pointers = std::vector of length 64, capacity 64 = {0x55500377f239, 0x1f3f7af6321fe565, 0x555556228660, 0x5555562286b0, 0x555556228700, 0x5555562287f0, 0x555556228840, 0x555556228890, 0x5555562288e0, 0x5555562287a0, 0x555556228750, 0x555556228930, 0x555556228980, 0x5555562289d0, 0x555556228a20, 0x555556228a70, 0x555556228ac0, 0x555556228b10, 0x555556228b60, 0x555556228bb0, 0x555556228c00, 0x555556228c50, 0x555556228ca0, 0x555556228cf0, 0x555556228d40, 0x555556228d90, 0x555556228de0, 0x555556228e30, 0x555556228e80, 0x555556228ed0, 0x555556228f20, 0x555556228f70, 0x555556228fc0, 0x555556229430, 0x555556229480, 0x5555562294d0, 0x555556229520, 0x555556229570, 0x5555562295c0, 0x555556229610, 0x555556229660, 0x5555562296b0, 0x555556229700, 0x555556229750, 0x5555562297a0, 0x5555562297f0, 0x555556229840, 0x555556229890, 0x5555562298e0, 0x555556229930, 0x555556229980, 0x5555562299d0, 0x555556229a20, 0x555556229a70, 0x555556229ac0, 0x555556229b10, 0x555556229b60, 0x555556229bb0, 0x555556229c00, 0x555556229c50, 0x555556229ca0, 0x555556229cf0, 0x555556229d40, 0x555556229d90}
+jobs = std::vector of length 64, capacity 64 = {std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x1f3f7af6321fe565}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228660}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562286b0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228700}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562287f0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228840}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228890}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562288e0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562287a0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228750}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228930}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228980}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562289d0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228a20}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228a70}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228ac0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228b10}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228b60}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228bb0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228c00}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228c50}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228ca0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228cf0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228d40}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228d90}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228de0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228e30}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228e80}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228ed0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228f20}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228f70}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556228fc0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229430}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229480}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562294d0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229520}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229570}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562295c0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229610}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229660}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562296b0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229700}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229750}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562297a0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562297f0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229840}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229890}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562298e0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229930}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229980}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x5555562299d0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229a20}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229a70}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229ac0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229b10}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229b60}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229bb0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229c00}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229c50}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229ca0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229cf0}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229d40}, std::unique_ptr<(anonymous namespace)::CountingJob> = {get() = 0x555556229d90}}
+poolWorker = <optimized out>
+total = <optimized out>
+pointers = <optimized out>
+jobs = <optimized out>
+job = <optimized out>
+__for_range = <optimized out>
+__for_begin = <optimized out>
+__for_end = <optimized out>
+$1 = 63
+$2 = {<QThread> = {<No data fields>}, static staticMetaObject = {d = {superdata = {direct = 0x7ffff64f99c0 <QThread::staticMetaObject>}, stringdata = 0x555555a38900 <(anonymous namespace)::qt_meta_stringdata_lmms__AudioEngineWorkerThread>, data = 0x555555a388c0 <qt_meta_data_lmms__AudioEngineWorkerThread>, static_metacall = 0x555555670b80 <lmms::AudioEngineWorkerThread::qt_static_metacall(QObject*, QMetaObject::Call, int, void**)>, relatedMetaObjects = 0x0, metaTypes = 0x555555b188c8 <qt_incomplete_metaTypeArray<(anonymous namespace)::qt_meta_stringdata_lmms__AudioEngineWorkerThread_t, QtPrivate::TypeAndForceComplete<lmms::AudioEngineWorkerThread, std::integral_constant<bool, true> > >>, extradata = 0x0}}, m_quit = false}
+gdb-cmds2.txt:19: Error in sourced command file:
+A syntax error in expression, near `()'.
+DONE

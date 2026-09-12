@@ -1,0 +1,68 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+********* Start testing of RenderJobQueueTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+[New Thread 0x7ffff0bff6c0 (LWP 2830444)]
+PASS   : RenderJobQueueTest::initTestCase()
+[New Thread 0x7fffebfff6c0 (LWP 2830445)]
+FAIL!  : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() Compared values are not the same
+   Actual   (total): 63
+   Expected (64)   : 64
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/src/core/RenderJobQueueTest.cpp(264)]
+QFATAL : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() QThread: Destroyed while thread is still running
+FAIL!  : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() Received a fatal error.
+Totals: 1 passed, 1 failed, 0 skipped, 0 blacklisted, 35ms
+********* Finished testing of RenderJobQueueTest *********
+
+Thread 1 "RenderJobQueueT" received signal SIGABRT, Aborted.
+__pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+warning: 44	./nptl/pthread_kill.c: No such file or directory
+
+==== BACKTRACE (all threads) ====
+#0  __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+#1  __pthread_kill_internal (signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:78
+#2  __GI___pthread_kill (threadid=<optimized out>, signo=signo@entry=6) at ./nptl/pthread_kill.c:89
+#3  0x00007ffff584527e in __GI_raise (sig=sig@entry=6) at ../sysdeps/posix/raise.c:26
+#4  0x00007ffff58288ff in __GI_abort () at ./stdlib/abort.c:79
+#5  0x00007ffff60a8e5f in qAbort() () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff60a9232 in QMessageLogger::fatal(char const*, ...) const () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff60c2c57 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x0000555555665908 in RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce (this=<optimized out>) at /usr/include/c++/13/bits/allocator.h:184
+#9  RenderJobQueueTest::qt_static_metacall (_o=<optimized out>, _id=<optimized out>, _a=<optimized out>, _c=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/tests/RenderJobQueueTest_autogen/include/RenderJobQueueTest.moc:154
+#10 0x00007ffff614700d in QMetaMethod::invoke(QObject*, Qt::ConnectionType, QGenericReturnArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument) const () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#11 0x00007ffff75d05b0 in ??? () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#12 0x00007ffff75ddecf in QTest::qRun() () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#13 0x00007ffff75d3397 in QTest::qExec(QObject*, int, char**) () at /lib/x86_64-linux-gnu/libQt6Test.so.6
+#14 0x00005555556593d4 in main (argc=<optimized out>, argv=0x7fffffffd868) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/src/core/RenderJobQueueTest.cpp:292
+
+==== THREADS ====
+  Id   Target Id                                             Frame 
+* 1    Thread 0x7ffff1c14180 (LWP 2830353) "RenderJobQueueT" __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+  2    Thread 0x7ffff0bff6c0 (LWP 2830444) "lmms::AudioEngi" 0x00007ffff5898e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7ffff0bfe830, op=137, expected=0, futex_word=0x555556228064) at ./nptl/futex-internal.c:57
+  3    Thread 0x7fffebfff6c0 (LWP 2830445) "lmms::AudioEngi" 0x00007ffff5898e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffebffe830, op=137, expected=0, futex_word=0x555556228064) at ./nptl/futex-internal.c:57
+
+==== FRAME 0/1/2 ====
+#0  __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+44	in ./nptl/pthread_kill.c
+#1  __pthread_kill_internal (signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:78
+78	in ./nptl/pthread_kill.c
+#2  __GI___pthread_kill (threadid=<optimized out>, signo=signo@entry=6) at ./nptl/pthread_kill.c:89
+89	in ./nptl/pthread_kill.c
+
+==== the test's own frame ====
+#6  0x00007ffff60a9232 in QMessageLogger::fatal(char const*, ...) const () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+Stack level 6, frame at 0x7fffffffcd60:
+ rip = 0x7ffff60a9232 in qt_assert(char const*, char const*, int); saved rip = 0x7ffff60c2c57
+ called by frame at 0x7fffffffcdc0, caller of frame at 0x7fffffffcc50
+ Arglist at 0x7fffffffcd50, args: 
+ Locals at 0x7fffffffcd50, Previous frame's sp is 0x7fffffffcd60
+ Saved registers:
+  rbx at 0x7fffffffcd48, rbp at 0x7fffffffcd50, rip at 0x7fffffffcd58
+
+==== kill ====
+[Inferior 1 (process 2830353) killed]

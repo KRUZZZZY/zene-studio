@@ -1,0 +1,6 @@
+[shutdown: undo/redo (dirty project)] exit=0 after 0.30s, socket exists=False
+[shutdown: no usable audio device] exit=0 after 0.22s, socket exists=False
+
+=== PASS ===
+  shutdown: undo/redo (dirty project)            ok
+  shutdown: no usable audio device               ok

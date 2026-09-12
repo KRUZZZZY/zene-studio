@@ -1,0 +1,11 @@
+********* Start testing of RenderJobQueueTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : RenderJobQueueTest::initTestCase()
+FAIL!  : RenderJobQueueTest::poolModeAccountingIsExactWhenBothThreadsDrain() Compared values are not the same
+   Actual   (CountingJob::s_plainTotal): 510
+   Expected (kJobs)                    : 512
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/tests/src/core/RenderJobQueueTest.cpp(365)]
+PASS   : RenderJobQueueTest::cleanupTestCase()
+Totals: 2 passed, 1 failed, 0 skipped, 0 blacklisted, 1ms
+********* Finished testing of RenderJobQueueTest *********
+attempt 1 EXIT=1 (1 = readable assertion failure, 134 = abort)

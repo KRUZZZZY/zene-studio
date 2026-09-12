@@ -1,0 +1,27 @@
+hogs=60 a=20 load_before=13.63
+run1 EXIT=0
+run2 EXIT=0
+run3 EXIT=0
+run4 EXIT=0
+run5 EXIT=0
+run6 EXIT=0
+run7 EXIT=0
+run8 EXIT=0
+run9 EXIT=0
+run10 EXIT=0
+run11 EXIT=0
+run12 EXIT=0
+run13 EXIT=0
+run14 EXIT=0
+run15 EXIT=0
+run16 EXIT=0
+run17 EXIT=0
+run18 EXIT=0
+run19 EXIT=0
+run20 EXIT=0
+run21 EXIT=0
+run22 EXIT=0
+run23 EXIT=0
+run24 EXIT=0
+run25 EXIT=0
+TOTAL passed=25 failed=0 out of 25 (abort rate 0.0%)

@@ -1,0 +1,14 @@
+********* Start testing of RenderJobQueueTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : RenderJobQueueTest::initTestCase()
+PASS   : RenderJobQueueTest::deterministicProcessingIsOffByDefaultAndResettable()
+PASS   : RenderJobQueueTest::inlineModeRunsEveryJobOnceOnTheCallingThread()
+PASS   : RenderJobQueueTest::inlineModeDrainsAStaticQueueOnTheCallingThread()
+PASS   : RenderJobQueueTest::inlineModeNeverLetsThePoolTakeAJob()
+PASS   : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce()
+PASS   : RenderJobQueueTest::poolModeAccountingIsExactWhenBothThreadsDrain()
+PASS   : RenderJobQueueTest::jobsThatDoNotRequireProcessingAreNotRun()
+PASS   : RenderJobQueueTest::cleanupTestCase()
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 221ms
+********* Finished testing of RenderJobQueueTest *********
+EXIT=0
