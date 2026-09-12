@@ -1,0 +1,12 @@
+file-length-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)
+file-length-gate: 31 tools-scope sources measured; 4 exceed 500 lines
+
+  lines  file
+  1896   tools/mmpz-git/mmpz_git.py
+  877    tools/mmpz-git/tests/test_mmpz_git.py
+  610    tools/mcp-zene-control/tests/test_mcp_e2e.py
+  513    tools/mcp-zene-control/tests/test_units.py
+
+REGRESSION: new file over 500 lines: tools/mcp-zene-control/tests/test_mcp_e2e.py (610)
+REGRESSION: new file over 500 lines: tools/mcp-zene-control/tests/test_units.py (513)
+FAIL: file-length ratchet regressed (check mode: baseline not written)

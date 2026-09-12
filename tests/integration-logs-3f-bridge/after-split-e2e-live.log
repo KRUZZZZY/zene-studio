@@ -1,0 +1,925 @@
+.....E
+======================================================================
+ERROR: test_11_mutating_command_undo_and_transactions (tests.test_mcp_e2e.ZeneControlBridgeE2E.test_11_mutating_command_undo_and_transactions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tools/mcp-zene-control/tests/test_mcp_e2e.py", line 302, in test_11_mutating_command_undo_and_transactions
+    self.assertTrue(out["undo"][1]["result"]["undone"], out["undo"][1])
+                    ~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'result'
+
+----------------------------------------------------------------------
+Ran 6 tests in 7.971s
+
+FAILED (errors=1)
+
+---- module fixture ----
+{
+  "socket_s": 0.1,
+  "engine_ready_s": 1.75,
+  "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/zene",
+  "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock",
+  "daw_commands": 74,
+  "command_list_source": "live",
+  "instance_exit": -11,
+  "transcript_path": "/tmp/zene-control-state-cvb5rual/mcp-transcript.json"
+}
+
+---- MCP transcript (every request/response) ----
+{
+  "kind": "tools_list",
+  "phase": "tool_generation",
+  "server_info": {
+    "name": "zene-control",
+    "version": "1.0.0"
+  },
+  "protocol": "2025-11-25",
+  "tool_count": 76,
+  "generated_count": 74,
+  "generated": [
+    "zene_app_version",
+    "zene_arrangement_get_state",
+    "zene_audio_device_list",
+    "zene_audio_device_set",
+    "zene_automation_add_point",
+    "zene_automation_clear",
+    "zene_automation_get_state",
+    "zene_automation_mode_set",
+    "zene_automation_remove_point",
+    "zene_clip_add",
+    "zene_clip_delete",
+    "zene_clip_duplicate",
+    "zene_clip_move",
+    "zene_clip_resize",
+    "zene_clip_select",
+    "zene_clip_split",
+    "zene_control_commands_list",
+    "zene_control_ping",
+    "zene_control_quit",
+    "zene_control_redo",
+    "zene_control_surface_report",
+    "zene_control_transactions",
+    "zene_control_undo",
+    "zene_control_version",
+    "zene_dsp_get_state",
+    "zene_midi_device_list",
+    "zene_midi_learn_toggle",
+    "zene_mixer_add_channel",
+    "zene_mixer_get_state",
+    "zene_mixer_remove_channel",
+    "zene_mixer_set_pan",
+    "zene_mixer_set_volume",
+    "zene_note_add",
+    "zene_note_move",
+    "zene_note_remove",
+    "zene_note_resize",
+    "zene_note_select",
+    "zene_note_velocity_set",
+    "zene_plugin_bypass",
+    "zene_plugin_list",
+    "zene_plugin_load",
+    "zene_plugin_param_get",
+    "zene_plugin_param_set",
+    "zene_plugin_preset_list",
+    "zene_plugin_preset_load",
+    "zene_plugin_preset_save",
+    "zene_plugin_state_load",
+    "zene_plugin_state_save",
+    "zene_plugin_unload",
+    "zene_project_get_state",
+    "zene_project_open",
+    "zene_project_restore_revision",
+    "zene_project_save",
+    "zene_render_render",
+    "zene_roll_get_state",
+    "zene_script_list",
+    "zene_script_run",
+    "zene_settings_get",
+    "zene_settings_set",
+    "zene_telemetry_consent",
+    "zene_telemetry_status",
+    "zene_track_add",
+    "zene_track_get_state",
+    "zene_track_list",
+    "zene_track_remove",
+    "zene_track_rename",
+    "zene_track_set_arm",
+    "zene_track_set_mute",
+    "zene_track_set_solo",
+    "zene_transport_get_state",
+    "zene_transport_play",
+    "zene_transport_seek",
+    "zene_transport_set_tempo",
+    "zene_transport_stop"
+  ],
+  "bridge_tools": [
+    "zene_commands",
+    "zene_status"
+  ],
+  "step": 1
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_project_open",
+  "arguments": {
+    "path": "/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp"
+  },
+  "is_error": false,
+  "elapsed_s": 0.073,
+  "summary": "project.open: ok in 0.02s (error_count=0, errors=[], file=/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp, format_upgraded=True)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_project_open",
+    "command": "project.open",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.02,
+    "result": {
+      "error_count": 0,
+      "errors": [],
+      "file": "/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp",
+      "format_upgraded": true,
+      "ids_assigned": 2,
+      "loaded_with_errors": false,
+      "tempo": 140,
+      "track_count": 1
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "project.open: ok in 0.02s (error_count=0, errors=[], file=/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp, format_upgraded=True)"
+  },
+  "step": 2
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_mixer_get_state",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.01,
+  "summary": "mixer.get_state: ok in 0.00s (channels=[{'id': 'ch-0', 'index': 0, 'is_bus': False, 'is_master': True, 'muted': False, 'name': 'Master', 'pan': None, 'sends': [], 'soloed': False, 'volume': 1}], count=1)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_mixer_get_state",
+    "command": "mixer.get_state",
+    "mutating": false,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "channels": [
+        {
+          "id": "ch-0",
+          "index": 0,
+          "is_bus": false,
+          "is_master": true,
+          "muted": false,
+          "name": "Master",
+          "pan": null,
+          "sends": [],
+          "soloed": false,
+          "volume": 1
+        }
+      ],
+      "count": 1
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "mixer.get_state: ok in 0.00s (channels=[{'id': 'ch-0', 'index': 0, 'is_bus': False, 'is_master': True, 'muted': False, 'name': 'Master', 'pan': None, 'sends': [], 'soloed': False, 'volume': 1}], count=1)"
+  },
+  "step": 3
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_mixer_add_channel",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.009,
+  "summary": "mixer.add_channel: ok in 0.00s (channel=ch-1, index=1)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_mixer_add_channel",
+    "command": "mixer.add_channel",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "channel": "ch-1",
+      "index": 1
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "mixer.add_channel: ok in 0.00s (channel=ch-1, index=1)"
+  },
+  "step": 4
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_mixer_set_volume",
+  "arguments": {
+    "channel": "ch-1",
+    "volume": 0.5
+  },
+  "is_error": false,
+  "elapsed_s": 0.008,
+  "summary": "mixer.set_volume: ok in 0.00s (channel=ch-1, volume=0.5)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_mixer_set_volume",
+    "command": "mixer.set_volume",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "channel": "ch-1",
+      "volume": 0.5
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "mixer.set_volume: ok in 0.00s (channel=ch-1, volume=0.5)"
+  },
+  "step": 5
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_mixer_get_state",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.007,
+  "summary": "mixer.get_state: ok in 0.00s (channels=[{'id': 'ch-0', 'index': 0, 'is_bus': False, 'is_master': True, 'muted': False, 'name': 'Master', 'pan': None, 'sends': [], 'soloed': False, 'volume': 1}, {'id': 'ch-1', 'index': 1, 'is_bus': False, 'is_master': False, 'muted': False, 'name': 'Channel 1', 'pan': None, 'sends': [{'amount': 1, 'pre_fader': False, 'to': 'ch-0'}], 'soloed': False, 'volume': 0.5}], count=2)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_mixer_get_state",
+    "command": "mixer.get_state",
+    "mutating": false,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "channels": [
+        {
+          "id": "ch-0",
+          "index": 0,
+          "is_bus": false,
+          "is_master": true,
+          "muted": false,
+          "name": "Master",
+          "pan": null,
+          "sends": [],
+          "soloed": false,
+          "volume": 1
+        },
+        {
+          "id": "ch-1",
+          "index": 1,
+          "is_bus": false,
+          "is_master": false,
+          "muted": false,
+          "name": "Channel 1",
+          "pan": null,
+          "sends": [
+            {
+              "amount": 1,
+              "pre_fader": false,
+              "to": "ch-0"
+            }
+          ],
+          "soloed": false,
+          "volume": 0.5
+        }
+      ],
+      "count": 2
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "mixer.get_state: ok in 0.00s (channels=[{'id': 'ch-0', 'index': 0, 'is_bus': False, 'is_master': True, 'muted': False, 'name': 'Master', 'pan': None, 'sends': [], 'soloed': False, 'volume': 1}, {'id': 'ch-1', 'index': 1, 'is_bus': False, 'is_master': False, 'muted': False, 'name': 'Channel 1', 'pan': None, 'sends': [{'amount': 1, 'pre_fader': False, 'to': 'ch-0'}], 'soloed': False, 'volume': 0.5}], count=2)"
+  },
+  "step": 6
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_render_render",
+  "arguments": {
+    "out": "/tmp/zene-flow-tmq2sihe/render.wav",
+    "format": "wav"
+  },
+  "is_error": false,
+  "elapsed_s": 0.774,
+  "summary": "render.render: ok in 0.76s (bytes=2720864, format=wav, frames=680192, path=/tmp/zene-flow-tmq2sihe/render.wav)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_render_render",
+    "command": "render.render",
+    "mutating": false,
+    "engine_free": false,
+    "timeout_s": 900.0,
+    "elapsed_s": 0.764,
+    "result": {
+      "bytes": 2720864,
+      "format": "wav",
+      "frames": 680192,
+      "path": "/tmp/zene-flow-tmq2sihe/render.wav",
+      "sample_rate": 44100,
+      "sha256": "fc31335cdfaaf2c4bf901c1b64cfe11f19cdd92c3cf611f67259e28fcca77800"
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "render.render: ok in 0.76s (bytes=2720864, format=wav, frames=680192, path=/tmp/zene-flow-tmq2sihe/render.wav)",
+    "long_operation": "renders the whole song by shelling out to the CLI; minutes on a long project"
+  },
+  "step": 7
+}
+{
+  "kind": "render_artifact",
+  "phase": "full_flow",
+  "path": "/tmp/zene-flow-tmq2sihe/render.wav",
+  "bytes": 2720864,
+  "seconds": 0.774,
+  "step": 8
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_project_save",
+  "arguments": {
+    "path": "/tmp/zene-flow-tmq2sihe/saved.mmp"
+  },
+  "is_error": false,
+  "elapsed_s": 0.019,
+  "summary": "project.save: ok in 0.01s (file=/tmp/zene-flow-tmq2sihe/saved.mmp, revision_kept=True, revisions={'count': 0, 'file': '/tmp/zene-flow-tmq2sihe/saved.mmp', 'max_revision_bytes': 8388608, 'max_total_bytes': 25165824, 'policy': 'keep-3', 'retained_bytes': 0, 'revisions': []}, saved=True)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_project_save",
+    "command": "project.save",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.009,
+    "result": {
+      "file": "/tmp/zene-flow-tmq2sihe/saved.mmp",
+      "revision_kept": true,
+      "revisions": {
+        "count": 0,
+        "file": "/tmp/zene-flow-tmq2sihe/saved.mmp",
+        "max_revision_bytes": 8388608,
+        "max_total_bytes": 25165824,
+        "policy": "keep-3",
+        "retained_bytes": 0,
+        "revisions": []
+      },
+      "saved": true
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "project.save: ok in 0.01s (file=/tmp/zene-flow-tmq2sihe/saved.mmp, revision_kept=True, revisions={'count': 0, 'file': '/tmp/zene-flow-tmq2sihe/saved.mmp', 'max_revision_bytes': 8388608, 'max_total_bytes': 25165824, 'policy': 'keep-3', 'retained_bytes': 0, 'revisions': []}, saved=True)"
+  },
+  "step": 9
+}
+{
+  "kind": "tools_call",
+  "phase": "full_flow",
+  "tool": "zene_project_get_state",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.008,
+  "summary": "project.get_state: ok in 0.00s (file=/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp, modified=False, playing=False, revisions={'count': 0, 'file': '/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp', 'max_revision_bytes': 8388608, 'max_total_bytes': 25165824, 'policy': 'keep-3', 'retained_bytes': 0, 'revisions': []})",
+  "structured": {
+    "ok": true,
+    "tool": "zene_project_get_state",
+    "command": "project.get_state",
+    "mutating": false,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "file": "/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp",
+      "modified": false,
+      "playing": false,
+      "revisions": {
+        "count": 0,
+        "file": "/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp",
+        "max_revision_bytes": 8388608,
+        "max_total_bytes": 25165824,
+        "policy": "keep-3",
+        "retained_bytes": 0,
+        "revisions": []
+      },
+      "tempo": 140,
+      "track_count": 1,
+      "tracks": [
+        "trk-0"
+      ]
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "project.get_state: ok in 0.00s (file=/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp, modified=False, playing=False, revisions={'count': 0, 'file': '/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp', 'max_revision_bytes': 8388608, 'max_total_bytes': 25165824, 'policy': 'keep-3', 'retained_bytes': 0, 'revisions': []})"
+  },
+  "step": 10
+}
+{
+  "kind": "full_flow_result",
+  "phase": "full_flow",
+  "steps": [
+    "added",
+    "mixer_after",
+    "mixer_before",
+    "opened",
+    "project_state",
+    "render",
+    "saved",
+    "set_volume"
+  ],
+  "out_wav": "/tmp/zene-flow-tmq2sihe/render.wav",
+  "saved": "/tmp/zene-flow-tmq2sihe/saved.mmp",
+  "step": 11
+}
+{
+  "kind": "resources_list",
+  "phase": "resources",
+  "uris": [
+    "zene://project/state",
+    "zene://instance/status"
+  ],
+  "step": 12
+}
+{
+  "kind": "resource_read",
+  "phase": "resources",
+  "uri": "zene://project/state",
+  "text": "{\n  \"ok\": true,\n  \"tool\": \"zene_project_get_state\",\n  \"command\": \"project.get_state\",\n  \"mutating\": false,\n  \"engine_free\": false,\n  \"timeout_s\": 30.0,\n  \"elapsed_s\": 0.0,\n  \"result\": {\n    \"file\": \"/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp\",\n    \"modified\": false,\n    \"playing\": false,\n    \"revisions\": {\n      \"count\": 0,\n      \"file\": \"/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp\",\n      \"max_revision_bytes\": 8388608,\n      \"max_total_bytes\": 25165824,\n      \"policy\": \"keep-3\",\n      \"retained_bytes\": 0,\n      \"revisions\": []\n    },\n    \"tempo\": 140,\n    \"track_count\": 1,\n    \"tracks\": [\n      \"trk-0\"\n    ]\n  },\n  \"instance\": {\n    \"version\": \"0.1.0-alpha.295+76e3639\",\n    \"proto\": 1,\n    \"engine_ready\": true,\n    \"socket_path\": \"/tmp/zene-control-test-csvjqtb9/zene.sock\"\n  },\n  \"summary\": \"project.get_state: ok in 0.00s (file=/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp, modified=False, playing=False, revisions={'count': 0, 'file': '/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp', 'max_revision_bytes': 8388608, 'max_total_bytes': 25165824, 'policy': 'keep-3', 'retained_bytes': 0, 'revisions': []})\"\n}",
+  "step": 13
+}
+{
+  "kind": "tools_call",
+  "phase": "daw_errors",
+  "tool": "zene_mixer_set_volume",
+  "arguments": {
+    "channel": "ch-9999",
+    "volume": 0.5
+  },
+  "is_error": true,
+  "elapsed_s": 0.011,
+  "summary": "ERROR [not_found]: no mixer channel ch-9999 (the mixer has 2)",
+  "structured": {
+    "ok": false,
+    "error": {
+      "kind": "not_found",
+      "message": "no mixer channel ch-9999 (the mixer has 2)",
+      "retryable": false,
+      "origin": "daw",
+      "hint": "the instance does not register that command or id; call zene_commands for the live list",
+      "command": "mixer.set_volume",
+      "elapsed_s": 0.0,
+      "detail": {
+        "command": "mixer.set_volume",
+        "daw_error": "{'kind': 'not_found', 'message': 'no mixer channel ch-9999 (the mixer has 2)'}"
+      }
+    },
+    "summary": "ERROR [not_found]: no mixer channel ch-9999 (the mixer has 2)",
+    "tool": "zene_mixer_set_volume",
+    "timeout_s": 30.0,
+    "engine_free": false
+  },
+  "step": 14
+}
+{
+  "kind": "tools_call",
+  "phase": "daw_errors",
+  "tool": "zene_mixer_set_pan",
+  "arguments": {
+    "channel": "ch-0",
+    "pan": 0.5
+  },
+  "is_error": true,
+  "elapsed_s": 0.007,
+  "summary": "ERROR [refused]: mixer channels have no pan property in this build: pan lives on InstrumentTrack/SampleTrack (panningModel) and on notes",
+  "structured": {
+    "ok": false,
+    "error": {
+      "kind": "refused",
+      "message": "mixer channels have no pan property in this build: pan lives on InstrumentTrack/SampleTrack (panningModel) and on notes",
+      "retryable": false,
+      "origin": "daw",
+      "hint": "the instance refused the change (the command exists but the state does not allow it); the message says why",
+      "command": "mixer.set_pan",
+      "elapsed_s": 0.0,
+      "detail": {
+        "command": "mixer.set_pan",
+        "daw_error": "{'kind': 'refused', 'message': 'mixer channels have no pan property in this build: pan lives on InstrumentTrack/SampleTrack (panningModel) and on notes'}"
+      }
+    },
+    "summary": "ERROR [refused]: mixer channels have no pan property in this build: pan lives on InstrumentTrack/SampleTrack (panningModel) and on notes",
+    "tool": "zene_mixer_set_pan",
+    "timeout_s": 30.0,
+    "engine_free": false
+  },
+  "step": 15
+}
+{
+  "kind": "tools_call",
+  "phase": "daw_errors",
+  "tool": "zene_transport_seek",
+  "arguments": {
+    "ticks": "not-a-number"
+  },
+  "is_error": true,
+  "elapsed_s": 0.01,
+  "summary": "ERROR [invalid_args]: ticks: expected integer",
+  "structured": {
+    "ok": false,
+    "error": {
+      "kind": "invalid_args",
+      "message": "ticks: expected integer",
+      "retryable": false,
+      "origin": "daw",
+      "hint": "the arguments did not satisfy the command's args_schema; the tool's inputSchema is the DAW's own, so a missing or mistyped field is the cause",
+      "command": "transport.seek",
+      "elapsed_s": 0.0,
+      "detail": {
+        "command": "transport.seek",
+        "daw_error": "{'kind': 'invalid_args', 'message': 'ticks: expected integer'}"
+      }
+    },
+    "summary": "ERROR [invalid_args]: ticks: expected integer",
+    "tool": "zene_transport_seek",
+    "timeout_s": 30.0,
+    "engine_free": false
+  },
+  "step": 16
+}
+{
+  "kind": "tools_call",
+  "phase": "daw_errors",
+  "tool": "zene_no_such_tool",
+  "arguments": {},
+  "is_error": true,
+  "elapsed_s": 0.007,
+  "summary": "ERROR [not_found]: unknown tool 'zene_no_such_tool'; the DAW registers: zene_app_version, zene_arrangement_get_state, zene_audio_device_list, zene_audio_device_set, zene_automation_add_point, zene_automation_clear, zene_automation_get_state, zene_automation_mode_set, zene_automation_remove_point, zene_clip_add, zene_clip_delete, zene_clip_duplicate, zene_clip_move, zene_clip_resize, zene_clip_select, zene_clip_split, zene_control_commands_list, zene_control_ping, zene_control_quit, zene_control_redo, zene_control_surface_report, zene_control_transactions, zene_control_undo, zene_control_version, zene_dsp_get_state, zene_midi_device_list, zene_midi_learn_toggle, zene_mixer_add_channel, zene_mixer_get_state, zene_mixer_remove_channel, zene_mixer_set_pan, zene_mixer_set_volume, zene_note_add, zene_note_move, zene_note_remove, zene_note_resize, zene_note_select, zene_note_velocity_set, zene_plugin_bypass, zene_plugin_list, zene_plugin_load, zene_plugin_param_get, zene_plugin_param_set, zene_plugin_preset_list, zene_plugin_preset_load, zene_plugin_preset_save, zene_plugin_state_load, zene_plugin_state_save, zene_plugin_unload, zene_project_get_state, zene_project_open, zene_project_restore_revision, zene_project_save, zene_render_render, zene_roll_get_state, zene_script_list, zene_script_run, zene_settings_get, zene_settings_set, zene_telemetry_consent, zene_telemetry_status, zene_track_add, zene_track_get_state, zene_track_list, zene_track_remove, zene_track_rename, zene_track_set_arm, zene_track_set_mute, zene_track_set_solo, zene_transport_get_state, zene_transport_play, zene_transport_seek, zene_transport_set_tempo, zene_transport_stop",
+  "structured": {
+    "ok": false,
+    "error": {
+      "kind": "not_found",
+      "message": "unknown tool 'zene_no_such_tool'; the DAW registers: zene_app_version, zene_arrangement_get_state, zene_audio_device_list, zene_audio_device_set, zene_automation_add_point, zene_automation_clear, zene_automation_get_state, zene_automation_mode_set, zene_automation_remove_point, zene_clip_add, zene_clip_delete, zene_clip_duplicate, zene_clip_move, zene_clip_resize, zene_clip_select, zene_clip_split, zene_control_commands_list, zene_control_ping, zene_control_quit, zene_control_redo, zene_control_surface_report, zene_control_transactions, zene_control_undo, zene_control_version, zene_dsp_get_state, zene_midi_device_list, zene_midi_learn_toggle, zene_mixer_add_channel, zene_mixer_get_state, zene_mixer_remove_channel, zene_mixer_set_pan, zene_mixer_set_volume, zene_note_add, zene_note_move, zene_note_remove, zene_note_resize, zene_note_select, zene_note_velocity_set, zene_plugin_bypass, zene_plugin_list, zene_plugin_load, zene_plugin_param_get, zene_plugin_param_set, zene_plugin_preset_list, zene_plugin_preset_load, zene_plugin_preset_save, zene_plugin_state_load, zene_plugin_state_save, zene_plugin_unload, zene_project_get_state, zene_project_open, zene_project_restore_revision, zene_project_save, zene_render_render, zene_roll_get_state, zene_script_list, zene_script_run, zene_settings_get, zene_settings_set, zene_telemetry_consent, zene_telemetry_status, zene_track_add, zene_track_get_state, zene_track_list, zene_track_remove, zene_track_rename, zene_track_set_arm, zene_track_set_mute, zene_track_set_solo, zene_transport_get_state, zene_transport_play, zene_transport_seek, zene_transport_set_tempo, zene_transport_stop",
+      "retryable": false,
+      "origin": "daw",
+      "hint": "tools are generated from control.commands_list \u2014 call zene_commands for the live list"
+    },
+    "summary": "ERROR [not_found]: unknown tool 'zene_no_such_tool'; the DAW registers: zene_app_version, zene_arrangement_get_state, zene_audio_device_list, zene_audio_device_set, zene_automation_add_point, zene_automation_clear, zene_automation_get_state, zene_automation_mode_set, zene_automation_remove_point, zene_clip_add, zene_clip_delete, zene_clip_duplicate, zene_clip_move, zene_clip_resize, zene_clip_select, zene_clip_split, zene_control_commands_list, zene_control_ping, zene_control_quit, zene_control_redo, zene_control_surface_report, zene_control_transactions, zene_control_undo, zene_control_version, zene_dsp_get_state, zene_midi_device_list, zene_midi_learn_toggle, zene_mixer_add_channel, zene_mixer_get_state, zene_mixer_remove_channel, zene_mixer_set_pan, zene_mixer_set_volume, zene_note_add, zene_note_move, zene_note_remove, zene_note_resize, zene_note_select, zene_note_velocity_set, zene_plugin_bypass, zene_plugin_list, zene_plugin_load, zene_plugin_param_get, zene_plugin_param_set, zene_plugin_preset_list, zene_plugin_preset_load, zene_plugin_preset_save, zene_plugin_state_load, zene_plugin_state_save, zene_plugin_unload, zene_project_get_state, zene_project_open, zene_project_restore_revision, zene_project_save, zene_render_render, zene_roll_get_state, zene_script_list, zene_script_run, zene_settings_get, zene_settings_set, zene_telemetry_consent, zene_telemetry_status, zene_track_add, zene_track_get_state, zene_track_list, zene_track_remove, zene_track_rename, zene_track_set_arm, zene_track_set_mute, zene_track_set_solo, zene_transport_get_state, zene_transport_play, zene_transport_seek, zene_transport_set_tempo, zene_transport_stop",
+    "tool": "zene_no_such_tool"
+  },
+  "step": 17
+}
+{
+  "kind": "tools_call",
+  "phase": "proto",
+  "tool": "zene_mixer_get_state",
+  "arguments": {},
+  "is_error": true,
+  "elapsed_s": 0.005,
+  "summary": "ERROR [proto_mismatch]: the instance speaks control proto 1, the bridge requires proto 2",
+  "structured": {
+    "ok": false,
+    "error": {
+      "kind": "proto_mismatch",
+      "message": "the instance speaks control proto 1, the bridge requires proto 2",
+      "retryable": false,
+      "origin": "bridge",
+      "hint": "restart the bridge with `--proto <the instance's version>`",
+      "command": "mixer.get_state",
+      "elapsed_s": 0.0,
+      "detail": {
+        "instance_proto": 1,
+        "bridge_proto": 2,
+        "instance_version": "0.1.0-alpha.295+76e3639"
+      }
+    },
+    "summary": "ERROR [proto_mismatch]: the instance speaks control proto 1, the bridge requires proto 2",
+    "tool": "zene_mixer_get_state",
+    "timeout_s": 5.0,
+    "engine_free": false
+  },
+  "step": 18
+}
+{
+  "kind": "proto_mismatch",
+  "phase": "proto",
+  "error_kind": "proto_mismatch",
+  "bridge_message": "the instance speaks control proto 1, the bridge requires proto 2",
+  "daw_reply_to_proto99": {
+    "ok": false,
+    "error": {
+      "kind": "refused",
+      "message": "unsupported protocol version; this instance speaks proto 1"
+    }
+  },
+  "step": 19
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_project_open",
+  "arguments": {
+    "path": "/tmp/zene-undo-30tncwk9/agent-control-fixture.mmp"
+  },
+  "is_error": false,
+  "elapsed_s": 0.061,
+  "summary": "project.open: ok in 0.02s (error_count=0, errors=[], file=/tmp/zene-undo-30tncwk9/agent-control-fixture.mmp, format_upgraded=True)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_project_open",
+    "command": "project.open",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.015,
+    "result": {
+      "error_count": 0,
+      "errors": [],
+      "file": "/tmp/zene-undo-30tncwk9/agent-control-fixture.mmp",
+      "format_upgraded": true,
+      "ids_assigned": 2,
+      "loaded_with_errors": false,
+      "tempo": 140,
+      "track_count": 1
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "project.open: ok in 0.02s (error_count=0, errors=[], file=/tmp/zene-undo-30tncwk9/agent-control-fixture.mmp, format_upgraded=True)"
+  },
+  "step": 20
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_transport_set_tempo",
+  "arguments": {
+    "bpm": 128
+  },
+  "is_error": false,
+  "elapsed_s": 0.014,
+  "summary": "transport.set_tempo: ok in 0.01s (tempo=128)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_transport_set_tempo",
+    "command": "transport.set_tempo",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.006,
+    "result": {
+      "tempo": 128
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "transport.set_tempo: ok in 0.01s (tempo=128)"
+  },
+  "step": 21
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_transport_get_state",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.007,
+  "summary": "transport.get_state: ok in 0.00s (master_volume=100, paused=False, playing=False, position_ticks=0)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_transport_get_state",
+    "command": "transport.get_state",
+    "mutating": false,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "master_volume": 100,
+      "paused": false,
+      "playing": false,
+      "position_ticks": 0,
+      "tempo": 128
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "transport.get_state: ok in 0.00s (master_volume=100, paused=False, playing=False, position_ticks=0)"
+  },
+  "step": 22
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_control_transactions",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.008,
+  "summary": "control.transactions: ok in 0.00s (cap_bytes=262144, cap_records=100, capped=False, count=6)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_control_transactions",
+    "command": "control.transactions",
+    "mutating": false,
+    "engine_free": true,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "cap_bytes": 262144,
+      "cap_records": 100,
+      "capped": false,
+      "count": 6,
+      "evicted": 0,
+      "retained_bytes": 1609,
+      "transactions": [
+        {
+          "before": {
+            "previous_file": "",
+            "previous_sha256": ""
+          },
+          "bytes": 275,
+          "class": "irreversible",
+          "command": "project.open",
+          "inverse": {
+            "args": {
+              "path": ""
+            },
+            "op": "project.open"
+          },
+          "mechanism": "none: the displaced session is not snapshotted; only the file path and its hash are recorded, so the caller can see what it replaced. UNSAVED changes to the previous session are lost",
+          "reversible": false
+        },
+        {
+          "before": {
+            "count": 1
+          },
+          "bytes": 361,
+          "class": "true_inverse",
+          "command": "mixer.add_channel",
+          "inverse": {
+            "args": {
+              "channel": "ch-1"
+            },
+            "op": "mixer.remove_channel"
+          },
+          "mechanism": "action checkpoint: the recorded undo step deletes the channel this command created, through the same Mixer::deleteChannel path mixer.remove_channel uses; a fresh channel carries only defaults, so removing it restores the mixer exactly. The before-state records the channel count",
+          "reversible": true
+        },
+        {
+          "before": {
+            "channel": "ch-1",
+            "volume": 1
+          },
+          "bytes": 160,
+          "class": "true_inverse",
+          "command": "mixer.set_volume",
+          "inverse": {
+            "args": {
+              "channel": "ch-1",
+              "volume": 1
+            },
+            "op": "mixer.set_volume"
+          },
+          "mechanism": "ProjectJournal (MixerChannel volume model checkpoint)",
+          "reversible": true
+        },
+        {
+          "before": {
+            "file": "/tmp/zene-flow-tmq2sihe/saved.mmp",
+            "previous_revision_replaced": 0
+          },
+          "bytes": 329,
+          "class": "snapshot",
+          "command": "project.save",
+          "inverse": {
+            "applies": "command",
+            "args": {
+              "path": "/tmp/zene-flow-tmq2sihe/saved.mmp",
+              "revision": 0
+            },
+            "op": "project.restore_revision"
+          },
+          "mechanism": "file revision: the replaced file is kept as revision 0 of the named 'keep-3' policy and project.restore_revision restores it",
+          "reversible": true
+        },
+        {
+          "before": {
+            "previous_file": "/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp",
+            "previous_sha256": ""
+          },
+          "bytes": 373,
+          "class": "irreversible",
+          "command": "project.open",
+          "inverse": {
+            "args": {
+              "path": "/tmp/zene-flow-tmq2sihe/agent-control-fixture.mmp"
+            },
+            "op": "project.open"
+          },
+          "mechanism": "none: the displaced session is not snapshotted; only the file path and its hash are recorded, so the caller can see what it replaced. UNSAVED changes to the previous session are lost",
+          "reversible": false
+        },
+        {
+          "before": {
+            "tempo": 140
+          },
+          "bytes": 111,
+          "class": "true_inverse",
+          "command": "transport.set_tempo",
+          "inverse": {
+            "args": {
+              "bpm": 140
+            },
+            "op": "transport.set_tempo"
+          },
+          "mechanism": "ProjectJournal (Song checkpoint)",
+          "reversible": true
+        }
+      ]
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-csvjqtb9/zene.sock"
+    },
+    "summary": "control.transactions: ok in 0.00s (cap_bytes=262144, cap_records=100, capped=False, count=6)"
+  },
+  "step": 23
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_control_undo",
+  "arguments": {},
+  "is_error": true,
+  "elapsed_s": 0.165,
+  "summary": "ERROR [disconnected]: the instance closed the connection before replying (it exited or crashed mid-request)",
+  "structured": {
+    "ok": false,
+    "error": {
+      "kind": "disconnected",
+      "message": "the instance closed the connection before replying (it exited or crashed mid-request)",
+      "retryable": true,
+      "origin": "bridge",
+      "hint": "the instance exited or crashed mid-request; check it is still running and re-issue the call",
+      "command": "control.undo",
+      "elapsed_s": 0.156
+    },
+    "summary": "ERROR [disconnected]: the instance closed the connection before replying (it exited or crashed mid-request)",
+    "tool": "zene_control_undo",
+    "timeout_s": 30.0,
+    "engine_free": true
+  },
+  "step": 24
+}
+
+MCP E2E: 24 recorded exchanges; fixture socket 0.1s, engine ready 1.75s, 74 DAW commands

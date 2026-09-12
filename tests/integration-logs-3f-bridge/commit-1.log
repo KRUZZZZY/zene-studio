@@ -1,0 +1,5 @@
+[post-alpha/foreign-merge 4b48a18c8] tools(mcp-zene-control): meet the tools-scope bar — split by concern, decompose to CCN <= 10
+ 10 files changed, 919 insertions(+), 614 deletions(-)
+ create mode 100644 tools/mcp-zene-control/tests/mcp_fixture.py
+ create mode 100644 tools/mcp-zene-control/tests/test_mcp_errors.py
+ create mode 100644 tools/mcp-zene-control/tests/test_wire_client.py

@@ -1,0 +1,5 @@
+Switched to a new branch 'scratch/gate6-negative-control'
+[scratch/gate6-negative-control f2f80d987] scratch(gate6): negative control - an undeclared edit to an inherited file outside tools/ (DO NOT MERGE)
+ 1 file changed, 4 insertions(+)
+Switched to branch 'post-alpha/foreign-merge'
+Deleted branch scratch/gate6-negative-control (was f2f80d987).
