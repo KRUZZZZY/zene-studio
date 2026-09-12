@@ -27,6 +27,7 @@
 #define LMMS_SAMPLE_PLAY_HANDLE_H
 
 #include "Sample.h"
+#include "SampleWindow.h"
 #include "PlayHandle.h"
 
 namespace lmms
@@ -43,7 +44,14 @@ class LMMS_EXPORT SamplePlayHandle : public PlayHandle
 public:
 	SamplePlayHandle(Sample* sample, bool ownAudioBusHandle = true);
 	SamplePlayHandle( const QString& sampleFile );
+	//! Renders the clip's whole authored window from its start.
 	SamplePlayHandle( SampleClip* clip );
+	/*! Renders one snapshot of a clip's window, starting at `window.sourceIn`.
+	 *
+	 *  SampleTrack::play derives this from the transport position for each pass
+	 *  and never writes the clip, so a trim survives the pass (Slice 0 of task
+	 *  #611: docs/CLIP-CAPTURE-DESIGN.md §2.5, invariant I1). */
+	SamplePlayHandle( SampleClip* clip, const SampleWindow& window );
 	~SamplePlayHandle() override;
 
 	inline bool affinityMatters() const override
@@ -74,6 +82,10 @@ public:
 
 private:
 	Sample::PlaybackState m_state;
+	//! The source window this handle renders, snapshotted at construction: nothing
+	//! that happens to the clip or the Sample afterwards changes this handle's
+	//! length (Slice 0, invariant I1).
+	SampleWindow m_window;
 	f_cnt_t m_frame = 0;
 	Sample* m_sample = nullptr;
 	Track* m_track = nullptr;

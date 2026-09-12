@@ -621,6 +621,32 @@ deliberately** for that one file (26 lines over) with the reason recorded by `--
 in the merge commit, following the same trade the 2026-09-11 re-anchor made. The eight
 pre-existing entries were unchanged; the ratchet still fails any *other* new file over 500.
 
+**Re-anchored again on 2026-09-12 (merging `post-alpha/clip-slice0` into `post-alpha/integration`):**
+the new file `tests/src/tracks/SampleClipWindowTest.cpp` measures **511 lines** (11 over the
+target) and was in no baseline, because this merge is what registered it in
+`tests/fork-sources.txt`. A sibling lane's report claimed "gate 7 PASS" for that branch; it does
+not reproduce — measured on the merged tree, the gate was red on exactly this one file (the
+other nine were already grandfathered: 1169, 992, 880, 875, 714, 597, 549, 529, 526). The file
+is **one coherent QTest class**: twelve slots that all share a single nine-helper
+anonymous-namespace block (`makeTone`/`makeStep`/`makeToneClip`/`makeStepClip`/
+`drainPlayHandles`/`trimIn`/`trimOut`/`asNumber`) plus one RED-test provenance comment; ~45 of
+its lines are the mandatory GPL header and ~50 are the comments naming the defect the file
+exists to catch. Fitting the count would mean extracting the shared helpers into a new support
+header and adding a second test binary purely for the metric, and trimming is forbidden by
+`docs/CONVENTIONS.md` rule 4 — so it was grandfathered at its measured 511 lines via the same
+documented valve, taking the `src/core/CrashReporter.cpp` (526) trade one step further rather
+than inventing a new one:
+
+```
+bash tests/file-length-gate.sh --reanchor "<reason>"     # EXIT=0, fork scope
+  RE-ANCHORED: baseline rewritten from the current tree (10 file(s) over 500 lines)
+  new entry: tests/src/tracks/SampleClipWindowTest.cpp   511
+```
+
+The nine pre-existing entries are unchanged, and any *other* new fork file over 500 still fails:
+`file-length-gate.sh --check` → EXIT=0 afterwards, `--check --scope tools` and
+`--check --scope all` are untouched by this change.
+
 ## Gate 8: Token duplication (`duplication-gate.sh`) — 2026-09-09
 
 Source: the adopted code-quality ruleset requires "token duplication < 5% (jscpd)". The

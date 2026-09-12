@@ -12,6 +12,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/LoudnessReportTest.cpp
+	src/core/ClipSerialisationTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/MathTest.cpp
@@ -36,6 +37,7 @@ set(LMMS_TESTS
 	src/core/TwoTrackRecordingHarness.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
+	src/tracks/SampleClipWindowTest.cpp
 )
 
 # Offline stem separation tests (opt-in, see doc/STEM-SPLIT.md).

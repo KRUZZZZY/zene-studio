@@ -27,6 +27,8 @@
 
 #include <QDomElement>
 
+#include <vector>
+
 #include "EffectChain.h"
 #include "Mixer.h"
 #include "panning.h"
@@ -75,8 +77,17 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 {
 	bool played_a_note = false; // will be return variable
 
-
-	clipVector clips;
+	// Slice 0 of the clip-and-capture wave (task #611, docs/CLIP-CAPTURE-DESIGN.md
+	// §§2.1, 2.5, I1): the playback path READS the clip's authored window and never
+	// writes it. What a pass renders is derived here from the transport position and
+	// handed to the play handle as a snapshot, so a trim survives the pass that
+	// used to overwrite it.
+	struct ScheduledClip
+	{
+		SampleClip* clip;
+		SampleWindow window;
+	};
+	std::vector<ScheduledClip> clips;
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
@@ -90,13 +101,15 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			return false;
 		}
-		clips.push_back(sClip);
+		clips.push_back({sClip, sClip->sampleWindow()});
 		if (trackContainer() == Engine::patternStore())
 		{
 			auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
 			f_cnt_t sampleStart = bufferFramesPerTick * _start;
 			pattern_track = PatternTrack::findPatternTrack(_clip_num);
-			sClip->setSampleStartFrame(sampleStart);
+			// this pass starts inside the source; the clip's own window still
+			// bounds it (was: sClip->setSampleStartFrame(), a model write)
+			clips.back().window = { sampleStart, sClip->sampleWindow().sourceOut };
 			sClip->setIsPlaying(true);
 			setPlaying(true);
 		}
@@ -113,19 +126,13 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			{
 				if( sClip->isPlaying() == false && _start >= (sClip->startPosition() + sClip->startTimeOffset()) )
 				{
-					auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
-					f_cnt_t sampleStart = bufferFramesPerTick * ( _start - sClip->startPosition() - sClip->startTimeOffset() );
-					f_cnt_t clipFrameLength = bufferFramesPerTick * ( sClip->endPosition() - sClip->startPosition() - sClip->startTimeOffset() );
-					f_cnt_t sampleBufferLength = sClip->sample().sampleSize();
-					//if the Clip smaller than the sample length we play only until Clip end
-					//else we play the sample to the end but nothing more
-					f_cnt_t samplePlayLength = clipFrameLength > sampleBufferLength ? sampleBufferLength : clipFrameLength;
-					//we only play within the sampleBuffer limits
-					if( sampleStart < sampleBufferLength )
+					// where this pass begins and ends inside the clip's window
+					const auto windowStart = sClip->sourceFrameAt( _start );
+					const auto windowEnd = sClip->sourceFrameAt( sClip->endPosition() );
+					//we only play within the clip's window
+					if( windowStart < windowEnd )
 					{
-						sClip->setSampleStartFrame( sampleStart );
-						sClip->setSamplePlayLength( samplePlayLength );
-						clips.push_back( sClip );
+						clips.push_back({sClip, { windowStart, windowEnd }});
 						sClip->setIsPlaying( true );
 						nowPlaying = true;
 					}
@@ -140,9 +147,9 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		setPlaying(nowPlaying);
 	}
 
-	for (const auto& clip : clips)
+	for (const auto& scheduled : clips)
 	{
-		auto st = dynamic_cast<SampleClip*>(clip);
+		auto st = scheduled.clip;
 		if( !st->isMuted() )
 		{
 			PlayHandle* handle;
@@ -157,7 +164,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			}
 			else
 			{
-				auto smpHandle = new SamplePlayHandle(st);
+				auto smpHandle = new SamplePlayHandle(st, scheduled.window);
 				smpHandle->setPatternTrack(pattern_track);
 				handle = smpHandle;
 			}

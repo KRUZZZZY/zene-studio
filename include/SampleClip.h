@@ -28,6 +28,7 @@
 #include <memory>
 #include "Clip.h"
 #include "Sample.h"
+#include "SampleWindow.h"
 
 namespace lmms
 {
@@ -72,8 +73,30 @@ public:
 	}
 
 	TimePos sampleLength() const;
+
+	/*! The clip's authored window into its source audio (design §2.2).
+	 *
+	 *  This is the state a trim, a slip or a split authors. The playback path
+	 *  reads it and never writes it: a playback pass derives the window it renders
+	 *  and hands it to the play handle as a snapshot (I1). */
+	SampleWindow sampleWindow() const { return m_window; }
+
+	/*! Authors the window; the single place the well-formedness rule (I4) lives.
+	 *
+	 *  An edit that would leave the window empty is rejected outright. A window
+	 *  that is not the whole buffer is a manual edit, so it also clears
+	 *  auto-resize (design §2.6 / OQ-4), which is what keeps it stable across a
+	 *  tempo change and a reload. */
+	void setSampleWindow(const SampleWindow& window);
+
+	//! The legacy absolute setters: the window's start frame, and its END frame
+	//! (`length` is a source frame index, as it always was - not a frame count).
 	void setSampleStartFrame( f_cnt_t startFrame );
 	void setSamplePlayLength( f_cnt_t length );
+
+	f_cnt_t sourceFrameAt(TimePos timelinePos) const override;
+	TimePos timelinePosAt(f_cnt_t sourceFrame) const override;
+
 	void setStartTimeOffset(const TimePos& startTimeOffset) override;
 	gui::ClipView * createView( gui::TrackView * _tv ) override;
 
@@ -99,9 +122,17 @@ protected:
 
 private:
 	Sample m_sample;
+	//! The authored window (design §2.2, Slice 0). Written only by this class -
+	//! never by the playback path - and mirrored into Sample's render-time frame
+	//! fields so drawing and Sample::render see it.
+	SampleWindow m_window;
 	BoolModel m_recordModel;
 	bool m_isPlaying;
 	int m_startFrameOffset;
+
+	//! Points the window (and Sample's frame fields) at the whole buffer; called
+	//! wherever the source buffer is replaced.
+	void resetWindowToFullBuffer();
 
 	friend class gui::SampleClipView;
 
