@@ -1,0 +1,6 @@
+chore(ci): keep the commit MESSAGES in the evidence dir, not the commit transcripts
+
+The transcripts of my own `git commit` runs record nothing about the product and
+one of them was untracked, which is exactly the dirty-tree state the brief warns
+about. The evidence dir keeps commit-msg-1.txt / commit-msg-2.txt (like the
+other integration-logs-* dirs); the commits themselves are in git log.
