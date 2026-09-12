@@ -220,7 +220,6 @@ set_tests_properties(StemExportTest PROPERTIES
 # dialog renders blank.
 set_tests_properties(PluginLogoResourceTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # Part C (task #585) - behaviour-preservation harness for the AudioPorts
