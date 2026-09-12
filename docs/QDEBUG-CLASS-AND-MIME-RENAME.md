@@ -239,7 +239,7 @@ All logs under `tests/integration-logs-qdebug/`; every exit code recorded unpipe
 | step | command | result |
 |---|---|---|
 | Qt5 emulation, self-test | `run.sh` → `00-shadow.log`, `01-selftest.log` | **PASS** — reproduces the CI error verbatim; one include is the difference |
-| Qt5 emulation, pre-fix class sweep | `qdebug_emulate.py --all` on the pre-fix tree → `03-prefix-sweep-class.log` | 84 TUs swept, **5 fail** with the CI error text, 79 clean, 22 inconclusive (no build had run yet) |
+| Qt5 emulation, pre-fix class sweep | `qdebug_emulate.py --all` on the pre-fix tree → `03-prefix-sweep-class.log` | 84 TUs swept, **5 fail** with the CI error text, 57 clean, 22 inconclusive (no build had run yet) |
 | Qt5 emulation, post-fix class sweep | `run.sh build` → `11-class-sweep.log` | **sweep EXIT=0** — 84 TUs, **0 fail**, 1 inconclusive (`MidiClipView.cpp`'s `QSet<Track*>` incomplete type, a shadow side-effect, explicitly not counted as a pass) |
 | build | `cmake --build build -j2` → `10-build.log` | **BUILD_EXIT=0**, 0 `error:` lines |
 | tests | `cd build/tests && ctest -j2` → `12-ctest.log` | **CTEST_EXIT=0 — 100% tests passed, 0 tests failed out of 86** |
