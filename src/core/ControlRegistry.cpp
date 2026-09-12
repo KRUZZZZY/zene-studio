@@ -23,7 +23,6 @@
 
 #include "ControlRegistry.h"
 
-#include <cmath>
 
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -31,7 +30,9 @@
 #include <QMetaObject>
 #include <QThread>
 
+#include "AudioEngine.h"
 #include "Engine.h"
+#include "HeadlessMode.h"
 #include "Mixer.h"
 #include "Song.h"
 
@@ -79,118 +80,6 @@ ControlResult ControlResult::failure(ControlErrorKind kind, const QString& messa
 // properties, additionalProperties, minimum, maximum, enum)
 // ---------------------------------------------------------------------------
 
-static bool typeMatches(const QJsonValue& value, const QString& type)
-{
-	if (type == QLatin1String("string")) { return value.isString(); }
-	if (type == QLatin1String("number")) { return value.isDouble(); }
-	if (type == QLatin1String("integer"))
-	{
-		return value.isDouble() && std::floor(value.toDouble()) == value.toDouble();
-	}
-	if (type == QLatin1String("boolean")) { return value.isBool(); }
-	if (type == QLatin1String("object")) { return value.isObject(); }
-	if (type == QLatin1String("array")) { return value.isArray(); }
-	return true; // an unknown type never rejects a value
-}
-
-static QString pathLabel(const QString& path)
-{
-	return path.isEmpty() ? QStringLiteral("args") : path;
-}
-
-static QString checkType(const QJsonValue& value, const QJsonObject& spec, const QString& path)
-{
-	const QString type = spec.value(QStringLiteral("type")).toString();
-	if (type.isEmpty() || typeMatches(value, type)) { return QString(); }
-	return QStringLiteral("%1: expected %2").arg(pathLabel(path), type);
-}
-
-static QString checkRange(const QJsonValue& value, const QJsonObject& spec, const QString& path)
-{
-	if (!value.isDouble()) { return QString(); }
-	const QJsonValue minimum = spec.value(QStringLiteral("minimum"));
-	if (minimum.isDouble() && value.toDouble() < minimum.toDouble())
-	{
-		return QStringLiteral("%1: %2 is below the minimum %3")
-			.arg(pathLabel(path), QString::number(value.toDouble()), QString::number(minimum.toDouble()));
-	}
-	const QJsonValue maximum = spec.value(QStringLiteral("maximum"));
-	if (maximum.isDouble() && value.toDouble() > maximum.toDouble())
-	{
-		return QStringLiteral("%1: %2 is above the maximum %3")
-			.arg(pathLabel(path), QString::number(value.toDouble()), QString::number(maximum.toDouble()));
-	}
-	return QString();
-}
-
-static QString checkEnum(const QJsonValue& value, const QJsonObject& spec, const QString& path)
-{
-	if (!spec.contains(QStringLiteral("enum"))) { return QString(); }
-	for (const QJsonValue& allowed : spec.value(QStringLiteral("enum")).toArray())
-	{
-		if (allowed == value) { return QString(); }
-	}
-	return QStringLiteral("%1: value not in the allowed set").arg(pathLabel(path));
-}
-
-static QString validateValue(const QJsonValue& value, const QJsonObject& spec, const QString& path);
-
-//! Validates the properties present in \p object; empty string means OK.
-static QString checkProperties(const QJsonObject& object, const QJsonObject& properties,
-	bool noAdditional, const QString& path)
-{
-	for (auto it = object.begin(); it != object.end(); ++it)
-	{
-		if (!properties.contains(it.key()))
-		{
-			if (noAdditional)
-			{
-				return QStringLiteral("%1: unexpected property '%2'").arg(pathLabel(path), it.key());
-			}
-			continue;
-		}
-		const QString subPath = path.isEmpty() ? it.key() : path + QLatin1Char('.') + it.key();
-		const QString reason = validateValue(it.value(), properties.value(it.key()).toObject(), subPath);
-		if (!reason.isEmpty()) { return reason; }
-	}
-	return QString();
-}
-
-static QString checkObjectMembers(const QJsonValue& value, const QJsonObject& spec, const QString& path)
-{
-	if (!value.isObject() || !spec.contains(QStringLiteral("properties"))) { return QString(); }
-	const QJsonObject object = value.toObject();
-	for (const QJsonValue& name : spec.value(QStringLiteral("required")).toArray())
-	{
-		if (!object.contains(name.toString()))
-		{
-			return QStringLiteral("%1: missing required property '%2'")
-				.arg(pathLabel(path), name.toString());
-		}
-	}
-	const bool noAdditional = spec.contains(QStringLiteral("additionalProperties")) &&
-		!spec.value(QStringLiteral("additionalProperties")).toBool(true);
-	return checkProperties(object, spec.value(QStringLiteral("properties")).toObject(), noAdditional, path);
-}
-
-static QString validateValue(const QJsonValue& value, const QJsonObject& spec, const QString& path)
-{
-	QString reason = checkType(value, spec, path);
-	if (reason.isEmpty()) { reason = checkRange(value, spec, path); }
-	if (reason.isEmpty()) { reason = checkEnum(value, spec, path); }
-	if (reason.isEmpty()) { reason = checkObjectMembers(value, spec, path); }
-	return reason;
-}
-
-QString ControlRegistry::validateArgs(const QJsonObject& schema, const QJsonObject& args)
-{
-	if (schema.isEmpty()) { return QString(); }
-	if (!args.isEmpty() || schema.contains(QStringLiteral("required")))
-	{
-		return validateValue(QJsonValue(args), schema, QString());
-	}
-	return QString();
-}
 
 // ---------------------------------------------------------------------------
 // registry
@@ -202,22 +91,10 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	m_transactions(),
 	m_headless(false)
 {
-	// Headless = no usable display. Two sources, because the registry can be
-	// created before Qt's platform plugin reports its name.
-	const QByteArray platform = qgetenv("QT_QPA_PLATFORM");
-	if (platform.contains("offscreen") || platform.contains("minimal"))
-	{
-		m_headless = true;
-	}
-	if (auto* guiApp = qobject_cast<QGuiApplication*>(QCoreApplication::instance()))
-	{
-		const QString name = guiApp->platformName();
-		if (name == QLatin1String("offscreen") || name == QLatin1String("minimal") ||
-			name == QLatin1String("vnc"))
-		{
-			m_headless = true;
-		}
-	}
+	// Headless = no display a human could answer a dialog on. One place decides
+	// (HeadlessMode.h), because MainWindow asks the same question before the
+	// registry exists.
+	m_headless = isHeadlessRun();
 }
 
 ControlRegistry* ControlRegistry::instance()
@@ -270,6 +147,12 @@ void ControlRegistry::setReady(bool ready)
 	s_ready = ready;
 }
 
+bool ControlRegistry::startupComplete()
+{
+	return s_ready;
+}
+
+
 QString ControlRegistry::checkRequires(const ControlCommand& command) const
 {
 	for (const QString& requirement : command.requiresDecl)
@@ -284,10 +167,14 @@ QString ControlRegistry::checkRequires(const ControlCommand& command) const
 		}
 		if (requirement == QLatin1String("device"))
 		{
-			if (Engine::audioEngine() != nullptr && Engine::audioEngine()->audioDevStartFailed())
+			AudioEngine* audio = Engine::audioEngine();
+			if (audio != nullptr && audio->audioDevStartFailed())
 			{
-				return QStringLiteral("command '%1' requires an audio device (the device failed to start)")
-					.arg(command.id);
+				return QStringLiteral("command '%1' requires an audio device: the configured device "
+					"'%2' failed to open (%3), so this instance is running with '%4', which produces "
+					"no sound output")
+					.arg(command.id, audio->audioDevRequestName(), audio->audioDevStartReason(),
+						audio->audioDevName());
 			}
 		}
 	}
@@ -330,8 +217,12 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 
 	if (cmd->requiresEngine && !isEngineReady())
 	{
+		// Carry the reason (task #626): a bare 'busy' left a client with no way
+		// to tell "still starting" from "your audio device failed" - the agent
+		// surface contract says every failure is typed AND explained.
+		const ReadinessReport state = readinessReport();
 		return ControlResult::failure(ControlErrorKind::Busy,
-			QStringLiteral("the engine is not initialised yet"));
+			QStringLiteral("the engine is not addressable yet [%1]: %2").arg(state.code, state.message));
 	}
 
 	const std::function<ControlResult(const QJsonObject&)> handler = cmd->handler;

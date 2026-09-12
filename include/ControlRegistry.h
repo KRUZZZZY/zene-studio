@@ -37,6 +37,8 @@
 
 #include "lmms_export.h"
 
+class QTimer;
+
 namespace lmms
 {
 
@@ -136,14 +138,71 @@ public:
 	//! re-enter the engine while the application is still starting up.
 	static bool isEngineReady();
 	static void setReady(bool ready);
+	//! True once startup has finished (the registry has been told the model is
+	//! up), whether or not an engine came with it. readinessReport() uses it to
+	//! tell "still starting" from "started without an engine".
+	static bool startupComplete();
+
+	//! What a client needs to understand a `busy` answer (task #626): whether the
+	//! engine is addressable, and when it is not, WHY. `code` is a stable reason
+	//! code and `message` is actionable. The audio fields are filled from the
+	//! engine's own device state, so "the configured device failed to open" can
+	//! never be reported as a bare false.
+	//!
+	//! Reason codes (closed set):
+	//!   engine_starting      - startup has not finished; poll control.ping
+	//!   audio_device_failed  - the configured device could not open; the engine
+	//!                          fell back to the dummy device and will be
+	//!                          addressable, but nothing is audible
+	//!   engine_missing       - startup finished without an engine (fatal)
+	//!   control_unsupported  - the instance was not started with a usable config
+	struct ReadinessReport
+	{
+		bool ready = false;
+		QString code;
+		QString message;
+		bool audioStarted = true;
+		QString requestedDevice;
+		QString actualDevice;
+	};
+	static ReadinessReport readinessReport();
+
+	//! How the control surface answers the questions the GUI would ask a human.
+	//! Ask is the unchanged interactive behaviour; control.quit sets one of the
+	//! others so the shutdown completes with nobody there to click (task #626).
+	enum class QuitPromptAnswer
+	{
+		Ask,      //!< ask a human (default)
+		Discard,  //!< answer the "project was modified" question with Discard
+		Save,     //!< answer it with Save
+	};
+
+	//! Record the shutdown intent and, once the instance is ready, ask the
+	//! application to quit through its normal path. A request that arrives while
+	//! the application is still starting up is remembered: main() applies it
+	//! after startup with applyPendingQuit(), so a client that connects at once
+	//! and quits still stops the process.
+	static void requestQuit(QuitPromptAnswer answer);
+	static bool quitPending();
+	static QuitPromptAnswer quitPromptAnswer();
+	static void setQuitPromptAnswer(QuitPromptAnswer answer);
+	//! Apply a quit requested before readiness. Returns true when it did.
+	static bool applyPendingQuit();
+	//! Stop the last-resort guard: main() calls this the moment the event loop
+	//! returns, so a slow but healthy teardown is never force-exited.
+	static void cancelShutdownGuard();
+
+	//! Milliseconds the last-resort shutdown guard waits before forcing an exit.
+	//! Kept deliberately long: it must never fire on a healthy shutdown.
+	static constexpr int ShutdownGuardMs = 10000;
 
 	void recordTransaction(const Transaction& tx);
 	QJsonArray transactions() const;
 	void clearTransactions();
 
-	//! Run by control.quit's watchdog when the event loop does not stop on its
-	//! own: the control socket unlinks itself here so the shutdown contract
-	//! ("the socket file is removed on exit") holds either way.
+	//! Run by the shutdown path (and by the last-resort guard) so the control
+	//! socket unlinks itself whatever route the process leaves by: the shutdown
+	//! contract is "the socket file is removed on exit".
 	void addShutdownHook(std::function<void()> hook);
 	void runShutdownHooks();
 
@@ -151,8 +210,16 @@ private:
 	explicit ControlRegistry(QObject* parent = nullptr);
 	QString checkRequires(const ControlCommand& command) const;
 
+	//! Ask the application to quit through its normal path and arm the
+	//! last-resort guard. Called by requestQuit() (immediately) and by
+	//! applyPendingQuit() (after startup, for a request that arrived too early).
+	static void scheduleQuit();
+
 	static ControlRegistry* s_instance;
 	static bool s_ready;
+	static bool s_quitPending;
+	static QuitPromptAnswer s_quitAnswer;
+	static QTimer* s_quitGuard;
 
 	QHash<QString, ControlCommand> m_commands;
 	QVector<Transaction> m_transactions;

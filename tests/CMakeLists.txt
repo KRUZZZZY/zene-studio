@@ -634,3 +634,55 @@ if(PYTHON3_EXECUTABLE)
 else()
 	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
 endif()
+
+# ---------------------------------------------------------------------------
+# Task #626: the shutdown and readiness defects of the control surface.
+#
+# ControlShutdown         - a clean shutdown for BOTH reproductions (undo/redo
+#                           leaves the project modified -> the quit prompt used to
+#                           block; an audio device that cannot open -> the startup
+#                           audio dialog used to block before app->exec()).
+# ControlReadiness        - connects BEFORE readiness and asserts the documented
+#                           order: connect -> poll control.ping -> wait for
+#                           engine_ready -> issue engine commands.
+# ControlNoAudioDevice    - a started instance with no usable audio device reports
+#                           the reason instead of answering `busy` forever.
+# ControlNegativeControl  - proves each of those can fail: the pre-fix artefacts
+#                           and real SIGKILL/SIGSTOP symptoms must be detected, so
+#                           none of the checks above is a tautology.
+#
+# All four are bounded by ctest's TIMEOUT and by deadlines inside each script: a
+# hang counts as a failure, never as a wait.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlShutdown
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-shutdown.py
+			$<TARGET_FILE:lmms>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+	)
+	add_test(NAME ControlReadiness
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-readiness.py
+			$<TARGET_FILE:lmms>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+	)
+	add_test(NAME ControlNoAudioDevice
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-no-audio-device.py
+			$<TARGET_FILE:lmms>
+	)
+	add_test(NAME ControlNegativeControl
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
+			$<TARGET_FILE:lmms>
+	)
+	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
+		ControlNegativeControl PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 420
+	)
+else()
+	message(STATUS "python3 not found: the #626 shutdown/readiness tests are not registered")
+endif()
+

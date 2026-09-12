@@ -1004,9 +1004,26 @@ int main( int argc, char * * argv )
 	if( controlServer )
 	{
 		controlServer->registry()->setReady( true );
+		// A client may have asked to quit before startup finished (the socket is
+		// up first, by design). Apply it now that the normal shutdown path - and
+		// the main event loop - actually exist (task #626).
+		ControlRegistry::applyPendingQuit();
 	}
 
 	const int ret = app->exec();
+
+	// The loop returned: the shutdown is doing its work, so disarm the
+	// last-resort guard (it must only ever catch a shutdown that never returns).
+	ControlRegistry::cancelShutdownGuard();
+
+	// Unlink the control socket here rather than at the end of main: the shutdown
+	// contract is "gone on exit", and this way it is gone before the engine
+	// teardown, which the agent may be watching (task #626).
+	if( controlServer )
+	{
+		controlServer->close();
+	}
+
 	delete app;
 
 	if( destroyEngine )
