@@ -1,0 +1,67 @@
+=== local-ci: reproducing .github/workflows/build.yml :: linux-x86_64 ===
+machine     : Linux x86_64, Ubuntu 24.04.4 LTS
+compiler    : g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cmake       : cmake version 3.28.3
+ccache      : /home/kruzzzzy/.local/bin/ccache
+build dir   : build (jobs=4, ctest -j2)
+CI CMAKE_OPTS: -DUSE_WERROR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON -DWANT_VST3=ON -DWANT_CLAP=ON
+qt flags    : -DWANT_QT6=ON
+
+--- [0/3] provision the pinned VST3 SDK and CLAP headers (the CI step) ---
+  both checkouts already present in build; verifying they are the pins
+provision EXIT=0   (log: build/provision.log)
+  VST3 SDK: already at v3.8.1_build_84 (3cdf9ca5d) in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/vst3sdk — nothing to fetch
+  CLAP: already at 1.2.10 (195b42a00) in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/clap — nothing to fetch
+    VST3 SDK v3.8.1_build_84 (3cdf9ca5d, MIT)  -> /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/vst3sdk
+    CLAP     1.2.10 (195b42a00, MIT)  -> /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/clap
+--- [1/3] configure (cmake -S . -B build ...) ---
+configure EXIT=0   (log: build/configure.log)
+--- [2/3] build (cmake --build build -j4) ---
+build EXIT=0   (log: build/build.log)
+--- [3/3] ctest (from build/tests, -j2) ---
+ctest EXIT=8   (log: build/ctest.log)
+ctest totals: 99% tests passed, 1 tests failed out of 86
+--- ctest failed; last 30 lines: ---
+   transport.seek               ok            0.0s  args={"ticks": 0}
+   transport.set_tempo          ok            0.0s  args={"bpm": 120}
+   transport.stop               ok            0.0s  args={}
+
+agent_surface: 46 reflected, 0 exempt (generated menus)
+  reflection : 3 registered, 43 unregistered (42 grandfathered, 1 new)
+  ratchet    : baseline 42 entries, 0 stale
+  reverse    : 72 commands, 72 swept, 0 allowlisted
+  budget     : 2.8 s of 120 s
+
+---- 1 problem(s) ----
+FAIL: NEW action without a registered command: 'menu:Help/Telemetry - what we send...' (surface=menu container=Help)
+
+FAIL: agent surface gate (1 problem(s))
+
+      Start 84: ControlHeadlessProjectOpen
+83/86 Test #84: ControlHeadlessProjectOpen ........   Passed    1.86 sec
+      Start 85: ControlHeadlessWorkingDirectory
+84/86 Test #85: ControlHeadlessWorkingDirectory ...   Passed    1.84 sec
+      Start 86: ControlHeadlessNoAudioDevice
+85/86 Test #86: ControlHeadlessNoAudioDevice ......   Passed    3.88 sec
+86/86 Test #82: ControlNegativeControl ............   Passed   11.18 sec
+
+99% tests passed, 1 tests failed out of 86
+
+Total Test time (real) =  62.83 sec
+
+The following tests FAILED:
+	 83 - agent_surface (Failed)
+Errors while running CTest
+
+=== job coverage on this machine ===
+linux-x86_64: REPRODUCED
+  run: configure=0 build=0 ctest=8 — a failing step here is a REAL failure of the code, not a machine limit
+  deviation: Qt5 development files not found: added -DWANT_QT6=ON (CI's runner installs qtbase5-dev; this box has Qt6 only)
+linux-arm64: NOT-REPRODUCIBLE-HERE (x86_64 host; needs ubuntu-24.04-arm runner or an aarch64 toolchain)
+mingw64: NOT-REPRODUCIBLE-HERE (no x86_64-w64-mingw32 cross toolchain; job uses vcpkg + cmake/toolchains/x64-mingw-vcpkg.cmake)
+macos-x86_64: NOT-REPRODUCIBLE-HERE (Darwin toolchain + Xcode SDK required; Darwin-only libc++/std::filesystem floors cannot be emulated)
+macos-arm64: NOT-REPRODUCIBLE-HERE (Darwin toolchain + Xcode SDK required; also brew ld search-path defaults)
+msvc-x64: NOT-REPRODUCIBLE-HERE (MSVC toolchain required: /WX, no libm, import-library semantics)
+windows-arm64: NOT-REPRODUCIBLE-HERE (Windows 11 ARM64 + msys2 CLANGARM64 required; CPack/NSIS path handling is Windows-specific)
+
+local-ci: overall exit=1 (0 = every executed step passed)

@@ -1,0 +1,108 @@
+  CMDN-REPORT.md                                added= 181  HEAD-ABSENT (a genuine addition)
+  CMDN-TRANSCRIPT.md                            added= 203  HEAD-ABSENT (a genuine addition)
+  CMakeLists.txt                                delta-added=   1 in-HEAD=   1 substring=  0 RESIDUE=0
+  docs/A16-REVERSIBILITY.md                     added= 378  HEAD-ABSENT (a genuine addition)
+  docs/VERSIONING.md                            added=  59  HEAD-ABSENT (a genuine addition)
+  include/AudioEngine.h                         delta-added=  16 in-HEAD=   4 substring=  0 RESIDUE=12
+  include/ControlAutomationSupport.h            added= 136  HEAD-ABSENT (a genuine addition)
+  include/ControlDeviceSupport.h                added= 215  HEAD-ABSENT (a genuine addition)
+  include/ControlEdit.h                         added= 166  HEAD-ABSENT (a genuine addition)
+  include/ControlRegistry.h                     added= 327  HEAD-ABSENT (a genuine addition)
+  include/ControlReversibility.h                added= 173  HEAD-ABSENT (a genuine addition)
+  include/ControlServer.h                       added= 100  HEAD-ABSENT (a genuine addition)
+  include/ControlVocabulary.h                   added= 106  HEAD-ABSENT (a genuine addition)
+  include/Effect.h                              delta-added=   9 in-HEAD=   3 substring=  0 RESIDUE=6
+  include/EffectChain.h                         delta-added=   7 in-HEAD=   1 substring=  0 RESIDUE=6
+  include/MidiLearnGui.h                        delta-added=   1 in-HEAD=   0 substring=  0 RESIDUE=1
+  include/ProjectIds.h                          added=  88  HEAD-ABSENT (a genuine addition)
+  include/ProjectJournal.h                      delta-added=  88 in-HEAD=  11 substring=  7 RESIDUE=70
+  include/ProjectRevisions.h                    added=  89  HEAD-ABSENT (a genuine addition)
+  include/Song.h                                delta-added=  14 in-HEAD=   4 substring=  0 RESIDUE=10
+  include/Track.h                               delta-added=  19 in-HEAD=   4 substring=  2 RESIDUE=13
+  include/UnattendedRun.h                       added=  50  HEAD-ABSENT (a genuine addition)
+  plugins/LadspaEffect/LadspaEffect.cpp         delta-added=  48 in-HEAD=  20 substring=  4 RESIDUE=24
+  plugins/MidiImport/MidiImport.cpp             delta-added=   5 in-HEAD=   0 substring=  0 RESIDUE=5
+  src/core/AudioEngine.cpp                      delta-added=  15 in-HEAD=   0 substring=  0 RESIDUE=15
+  src/core/CMakeLists.txt                       delta-added=  39 in-HEAD=   0 substring=  0 RESIDUE=39
+  src/core/ConfigManager.cpp                    delta-added=  10 in-HEAD=   2 substring=  1 RESIDUE=7
+  src/core/ControlAutomationSupport.cpp         added= 336  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsArrangement.cpp       added= 465  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsArrangementState.cpp  added= 133  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsAutomation.cpp        added= 220  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsAutomationEdit.cpp    added= 272  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsClip.cpp              added= 461  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsControl.cpp           added= 406  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsDsp.cpp               added= 177  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsMixer.cpp             added= 296  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsNotes.cpp             added= 474  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPlugin.cpp            added= 440  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPluginParams.cpp      added= 242  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPluginPreset.cpp      added= 315  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPluginState.cpp       added= 231  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsProject.cpp           added= 396  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsProjectFiles.cpp      added= 269  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsScript.cpp            added= 307  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsSettings.cpp          added= 474  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsSurface.cpp           added= 325  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsTransport.cpp         added= 293  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceCatalogue.cpp           added= 183  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceHosted.cpp              added= 271  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceState.cpp               added= 228  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceSupport.cpp             added= 456  HEAD-ABSENT (a genuine addition)
+  src/core/ControlEditSupport.cpp               added= 420  HEAD-ABSENT (a genuine addition)
+  src/core/ControlRegistry.cpp                  added= 467  HEAD-ABSENT (a genuine addition)
+  src/core/ControlReversibility.cpp             added= 127  HEAD-ABSENT (a genuine addition)
+  src/core/ControlReversibilityTable.cpp        added= 432  HEAD-ABSENT (a genuine addition)
+  src/core/ControlSchema.cpp                    added= 153  HEAD-ABSENT (a genuine addition)
+  src/core/ControlServer.cpp                    added= 398  HEAD-ABSENT (a genuine addition)
+  src/core/ControlSession.cpp                   added= 174  HEAD-ABSENT (a genuine addition)
+  src/core/ControlVocabulary.cpp                added= 157  HEAD-ABSENT (a genuine addition)
+  src/core/DataFile.cpp                         delta-added=  22 in-HEAD=   8 substring=  2 RESIDUE=12
+  src/core/ImportFilter.cpp                     delta-added=  33 in-HEAD=   8 substring= 12 RESIDUE=13
+  src/core/PeakController.cpp                   delta-added=  19 in-HEAD=   4 substring=  7 RESIDUE=8
+  src/core/Plugin.cpp                           delta-added=  15 in-HEAD=   5 substring=  1 RESIDUE=9
+  src/core/ProjectIds.cpp                       added=  85  HEAD-ABSENT (a genuine addition)
+  src/core/ProjectJournal.cpp                   delta-added= 173 in-HEAD=  57 substring= 13 RESIDUE=103
+  src/core/ProjectRevisions.cpp                 added= 215  HEAD-ABSENT (a genuine addition)
+  src/core/SampleBuffer.cpp                     delta-added=   5 in-HEAD=   0 substring=  0 RESIDUE=5
+  src/core/Song.cpp                             delta-added=  79 in-HEAD=  17 substring=  0 RESIDUE=62
+  src/core/Track.cpp                            delta-added=  50 in-HEAD=  11 substring=  1 RESIDUE=38
+  src/core/TrackContainer.cpp                   delta-added=   6 in-HEAD=   0 substring=  0 RESIDUE=6
+  src/core/UnattendedRun.cpp                    added=  81  HEAD-ABSENT (a genuine addition)
+  src/core/main.cpp                             delta-added=  85 in-HEAD=  24 substring=  4 RESIDUE=57
+  src/gui/GuiApplication.cpp                    delta-added=  37 in-HEAD=   3 substring= 12 RESIDUE=22
+  src/gui/MainWindow.cpp                        delta-added=  98 in-HEAD=  25 substring=  9 RESIDUE=64
+  tests/CMakeLists.txt                          delta-added= 168 in-HEAD=  32 substring=  5 RESIDUE=131
+  tests/agent-surface-allowlist.txt             added=  17  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-baseline.txt              added=  49  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-exempt.txt                added=  21  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-gate.py                   added= 496  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-negative-control.md       added= 206  HEAD-ABSENT (a genuine addition)
+  tests/agent_surface_lib.py                    added= 463  HEAD-ABSENT (a genuine addition)
+  tests/all-sources.txt                         delta-added=   1 in-HEAD=   0 substring=  0 RESIDUE=1
+  tests/control-headless-no-audio-device.py     added= 182  HEAD-ABSENT (a genuine addition)
+  tests/control-headless-project-open.py        added= 216  HEAD-ABSENT (a genuine addition)
+  tests/control-headless-working-directory.py   added= 148  HEAD-ABSENT (a genuine addition)
+  tests/control-negative-control.py             added= 277  HEAD-ABSENT (a genuine addition)
+  tests/control-no-audio-device.py              added= 156  HEAD-ABSENT (a genuine addition)
+  tests/control-readiness.py                    added= 160  HEAD-ABSENT (a genuine addition)
+  tests/control-reversibility-transcript.py     added= 203  HEAD-ABSENT (a genuine addition)
+  tests/control-shutdown.py                     added= 163  HEAD-ABSENT (a genuine addition)
+  tests/control-socket-integration.py           added=1934  HEAD-ABSENT (a genuine addition)
+  tests/control-stable-ids.py                   added= 252  HEAD-ABSENT (a genuine addition)
+  tests/control_socket_flows.py                 added= 216  HEAD-ABSENT (a genuine addition)
+  tests/control_socket_harness.py               added= 474  HEAD-ABSENT (a genuine addition)
+  tests/data/README-error-fixtures.md           added=  44  HEAD-ABSENT (a genuine addition)
+  tests/data/agent-control-fixture.mmp          added=  90  HEAD-ABSENT (a genuine addition)
+  tests/data/automation-audio-fixture.mmp       added=  56  HEAD-ABSENT (a genuine addition)
+  tests/data/error-carrying-project.mmp         added=  74  HEAD-ABSENT (a genuine addition)
+  tests/fork-sources.txt                        delta-added= 177 in-HEAD=   0 substring=  0 RESIDUE=177
+  tests/src/core/ControlAutomationScriptTest.cpp added= 314  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ControlDeviceCatalogueTest.cpp added= 250  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ControlEditCommandsTest.cpp    added= 275  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ControlRegistryTest.cpp        added= 422  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ReversibilityContractTest.cpp  added= 187  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ReversibilityTestSupport.h     added= 327  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ReversibilityUndoTest.cpp      added= 408  HEAD-ABSENT (a genuine addition)
+  tests/src/core/StableTrackIdsTest.cpp         added= 482  HEAD-ABSENT (a genuine addition)
+  tests/upstream-modifications.txt              delta-added=  29 in-HEAD=   2 substring=  0 RESIDUE=27

@@ -1,0 +1,9 @@
+LOCAL_CI_EXIT=0
+GATE9_EXIT=0
+GATE6_EXIT=0
+RUN_ALL_GATES_EXIT=3
+REGEN_INDEX_EXIT=0
+REGEN_HEAD_EXIT=0
+PRECOMMIT_EXIT=0
+--- tree-after-gates (expect only untracked tests/integration-logs-3f/*):
+  (clean apart from this train's own evidence)

@@ -1,0 +1,27 @@
+=== merge 1: post-alpha/agent-surface-onto-integration (f8715fa423e44f2dcc260fa2ac09456b0d39843f) onto 09e313c19 ===
+Auto-merging CMakeLists.txt
+Auto-merging include/Song.h
+Auto-merging src/core/CMakeLists.txt
+Auto-merging src/core/Song.cpp
+Auto-merging src/core/main.cpp
+Auto-merging src/gui/MainWindow.cpp
+Auto-merging tests/CMakeLists.txt
+Auto-merging tests/all-sources.txt
+Auto-merging tests/fork-sources.txt
+CONFLICT (content): Merge conflict in tests/fork-sources.txt
+Auto-merging tests/upstream-modifications.txt
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1
+conflicted files: 2
+  tests/fork-sources.txt
+  tests/upstream-modifications.txt
+--- what the merged index brings vs HEAD (name-status):
+  paths: 107
+--- sides saved in tests/integration-logs-3f/merge1/sides:
+  tests_fork-sources.txt.base
+  tests_fork-sources.txt.ours
+  tests_fork-sources.txt.theirs
+  tests_upstream-modifications.txt.base
+  tests_upstream-modifications.txt.ours
+  tests_upstream-modifications.txt.theirs

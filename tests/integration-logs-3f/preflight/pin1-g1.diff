@@ -1,0 +1,749 @@
+diff --git a/include/ProjectJournal.h b/include/ProjectJournal.h
+index b5b8fc138..28cc5bbcc 100644
+--- a/include/ProjectJournal.h
++++ b/include/ProjectJournal.h
+@@ -25,8 +25,11 @@
+ #ifndef LMMS_PROJECT_JOURNAL_H
+ #define LMMS_PROJECT_JOURNAL_H
+ 
++#include <functional>
++
+ #include <QHash>
+ #include <QStack>
++#include <QVector>
+ 
+ #include "LmmsTypes.h"
+ #include "DataFile.h"
+@@ -56,11 +59,52 @@ public:
+ 
+ 	void addJournalCheckPoint( JournallingObject *jo );
+ 
++	/*! One undo step covering SEVERAL objects (Zene Studio, SPEC A16).
++	 *
++	 * undo() pops ONE checkpoint, so N checkpoints cost N Ctrl+Z presses. An
++	 * agent command that writes more than one object - track.set_solo writes
++	 * every track's mute through TrackView - must nevertheless be ONE undoable
++	 * step for the human, so its before-states are recorded as one checkpoint
++	 * and restored together. Additive: the single-object call above is the
++	 * one-entry case of this and its behaviour is unchanged.
++	 */
++	void addJournalCheckPoint( const QVector<JournallingObject *> &objects );
++
++	/*! One undo step that RUNS AN ACTION instead of restoring an object
++	 * (Zene Studio, SPEC A16).
++	 *
++	 * A created or deleted Track/MixerChannel has no live object a checkpoint
++	 * could restore - a deleted JournallingObject's id resolves to nullptr and
++	 * a created one has nothing to put back - so the inverse is the operation,
++	 * not the state. Pushing it here (rather than into a second undo stack kept
++	 * by the control surface) is what makes Ctrl+Z and control.undo one
++	 * history. `redo` is the reverse action, so a redo is faithful rather than
++	 * a dropped step. Both actions run on the UI thread; nothing here is
++	 * reached from the audio thread.
++	 */
++	void addJournalAction( std::function<void()> undo, std::function<void()> redo );
++
+ 	bool isJournalling() const
+ 	{
+ 		return m_journalling;
+ 	}
+ 
++	/*! Marks the current undo depth, and merges everything pushed since into
++	 * ONE step (Zene Studio, SPEC A16 deliverable 3).
++	 *
++	 * This is the mechanism that makes "one agent command = one Ctrl+Z" true in
++	 * general rather than per command. AutomatableModel::setValue() pushes a
++	 * checkpoint of its own on every non-automated write
++	 * (src/core/AutomatableModel.cpp:303), so a single command that writes N
++	 * models - track.set_solo writes the solo flag and every other track's mute -
++	 * leaves N checkpoints on the stack and costs N undos. The control registry
++	 * therefore marks the depth before a mutating handler runs and merges
++	 * afterwards: for each object, its EARLIEST capture wins (that is the
++	 * pre-command state), and every recorded action is kept in push order.
++	 */
++	int undoDepth() const { return m_undoCheckPoints.size(); }
++	void mergeCheckpointsFrom( int depth );
++
+ 	void setJournalling( const bool _on )
+ 	{
+ 		m_journalling = _on;
+@@ -102,18 +146,59 @@ public:
+ private:
+ 	using JoIdMap = QHash<jo_id_t, JournallingObject*>;
+ 
+-	struct CheckPoint
++	//! One (object, saved state) pair of a checkpoint.
++	struct SavedObject
+ 	{
+-		CheckPoint( jo_id_t initID = 0, const DataFile& initData = DataFile( DataFile::Type::JournalData ) ) :
++		SavedObject( jo_id_t initID = 0,
++					const DataFile& initData = DataFile( DataFile::Type::JournalData ) ) :
+ 			joID( initID ),
+ 			data( initData )
+ 		{
+ 		}
+ 		jo_id_t joID;
+ 		DataFile data;
+-	} ;
++	};
++
++	struct CheckPoint
++	{
++		//! An empty step: an action-only step, or a redo record being filled.
++		CheckPoint() = default;
++		//! A step restoring one object (the historical checkpoint shape).
++		CheckPoint( jo_id_t initID, const DataFile& initData ) :
++			objects(),
++			actions()
++		{
++			objects.append( SavedObject( initID, initData ) );
++		}
++		//! The objects this step restores, together, in one pop.
++		QVector<SavedObject> objects;
++		//! Operations this step runs, in push order, each paired with its
++		//! reverse. Undo runs the firsts in reverse push order, redo the
++		//! seconds; a step whose second is empty cannot be redone, and the
++		//! redo stack is emptied rather than replaying an older entry.
++		QVector<QPair<std::function<void()>, std::function<void()>>> actions;
++
++		bool hasActions() const { return !actions.isEmpty(); }
++		bool empty() const { return objects.isEmpty() && actions.isEmpty(); }
++	};
+ 	using CheckPointStack = QStack<CheckPoint>;
+ 
++	//! An action-only step: runs \a undo, and on redo runs \a redo.
++	static CheckPoint actionCheckPoint( std::function<void()> undo,
++		std::function<void()> redo = std::function<void()>() );
++	//! Drops the oldest steps once the stack exceeds MAX_UNDO_STATES.
++	void trimUndoStack();
++	//! Restores every live object of \a step, capturing the redo halves into
++	//! \a redo. False when no object of the step is still alive (the caller then
++	//! pops the next checkpoint, the historical behaviour). Non-const because
++	//! DataFile::content() is: the step is the caller's own copy, popped off the
++	//! stack, so modifying it in place is safe.
++	bool restoreStep( CheckPoint & step, CheckPoint * redo );
++	//! Captures \a jo's current state into \a into (the redo half of a step).
++	void captureState( JournallingObject * jo, SavedObject * into ) const;
++	//! Restores \a saved into its object, journalling off.
++	void restoreState( SavedObject & saved );
++
+ 	JoIdMap m_joIDs;
+ 
+ 	CheckPointStack m_undoCheckPoints;
+diff --git a/include/Song.h b/include/Song.h
+index 09ee47505..dc4c5d611 100644
+--- a/include/Song.h
++++ b/include/Song.h
+@@ -105,6 +105,18 @@ public:
+ 	void collectError( const QString error );
+ 	bool hasErrors();
+ 	QString errorSummary();
++	//! The messages collected by the last load, with how often each occurred
++	//! (SPEC A13: a headless client reads which samples/plugins failed and why
++	//! from a typed result instead of a dialog nobody can answer).
++	const QHash<QString, int>& errors() const
++	{
++		return m_errors;
++	}
++	//! Why the most recent loadProject() refused the file, empty when it loaded.
++	QString loadRefusal() const
++	{
++		return m_loadRefusal;
++	}
+ 
+ 	void processNextBuffer();
+ 
+@@ -497,6 +509,8 @@ private:
+ 	SaveOptions m_saveOptions;
+ 
+ 	QHash<QString, int> m_errors;
++	//! Set by loadProject() when it refuses a file; empty after a good load.
++	QString m_loadRefusal;
+ 
+ 	std::array<Timeline, PlayModeCount> m_timelines;
+ 
+diff --git a/include/Track.h b/include/Track.h
+index 92cb38f26..a1c5adb24 100644
+--- a/include/Track.h
++++ b/include/Track.h
+@@ -161,6 +161,24 @@ public:
+ 		return name();
+ 	}
+ 
++	/*! The track's stable id, the number in "trk-<n>" (SPEC-stable-ids.md).
++	 *
++	 * Assigned ONCE, in the constructor, and never changed while the track is
++	 * alive: it names the object, not its position in Song::tracks(). The only
++	 * other writer is loadTrack(), which takes the value the project file
++	 * carries so a re-save keeps it; a file element with no id leaves the
++	 * constructor's value in place, which is what makes legacy assignment
++	 * deterministic (construction order == document order).
++	 */
++	int id() const
++	{
++		return m_id;
++	}
++
++	//! Take \a id from a project file. Raises the project counter above it, so
++	//! the number can never be handed to a new object (see ProjectIds).
++	void setId(int id);
++
+ 	using Model::dataChanged;
+ 
+ 	inline int getHeight()
+@@ -214,6 +232,7 @@ private:
+ private:
+ 	TrackContainer* m_trackContainer;
+ 	Type m_type;
++	int m_id;
+ 	QString m_name;
+ 	int m_height;
+ 
+diff --git a/src/core/ProjectJournal.cpp b/src/core/ProjectJournal.cpp
+index 11e64810b..91992050d 100644
+--- a/src/core/ProjectJournal.cpp
++++ b/src/core/ProjectJournal.cpp
+@@ -23,7 +23,10 @@
+  */
+ 
+ #include <cstdlib>
++#include <utility>
++
+ #include <QDomElement>
++#include <QSet>
+ 
+ #include "ProjectJournal.h"
+ #include "Engine.h"
+@@ -52,32 +55,93 @@ ProjectJournal::ProjectJournal() :
+ 
+ 
+ 
++ProjectJournal::CheckPoint ProjectJournal::actionCheckPoint( std::function<void()> undo,
++	std::function<void()> redo )
++{
++	CheckPoint step;
++	step.actions.append( qMakePair( std::move( undo ), std::move( redo ) ) );
++	return step;
++}
++
++
++
++
++//! Captures \a jo's current state, which becomes the redo half of a step.
++void ProjectJournal::captureState( JournallingObject * jo, SavedObject * into ) const
++{
++	DataFile currentState( DataFile::Type::JournalData );
++	jo->saveState( currentState, currentState.content() );
++	*into = SavedObject( jo->id(), currentState );
++}
++
++//! Restores one object from its saved XML, with journalling off so the restore
++//! itself does not push a new checkpoint. The AutomationClip id fix-up is the
++//! historical step that follows a restore that carried automation clips.
++void ProjectJournal::restoreState( SavedObject & saved )
++{
++	JournallingObject * jo = m_joIDs.value( saved.joID, nullptr );
++	if( jo == nullptr ) { return; }
++
++	const bool previous = isJournalling();
++	setJournalling( false );
++	jo->restoreState( saved.data.content().firstChildElement() );
++	setJournalling( previous );
++	Engine::getSong()->setModified();
++
++	// loading AutomationClip connections correctly
++	if( !saved.data.content().elementsByTagName( "automationclip" ).isEmpty() )
++	{
++		AutomationClip::resolveAllIDs();
++	}
++}
++
++//! Restores every live object of \a step in one go (SPEC A16: one agent command
++//! is one undoable step, however many objects it wrote).
++bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
++{
++	bool restoredAny = false;
++	for( SavedObject & saved : step.objects )
++	{
++		JournallingObject * jo = m_joIDs.value( saved.joID, nullptr );
++		if( jo == nullptr ) { continue; }
++		SavedObject current;
++		captureState( jo, &current );
++		redo->objects.append( current );
++		restoreState( saved );
++		restoredAny = true;
++	}
++	return restoredAny;
++}
++
+ void ProjectJournal::undo()
+ {
+ 	while( !m_undoCheckPoints.isEmpty() )
+ 	{
+ 		CheckPoint c = m_undoCheckPoints.pop();
+-		JournallingObject *jo = m_joIDs[c.joID];
+-
+-		if( jo )
++		CheckPoint redo;
++
++		// Objects first: an action may FREE one of them (deleting a MixerChannel
++		// frees its models, deleting a Track frees its clips), and a restore
++		// after the free would be a restore of a dead journal id.
++		bool did = restoreStep( c, &redo );
++		bool redoable = true;
++		for( int i = c.actions.size() - 1; i >= 0; --i )
+ 		{
+-			DataFile curState( DataFile::Type::JournalData );
+-			jo->saveState( curState, curState.content() );
+-			m_redoCheckPoints.push( CheckPoint( c.joID, curState ) );
+-
+-			bool prev = isJournalling();
+-			setJournalling( false );
+-			jo->restoreState( c.data.content().firstChildElement() );
+-			setJournalling( prev );
+-			Engine::getSong()->setModified();
+-
+-			// loading AutomationClip connections correctly
+-			if (!c.data.content().elementsByTagName("automationclip").isEmpty())
+-			{
+-				AutomationClip::resolveAllIDs();
+-			}
+-			break;
++			// Undo is LIFO, so the recorded operations run in reverse push order
++			// and the redo record keeps them in push order.
++			const std::function<void()> undoAction = c.actions.at( i ).first;
++			const std::function<void()> redoAction = c.actions.at( i ).second;
++			if( !undoAction ) { continue; }
++			if( redoAction ) { redo.actions.prepend( qMakePair( undoAction, redoAction ) ); }
++			else { redoable = false; }
++			undoAction();
++			did = true;
+ 		}
++		if( !did ) { continue; }
++		if( redoable ) { m_redoCheckPoints.push( redo ); }
++		else { m_redoCheckPoints.clear(); }
++		Engine::getSong()->setModified();
++		break;
+ 	}
+ }
+ 
+@@ -88,21 +152,21 @@ void ProjectJournal::redo()
+ 	while( !m_redoCheckPoints.isEmpty() )
+ 	{
+ 		CheckPoint c = m_redoCheckPoints.pop();
+-		JournallingObject *jo = m_joIDs[c.joID];
++		CheckPoint undoState;
+ 
+-		if( jo )
++		bool did = restoreStep( c, &undoState );
++		for( int i = c.actions.size() - 1; i >= 0; --i )
+ 		{
+-			DataFile curState( DataFile::Type::JournalData );
+-			jo->saveState( curState, curState.content() );
+-			m_undoCheckPoints.push( CheckPoint( c.joID, curState ) );
+-
+-			bool prev = isJournalling();
+-			setJournalling( false );
+-			jo->restoreState( c.data.content().firstChildElement() );
+-			setJournalling( prev );
+-			Engine::getSong()->setModified();
+-			break;
++			const std::function<void()> redoAction = c.actions.at( i ).second;
++			if( !redoAction ) { continue; }
++			undoState.actions.prepend( c.actions.at( i ) );
++			redoAction();
++			did = true;
+ 		}
++		if( !did ) { continue; }
++		m_undoCheckPoints.push( undoState );
++		Engine::getSong()->setModified();
++		break;
+ 	}
+ }
+ 
+@@ -120,18 +184,57 @@ bool ProjectJournal::canRedo() const
+ 
+ void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
+ {
+-	if( isJournalling() )
++	if( !isJournalling() ) { return; }
++
++	DataFile dataFile( DataFile::Type::JournalData );
++	jo->saveState( dataFile, dataFile.content() );
++
++	m_redoCheckPoints.clear();
++	m_undoCheckPoints.push( CheckPoint( jo->id(), dataFile ) );
++	trimUndoStack();
++}
++
++
++
++void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &objects )
++{
++	if( !isJournalling() ) { return; }
++
++	// One checkpoint, N objects: undo() pops it once and restores all of them,
++	// which is what makes one agent command one Ctrl+Z (SPEC A16).
++	CheckPoint step;
++	for( JournallingObject * jo : objects )
+ 	{
+-		m_redoCheckPoints.clear();
++		if( jo == nullptr ) { continue; }
++		SavedObject saved;
++		captureState( jo, &saved );
++		step.objects.append( saved );
++	}
++	if( step.objects.isEmpty() ) { return; }
+ 
+-		DataFile dataFile( DataFile::Type::JournalData );
+-		jo->saveState( dataFile, dataFile.content() );
++	m_redoCheckPoints.clear();
++	m_undoCheckPoints.push( step );
++	trimUndoStack();
++}
+ 
+-		m_undoCheckPoints.push( CheckPoint( jo->id(), dataFile ) );
+-		if( m_undoCheckPoints.size() > MAX_UNDO_STATES )
+-		{
+-			m_undoCheckPoints.remove( 0, m_undoCheckPoints.size() - MAX_UNDO_STATES );
+-		}
++
++
++void ProjectJournal::addJournalAction( std::function<void()> undoAction, std::function<void()> redoAction )
++{
++	if( !isJournalling() || !undoAction ) { return; }
++
++	m_redoCheckPoints.clear();
++	m_undoCheckPoints.push( actionCheckPoint( std::move( undoAction ), std::move( redoAction ) ) );
++	trimUndoStack();
++}
++
++
++
++void ProjectJournal::trimUndoStack()
++{
++	if( m_undoCheckPoints.size() > MAX_UNDO_STATES )
++	{
++		m_undoCheckPoints.remove( 0, m_undoCheckPoints.size() - MAX_UNDO_STATES );
+ 	}
+ }
+ 
+@@ -170,6 +273,36 @@ jo_id_t ProjectJournal::idFromSave( jo_id_t id )
+ 
+ 
+ 
++void ProjectJournal::mergeCheckpointsFrom( int depth )
++{
++	if( depth < 0 || depth > m_undoCheckPoints.size() ) { return; }
++	const int excess = m_undoCheckPoints.size() - depth;
++	if( excess <= 1 ) { return; }
++
++	// For each OBJECT, the earliest capture wins: that is the state before the
++	// command, and restoring a later capture would undo only part of it.
++	CheckPoint merged;
++	QSet<jo_id_t> seen;
++	for( int i = depth; i < m_undoCheckPoints.size(); ++i )
++	{
++		const CheckPoint & step = m_undoCheckPoints.at( i );
++		for( const SavedObject & saved : step.objects )
++		{
++			if( seen.contains( saved.joID ) ) { continue; }
++			seen.insert( saved.joID );
++			merged.objects.append( saved );
++		}
++		// Every recorded operation is kept, in push order.
++		merged.actions += step.actions;
++	}
++	if( merged.empty() ) { m_undoCheckPoints.remove( depth, excess ); return; }
++
++	m_undoCheckPoints.remove( depth, excess );
++	m_undoCheckPoints.push( merged );
++}
++
++
++
+ void ProjectJournal::clearJournal()
+ {
+ 	m_undoCheckPoints.clear();
+diff --git a/src/core/Song.cpp b/src/core/Song.cpp
+index 33f5c51a9..6a2f94ed1 100644
+--- a/src/core/Song.cpp
++++ b/src/core/Song.cpp
+@@ -28,6 +28,7 @@
+ #include <QDebug>
+ #include <QFile>
+ #include <QMessageBox>
++#include <QSet>
+ 
+ #include <algorithm>
+ #include <cmath>
+@@ -37,6 +38,7 @@
+ #include "ConfigManager.h"
+ #include "ControllerRackView.h"
+ #include "ControllerConnection.h"
++#include "UnattendedRun.h"
+ #include "EnvelopeAndLfoParameters.h"
+ #include "Mixer.h"
+ #include "MixerView.h"
+@@ -52,6 +54,7 @@
+ #include "PatternTrack.h"
+ #include "PianoRoll.h"
+ #include "ProjectJournal.h"
++#include "ProjectIds.h"
+ #include "ProjectNotes.h"
+ #include "Scale.h"
+ #include "SongEditor.h"
+@@ -1004,6 +1007,11 @@ void Song::createNewProject()
+ 
+ 	clearProject();
+ 
++	// A brand-new document starts its id counter at 0, so the first object an
++	// agent creates after project.new is <prefix>-0 rather than a number left
++	// over from whatever was loaded before (SPEC-stable-ids.md 2.1).
++	ProjectIds::reset();
++
+ 	Engine::projectJournal()->setJournalling( false );
+ 
+ 	m_oldFileName = "";
+@@ -1065,6 +1073,11 @@ void Song::loadProject( const QString & fileName )
+ 
+ 	m_loadingProject = true;
+ 
++	// A load must never leave a modal dialog open in an agent instance (task
++	// #625): record why a file was refused so project.open can answer with a
++	// typed error instead.
++	m_loadRefusal.clear();
++
+ 	Engine::projectJournal()->setJournalling( false );
+ 
+ 	m_oldFileName = m_fileName;
+@@ -1078,6 +1091,8 @@ void Song::loadProject( const QString & fileName )
+ 	if( dataFile.head().isNull() )
+ 	{
+ 		cantLoadProject = true;
++		m_loadRefusal = tr( "the project file could not be read or parsed "
++			"(see the log for the parser's line/column report)" );
+ 	}
+ 	else
+ 	{
+@@ -1086,12 +1101,15 @@ void Song::loadProject( const QString & fileName )
+ 		if (dataFile.hasLocalPlugins())
+ 		{
+ 			cantLoadProject = true;
++			m_loadRefusal = tr("Project file contains local paths to plugins, which could be used to "
++					"run malicious code.");
+ 
+-			if (getGUI() != nullptr)
++			// In an agent instance nobody can answer this box (task #625), so
++			// the refusal becomes the typed error project.open returns.
++			if (getGUI() != nullptr && !lmms::isUnattendedRun())
+ 			{
+ 				QMessageBox::critical(nullptr, tr("Aborting project load"),
+-					tr("Project file contains local paths to plugins, which could be used to "
+-						"run malicious code."));
++					m_loadRefusal);
+ 			}
+ 			else
+ 			{
+@@ -1130,6 +1148,14 @@ void Song::loadProject( const QString & fileName )
+ 
+ 	clearErrors();
+ 
++	// The id pass, load half (SPEC-stable-ids.md R2/R3). Reset the counter so
++	// assignment is deterministic - the container walk below creates the tracks
++	// in document order and the Track constructor allocates in that order, so
++	// the same legacy document always yields the same ids - and clear the
++	// assignment count project.open reports as `ids_assigned`.
++	ProjectIds::reset();
++	ProjectIds::beginLoad();
++
+ 	Engine::audioEngine()->requestChangeInModel();
+ 
+ 	// get the header information from the DOM
+@@ -1252,6 +1278,42 @@ void Song::loadProject( const QString & fileName )
+ 	// quirk for fixing projects with broken positions of Clips inside pattern tracks
+ 	Engine::patternStore()->fixIncorrectPositions();
+ 
++	// The id pass, post-walk half (SPEC-stable-ids.md R3). The objects exist and
++	// carry ids now, so this is the one place the document's own counter can be
++	// honoured and repaired:
++	//
++	//  * `next-id` is taken from the root. A file written by this build carries
++	//    it; a legacy file (or a file that came back through an older build,
++	//    which drops it) does not, and then the counter is already at
++	//    max(id seen)+1 because every setId() observed its value.
++	//  * Two live tracks sharing an id is only reachable from an external merge
++	//    of two projects (GIT-FRIENDLY-MMPZ.md documents real .mmpz merges). The
++	//    second in document order is re-assigned from the high-water mark and
++	//    counted, so the repair shows up in `ids_assigned` instead of hiding.
++	if (dataFile.documentElement().hasAttribute(QStringLiteral("next-id")))
++	{
++		bool ok = false;
++		const int stored = dataFile.documentElement().attribute(QStringLiteral("next-id")).toInt(&ok);
++		if (ok) { ProjectIds::observeNext(stored); }
++	}
++	{
++		QSet<int> seen;
++		const TrackContainer::TrackList& loaded = tracks();
++		for (int i = 0; i < static_cast<int>(loaded.size()); ++i)
++		{
++			Track* track = loaded[i];
++			if (seen.contains(track->id()))
++			{
++				track->setId(ProjectIds::allocate());
++				ProjectIds::noteLoadAssignment();
++			}
++			else
++			{
++				seen.insert(track->id());
++			}
++		}
++	}
++
+ 	// Connect controller links to their controllers
+ 	// now that everything is loaded
+ 	ControllerConnection::finalizeConnections();
+@@ -1282,7 +1344,12 @@ void Song::loadProject( const QString & fileName )
+ 
+ 	if ( hasErrors())
+ 	{
+-		if ( getGUI() != nullptr )
++		// The "LMMS Error report" box is a question for a human.  In an agent
++		// instance (--control-socket) or a run with no display it would park
++		// the UI thread in a nested event loop - project.open never returns,
++		// and the client is told nothing (task #625).  The same report goes to
++		// stderr, and project.open hands the caller the per-item list.
++		if ( getGUI() != nullptr && !lmms::isUnattendedRun() )
+ 		{
+ 			QMessageBox::warning( nullptr, tr("Zene Studio Error report"), errorSummary(),
+ 							QMessageBox::Ok );
+@@ -1363,6 +1430,14 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
+ 
+ 	m_savingProject = false;
+ 
++	// The project-scoped id counter, on the root element beside version /
++	// creatorversion (SPEC-stable-ids.md 3.2). The root is already a mutable
++	// document header: DataFile's constructor writes five sibling attributes
++	// there and DataFile::upgrade() rewrites them. This is the ONLY place ids
++	// reach the disk - load-time assignment is in memory only, which is what
++	// keeps the agent_surface gate's fixture byte-identical across a sweep.
++	dataFile.documentElement().setAttribute( "next-id", ProjectIds::next() );
++
+ 	return dataFile.writeFile(filename, withResources);
+ }
+ 
+diff --git a/src/core/Track.cpp b/src/core/Track.cpp
+index e44475d93..0a343bb4b 100644
+--- a/src/core/Track.cpp
++++ b/src/core/Track.cpp
+@@ -39,6 +39,7 @@
+ #include "InstrumentTrack.h"
+ #include "PatternStore.h"
+ #include "PatternTrack.h"
++#include "ProjectIds.h"
+ #include "SampleTrack.h"
+ #include "Song.h"
+ 
+@@ -60,7 +61,22 @@ Track::Track( Type type, TrackContainer * tc ) :
+ 	Model( tc ),                   /*!< The track Model */
+ 	m_trackContainer( tc ),        /*!< The track container object */
+ 	m_type( type ),                /*!< The track type */
++	// The stable id, handed out once, here, at creation (SPEC-stable-ids.md
++	// 2.1). It is the number in trk-<n> and it never changes while the track
++	// lives, so a client that was told trk-7 keeps trk-7 when a sibling is
++	// added or removed. loadTrack() overrides it with the file's value on a
++	// project load, and a file element with no id keeps this one - which is
++	// what makes legacy assignment deterministic, because the load walks the
++	// containers in document order.
++	m_id( ProjectIds::allocate() ),
+ 	m_name(),                       /*!< The track's name */
++	m_mutedBeforeSolo( false ),     /*!< Transient pre-solo mute state; written to
++	                                 * the file by saveTrack as an int, so an
++	                                 * uninitialised value made every save
++	                                 * nondeterministic (measured: the same fresh
++	                                 * track saved as mutedBeforeSolo=1 in one run
++	                                 * and 48 in the next, which StableTrackIdsTest
++	                                 * compares). */
+ 	m_mutedModel( false, this, tr( "Mute" ) ), /*!< For controlling track muting */
+ 	m_soloModel( false, this, tr( "Solo" ) ), /*!< For controlling track soloing */
+ 	m_clips()        /*!< The clips (segments) */
+@@ -69,6 +85,14 @@ Track::Track( Type type, TrackContainer * tc ) :
+ 	m_height = -1;
+ }
+ 
++void Track::setId(int id)
++{
++	m_id = id;
++	// Never let the counter hand this number to anything else, even if the file
++	// that carried it had no (or a stale) next-id.
++	ProjectIds::observe(id);
++}
++
+ 
+ 
+ 
+@@ -193,6 +217,14 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
+ 	}
+ 	element.setAttribute( "type", static_cast<int>(type()) );
+ 	element.setAttribute( "name", name() );
++	if (!presetMode)
++	{
++		// SPEC-stable-ids.md 3.1: an ATTRIBUTE on the track's own element,
++		// never a child element - Track::loadTrack turns an unrecognised child
++		// element into a real Clip, so an id element would make every track
++		// grow a phantom clip on load, on every track, in every project.
++		element.setAttribute( "id", m_id );
++	}
+ 	m_mutedModel.saveSettings( doc, element, "muted" );
+ 	m_soloModel.saveSettings( doc, element, "solo" );
+ 	// Save the mutedBeforeSolo value so we can recover the muted state if any solo was active (issue 5562)
+@@ -276,6 +308,24 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
+ 		return;
+ 	}
+ 
++	// The stable id (SPEC-stable-ids.md rules R1/R2). A file that carries one
++	// keeps it; a legacy file that does not gets the number the constructor
++	// already handed out, which is deterministic because Song::loadProject walks
++	// the containers in document order. Either way ProjectIds::loadAssignments()
++	// counts it, and project.open reports the count as `ids_assigned`, so a
++	// legacy file's one-time upgrade is stated rather than silent.
++	if (element.hasAttribute("id"))
++	{
++		bool ok = false;
++		const int stored = element.attribute("id").toInt(&ok);
++		if (ok && stored >= 0) { setId(stored); }
++		else { ProjectIds::noteLoadAssignment(); }
++	}
++	else
++	{
++		ProjectIds::noteLoadAssignment();
++	}
++
+ 	{
+ 		auto guard = Engine::audioEngine()->requestChangesGuard();
+ 		deleteClips();
+diff --git a/src/core/TrackContainer.cpp b/src/core/TrackContainer.cpp
+index 7005362ca..214187396 100644
+--- a/src/core/TrackContainer.cpp
++++ b/src/core/TrackContainer.cpp
+@@ -36,6 +36,7 @@
+ #include "PatternStore.h"
+ #include "PatternTrack.h"
+ #include "Song.h"
++#include "UnattendedRun.h"
+ 
+ #include "GuiApplication.h"
+ #include "MainWindow.h"
+@@ -91,7 +92,11 @@ void TrackContainer::loadSettings( const QDomElement & _this )
+ 
+ 	static QProgressDialog * pd = nullptr;
+ 	bool was_null = ( pd == nullptr );
+-	if (!journalRestore && gui::getGUI() != nullptr)
++	// The progress window is application-modal and its Cancel button is the
++	// only way to stop a load. In an unattended run nobody can click it (task
++	// #625), so the load runs without the window - it never blocked, but it left
++	// an unclosable modal widget over a socket-driven load.
++	if (!journalRestore && gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 	{
+ 		if( pd == nullptr )
+ 		{

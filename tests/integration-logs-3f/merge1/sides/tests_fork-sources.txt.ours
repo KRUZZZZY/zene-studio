@@ -1,0 +1,341 @@
+# Sources added by this fork on top of upstream master 4e677cb6c6ab.
+#
+# The entry list below is the byte-exact output of the command under "Regenerate with".
+#
+# Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
+#   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
+#       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
+#   } | LC_ALL=C sort
+#
+# Verify it - this must print REPRODUCES and nothing else:
+#   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
+#        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
+#            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
+#        } | LC_ALL=C sort) && echo REPRODUCES
+#
+# The pathspec is `src include plugins` (this fork's product code) plus four extras the
+# product command cannot derive on its own. Each is named here with its reason, so no entry in
+# this file is a hand-edit nobody can account for:
+#   * tests/src/core, tests/src/tracks - the pathspec's two tests/ additions (added with them,
+#     not before) - this file holds exactly ten fork-authored TEST
+#     sources (ClipSerialisationTest, DataFileSaveIntegrityTest, LufsMeterTest, MidiLearnTest,
+#     MixerConcurrencyTest, ProjectOpenIntegrityTest, SampleClipWindowTest.cpp, SessionModelTest,
+#     StemExportTest, StemExportTestSupport.h): three
+#     registered by a42c68f24 (the integration fix that made Gate 9 green), two by 117068e76
+#     (stem export), two landed at integration on 2026-09-12 from post-alpha/clip-slice0
+#     (ClipSerialisationTest, SampleClipWindowTest.cpp), and two more arrived with
+#     post-alpha/saveload-integrity the same night (DataFileSaveIntegrityTest, ProjectOpenIntegrityTest
+#     - the lane registered them here itself, and they are kept rather than moved to
+#     tests/all-sources.txt for the same no-narrowing reason), and one more arrived with
+#     post-alpha/mixer-concurrency (MixerConcurrencyTest.cpp, registered by that lane here too; the
+#     stale comment block it carried beside the entry claimed this command only walks
+#     src/include/plugins, which stopped being true when the allow-list was introduced, and it is
+#     dropped rather than kept as a false statement). They are the suites of fork-NEW
+#     features, so the fork ratchets look at them. The other ~100 tests/src sources
+#     added since the fork point are whole-tree material and live in tests/all-sources.txt only -
+#     the awk filter admits exactly these ten. A new fork test source belongs in
+#     tests/all-sources.txt by default; add it to the awk pattern above only if it must carry the
+#     fork ratchets too, and then re-run this command.
+#
+#     Merged 2026-09-12 (integration wave 3C). The three post-alpha/warp test sources
+#     (ClipWarpPersistenceTest, WarpMarkersTest, SampleClipWarpTest) arrived registered HERE,
+#     where this file's own command cannot produce them: the awk allow-list above does not admit
+#     them and none of the three carries a fork-ratchet baseline, so admitting them would widen
+#     the fork ratchets for no measured reason. They are MOVED to their home,
+#     tests/all-sources.txt - whose own command produces all three, and which the paragraph above
+#     names as the default for a new fork test source. This is the same "put the entry where its
+#     home actually is" move post-alpha/stem-export's tool needed at wave 3A.
+#     include/WarpMarkers.h stays here: it is fork-NEW product code and the command derives it.
+#
+#     Merged 2026-09-12 (integration wave 3A). The two clip-lane entries arrived on the
+#     integration side of this merge and were hand-added there (their lane's own comment says
+#     so); the gate-hygiene side, branched before that lane landed, could not produce them. They
+#     are kept rather than moved to tests/all-sources.txt for the reason this file already
+#     records for tools/local-ci.sh: the fork-scoped ratchets already measure them - including
+#     tests/src/tracks/SampleClipWindowTest.cpp, which holds a fork file-length baseline entry
+#     (511) taken by a recorded re-anchor - and moving them would narrow the fork scope. The awk
+#     allow-list above was extended by exactly those two names, and the file now reproduces from
+#     the command under "Regenerate with".
+#   * tools/local-ci.sh, tools/ncpu-shim.c and plugins/Vst3Instrument/logo.png - the second,
+#     explicit pathspec line above. All three are
+#     admitted by name rather than by widening the extension filter, because widening it also
+#     admits five fork-authored .sh harness scripts under plugins/RnnoiseDenoiser/testdata/,
+#     which would put shell tooling in the product scope.
+#     - tools/local-ci.sh is registered HERE rather than in tests/tools-sources.txt because the
+#       fork-scoped ratchets already measured it when that list was added, and moving it would
+#       narrow the fork scope. Its reason is recorded in tests/tools-sources.txt's header too.
+#     - tools/ncpu-shim.c was registered by the post-alpha/render-determinism lane (2026-09-12)
+#       and is kept here at integration. It is a C source and therefore already on
+#       tests/all-sources.txt's list (that list is `git ls-files` over the C/C++ extension set);
+#       its presence here as well is what Gate 6 needs, because Gate 6 classifies a tools/ path
+#       by tests/tools-sources.txt and consults no other list - registering it there instead
+#       would be the same allowance by a different route, and the file is 93 lines with no
+#       function over the complexity target, so the fork ratchets it widens are clean.
+#       tests/tools-sources.txt's subtraction regex names it and does not repeat it.
+#     - plugins/Vst3Instrument/logo.png was added by the post-alpha/instrument-hosting-impl
+#       lane (2026-09-12, integration wave 3D) as the embedded resource of the new VST3
+#       instrument host (`BUILD_PLUGIN(vst3instrument ... EMBEDDED_RESOURCES
+#       "${CMAKE_CURRENT_SOURCE_DIR}/logo.png")` in plugins/Vst3Instrument/CMakeLists.txt).
+#       It is NOT a source and the extension filter above cannot produce it, so it is named
+#       in the second pathspec line. It has to be registered SOMEWHERE: Gate 6 examines
+#       every path changed since its base, and for a plugins/ path that is neither a test, a
+#       build file, CI config, documentation, nor in this list, the only remaining home is
+#       tests/upstream-modifications.txt - which would be a false statement there, because
+#       this file is fork-NEW and upstream has no plugins/Vst3Instrument at all (the
+#       ledger's own SCOPE paragraph refuses fork-authored paths for exactly that reason,
+#       and wave 3C deleted seven tools/ entries for making that false statement). This
+#       list is the fork's PRODUCT scope, so the binary asset is in the fork-scoped
+#       file-length / complexity / duplication ratchets; all three were measured with the
+#       entry present and pass (file-length and complexity report it with its own line
+#       count, duplication reports 0.60% against a 5% budget), so the scope widened by one
+#       file that those gates measure without a violation.
+#   * tools/stem-export-demo.py used to be a second hand-added tools/ entry in this file. It was
+#     moved to tests/tools-sources.txt on 2026-09-12 (gate hygiene): tooling has one home, and
+#     that list is the home tests/tools-sources.txt itself declares for tools/. It is not in the
+#     command above any more, and this file no longer carries it.
+#
+# Why the base is a fixed commit and not `origin/master`. `origin` in this clone is
+# upstream LMMS/lmms; this repo never pushes to it, and its `master` ref tracks whatever
+# upstream publishes - on 2026-09-11 it was 518a7e8ef, which is NOT an ancestor of the
+# fork point (verified: `git merge-base --is-ancestor origin/master 4e677cb6c6ab` -> 1).
+# The old command as written (`... --diff-filter=A origin/master HEAD ...`) therefore
+# listed 116 files instead of 109: it reclassified seven upstream files this fork
+# never authored as fork-new - include/AudioOss.h, include/AudioSoundIo.h,
+# include/MidiOss.h, plugins/Sf2Player/fluidsynthshims.h, src/core/audio/AudioOss.cpp,
+# src/core/audio/AudioSoundIo.cpp, src/core/midi/MidiOss.cpp - all of which exist at
+# 4e677cb6c6ab (`git cat-file -e 4e677cb6c6ab:<path>`). The fork point is a fixed commit,
+# so the corrected command needs no remote state at all. Verify it is in the clone first:
+#   git cat-file -e 4e677cb6c6ab^{commit} && echo ok
+# (`git merge-base origin/master HEAD` returns the same commit - 4e677cb6c6ab - but only
+# while origin has been fetched; the literal commit is the base that cannot drift.)
+#
+# Vendored third-party trees are excluded on purpose (524 files): src/3rdparty
+# (lua, luabridge), plugins/NeuralAmp/rtneural (RTNeural), plugins/NeuralAmp/nam
+# (Neural Amp Modeler), plugins/NeuralAmp/tests, plugins/RnnoiseDenoiser/rnnoise
+# (RNNoise). They are not this fork's code and these gates never refactor them.
+#
+# lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
+# resolves this file's directory to the repo root).
+#
+# The collation is pinned to C for the same reason tests/all-sources.txt's is: plain `sort`
+# follows the caller's locale, so an unpinned command does not reproduce this file on a
+# machine with a different one, and the tail entries appended by merge lanes ended up out of
+# order for the same reason.
+#
+# Merged 2026-09-12 (integration wave 3B, merge #2 = post-alpha/brand-placeholders). That lane
+# added four entries to this file by hand; NONE of them can be produced by this file's own
+# command, so keeping them would make the file stop reproducing. Each is resolved by where its
+# home actually is, and none is a silently dropped entry:
+#   * tools/brand/rasterise-placeholders.py - MOVED to tests/tools-sources.txt, which is this
+#     repo's documented home for the fork's own tooling under tools/ and whose own command DOES
+#     produce it (the regeneration run reports it as the one added tools entry). Gate 9
+#     classifies a tools/ path by tests/tools-sources.txt, so this is a recorded move of home.
+#   * tests/brand-resource-sweep.py,
+#     tests/evidence/brand-placeholders/verify-placeholders.py,
+#     tests/evidence/brand-placeholders/provenance-audit.py - not registered in ANY scope, and
+#     deliberately so: Gate 9's scope is C/C++ outside tools/ (is_source) and C/C++/Python/shell
+#     under tools/ (is_tools_source), so a .py under tests/ is outside every list this gate
+#     reads and needs no home. This file is the fork's PRODUCT scope - admitting test-side
+#     scripts here would widen the fork-scoped file-length / complexity / duplication ratchets
+#     onto them, which is exactly the scope widening 3A refused for
+#     plugins/RnnoiseDenoiser/testdata/*.sh. Their commands are recorded in
+#     docs/BRAND-PLACEHOLDERS.md and beside the scripts in tests/evidence/.
+#
+# Merged 2026-09-12 (integration wave 3B, merge #5 = post-alpha/racks). That lane added
+# tools/rack-render-fixture.py and tools/rack-render-proof.py here by hand; neither can be
+# produced by this file's own command, and the regeneration run proved it (both reported
+# as `-` removals). Both are MOVED to tests/tools-sources.txt, the documented home for the
+# fork's own tooling under tools/ and the list whose own command DOES produce them - a
+# recorded move of home, not a lost entry, and the same treatment merge #2 gave
+# tools/brand/rasterise-placeholders.py.
+#
+# Merged 2026-09-12 (integration wave 3D, merge #1 = post-alpha/instrument-hosting-impl).
+# That lane added eight entries here (the Vst3Instrument module's four sources, the two
+# Vst3Midi* files and Vst3MidiQueue.h extracted from the effect host, and
+# plugins/Vst3Instrument/logo.png). Seven are produced by the command under "Regenerate
+# with" unchanged; logo.png is admitted by name in the second pathspec line, with its
+# reason above. Its copy of this file also carried an older header (no collation note, no
+# wave-3C paragraph) and was missing 67 entries ours has - ours is kept, and the entry set
+# is the union of both sides, 175 entries, which the regeneration run reports as
+# REPRODUCES with 0 duplicates.
+include/AudioBus.h
+include/AudioPlugin.h
+include/AudioPorts.h
+include/AudioPortsModel.h
+include/AudioPortsSettings.h
+include/CrashReporter.h
+include/DpiHelper.h
+include/LatencyCompensation.h
+include/LmmsPolyfill.h
+include/LoudnessReport.h
+include/LufsMeter.h
+include/MasteringChain.h
+include/MasteringJob.h
+include/MidiLearn.h
+include/MidiLearnGui.h
+include/MpeExpression.h
+include/MultiTrackRecorder.h
+include/NoteRandom.h
+include/NoteTransform.h
+include/PinConnector.h
+include/PluginAudioPorts.h
+include/PluginScanCache.h
+include/ProjectRecovery.h
+include/Rack.h
+include/RackNodes.h
+include/RecordRingBuffer.h
+include/RemotePluginAudioPorts.h
+include/RoutingChainNodes.h
+include/RoutingGraph.h
+include/RoutingNode.h
+include/RoutingNodes.h
+include/SampleFrameRingBuffer.h
+include/SampleRecordAccumulator.h
+include/SampleWindow.h
+include/ScriptApiVersion.h
+include/ScriptBindings.h
+include/ScriptConsole.h
+include/ScriptEngine.h
+include/ScriptLuaQtTypes.h
+include/ScriptPackage.h
+include/SessionModel.h
+include/SessionScheduler.h
+include/StemSeparation/ExternalProcessStemSeparator.h
+include/StemSeparation/OnnxRuntimeStemSeparator.h
+include/StemSeparation/StemJobManager.h
+include/StemSeparation/StemModelStore.h
+include/StemSeparation/StemSeparator.h
+include/StemSeparation/StemTrackBuilder.h
+include/StemSeparation/StemTypes.h
+include/StemSplitController.h
+include/Telemetry.h
+include/TelemetryConsentDialog.h
+include/TelemetryNetworkTransport.h
+include/TrackRecorder.h
+include/VcaGroup.h
+include/WarpMarkers.h
+plugins/ClapEffect/ClapBusMap.cpp
+plugins/ClapEffect/ClapBusMap.h
+plugins/ClapEffect/ClapEffect.cpp
+plugins/ClapEffect/ClapEffect.h
+plugins/ClapEffect/ClapEffectControlDialog.cpp
+plugins/ClapEffect/ClapEffectControlDialog.h
+plugins/ClapEffect/ClapEffectControls.cpp
+plugins/ClapEffect/ClapEffectControls.h
+plugins/ClapEffect/ClapHost.cpp
+plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapParamDescriptor.h
+plugins/ClapEffect/ClapParameter.cpp
+plugins/ClapEffect/ClapParameter.h
+plugins/ClapEffect/ClapSubPluginFeatures.cpp
+plugins/ClapEffect/ClapSubPluginFeatures.h
+plugins/NeuralAmp/NeuralAmpControlDialog.cpp
+plugins/NeuralAmp/NeuralAmpControlDialog.h
+plugins/NeuralAmp/NeuralAmpControls.cpp
+plugins/NeuralAmp/NeuralAmpControls.h
+plugins/NeuralAmp/NeuralAmpEffect.cpp
+plugins/NeuralAmp/NeuralAmpEffect.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+plugins/Vst3Effect/Vst3BusMap.cpp
+plugins/Vst3Effect/Vst3BusMap.h
+plugins/Vst3Effect/Vst3Effect.cpp
+plugins/Vst3Effect/Vst3Effect.h
+plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+plugins/Vst3Effect/Vst3EffectControlDialog.h
+plugins/Vst3Effect/Vst3EffectControls.cpp
+plugins/Vst3Effect/Vst3EffectControls.h
+plugins/Vst3Effect/Vst3Host.cpp
+plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3MidiEvent.cpp
+plugins/Vst3Effect/Vst3MidiEvent.h
+plugins/Vst3Effect/Vst3MidiQueue.h
+plugins/Vst3Effect/Vst3ParamDescriptor.h
+plugins/Vst3Effect/Vst3Parameter.cpp
+plugins/Vst3Effect/Vst3Parameter.h
+plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+plugins/Vst3Effect/Vst3SubPluginFeatures.h
+plugins/Vst3Instrument/Vst3Instrument.cpp
+plugins/Vst3Instrument/Vst3Instrument.h
+plugins/Vst3Instrument/Vst3InstrumentView.cpp
+plugins/Vst3Instrument/Vst3InstrumentView.h
+plugins/Vst3Instrument/logo.png
+plugins/WasmEffect/WasmEffect.cpp
+plugins/WasmEffect/WasmEffect.h
+plugins/WasmEffect/WasmEffectControlDialog.cpp
+plugins/WasmEffect/WasmEffectControlDialog.h
+plugins/WasmEffect/WasmEffectControls.cpp
+plugins/WasmEffect/WasmEffectControls.h
+src/core/AudioBus.cpp
+src/core/AudioPortsModel.cpp
+src/core/CrashReporter.cpp
+src/core/ExternalProcessStemSeparator.cpp
+src/core/LatencyCompensation.cpp
+src/core/LoudnessReport.cpp
+src/core/LufsMeter.cpp
+src/core/MasteringChain.cpp
+src/core/MasteringJob.cpp
+src/core/MidiLearn.cpp
+src/core/NoteRandom.cpp
+src/core/NoteTransform.cpp
+src/core/OnnxRuntimeStemSeparator.cpp
+src/core/PluginScanCache.cpp
+src/core/ProjectRecovery.cpp
+src/core/Rack.cpp
+src/core/RackNodes.cpp
+src/core/RoutingChainNodes.cpp
+src/core/RoutingGraph.cpp
+src/core/RoutingNode.cpp
+src/core/RoutingNodes.cpp
+src/core/ScriptApiVersion.cpp
+src/core/ScriptBindings.cpp
+src/core/ScriptCommandQueue.cpp
+src/core/ScriptConsole.cpp
+src/core/ScriptEngine.cpp
+src/core/ScriptPackage.cpp
+src/core/SessionClip.cpp
+src/core/SessionModel.cpp
+src/core/SessionModelPrivate.h
+src/core/SessionScheduler.cpp
+src/core/StemJobManager.cpp
+src/core/StemModelStore.cpp
+src/core/StemTrackBuilder.cpp
+src/core/Telemetry.cpp
+src/core/TelemetryNetworkTransport.cpp
+src/core/VcaGroup.cpp
+src/core/audio/MultiTrackRecorder.cpp
+src/core/audio/TrackRecorder.cpp
+src/core/midi/MpeExpression.cpp
+src/gui/MidiLearnGui.cpp
+src/gui/PinConnector.cpp
+src/gui/StemSplitController.cpp
+src/gui/TelemetryConsentDialog.cpp
+src/wasm/WasmAbi.h
+src/wasm/WasmSandbox.cpp
+src/wasm/WasmSandbox.h
+src/wasm/WasmSpscRingBuffer.h
+src/wasm/WasmWorker.cpp
+src/wasm/WasmWorker.h
+tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/LufsMeterTest.cpp
+tests/src/core/MidiLearnTest.cpp
+tests/src/core/MixerConcurrencyTest.cpp
+tests/src/core/ProjectOpenIntegrityTest.cpp
+tests/src/core/SessionModelTest.cpp
+tests/src/core/StemExportTest.cpp
+tests/src/core/StemExportTestSupport.h
+tests/src/tracks/SampleClipWindowTest.cpp
+tools/local-ci.sh
+tools/ncpu-shim.c

@@ -1,0 +1,379 @@
+diff --git a/src/core/main.cpp b/src/core/main.cpp
+index 4641d8b5d..2fa91000a 100644
+--- a/src/core/main.cpp
++++ b/src/core/main.cpp
+@@ -77,6 +77,11 @@
+ #include "Song.h"
+ #include "ScriptConsole.h"
+ #include "ScriptEngine.h"
++#include "ControlRegistry.h"
++#include "ControlServer.h"
++#include "UnattendedRun.h"
++
++#include <memory>
+ 
+ #ifdef LMMS_DEBUG_FPE
+ #include <fenv.h> // For feenableexcept
+@@ -220,6 +225,8 @@ void printHelp()
+ 		"  -p, --profile <out>            Dump profiling information to file <out>\n"
+ 		"      --run-script <file>        Run the Lua script <file> headless and exit\n"
+ 		"          Prints the script's LuaLog output to stdout\n"
++		"      --control-socket <path>    Listen for agent JSON-RPC commands on the\n"
++		"          AF_UNIX socket <path>. Opt-in; off unless given.\n"
+ 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
+ 		"          Range: 44100 (default) to 192000\n"
+ 		"          Possible values: 1, 2, 4, 8\n"
+@@ -276,7 +283,7 @@ int main( int argc, char * * argv )
+ 	bool outputSpecified = false;
+ 	int scriptExitCode = EXIT_SUCCESS;
+ 	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile,
+-			scriptFile;
++			scriptFile, controlSocket;
+ 
+ 	// first of two command-line parsing stages
+ 	for (int i = 1; i < argc; ++i)
+@@ -720,6 +727,24 @@ int main( int argc, char * * argv )
+ 
+ 			scriptFile = QString::fromLocal8Bit( argv[i] );
+ 		}
++		else if( arg == "--control-socket" )
++		{
++			// Opt-in agent control socket (SPEC-zene-studio.md A12). Off unless
++			// this flag is given; the socket is AF_UNIX, mode 0600, local only.
++			++i;
++
++			if( i == argc )
++			{
++				return usageError( "No control socket path specified" );
++			}
++
++			controlSocket = QString::fromLocal8Bit( argv[i] );
++			// Mark the whole process as agent-driven before the GUI or the
++			// engine exists: from here on no modal dialog may be opened, and
++			// the commands that raise one answer with a typed result instead
++			// (task #625, SPEC A13).
++			lmms::setAgentInstance( true );
++		}
+ 		else
+ 		{
+ 			if( argv[i][0] == '-' )
+@@ -794,6 +819,25 @@ int main( int argc, char * * argv )
+ 
+ 	bool destroyEngine = false;
+ 
++	// Opt-in agent control surface (SPEC A12). The socket is started before the
++	// engine so that a client can connect and probe (control.ping) while the
++	// instance is still initialising; commands that need the model return the
++	// typed 'busy' refusal until Engine::init() has run.
++	std::unique_ptr<ControlServer> controlServer;
++	if( !controlSocket.isEmpty() )
++	{
++		ControlRegistry* registry = ControlRegistry::instance();
++		controlServer = std::make_unique<ControlServer>( registry );
++		QString controlError;
++		if( !controlServer->listen( controlSocket, &controlError ) )
++		{
++			fprintf( stderr, "control socket: %s\n", controlError.toUtf8().constData() );
++			return EXIT_FAILURE;
++		}
++		printf( "control socket listening on %s\n", controlSocket.toUtf8().constData() );
++		fflush( stdout );
++	}
++
+ 	// if we have an output file for rendering, just render the song
+ 	// without starting the GUI
+ 	if( !renderOut.isEmpty() )
+@@ -985,7 +1029,21 @@ int main( int argc, char * * argv )
+ 					recoveryDecision.detail.toUtf8().constData() );
+ 		}
+ 
+-		if( recoveryFilePresent )
++		if( recoveryFilePresent && lmms::isUnattendedRun() )
++		{
++			// A modal here runs BEFORE app->exec(): in an unattended run
++			// (--control-socket, or no display at all) nobody can click it, so
++			// the instance would never become ready (task #625).  Take the
++			// box's own default button - "Recover", the non-destructive answer
++			// - and say so on stderr.
++			fileToLoad = recoveryFile;
++			getGUI()->mainWindow()->setSession( MainWindow::SessionState::Recover );
++			fprintf( stderr, "main: unattended run: recovering %s without the "
++				"\"Project recovery\" prompt (the prompt's default answer)\n",
++				recoveryFile.toUtf8().constData() );
++			fflush( stderr );
++		}
++		else if( recoveryFilePresent )
+ 		{
+ 			QMessageBox mb;
+ 			mb.setWindowTitle( MainWindow::tr( "Project recovery" ) );
+@@ -1149,7 +1207,32 @@ int main( int argc, char * * argv )
+ 		}
+ 	}
+ 
++	// The application is fully constructed and the initial project exists: from
++	// here the agent surface may drive the model (before this point every
++	// command returns the typed 'busy' refusal).
++	if( controlServer )
++	{
++		controlServer->registry()->setReady( true );
++		// A client may have asked to quit before startup finished (the socket is
++		// up first, by design). Apply it now that the normal shutdown path - and
++		// the main event loop - actually exist (task #626).
++		ControlRegistry::applyPendingQuit();
++	}
++
+ 	const int ret = app->exec();
++
++	// The loop returned: the shutdown is doing its work, so disarm the
++	// last-resort guard (it must only ever catch a shutdown that never returns).
++	ControlRegistry::cancelShutdownGuard();
++
++	// Unlink the control socket here rather than at the end of main: the shutdown
++	// contract is "gone on exit", and this way it is gone before the engine
++	// teardown, which the agent may be watching (task #626).
++	if( controlServer )
++	{
++		controlServer->close();
++	}
++
+ 	// A clean exit: clear the "session was open" marker so the next launch
+ 	// knows the difference between a crash and a deliberate quit.
+ 	crashreporter::endSession();
+diff --git a/src/gui/GuiApplication.cpp b/src/gui/GuiApplication.cpp
+index 0929ff368..7d8d9a205 100644
+--- a/src/gui/GuiApplication.cpp
++++ b/src/gui/GuiApplication.cpp
+@@ -50,6 +50,10 @@
+ #include <QSplashScreen>
+ #include <QSocketNotifier>
+ 
++#include <cstdio>
++
++#include "UnattendedRun.h"
++
+ #ifdef LMMS_BUILD_WIN32
+ #include <io.h>
+ #include <stdio.h>
+@@ -91,16 +95,42 @@ GuiApplication::GuiApplication()
+ 	// Immediately register our SIGINT handler
+ 	createSocketNotifier();
+ 
+-	// prompt the user to create the Zene Studio working directory (e.g. ~/Documents/Zene Studio) if it doesn't exist
+-	if ( !ConfigManager::inst()->hasWorkingDir() &&
+-		QMessageBox::question( nullptr,
++	// Prompt the user to create the Zene Studio working directory (e.g.
++	// ~/Documents/Zene Studio) if it doesn't exist. In an unattended run
++	// (--control-socket, or no display at all) there is nobody to answer the prompt and Qt would park
++	// the constructor in a nested event loop, so the instance would never
++	// reach app->exec() (task #625). Take the prompt's own default answer -
++	// "Yes, create it" - and say so on stderr; if creation fails, name the
++	// path in a typed line rather than waiting on a click.
++	if ( !ConfigManager::inst()->hasWorkingDir() )
++	{
++		const QString workingDir = ConfigManager::inst()->workingDir();
++		const bool unattended = lmms::isUnattendedRun();
++		if ( unattended ||
++			QMessageBox::question( nullptr,
+ 				tr( "Working directory" ),
+ 				tr( "The Zene Studio working directory %1 does not "
+-				"exist. Create it now? You can change the directory "
+-				"later via Edit -> Settings." ).arg( ConfigManager::inst()->workingDir() ),
++					"exist. Create it now? You can change the directory "
++					"later via Edit -> Settings." ).arg( workingDir ),
+ 					QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes ) == QMessageBox::Yes)
+-	{
+-		ConfigManager::inst()->createWorkingDir();
++		{
++			ConfigManager::inst()->createWorkingDir();
++			if ( unattended )
++			{
++				if ( ConfigManager::inst()->hasWorkingDir() )
++				{
++					fprintf( stderr, "GuiApplication: working-directory path=%s "
++						"state=created (unattended run: the prompt's default answer)\n",
++						workingDir.toUtf8().constData() );
++				}
++				else
++				{
++					fprintf( stderr, "GuiApplication: working-directory-error path=%s "
++						"reason=create-failed\n", workingDir.toUtf8().constData() );
++				}
++				fflush( stderr );
++			}
++		}
+ 	}
+ 	// Init style and palette
+ 	QDir::addSearchPath("artwork", ConfigManager::inst()->themeDir());
+diff --git a/src/gui/MainWindow.cpp b/src/gui/MainWindow.cpp
+index fcf2b459a..a352d8837 100644
+--- a/src/gui/MainWindow.cpp
++++ b/src/gui/MainWindow.cpp
+@@ -24,6 +24,8 @@
+ 
+ #include "MainWindow.h"
+ 
++#include <cstdio>
++
+ #include <QApplication>
+ #include <QCloseEvent>
+ #include <QDateTime>
+@@ -38,7 +40,11 @@
+ #include <QSplitter>
+ 
+ #include "AboutDialog.h"
++#include "AudioEngine.h"
+ #include "AutomationEditor.h"
++#include "AudioEngine.h"
++#include "ControlRegistry.h"
++#include "UnattendedRun.h"
+ #include "ControllerRackView.h"
+ #include "DeprecationHelper.h"
+ #include "DpiHelper.h"
+@@ -343,6 +349,9 @@ void MainWindow::finalize()
+ 	m_redoAction = addAction(edit_menu, "edit_redo", tr("Redo"),
+ 		QKeySequence::Redo, &MainWindow::redo);
+ 
++	// A11/A15: these two actions declare the registry commands they implement.
++	m_undoAction->setData(QStringLiteral("control.undo"));
++	m_redoAction->setData(QStringLiteral("control.redo"));
+ 	m_undoAction->setShortcutContext(Qt::ApplicationShortcut);
+ 	m_redoAction->setShortcutContext(Qt::ApplicationShortcut);
+ 
+@@ -357,6 +366,10 @@ void MainWindow::finalize()
+ 		this, SLOT(toggleMidiLearn()));
+ 	m_midiLearnAction->setCheckable(true);
+ 	m_midiLearnAction->setToolTip(tr("Arm MIDI learn, then touch a control and move a hardware knob"));
++	// A11/A15: the action declares the registry command it implements, and
++	// toggleMidiLearn() below invokes that same command - one implementation for
++	// the menu item, the shortcut and the agent surface (SPEC-zene-studio.md A11).
++	m_midiLearnAction->setData(QStringLiteral("midi.learn_toggle"));
+ 	MidiLearnGui::instance()->setAction(m_midiLearnAction);
+ 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateMidiLearnAction()));
+ 
+@@ -481,12 +494,31 @@ void MainWindow::finalize()
+ 	m_toolBarLayout->setColumnStretch( 100, 1 );
+ 
+ 	// setup-dialog opened before?
++	//
++	// Both dialogs below are questions for a human, asked BEFORE app->exec().
++	// In an unattended run (--control-socket, or no display at all) nobody can
++	// answer them, so Qt parks the startup path in a nested event loop: the
++	// instance stays alive, keeps answering `control.ping` with
++	// engine_ready=false, and never becomes usable (task #625, measured on
++	// 6b01b98eb). Ask only when a human is actually there; otherwise say it on
++	// stderr, where the log and the operator can see it.
++	const bool interactive = !lmms::isUnattendedRun();
++
+ 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
+ 	{
+ 		ConfigManager::inst()->setValue( "app", "configured", "1" );
+ 		// no, so show it that user can setup everything
+-		SetupDialog sd;
+-		sd.exec();
++		if( interactive )
++		{
++			SetupDialog sd;
++			sd.exec();
++		}
++		else
++		{
++			fprintf( stderr, "MainWindow: unattended run: skipping the first-run setup dialog; "
++				"configure audio and MIDI in the --config file\n" );
++			fflush( stderr );
++		}
+ 	}
+ 	// look whether the audio engine failed to start the audio device selected by the
+ 	// user and is using AudioDummy as a fallback
+@@ -494,12 +526,38 @@ void MainWindow::finalize()
+ 	else if( Engine::audioEngine()->audioDevStartFailed() || !AudioEngine::isAudioDevNameValid(
+ 		ConfigManager::inst()->value( "audioengine", "audiodev" ) ) )
+ 	{
+-		QMessageBox::critical(nullptr, "Audio device setup failed",
+-			tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart Zene Studio."));
+ 
+-		// if so, offer the audio settings section of the setup dialog
+-		SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
+-		sd.exec();
++		if( interactive )
++		{
++			QMessageBox::critical(nullptr, "Audio device setup failed",
++				tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart Zene Studio."));
++
++			// if so, offer the audio settings section of the setup dialog
++			SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
++			sd.exec();
++		}
++		else
++		{
++			// The engine already fell back to the dummy device and keeps working
++			// (render, edit, save); an agent needs the reason, not a prompt. Two lines,
++			// both from this one event, because they serve two readers:
++			//   1. the sentence control.ping reports as audio.message (agent-facing, one source);
++			//   2. the structured diagnostic the headless no-audio-device test parses
++			//      (backend / start-failed / name-known / device), which is what makes the
++			//      fallback auditable from a log rather than only from the socket.
++			// Merge reconciliation of #625 x #626, 2026-09-12: both contracts are kept.
++			const QString requested = ConfigManager::inst()->value( "audioengine", "audiodev" );
++			const bool failed = Engine::audioEngine()->audioDevStartFailed();
++			const bool known = AudioEngine::isAudioDevNameValid( requested );
++			fprintf( stderr, "MainWindow: audio device setup failed: %s\n",
++				Engine::audioEngine()->audioDevStartReason().toUtf8().constData() );
++			fprintf( stderr, "MainWindow: audio-device-setup backend=\"%s\" "
++				"device_start_failed=%d name_known=%d device=\"%s\" "
++				"(unattended run: no dialog, the engine continues)\n",
++				requested.toUtf8().constData(), failed ? 1 : 0, known ? 1 : 0,
++				Engine::audioEngine()->audioDevName().toUtf8().constData() );
++			fflush( stderr );
++		}
+ 	}
+ 
+ 	// Add editor subwindows
+@@ -621,6 +679,27 @@ bool MainWindow::mayChangeProject(bool stopPlayback)
+ 		return( true );
+ 	}
+ 
++	// A control-surface quit (control.quit) has nobody to ask. It states its
++	// intent up front, so answer the same question the dialog below would ask
++	// exactly as a user would, minus the dialog. Without this the question blocks
++	// in a nested event loop that nothing can dismiss, and the process never
++	// finishes quitting - the whole of reproduction (a) in task #626 (the stack
++	// was QCoreApplication::quit -> QApplication::closeAllWindows ->
++	// MainWindow::closeEvent -> this dialog).
++	const ControlRegistry::QuitPromptAnswer quitAnswer = ControlRegistry::quitPromptAnswer();
++	if( quitAnswer != ControlRegistry::QuitPromptAnswer::Ask )
++	{
++		if( quitAnswer == ControlRegistry::QuitPromptAnswer::Save )
++		{
++			return( saveProject() );
++		}
++		if( getSession() == SessionState::Recover )
++		{
++			sessionCleanup();
++		}
++		return( true );
++	}
++
+ 	// Separate message strings for modified and recovered files
+ 	QString messageTitleRecovered = tr( "Recovered project not saved" );
+ 	QString messageRecovered = tr( "This project was recovered from the "
+@@ -1283,8 +1362,18 @@ void MainWindow::updateUndoRedoButtons()
+ 
+ void MainWindow::toggleMidiLearn()
+ {
+-	// Armed state lives in MidiLearn; the action is the GUI handle for it.
+-	MidiLearnGui::instance()->setArmed(m_midiLearnAction->isChecked());
++	// A11: the menu item drives the SAME registry command an agent calls, so the
++	// mode has one implementation rather than two that can drift. The handler
++	// arms MidiLearnGui and syncs this action's tick (MidiLearnGui holds it).
++	const ControlResult result = ControlRegistry::instance()->invoke(
++		QStringLiteral("midi.learn_toggle"));
++	if( !result.ok )
++	{
++		// Nothing armed - there is no GUI yet, or the engine is still starting.
++		// Qt has already flipped the tick, so put it back where the real state
++		// is: the menu must never claim a mode that was not armed.
++		updateMidiLearnAction();
++	}
+ }
+ 
+ 

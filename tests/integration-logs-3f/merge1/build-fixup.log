@@ -1,0 +1,595 @@
+[  0%] Built target weakjack
+[  0%] Built target ringbuffer
+[  0%] Built target carla_native-plugin
+[  1%] Built target lua
+[  2%] Built target tap_autopan
+[  2%] Built target tap_deesser
+[  2%] Built target tap_chorusflanger
+[  3%] Built target caps
+[  3%] Built target tap_doubler
+[  3%] Built target tap_dynamics_m
+[  3%] Built target tap_dynamics_st
+[  3%] Built target tap_echo
+[  3%] Built target tap_eq
+[  3%] Built target tap_eqbw
+[  3%] Built target tap_limiter
+[  3%] Built target tap_pinknoise
+[  3%] Built target tap_pitch
+[  4%] Built target tap_reflector
+[  4%] Built target tap_reverb
+[  4%] Built target tap_rotspeak
+[  4%] Built target tap_tubewarmth
+[  4%] Built target tap_sigmoid
+[  4%] Built target tap_tremolo
+[  4%] Built target tap_vibrato
+[  4%] Built target alias_1407
+[  5%] Built target allpass_1895
+[  5%] Built target am_pitchshift_1433
+[  5%] Built target amp_1181
+[  5%] Built target iir
+[  5%] Built target blo
+[  5%] Built target bode_shifter_1431
+[  6%] Built target bode_shifter_cv_1432
+[  6%] Built target chebstortion_1430
+[  6%] Built target comb_1190
+[  6%] Built target comb_splitter_1411
+[  6%] Built target comb_1887
+[  6%] Built target const_1909
+[  6%] Built target crossover_dist_1404
+[  6%] Built target debug_1184
+[  6%] Built target dc_remove_1207
+[  6%] Built target decay_1886
+[  6%] Built target decimator_1202
+[  6%] Built target delay_1898
+[  6%] Built target declip_1195
+[  6%] Built target divider_1186
+[  6%] Built target delayorama_1402
+[  6%] Built target diode_1185
+[  6%] Built target dj_eq_1901
+[  6%] Built target dyson_compress_1403
+[  6%] Built target dj_flanger_1438
+[  6%] Built target fad_delay_1192
+[  6%] Built target fast_lookahead_limiter_1913
+[  6%] Built target flanger_1191
+[  6%] Built target fm_osc_1415
+[  6%] Built target foldover_1213
+[  6%] Built target foverdrive_1196
+[  6%] Built target freq_tracker_1418
+[  7%] Built target gate_1410
+[  7%] Built target gate_1921
+[  7%] Built target giant_flange_1437
+[  7%] Built target gong_beater_1439
+[  7%] Built target gong_1424
+[  8%] Built target gsm
+[  8%] Built target gverb
+[  8%] Built target harmonic_gen_1220
+[  8%] Built target hard_limiter_1413
+[  9%] Built target hermes_filter_1200
+[  9%] Built target highpass_iir_1890
+[  9%] Built target hilbert_1440
+[  9%] Built target imp_1199
+[  9%] Built target inv_1429
+[  9%] Built target impulse_1885
+[  9%] Built target latency_1914
+[ 10%] Built target karaoke_1409
+[ 10%] Built target lcr_delay_1436
+[ 10%] Built target lowpass_iir_1891
+[ 10%] Built target matrix_ms_st_1421
+[ 10%] Built target ls_filter_1908
+[ 10%] Built target matrix_spatialiser_1422
+[ 10%] Built target matrix_st_ms_1420
+[ 10%] Built target mod_delay_1419
+[ 10%] Built target mbeq_1197
+[ 10%] Built target notch_iir_1894
+[ 10%] Built target multivoice_chorus_1201
+[ 10%] Built target phasers_1217
+[ 10%] Built target pitchscale
+[ 10%] Built target pointer_cast_1910
+[ 10%] Built target plate_1423
+[ 10%] Built target rate_shifter_1417
+[ 10%] Built target retro_flange_1208
+[ 10%] Built target revdelay_1605
+[ 10%] Built target ringmod_1188
+[ 10%] Built target db
+[ 10%] Built target satan_maximiser_1408
+[ 10%] Built target rms
+[ 10%] Built target shaper_1187
+[ 10%] Built target sin_cos_1881
+[ 10%] Built target sifter_1210
+[ 11%] Built target single_para_1203
+[ 11%] Built target sinus_wavewrapper_1198
+[ 11%] Built target smooth_decimate_1414
+[ 11%] Built target split_1406
+[ 11%] Built target step_muxer_1212
+[ 11%] Built target surround_encoder_1401
+[ 11%] Built target svf_1214
+[ 11%] Built target tape_delay_1211
+[ 11%] Built target transient_1206
+[ 11%] Built target triple_para_1204
+[ 11%] Built target valve_1209
+[ 11%] Built target valve_rect_1405
+[ 11%] Built target vocoder_1337
+[ 11%] Built target vynil_1905
+[ 11%] Built target wave_terrain_1412
+[ 11%] Built target xfade_1915
+[ 11%] Built target zm1_1428
+[ 12%] Built target cmt
+[ 12%] Built target adplug
+[ 13%] Built target gme
+[ 14%] Built target veal
+[ 14%] Built target rnnoise_vendored
+[ 14%] Performing build step for 'NativeLinuxRemoteVstPlugin64'
+[ 15%] Built target resid_objects
+[ 16%] Built target lmms_vst3_sdk
+[ 17%] Built target zynaddsubfx_nio
+[100%] Built target NativeLinuxRemoteVstPlugin64
+[ 19%] Built target zynaddsubfx_synth
+[ 19%] Built target FakeRemotePluginClient_autogen_timestamp_deps
+[ 20%] No install step for 'NativeLinuxRemoteVstPlugin64'
+[ 22%] Built target zynaddsubfx_gui
+[ 22%] Built target ClapBusMapTest_autogen_timestamp_deps
+[ 22%] Built target clap-test-gain_autogen_timestamp_deps
+[ 22%] Completed 'NativeLinuxRemoteVstPlugin64'
+[ 22%] Built target lmmsobjs_autogen_timestamp_deps
+[ 22%] Built target analogue_osc_1416
+[ 22%] Built target bandpass_a_iir_1893
+[ 22%] Built target bandpass_iir_1892
+[ 22%] Built target butterworth_1902
+[ 22%] Built target gsm_1215
+[ 22%] Built target NativeLinuxRemoteVstPlugin64
+[ 22%] Built target gverb_1216
+[ 22%] Built target pitch_scale_1194
+[ 23%] Built target pitch_scale_1193
+[ 23%] Built target sc2_1426
+[ 23%] Built target sc1_1425
+[ 24%] Built target sc3_1427
+[ 24%] Built target sc4_1882
+[ 24%] Built target sc4m_1916
+[ 24%] Built target se4_1883
+[ 24%] Built target FakeRemotePluginClient_autogen
+[ 24%] Built target clap-test-gain_autogen
+[ 24%] Built target ZynAddSubFxCore
+[ 24%] Built target ClapBusMapTest_autogen
+[ 24%] Built target clap-test-gain
+[ 24%] Built target FakeRemotePluginClient
+[ 24%] Built target RemoteZynAddSubFx
+[ 24%] Built target ClapHostTest_autogen_timestamp_deps
+[ 24%] Built target ClapBusMapTest
+[ 24%] Built target ClapHostTest_autogen
+[ 24%] Built target ClapHostTest
+[ 24%] Automatic MOC and UIC for target lmmsobjs
+[ 24%] Built target lmmsobjs_autogen
+[ 24%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioSdl.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Track.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioPulseAudio.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioSampleRecorder.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/lv2/Lv2Proc.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/lv2/Lv2Manager.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiAlsaSeq.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiController.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiJack.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiPort.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/AutomatableModelView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/ControllerRackView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/EffectControlDialog.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/EffectRackView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/EffectView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/FileBrowser.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/GuiApplication.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/LfoControllerDialog.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/Lv2ViewBase.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MainApplication.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MicrotunerConfig.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MidiCCRackView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MidiLearnGui.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MixerChannelView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MixerView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/PluginBrowser.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/ProjectNotes.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/SampleTrackWindow.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/SampleThumbnail.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/SendButtonIndicator.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/AutomationClipView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/ClipView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/MidiClipView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/PatternClipView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/SampleClipView.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/AutomationEditor.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/Editor.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/PatternEditor.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/PianoRoll.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/PositionLine.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/SongEditor.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/TimeLineWidget.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/TrackContainerView.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/EnvelopeAndLfoView.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/EnvelopeGraph.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentMidiIOView.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentTuningView.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentSoundShapingView.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentTrackWindow.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentView.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/LfoGraph.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/PianoView.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/menus/RecentProjectsMenu.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/menus/TemplatesMenu.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/ControllerConnectionDialog.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/EffectSelectDialog.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/ExportProjectDialog.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/SetupDialog.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/VersionedSaveDialog.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/AutomationTrackView.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/InstrumentTrackView.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/PatternTrackView.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/SampleTrackView.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackContentWidget.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackLabelButton.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackOperationsWidget.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackGrip.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackView.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/CPULoadWidget.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/FloatModelEditorBase.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/Graph.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/Oscilloscope.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/TempoSyncBarModelEditor.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/TempoSyncKnob.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/TimeDisplayWidget.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/AutomationTrack.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/InstrumentTrack.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/MidiClip.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/PatternTrack.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/SampleTrack.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/lmmsobjs.dir/qrc_lmms.cpp.o
+[ 38%] Built target lmmsobjs
+[ 38%] Built target ArrayVectorTest_autogen_timestamp_deps
+[ 38%] Built target AudioBufferTest_autogen_timestamp_deps
+[ 38%] Built target zene_autogen_timestamp_deps
+[ 38%] Built target AudioBusHandleTest_autogen_timestamp_deps
+[ 38%] Built target AudioBusTest_autogen_timestamp_deps
+[ 38%] Built target AudioEngineTeardownTest_autogen_timestamp_deps
+[ 38%] Built target AudioPortsTest_autogen_timestamp_deps
+[ 38%] Built target AudioPortsModelTest_autogen_timestamp_deps
+[ 38%] Built target AutomatableModelTest_autogen_timestamp_deps
+[ 38%] Built target AutomationModesTest_autogen_timestamp_deps
+[ 38%] Built target ClipSerialisationTest_autogen_timestamp_deps
+[ 38%] Built target ClipWarpPersistenceTest_autogen_timestamp_deps
+[ 38%] Built target ControlAutomationScriptTest_autogen_timestamp_deps
+[ 38%] Built target ConfigMigrationTest_autogen_timestamp_deps
+[ 38%] Built target ControlDeviceCatalogueTest_autogen_timestamp_deps
+[ 38%] Built target ControlEditCommandsTest_autogen_timestamp_deps
+[ 38%] Built target ControlRegistryTest_autogen_timestamp_deps
+[ 38%] Built target DataFileFormatTest_autogen_timestamp_deps
+[ 38%] Built target CrashReporterTest_autogen_timestamp_deps
+[ 38%] Built target DataFileSaveIntegrityTest_autogen_timestamp_deps
+[ 38%] Built target LufsMeterTest_autogen_timestamp_deps
+[ 38%] Built target LoudnessReportTest_autogen_timestamp_deps
+[ 38%] Built target MasteringTest_autogen_timestamp_deps
+[ 38%] Built target MathTest_autogen_timestamp_deps
+[ 38%] Built target MidiLearnThreadTest_autogen_timestamp_deps
+[ 38%] Built target MidiLearnTest_autogen_timestamp_deps
+[ 38%] Built target MidiProbabilityPersistenceTest_autogen_timestamp_deps
+[ 38%] Built target MixerAbRegressionTest_autogen_timestamp_deps
+[ 38%] Built target MixerRoutingBackwardCompatTest_autogen_timestamp_deps
+[ 38%] Built target MixerConcurrencyTest_autogen_timestamp_deps
+[ 38%] Built target MpeExpressionTest_autogen_timestamp_deps
+[ 38%] Built target MpeInputPathTest_autogen_timestamp_deps
+[ 38%] Built target MpeNoteStorageTest_autogen_timestamp_deps
+[ 38%] Built target MultiTrackRecorderTest_autogen_timestamp_deps
+[ 38%] Built target NoteRandomTest_autogen_timestamp_deps
+[ 38%] Built target NoteTransformTest_autogen_timestamp_deps
+[ 38%] Built target PhaseFChannelScaleTest_autogen_timestamp_deps
+[ 38%] Built target PluginLogoResourceTest_autogen_timestamp_deps
+[ 38%] Built target PluginAudioPortsTest_autogen_timestamp_deps
+[ 38%] Built target ProjectOpenIntegrityTest_autogen_timestamp_deps
+[ 38%] Built target ProjectRecoveryTest_autogen_timestamp_deps
+[ 38%] Built target RackTest_autogen_timestamp_deps
+[ 38%] Built target RecordClipTest_autogen_timestamp_deps
+[ 38%] Built target ProjectVersionTest_autogen_timestamp_deps
+[ 38%] Built target RecordRingBufferTest_autogen_timestamp_deps
+[ 38%] Built target RecordingRealtimeTest_autogen_timestamp_deps
+[ 38%] Built target RelativePathsTest_autogen_timestamp_deps
+[ 38%] Built target ReversibilityContractTest_autogen_timestamp_deps
+[ 38%] Built target ReversibilityUndoTest_autogen_timestamp_deps
+[ 38%] Built target RemotePluginAudioPortsTest_autogen_timestamp_deps
+[ 38%] Built target RemotePluginClientE2ETest_autogen_timestamp_deps
+[ 38%] Built target RenderJobQueueTest_autogen_timestamp_deps
+[ 38%] Built target RoutingGraphLiveTest_autogen_timestamp_deps
+[ 38%] Built target RoutingGraphTest_autogen_timestamp_deps
+[ 38%] Built target PdcMixerTest_autogen_timestamp_deps
+[ 38%] Built target VcaGroupTest_autogen_timestamp_deps
+[ 38%] Built target ScriptBindingsTest_autogen_timestamp_deps
+[ 38%] Built target ScriptEngineTest_autogen_timestamp_deps
+[ 38%] Built target ScriptStabilisationTest_autogen_timestamp_deps
+[ 38%] Built target SlideNotesTest_autogen_timestamp_deps
+[ 38%] Built target StableTrackIdsTest_autogen_timestamp_deps
+[ 38%] Built target StemExportTest_autogen_timestamp_deps
+[ 38%] Built target TimelineTest_autogen_timestamp_deps
+[ 38%] Built target TelemetryTest_autogen_timestamp_deps
+[ 38%] Built target TwoTrackRecordingHarness_autogen_timestamp_deps
+[ 38%] Built target WarpMarkersTest_autogen_timestamp_deps
+[ 38%] Built target MidiLearnGuiTest_autogen_timestamp_deps
+[ 38%] Built target AutomationTrackTest_autogen_timestamp_deps
+[ 38%] Built target SampleClipWarpTest_autogen_timestamp_deps
+[ 38%] Built target SampleClipWindowTest_autogen_timestamp_deps
+[ 38%] Automatic MOC and UIC for target zene
+[ 38%] Automatic MOC for target ArrayVectorTest
+[ 38%] Automatic MOC for target AudioBusHandleTest
+[ 38%] Automatic MOC for target AudioBufferTest
+[ 38%] Built target zene_autogen
+[ 38%] Built target ArrayVectorTest_autogen
+[ 38%] Built target AudioBufferTest_autogen
+[ 38%] Automatic MOC for target AudioBusTest
+[ 38%] Automatic MOC for target AudioEngineTeardownTest
+[ 38%] Built target AudioBusTest_autogen
+[ 38%] Automatic MOC for target AudioPortsModelTest
+[ 38%] Automatic MOC for target AudioPortsTest
+[ 38%] Built target AudioBusHandleTest_autogen
+[ 38%] Automatic MOC for target AutomatableModelTest
+[ 38%] Built target AudioPortsModelTest_autogen
+[ 38%] Built target AudioEngineTeardownTest_autogen
+[ 38%] Built target AutomatableModelTest_autogen
+[ 38%] Automatic MOC for target AutomationModesTest
+[ 38%] Automatic MOC for target ClipSerialisationTest
+[ 38%] Automatic MOC for target ClipWarpPersistenceTest
+[ 38%] Built target AudioPortsTest_autogen
+[ 38%] Automatic MOC for target ConfigMigrationTest
+[ 38%] Built target ConfigMigrationTest_autogen
+[ 38%] Automatic MOC for target ControlAutomationScriptTest
+[ 38%] Built target AutomationModesTest_autogen
+[ 38%] Built target ClipWarpPersistenceTest_autogen
+[ 38%] Built target ClipSerialisationTest_autogen
+[ 38%] Automatic MOC for target ControlEditCommandsTest
+[ 38%] Automatic MOC for target ControlDeviceCatalogueTest
+[ 38%] Automatic MOC for target ControlRegistryTest
+[ 38%] Built target ControlAutomationScriptTest_autogen
+[ 39%] Automatic MOC for target CrashReporterTest
+[ 39%] Built target CrashReporterTest_autogen
+[ 39%] Automatic MOC for target DataFileFormatTest
+[ 39%] Built target DataFileFormatTest_autogen
+[ 39%] Automatic MOC for target DataFileSaveIntegrityTest
+[ 39%] Built target DataFileSaveIntegrityTest_autogen
+[ 39%] Automatic MOC for target LoudnessReportTest
+[ 39%] Built target LoudnessReportTest_autogen
+[ 39%] Automatic MOC for target LufsMeterTest
+[ 39%] Built target LufsMeterTest_autogen
+[ 39%] Automatic MOC for target MasteringTest
+[ 39%] Built target ControlEditCommandsTest_autogen
+[ 39%] Built target ControlRegistryTest_autogen
+[ 39%] Built target ControlDeviceCatalogueTest_autogen
+[ 39%] Automatic MOC for target MathTest
+[ 39%] Automatic MOC for target MidiLearnTest
+[ 39%] Automatic MOC for target MidiLearnThreadTest
+[ 39%] Built target MathTest_autogen
+[ 39%] Automatic MOC for target MidiProbabilityPersistenceTest
+[ 39%] Built target MidiProbabilityPersistenceTest_autogen
+[ 39%] Automatic MOC for target MixerAbRegressionTest
+[ 39%] Built target MasteringTest_autogen
+[ 39%] Automatic MOC for target MixerConcurrencyTest
+[ 39%] Built target MidiLearnTest_autogen
+[ 39%] Built target MidiLearnThreadTest_autogen
+[ 39%] Automatic MOC for target MpeExpressionTest
+[ 39%] Automatic MOC for target MixerRoutingBackwardCompatTest
+[ 39%] Built target MixerAbRegressionTest_autogen
+[ 39%] Automatic MOC for target MpeInputPathTest
+[ 39%] Built target MixerConcurrencyTest_autogen
+[ 39%] Automatic MOC for target MpeNoteStorageTest
+[ 39%] Built target MpeNoteStorageTest_autogen
+[ 39%] Automatic MOC for target MultiTrackRecorderTest
+[ 39%] Built target MultiTrackRecorderTest_autogen
+[ 39%] Automatic MOC for target NoteRandomTest
+[ 39%] Built target MpeExpressionTest_autogen
+[ 39%] Built target NoteRandomTest_autogen
+[ 39%] Built target MixerRoutingBackwardCompatTest_autogen
+[ 39%] Automatic MOC for target NoteTransformTest
+[ 39%] Automatic MOC for target PhaseFChannelScaleTest
+[ 39%] Automatic MOC for target PluginLogoResourceTest
+[ 39%] Built target NoteTransformTest_autogen
+[ 39%] Built target PluginLogoResourceTest_autogen
+[ 39%] Automatic MOC for target PluginAudioPortsTest
+[ 39%] Automatic MOC for target ProjectOpenIntegrityTest
+[ 39%] Built target MpeInputPathTest_autogen
+[ 39%] Automatic MOC for target ProjectRecoveryTest
+[ 39%] Built target ProjectRecoveryTest_autogen
+[ 39%] Automatic MOC for target ProjectVersionTest
+[ 39%] Built target ProjectVersionTest_autogen
+[ 39%] Automatic MOC for target RackTest
+[ 39%] Built target PluginAudioPortsTest_autogen
+[ 39%] Automatic MOC for target RecordClipTest
+[ 39%] Built target RecordClipTest_autogen
+[ 39%] Automatic MOC for target RecordRingBufferTest
+[ 39%] Built target RecordRingBufferTest_autogen
+[ 39%] Built target PhaseFChannelScaleTest_autogen
+[ 39%] Automatic MOC for target RecordingRealtimeTest
+[ 39%] Automatic MOC for target RelativePathsTest
+[ 39%] Built target RelativePathsTest_autogen
+[ 39%] Built target ProjectOpenIntegrityTest_autogen
+[ 39%] Automatic MOC for target ReversibilityContractTest
+[ 39%] Automatic MOC for target ReversibilityUndoTest
+[ 39%] Built target RackTest_autogen
+[ 39%] Automatic MOC for target RemotePluginAudioPortsTest
+[ 39%] Built target RecordingRealtimeTest_autogen
+[ 39%] Automatic MOC for target RemotePluginClientE2ETest
+[ 39%] Built target ReversibilityContractTest_autogen
+[ 39%] Automatic MOC for target RenderJobQueueTest
+[ 39%] Built target RemotePluginAudioPortsTest_autogen
+[ 39%] Built target ReversibilityUndoTest_autogen
+[ 39%] Automatic MOC for target RoutingGraphTest
+[ 39%] Built target RenderJobQueueTest_autogen
+[ 39%] Automatic MOC for target RoutingGraphLiveTest
+[ 39%] Built target RoutingGraphTest_autogen
+[ 39%] Automatic MOC for target PdcMixerTest
+[ 39%] Automatic MOC for target VcaGroupTest
+[ 39%] Built target RemotePluginClientE2ETest_autogen
+[ 39%] Automatic MOC for target ScriptBindingsTest
+[ 39%] Built target RoutingGraphLiveTest_autogen
+[ 39%] Automatic MOC for target ScriptEngineTest
+[ 39%] Built target PdcMixerTest_autogen
+[ 39%] Built target VcaGroupTest_autogen
+[ 39%] Automatic MOC for target ScriptStabilisationTest
+[ 39%] Automatic MOC for target SlideNotesTest
+[ 39%] Built target ScriptBindingsTest_autogen
+[ 39%] Automatic MOC for target StableTrackIdsTest
+[ 39%] Built target ScriptEngineTest_autogen
+[ 39%] Automatic MOC for target StemExportTest
+[ 39%] Built target ScriptStabilisationTest_autogen
+[ 39%] Automatic MOC for target TelemetryTest
+[ 39%] Built target SlideNotesTest_autogen
+[ 39%] Built target TelemetryTest_autogen
+[ 39%] Automatic MOC for target TwoTrackRecordingHarness
+[ 39%] Automatic MOC for target TimelineTest
+[ 39%] Built target TwoTrackRecordingHarness_autogen
+[ 39%] Automatic MOC for target WarpMarkersTest
+[ 39%] Built target WarpMarkersTest_autogen
+[ 39%] Automatic MOC for target MidiLearnGuiTest
+[ 39%] Built target StableTrackIdsTest_autogen
+[ 39%] Automatic MOC for target AutomationTrackTest
+[ 39%] Built target StemExportTest_autogen
+[ 39%] Automatic MOC for target SampleClipWarpTest
+[ 39%] Built target TimelineTest_autogen
+[ 40%] Automatic MOC for target SampleClipWindowTest
+[ 40%] Built target MidiLearnGuiTest_autogen
+[ 40%] Building CXX object src/CMakeFiles/zene.dir/core/main.cpp.o
+[ 40%] Built target AutomationTrackTest_autogen
+[ 40%] Linking CXX executable ArrayVectorTest
+[ 40%] Built target SampleClipWarpTest_autogen
+[ 40%] Linking CXX executable AudioBufferTest
+[ 40%] Built target SampleClipWindowTest_autogen
+[ 40%] Building CXX object tests/CMakeFiles/AudioBusHandleTest.dir/src/core/AudioBusHandleTest.cpp.o
+[ 40%] Built target ArrayVectorTest
+[ 40%] Linking CXX executable AudioBusTest
+[ 40%] Built target AudioBufferTest
+[ 40%] Building CXX object tests/CMakeFiles/AudioEngineTeardownTest.dir/src/core/AudioEngineTeardownTest.cpp.o
+[ 40%] Built target AudioBusTest
+[ 40%] Building CXX object tests/CMakeFiles/AudioPortsModelTest.dir/src/core/AudioPortsModelTest.cpp.o
+[ 40%] Linking CXX executable ../zene
+[ 40%] Linking CXX executable AudioBusHandleTest
+[ 41%] Built target zene
+[ 41%] Building CXX object tests/CMakeFiles/AudioPortsTest.dir/src/core/AudioPortsTest.cpp.o
+[ 42%] Linking CXX executable AudioEngineTeardownTest
+[ 42%] Built target AudioBusHandleTest
+[ 42%] Linking CXX executable AutomatableModelTest
+[ 42%] Built target AudioEngineTeardownTest
+[ 43%] Building CXX object tests/CMakeFiles/AutomationModesTest.dir/src/core/AutomationModesTest.cpp.o
+[ 43%] Built target AutomatableModelTest
+[ 43%] Building CXX object tests/CMakeFiles/ClipSerialisationTest.dir/src/core/ClipSerialisationTest.cpp.o
+[ 43%] Linking CXX executable AudioPortsModelTest
+[ 43%] Built target AudioPortsModelTest
+[ 43%] Building CXX object tests/CMakeFiles/ClipWarpPersistenceTest.dir/src/core/ClipWarpPersistenceTest.cpp.o
+[ 43%] Linking CXX executable AudioPortsTest
+[ 43%] Built target AudioPortsTest
+[ 43%] Linking CXX executable ConfigMigrationTest
+[ 43%] Linking CXX executable AutomationModesTest
+[ 43%] Linking CXX executable ClipSerialisationTest
+[ 43%] Built target ConfigMigrationTest
+[ 43%] Building CXX object tests/CMakeFiles/ControlAutomationScriptTest.dir/ControlAutomationScriptTest_autogen/mocs_compilation.cpp.o
+[ 43%] Building CXX object tests/CMakeFiles/ControlAutomationScriptTest.dir/src/core/ControlAutomationScriptTest.cpp.o
+[ 43%] Built target AutomationModesTest
+[ 43%] Building CXX object tests/CMakeFiles/ControlDeviceCatalogueTest.dir/ControlDeviceCatalogueTest_autogen/mocs_compilation.cpp.o
+[ 43%] Building CXX object tests/CMakeFiles/ControlDeviceCatalogueTest.dir/src/core/ControlDeviceCatalogueTest.cpp.o
+[ 43%] Built target ClipSerialisationTest
+[ 43%] Building CXX object tests/CMakeFiles/ControlEditCommandsTest.dir/ControlEditCommandsTest_autogen/mocs_compilation.cpp.o
+[ 43%] Linking CXX executable ClipWarpPersistenceTest
+[ 43%] Building CXX object tests/CMakeFiles/ControlEditCommandsTest.dir/src/core/ControlEditCommandsTest.cpp.o
+[ 43%] Built target ClipWarpPersistenceTest
+[ 43%] Building CXX object tests/CMakeFiles/ControlRegistryTest.dir/ControlRegistryTest_autogen/mocs_compilation.cpp.o
+[ 43%] Building CXX object tests/CMakeFiles/ControlRegistryTest.dir/src/core/ControlRegistryTest.cpp.o
+[ 43%] Linking CXX executable ControlAutomationScriptTest
+[ 43%] Linking CXX executable ControlDeviceCatalogueTest
+[ 43%] Linking CXX executable ControlEditCommandsTest
+[ 44%] Built target ControlAutomationScriptTest
+[ 44%] Linking CXX executable CrashReporterTest
+[ 44%] Built target ControlDeviceCatalogueTest
+[ 44%] Linking CXX executable DataFileFormatTest
+[ 44%] Built target ControlEditCommandsTest
+[ 44%] Linking CXX executable DataFileSaveIntegrityTest
+[ 44%] Linking CXX executable ControlRegistryTest
+[ 44%] Built target CrashReporterTest
+[ 44%] Linking CXX executable LoudnessReportTest
+[ 44%] Built target DataFileFormatTest
+[ 44%] Linking CXX executable LufsMeterTest
+[ 44%] Built target DataFileSaveIntegrityTest
+[ 44%] Built target ControlRegistryTest
+[ 44%] Building CXX object tests/CMakeFiles/MasteringTest.dir/src/core/MasteringTest.cpp.o
+[ 44%] Linking CXX executable MathTest
+[ 44%] Built target LoudnessReportTest
+[ 44%] Building CXX object tests/CMakeFiles/MidiLearnTest.dir/src/core/MidiLearnTest.cpp.o
+[ 45%] Built target LufsMeterTest
+[ 45%] Building CXX object tests/CMakeFiles/MidiLearnThreadTest.dir/src/core/MidiLearnThreadTest.cpp.o
+[ 45%] Built target MathTest
+[ 45%] Linking CXX executable MidiProbabilityPersistenceTest
+[ 45%] Built target MidiProbabilityPersistenceTest
+[ 45%] Building CXX object tests/CMakeFiles/MixerAbRegressionTest.dir/src/core/MixerAbRegressionTest.cpp.o
+[ 45%] Linking CXX executable MasteringTest
+[ 45%] Linking CXX executable MidiLearnTest
+[ 45%] Linking CXX executable MidiLearnThreadTest
+[ 45%] Built target MasteringTest
+[ 45%] Building CXX object tests/CMakeFiles/MixerConcurrencyTest.dir/src/core/MixerConcurrencyTest.cpp.o
+[ 45%] Built target MidiLearnTest
+[ 45%] Building CXX object tests/CMakeFiles/MixerRoutingBackwardCompatTest.dir/src/core/MixerRoutingBackwardCompatTest.cpp.o
+[ 46%] Built target MidiLearnThreadTest
+[ 46%] Building CXX object tests/CMakeFiles/MpeExpressionTest.dir/src/core/MpeExpressionTest.cpp.o
+[ 46%] Linking CXX executable MixerAbRegressionTest
+[ 46%] Built target MixerAbRegressionTest
+[ 46%] Building CXX object tests/CMakeFiles/MpeInputPathTest.dir/src/core/MpeInputPathTest.cpp.o
+[ 46%] Linking CXX executable MpeExpressionTest
+[ 46%] Linking CXX executable MixerConcurrencyTest
+[ 46%] Linking CXX executable MixerRoutingBackwardCompatTest
+[ 47%] Built target MpeExpressionTest
+[ 47%] Linking CXX executable MpeNoteStorageTest
+[ 47%] Built target MixerConcurrencyTest
+[ 47%] Linking CXX executable MultiTrackRecorderTest
+[ 47%] Linking CXX executable MpeInputPathTest
+[ 47%] Built target MixerRoutingBackwardCompatTest
+[ 47%] Linking CXX executable NoteRandomTest
+[ 47%] Built target MpeNoteStorageTest
+[ 47%] Linking CXX executable NoteTransformTest
+[ 47%] Built target MultiTrackRecorderTest
+[ 47%] Building CXX object tests/CMakeFiles/PhaseFChannelScaleTest.dir/src/core/PhaseFChannelScaleTest.cpp.o
+[ 47%] Built target MpeInputPathTest
+[ 47%] Linking CXX executable PluginLogoResourceTest
+[ 47%] Built target NoteRandomTest
+[ 47%] Building CXX object tests/CMakeFiles/PluginAudioPortsTest.dir/src/core/PluginAudioPortsTest.cpp.o
+[ 47%] Built target NoteTransformTest
+[ 47%] Building CXX object tests/CMakeFiles/ProjectOpenIntegrityTest.dir/src/core/ProjectOpenIntegrityTest.cpp.o
+[ 47%] Built target PluginLogoResourceTest
+[ 47%] Linking CXX executable ProjectRecoveryTest
+[ 47%] Built target ProjectRecoveryTest
+[ 47%] Linking CXX executable ProjectVersionTest
+[ 47%] Linking CXX executable PhaseFChannelScaleTest
+[ 47%] Built target ProjectVersionTest
+[ 48%] Building CXX object tests/CMakeFiles/RackTest.dir/src/core/RackTest.cpp.o
+[ 48%] Linking CXX executable ProjectOpenIntegrityTest
+[ 48%] Linking CXX executable PluginAudioPortsTest
+[ 49%] Built target PhaseFChannelScaleTest
+[ 49%] Linking CXX executable RecordClipTest
+[ 49%] Built target ProjectOpenIntegrityTest
+[ 49%] Linking CXX executable RecordRingBufferTest
+[ 49%] Built target PluginAudioPortsTest
+[ 49%] Building CXX object tests/CMakeFiles/RecordingRealtimeTest.dir/src/core/RecordingRealtimeTest.cpp.o
+[ 49%] Built target RecordClipTest
+[ 49%] Linking CXX executable RelativePathsTest
+[ 49%] Built target RecordRingBufferTest
+[ 49%] Building CXX object tests/CMakeFiles/ReversibilityContractTest.dir/ReversibilityContractTest_autogen/mocs_compilation.cpp.o
+[ 49%] Building CXX object tests/CMakeFiles/ReversibilityContractTest.dir/src/core/ReversibilityContractTest.cpp.o
+[ 49%] Built target RelativePathsTest
+[ 49%] Building CXX object tests/CMakeFiles/ReversibilityUndoTest.dir/ReversibilityUndoTest_autogen/mocs_compilation.cpp.o
+[ 49%] Building CXX object tests/CMakeFiles/ReversibilityUndoTest.dir/src/core/ReversibilityUndoTest.cpp.o
+[ 49%] Linking CXX executable RackTest
+[ 49%] Built target RackTest
+[ 49%] Building CXX object tests/CMakeFiles/RemotePluginAudioPortsTest.dir/src/core/RemotePluginAudioPortsTest.cpp.o
+[ 49%] Linking CXX executable RecordingRealtimeTest
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/src/core/ReversibilityContractTest.cpp: In member function ‘void ReversibilityContractTest::transactionRecordStatesItsBounds()’:
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/src/core/ReversibilityContractTest.cpp:130:34: error: unused variable ‘registry’ [-Werror=unused-variable]
+  130 |                 ControlRegistry* registry = ControlRegistry::instance();
+      |                                  ^~~~~~~~
+cc1plus: all warnings being treated as errors
+gmake[2]: *** [tests/CMakeFiles/ReversibilityContractTest.dir/build.make:96: tests/CMakeFiles/ReversibilityContractTest.dir/src/core/ReversibilityContractTest.cpp.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:10940: tests/CMakeFiles/ReversibilityContractTest.dir/all] Error 2
+gmake[1]: *** Waiting for unfinished jobs....
+[ 49%] Built target RecordingRealtimeTest
+[ 49%] Linking CXX executable ReversibilityUndoTest
+[ 49%] Linking CXX executable RemotePluginAudioPortsTest
+[ 50%] Built target ReversibilityUndoTest
+[ 51%] Built target RemotePluginAudioPortsTest
+gmake: *** [Makefile:156: all] Error 2

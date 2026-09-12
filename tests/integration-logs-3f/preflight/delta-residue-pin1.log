@@ -1,0 +1,1053 @@
+unit f8715fa423  merge-base 3c245cb8ab  against HEAD  paths=108
+  CMDN-REPORT.md                                added= 181  HEAD-ABSENT (a genuine addition)
+  CMDN-TRANSCRIPT.md                            added= 203  HEAD-ABSENT (a genuine addition)
+  CMakeLists.txt                                delta-added=   1 in-HEAD=   1 substring=  0 RESIDUE=0
+  docs/A16-REVERSIBILITY.md                     added= 378  HEAD-ABSENT (a genuine addition)
+  docs/VERSIONING.md                            added=  59  HEAD-ABSENT (a genuine addition)
+  include/AudioEngine.h                         delta-added=  16 in-HEAD=   4 substring=  0 RESIDUE=12
+      RESIDUE| 	//! The device name the configuration asked for (may differ from
+      RESIDUE| 	//! audioDevName() after a fallback). Needed so a failure report can name the
+      RESIDUE| 	//! backend that failed to open instead of saying only "an audio device".
+      RESIDUE| 	inline const QString & audioDevRequestName() const
+      RESIDUE| 		return m_audioDevRequestName;
+      RESIDUE| 	//! Why the configured device could not be used, when it could not: the text
+      RESIDUE| 	//! control.ping and the typed 'requires' refusal hand to an agent. Empty when
+      RESIDUE| 	//! the device started normally.
+      RESIDUE| 	inline const QString & audioDevStartReason() const
+      RESIDUE| 		return m_audioDevStartReason;
+      RESIDUE| 	QString m_audioDevRequestName;
+      RESIDUE| 	QString m_audioDevStartReason;
+  include/ControlAutomationSupport.h            added= 136  HEAD-ABSENT (a genuine addition)
+  include/ControlDeviceSupport.h                added= 215  HEAD-ABSENT (a genuine addition)
+  include/ControlEdit.h                         added= 166  HEAD-ABSENT (a genuine addition)
+  include/ControlRegistry.h                     added= 327  HEAD-ABSENT (a genuine addition)
+  include/ControlReversibility.h                added= 173  HEAD-ABSENT (a genuine addition)
+  include/ControlServer.h                       added= 100  HEAD-ABSENT (a genuine addition)
+  include/ControlVocabulary.h                   added= 106  HEAD-ABSENT (a genuine addition)
+  include/Effect.h                              delta-added=   9 in-HEAD=   3 substring=  0 RESIDUE=6
+      RESIDUE| 	//! Drive the same On/Off control the rack's LED checkbox drives (SPEC A11:
+      RESIDUE| 	//! one action, one implementation). Added for the agent control surface
+      RESIDUE| 	//! (plugin.bypass / dsp.get_state read-back); the model is journalled, so
+      RESIDUE| 	//! the change is reversible through the ProjectJournal.
+      RESIDUE| 	void setEnabled( bool enabled )
+      RESIDUE| 		m_enabledModel.setValue( enabled );
+  include/EffectChain.h                         delta-added=   7 in-HEAD=   1 substring=  0 RESIDUE=6
+      RESIDUE| 	//! Every effect in the chain, in processing order. Control thread only.
+      RESIDUE| 	//! Added for the agent control surface (plugin.* / dsp.get_state, SPEC
+      RESIDUE| 	//! A11-A14): m_effects is the true order, while QObject child order can
+      RESIDUE| 	//! diverge from it after moveUp()/moveDown(), so an id resolved by index
+      RESIDUE| 	//! must come from here.
+      RESIDUE| 	auto effects() const -> const std::vector<Effect*>& { return m_effects; }
+  include/MidiLearnGui.h                        delta-added=   1 in-HEAD=   0 substring=  0 RESIDUE=1
+      RESIDUE| #include <QAction>
+  include/ProjectIds.h                          added=  88  HEAD-ABSENT (a genuine addition)
+  include/ProjectJournal.h                      delta-added=  88 in-HEAD=  11 substring=  7 RESIDUE=70
+      RESIDUE| #include <functional>
+      RESIDUE| #include <QVector>
+      RESIDUE| 	/*! One undo step covering SEVERAL objects (Zene Studio, SPEC A16).
+      RESIDUE| 	 * undo() pops ONE checkpoint, so N checkpoints cost N Ctrl+Z presses. An
+      RESIDUE| 	 * agent command that writes more than one object - track.set_solo writes
+      RESIDUE| 	 * every track's mute through TrackView - must nevertheless be ONE undoable
+      RESIDUE| 	 * step for the human, so its before-states are recorded as one checkpoint
+      RESIDUE| 	 * and restored together. Additive: the single-object call above is the
+      RESIDUE| 	 * one-entry case of this and its behaviour is unchanged.
+      RESIDUE| 	void addJournalCheckPoint( const QVector<JournallingObject *> &objects );
+      RESIDUE| 	/*! One undo step that RUNS AN ACTION instead of restoring an object
+      RESIDUE| 	 * (Zene Studio, SPEC A16).
+      RESIDUE| 	 * A created or deleted Track/MixerChannel has no live object a checkpoint
+      RESIDUE| 	 * could restore - a deleted JournallingObject's id resolves to nullptr and
+      RESIDUE| 	 * a created one has nothing to put back - so the inverse is the operation,
+      RESIDUE| 	 * not the state. Pushing it here (rather than into a second undo stack kept
+      RESIDUE| 	 * by the control surface) is what makes Ctrl+Z and control.undo one
+      RESIDUE| 	 * history. `redo` is the reverse action, so a redo is faithful rather than
+      RESIDUE| 	 * a dropped step. Both actions run on the UI thread; nothing here is
+      RESIDUE| 	 * reached from the audio thread.
+      RESIDUE| 	void addJournalAction( std::function<void()> undo, std::function<void()> redo );
+      RESIDUE| 	/*! Marks the current undo depth, and merges everything pushed since into
+      RESIDUE| 	 * ONE step (Zene Studio, SPEC A16 deliverable 3).
+      RESIDUE| 	 * This is the mechanism that makes "one agent command = one Ctrl+Z" true in
+      RESIDUE| 	 * general rather than per command. AutomatableModel::setValue() pushes a
+      RESIDUE| 	 * checkpoint of its own on every non-automated write
+      RESIDUE| 	 * (src/core/AutomatableModel.cpp:303), so a single command that writes N
+      RESIDUE| 	 * models - track.set_solo writes the solo flag and every other track's mute -
+      RESIDUE| 	 * leaves N checkpoints on the stack and costs N undos. The control registry
+      RESIDUE| 	 * therefore marks the depth before a mutating handler runs and merges
+      RESIDUE| 	 * afterwards: for each object, its EARLIEST capture wins (that is the
+      RESIDUE| 	 * pre-command state), and every recorded action is kept in push order.
+      RESIDUE| 	int undoDepth() const { return m_undoCheckPoints.size(); }
+      RESIDUE| 	void mergeCheckpointsFrom( int depth );
+      RESIDUE| 	//! One (object, saved state) pair of a checkpoint.
+      RESIDUE| 	struct SavedObject
+      RESIDUE| 		SavedObject( jo_id_t initID = 0,
+      RESIDUE| 	};
+      RESIDUE| 		//! An empty step: an action-only step, or a redo record being filled.
+      RESIDUE| 		CheckPoint() = default;
+      RESIDUE| 		//! A step restoring one object (the historical checkpoint shape).
+      RESIDUE| 		CheckPoint( jo_id_t initID, const DataFile& initData ) :
+      RESIDUE| 			objects(),
+      RESIDUE| 			actions()
+      RESIDUE| 			objects.append( SavedObject( initID, initData ) );
+      RESIDUE| 		//! The objects this step restores, together, in one pop.
+      RESIDUE| 		QVector<SavedObject> objects;
+      RESIDUE| 		//! Operations this step runs, in push order, each paired with its
+      RESIDUE| 		//! reverse. Undo runs the firsts in reverse push order, redo the
+      RESIDUE| 		//! seconds; a step whose second is empty cannot be redone, and the
+      RESIDUE| 		//! redo stack is emptied rather than replaying an older entry.
+      RESIDUE| 		QVector<QPair<std::function<void()>, std::function<void()>>> actions;
+      RESIDUE| 		bool hasActions() const { return !actions.isEmpty(); }
+      RESIDUE| 		bool empty() const { return objects.isEmpty() && actions.isEmpty(); }
+      RESIDUE| 	};
+      RESIDUE| 	//! An action-only step: runs \a undo, and on redo runs \a redo.
+      RESIDUE| 	static CheckPoint actionCheckPoint( std::function<void()> undo,
+      RESIDUE| 		std::function<void()> redo = std::function<void()>() );
+      RESIDUE| 	//! Drops the oldest steps once the stack exceeds MAX_UNDO_STATES.
+      RESIDUE| 	void trimUndoStack();
+      RESIDUE| 	//! Restores every live object of \a step, capturing the redo halves into
+      RESIDUE| 	//! \a redo. False when no object of the step is still alive (the caller then
+      RESIDUE| 	//! pops the next checkpoint, the historical behaviour). Non-const because
+      RESIDUE| 	//! DataFile::content() is: the step is the caller's own copy, popped off the
+      RESIDUE| 	//! stack, so modifying it in place is safe.
+      RESIDUE| 	bool restoreStep( CheckPoint & step, CheckPoint * redo );
+      RESIDUE| 	//! Captures \a jo's current state into \a into (the redo half of a step).
+      RESIDUE| 	void captureState( JournallingObject * jo, SavedObject * into ) const;
+      RESIDUE| 	//! Restores \a saved into its object, journalling off.
+      RESIDUE| 	void restoreState( SavedObject & saved );
+  include/ProjectRevisions.h                    added=  89  HEAD-ABSENT (a genuine addition)
+  include/Song.h                                delta-added=  14 in-HEAD=   4 substring=  0 RESIDUE=10
+      RESIDUE| 	//! The messages collected by the last load, with how often each occurred
+      RESIDUE| 	//! (SPEC A13: a headless client reads which samples/plugins failed and why
+      RESIDUE| 	//! from a typed result instead of a dialog nobody can answer).
+      RESIDUE| 	const QHash<QString, int>& errors() const
+      RESIDUE| 		return m_errors;
+      RESIDUE| 	//! Why the most recent loadProject() refused the file, empty when it loaded.
+      RESIDUE| 	QString loadRefusal() const
+      RESIDUE| 		return m_loadRefusal;
+      RESIDUE| 	//! Set by loadProject() when it refuses a file; empty after a good load.
+      RESIDUE| 	QString m_loadRefusal;
+  include/Track.h                               delta-added=  19 in-HEAD=   4 substring=  2 RESIDUE=13
+      RESIDUE| 	/*! The track's stable id, the number in "trk-<n>" (SPEC-stable-ids.md).
+      RESIDUE| 	 * Assigned ONCE, in the constructor, and never changed while the track is
+      RESIDUE| 	 * alive: it names the object, not its position in Song::tracks(). The only
+      RESIDUE| 	 * other writer is loadTrack(), which takes the value the project file
+      RESIDUE| 	 * carries so a re-save keeps it; a file element with no id leaves the
+      RESIDUE| 	 * constructor's value in place, which is what makes legacy assignment
+      RESIDUE| 	 * deterministic (construction order == document order).
+      RESIDUE| 	int id() const
+      RESIDUE| 		return m_id;
+      RESIDUE| 	//! Take \a id from a project file. Raises the project counter above it, so
+      RESIDUE| 	//! the number can never be handed to a new object (see ProjectIds).
+      RESIDUE| 	void setId(int id);
+      RESIDUE| 	int m_id;
+  include/UnattendedRun.h                       added=  50  HEAD-ABSENT (a genuine addition)
+  plugins/LadspaEffect/LadspaEffect.cpp         delta-added=  48 in-HEAD=  20 substring=  4 RESIDUE=24
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 		// This runs while a project that references the plugin loads: a modal
+      RESIDUE| 		// here would leave project.open unanswered in an agent instance
+      RESIDUE| 		// (task #625), so the reason goes to stderr instead.
+      RESIDUE| 		const QString reason = QStringLiteral( "Can't get LADSPA descriptor function: %1" )
+      RESIDUE| 				.arg( m_key.second );
+      RESIDUE| 		if( lmms::isUnattendedRun() )
+      RESIDUE| 			qWarning() << reason;
+      RESIDUE| 			QMessageBox::warning( 0, "Effect", reason,
+      RESIDUE| 		const QString reason = QStringLiteral( "Plugin has no processor: %1" )
+      RESIDUE| 				.arg( m_key.second );
+      RESIDUE| 		if( lmms::isUnattendedRun() )
+      RESIDUE| 			qWarning() << reason;
+      RESIDUE| 			QMessageBox::warning( 0, "Effect", reason,
+      RESIDUE| 			const QString reason = QStringLiteral( "Can't get LADSPA instance: %1" )
+      RESIDUE| 				.arg( m_key.second );
+      RESIDUE| 			if( lmms::isUnattendedRun() )
+      RESIDUE| 				qWarning() << reason;
+      RESIDUE| 				QMessageBox::warning( 0, "Effect", reason,
+      RESIDUE| 				const QString reason = QStringLiteral( "Failed to connect port: %1" )
+      RESIDUE| 					.arg( m_key.second );
+      RESIDUE| 				if( lmms::isUnattendedRun() )
+      RESIDUE| 					qWarning() << reason;
+      RESIDUE| 					QMessageBox::warning( 0, "Effect", reason,
+  plugins/MidiImport/MidiImport.cpp             delta-added=   5 in-HEAD=   0 substring=  0 RESIDUE=5
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 	// Import runs on the startup path (--import) and from the file browser: in
+      RESIDUE| 	// an unattended run nobody can answer this box (task #625).
+      RESIDUE| 	if (gui::getGUI() != nullptr && !lmms::isUnattendedRun() && ConfigManager::inst()->sf2File().isEmpty())
+      RESIDUE| 	if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+  src/core/AudioEngine.cpp                      delta-added=  15 in-HEAD=   0 substring=  0 RESIDUE=15
+      RESIDUE| 	// What the configuration asked for, verbatim, so a failure report can name
+      RESIDUE| 	// the backend that did not open (task #626).
+      RESIDUE| 	m_audioDevRequestName = ConfigManager::inst()->value( "audioengine", "audiodev" );
+      RESIDUE| 	m_audioDevStartReason.clear();
+      RESIDUE| 	QString dev_name = m_audioDevRequestName;
+      RESIDUE| 		// Say WHAT failed to open and what is being used instead, so control.ping
+      RESIDUE| 		// and the typed 'requires' refusal can hand an agent an actionable
+      RESIDUE| 		// sentence instead of a bare false (task #626). The backend library's own
+      RESIDUE| 		// error text (SDL_GetError / snd_strerror) is printed by the backend
+      RESIDUE| 		// above and stays on stderr.
+      RESIDUE| 		m_audioDevStartReason = m_audioDevRequestName.isEmpty()
+      RESIDUE| 			? tr( "no configured audio device could be opened; the engine is running with '%1' (no sound output)" )
+      RESIDUE| 				.arg( AudioDummy::name() )
+      RESIDUE| 			: tr( "the configured audio device '%1' could not be opened; the engine is running with '%2' (no sound output)" )
+      RESIDUE| 				.arg( m_audioDevRequestName, AudioDummy::name() );
+  src/core/CMakeLists.txt                       delta-added=  39 in-HEAD=   0 substring=  0 RESIDUE=39
+      RESIDUE| 	core/ControlCommandsArrangement.cpp
+      RESIDUE| 	core/ControlCommandsClip.cpp
+      RESIDUE| 	core/ControlAutomationSupport.cpp
+      RESIDUE| 	core/ControlCommandsAutomation.cpp
+      RESIDUE| 	core/ControlCommandsAutomationEdit.cpp
+      RESIDUE| 	core/ControlCommandsControl.cpp
+      RESIDUE| 	core/ControlCommandsDsp.cpp
+      RESIDUE| 	core/ControlCommandsMixer.cpp
+      RESIDUE| 	core/ControlCommandsNotes.cpp
+      RESIDUE| 	core/ControlCommandsPlugin.cpp
+      RESIDUE| 	core/ControlCommandsPluginParams.cpp
+      RESIDUE| 	core/ControlCommandsPluginPreset.cpp
+      RESIDUE| 	core/ControlCommandsPluginState.cpp
+      RESIDUE| 	core/ControlCommandsArrangementState.cpp
+      RESIDUE| 	core/ControlCommandsProject.cpp
+      RESIDUE| 	core/ControlCommandsProjectFiles.cpp
+      RESIDUE| 	core/ControlCommandsScript.cpp
+      RESIDUE| 	core/ControlCommandsSettings.cpp
+      RESIDUE| 	core/ControlCommandsSurface.cpp
+      RESIDUE| 	core/ControlCommandsTransport.cpp
+      RESIDUE| 	core/ControlDeviceCatalogue.cpp
+      RESIDUE| 	core/ControlDeviceHosted.cpp
+      RESIDUE| 	core/ControlDeviceState.cpp
+      RESIDUE| 	core/ControlDeviceSupport.cpp
+      RESIDUE| 	core/ControlEditSupport.cpp
+      RESIDUE| 	core/ControlRegistry.cpp
+      RESIDUE| 	core/ControlReversibility.cpp
+      RESIDUE| 	core/ControlReversibilityTable.cpp
+      RESIDUE| 	core/ControlSchema.cpp
+      RESIDUE| 	core/ControlVocabulary.cpp
+      RESIDUE| 	core/ControlServer.cpp
+      RESIDUE| 	core/ControlSession.cpp
+      RESIDUE| 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).
+      RESIDUE| 	${CMAKE_SOURCE_DIR}/include/ControlEdit.h
+      RESIDUE| 	${CMAKE_SOURCE_DIR}/include/ControlRegistry.h
+      RESIDUE| 	${CMAKE_SOURCE_DIR}/include/ControlServer.h
+      RESIDUE| 	core/ProjectIds.cpp
+      RESIDUE| 	core/ProjectRevisions.cpp
+      RESIDUE| 	core/UnattendedRun.cpp
+  src/core/ConfigManager.cpp                    delta-added=  10 in-HEAD=   2 substring=  1 RESIDUE=7
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 		else if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+      RESIDUE| 		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+      RESIDUE| 			// Reachable from a command: loading a project adds it to the recent
+      RESIDUE| 			// list and saving that list writes this file.  An agent instance
+      RESIDUE| 			// must not stop for a dialog here (task #625).
+      RESIDUE| 			qWarning() << title << message;
+  src/core/ControlAutomationSupport.cpp         added= 336  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsArrangement.cpp       added= 465  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsArrangementState.cpp  added= 133  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsAutomation.cpp        added= 220  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsAutomationEdit.cpp    added= 272  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsClip.cpp              added= 461  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsControl.cpp           added= 406  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsDsp.cpp               added= 177  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsMixer.cpp             added= 296  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsNotes.cpp             added= 474  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPlugin.cpp            added= 440  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPluginParams.cpp      added= 242  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPluginPreset.cpp      added= 315  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsPluginState.cpp       added= 231  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsProject.cpp           added= 396  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsProjectFiles.cpp      added= 269  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsScript.cpp            added= 307  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsSettings.cpp          added= 474  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsSurface.cpp           added= 325  HEAD-ABSENT (a genuine addition)
+  src/core/ControlCommandsTransport.cpp         added= 293  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceCatalogue.cpp           added= 183  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceHosted.cpp              added= 271  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceState.cpp               added= 228  HEAD-ABSENT (a genuine addition)
+  src/core/ControlDeviceSupport.cpp             added= 456  HEAD-ABSENT (a genuine addition)
+  src/core/ControlEditSupport.cpp               added= 420  HEAD-ABSENT (a genuine addition)
+  src/core/ControlRegistry.cpp                  added= 467  HEAD-ABSENT (a genuine addition)
+  src/core/ControlReversibility.cpp             added= 127  HEAD-ABSENT (a genuine addition)
+  src/core/ControlReversibilityTable.cpp        added= 432  HEAD-ABSENT (a genuine addition)
+  src/core/ControlSchema.cpp                    added= 153  HEAD-ABSENT (a genuine addition)
+  src/core/ControlServer.cpp                    added= 398  HEAD-ABSENT (a genuine addition)
+  src/core/ControlSession.cpp                   added= 174  HEAD-ABSENT (a genuine addition)
+  src/core/ControlVocabulary.cpp                added= 157  HEAD-ABSENT (a genuine addition)
+  src/core/DataFile.cpp                         delta-added=  22 in-HEAD=   8 substring=  2 RESIDUE=12
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 		// A modal here would leave project.open unanswered in an agent
+      RESIDUE| 		// instance (task #625): below, the same sentence goes to stderr.
+      RESIDUE| 		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+      RESIDUE| 			qWarning() << "Could not open file" << _fileName
+      RESIDUE| 				<< "- no read permission or not a file";
+      RESIDUE| 		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+      RESIDUE| 		// This runs inside the load path; an unattended run must not stop to
+      RESIDUE| 		// ask about it (task #625) - say it on stderr instead.
+      RESIDUE| 		if (!lmms::isUnattendedRun())
+      RESIDUE| 			qWarning() << QObject::tr("The project contains %1 LADSPA plugin(s) which might have not been restored correctly! Please check the project.").arg(numberOfProblematicPlugins);
+      RESIDUE| 			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+  src/core/ImportFilter.cpp                     delta-added=  33 in-HEAD=   8 substring= 12 RESIDUE=13
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 		// This box is raised on the import path, which an agent instance can
+      RESIDUE| 		// drive (--import) with nobody to click it (task #625).
+      RESIDUE| 		if (!lmms::isUnattendedRun())
+      RESIDUE| 		else
+      RESIDUE| 			qWarning() << TrackContainer::tr( "Couldn't find a filter for importing file %1." )
+      RESIDUE| 					.arg( _file_to_import );
+      RESIDUE| 		// No modal in an unattended run (--control-socket / no display): the
+      RESIDUE| 		// caller gets the typed failure instead of a wait on a click (#625).
+      RESIDUE| 		if (!lmms::isUnattendedRun())
+      RESIDUE| 		else
+      RESIDUE| 			qWarning() << TrackContainer::tr( "Couldn't open file %1 for reading." )
+      RESIDUE| 					.arg( m_file.fileName() );
+  src/core/PeakController.cpp                   delta-added=  19 in-HEAD=   4 substring=  7 RESIDUE=8
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 			// This runs while a project is loading. An agent instance
+      RESIDUE| 			// (--control-socket) has nobody to answer the box, so the load
+      RESIDUE| 			// would never finish (task #625): say it on stderr instead.
+      RESIDUE| 			if (lmms::isUnattendedRun())
+      RESIDUE| 				qWarning() << tr("Due to a bug in older version of LMMS, the peak "
+      RESIDUE| 						"controllers may not be connect properly. Please ensure that "
+      RESIDUE| 						"peak controllers are connected properly and re-save this file.");
+  src/core/Plugin.cpp                           delta-added=  15 in-HEAD=   5 substring=  1 RESIDUE=9
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 		// An agent instance (--control-socket) cannot answer a modal, and a
+      RESIDUE| 		// project that references a missing plugin loads with it (task #625):
+      RESIDUE| 		// the reason goes to stderr, where a headless operator reads it.
+      RESIDUE| 		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+      RESIDUE| 			qWarning() << tr( "The plugin \"%1\" wasn't found or could not be loaded! Reason: \"%2\"" ).
+      RESIDUE| 					arg( pluginName ).arg( getPluginFactory()->errorString(pluginName) );
+      RESIDUE| 			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+      RESIDUE| 				qWarning() << tr( "Failed to load plugin \"%1\"!" ).arg( pluginName );
+  src/core/ProjectIds.cpp                       added=  85  HEAD-ABSENT (a genuine addition)
+  src/core/ProjectJournal.cpp                   delta-added= 173 in-HEAD=  57 substring= 13 RESIDUE=103
+      RESIDUE| #include <utility>
+      RESIDUE| #include <QSet>
+      RESIDUE| ProjectJournal::CheckPoint ProjectJournal::actionCheckPoint( std::function<void()> undo,
+      RESIDUE| 	std::function<void()> redo )
+      RESIDUE| 	CheckPoint step;
+      RESIDUE| 	step.actions.append( qMakePair( std::move( undo ), std::move( redo ) ) );
+      RESIDUE| 	return step;
+      RESIDUE| //! Captures \a jo's current state, which becomes the redo half of a step.
+      RESIDUE| void ProjectJournal::captureState( JournallingObject * jo, SavedObject * into ) const
+      RESIDUE| 	DataFile currentState( DataFile::Type::JournalData );
+      RESIDUE| 	jo->saveState( currentState, currentState.content() );
+      RESIDUE| 	*into = SavedObject( jo->id(), currentState );
+      RESIDUE| //! Restores one object from its saved XML, with journalling off so the restore
+      RESIDUE| //! itself does not push a new checkpoint. The AutomationClip id fix-up is the
+      RESIDUE| //! historical step that follows a restore that carried automation clips.
+      RESIDUE| void ProjectJournal::restoreState( SavedObject & saved )
+      RESIDUE| 	JournallingObject * jo = m_joIDs.value( saved.joID, nullptr );
+      RESIDUE| 	if( jo == nullptr ) { return; }
+      RESIDUE| 	const bool previous = isJournalling();
+      RESIDUE| 	jo->restoreState( saved.data.content().firstChildElement() );
+      RESIDUE| 	setJournalling( previous );
+      RESIDUE| 	if( !saved.data.content().elementsByTagName( "automationclip" ).isEmpty() )
+      RESIDUE| //! Restores every live object of \a step in one go (SPEC A16: one agent command
+      RESIDUE| //! is one undoable step, however many objects it wrote).
+      RESIDUE| bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
+      RESIDUE| 	bool restoredAny = false;
+      RESIDUE| 	for( SavedObject & saved : step.objects )
+      RESIDUE| 		JournallingObject * jo = m_joIDs.value( saved.joID, nullptr );
+      RESIDUE| 		if( jo == nullptr ) { continue; }
+      RESIDUE| 		SavedObject current;
+      RESIDUE| 		captureState( jo, &current );
+      RESIDUE| 		redo->objects.append( current );
+      RESIDUE| 		restoreState( saved );
+      RESIDUE| 		restoredAny = true;
+      RESIDUE| 	return restoredAny;
+      RESIDUE| 		CheckPoint redo;
+      RESIDUE| 		// Objects first: an action may FREE one of them (deleting a MixerChannel
+      RESIDUE| 		// frees its models, deleting a Track frees its clips), and a restore
+      RESIDUE| 		// after the free would be a restore of a dead journal id.
+      RESIDUE| 		bool did = restoreStep( c, &redo );
+      RESIDUE| 		bool redoable = true;
+      RESIDUE| 		for( int i = c.actions.size() - 1; i >= 0; --i )
+      RESIDUE| 			// Undo is LIFO, so the recorded operations run in reverse push order
+      RESIDUE| 			// and the redo record keeps them in push order.
+      RESIDUE| 			const std::function<void()> undoAction = c.actions.at( i ).first;
+      RESIDUE| 			const std::function<void()> redoAction = c.actions.at( i ).second;
+      RESIDUE| 			if( !undoAction ) { continue; }
+      RESIDUE| 			if( redoAction ) { redo.actions.prepend( qMakePair( undoAction, redoAction ) ); }
+      RESIDUE| 			else { redoable = false; }
+      RESIDUE| 			undoAction();
+      RESIDUE| 			did = true;
+      RESIDUE| 		if( !did ) { continue; }
+      RESIDUE| 		if( redoable ) { m_redoCheckPoints.push( redo ); }
+      RESIDUE| 		else { m_redoCheckPoints.clear(); }
+      RESIDUE| 		CheckPoint undoState;
+      RESIDUE| 		bool did = restoreStep( c, &undoState );
+      RESIDUE| 		for( int i = c.actions.size() - 1; i >= 0; --i )
+      RESIDUE| 			const std::function<void()> redoAction = c.actions.at( i ).second;
+      RESIDUE| 			if( !redoAction ) { continue; }
+      RESIDUE| 			undoState.actions.prepend( c.actions.at( i ) );
+      RESIDUE| 			redoAction();
+      RESIDUE| 			did = true;
+      RESIDUE| 		if( !did ) { continue; }
+      RESIDUE| 		m_undoCheckPoints.push( undoState );
+      RESIDUE| 	if( !isJournalling() ) { return; }
+      RESIDUE| 	trimUndoStack();
+      RESIDUE| void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &objects )
+      RESIDUE| 	if( !isJournalling() ) { return; }
+      RESIDUE| 	// One checkpoint, N objects: undo() pops it once and restores all of them,
+      RESIDUE| 	// which is what makes one agent command one Ctrl+Z (SPEC A16).
+      RESIDUE| 	CheckPoint step;
+      RESIDUE| 	for( JournallingObject * jo : objects )
+      RESIDUE| 		if( jo == nullptr ) { continue; }
+      RESIDUE| 		SavedObject saved;
+      RESIDUE| 		captureState( jo, &saved );
+      RESIDUE| 		step.objects.append( saved );
+      RESIDUE| 	if( step.objects.isEmpty() ) { return; }
+      RESIDUE| 	m_undoCheckPoints.push( step );
+      RESIDUE| 	trimUndoStack();
+      RESIDUE| void ProjectJournal::addJournalAction( std::function<void()> undoAction, std::function<void()> redoAction )
+      RESIDUE| 	if( !isJournalling() || !undoAction ) { return; }
+      RESIDUE| 	m_undoCheckPoints.push( actionCheckPoint( std::move( undoAction ), std::move( redoAction ) ) );
+      RESIDUE| 	trimUndoStack();
+      RESIDUE| void ProjectJournal::trimUndoStack()
+      RESIDUE| void ProjectJournal::mergeCheckpointsFrom( int depth )
+      RESIDUE| 	if( depth < 0 || depth > m_undoCheckPoints.size() ) { return; }
+      RESIDUE| 	const int excess = m_undoCheckPoints.size() - depth;
+      RESIDUE| 	if( excess <= 1 ) { return; }
+      RESIDUE| 	// For each OBJECT, the earliest capture wins: that is the state before the
+      RESIDUE| 	// command, and restoring a later capture would undo only part of it.
+      RESIDUE| 	CheckPoint merged;
+      RESIDUE| 	QSet<jo_id_t> seen;
+      RESIDUE| 	for( int i = depth; i < m_undoCheckPoints.size(); ++i )
+      RESIDUE| 		const CheckPoint & step = m_undoCheckPoints.at( i );
+      RESIDUE| 		for( const SavedObject & saved : step.objects )
+      RESIDUE| 			if( seen.contains( saved.joID ) ) { continue; }
+      RESIDUE| 			seen.insert( saved.joID );
+      RESIDUE| 			merged.objects.append( saved );
+      RESIDUE| 		// Every recorded operation is kept, in push order.
+      RESIDUE| 		merged.actions += step.actions;
+      RESIDUE| 	if( merged.empty() ) { m_undoCheckPoints.remove( depth, excess ); return; }
+      RESIDUE| 	m_undoCheckPoints.remove( depth, excess );
+      RESIDUE| 	m_undoCheckPoints.push( merged );
+  src/core/ProjectRevisions.cpp                 added= 215  HEAD-ABSENT (a genuine addition)
+  src/core/SampleBuffer.cpp                     delta-added=   5 in-HEAD=   0 substring=  0 RESIDUE=5
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 		// An agent instance (--control-socket) has nobody to answer the box
+      RESIDUE| 		// (task #625), so it is shown only when a human is really there.
+      RESIDUE| 		if (gui::getGUI() && !lmms::isUnattendedRun())
+      RESIDUE| 		if (gui::getGUI() && !lmms::isUnattendedRun())
+  src/core/Song.cpp                             delta-added=  79 in-HEAD=  17 substring=  0 RESIDUE=62
+      RESIDUE| #include <QSet>
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| #include "ProjectIds.h"
+      RESIDUE| 	// A brand-new document starts its id counter at 0, so the first object an
+      RESIDUE| 	// agent creates after project.new is <prefix>-0 rather than a number left
+      RESIDUE| 	// over from whatever was loaded before (SPEC-stable-ids.md 2.1).
+      RESIDUE| 	ProjectIds::reset();
+      RESIDUE| 	// A load must never leave a modal dialog open in an agent instance (task
+      RESIDUE| 	// #625): record why a file was refused so project.open can answer with a
+      RESIDUE| 	// typed error instead.
+      RESIDUE| 	m_loadRefusal.clear();
+      RESIDUE| 		m_loadRefusal = tr( "the project file could not be read or parsed "
+      RESIDUE| 			"(see the log for the parser's line/column report)" );
+      RESIDUE| 			m_loadRefusal = tr("Project file contains local paths to plugins, which could be used to "
+      RESIDUE| 					"run malicious code.");
+      RESIDUE| 			// In an agent instance nobody can answer this box (task #625), so
+      RESIDUE| 			// the refusal becomes the typed error project.open returns.
+      RESIDUE| 			if (getGUI() != nullptr && !lmms::isUnattendedRun())
+      RESIDUE| 					m_loadRefusal);
+      RESIDUE| 	// The id pass, load half (SPEC-stable-ids.md R2/R3). Reset the counter so
+      RESIDUE| 	// assignment is deterministic - the container walk below creates the tracks
+      RESIDUE| 	// in document order and the Track constructor allocates in that order, so
+      RESIDUE| 	// the same legacy document always yields the same ids - and clear the
+      RESIDUE| 	// assignment count project.open reports as `ids_assigned`.
+      RESIDUE| 	ProjectIds::reset();
+      RESIDUE| 	ProjectIds::beginLoad();
+      RESIDUE| 	// The id pass, post-walk half (SPEC-stable-ids.md R3). The objects exist and
+      RESIDUE| 	// carry ids now, so this is the one place the document's own counter can be
+      RESIDUE| 	// honoured and repaired:
+      RESIDUE| 	//  * `next-id` is taken from the root. A file written by this build carries
+      RESIDUE| 	//    it; a legacy file (or a file that came back through an older build,
+      RESIDUE| 	//    which drops it) does not, and then the counter is already at
+      RESIDUE| 	//    max(id seen)+1 because every setId() observed its value.
+      RESIDUE| 	//  * Two live tracks sharing an id is only reachable from an external merge
+      RESIDUE| 	//    of two projects (GIT-FRIENDLY-MMPZ.md documents real .mmpz merges). The
+      RESIDUE| 	//    second in document order is re-assigned from the high-water mark and
+      RESIDUE| 	//    counted, so the repair shows up in `ids_assigned` instead of hiding.
+      RESIDUE| 	if (dataFile.documentElement().hasAttribute(QStringLiteral("next-id")))
+      RESIDUE| 		bool ok = false;
+      RESIDUE| 		const int stored = dataFile.documentElement().attribute(QStringLiteral("next-id")).toInt(&ok);
+      RESIDUE| 		if (ok) { ProjectIds::observeNext(stored); }
+      RESIDUE| 		QSet<int> seen;
+      RESIDUE| 		const TrackContainer::TrackList& loaded = tracks();
+      RESIDUE| 		for (int i = 0; i < static_cast<int>(loaded.size()); ++i)
+      RESIDUE| 			Track* track = loaded[i];
+      RESIDUE| 			if (seen.contains(track->id()))
+      RESIDUE| 				track->setId(ProjectIds::allocate());
+      RESIDUE| 				ProjectIds::noteLoadAssignment();
+      RESIDUE| 				seen.insert(track->id());
+      RESIDUE| 		// The "LMMS Error report" box is a question for a human.  In an agent
+      RESIDUE| 		// instance (--control-socket) or a run with no display it would park
+      RESIDUE| 		// the UI thread in a nested event loop - project.open never returns,
+      RESIDUE| 		// and the client is told nothing (task #625).  The same report goes to
+      RESIDUE| 		// stderr, and project.open hands the caller the per-item list.
+      RESIDUE| 		if ( getGUI() != nullptr && !lmms::isUnattendedRun() )
+      RESIDUE| 	// The project-scoped id counter, on the root element beside version /
+      RESIDUE| 	// creatorversion (SPEC-stable-ids.md 3.2). The root is already a mutable
+      RESIDUE| 	// document header: DataFile's constructor writes five sibling attributes
+      RESIDUE| 	// there and DataFile::upgrade() rewrites them. This is the ONLY place ids
+      RESIDUE| 	// reach the disk - load-time assignment is in memory only, which is what
+      RESIDUE| 	// keeps the agent_surface gate's fixture byte-identical across a sweep.
+      RESIDUE| 	dataFile.documentElement().setAttribute( "next-id", ProjectIds::next() );
+  src/core/Track.cpp                            delta-added=  50 in-HEAD=  11 substring=  1 RESIDUE=38
+      RESIDUE| #include "ProjectIds.h"
+      RESIDUE| 	// The stable id, handed out once, here, at creation (SPEC-stable-ids.md
+      RESIDUE| 	// 2.1). It is the number in trk-<n> and it never changes while the track
+      RESIDUE| 	// lives, so a client that was told trk-7 keeps trk-7 when a sibling is
+      RESIDUE| 	// added or removed. loadTrack() overrides it with the file's value on a
+      RESIDUE| 	// project load, and a file element with no id keeps this one - which is
+      RESIDUE| 	// what makes legacy assignment deterministic, because the load walks the
+      RESIDUE| 	// containers in document order.
+      RESIDUE| 	m_id( ProjectIds::allocate() ),
+      RESIDUE| 	m_mutedBeforeSolo( false ),     /*!< Transient pre-solo mute state; written to
+      RESIDUE| 	                                 * the file by saveTrack as an int, so an
+      RESIDUE| 	                                 * uninitialised value made every save
+      RESIDUE| 	                                 * nondeterministic (measured: the same fresh
+      RESIDUE| 	                                 * track saved as mutedBeforeSolo=1 in one run
+      RESIDUE| 	                                 * and 48 in the next, which StableTrackIdsTest
+      RESIDUE| 	                                 * compares). */
+      RESIDUE| void Track::setId(int id)
+      RESIDUE| 	m_id = id;
+      RESIDUE| 	// Never let the counter hand this number to anything else, even if the file
+      RESIDUE| 	// that carried it had no (or a stale) next-id.
+      RESIDUE| 	ProjectIds::observe(id);
+      RESIDUE| 		// SPEC-stable-ids.md 3.1: an ATTRIBUTE on the track's own element,
+      RESIDUE| 		// never a child element - Track::loadTrack turns an unrecognised child
+      RESIDUE| 		// element into a real Clip, so an id element would make every track
+      RESIDUE| 		// grow a phantom clip on load, on every track, in every project.
+      RESIDUE| 		element.setAttribute( "id", m_id );
+      RESIDUE| 	// The stable id (SPEC-stable-ids.md rules R1/R2). A file that carries one
+      RESIDUE| 	// keeps it; a legacy file that does not gets the number the constructor
+      RESIDUE| 	// already handed out, which is deterministic because Song::loadProject walks
+      RESIDUE| 	// the containers in document order. Either way ProjectIds::loadAssignments()
+      RESIDUE| 	// counts it, and project.open reports the count as `ids_assigned`, so a
+      RESIDUE| 	// legacy file's one-time upgrade is stated rather than silent.
+      RESIDUE| 	if (element.hasAttribute("id"))
+      RESIDUE| 		bool ok = false;
+      RESIDUE| 		const int stored = element.attribute("id").toInt(&ok);
+      RESIDUE| 		if (ok && stored >= 0) { setId(stored); }
+      RESIDUE| 		else { ProjectIds::noteLoadAssignment(); }
+      RESIDUE| 		ProjectIds::noteLoadAssignment();
+  src/core/TrackContainer.cpp                   delta-added=   6 in-HEAD=   0 substring=  0 RESIDUE=6
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 	// The progress window is application-modal and its Cancel button is the
+      RESIDUE| 	// only way to stop a load. In an unattended run nobody can click it (task
+      RESIDUE| 	// #625), so the load runs without the window - it never blocked, but it left
+      RESIDUE| 	// an unclosable modal widget over a socket-driven load.
+      RESIDUE| 	if (!journalRestore && gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+  src/core/UnattendedRun.cpp                    added=  81  HEAD-ABSENT (a genuine addition)
+  src/core/main.cpp                             delta-added=  85 in-HEAD=  24 substring=  4 RESIDUE=57
+      RESIDUE| #include "ControlRegistry.h"
+      RESIDUE| #include "ControlServer.h"
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| #include <memory>
+      RESIDUE| 		"      --control-socket <path>    Listen for agent JSON-RPC commands on the\n"
+      RESIDUE| 		"          AF_UNIX socket <path>. Opt-in; off unless given.\n"
+      RESIDUE| 			scriptFile, controlSocket;
+      RESIDUE| 		else if( arg == "--control-socket" )
+      RESIDUE| 			// Opt-in agent control socket (SPEC-zene-studio.md A12). Off unless
+      RESIDUE| 			// this flag is given; the socket is AF_UNIX, mode 0600, local only.
+      RESIDUE| 				return usageError( "No control socket path specified" );
+      RESIDUE| 			controlSocket = QString::fromLocal8Bit( argv[i] );
+      RESIDUE| 			// Mark the whole process as agent-driven before the GUI or the
+      RESIDUE| 			// engine exists: from here on no modal dialog may be opened, and
+      RESIDUE| 			// the commands that raise one answer with a typed result instead
+      RESIDUE| 			// (task #625, SPEC A13).
+      RESIDUE| 			lmms::setAgentInstance( true );
+      RESIDUE| 	// Opt-in agent control surface (SPEC A12). The socket is started before the
+      RESIDUE| 	// engine so that a client can connect and probe (control.ping) while the
+      RESIDUE| 	// instance is still initialising; commands that need the model return the
+      RESIDUE| 	// typed 'busy' refusal until Engine::init() has run.
+      RESIDUE| 	std::unique_ptr<ControlServer> controlServer;
+      RESIDUE| 	if( !controlSocket.isEmpty() )
+      RESIDUE| 		ControlRegistry* registry = ControlRegistry::instance();
+      RESIDUE| 		controlServer = std::make_unique<ControlServer>( registry );
+      RESIDUE| 		QString controlError;
+      RESIDUE| 		if( !controlServer->listen( controlSocket, &controlError ) )
+      RESIDUE| 			fprintf( stderr, "control socket: %s\n", controlError.toUtf8().constData() );
+      RESIDUE| 		printf( "control socket listening on %s\n", controlSocket.toUtf8().constData() );
+      RESIDUE| 		if( recoveryFilePresent && lmms::isUnattendedRun() )
+      RESIDUE| 			// A modal here runs BEFORE app->exec(): in an unattended run
+      RESIDUE| 			// (--control-socket, or no display at all) nobody can click it, so
+      RESIDUE| 			// the instance would never become ready (task #625).  Take the
+      RESIDUE| 			// box's own default button - "Recover", the non-destructive answer
+      RESIDUE| 			// - and say so on stderr.
+      RESIDUE| 			fprintf( stderr, "main: unattended run: recovering %s without the "
+      RESIDUE| 				"\"Project recovery\" prompt (the prompt's default answer)\n",
+      RESIDUE| 				recoveryFile.toUtf8().constData() );
+      RESIDUE| 			fflush( stderr );
+      RESIDUE| 		else if( recoveryFilePresent )
+      RESIDUE| 	// The application is fully constructed and the initial project exists: from
+      RESIDUE| 	// here the agent surface may drive the model (before this point every
+      RESIDUE| 	// command returns the typed 'busy' refusal).
+      RESIDUE| 	if( controlServer )
+      RESIDUE| 		controlServer->registry()->setReady( true );
+      RESIDUE| 		// A client may have asked to quit before startup finished (the socket is
+      RESIDUE| 		// up first, by design). Apply it now that the normal shutdown path - and
+      RESIDUE| 		// the main event loop - actually exist (task #626).
+      RESIDUE| 		ControlRegistry::applyPendingQuit();
+      RESIDUE| 	// The loop returned: the shutdown is doing its work, so disarm the
+      RESIDUE| 	// last-resort guard (it must only ever catch a shutdown that never returns).
+      RESIDUE| 	ControlRegistry::cancelShutdownGuard();
+      RESIDUE| 	// Unlink the control socket here rather than at the end of main: the shutdown
+      RESIDUE| 	// contract is "gone on exit", and this way it is gone before the engine
+      RESIDUE| 	// teardown, which the agent may be watching (task #626).
+      RESIDUE| 	if( controlServer )
+      RESIDUE| 		controlServer->close();
+  src/gui/GuiApplication.cpp                    delta-added=  37 in-HEAD=   3 substring= 12 RESIDUE=22
+      RESIDUE| #include <cstdio>
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 	// Prompt the user to create the Zene Studio working directory (e.g.
+      RESIDUE| 	// ~/Documents/Zene Studio) if it doesn't exist. In an unattended run
+      RESIDUE| 	// (--control-socket, or no display at all) there is nobody to answer the prompt and Qt would park
+      RESIDUE| 	// the constructor in a nested event loop, so the instance would never
+      RESIDUE| 	// reach app->exec() (task #625). Take the prompt's own default answer -
+      RESIDUE| 	// "Yes, create it" - and say so on stderr; if creation fails, name the
+      RESIDUE| 	// path in a typed line rather than waiting on a click.
+      RESIDUE| 	if ( !ConfigManager::inst()->hasWorkingDir() )
+      RESIDUE| 		const QString workingDir = ConfigManager::inst()->workingDir();
+      RESIDUE| 		const bool unattended = lmms::isUnattendedRun();
+      RESIDUE| 		if ( unattended ||
+      RESIDUE| 					"later via Edit -> Settings." ).arg( workingDir ),
+      RESIDUE| 			if ( unattended )
+      RESIDUE| 				if ( ConfigManager::inst()->hasWorkingDir() )
+      RESIDUE| 					fprintf( stderr, "GuiApplication: working-directory path=%s "
+      RESIDUE| 						"state=created (unattended run: the prompt's default answer)\n",
+      RESIDUE| 						workingDir.toUtf8().constData() );
+      RESIDUE| 					fprintf( stderr, "GuiApplication: working-directory-error path=%s "
+      RESIDUE| 						"reason=create-failed\n", workingDir.toUtf8().constData() );
+      RESIDUE| 				fflush( stderr );
+  src/gui/MainWindow.cpp                        delta-added=  98 in-HEAD=  25 substring=  9 RESIDUE=64
+      RESIDUE| #include <cstdio>
+      RESIDUE| #include "AudioEngine.h"
+      RESIDUE| #include "AudioEngine.h"
+      RESIDUE| #include "ControlRegistry.h"
+      RESIDUE| #include "UnattendedRun.h"
+      RESIDUE| 	// A11/A15: these two actions declare the registry commands they implement.
+      RESIDUE| 	m_undoAction->setData(QStringLiteral("control.undo"));
+      RESIDUE| 	m_redoAction->setData(QStringLiteral("control.redo"));
+      RESIDUE| 	// A11/A15: the action declares the registry command it implements, and
+      RESIDUE| 	// toggleMidiLearn() below invokes that same command - one implementation for
+      RESIDUE| 	// the menu item, the shortcut and the agent surface (SPEC-zene-studio.md A11).
+      RESIDUE| 	m_midiLearnAction->setData(QStringLiteral("midi.learn_toggle"));
+      RESIDUE| 	// Both dialogs below are questions for a human, asked BEFORE app->exec().
+      RESIDUE| 	// In an unattended run (--control-socket, or no display at all) nobody can
+      RESIDUE| 	// answer them, so Qt parks the startup path in a nested event loop: the
+      RESIDUE| 	// instance stays alive, keeps answering `control.ping` with
+      RESIDUE| 	// engine_ready=false, and never becomes usable (task #625, measured on
+      RESIDUE| 	// 6b01b98eb). Ask only when a human is actually there; otherwise say it on
+      RESIDUE| 	// stderr, where the log and the operator can see it.
+      RESIDUE| 	const bool interactive = !lmms::isUnattendedRun();
+      RESIDUE| 		if( interactive )
+      RESIDUE| 			fprintf( stderr, "MainWindow: unattended run: skipping the first-run setup dialog; "
+      RESIDUE| 				"configure audio and MIDI in the --config file\n" );
+      RESIDUE| 			fflush( stderr );
+      RESIDUE| 		if( interactive )
+      RESIDUE| 			// The engine already fell back to the dummy device and keeps working
+      RESIDUE| 			// (render, edit, save); an agent needs the reason, not a prompt. Two lines,
+      RESIDUE| 			// both from this one event, because they serve two readers:
+      RESIDUE| 			//   1. the sentence control.ping reports as audio.message (agent-facing, one source);
+      RESIDUE| 			//   2. the structured diagnostic the headless no-audio-device test parses
+      RESIDUE| 			//      (backend / start-failed / name-known / device), which is what makes the
+      RESIDUE| 			//      fallback auditable from a log rather than only from the socket.
+      RESIDUE| 			// Merge reconciliation of #625 x #626, 2026-09-12: both contracts are kept.
+      RESIDUE| 			const QString requested = ConfigManager::inst()->value( "audioengine", "audiodev" );
+      RESIDUE| 			const bool failed = Engine::audioEngine()->audioDevStartFailed();
+      RESIDUE| 			const bool known = AudioEngine::isAudioDevNameValid( requested );
+      RESIDUE| 			fprintf( stderr, "MainWindow: audio device setup failed: %s\n",
+      RESIDUE| 				Engine::audioEngine()->audioDevStartReason().toUtf8().constData() );
+      RESIDUE| 			fprintf( stderr, "MainWindow: audio-device-setup backend=\"%s\" "
+      RESIDUE| 				"device_start_failed=%d name_known=%d device=\"%s\" "
+      RESIDUE| 				"(unattended run: no dialog, the engine continues)\n",
+      RESIDUE| 				requested.toUtf8().constData(), failed ? 1 : 0, known ? 1 : 0,
+      RESIDUE| 				Engine::audioEngine()->audioDevName().toUtf8().constData() );
+      RESIDUE| 			fflush( stderr );
+      RESIDUE| 	// A control-surface quit (control.quit) has nobody to ask. It states its
+      RESIDUE| 	// intent up front, so answer the same question the dialog below would ask
+      RESIDUE| 	// exactly as a user would, minus the dialog. Without this the question blocks
+      RESIDUE| 	// in a nested event loop that nothing can dismiss, and the process never
+      RESIDUE| 	// finishes quitting - the whole of reproduction (a) in task #626 (the stack
+      RESIDUE| 	// was QCoreApplication::quit -> QApplication::closeAllWindows ->
+      RESIDUE| 	// MainWindow::closeEvent -> this dialog).
+      RESIDUE| 	const ControlRegistry::QuitPromptAnswer quitAnswer = ControlRegistry::quitPromptAnswer();
+      RESIDUE| 	if( quitAnswer != ControlRegistry::QuitPromptAnswer::Ask )
+      RESIDUE| 		if( quitAnswer == ControlRegistry::QuitPromptAnswer::Save )
+      RESIDUE| 	// A11: the menu item drives the SAME registry command an agent calls, so the
+      RESIDUE| 	// mode has one implementation rather than two that can drift. The handler
+      RESIDUE| 	// arms MidiLearnGui and syncs this action's tick (MidiLearnGui holds it).
+      RESIDUE| 	const ControlResult result = ControlRegistry::instance()->invoke(
+      RESIDUE| 		QStringLiteral("midi.learn_toggle"));
+      RESIDUE| 	if( !result.ok )
+      RESIDUE| 		// Nothing armed - there is no GUI yet, or the engine is still starting.
+      RESIDUE| 		// Qt has already flipped the tick, so put it back where the real state
+      RESIDUE| 		// is: the menu must never claim a mode that was not armed.
+      RESIDUE| 		updateMidiLearnAction();
+  tests/CMakeLists.txt                          delta-added= 168 in-HEAD=  32 substring=  5 RESIDUE=131
+      RESIDUE| 	src/core/ControlAutomationScriptTest.cpp
+      RESIDUE| 	src/core/ControlDeviceCatalogueTest.cpp
+      RESIDUE| 	src/core/ControlEditCommandsTest.cpp
+      RESIDUE| 	src/core/ControlRegistryTest.cpp
+      RESIDUE| 	src/core/ReversibilityContractTest.cpp
+      RESIDUE| 	src/core/ReversibilityUndoTest.cpp
+      RESIDUE| 	src/core/StableTrackIdsTest.cpp
+      RESIDUE| 	# Tests that need the build tree's plugin modules (they resolve LMMS core
+      RESIDUE| 	# symbols from the host process at load time, exactly like the zene
+      RESIDUE| 	# executable) get ENABLE_EXPORTS and the plugin directory. ScriptEngineTest
+      RESIDUE| 	# does it for the Lua Instrument binding; ControlDeviceCatalogueTest does it
+      RESIDUE| 	# so PluginFactory discovers lv2effect/lv2instrument and the LV2 half of the
+      RESIDUE| 	# device catalogue is real rather than empty.  PluginScanCacheTest drives the
+      RESIDUE| 	# scan cache against a copy of the built tripleoscillator module;
+      RESIDUE| 	# ReversibilityContractTest/ReversibilityUndoTest load the real binary's
+      RESIDUE| 	# plugins to prove the A16 inverses (#623).
+      RESIDUE| 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
+      RESIDUE| 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
+      RESIDUE| 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest")
+      RESIDUE| # Agent control surface (SPEC A12/A16). The ControlRegistryTest unit test runs
+      RESIDUE| # in the LMMS_TESTS loop above; this one starts the real binary with
+      RESIDUE| # --control-socket under QT_QPA_PLATFORM=offscreen and drives it from an
+      RESIDUE| # EXTERNAL Python client over the AF_UNIX socket, so the socket, the wire
+      RESIDUE| # framing and the command groups are exercised end to end.
+      RESIDUE| find_program(PYTHON3_EXECUTABLE NAMES python3)
+      RESIDUE| if(PYTHON3_EXECUTABLE)
+      RESIDUE| 	add_test(NAME ControlSocketIntegration
+      RESIDUE| 		COMMAND ${PYTHON3_EXECUTABLE}
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-integration.py
+      RESIDUE| 			$<TARGET_FILE:zene>
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+      RESIDUE| 	set_tests_properties(ControlSocketIntegration PROPERTIES
+      RESIDUE| 		TIMEOUT 600
+      RESIDUE| else()
+      RESIDUE| 	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
+      RESIDUE| # Task #626: the shutdown and readiness defects of the control surface.
+      RESIDUE| # ControlShutdown         - a clean shutdown for BOTH reproductions (undo/redo
+      RESIDUE| #                           leaves the project modified -> the quit prompt used to
+      RESIDUE| #                           block; an audio device that cannot open -> the startup
+      RESIDUE| #                           audio dialog used to block before app->exec()).
+      RESIDUE| # ControlReadiness        - connects BEFORE readiness and asserts the documented
+      RESIDUE| #                           order: connect -> poll control.ping -> wait for
+      RESIDUE| #                           engine_ready -> issue engine commands.
+      RESIDUE| # ControlNoAudioDevice    - a started instance with no usable audio device reports
+      RESIDUE| #                           the reason instead of answering `busy` forever.
+      RESIDUE| # ControlNegativeControl  - proves each of those can fail: the pre-fix artefacts
+      RESIDUE| #                           and real SIGKILL/SIGSTOP symptoms must be detected, so
+      RESIDUE| #                           none of the checks above is a tautology.
+      RESIDUE| # All four are bounded by ctest's TIMEOUT and by deadlines inside each script: a
+      RESIDUE| # hang counts as a failure, never as a wait.
+      RESIDUE| if(PYTHON3_EXECUTABLE)
+      RESIDUE| 	add_test(NAME ControlShutdown
+      RESIDUE| 		COMMAND ${PYTHON3_EXECUTABLE}
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/control-shutdown.py
+      RESIDUE| 			$<TARGET_FILE:zene>
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+      RESIDUE| 	add_test(NAME ControlReadiness
+      RESIDUE| 		COMMAND ${PYTHON3_EXECUTABLE}
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/control-readiness.py
+      RESIDUE| 			$<TARGET_FILE:zene>
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+      RESIDUE| 	add_test(NAME ControlNoAudioDevice
+      RESIDUE| 		COMMAND ${PYTHON3_EXECUTABLE}
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/control-no-audio-device.py
+      RESIDUE| 			$<TARGET_FILE:zene>
+      RESIDUE| 	add_test(NAME ControlNegativeControl
+      RESIDUE| 		COMMAND ${PYTHON3_EXECUTABLE}
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
+      RESIDUE| 			$<TARGET_FILE:zene>
+      RESIDUE| 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
+      RESIDUE| 		ControlNegativeControl PROPERTIES
+      RESIDUE| 		TIMEOUT 420
+      RESIDUE| else()
+      RESIDUE| 	message(STATUS "python3 not found: the #626 shutdown/readiness tests are not registered")
+      RESIDUE| # agent_surface (SPEC A15 / task #620). The anti-drift gate: it reflects the
+      RESIDUE| # LIVE menu/toolbar surface over the control socket, fails on any action that
+      RESIDUE| # has no registered command (grandfathering the ones that do not, in
+      RESIDUE| # tests/agent-surface-baseline.txt, under a shrink-only ratchet), checks that
+      RESIDUE| # every declared command is either swept headless or allowlisted with a reason,
+      RESIDUE| # and then sweeps each non-allowlisted command to a typed result under
+      RESIDUE| # QT_QPA_PLATFORM=offscreen with a throwaway HOME.
+      RESIDUE| # The gate is a Python file rather than a test binary on purpose: the reflection
+      RESIDUE| # it needs lives in the running process (control.surface_report walks the real
+      RESIDUE| # MainWindow), so the test drives a real instance exactly like an agent would.
+      RESIDUE| # --check is passed explicitly: this gate must never rewrite its own baseline
+      RESIDUE| # during a test run; only a deliberate --reanchor "reason" does that.
+      RESIDUE| if(PYTHON3_EXECUTABLE)
+      RESIDUE| 	add_test(NAME agent_surface
+      RESIDUE| 		COMMAND ${PYTHON3_EXECUTABLE}
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/agent-surface-gate.py
+      RESIDUE| 			$<TARGET_FILE:zene>
+      RESIDUE| 			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+      RESIDUE| 			--check
+      RESIDUE| 			--report ${CMAKE_CURRENT_BINARY_DIR}/agent-surface-report.json
+      RESIDUE| 	set_tests_properties(agent_surface PROPERTIES
+      RESIDUE| 		TIMEOUT 300
+      RESIDUE| else()
+      RESIDUE| 	message(STATUS "python3 not found: agent_surface is not registered")
+      RESIDUE| # The notes / clips / tracks command group edits real Song model objects
+      RESIDUE| # (tracks, MidiClips, notes) rather than only reading them, so it needs a Qt
+      RESIDUE| # platform plugin even though the assertions never open a window.
+      RESIDUE| set_tests_properties(ControlEditCommandsTest PROPERTIES
+      RESIDUE| # The stable-id tests construct a full Engine and drive project.open/save through
+      RESIDUE| # the control registry, so they need a Qt platform plugin even though nothing
+      RESIDUE| # opens a window.
+      RESIDUE| set_tests_properties(StableTrackIdsTest PROPERTIES
+      RESIDUE| # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
+      RESIDUE| # instance started with --control-socket.
+      RESIDUE| # Each test starts the real binary under QT_QPA_PLATFORM=offscreen, drives it
+      RESIDUE| # from an external client, and treats a HANG as a failure: every wait is
+      RESIDUE| # bounded. Each also has an `--expect-blocked` mode that asserts the pre-fix
+      RESIDUE| # defect (the startup path parked inside a modal's nested event loop), so the
+      RESIDUE| # tests cannot pass by accident. Reproductions against the base commit
+      RESIDUE| # 6b01b98eb are recorded in the lane's evidence.
+      RESIDUE| if(PYTHON3_EXECUTABLE)
+      RESIDUE| 	foreach(HEADLESS_TEST
+      RESIDUE| 			"ControlHeadlessProjectOpen|control-headless-project-open.py|${CMAKE_SOURCE_DIR}/data/projects/tutorials/editing_note_volumes.mmp ${CMAKE_CURRENT_SOURCE_DIR}/data/error-carrying-project.mmp"
+      RESIDUE| 			"ControlHeadlessWorkingDirectory|control-headless-working-directory.py|"
+      RESIDUE| 			"ControlHeadlessNoAudioDevice|control-headless-no-audio-device.py|")
+      RESIDUE| 		string(REPLACE "|" ";" FIELDS "${HEADLESS_TEST}")
+      RESIDUE| 		list(GET FIELDS 0 TEST_NAME)
+      RESIDUE| 		list(GET FIELDS 1 TEST_SCRIPT)
+      RESIDUE| 		list(GET FIELDS 2 TEST_ARGS)
+      RESIDUE| 		separate_arguments(TEST_ARGS_LIST UNIX_COMMAND "${TEST_ARGS}")
+      RESIDUE| 		add_test(NAME ${TEST_NAME}
+      RESIDUE| 			COMMAND ${PYTHON3_EXECUTABLE}
+      RESIDUE| 				${CMAKE_CURRENT_SOURCE_DIR}/${TEST_SCRIPT}
+      RESIDUE| 				$<TARGET_FILE:zene>
+      RESIDUE| 				${TEST_ARGS_LIST}
+      RESIDUE| 		set_tests_properties(${TEST_NAME} PROPERTIES
+      RESIDUE| 			TIMEOUT 300
+  tests/agent-surface-allowlist.txt             added=  17  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-baseline.txt              added=  49  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-exempt.txt                added=  21  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-gate.py                   added= 496  HEAD-ABSENT (a genuine addition)
+  tests/agent-surface-negative-control.md       added= 206  HEAD-ABSENT (a genuine addition)
+  tests/agent_surface_lib.py                    added= 463  HEAD-ABSENT (a genuine addition)
+  tests/all-sources.txt                         delta-added=   1 in-HEAD=   0 substring=  0 RESIDUE=1
+      RESIDUE| tests/src/core/ControlRegistryTest.cpp
+  tests/control-headless-no-audio-device.py     added= 182  HEAD-ABSENT (a genuine addition)
+  tests/control-headless-project-open.py        added= 216  HEAD-ABSENT (a genuine addition)
+  tests/control-headless-working-directory.py   added= 148  HEAD-ABSENT (a genuine addition)
+  tests/control-negative-control.py             added= 277  HEAD-ABSENT (a genuine addition)
+  tests/control-no-audio-device.py              added= 156  HEAD-ABSENT (a genuine addition)
+  tests/control-readiness.py                    added= 160  HEAD-ABSENT (a genuine addition)
+  tests/control-reversibility-transcript.py     added= 203  HEAD-ABSENT (a genuine addition)
+  tests/control-shutdown.py                     added= 163  HEAD-ABSENT (a genuine addition)
+  tests/control-socket-integration.py           added=1934  HEAD-ABSENT (a genuine addition)
+  tests/control-stable-ids.py                   added= 252  HEAD-ABSENT (a genuine addition)
+  tests/control_socket_flows.py                 added= 216  HEAD-ABSENT (a genuine addition)
+  tests/control_socket_harness.py               added= 474  HEAD-ABSENT (a genuine addition)
+  tests/data/README-error-fixtures.md           added=  44  HEAD-ABSENT (a genuine addition)
+  tests/data/agent-control-fixture.mmp          added=  90  HEAD-ABSENT (a genuine addition)
+  tests/data/automation-audio-fixture.mmp       added=  56  HEAD-ABSENT (a genuine addition)
+  tests/data/error-carrying-project.mmp         added=  74  HEAD-ABSENT (a genuine addition)
+  tests/fork-sources.txt                        delta-added= 177 in-HEAD=   0 substring=  0 RESIDUE=177
+      RESIDUE| # ---------------------------------------------------------------------------
+      RESIDUE| # Merged 2026-09-12 (post-alpha/agent-surface-integration -> post-alpha/integration).
+      RESIDUE| # The entry list below is the machine-checked UNION of the two parents' entry sets:
+      RESIDUE| #   150 (this branch) u 166 (agent-surface) = 216 entries, 0 lost, 0 extra,
+      RESIDUE| # asserted in python against BOTH parents' entry sets - an ENTRY union, never a line
+      RESIDUE| # union. The other programme's per-entry annotations for its own registrations are kept
+      RESIDUE| # above their entries. Its 12-line header is NOT carried: its `Regenerate with` command
+      RESIDUE| # is based on `origin/master` and does not describe this file, and the two notes it adds
+      RESIDUE| # (the vendored trees excluded on purpose, the lcov anchoring) are already stated in the
+      RESIDUE| # header above. The 21 entries that programme registered by hand are kept, with the
+      RESIDUE| # reasons it wrote beside them, because it registered them on purpose so the fork-scoped
+      RESIDUE| # ratchets measure them ("Registered as fork-NEW so the fork-scoped ratchets measure
+      RESIDUE| # them"): 11 tests/*.py harnesses and 10 tests/src/core/*.{cpp,h} sources. Running the
+      RESIDUE| # command under "Regenerate with" reproduces post-alpha/integration's 150 entries exactly,
+      RESIDUE| # and prints 195 of this union's 216 - it omits exactly the 21 hand-registered entries and
+      RESIDUE| # adds none, which is the same relationship the other programme's own file already had to
+      RESIDUE| # its own command (its 166 entries were 21 wider than the 145 that command printed).
+      RESIDUE| # This is a deliberate scope decision, recorded here rather than taken
+      RESIDUE| # silently: it widens the fork-scoped file-length / complexity / duplication ratchets onto
+      RESIDUE| # those files, which is what registering them was for; it narrows no scope this branch had.
+      RESIDUE| # ---------------------------------------------------------------------------
+      RESIDUE| # ---- Agent control surface: automation + scripting command groups ----
+      RESIDUE| # Lane post-alpha/cmd-automation off post-alpha/cmd-plugins. The automation.*
+      RESIDUE| # group (read-back, the point edits, and the registered-but-refused
+      RESIDUE| # automation.mode_set, because this tree has no automation modes) and the
+      RESIDUE| # script.* group (script.run drives the embedded ScriptEngine in the running
+      RESIDUE| # instance; script.list reports the scripts the build ships). Registered as
+      RESIDUE| # fork-NEW so the fork-scoped ratchets measure them.
+      RESIDUE| include/ControlAutomationSupport.h
+      RESIDUE| # ---- Agent control surface: plugin/dsp + settings command groups ----
+      RESIDUE| # Lane post-alpha/cmd-plugins off post-alpha/agent-control-surface. The device
+      RESIDUE| # catalogue and device support shared by plugin.list / dsp.get_state, the
+      RESIDUE| # plugin.* device+parameter+state+preset commands, and the settings.*/audio.*/
+      RESIDUE| # midi.*/app.* group. Registered as fork-NEW so the fork-scoped ratchets measure
+      RESIDUE| # them.
+      RESIDUE| include/ControlDeviceSupport.h
+      RESIDUE| # ---- Notes / clips / tracks command group (SPEC A11-A16, lane post-alpha/cmd-notes) ----
+      RESIDUE| # The piano-roll and song-editor half of AGENT-TOOLING.md section 5: note.*,
+      RESIDUE| # roll.get_state, clip.*, track.add/remove/rename/set_mute/set_solo/set_arm and
+      RESIDUE| # arrangement.get_state, plus the helpers they share. Registered as fork-NEW so
+      RESIDUE| # the fork-scoped ratchets measure them.
+      RESIDUE| include/ControlEdit.h
+      RESIDUE| # ---- Agent control surface (SPEC A11-A16, lane post-alpha/agent-control-surface) ----
+      RESIDUE| # The in-app command registry, the opt-in JSON-RPC control socket and the
+      RESIDUE| # first command groups (control.*, transport.*, track.*, mixer.*, project.*,
+      RESIDUE| # render.render). Registered as fork-NEW so the fork-scoped ratchets measure them.
+      RESIDUE| include/ControlRegistry.h
+      RESIDUE| # ---- SPEC A16 reversibility contract (#623, lane post-alpha/reversibility) ----
+      RESIDUE| # New sources only. The command files this lane touches were already fork-NEW;
+      RESIDUE| # the two UPSTREAM-inherited files it extends (include/ProjectJournal.h,
+      RESIDUE| # src/core/ProjectJournal.cpp) are declared in tests/upstream-modifications.txt.
+      RESIDUE| #   ControlReversibility.{h,cpp}      the contract: class lookup + undo-step helper
+      RESIDUE| #   ControlReversibilityTable.cpp     THE classification table, one row per command
+      RESIDUE| #   ProjectRevisions.{h,cpp}          the keep-3 previous-revision set of project.save
+      RESIDUE| #   ReversibilityContractTest.cpp     apply -> undo -> read back, and the typed refusal
+      RESIDUE| include/ControlReversibility.h
+      RESIDUE| include/ControlServer.h
+      RESIDUE| # ---- Shared command-surface vocabulary (lane post-alpha/stable-ids, step 0) ----
+      RESIDUE| # Four merge repairs each re-derived the same small helpers; the last was four
+      RESIDUE| # schema helpers defined identically in two translation units (a duplicate-symbol
+      RESIDUE| # link failure). objectSchema + the property helpers + the trk-/clip-/note-/ch-/
+      RESIDUE| # fx-/dev- id grammar now have one header and one definition, and the twelve
+      RESIDUE| # per-file anonymous-namespace copies are gone.
+      RESIDUE| include/ControlVocabulary.h
+      RESIDUE| # ---- Stable track ids (SPEC-stable-ids.md slice 1, lane post-alpha/stable-ids) ----
+      RESIDUE| # The project-scoped monotonic id counter behind every stable id (one counter, one
+      RESIDUE| # root attribute, one repair rule) and its acceptance test.
+      RESIDUE| include/ProjectIds.h
+      RESIDUE| include/ProjectRevisions.h
+      RESIDUE| # ---- Headless load path (task #625: no modal may block an agent instance) ----
+      RESIDUE| # The tests that hold the startup/load path to SPEC A13 ("every command runs
+      RESIDUE| # with no display and no audio device"). Registered as fork-NEW so the
+      RESIDUE| # fork-scoped gates measure them. The fixture they use is
+      RESIDUE| # tests/data/error-carrying-project.mmp (documented in
+      RESIDUE| # tests/data/README-error-fixtures.md): it carries two load errors on purpose.
+      RESIDUE| include/UnattendedRun.h
+      RESIDUE| src/core/ControlAutomationSupport.cpp
+      RESIDUE| src/core/ControlCommandsArrangement.cpp
+      RESIDUE| src/core/ControlCommandsArrangementState.cpp
+      RESIDUE| src/core/ControlCommandsAutomation.cpp
+      RESIDUE| src/core/ControlCommandsAutomationEdit.cpp
+      RESIDUE| src/core/ControlCommandsClip.cpp
+      RESIDUE| src/core/ControlCommandsControl.cpp
+      RESIDUE| src/core/ControlCommandsDsp.cpp
+      RESIDUE| src/core/ControlCommandsMixer.cpp
+      RESIDUE| src/core/ControlCommandsNotes.cpp
+      RESIDUE| src/core/ControlCommandsPlugin.cpp
+      RESIDUE| src/core/ControlCommandsPluginParams.cpp
+      RESIDUE| src/core/ControlCommandsPluginPreset.cpp
+      RESIDUE| src/core/ControlCommandsPluginState.cpp
+      RESIDUE| src/core/ControlCommandsProject.cpp
+      RESIDUE| # Split out of ControlCommandsProject.cpp / ControlCommandsArrangement.cpp so no
+      RESIDUE| # file crosses the 500-line ratchet (Gate 7) and the file-level commands are
+      RESIDUE| # readable next to each other.
+      RESIDUE| src/core/ControlCommandsProjectFiles.cpp
+      RESIDUE| src/core/ControlCommandsScript.cpp
+      RESIDUE| src/core/ControlCommandsSettings.cpp
+      RESIDUE| # ---- Agent surface gate (SPEC A15, lane post-alpha/agent-surface-gate) ----
+      RESIDUE| # control.surface_report reflects the live menu/toolbar surface so the
+      RESIDUE| # agent_surface ctest can fail on an action with no registered command.
+      RESIDUE| # The gate itself is Python: the reflection lives in the running process, so the
+      RESIDUE| # test drives a real instance over the control socket exactly like an agent does.
+      RESIDUE| # Registered as fork-NEW so the fork-scoped ratchets measure them.
+      RESIDUE| src/core/ControlCommandsSurface.cpp
+      RESIDUE| src/core/ControlCommandsTransport.cpp
+      RESIDUE| src/core/ControlDeviceCatalogue.cpp
+      RESIDUE| # ---- Agent control surface: the LV2 half of the device catalogue ----
+      RESIDUE| # Lane post-alpha/lv2-catalogue off post-alpha/cmd-plugins. LV2 devices are
+      RESIDUE| # enumerated through the LV2 host module's own discovery path
+      RESIDUE| # (SubPluginFeatures::listSubPluginKeys) into plugin.list, and loadable through
+      RESIDUE| # plugin.load. The extended product sources are already listed above under the
+      RESIDUE| # cmd-plugins entry (ControlDeviceSupport.{h,cpp}, ControlDeviceCatalogue.cpp,
+      RESIDUE| # ControlCommandsPlugin.cpp); the entries below are what this lane adds - the
+      RESIDUE| # hosted-format (LADSPA/LV2) catalogue + instantiation split out of
+      RESIDUE| # ControlDeviceSupport.cpp so no file crosses the line ratchet, and the
+      RESIDUE| # in-process catalogue test.
+      RESIDUE| src/core/ControlDeviceHosted.cpp
+      RESIDUE| src/core/ControlDeviceState.cpp
+      RESIDUE| src/core/ControlDeviceSupport.cpp
+      RESIDUE| src/core/ControlEditSupport.cpp
+      RESIDUE| src/core/ControlRegistry.cpp
+      RESIDUE| src/core/ControlReversibility.cpp
+      RESIDUE| src/core/ControlReversibilityTable.cpp
+      RESIDUE| # ---- Control-surface hardening: shutdown + readiness (task #626, lane
+      RESIDUE| #      post-alpha/control-hardening) ----
+      RESIDUE| # One place decides whether this run can show a dialog to a human. Both #626
+      RESIDUE| # reproductions were a modal dialog in a run that has no human: the "project was
+      RESIDUE| # modified, save it?" prompt during quit (a) and the audio-device-failure box
+      RESIDUE| # before app->exec() (b). MainWindow and the control registry ask the same
+      RESIDUE| # question, so they ask it in one place.
+      RESIDUE| # Split out of ControlRegistry.cpp by task #626 so no one file carries the whole
+      RESIDUE| # surface: the JSON-schema subset the registry validates with, and the session
+      RESIDUE| # state a client reads before it may use the command table (readiness report +
+      RESIDUE| # shutdown intent). Both were already fork-NEW inside ControlRegistry.cpp.
+      RESIDUE| src/core/ControlSchema.cpp
+      RESIDUE| src/core/ControlServer.cpp
+      RESIDUE| src/core/ControlSession.cpp
+      RESIDUE| src/core/ControlVocabulary.cpp
+      RESIDUE| src/core/ProjectIds.cpp
+      RESIDUE| src/core/ProjectRevisions.cpp
+      RESIDUE| src/core/UnattendedRun.cpp
+      RESIDUE| tests/agent-surface-gate.py
+      RESIDUE| tests/agent_surface_lib.py
+      RESIDUE| tests/control-headless-no-audio-device.py
+      RESIDUE| tests/control-headless-project-open.py
+      RESIDUE| tests/control-headless-working-directory.py
+      RESIDUE| tests/control-negative-control.py
+      RESIDUE| tests/control-no-audio-device.py
+      RESIDUE| tests/control-readiness.py
+      RESIDUE| # ---- SPEC A16 acceptance transcript (#623, lane post-alpha/reversibility) ----
+      RESIDUE| # The raw apply -> undo -> read back transcript for one command of each class,
+      RESIDUE| # driven over the socket against the real binary (usage in its own docstring).
+      RESIDUE| tests/control-reversibility-transcript.py
+      RESIDUE| # The #626 tests: both shutdown reproductions, the documented readiness order, the
+      RESIDUE| # no-audio-device report, and the negative controls that prove each of those can
+      RESIDUE| # fail (a check that cannot fail is not evidence).
+      RESIDUE| tests/control-shutdown.py
+      RESIDUE| tests/control-stable-ids.py
+      RESIDUE| tests/control_socket_flows.py
+      RESIDUE| # One socket harness for every control-surface test (2026-09-12): the #626 harness and
+      RESIDUE| # the #625 headless-load harness had drifted into two Instance/Client classes and two
+      RESIDUE| # names for "the bounded wait expired", so they were collapsed into this module.
+      RESIDUE| # Split 2026-09-12 (Gate 7, the 500-line per-file ratchet): this is the CORE (Instance,
+      RESIDUE| # Client, the bounds, the readiness poll, the assertion helpers); the `check_*` payloads
+      RESIDUE| # and the multi-instance flow helpers live in tests/control_socket_flows.py, which every
+      RESIDUE| # case test imports alongside this module. Both halves are registered so the ratchets
+      RESIDUE| # measure both — a split that hides half the code from the gate would be a dodge.
+      RESIDUE| tests/control_socket_harness.py
+      RESIDUE| tests/src/core/ControlAutomationScriptTest.cpp
+      RESIDUE| tests/src/core/ControlDeviceCatalogueTest.cpp
+      RESIDUE| tests/src/core/ControlEditCommandsTest.cpp
+      RESIDUE| tests/src/core/ControlRegistryTest.cpp
+      RESIDUE| # Split so no test file crosses the 500-line ratchet either (Gate 7).
+      RESIDUE| tests/src/core/ReversibilityContractTest.cpp
+      RESIDUE| tests/src/core/ReversibilityTestSupport.h
+      RESIDUE| tests/src/core/ReversibilityUndoTest.cpp
+      RESIDUE| tests/src/core/StableTrackIdsTest.cpp
+  tests/src/core/ControlAutomationScriptTest.cpp added= 314  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ControlDeviceCatalogueTest.cpp added= 250  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ControlEditCommandsTest.cpp    added= 275  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ControlRegistryTest.cpp        added= 422  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ReversibilityContractTest.cpp  added= 187  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ReversibilityTestSupport.h     added= 327  HEAD-ABSENT (a genuine addition)
+  tests/src/core/ReversibilityUndoTest.cpp      added= 408  HEAD-ABSENT (a genuine addition)
+  tests/src/core/StableTrackIdsTest.cpp         added= 482  HEAD-ABSENT (a genuine addition)
+  tests/upstream-modifications.txt              delta-added=  29 in-HEAD=   2 substring=  0 RESIDUE=27
+      RESIDUE| include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph; post-alpha/recording-realtime: capture staging ring (fixed capacity, pre-allocated) replacing the locking, doubling input buffer, and pushInputFrames() taking const frames as noexcept; #626: audioDevRequestName()/audioDevStartReason() so a device that failed to open can be named to an agent instead of a bare false (post-alpha/control-hardening)
+      RESIDUE| include/Effect.h	#605 PDC: latency accessor on the effect interface; post-alpha/cmd-plugins: public setEnabled() so plugin.bypass drives the same enabled model the rack's On/Off LED drives (SPEC A11)
+      RESIDUE| include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph; #599 routing: the chain owns the RoutingGraph that renders its block (rebuildRoutingGraph/routingGraph); post-alpha/cmd-plugins: public const effects() view so plugin.unload / plugin.bypass resolve fx-<n> in processing order (QObject child order diverges after moveUp/moveDown)
+      RESIDUE| include/Song.h	#594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off. Stem export (post-alpha/stem-export): setExportLengthOverrideBars()/setExportTailBars() accessors whose defaults (0/1) reproduce the historical export length exactly; post-alpha/midi-depth: midiSeed()/setMidiSeed() and m_midiSeed - the project seed the note probability and velocity jitter rolls use; save integrity (#594 follow-up): m_preservedSessionXml, the #else of that member, holds an unsupported <session> block so a build with the flag off can write it back instead of dropping it (docs/SAVELOAD-INTEGRITY.md); #625 headless load: errors()/loadRefusal() accessors, so project.open answers with the per-item error list and a typed refusal instead of a dialog
+      RESIDUE| src/core/ConfigManager.cpp	wave R rename (018d2041f): the bundled data search path moved from share/lmms/ to share/zene/, and the build-tree discovery moved from the lmms_SOURCE_DIR/lmms_BINARY_DIR CMake cache entries to the zene_ spelling the renamed CMake project writes (the old lmms_ entry is still accepted, so an existing build tree keeps working).; wave R rename: runtime data/working paths derive from the renamed install layout; #625 headless load: the config parse-error and config-write-failure boxes are not opened in an unattended run (saveConfigFile is reachable from project.open via the recent-projects list)
+      RESIDUE| src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644); mixer concurrency audit D5: moveUp/moveDown take the change mutex, as appendEffect/removeEffect/clear already did (post-alpha/mixer-concurrency); #599 routing: build the chain's RoutingGraph on every topology edit and render the block through it in processAudioBuffer(AudioBus&)
+      RESIDUE| src/core/ImportFilter.cpp	wave R rename (018d2041f): the 'open this with' hint shown when no import filter matches named LMMS -> Zene Studio. User-visible string only.; wave R rename: user-visible import error text names the renamed product; #625 headless load: the import-path boxes are not opened in an unattended run (reachable with --import)
+      RESIDUE| src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644); mixer concurrency audit D1 (mute latch pass split from the action pass, D2(ii)/(iii) muted senders clear their outgoing sidechain intermediates), D3 (createChannel/createBusChannel under the change mutex) and D4 (moveChannelLeft under the change mutex) (post-alpha/mixer-concurrency); #599 racks: the channel renders its period through the rack's RoutingGraph when one is configured, saves/loads the channel's <rack> element, and drops the rack when the channel is cleared
+      RESIDUE| src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged). Stem export (post-alpha/stem-export): startExport() honours the render-length override and the configurable tail, both of which default to the historical length (held by StemExportTest::wholeProjectRenderIsUnchangedByAStemExport); post-alpha/automation-modes: publish the transport run once per rendered period (processNextBuffer), let a Touch/Latch/Write control record its moves (processAutomations), and apply the trim offset where the automation is read out; post-alpha/midi-depth: read and write the midiseed header attribute (only when non-zero) and reset it for a new project; save integrity: the failed-open branch restores m_loadingProject and journal journalling (D2) and the #else of the session branches preserves an unsupported <session> block verbatim instead of dropping it (docs/SAVELOAD-INTEGRITY.md); rename layer 1: user-visible label/dialog string says Zene Studio; #625 headless load: the 'Aborting project load' and 'LMMS Error report' boxes are not opened in an unattended run; the refusal reason and the per-item errors are recorded (post-alpha/headless-load); #628 SPEC-stable-ids slice 1: Song::loadProject resets and starts the project id counter, honours/repairs the root's next-id after the container walk and re-assigns a duplicate track id, and Song::saveProjectFile writes next-id on the root
+      RESIDUE| src/core/main.cpp	crash reporter: install()/beginSession()/endSession() around the process lifetime and setProjectPath() on every project load (start-up, render, --run-script, clean exit), plus the one-off pending-report offer (QMessageBox in GUI mode, stderr when core-only) and the Song::projectFileNameChanged follow (98a706dbe); Lua console: the --run-script action turns ScriptConsole off because stdout is that path's contract, otherwise every captured line would be printed twice by the new console stream (task #613); wave R rename (018d2041f): every user-visible name in main() moves to the product -- the version banner, the --help usage block ('Usage: zene', 'Start Zene Studio'), the root warning and the single-instance messages.; stem export (post-alpha/stem-export): headless `exportstems <project> -o <dir> [--tail-bars N]` action beside `render`/`rendertracks`; #618 loudness wiring: the CLI's --loudness-report option for `lmms render`, so a headless render can ask for the report (and its sidecar) as well; autosave recovery: the startup recovery prompt is gated by ProjectRecovery::decideRecovery() so a stale or other-project recover.mmp is not offered, and the dialog names the project it belongs to; regression test tests/src/core/ProjectRecoveryTest.cpp (post-alpha/autosave); wave R rename: --version banner, --help usage and root-user notice name the renamed product; #A11/A12: --control-socket flag starts the opt-in in-app JSON-RPC control server and documents it in --help (post-alpha/agent-control-surface); #626: apply a quit requested before readiness once the engine is ready, and unlink the control socket as soon as the event loop returns (post-alpha/control-hardening); #A11/A12: --control-socket flag starts the opt-in in-app JSON-RPC control server and documents it in --help; it also marks the process as agent-driven (ControlRegistry::setAgentInstance) so no modal dialog is opened, and the project-recovery prompt is answered without a dialog (#625) (post-alpha/agent-control-surface, post-alpha/headless-load)
+      RESIDUE| src/gui/GuiApplication.cpp	wave R rename (018d2041f): the first-run working-directory prompt, its title and the surrounding comments named LMMS -> Zene Studio. Strings and comments only; the directory itself is unchanged.; wave R rename: working-directory prompt text names the renamed product; #625 headless load: the missing-working-directory prompt is answered by creating the directory when no human can click it (post-alpha/headless-load)
+      RESIDUE| src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4); plugin-scan: build the Tools menu on first open, so start-up never scans plugins (023770f7b); Lua console: runScript stops printing the captured log a second time, ScriptConsole streams it onto Qt's logging path (task #613); wave R rename (018d2041f): the window title and the audio-device failure message name Zene Studio, and the stale wiki link (lmms.sf.net/wiki) is replaced by the product's documentation URL.; plus the Edit > MIDI Learn menu action and its two slots, which handle only the action's tick and read the armed state from MidiLearnGui (5d6ccdf1f, post-alpha/midi-race); autosave identity sidecar written beside recover.mmp and its removal in sessionCleanup (post-alpha/autosave); #626: in a headless run skip the interactive setup/audio-failure dialogs that blocked before app->exec() (the failure is reported instead) and answer the "project was modified" quit prompt from the control surface's stated intent (post-alpha/control-hardening); #A11/A15: Edit->Undo/Redo declare the registry commands they implement (control.undo/control.redo, the same ProjectJournal the menu slot drives) so the agent_surface gate can see the menu item as reachable (post-alpha/agent-surface-gate); #625 headless load: the first-run setup dialog and the 'Audio device setup failed' box are not opened in an unattended run; #A11/A15: the Edit > MIDI Learn action declares the registry command midi.learn_toggle (QAction::data) and toggleMidiLearn() now invokes that command instead of arming MidiLearnGui itself, so the menu item and the agent surface are ONE implementation (post-alpha/agent-surface-onto-integration)
+      RESIDUE| src/core/AudioEngine.cpp	post-alpha/recording-realtime D9b/D9a: pushInputFrames() no longer takes m_changeMutex on the JACK/SDL capture thread and no longer doubles the input buffer; swapBuffers() drains the fixed-capacity staging ring instead; test hygiene (post-alpha/test-hygiene): ~AudioEngine joined each worker thread with a fixed wait(500), so a worker that had not finished winding down when the budget expired was left running, and the QThread objects are children of the engine (~QObject deletes them) - so the QThread was destroyed while its thread ran and Qt answered with qFatal("QThread: Destroyed while thread is still running")/SIGABRT inside Engine::destroy(), reported as a failure of whichever test was executing (measured: 13 of 64 PdcMixerTest runs aborted in cleanupTestCase(), exit 134, load average ~27, gdb showing exactly one worker of 19 still parked in QWaitCondition::wait()). The join is now unbounded and terminates because each worker re-checks m_quit inside the quit-recheck interval; the audio path is untouched. Held by tests/src/core/AudioEngineTeardownTest.cpp.; #626: record which configured audio device failed to open and why (the sentence control.ping and the typed 'requires' refusal hand to an agent) instead of reporting a bare false (post-alpha/control-hardening)
+      RESIDUE| src/core/DataFile.cpp	save integrity (D3): the four statements at the end of writeFile() no longer discard QFile::rename/QFile::remove results - a rename the filesystem refuses is reported through showError() and returns false, a backup that could not be made is reported on its own, and the previous project is moved back out of .bak when the final rename fails (upstream returned true unconditionally). docs/SAVELOAD-INTEGRITY.md; rename layer 1: the version-difference notice reports the name the file itself records; #625 headless load: the 'Could not open file', bundle write-failure, LADSPA upgrade and 'Error in file' boxes are not opened in an unattended run
+      RESIDUE| plugins/LadspaEffect/LadspaEffect.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; #625 headless load: the 'Can't get LADSPA descriptor function' and 'Plugin has no processor' boxes are not opened in an unattended run (they fire while a project that references the plugin loads)
+      RESIDUE| plugins/MidiImport/MidiImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; #625 headless load: the 'Setup incomplete' boxes are not opened in an unattended run (the import path is reachable from --import at startup)
+      RESIDUE| # --- post-alpha/agent-surface-integration (merge union 2026-09-12) --------------
+      RESIDUE| # Entries this file did not carry before the merge. Each reason is the one that
+      RESIDUE| # programme wrote; where both sides declared a path, the reasons above carry both.
+      RESIDUE| include/ProjectJournal.h	#623 SPEC A16: additive checkpoint flavours - a COMPOSITE checkpoint (several objects restored in one pop, so track.set_solo is one Ctrl+Z) and an ACTION checkpoint (a recorded inverse operation, for a created/deleted object that has no live state to restore). The single-object path is an unchanged one-entry case (post-alpha/reversibility)
+      RESIDUE| include/Track.h	#628 SPEC-stable-ids slice 1: Track gains id()/setId() and the m_id member - the number in trk-<n> is assigned at construction and kept until the track dies (SPEC-stable-ids.md 2.1)
+      RESIDUE| src/core/PeakController.cpp	#625 headless load: the 'Peak Controller Bug' box (raised from the project-load path) is not opened in an unattended run
+      RESIDUE| src/core/Plugin.cpp	#625 headless load: the 'Plugin not found' and 'Error while loading plugin' boxes are not opened in an unattended run
+      RESIDUE| src/core/ProjectJournal.cpp	#623 SPEC A16: implements the two flavours; undo()/redo() now restore a whole step and carry the reverse action, and a step with no reverse empties the redo stack rather than replaying an older entry (post-alpha/reversibility)
+      RESIDUE| src/core/SampleBuffer.cpp	#625 headless load: the 'Failed to load sample' boxes are not opened in an unattended run (they fire while a project loads)
+      RESIDUE| src/core/Track.cpp	#628 SPEC-stable-ids slice 1: the Track constructor allocates the id, saveTrack writes it as an `id` ATTRIBUTE on the track's own element, loadTrack takes the file's value (or keeps the constructor's for a legacy element), all guarded so presetMode never writes one (SPEC-stable-ids.md 3.1/3.3); #623: initialise m_mutedBeforeSolo in the constructor. It was read uninitialised by saveTrack, which writes it to the project file as an int, so the SAME fresh track saved as mutedBeforeSolo=1 in one run and 48 in the next - measured by the intermittently failing StableTrackIdsTest and by the byte-determinism promise the serializer makes (post-alpha/reversibility)
+      RESIDUE| src/core/TrackContainer.cpp	#625 headless load: the application-modal 'Loading project...' progress window is not created in an unattended run (its Cancel button is the only way to stop a load)
+TOTAL hard residue for the unit's own delta: 22155

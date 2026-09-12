@@ -1,0 +1,583 @@
+diff --git a/include/AudioEngine.h b/include/AudioEngine.h
+index da4af45b5..fafc3ab83 100644
+--- a/include/AudioEngine.h
++++ b/include/AudioEngine.h
+@@ -126,6 +126,20 @@ public:
+ 	{
+ 		return m_audioDevStartFailed;
+ 	}
++	//! The device name the configuration asked for (may differ from
++	//! audioDevName() after a fallback). Needed so a failure report can name the
++	//! backend that failed to open instead of saying only "an audio device".
++	inline const QString & audioDevRequestName() const
++	{
++		return m_audioDevRequestName;
++	}
++	//! Why the configured device could not be used, when it could not: the text
++	//! control.ping and the typed 'requires' refusal hand to an agent. Empty when
++	//! the device started normally.
++	inline const QString & audioDevStartReason() const
++	{
++		return m_audioDevStartReason;
++	}
+ 
+ 	//! Set new audio device. Old device will be deleted,
+ 	//! unless it's stored using storeAudioDevice
+@@ -441,6 +455,8 @@ private:
+ 	AudioDevice * m_audioDev;
+ 	AudioDevice * m_oldAudioDev;
+ 	QString m_audioDevName;
++	QString m_audioDevRequestName;
++	QString m_audioDevStartReason;
+ 	bool m_audioDevStartFailed;
+ 
+ 	// MIDI device stuff
+diff --git a/include/Effect.h b/include/Effect.h
+index e65a5afbe..b4356c2b0 100644
+--- a/include/Effect.h
++++ b/include/Effect.h
+@@ -106,6 +106,15 @@ public:
+ 		return m_enabledModel.value();
+ 	}
+ 
++	//! Drive the same On/Off control the rack's LED checkbox drives (SPEC A11:
++	//! one action, one implementation). Added for the agent control surface
++	//! (plugin.bypass / dsp.get_state read-back); the model is journalled, so
++	//! the change is reversible through the ProjectJournal.
++	void setEnabled( bool enabled )
++	{
++		m_enabledModel.setValue( enabled );
++	}
++
+ 	inline f_cnt_t timeout() const
+ 	{
+ 		const float samples = Engine::audioEngine()->outputSampleRate() * m_autoQuitModel.value() / 1000.0f;
+diff --git a/include/EffectChain.h b/include/EffectChain.h
+index 421ff6110..e666b0122 100644
+--- a/include/EffectChain.h
++++ b/include/EffectChain.h
+@@ -132,6 +132,13 @@ public:
+ 
+ 	void clear();
+ 
++	//! Every effect in the chain, in processing order. Control thread only.
++	//! Added for the agent control surface (plugin.* / dsp.get_state, SPEC
++	//! A11-A14): m_effects is the true order, while QObject child order can
++	//! diverge from it after moveUp()/moveDown(), so an id resolved by index
++	//! must come from here.
++	auto effects() const -> const std::vector<Effect*>& { return m_effects; }
++
+ 
+ private:
+ 	using EffectList = std::vector<Effect*>;
+diff --git a/include/MidiLearnGui.h b/include/MidiLearnGui.h
+index 9fe75ab0a..8ac79dbb9 100644
+--- a/include/MidiLearnGui.h
++++ b/include/MidiLearnGui.h
+@@ -25,14 +25,13 @@
+ #ifndef LMMS_GUI_MIDI_LEARN_GUI_H
+ #define LMMS_GUI_MIDI_LEARN_GUI_H
+ 
++#include <QAction>
+ #include <QObject>
+ #include <QPointer>
+ #include <QTimer>
+ 
+ #include "lmms_export.h"
+ 
+-class QAction;
+-
+ namespace lmms::gui
+ {
+ 
+diff --git a/plugins/LadspaEffect/LadspaEffect.cpp b/plugins/LadspaEffect/LadspaEffect.cpp
+index 042da6faf..9f6ee591f 100644
+--- a/plugins/LadspaEffect/LadspaEffect.cpp
++++ b/plugins/LadspaEffect/LadspaEffect.cpp
+@@ -37,6 +37,7 @@
+ #include "AutomationClip.h"
+ #include "ValueBuffer.h"
+ #include "Song.h"
++#include "UnattendedRun.h"
+ 
+ #include "embed.h"
+ 
+@@ -451,17 +452,36 @@ void LadspaEffect::pluginInstantiation()
+ 	m_descriptor = manager->getDescriptor( m_key );
+ 	if( m_descriptor == nullptr )
+ 	{
+-		QMessageBox::warning( 0, "Effect",
+-			"Can't get LADSPA descriptor function: " + m_key.second,
+-			QMessageBox::Ok, QMessageBox::NoButton );
++		// This runs while a project that references the plugin loads: a modal
++		// here would leave project.open unanswered in an agent instance
++		// (task #625), so the reason goes to stderr instead.
++		const QString reason = QStringLiteral( "Can't get LADSPA descriptor function: %1" )
++				.arg( m_key.second );
++		if( lmms::isUnattendedRun() )
++		{
++			qWarning() << reason;
++		}
++		else
++		{
++			QMessageBox::warning( 0, "Effect", reason,
++				QMessageBox::Ok, QMessageBox::NoButton );
++		}
+ 		setOkay( false );
+ 		return;
+ 	}
+ 	if( m_descriptor->run == nullptr )
+ 	{
+-		QMessageBox::warning( 0, "Effect",
+-			"Plugin has no processor: " + m_key.second,
+-			QMessageBox::Ok, QMessageBox::NoButton );
++		const QString reason = QStringLiteral( "Plugin has no processor: %1" )
++				.arg( m_key.second );
++		if( lmms::isUnattendedRun() )
++		{
++			qWarning() << reason;
++		}
++		else
++		{
++			QMessageBox::warning( 0, "Effect", reason,
++				QMessageBox::Ok, QMessageBox::NoButton );
++		}
+ 		setDontRun( true );
+ 	}
+ 	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
+@@ -469,9 +489,17 @@ void LadspaEffect::pluginInstantiation()
+ 		LADSPA_Handle effect = manager->instantiate(m_key, Engine::audioEngine()->outputSampleRate());
+ 		if( effect == nullptr )
+ 		{
+-			QMessageBox::warning( 0, "Effect",
+-				"Can't get LADSPA instance: " + m_key.second,
+-				QMessageBox::Ok, QMessageBox::NoButton );
++			const QString reason = QStringLiteral( "Can't get LADSPA instance: %1" )
++				.arg( m_key.second );
++			if( lmms::isUnattendedRun() )
++			{
++				qWarning() << reason;
++			}
++			else
++			{
++				QMessageBox::warning( 0, "Effect", reason,
++					QMessageBox::Ok, QMessageBox::NoButton );
++			}
+ 			setOkay( false );
+ 			return;
+ 		}
+@@ -489,9 +517,17 @@ void LadspaEffect::pluginInstantiation()
+ 						port,
+ 						pp->buffer ) )
+ 			{
+-				QMessageBox::warning( 0, "Effect",
+-				"Failed to connect port: " + m_key.second,
+-				QMessageBox::Ok, QMessageBox::NoButton );
++				const QString reason = QStringLiteral( "Failed to connect port: %1" )
++					.arg( m_key.second );
++				if( lmms::isUnattendedRun() )
++				{
++					qWarning() << reason;
++				}
++				else
++				{
++					QMessageBox::warning( 0, "Effect", reason,
++						QMessageBox::Ok, QMessageBox::NoButton );
++				}
+ 				setDontRun( true );
+ 				return;
+ 			}
+diff --git a/plugins/MidiImport/MidiImport.cpp b/plugins/MidiImport/MidiImport.cpp
+index 5b70d9424..4cc2469dc 100644
+--- a/plugins/MidiImport/MidiImport.cpp
++++ b/plugins/MidiImport/MidiImport.cpp
+@@ -44,6 +44,7 @@
+ #include "MainWindow.h"
+ #include "TimePos.h"
+ #include "Song.h"
++#include "UnattendedRun.h"
+ 
+ #include "plugin_export.h"
+ 
+@@ -92,7 +93,9 @@ bool MidiImport::tryImport(TrackContainer* tc)
+ 	if (!openFile()) { return false; }
+ 
+ #ifdef LMMS_HAVE_FLUIDSYNTH
+-	if (gui::getGUI() != nullptr && ConfigManager::inst()->sf2File().isEmpty())
++	// Import runs on the startup path (--import) and from the file browser: in
++	// an unattended run nobody can answer this box (task #625).
++	if (gui::getGUI() != nullptr && !lmms::isUnattendedRun() && ConfigManager::inst()->sf2File().isEmpty())
+ 	{
+ 		QMessageBox::information(gui::getGUI()->mainWindow(),
+ 			tr("Setup incomplete"),
+@@ -104,7 +107,7 @@ bool MidiImport::tryImport(TrackContainer* tc)
+ 				"settings dialog and try again."));
+ 	}
+ #else
+-	if (gui::getGUI() != nullptr)
++	if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 	{
+ 		QMessageBox::information(gui::getGUI()->mainWindow(),
+ 			tr("Setup incomplete"),
+diff --git a/src/core/AudioEngine.cpp b/src/core/AudioEngine.cpp
+index 029e925db..caf9ea150 100644
+--- a/src/core/AudioEngine.cpp
++++ b/src/core/AudioEngine.cpp
+@@ -764,7 +764,11 @@ AudioDevice * AudioEngine::tryAudioDevices()
+ {
+ 	bool success_ful = false;
+ 	AudioDevice * dev = nullptr;
+-	QString dev_name = ConfigManager::inst()->value( "audioengine", "audiodev" );
++	// What the configuration asked for, verbatim, so a failure report can name
++	// the backend that did not open (task #626).
++	m_audioDevRequestName = ConfigManager::inst()->value( "audioengine", "audiodev" );
++	m_audioDevStartReason.clear();
++	QString dev_name = m_audioDevRequestName;
+ 	if( !isAudioDevNameValid( dev_name ) )
+ 	{
+ 		dev_name = "";
+@@ -898,6 +902,16 @@ AudioDevice * AudioEngine::tryAudioDevices()
+ 			"files...\n" );
+ 
+ 		m_audioDevStartFailed = true;
++		// Say WHAT failed to open and what is being used instead, so control.ping
++		// and the typed 'requires' refusal can hand an agent an actionable
++		// sentence instead of a bare false (task #626). The backend library's own
++		// error text (SDL_GetError / snd_strerror) is printed by the backend
++		// above and stays on stderr.
++		m_audioDevStartReason = m_audioDevRequestName.isEmpty()
++			? tr( "no configured audio device could be opened; the engine is running with '%1' (no sound output)" )
++				.arg( AudioDummy::name() )
++			: tr( "the configured audio device '%1' could not be opened; the engine is running with '%2' (no sound output)" )
++				.arg( m_audioDevRequestName, AudioDummy::name() );
+ 	}
+ 
+ 	m_audioDevName = AudioDummy::name();
+diff --git a/src/core/ConfigManager.cpp b/src/core/ConfigManager.cpp
+index 1f6bb87b8..ab16d7d87 100644
+--- a/src/core/ConfigManager.cpp
++++ b/src/core/ConfigManager.cpp
+@@ -31,6 +31,7 @@
+ #include <QStandardPaths>
+ #include <QTextStream>
+ 
++#include "UnattendedRun.h"
+ #include "DeprecationHelper.h"
+ #include "GuiApplication.h"
+ #include "MainWindow.h"
+@@ -536,7 +537,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
+ 		#endif
+ 			setBackgroundPicFile(value("paths", "backgroundtheme"));
+ 		}
+-		else if (gui::getGUI() != nullptr)
++		else if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 		{
+ 			QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"),
+ 									gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
+@@ -685,12 +686,19 @@ void ConfigManager::saveConfigFile()
+ 					"the directory containing the "
+ 					"file and try again!"
+ 						).arg(m_configFile);
+-		if (gui::getGUI() != nullptr)
++		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 		{
+ 			QMessageBox::critical(nullptr, title, message,
+ 						QMessageBox::Ok,
+ 						QMessageBox::NoButton);
+ 		}
++		else
++		{
++			// Reachable from a command: loading a project adds it to the recent
++			// list and saving that list writes this file.  An agent instance
++			// must not stop for a dialog here (task #625).
++			qWarning() << title << message;
++		}
+ 		return;
+ 	}
+ 
+diff --git a/src/core/DataFile.cpp b/src/core/DataFile.cpp
+index b78eb02a5..65629e732 100644
+--- a/src/core/DataFile.cpp
++++ b/src/core/DataFile.cpp
+@@ -40,6 +40,7 @@
+ 
+ #include "base64.h"
+ #include "ConfigManager.h"
++#include "UnattendedRun.h"
+ #include "DeprecationHelper.h"
+ #include "Effect.h"
+ #include "embed.h"
+@@ -163,7 +164,9 @@ DataFile::DataFile( const QString & _fileName ) :
+ 	QFile inFile( _fileName );
+ 	if( !inFile.open( QIODevice::ReadOnly ) )
+ 	{
+-		if (gui::getGUI() != nullptr)
++		// A modal here would leave project.open unanswered in an agent
++		// instance (task #625): below, the same sentence goes to stderr.
++		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 		{
+ 			QMessageBox::critical( nullptr,
+ 				gui::SongEditor::tr( "Could not open file" ),
+@@ -173,6 +176,11 @@ DataFile::DataFile( const QString & _fileName ) :
+ 						"least read permissions to the file "
+ 						"and try again." ).arg( _fileName ) );
+ 		}
++		else
++		{
++			qWarning() << "Could not open file" << _fileName
++				<< "- no read permission or not a file";
++		}
+ 
+ 		return;
+ 	}
+@@ -352,7 +360,7 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
+ {
+ 	// Small lambda function for displaying errors
+ 	auto showError = [](QString title, QString body){
+-		if (gui::getGUI() != nullptr)
++		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 		{
+ 			QMessageBox mb;
+ 			mb.setWindowTitle(title);
+@@ -2151,8 +2159,17 @@ void DataFile::findProblematicLadspaPlugins()
+ 
+ 	if (numberOfProblematicPlugins > 0)
+ 	{
+-		QMessageBox::warning(nullptr, QObject::tr("LADSPA plugins"),
+-			QObject::tr("The project contains %1 LADSPA plugin(s) which might have not been restored correctly! Please check the project.").arg(numberOfProblematicPlugins));
++		// This runs inside the load path; an unattended run must not stop to
++		// ask about it (task #625) - say it on stderr instead.
++		if (!lmms::isUnattendedRun())
++		{
++			QMessageBox::warning(nullptr, QObject::tr("LADSPA plugins"),
++				QObject::tr("The project contains %1 LADSPA plugin(s) which might have not been restored correctly! Please check the project.").arg(numberOfProblematicPlugins));
++		}
++		else
++		{
++			qWarning() << QObject::tr("The project contains %1 LADSPA plugin(s) which might have not been restored correctly! Please check the project.").arg(numberOfProblematicPlugins);
++		}
+ 	}
+ }
+ 
+@@ -2235,7 +2252,7 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
+ 			using gui::SongEditor;
+ 
+ 			qWarning() << "at line" << line << "column" << errorMsg;
+-			if (gui::getGUI() != nullptr)
++			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 			{
+ 				QMessageBox::critical( nullptr,
+ 					SongEditor::tr( "Error in file" ),
+diff --git a/src/core/ImportFilter.cpp b/src/core/ImportFilter.cpp
+index 71ab21a64..0dc949355 100644
+--- a/src/core/ImportFilter.cpp
++++ b/src/core/ImportFilter.cpp
+@@ -27,6 +27,7 @@
+ #include <QMessageBox>
+ 
+ #include "ImportFilter.h"
++#include "UnattendedRun.h"
+ #include "Engine.h"
+ #include "TrackContainer.h"
+ #include "PluginFactory.h"
+@@ -76,9 +77,13 @@ void ImportFilter::import( const QString & _file_to_import,
+ 
+ 	if( successful == false )
+ 	{
+-		QMessageBox::information( nullptr,
+-			TrackContainer::tr( "Couldn't import file" ),
+-			TrackContainer::tr( "Couldn't find a filter for "
++		// This box is raised on the import path, which an agent instance can
++		// drive (--import) with nobody to click it (task #625).
++		if (!lmms::isUnattendedRun())
++		{
++			QMessageBox::information( nullptr,
++				TrackContainer::tr( "Couldn't import file" ),
++				TrackContainer::tr( "Couldn't find a filter for "
+ 						"importing file %1.\n"
+ 						"You should convert this file "
+ 						"into a format supported by "
+@@ -86,6 +91,12 @@ void ImportFilter::import( const QString & _file_to_import,
+ 						).arg( _file_to_import ),
+ 					QMessageBox::Ok,
+ 					QMessageBox::NoButton );
++		}
++		else
++		{
++			qWarning() << TrackContainer::tr( "Couldn't find a filter for importing file %1." )
++					.arg( _file_to_import );
++		}
+ 	}
+ }
+ 
+@@ -96,17 +107,27 @@ bool ImportFilter::openFile()
+ {
+ 	if( m_file.open( QFile::ReadOnly ) == false )
+ 	{
+-		QMessageBox::critical( nullptr,
+-			TrackContainer::tr( "Couldn't open file" ),
+-			TrackContainer::tr( "Couldn't open file %1 "
+-						"for reading.\nPlease make "
+-						"sure you have read-"
+-						"permission to the file and "
+-						"the directory containing the "
+-						"file and try again!" ).arg(
+-							m_file.fileName() ),
++		// No modal in an unattended run (--control-socket / no display): the
++		// caller gets the typed failure instead of a wait on a click (#625).
++		if (!lmms::isUnattendedRun())
++		{
++			QMessageBox::critical( nullptr,
++				TrackContainer::tr( "Couldn't open file" ),
++				TrackContainer::tr( "Couldn't open file %1 "
++							"for reading.\nPlease make "
++							"sure you have read-"
++							"permission to the file and "
++							"the directory containing the "
++							"file and try again!" ).arg(
++								m_file.fileName() ),
+ 					QMessageBox::Ok,
+ 					QMessageBox::NoButton );
++		}
++		else
++		{
++			qWarning() << TrackContainer::tr( "Couldn't open file %1 for reading." )
++					.arg( m_file.fileName() );
++		}
+ 		return false;
+ 	}
+ 	return true;
+diff --git a/src/core/PeakController.cpp b/src/core/PeakController.cpp
+index 27fc13ac6..3b8c5a026 100644
+--- a/src/core/PeakController.cpp
++++ b/src/core/PeakController.cpp
+@@ -30,6 +30,7 @@
+ #include <QMessageBox>
+ 
+ #include "AudioEngine.h"
++#include "UnattendedRun.h"
+ #include "EffectChain.h"
+ #include "plugins/PeakControllerEffect/PeakControllerEffect.h"
+ 
+@@ -208,16 +209,28 @@ PeakController * PeakController::getControllerBySetting(const QDomElement & _thi
+ 			{
+ 				effect->m_effectId = newEffectId++;
+ 			}
+-			QMessageBox msgBox;
+-			msgBox.setIcon( QMessageBox::Information );
+-			msgBox.setWindowTitle( tr("Peak Controller Bug") );
+-			msgBox.setText( tr("Due to a bug in older version of LMMS, the peak "
++			// This runs while a project is loading. An agent instance
++			// (--control-socket) has nobody to answer the box, so the load
++			// would never finish (task #625): say it on stderr instead.
++			if (lmms::isUnattendedRun())
++			{
++				qWarning() << tr("Due to a bug in older version of LMMS, the peak "
++						"controllers may not be connect properly. Please ensure that "
++						"peak controllers are connected properly and re-save this file.");
++			}
++			else
++			{
++				QMessageBox msgBox;
++				msgBox.setIcon( QMessageBox::Information );
++				msgBox.setWindowTitle( tr("Peak Controller Bug") );
++				msgBox.setText( tr("Due to a bug in older version of LMMS, the peak "
+ 							   "controllers may not be connect properly. "
+ 							   "Please ensure that peak controllers are connected "
+ 							   "properly and re-save this file. "
+ 							   "Sorry for any inconvenience caused.") );
+-			msgBox.setStandardButtons(QMessageBox::Ok);
+-			msgBox.exec();
++				msgBox.setStandardButtons(QMessageBox::Ok);
++				msgBox.exec();
++			}
+ 		}
+ 	}
+ 
+diff --git a/src/core/Plugin.cpp b/src/core/Plugin.cpp
+index fe34c5c31..0e6b91a60 100644
+--- a/src/core/Plugin.cpp
++++ b/src/core/Plugin.cpp
+@@ -30,6 +30,7 @@
+ 
+ #include "embed.h"
+ #include "Engine.h"
++#include "UnattendedRun.h"
+ #include "GuiApplication.h"
+ #include "DummyPlugin.h"
+ #include "AutomatableModel.h"
+@@ -213,7 +214,10 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
+ 	Plugin* inst;
+ 	if( pi.isNull() )
+ 	{
+-		if (gui::getGUI() != nullptr)
++		// An agent instance (--control-socket) cannot answer a modal, and a
++		// project that references a missing plugin loads with it (task #625):
++		// the reason goes to stderr, where a headless operator reads it.
++		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 		{
+ 			QMessageBox::information( nullptr,
+ 				tr( "Plugin not found" ),
+@@ -221,6 +225,11 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
+ 						arg( pluginName ).arg( getPluginFactory()->errorString(pluginName) ),
+ 				QMessageBox::Ok | QMessageBox::Default );
+ 		}
++		else
++		{
++			qWarning() << tr( "The plugin \"%1\" wasn't found or could not be loaded! Reason: \"%2\"" ).
++					arg( pluginName ).arg( getPluginFactory()->errorString(pluginName) );
++		}
+ 		inst = new DummyPlugin();
+ 	}
+ 	else
+@@ -235,13 +244,17 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
+ 		}
+ 		else
+ 		{
+-			if (gui::getGUI() != nullptr)
++			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+ 			{
+ 				QMessageBox::information( nullptr,
+ 					tr( "Error while loading plugin" ),
+ 					tr( "Failed to load plugin \"%1\"!").arg( pluginName ),
+ 					QMessageBox::Ok | QMessageBox::Default );
+ 			}
++			else
++			{
++				qWarning() << tr( "Failed to load plugin \"%1\"!" ).arg( pluginName );
++			}
+ 			inst = new DummyPlugin();
+ 		}
+ 	}
+diff --git a/src/core/SampleBuffer.cpp b/src/core/SampleBuffer.cpp
+index e04a63205..acbdde420 100644
+--- a/src/core/SampleBuffer.cpp
++++ b/src/core/SampleBuffer.cpp
+@@ -28,6 +28,7 @@
+ #include <QMessageBox>
+ #include <cstring>
+ 
++#include "UnattendedRun.h"
+ #include "GuiApplication.h"
+ #include "PathUtil.h"
+ #include "SampleDecoder.h"
+@@ -83,7 +84,9 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromFile(const QString& filePa
+ 	{
+ 		// TODO: Improve error handling. We dont always want to show a message box on failure when there is a GUI (e.g.
+ 		// when loading the project), and this function also shouldn't be concerned with handling the error.
+-		if (gui::getGUI())
++		// An agent instance (--control-socket) has nobody to answer the box
++		// (task #625), so it is shown only when a human is really there.
++		if (gui::getGUI() && !lmms::isUnattendedRun())
+ 		{
+ 			QMessageBox::warning(nullptr, QObject::tr("Failed to load sample"),
+ 				QObject::tr("The sample may be corrupted or unsupported."));
+@@ -112,7 +115,7 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str,
+ 	{
+ 		// TODO: Improve error handling. We dont always want to show a message box on failure when there is a GUI (e.g.
+ 		// when loading the project), and this function also shouldn't be concerned with handling the error.
+-		if (gui::getGUI())
++		if (gui::getGUI() && !lmms::isUnattendedRun())
+ 		{
+ 			QMessageBox::warning(
+ 				nullptr, QObject::tr("Failed to load sample"), QObject::tr("The sample size is invalid."));

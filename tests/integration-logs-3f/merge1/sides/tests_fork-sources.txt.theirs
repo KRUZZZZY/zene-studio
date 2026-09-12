@@ -1,0 +1,455 @@
+# Sources added by this fork on top of upstream master 4e677cb6c6ab.
+#
+# The entry list below is the byte-exact output of the command under "Regenerate with".
+#
+# Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
+#   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
+#       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
+#   } | LC_ALL=C sort
+#
+# Verify it - this must print REPRODUCES and nothing else:
+#   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
+#        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
+#            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
+#        } | LC_ALL=C sort) && echo REPRODUCES
+#
+# The pathspec is `src include plugins` (this fork's product code) plus four extras the
+# product command cannot derive on its own. Each is named here with its reason, so no entry in
+# this file is a hand-edit nobody can account for:
+#   * tests/src/core, tests/src/tracks - the pathspec's two tests/ additions (added with them,
+#     not before) - this file holds exactly ten fork-authored TEST
+#     sources (ClipSerialisationTest, DataFileSaveIntegrityTest, LufsMeterTest, MidiLearnTest,
+#     MixerConcurrencyTest, ProjectOpenIntegrityTest, SampleClipWindowTest.cpp, SessionModelTest,
+#     StemExportTest, StemExportTestSupport.h): three
+#     registered by a42c68f24 (the integration fix that made Gate 9 green), two by 117068e76
+#     (stem export), two landed at integration on 2026-09-12 from post-alpha/clip-slice0
+#     (ClipSerialisationTest, SampleClipWindowTest.cpp), and two more arrived with
+#     post-alpha/saveload-integrity the same night (DataFileSaveIntegrityTest, ProjectOpenIntegrityTest
+#     - the lane registered them here itself, and they are kept rather than moved to
+#     tests/all-sources.txt for the same no-narrowing reason), and one more arrived with
+#     post-alpha/mixer-concurrency (MixerConcurrencyTest.cpp, registered by that lane here too; the
+#     stale comment block it carried beside the entry claimed this command only walks
+#     src/include/plugins, which stopped being true when the allow-list was introduced, and it is
+#     dropped rather than kept as a false statement). They are the suites of fork-NEW
+#     features, so the fork ratchets look at them. The other ~100 tests/src sources
+#     added since the fork point are whole-tree material and live in tests/all-sources.txt only -
+#     the awk filter admits exactly these ten. A new fork test source belongs in
+#     tests/all-sources.txt by default; add it to the awk pattern above only if it must carry the
+#     fork ratchets too, and then re-run this command.
+#
+#     Merged 2026-09-12 (integration wave 3A). The two clip-lane entries arrived on the
+#     integration side of this merge and were hand-added there (their lane's own comment says
+#     so); the gate-hygiene side, branched before that lane landed, could not produce them. They
+#     are kept rather than moved to tests/all-sources.txt for the reason this file already
+#     records for tools/local-ci.sh: the fork-scoped ratchets already measure them - including
+#     tests/src/tracks/SampleClipWindowTest.cpp, which holds a fork file-length baseline entry
+#     (511) taken by a recorded re-anchor - and moving them would narrow the fork scope. The awk
+#     allow-list above was extended by exactly those two names, and the file now reproduces from
+#     the command under "Regenerate with".
+#   * tools/local-ci.sh and tools/ncpu-shim.c - the second, explicit pathspec line above. Both are
+#     admitted by name rather than by widening the extension filter, because widening it also
+#     admits five fork-authored .sh harness scripts under plugins/RnnoiseDenoiser/testdata/,
+#     which would put shell tooling in the product scope.
+#     - tools/local-ci.sh is registered HERE rather than in tests/tools-sources.txt because the
+#       fork-scoped ratchets already measured it when that list was added, and moving it would
+#       narrow the fork scope. Its reason is recorded in tests/tools-sources.txt's header too.
+#     - tools/ncpu-shim.c was registered by the post-alpha/render-determinism lane (2026-09-12)
+#       and is kept here at integration. It is a C source and therefore already on
+#       tests/all-sources.txt's list (that list is `git ls-files` over the C/C++ extension set);
+#       its presence here as well is what Gate 6 needs, because Gate 6 classifies a tools/ path
+#       by tests/tools-sources.txt and consults no other list - registering it there instead
+#       would be the same allowance by a different route, and the file is 93 lines with no
+#       function over the complexity target, so the fork ratchets it widens are clean.
+#       tests/tools-sources.txt's subtraction regex names it and does not repeat it.
+#   * tools/stem-export-demo.py used to be a second hand-added tools/ entry in this file. It was
+#     moved to tests/tools-sources.txt on 2026-09-12 (gate hygiene): tooling has one home, and
+#     that list is the home tests/tools-sources.txt itself declares for tools/. It is not in the
+#     command above any more, and this file no longer carries it.
+#
+# Why the base is a fixed commit and not `origin/master`. `origin` in this clone is
+# upstream LMMS/lmms; this repo never pushes to it, and its `master` ref tracks whatever
+# upstream publishes - on 2026-09-11 it was 518a7e8ef, which is NOT an ancestor of the
+# fork point (verified: `git merge-base --is-ancestor origin/master 4e677cb6c6ab` -> 1).
+# The old command as written (`... --diff-filter=A origin/master HEAD ...`) therefore
+# listed 116 files instead of 109: it reclassified seven upstream files this fork
+# never authored as fork-new - include/AudioOss.h, include/AudioSoundIo.h,
+# include/MidiOss.h, plugins/Sf2Player/fluidsynthshims.h, src/core/audio/AudioOss.cpp,
+# src/core/audio/AudioSoundIo.cpp, src/core/midi/MidiOss.cpp - all of which exist at
+# 4e677cb6c6ab (`git cat-file -e 4e677cb6c6ab:<path>`). The fork point is a fixed commit,
+# so the corrected command needs no remote state at all. Verify it is in the clone first:
+#   git cat-file -e 4e677cb6c6ab^{commit} && echo ok
+# (`git merge-base origin/master HEAD` returns the same commit - 4e677cb6c6ab - but only
+# while origin has been fetched; the literal commit is the base that cannot drift.)
+#
+# Vendored third-party trees are excluded on purpose (524 files): src/3rdparty
+# (lua, luabridge), plugins/NeuralAmp/rtneural (RTNeural), plugins/NeuralAmp/nam
+# (Neural Amp Modeler), plugins/NeuralAmp/tests, plugins/RnnoiseDenoiser/rnnoise
+# (RNNoise). They are not this fork's code and these gates never refactor them.
+#
+# lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
+# resolves this file's directory to the repo root).
+#
+# The collation is pinned to C for the same reason tests/all-sources.txt's is: plain `sort`
+# follows the caller's locale, so an unpinned command does not reproduce this file on a
+# machine with a different one, and the tail entries appended by merge lanes ended up out of
+# order for the same reason.
+#
+# Merged 2026-09-12 (integration wave 3B, merge #2 = post-alpha/brand-placeholders). That lane
+# added four entries to this file by hand; NONE of them can be produced by this file's own
+# command, so keeping them would make the file stop reproducing. Each is resolved by where its
+# home actually is, and none is a silently dropped entry:
+#   * tools/brand/rasterise-placeholders.py - MOVED to tests/tools-sources.txt, which is this
+#     repo's documented home for the fork's own tooling under tools/ and whose own command DOES
+#     produce it (the regeneration run reports it as the one added tools entry). Gate 9
+#     classifies a tools/ path by tests/tools-sources.txt, so this is a recorded move of home.
+#   * tests/brand-resource-sweep.py,
+#     tests/evidence/brand-placeholders/verify-placeholders.py,
+#     tests/evidence/brand-placeholders/provenance-audit.py - not registered in ANY scope, and
+#     deliberately so: Gate 9's scope is C/C++ outside tools/ (is_source) and C/C++/Python/shell
+#     under tools/ (is_tools_source), so a .py under tests/ is outside every list this gate
+#     reads and needs no home. This file is the fork's PRODUCT scope - admitting test-side
+#     scripts here would widen the fork-scoped file-length / complexity / duplication ratchets
+#     onto them, which is exactly the scope widening 3A refused for
+#     plugins/RnnoiseDenoiser/testdata/*.sh. Their commands are recorded in
+#     docs/BRAND-PLACEHOLDERS.md and beside the scripts in tests/evidence/.
+#
+# Merged 2026-09-12 (integration wave 3B, merge #5 = post-alpha/racks). That lane added
+# tools/rack-render-fixture.py and tools/rack-render-proof.py here by hand; neither can be
+# produced by this file's own command, and the regeneration run proved it (both reported
+# as `-` removals). Both are MOVED to tests/tools-sources.txt, the documented home for the
+# fork's own tooling under tools/ and the list whose own command DOES produce them - a
+# recorded move of home, not a lost entry, and the same treatment merge #2 gave
+# tools/brand/rasterise-placeholders.py.
+# ---------------------------------------------------------------------------
+# Merged 2026-09-12 (post-alpha/agent-surface-integration -> post-alpha/integration).
+# The entry list below is the machine-checked UNION of the two parents' entry sets:
+#   150 (this branch) u 166 (agent-surface) = 216 entries, 0 lost, 0 extra,
+# asserted in python against BOTH parents' entry sets - an ENTRY union, never a line
+# union. The other programme's per-entry annotations for its own registrations are kept
+# above their entries. Its 12-line header is NOT carried: its `Regenerate with` command
+# is based on `origin/master` and does not describe this file, and the two notes it adds
+# (the vendored trees excluded on purpose, the lcov anchoring) are already stated in the
+# header above. The 21 entries that programme registered by hand are kept, with the
+# reasons it wrote beside them, because it registered them on purpose so the fork-scoped
+# ratchets measure them ("Registered as fork-NEW so the fork-scoped ratchets measure
+# them"): 11 tests/*.py harnesses and 10 tests/src/core/*.{cpp,h} sources. Running the
+# command under "Regenerate with" reproduces post-alpha/integration's 150 entries exactly,
+# and prints 195 of this union's 216 - it omits exactly the 21 hand-registered entries and
+# adds none, which is the same relationship the other programme's own file already had to
+# its own command (its 166 entries were 21 wider than the 145 that command printed).
+# This is a deliberate scope decision, recorded here rather than taken
+# silently: it widens the fork-scoped file-length / complexity / duplication ratchets onto
+# those files, which is what registering them was for; it narrows no scope this branch had.
+# ---------------------------------------------------------------------------
+include/AudioBus.h
+include/AudioPlugin.h
+include/AudioPorts.h
+include/AudioPortsModel.h
+include/AudioPortsSettings.h
+# ---- Agent control surface: automation + scripting command groups ----
+# Lane post-alpha/cmd-automation off post-alpha/cmd-plugins. The automation.*
+# group (read-back, the point edits, and the registered-but-refused
+# automation.mode_set, because this tree has no automation modes) and the
+# script.* group (script.run drives the embedded ScriptEngine in the running
+# instance; script.list reports the scripts the build ships). Registered as
+# fork-NEW so the fork-scoped ratchets measure them.
+include/ControlAutomationSupport.h
+# ---- Agent control surface: plugin/dsp + settings command groups ----
+# Lane post-alpha/cmd-plugins off post-alpha/agent-control-surface. The device
+# catalogue and device support shared by plugin.list / dsp.get_state, the
+# plugin.* device+parameter+state+preset commands, and the settings.*/audio.*/
+# midi.*/app.* group. Registered as fork-NEW so the fork-scoped ratchets measure
+# them.
+include/ControlDeviceSupport.h
+# ---- Notes / clips / tracks command group (SPEC A11-A16, lane post-alpha/cmd-notes) ----
+# The piano-roll and song-editor half of AGENT-TOOLING.md section 5: note.*,
+# roll.get_state, clip.*, track.add/remove/rename/set_mute/set_solo/set_arm and
+# arrangement.get_state, plus the helpers they share. Registered as fork-NEW so
+# the fork-scoped ratchets measure them.
+include/ControlEdit.h
+# ---- Agent control surface (SPEC A11-A16, lane post-alpha/agent-control-surface) ----
+# The in-app command registry, the opt-in JSON-RPC control socket and the
+# first command groups (control.*, transport.*, track.*, mixer.*, project.*,
+# render.render). Registered as fork-NEW so the fork-scoped ratchets measure them.
+include/ControlRegistry.h
+# ---- SPEC A16 reversibility contract (#623, lane post-alpha/reversibility) ----
+# New sources only. The command files this lane touches were already fork-NEW;
+# the two UPSTREAM-inherited files it extends (include/ProjectJournal.h,
+# src/core/ProjectJournal.cpp) are declared in tests/upstream-modifications.txt.
+#   ControlReversibility.{h,cpp}      the contract: class lookup + undo-step helper
+#   ControlReversibilityTable.cpp     THE classification table, one row per command
+#   ProjectRevisions.{h,cpp}          the keep-3 previous-revision set of project.save
+#   ReversibilityContractTest.cpp     apply -> undo -> read back, and the typed refusal
+include/ControlReversibility.h
+include/ControlServer.h
+# ---- Shared command-surface vocabulary (lane post-alpha/stable-ids, step 0) ----
+# Four merge repairs each re-derived the same small helpers; the last was four
+# schema helpers defined identically in two translation units (a duplicate-symbol
+# link failure). objectSchema + the property helpers + the trk-/clip-/note-/ch-/
+# fx-/dev- id grammar now have one header and one definition, and the twelve
+# per-file anonymous-namespace copies are gone.
+include/ControlVocabulary.h
+include/CrashReporter.h
+include/DpiHelper.h
+include/LatencyCompensation.h
+include/LmmsPolyfill.h
+include/LoudnessReport.h
+include/LufsMeter.h
+include/MidiLearn.h
+include/MidiLearnGui.h
+include/MultiTrackRecorder.h
+include/NoteRandom.h
+include/NoteTransform.h
+include/PinConnector.h
+include/PluginAudioPorts.h
+include/PluginScanCache.h
+# ---- Stable track ids (SPEC-stable-ids.md slice 1, lane post-alpha/stable-ids) ----
+# The project-scoped monotonic id counter behind every stable id (one counter, one
+# root attribute, one repair rule) and its acceptance test.
+include/ProjectIds.h
+include/ProjectRecovery.h
+include/ProjectRevisions.h
+include/Rack.h
+include/RackNodes.h
+include/RecordRingBuffer.h
+include/RemotePluginAudioPorts.h
+include/RoutingChainNodes.h
+include/RoutingGraph.h
+include/RoutingNode.h
+include/RoutingNodes.h
+include/SampleFrameRingBuffer.h
+include/SampleRecordAccumulator.h
+include/SampleWindow.h
+include/ScriptApiVersion.h
+include/ScriptBindings.h
+include/ScriptConsole.h
+include/ScriptEngine.h
+include/ScriptLuaQtTypes.h
+include/ScriptPackage.h
+include/SessionModel.h
+include/StemSeparation/ExternalProcessStemSeparator.h
+include/StemSeparation/OnnxRuntimeStemSeparator.h
+include/StemSeparation/StemJobManager.h
+include/StemSeparation/StemModelStore.h
+include/StemSeparation/StemSeparator.h
+include/StemSeparation/StemTrackBuilder.h
+include/StemSeparation/StemTypes.h
+include/StemSplitController.h
+include/TrackRecorder.h
+# ---- Headless load path (task #625: no modal may block an agent instance) ----
+# The tests that hold the startup/load path to SPEC A13 ("every command runs
+# with no display and no audio device"). Registered as fork-NEW so the
+# fork-scoped gates measure them. The fixture they use is
+# tests/data/error-carrying-project.mmp (documented in
+# tests/data/README-error-fixtures.md): it carries two load errors on purpose.
+include/UnattendedRun.h
+plugins/ClapEffect/ClapBusMap.cpp
+plugins/ClapEffect/ClapBusMap.h
+plugins/ClapEffect/ClapEffect.cpp
+plugins/ClapEffect/ClapEffect.h
+plugins/ClapEffect/ClapEffectControlDialog.cpp
+plugins/ClapEffect/ClapEffectControlDialog.h
+plugins/ClapEffect/ClapEffectControls.cpp
+plugins/ClapEffect/ClapEffectControls.h
+plugins/ClapEffect/ClapHost.cpp
+plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapParamDescriptor.h
+plugins/ClapEffect/ClapParameter.cpp
+plugins/ClapEffect/ClapParameter.h
+plugins/ClapEffect/ClapSubPluginFeatures.cpp
+plugins/ClapEffect/ClapSubPluginFeatures.h
+plugins/NeuralAmp/NeuralAmpControlDialog.cpp
+plugins/NeuralAmp/NeuralAmpControlDialog.h
+plugins/NeuralAmp/NeuralAmpControls.cpp
+plugins/NeuralAmp/NeuralAmpControls.h
+plugins/NeuralAmp/NeuralAmpEffect.cpp
+plugins/NeuralAmp/NeuralAmpEffect.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+plugins/Vst3Effect/Vst3BusMap.cpp
+plugins/Vst3Effect/Vst3BusMap.h
+plugins/Vst3Effect/Vst3Effect.cpp
+plugins/Vst3Effect/Vst3Effect.h
+plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+plugins/Vst3Effect/Vst3EffectControlDialog.h
+plugins/Vst3Effect/Vst3EffectControls.cpp
+plugins/Vst3Effect/Vst3EffectControls.h
+plugins/Vst3Effect/Vst3Host.cpp
+plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3ParamDescriptor.h
+plugins/Vst3Effect/Vst3Parameter.cpp
+plugins/Vst3Effect/Vst3Parameter.h
+plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+plugins/Vst3Effect/Vst3SubPluginFeatures.h
+plugins/WasmEffect/WasmEffect.cpp
+plugins/WasmEffect/WasmEffect.h
+plugins/WasmEffect/WasmEffectControlDialog.cpp
+plugins/WasmEffect/WasmEffectControlDialog.h
+plugins/WasmEffect/WasmEffectControls.cpp
+plugins/WasmEffect/WasmEffectControls.h
+src/core/AudioBus.cpp
+src/core/AudioPortsModel.cpp
+src/core/ControlAutomationSupport.cpp
+src/core/ControlCommandsArrangement.cpp
+src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAutomation.cpp
+src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsClip.cpp
+src/core/ControlCommandsControl.cpp
+src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsPlugin.cpp
+src/core/ControlCommandsPluginParams.cpp
+src/core/ControlCommandsPluginPreset.cpp
+src/core/ControlCommandsPluginState.cpp
+src/core/ControlCommandsProject.cpp
+# Split out of ControlCommandsProject.cpp / ControlCommandsArrangement.cpp so no
+# file crosses the 500-line ratchet (Gate 7) and the file-level commands are
+# readable next to each other.
+src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsScript.cpp
+src/core/ControlCommandsSettings.cpp
+# ---- Agent surface gate (SPEC A15, lane post-alpha/agent-surface-gate) ----
+# control.surface_report reflects the live menu/toolbar surface so the
+# agent_surface ctest can fail on an action with no registered command.
+# The gate itself is Python: the reflection lives in the running process, so the
+# test drives a real instance over the control socket exactly like an agent does.
+# Registered as fork-NEW so the fork-scoped ratchets measure them.
+src/core/ControlCommandsSurface.cpp
+src/core/ControlCommandsTransport.cpp
+src/core/ControlDeviceCatalogue.cpp
+# ---- Agent control surface: the LV2 half of the device catalogue ----
+# Lane post-alpha/lv2-catalogue off post-alpha/cmd-plugins. LV2 devices are
+# enumerated through the LV2 host module's own discovery path
+# (SubPluginFeatures::listSubPluginKeys) into plugin.list, and loadable through
+# plugin.load. The extended product sources are already listed above under the
+# cmd-plugins entry (ControlDeviceSupport.{h,cpp}, ControlDeviceCatalogue.cpp,
+# ControlCommandsPlugin.cpp); the entries below are what this lane adds - the
+# hosted-format (LADSPA/LV2) catalogue + instantiation split out of
+# ControlDeviceSupport.cpp so no file crosses the line ratchet, and the
+# in-process catalogue test.
+src/core/ControlDeviceHosted.cpp
+src/core/ControlDeviceState.cpp
+src/core/ControlDeviceSupport.cpp
+src/core/ControlEditSupport.cpp
+src/core/ControlRegistry.cpp
+src/core/ControlReversibility.cpp
+src/core/ControlReversibilityTable.cpp
+# ---- Control-surface hardening: shutdown + readiness (task #626, lane
+#      post-alpha/control-hardening) ----
+# One place decides whether this run can show a dialog to a human. Both #626
+# reproductions were a modal dialog in a run that has no human: the "project was
+# modified, save it?" prompt during quit (a) and the audio-device-failure box
+# before app->exec() (b). MainWindow and the control registry ask the same
+# question, so they ask it in one place.
+# Split out of ControlRegistry.cpp by task #626 so no one file carries the whole
+# surface: the JSON-schema subset the registry validates with, and the session
+# state a client reads before it may use the command table (readiness report +
+# shutdown intent). Both were already fork-NEW inside ControlRegistry.cpp.
+src/core/ControlSchema.cpp
+src/core/ControlServer.cpp
+src/core/ControlSession.cpp
+src/core/ControlVocabulary.cpp
+src/core/CrashReporter.cpp
+src/core/ExternalProcessStemSeparator.cpp
+src/core/LatencyCompensation.cpp
+src/core/LoudnessReport.cpp
+src/core/LufsMeter.cpp
+src/core/MidiLearn.cpp
+src/core/NoteRandom.cpp
+src/core/NoteTransform.cpp
+src/core/OnnxRuntimeStemSeparator.cpp
+src/core/PluginScanCache.cpp
+src/core/ProjectIds.cpp
+src/core/ProjectRecovery.cpp
+src/core/ProjectRevisions.cpp
+src/core/Rack.cpp
+src/core/RackNodes.cpp
+src/core/RoutingChainNodes.cpp
+src/core/RoutingGraph.cpp
+src/core/RoutingNode.cpp
+src/core/RoutingNodes.cpp
+src/core/ScriptApiVersion.cpp
+src/core/ScriptBindings.cpp
+src/core/ScriptCommandQueue.cpp
+src/core/ScriptConsole.cpp
+src/core/ScriptEngine.cpp
+src/core/ScriptPackage.cpp
+src/core/SessionClip.cpp
+src/core/SessionModel.cpp
+src/core/SessionModelPrivate.h
+src/core/StemJobManager.cpp
+src/core/StemModelStore.cpp
+src/core/StemTrackBuilder.cpp
+src/core/UnattendedRun.cpp
+src/core/audio/MultiTrackRecorder.cpp
+src/core/audio/TrackRecorder.cpp
+src/gui/MidiLearnGui.cpp
+src/gui/PinConnector.cpp
+src/gui/StemSplitController.cpp
+src/wasm/WasmAbi.h
+src/wasm/WasmSandbox.cpp
+src/wasm/WasmSandbox.h
+src/wasm/WasmSpscRingBuffer.h
+src/wasm/WasmWorker.cpp
+src/wasm/WasmWorker.h
+tests/agent-surface-gate.py
+tests/agent_surface_lib.py
+tests/control-headless-no-audio-device.py
+tests/control-headless-project-open.py
+tests/control-headless-working-directory.py
+tests/control-negative-control.py
+tests/control-no-audio-device.py
+tests/control-readiness.py
+# ---- SPEC A16 acceptance transcript (#623, lane post-alpha/reversibility) ----
+# The raw apply -> undo -> read back transcript for one command of each class,
+# driven over the socket against the real binary (usage in its own docstring).
+tests/control-reversibility-transcript.py
+# The #626 tests: both shutdown reproductions, the documented readiness order, the
+# no-audio-device report, and the negative controls that prove each of those can
+# fail (a check that cannot fail is not evidence).
+tests/control-shutdown.py
+tests/control-stable-ids.py
+tests/control_socket_flows.py
+# One socket harness for every control-surface test (2026-09-12): the #626 harness and
+# the #625 headless-load harness had drifted into two Instance/Client classes and two
+# names for "the bounded wait expired", so they were collapsed into this module.
+# Split 2026-09-12 (Gate 7, the 500-line per-file ratchet): this is the CORE (Instance,
+# Client, the bounds, the readiness poll, the assertion helpers); the `check_*` payloads
+# and the multi-instance flow helpers live in tests/control_socket_flows.py, which every
+# case test imports alongside this module. Both halves are registered so the ratchets
+# measure both — a split that hides half the code from the gate would be a dodge.
+tests/control_socket_harness.py
+tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ControlAutomationScriptTest.cpp
+tests/src/core/ControlDeviceCatalogueTest.cpp
+tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlRegistryTest.cpp
+tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/LufsMeterTest.cpp
+tests/src/core/MidiLearnTest.cpp
+tests/src/core/MixerConcurrencyTest.cpp
+tests/src/core/ProjectOpenIntegrityTest.cpp
+# Split so no test file crosses the 500-line ratchet either (Gate 7).
+tests/src/core/ReversibilityContractTest.cpp
+tests/src/core/ReversibilityTestSupport.h
+tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/SessionModelTest.cpp
+tests/src/core/StableTrackIdsTest.cpp
+tests/src/core/StemExportTest.cpp
+tests/src/core/StemExportTestSupport.h
+tests/src/tracks/SampleClipWindowTest.cpp
+tools/local-ci.sh
+tools/ncpu-shim.c

@@ -1,0 +1,20 @@
+c7e68aed296aa13d10339bedf77940dea101eeb6
+100644 07524d6909d3f16029d2e6a5a4108d8c0ee3eb76 1	tests/fork-sources.txt
+100644 2ffe2f846ccdca31fa6285b168b3886db255d114 2	tests/fork-sources.txt
+100644 dfbee3743a86402ff5d9488eb8c486fc44002df4 3	tests/fork-sources.txt
+100644 7fe1ce8488760fad29dfb84f95f1f3eeab1d331c 1	tests/upstream-modifications.txt
+100644 9c21289647bbfcc098d1e58650eddea36e6ef718 2	tests/upstream-modifications.txt
+100644 4aeba83e362a2133dd97383a74a5477deef7bf56 3	tests/upstream-modifications.txt
+
+Auto-merging CMakeLists.txt
+Auto-merging include/Song.h
+Auto-merging src/core/CMakeLists.txt
+Auto-merging src/core/Song.cpp
+Auto-merging src/core/main.cpp
+Auto-merging src/gui/MainWindow.cpp
+Auto-merging tests/CMakeLists.txt
+Auto-merging tests/all-sources.txt
+Auto-merging tests/fork-sources.txt
+CONFLICT (content): Merge conflict in tests/fork-sources.txt
+Auto-merging tests/upstream-modifications.txt
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt

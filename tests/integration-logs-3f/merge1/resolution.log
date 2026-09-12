@@ -1,0 +1,5 @@
+=== resolution log, merge 1 ===
+-- tests/fork-sources.txt: kept OURS, then re-derived from the manifest's own documented command (regen.py --write, against the index): 175 ours -> 220 entries, VERIFY ALL-REPRODUCE
+-- tests/upstream-modifications.txt: TRUE UNION via resolve_pair.py ledger (index stages :1: :2: :3:)
+  --dry-run: 0 entries (ours 0 + theirs-only 0); reasons: 0 kept-ours (branch copy was the base), 0 superset, 0 clause-union; 0 lost, 0 dup, 0 blank
+  tests/upstream-modifications.txt: 0 entries (ours 0 + theirs-only 0); reasons: 0 kept-ours (branch copy was the base), 0 superset, 0 clause-union; 0 lost, 0 dup, 0 blank

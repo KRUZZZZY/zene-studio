@@ -1,0 +1,22 @@
+=== merge 2: fix/latency-complexity (df9944ba1d3ffaa302bc8bafaa018b40218d794c) onto 0ddbb1ca1 ===
+Auto-merging .github/ISSUE_TEMPLATE/alpha-feedback.yml
+CONFLICT (content): Merge conflict in .github/ISSUE_TEMPLATE/alpha-feedback.yml
+Auto-merging docs/KNOWN-LIMITATIONS.md
+CONFLICT (content): Merge conflict in docs/KNOWN-LIMITATIONS.md
+Auto-merging tests/upstream-modifications.txt
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1
+conflicted files: 3
+  .github/ISSUE_TEMPLATE/alpha-feedback.yml
+  docs/KNOWN-LIMITATIONS.md
+  tests/upstream-modifications.txt
+--- what the merged index brings vs HEAD (name-status):
+  paths: 3
+--- sides saved in tests/integration-logs-3f/merge2/sides:
+  docs_KNOWN-LIMITATIONS.md.base
+  docs_KNOWN-LIMITATIONS.md.ours
+  docs_KNOWN-LIMITATIONS.md.theirs
+  tests_upstream-modifications.txt.base
+  tests_upstream-modifications.txt.ours
+  tests_upstream-modifications.txt.theirs

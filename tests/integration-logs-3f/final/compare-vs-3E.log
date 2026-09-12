@@ -1,0 +1,10 @@
+render-final-1.wav  vs  render-final-1.wav
+  frames              : 544256 (44100 Hz, 2 ch, 16 bit, header match=True)
+  differing frames    : 0  (0.000000 %)
+  first differing at  : -1
+  max |delta|         : 0 LSB   (-inf dBFS)
+  delta RMS           : -inf dBFS
+  level delta         : +0.000000 dB
+  best lag            : 0 frames -> 0 differing frames (unshifted 0)
+  periods (256f) dirty : 0 of 2126, worst period 0 frames
+
