@@ -1153,6 +1153,7 @@ tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
+tests/src/core/RenderJobQueueTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp
@@ -1189,4 +1190,5 @@ tools/mmpz-git/scratch/qtesc.cpp
 tools/mmpz-git/scratch/qtroundtrip.cpp
 tools/mmpz-git/scratch/qtsave.cpp
 tools/mmpz-git/scratch/qtsave2.cpp
+tools/ncpu-shim.c
 tools/wasm/wat2wasm.cpp

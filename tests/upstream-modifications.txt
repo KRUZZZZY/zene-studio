@@ -134,7 +134,7 @@ src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's 
 src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
 src/core/ImportFilter.cpp	wave R rename (018d2041f): the 'open this with' hint shown when no import filter matches named LMMS -> Zene Studio. User-visible string only.
 src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
-src/core/ProjectRenderer.cpp	#618 loudness wiring: the passive tap (measure each rendered block immediately before writeBuffer()), the sidecar write and the console line; the audio path is untouched and the tap does not exist unless the render asked for a report
+src/core/ProjectRenderer.cpp	#618 loudness wiring: the passive tap (measure each rendered block immediately before writeBuffer()), the sidecar write and the console line; the audio path is untouched and the tap does not exist unless the render asked for a report; render determinism (render-determinism lane): holds the switch for the duration of an export; live playback is untouched
 src/core/PluginFactory.cpp	plugin-scan: fingerprint-keyed scan cache, quarantine filtering, and cache-served (lazily loaded) plugin entries in discoverPlugins() (023770f7b); wave R rename (018d2041f): the installed plugin search path ../lib/lmms -> ../lib/zene (it follows the renamed install location), the path comments in the same function, and the 'LMMS plugin %1 ...' warning string -> 'Zene Studio plugin %1 ...'.
 src/core/RemotePlugin.cpp	#589 planar-ports migration: ports allocate the shared block; counts owned by the ports model; removed count ids refused loudly
 src/core/Song.cpp	#594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged). Stem export (post-alpha/stem-export): startExport() honours the render-length override and the configurable tail, both of which default to the historical length (held by StemExportTest::wholeProjectRenderIsUnchangedByAStemExport); post-alpha/automation-modes: publish the transport run once per rendered period (processNextBuffer), let a Touch/Latch/Write control record its moves (processAutomations), and apply the trim offset where the automation is read out; post-alpha/midi-depth: read and write the midiseed header attribute (only when non-zero) and reset it for a new project
@@ -153,9 +153,14 @@ src/gui/modals/SetupDialog.cpp	wave R rename (018d2041f): the Setup dialog's wor
 src/gui/modals/about_dialog.ui	wave R rename (018d2041f): the About box title, product line, tagline and wiki link move to Zene Studio (the link points at the product repo). UI strings only.
 src/lmmsconfig.h.in	#594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
 # --- fork-new developer tooling under tools/ (task #612, 2026-09-11) ---------------------------
-# These are this repo's own tools, not upstream-inherited production files: upstream master has no tools/
-# directory. They are declared here only because Gate 6 has no fork-NEW category for paths outside the
-# C/C++ scope of tests/fork-sources.txt, and registering them there was measured to break the file-length
-# and complexity ratchets. A future gate-config change should give tools/ its own category; until then this
-# is the honest place to record them. Reasons are factual descriptions, not justifications of divergence.
+# SUPERSEDED 2026-09-12 (gate hygiene, merge train 3A #1): Gate 6 now classifies a path registered in
+# tests/tools-sources.txt as fork tooling, and the seven tools/ entries this block used to declare were
+# deleted with it (112 -> 112: see the gate-hygiene commit). Every tools/ file has its home in
+# tests/tools-sources.txt now, and a tools/ entry in THIS file would be a false statement - the file's
+# header records that an entry must be an inherited file, and tools/ does not exist at the fork point.
+# The block is kept as the record of the compromise and of why it ended.
 vcpkg.json	wave R rename (018d2041f): the vcpkg manifest's "name" field lmms -> zene (the manifest's product identity, not a dependency).
+
+# (2026-09-12) render-determinism lane: the offline render's job scheduling.
+include/AudioEngineWorkerThread.h	render determinism (render-determinism lane): public switch ProjectRenderer sets so an export's jobs run on one thread (docs/RENDER-DETERMINISM.md)
+src/core/AudioEngineWorkerThread.cpp	render determinism (render-determinism lane): storage for that switch plus the inline branch in startAndWaitForJobs()

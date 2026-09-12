@@ -32,6 +32,7 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
+	src/core/RenderJobQueueTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
 	# NOT REGISTERED, deliberately: src/core/PhaseDSidechainTest.cpp (455 lines, Phase D

@@ -37,11 +37,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #if defined(__APPLE__)
 #include <sys/stat.h> // ::mkdir — see the macOS branch in main()
 #endif
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -99,6 +101,50 @@ std::vector<lmms::sample_t> expectedSignal(int channel, std::uint64_t frames)
 	std::vector<lmms::sample_t> out(frames);
 	for (std::uint64_t i = 0; i < frames; ++i) { out[i] = channelValue(channel, i); }
 	return out;
+}
+
+//! The temp root, without std::filesystem's availability-annotated helpers on Apple.
+std::string temporaryRoot()
+{
+#if defined(__APPLE__) || defined(_WIN32)
+	// macOS always sets TMPDIR; Windows sets TEMP/TMP. temp_directory_path() is
+	// availability-annotated like create_directories (see the macOS note in main()),
+	// so it is not usable from a target with this deployment floor.
+	for (const char* name : {"TMPDIR", "TEMP", "TMP"})
+	{
+		if (const char* value = std::getenv(name); value != nullptr && *value != '\0')
+		{
+			return value;
+		}
+	}
+	return "/tmp";
+#else
+	std::error_code ec;
+	const auto dir = std::filesystem::temp_directory_path(ec);
+	return (ec || dir.empty()) ? std::string("/tmp") : dir.string();
+#endif
+}
+
+//! A fresh output directory for this run.
+//!
+//! The default used to be the fixed path "/tmp/lmms-recording-harness". Two lanes - or
+//! two ctest jobs - running this harness at the same time then wrote the same two WAVs
+//! and the same digest file, and whichever process was mid-write when the other
+//! reopened the file made that other run fail its frame-count or digest check: a red
+//! test with no code change behind it. Measured with eight concurrent runs before this
+//! change and after (see docs/RENDER-DETERMINISM.md §6). The digest assertion itself is
+//! exact on purpose and stays exact - only the path was shared.
+//!
+//! An explicit argv[1] is still honoured verbatim; keep passing one when a caller
+//! genuinely wants to name the directory (the ctest entry point passes none).
+std::string defaultOutputDir()
+{
+	std::random_device entropy;
+	const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+	char suffix[48] = {};
+	std::snprintf(suffix, sizeof(suffix), "-%llx-%08x",
+		static_cast<unsigned long long>(stamp), static_cast<unsigned>(entropy()));
+	return temporaryRoot() + "/lmms-recording-harness" + suffix;
 }
 
 struct TrackReport
@@ -220,7 +266,10 @@ TrackReport verifyTrack(int index, const std::string& path, int inputChannel,
 
 int main(int argc, char** argv)
 {
-	const std::string outDir = argc > 1 ? argv[1] : "/tmp/lmms-recording-harness";
+	// A unique directory per run by default: the old fixed /tmp/lmms-recording-harness
+	// made two concurrent runs (two lanes, or two ctest jobs) clobber each other's WAVs
+	// and fail on a digest that no code change can explain.
+	const std::string outDir = argc > 1 ? argv[1] : defaultOutputDir();
 #if defined(__APPLE__)
 	// std::filesystem is only available from macOS 10.15, and the CI runner builds
 	// against an older deployment floor ("error: 'create_directories' is unavailable:
