@@ -1,0 +1,8 @@
+=== $ bash tests/fork-sources-gate.sh ===
+
+scanned 1298 tracked source file(s) under src/, include/, plugins/, tests/, tools/, modules/;
+  242 fork-sources entry(ies), 1036 all-sources (whole-tree),
+  34 tools-sources (fork tooling), 0 stale entry(ies).
+
+PASS: every tracked source in scope is registered (242 fork-NEW, 1036 inherited, 34 tooling).
+EXIT=0

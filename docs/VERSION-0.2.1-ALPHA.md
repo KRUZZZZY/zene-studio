@@ -131,3 +131,58 @@ seen to fail is not a gate:
 The third row is the one that matters: it drives `git ls-files`, the path CI uses, so a **new** file added
 without a namespace is still reported — and the tree went from four errors to zero without the check losing
 that ability. The transcript is `tests/integration-logs-ver021/02-check-namespace-negative-control.log`.
+
+## 5. Verification, and the one deviation
+
+Every command below was run on this branch with its exit code measured unpiped, and each has its log in
+`tests/integration-logs-ver021/`.
+
+| step | command | result | log |
+|---|---|---|---|
+| configure (CI's linux-x86_64 options) | `JOBS=2 bash tools/local-ci.sh --configure-only --build-dir build` | exit 0; VST3 SDK `3.8.1_build_84` + CLAP `1.2.10` provisioned | `00-configure-ci-flags.log` |
+| compile | `cmake --build build -j2` | **exit 0**, whole tree under `-Werror` (1171 C++ translations, 26 min) | `01b-build.log` |
+| test suite | `ctest` **from `build/tests`** | **86/86 passed, exit 0** (124.5 s) | `07-ctest.log` |
+| the gate | `bash tests/release-version-gate.sh` | **PASS**, exit 0 | `03-release-version-gate.log` |
+| the gate's own red/green harness | `bash tests/test-release-version-gate.sh` | 8/8 controls as declared, exit 0 | `04-test-release-version-gate.log` |
+| Gate 5 | `bash tests/fork-sources-gate.sh` | PASS (242 fork-NEW, 1036 inherited, 34 tooling), exit 0 | `05-fork-sources-gate.log` |
+| Gate 6 | `bash tests/no-upstream-regression-gate.sh` | PASS (443 changed paths declared; ledger 456), exit 0 | `06-no-upstream-regression-gate.log` |
+| `check-namespace` + negative control | see §4 | 0 errors, and the probe still reported | `02-check-namespace-negative-control.log` |
+| the version fallback | `cmake -B build -DFORCE_VERSION=internal` | configure prints, and `build/lmmsversion.h` carries, `LMMS_VERSION "0.2.1-alpha"` | `08-version-fallback-probe.log` |
+
+**The one deviation: `-g` was dropped from the build type.** The box had **4.0 GB free** when this started
+(sibling lanes' `RelWithDebInfo` build directories measure 13–15 GB each) and CI's exact configuration does not
+fit. The build was configured with the CI options and then the build-type flags were overridden to
+`-DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG"` / `-DCMAKE_C_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG"` —
+**the optimization level, `-DNDEBUG` and `-Werror` are exactly CI's; only debug information is absent**. The
+resulting `flags.make` line is quoted in `01-build-and-flags.log`:
+`-O2 -DNDEBUG -std=gnu++20 … -Wall -Wno-array-bounds -Wno-stringop-overread -Werror`. Debug information cannot
+change a diagnostic or a test outcome, so this is a disk concession, not a fidelity concession — but it *is* a
+deviation and it is recorded as one. (`local-ci.sh` reports its own, unchanged: Qt6 instead of Qt5, because
+this box has no Qt5 development files.) Note for the release re-run: ~63 GB was freed on the machine by
+another session while this build ran, so the CI-flag-exact `RelWithDebInfo` configuration is now affordable if
+exactness is wanted there.
+
+Not run here, because they are the release verification's own steps rather than this job's: Gate 2 (coverage,
+needs an instrumented `Debug` + `WANT_COVERAGE=ON` build and a tracefile), the whole-tree complexity /
+file-length scopes, `tests/run-all-gates.sh`, and the seven-platform matrix. `86/86` matches the recorded
+post-alpha baseline (`docs/CI-TAG-FAILURES.md`); as that document's own rule says, a matching total is not by
+itself a matching suite, so the feature state of this configure is recorded above rather than assumed.
+
+## 6. What the gate still wants: the tag, and what the binary says until it exists
+
+`tests/release-version-gate.sh` reports `RESULT: PASS` and its fourth point as
+`[skip] tag: no v0.2.1-alpha tag exists yet (the owner creates it at freeze, Block C/F)`. That is the one thing
+this branch cannot satisfy: the gate's tag check is deterministic only once a `v0.2.1-alpha` tag exists at the
+release commit, and creating it is the owner's act (and this lane is forbidden from tagging). The harness in
+§5 covers the *logic*: with the tag present as `GITHUB_REF`, the gate passes (G0b), and every wrong-tag or
+wrong-lineage case exits 1 (R1, R5, R6).
+
+**And the tag is not only a gate formality — it is what makes the binary report the right string.**
+`cmake/modules/VersionInfo.cmake` prefers `git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*'`, so on this
+untagged branch the built binary reports the **superseded** tag's string: `build/lmmsversion.h` reads
+`LMMS_VERSION "0.2.0-alpha.9+0de9f3b"` (`git describe` → `v0.2.0-alpha-9-g0de9f3b8d`). At the tag it returns
+exactly `v0.2.1-alpha` and the build reports `0.2.1-alpha`; and where git cannot supply a version (a source
+tarball, or `-DFORCE_VERSION=internal`), the `CMakeLists.txt` fallback is now exactly right — measured, not
+assumed: `LMMS_VERSION "0.2.1-alpha"` (`08-version-fallback-probe.log`). The two paths agree, which is the
+condition `docs/VERSIONING.md` states.
+

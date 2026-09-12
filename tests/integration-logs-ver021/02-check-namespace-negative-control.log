@@ -1,0 +1,68 @@
+++ echo '### clean tree'
+### clean tree
+++ python3 tests/scripted/check-namespace
+
+# namespace checks
+
+
+# summary
+
+0 errors.
+++ echo EXIT=0
+EXIT=0
+++ PROBE=build/namespace-negative-control/namespaceless-probe.cpp
+++ mkdir -p build/namespace-negative-control
+++ printf '/* negative control: a file with no namespace lmms, added by hand to prove\n * tests/scripted/check-namespace still fails a NEW file that lacks one. */\nint zene_namespace_negative_control(void) { return 0; }\n'
+++ echo '### negative control 1/2: named on the command line, NOT on the allowance list'
+### negative control 1/2: named on the command line, NOT on the allowance list
+++ python3 tests/scripted/check-namespace build/namespace-negative-control/namespaceless-probe.cpp
+
+# namespace checks
+
+Error: build/namespace-negative-control/namespaceless-probe.cpp: File has no namespace lmms
+
+# summary
+
+1 errors.
+++ echo EXIT=1
+EXIT=1
+++ git add -f -N build/namespace-negative-control/namespaceless-probe.cpp
+++ echo '### negative control 2/2: the checker'\''s real enumeration path (git ls-files), no arguments'
+### negative control 2/2: the checker's real enumeration path (git ls-files), no arguments
+++ git ls-files '*.[ch]' '*.[ch]pp' ':!tests/*'
+++ grep -c namespace-negative-control
+1
+++ python3 tests/scripted/check-namespace
+
+# namespace checks
+
+Error: build/namespace-negative-control/namespaceless-probe.cpp: File has no namespace lmms
+
+# summary
+
+1 errors.
+++ echo EXIT=1
+EXIT=1
+++ echo '### back to clean: index entry reset, scratch file removed'
+### back to clean: index entry reset, scratch file removed
+++ git reset -q -- build/namespace-negative-control/namespaceless-probe.cpp
+++ rm -rf build/namespace-negative-control
+++ git ls-files
+++ grep -c namespace-negative-control
+0
+++ python3 tests/scripted/check-namespace
+
+# namespace checks
+
+
+# summary
+
+0 errors.
+++ echo EXIT=0
+EXIT=0
+++ echo '### git status --porcelain (must be empty)'
+### git status --porcelain (must be empty)
+++ git status --porcelain
+?? tests/integration-logs-ver021/
+++ echo END
+END

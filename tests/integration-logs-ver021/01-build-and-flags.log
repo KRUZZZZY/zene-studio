@@ -1,0 +1,10 @@
+=== reflag: drop only -g from the CI build type (disk: 4.0G free; CI's RelWithDebInfo needs ~15 GB) ===
+RECONFIGURE EXIT=0
+
+=== proof the flags took (a sample target) ===
+
+=== build (cmake --build build -j2) ===
+2026-09-12T19:29:25+01:00
+BUILD EXIT=0
+2026-09-12T19:55:28+01:00
+/dev/nvme0n1p2  286G  269G  3.1G  99% /
