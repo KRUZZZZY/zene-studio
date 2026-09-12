@@ -27,6 +27,8 @@ include/RemotePluginAudioPorts.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
+include/SampleFrameRingBuffer.h
+include/SampleRecordAccumulator.h
 include/ScriptBindings.h
 include/ScriptEngine.h
 include/StemSeparation/ExternalProcessStemSeparator.h

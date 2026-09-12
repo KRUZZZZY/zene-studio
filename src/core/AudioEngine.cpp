@@ -95,10 +95,14 @@ AudioEngine::AudioEngine(bool renderOnly)
 	for( int i = 0; i < 2; ++i )
 	{
 		m_inputBufferFrames[i] = 0;
-		m_inputBufferSize[i] = DEFAULT_BUFFER_SIZE * 100;
-		m_inputBuffer[i] = new SampleFrame[ DEFAULT_BUFFER_SIZE * 100 ];
+		m_inputBufferSize[i] = InputStageCapacityFrames;
+		m_inputBuffer[i] = new SampleFrame[ InputStageCapacityFrames ];
 		zeroSampleFrames(m_inputBuffer[i], m_inputBufferSize[i]);
 	}
+
+	// Capture input staging (see pushInputFrames/drainInputStage). Allocated
+	// exactly once, here, off the audio thread and never resized afterwards.
+	m_inputStage = std::make_unique<SampleFrameRingBuffer>(InputStageCapacityFrames);
 
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
@@ -170,31 +174,57 @@ bool AudioEngine::criticalXRuns() const
 
 
 
-void AudioEngine::pushInputFrames( SampleFrame* _ab, const f_cnt_t _frames )
+void AudioEngine::pushInputFrames( const SampleFrame* _ab, const f_cnt_t _frames ) noexcept
 {
-	requestChangeInModel();
-
-	f_cnt_t frames = m_inputBufferFrames[ m_inputBufferWrite ];
-	auto size = m_inputBufferSize[m_inputBufferWrite];
-	SampleFrame* buf = m_inputBuffer[ m_inputBufferWrite ];
-
-	if( frames + _frames > size )
+	if( _ab == nullptr || _frames == 0 || m_inputStage == nullptr )
 	{
-		size = std::max(size * 2, frames + _frames);
-		auto ab = new SampleFrame[size];
-		memcpy( ab, buf, frames * sizeof( SampleFrame ) );
-		delete [] buf;
-
-		m_inputBufferSize[ m_inputBufferWrite ] = size;
-		m_inputBuffer[ m_inputBufferWrite ] = ab;
-
-		buf = ab;
+		return;
 	}
 
-	memcpy( &buf[ frames ], _ab, _frames * sizeof( SampleFrame ) );
-	m_inputBufferFrames[ m_inputBufferWrite ] += _frames;
+	// Realtime-safe by construction. This runs on the backend's capture thread
+	// - the JACK process callback or the SDL capture callback - so it must not
+	// lock, allocate or grow.
+	//
+	// It used to call requestChangeInModel(), which takes m_changeMutex and can
+	// therefore block behind any GUI thread that holds the model lock, and it
+	// grew m_inputBuffer by doubling (new SampleFrame[size]) whenever the
+	// backlog did not fit. Both are gone: the frames go into one
+	// fixed-capacity ring, allocated once in the constructor, which
+	// drainInputStage() empties once per rendered period. A full ring drops
+	// the newest frames and counts them (inputFramesDropped()).
+	m_inputStage->writeBlock( _ab, static_cast<std::size_t>( _frames ) );
+}
 
-	doneChangeInModel();
+
+
+void AudioEngine::drainInputStage() noexcept
+{
+	if( m_inputStage == nullptr )
+	{
+		return;
+	}
+
+	// Render thread only, and bounded by both the ring and the destination
+	// buffer, so this can neither allocate nor overrun m_inputBuffer.
+	const auto staged = m_inputStage->available();
+	const auto frames = std::min( staged,
+		static_cast<std::size_t>( m_inputBufferSize[ m_inputBufferRead ] ) );
+	m_inputStage->read( m_inputBuffer[ m_inputBufferRead ], frames );
+	m_inputBufferFrames[ m_inputBufferRead ] = static_cast<f_cnt_t>( frames );
+}
+
+
+
+std::size_t AudioEngine::inputFramesStaged() const noexcept
+{
+	return m_inputStage != nullptr ? m_inputStage->available() : 0u;
+}
+
+
+
+std::uint64_t AudioEngine::inputFramesDropped() const noexcept
+{
+	return m_inputStage != nullptr ? m_inputStage->overflowCount() : 0u;
 }
 
 
@@ -349,6 +379,12 @@ void AudioEngine::swapBuffers()
 	m_inputBufferWrite = (m_inputBufferWrite + 1) % 2;
 	m_inputBufferRead = (m_inputBufferRead + 1) % 2;
 	m_inputBufferFrames[m_inputBufferWrite] = 0;
+
+	// Move whatever the capture thread staged into this period's read side.
+	// Done here - once per rendered period, before any play handle reads
+	// inputBuffer() (STAGE 1) or the recorder demuxes it (STAGE 4) - so the
+	// capture thread never touches m_inputBuffer and needs no lock for it.
+	drainInputStage();
 
 	std::swap(m_outputBufferRead, m_outputBufferWrite);
 	zeroSampleFrames(m_outputBufferWrite.get(), m_framesPerPeriod);

@@ -21,7 +21,7 @@
 Brewfile	#609 CI: brew "mda-lv2" so the macOS runners have the LV2 bundle PluginPortsMigrationTest renders by URI (3d87d33ca)
 include/AudioBuffer.h	#608 memory correctness: the channel access buffer (pointer table) is process-local, never allocated from a shared memory resource (746f6bd0e)
 include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's compensation graph
-include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
+include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph; post-alpha/recording-realtime: capture staging ring (fixed capacity, pre-allocated) replacing the locking, doubling input buffer, and pushInputFrames() taking const frames as noexcept
 include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
 include/Effect.h	#605 PDC: latency accessor on the effect interface
 include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
@@ -49,3 +49,6 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> proce
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+include/SampleRecordHandle.h	post-alpha/recording-realtime D9c: the clip record path stages frames into a pre-allocated ring and assembles the take on the accumulator's own thread, replacing the per-period new SampleFrame[] and the QList of blocks
+src/core/AudioEngine.cpp	post-alpha/recording-realtime D9b/D9a: pushInputFrames() no longer takes m_changeMutex on the JACK/SDL capture thread and no longer doubles the input buffer; swapBuffers() drains the fixed-capacity staging ring instead
+src/core/SampleRecordHandle.cpp	post-alpha/recording-realtime D9c: writeBuffer() appends to the pre-allocated ring instead of allocating per period, and the destructor installs the take the drain thread already built instead of assembling it on the audio thread
