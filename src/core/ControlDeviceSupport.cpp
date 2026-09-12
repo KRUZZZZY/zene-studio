@@ -35,7 +35,7 @@
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
-#include "LadspaBase.h"
+#include "LinkedModelGroups.h"
 #include "Mixer.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
@@ -48,12 +48,6 @@ namespace lmms
 
 namespace
 {
-
-#if defined(LMMS_BUILD_WIN32) || defined(LMMS_BUILD_CYGWIN)
-const QString LadspaSuffix = QStringLiteral(".dll");
-#else
-const QString LadspaSuffix = QStringLiteral(".so");
-#endif
 
 QString trackTypeName(Track::Type type)
 {
@@ -69,25 +63,6 @@ QString trackTypeName(Track::Type type)
 		case Track::Type::Count: break;
 	}
 	return QStringLiteral("unknown");
-}
-
-//! Look \a name up among the build's loaded plugin descriptors.
-const Plugin::Descriptor* findDescriptor(const QString& name, Plugin::Type type)
-{
-	for (const Plugin::Descriptor* descriptor : getPluginFactory()->descriptors(type))
-	{
-		if (descriptor != nullptr && name == QLatin1String(descriptor->name))
-		{
-			return descriptor;
-		}
-	}
-	return nullptr;
-}
-
-//! The LADSPA file key is the library file name, extension included.
-QString ladspaFileKey(const QString& file)
-{
-	return file.endsWith(LadspaSuffix) ? file : file + LadspaSuffix;
 }
 
 bool resolveTrackTarget(const QString& id, ControlTarget* target, ControlResult* error)
@@ -145,6 +120,39 @@ bool resolveChannelTarget(const QString& id, ControlTarget* target, ControlResul
 	target->chain = &mixer->mixerChannel(index)->m_fxChain;
 	target->instrumentTrack = nullptr;
 	return true;
+}
+
+//! Appends the parameters a device keeps in LinkedModelGroups.
+//!
+//! A built-in effect puts its controls on itself as QObject children, so
+//! findChildren() above finds them. A hosted LV2 device does not:
+//! Lv2Proc::createPort() constructs each control-port model with a nullptr
+//! parent and Lv2Proc::addModel() only names it (src/core/lv2/Lv2Proc.cpp:608,
+//! :749), while the Lv2Proc itself - a LinkedModelGroup, i.e. a Model, i.e. a
+//! QObject - *is* parented to the device (Lv2ControlBase::init(meAsModel)).
+//! Without this walk an LV2 device reports zero parameters and plugin.param_get
+//! could not address one of its ports at all - measured, not assumed.
+//!
+//! Order: groups in QObject child order (one Lv2Proc for a stereo plugin, two
+//! for a mono one, in construction order) and, inside a group, the order of
+//! LinkedModelGroup::m_models - a std::map<std::string, ModelInfo>
+//! (include/LinkedModelGroups.h:136) keyed by the model's object name, which
+//! Lv2Proc::addModel() sets to the port's symbol (Lv2Ports::PortBase::uri() is
+//! lilv_port_get_symbol) - i.e. ascending port symbol. Both are deterministic
+//! for a binary, which is what makes the parameter index stable.
+void appendLinkedModelGroupParameters(QObject* device, QList<AutomatableModel*>* models)
+{
+	if (device == nullptr) { return; }
+	for (LinkedModelGroup* group : device->findChildren<LinkedModelGroup*>(
+			QString(), Qt::FindChildrenRecursively))
+	{
+		group->foreach_model([models](const std::string&, LinkedModelGroup::ModelInfo& info) {
+			if (info.m_model != nullptr && !info.m_model->displayName().isEmpty())
+			{
+				models->append(info.m_model);
+			}
+		});
+	}
 }
 
 } // namespace
@@ -216,6 +224,7 @@ QList<AutomatableModel*> controlEffectParameters(Effect* effect)
 	{
 		if (!model->displayName().isEmpty()) { models.append(model); }
 	}
+	appendLinkedModelGroupParameters(effect, &models);
 	return models;
 }
 
@@ -258,6 +267,7 @@ QList<AutomatableModel*> controlInstrumentParameters(Instrument* instrument)
 		AutomatableModel* model = instrument->parameterModel(i);
 		if (model != nullptr) { models.append(model); }
 	}
+	appendLinkedModelGroupParameters(instrument, &models);
 	return models;
 }
 
@@ -358,10 +368,12 @@ QString controlEffectStateXml(Effect* effect)
 	const bool hosted = key.isValid() && !key.attributes.isEmpty();
 	if (hosted)
 	{
-		// A hosted plugin's identity is its key (LADSPA: file + label); the
-		// descriptor name alone ("ladspaeffect") would not identify it.
+		// A hosted plugin's identity is its key (LADSPA: file + label; LV2: the
+		// URI); the descriptor name alone ("ladspaeffect"/"lv2effect") would not
+		// identify it, and it is shared by every device of the format.
 		root.setAttribute(QStringLiteral("hosted_file"), key.attributes.value(QStringLiteral("file")));
 		root.setAttribute(QStringLiteral("hosted_id"), key.attributes.value(QStringLiteral("plugin")));
+		root.setAttribute(QStringLiteral("hosted_uri"), key.attributes.value(QStringLiteral("uri")));
 	}
 	doc.appendChild(root);
 
@@ -406,6 +418,18 @@ ControlResult controlRestoreEffectState(Effect* effect, const QByteArray& xml)
 			QStringLiteral("the state file holds hosted plugin '%1'; this device is '%2'")
 				.arg(hostedId, key.attributes.value(QStringLiteral("plugin"))));
 	}
+	// An LV2 device is identified by its URI, and every LV2 effect shares the
+	// descriptor name "lv2effect" - so without this check a state file written
+	// for one LV2 plugin would be accepted by any other one.
+	const QString hostedUri = root.attribute(QStringLiteral("hosted_uri"));
+	const QString deviceUri = key.attributes.value(QStringLiteral("uri"));
+	if (hostedUri != deviceUri)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the state file holds LV2 plugin '%1'; this device is '%2'")
+				.arg(hostedUri.isEmpty() ? QStringLiteral("(none)") : hostedUri,
+					deviceUri.isEmpty() ? QStringLiteral("(none)") : deviceUri));
+	}
 
 	const QDomElement body = root.firstChildElement(effect->nodeName());
 	if (body.isNull())
@@ -419,51 +443,6 @@ ControlResult controlRestoreEffectState(Effect* effect, const QByteArray& xml)
 	result.insert(QStringLiteral("restored"), true);
 	result.insert(QStringLiteral("plugin"), plugin);
 	return ControlResult::success(result);
-}
-
-Effect* controlInstantiateDevice(const ControlDeviceEntry& entry, EffectChain* chain,
-	ControlResult* error)
-{
-	if (!entry.loadable)
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("device '%1' is a %2/%3 and this build has no host for it: only "
-				"built-in effect and instrument modules and LADSPA effects load into a chain")
-				.arg(entry.name, entry.format, entry.kind));
-		return nullptr;
-	}
-
-	QString pluginName = entry.name;
-	const Plugin::Descriptor* descriptor = findDescriptor(entry.name, Plugin::Type::Effect);
-	Plugin::Descriptor::SubPluginFeatures::Key key;
-	bool useKey = false;
-	if (entry.format == QLatin1String("ladspa"))
-	{
-		// The whole LADSPA format is hosted by one plugin module; a LADSPA
-		// device is selected by its key (file + label), not by plugin name.
-		pluginName = QStringLiteral("ladspaeffect");
-		descriptor = findDescriptor(pluginName, Plugin::Type::Effect);
-		if (descriptor == nullptr)
-		{
-			*error = ControlResult::failure(ControlErrorKind::NotFound,
-				QStringLiteral("the LADSPA host plugin 'ladspaeffect' is not in this build"));
-			return nullptr;
-		}
-		key = ladspaKeyToSubPluginKey(descriptor, entry.displayName,
-			ladspa_key_t(ladspaFileKey(entry.file), entry.label));
-		useKey = true;
-	}
-	if (!controlPluginIsInstantiable(pluginName, error)) { return nullptr; }
-
-	Effect* effect = Effect::instantiate(pluginName, chain, useKey ? &key : nullptr);
-	if (effect == nullptr)
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the engine could not instantiate '%1'").arg(pluginName));
-		return nullptr;
-	}
-	chain->appendEffect(effect);
-	return effect;
 }
 
 } // namespace lmms

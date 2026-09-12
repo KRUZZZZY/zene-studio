@@ -129,6 +129,9 @@ QList<ControlDeviceEntry> controlDeviceCatalogue()
 	appendBuiltinDevices(Plugin::Type::Effect, QStringLiteral("effect"), &out);
 	appendBuiltinDevices(Plugin::Type::Instrument, QStringLiteral("instrument"), &out);
 	appendLadspaDevices(&out);
+	// The hosted formats are appended in a fixed order (LADSPA, then LV2) so a
+	// build that gains a host keeps the dev-<n> ids of the ones already there.
+	controlLv2DeviceEntries(&out);
 	return out;
 }
 
@@ -167,6 +170,10 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 	{
 		out.insert(QStringLiteral("file"), entry.file);
 		out.insert(QStringLiteral("label"), entry.label);
+	}
+	if (entry.format == QLatin1String("lv2"))
+	{
+		out.insert(QStringLiteral("uri"), entry.uri);
 	}
 	return out;
 }

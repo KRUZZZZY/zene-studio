@@ -103,12 +103,15 @@ void registerPluginList(ControlRegistry& registry)
 	cmd.group = QStringLiteral("plugin");
 	cmd.verb = QStringLiteral("list");
 	cmd.description = QStringLiteral("Every device this build can load: built-in effect and "
-		"instrument modules plus the devices of the shipped hosting formats (LADSPA), each with "
-		"a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a "
-		"persisted project id, and 'loadable' says whether plugin.load accepts the entry.");
+		"instrument modules plus the devices of the shipped hosting formats (LADSPA and LV2), "
+		"each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue "
+		"index, not a persisted project id, and 'loadable' says whether plugin.load accepts the "
+		"entry. Format order is built-in, then LADSPA, then LV2, so adding a host does not "
+		"renumber the ids of the formats that were already there.");
 	cmd.argsSchema = schemaObject({
 		{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
-			{QStringLiteral("enum"), QJsonArray{QStringLiteral("builtin"), QStringLiteral("ladspa")}}}},
+			{QStringLiteral("enum"), QJsonArray{QStringLiteral("builtin"), QStringLiteral("ladspa"),
+				QStringLiteral("lv2")}}}},
 		{QStringLiteral("kind"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("effect"),
 				QStringLiteral("instrument"), QStringLiteral("tool"), QStringLiteral("other")}}}},
@@ -193,7 +196,8 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 }
 
 //! Replaces the instrument of an instrument track.
-ControlResult loadInstrument(const ControlTarget& target, const ControlDeviceEntry& entry)
+ControlResult loadInstrument(const ControlTarget& target, const ControlDeviceEntry& entry,
+	int deviceIndex)
 {
 	if (target.instrumentTrack == nullptr)
 	{
@@ -207,21 +211,28 @@ ControlResult loadInstrument(const ControlTarget& target, const ControlDeviceEnt
 		: QString();
 
 	ControlResult error;
-	if (!controlPluginIsInstantiable(entry.name, &error)) { return error; }
-	Instrument* instrument = target.instrumentTrack->loadInstrument(entry.name);
+	QString pluginName;
+	Plugin::Descriptor::SubPluginFeatures::Key key;
+	bool useKey = false;
+	if (!controlDeviceModule(entry, &pluginName, &key, &useKey, &error)) { return error; }
+	if (!controlPluginIsInstantiable(pluginName, &error)) { return error; }
+	Instrument* instrument = target.instrumentTrack->loadInstrument(pluginName,
+		useKey ? &key : nullptr);
 	if (instrument == nullptr ||
-		QString::fromUtf8(instrument->descriptor()->name) != entry.name)
+		QString::fromUtf8(instrument->descriptor()->name) != pluginName)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the engine could not load instrument '%1'").arg(entry.name));
+			QStringLiteral("the engine could not load instrument '%1'").arg(pluginName));
 	}
 
 	QJsonObject result;
 	result.insert(QStringLiteral("target"), target.id);
 	result.insert(QStringLiteral("kind"), QStringLiteral("instrument"));
 	result.insert(QStringLiteral("id"), QStringLiteral("inst"));
-	result.insert(QStringLiteral("plugin"), entry.name);
-	result.insert(QStringLiteral("display_name"), entry.displayName);
+	result.insert(QStringLiteral("device"), control::deviceId(deviceIndex));
+	result.insert(QStringLiteral("plugin"), pluginName);
+	result.insert(QStringLiteral("display_name"),
+		entry.displayName.isEmpty() ? entry.name : entry.displayName);
 	result.insert(QStringLiteral("previous_plugin"), previous);
 
 	QJsonObject transaction;
@@ -250,8 +261,10 @@ void registerPluginLoad(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("load");
 	cmd.description = QStringLiteral("Load a device by its dev-<n> id: an effect onto a track's "
 		"device chain or a mixer channel's insert chain, an instrument onto an instrument track. "
-		"Returns the new instance id (fx-<n>, or inst for an instrument). No display is needed - "
-		"a plugin editor is only created when a user opens one.");
+		"Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it "
+		"declares no 'requires' at all, because no editor is created here - neither a built-in "
+		"plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully "
+		"parametrisable through plugin.param_get / plugin.param_set on a display-less instance.");
 	cmd.argsSchema = schemaObject(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("device"), stringProperty()}},
@@ -279,7 +292,7 @@ void registerPluginLoad(ControlRegistry& registry)
 		}
 		if (entry.kind == QLatin1String("instrument"))
 		{
-			return loadInstrument(target, entry);
+			return loadInstrument(target, entry, deviceIndex);
 		}
 		return loadEffect(target, entry, deviceIndex);
 	};

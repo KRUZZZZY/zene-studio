@@ -32,6 +32,7 @@
 
 #include "ControlRegistry.h"
 #include "lmms_export.h"
+#include "Plugin.h"
 
 namespace lmms
 {
@@ -44,21 +45,34 @@ class InstrumentTrack;
 class Track;
 
 //! One device of the build's catalogue: a built-in plugin module or a plugin
-//! hosted from one of the formats the build includes (LADSPA in this tree).
+//! hosted from one of the formats the build includes (LADSPA and LV2 in this
+//! tree).
 struct ControlDeviceEntry
 {
-	QString name;        //!< plugin name ("amplifier") or LADSPA label ("amp_mono")
+	QString name;        //!< plugin name ("amplifier"), LADSPA label ("amp_mono")
+	                     //!< or, for LV2, the plugin URI
 	QString displayName; //!< human name ("Amplifier")
-	QString format;      //!< "builtin" | "ladspa"
+	QString format;      //!< "builtin" | "ladspa" | "lv2"
 	QString kind;        //!< "effect" | "instrument" | "tool" | "other"
-	QString file;        //!< LADSPA file stem, empty for a built-in
-	QString label;       //!< LADSPA label, empty for a built-in
+	QString file;        //!< LADSPA file stem, empty for other formats
+	QString label;       //!< LADSPA label, empty for other formats
+	QString uri;         //!< LV2 plugin URI, empty for other formats
 	bool loadable;       //!< plugin.load accepts this entry
 };
 
+//! Appends this build's LV2 devices to \a out, through the LV2 host module's
+//! own discovery path (the SubPluginFeatures::listSubPluginKeys() dispatch the
+//! effect and instrument select dialogs use) - not a second scanner. A no-op
+//! when the build has no LV2 host or the process has no LV2 world, so the
+//! catalogue is simply built-in + LADSPA there. Called by
+//! controlDeviceCatalogue() after the LADSPA block.
+LMMS_EXPORT void controlLv2DeviceEntries(QList<ControlDeviceEntry>* out);
+
 //! The build's device catalogue in the stable order the dev-<n> ids use:
-//! built-in effects, built-in instruments, then LADSPA (each sorted by name).
-//! The order is deterministic for a binary, which is what makes dev-<n> stable.
+//! built-in effects, built-in instruments, LADSPA (sorted by name), then LV2
+//! (sorted by URI). The order is deterministic for a binary, which is what
+//! makes dev-<n> stable; the hosted formats are appended after the built-ins so
+//! a build that gains a host does not renumber the existing dev-<n> ids.
 LMMS_EXPORT QList<ControlDeviceEntry> controlDeviceCatalogue();
 
 //! The catalogue entry whose dev-<n> id is \a id; \a index receives n.
@@ -122,6 +136,18 @@ LMMS_EXPORT ControlResult controlRestoreEffectState(Effect* effect, const QByteA
 //! "Add an effect to this chain" for a built-in or hosted device.
 LMMS_EXPORT Effect* controlInstantiateDevice(const ControlDeviceEntry& entry, EffectChain* chain,
 	ControlResult* error);
+
+//! Which plugin module instantiates \a entry and with which SubPluginFeatures
+//! key - the same key shape the effect/instrument select dialogs build (LADSPA:
+//! file + label; LV2: the URI).
+//! \param pluginName receives the module to instantiate ("amplifier",
+//!        "ladspaeffect" or "lv2effect").
+//! \param key receives the sub-plugin key; \param useKey says whether the
+//!        engine's instantiate call must be given it (false for a built-in,
+//!        whose plugin name alone selects it).
+//! False and *error set when this build does not ship the host the entry needs.
+LMMS_EXPORT bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
+	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
 
 //! True when the module is present and exposes lmms_plugin_main - the check
 //! that keeps Plugin::instantiate()'s modal error box out of a headless call.
