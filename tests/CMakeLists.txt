@@ -8,6 +8,7 @@ set(LMMS_TESTS
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
+	src/core/AudioEngineTeardownTest.cpp
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
@@ -23,11 +24,14 @@ set(LMMS_TESTS
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
+	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerConcurrencyTest.cpp
 	src/core/MixerRoutingBackwardCompatTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
+	src/core/PhaseDSidechainTest.cpp
+	src/core/PhaseFChannelScaleTest.cpp
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
@@ -43,21 +47,6 @@ set(LMMS_TESTS
 	src/core/RenderJobQueueTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
-	# NOT REGISTERED, deliberately: src/core/PhaseDSidechainTest.cpp (455 lines, Phase D
-	# sidechain routing, #587) does not compile, so registering it would break the build for every
-	# job instead of producing evidence. It was found unregistered (never built, never run) by the
-	# 2026-09-12 gate-hygiene pass; compiling it by hand gives, on the first try:
-	#
-	#   tests/src/core/PhaseDSidechainTest.cpp:103:62: error: 'PART_D_COMPRESSOR_LIBRARY' was not
-	#   declared in this scope
-	#       const QString compressor = QString::fromUtf8(PART_D_COMPRESSOR_LIBRARY);
-	#
-	# That macro is referenced exactly once in the repo and defined nowhere (no CMakeLists.txt,
-	# no header): the test was written against a compile definition that was never wired. The
-	# other test TUs take a built plugin from LMMS_TEST_PLUGIN_DIR (defined for them in this
-	# file), so the fix is a one-line interface fix there - it is NOT applied here, because a
-	# test must not be bent until it passes; the defect is reported instead. Remove this note and
-	# add the file to LMMS_TESTS when it compiles. See docs/GATE-HYGIENE.md.
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/ScriptStabilisationTest.cpp
@@ -171,6 +160,25 @@ endforeach()
 # (D9b/D9a), which needs a Qt platform plugin even though the test is guiless.
 set_tests_properties(RecordingRealtimeTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# ---------------------------------------------------------------------------
+# PhaseDSidechainTest loads the native Compressor module.
+#
+# It points LMMS_PLUGIN_DIR at a private directory holding a link to the built
+# Compressor, to prove sidechain ducking through the real plugin. The path comes
+# in as PART_D_COMPRESSOR_LIBRARY; until now nothing defined that macro, so the
+# file could not compile and was never registered - a test that looked like
+# Phase D coverage and could not run in any way. $<TARGET_FILE:> resolves to the
+# built module and makes the plugin a build dependency.
+# ---------------------------------------------------------------------------
+add_dependencies(PhaseDSidechainTest compressor)
+target_compile_definitions(PhaseDSidechainTest PRIVATE
+	PART_D_COMPRESSOR_LIBRARY="$<TARGET_FILE:compressor>")
+# The Compressor module is dlopen()ed, so the test binary must export the
+# lmms:: core symbols the module resolves from its host (same reason
+# ScriptEngineTest and PluginScanCacheTest set this). Without it the load fails
+# with "undefined symbol: _ZTIN4lmms16AutomatableModelE".
+set_target_properties(PhaseDSidechainTest PROPERTIES ENABLE_EXPORTS ON)
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.

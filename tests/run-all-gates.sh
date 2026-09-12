@@ -2,7 +2,7 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9 (Gate 5 ≈3 min)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
@@ -95,10 +95,14 @@ if [[ ! -d build ]]; then
 	echo "no build/ — configure first: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON && cmake --build build -j4"
 	record 1 "ctest" "SKIP" "no configured build/ directory"
 else
-	cmake --build build -j4 > /tmp/gate1-build.log 2>&1
+	# The log goes inside the build tree, not /tmp: a disk reclaim has already
+	# destroyed one verification's evidence in this program, and two concurrent
+	# gate runs in sibling worktrees would otherwise clobber one shared file.
+	build_log="build/gate1-build.log"
+	cmake --build build -j4 > "$build_log" 2>&1
 	build_rc=$?
 	if [[ $build_rc -ne 0 ]]; then
-		echo "build FAILED (exit $build_rc) — tail:"; tail -15 /tmp/gate1-build.log
+		echo "build FAILED (exit $build_rc) — tail of $build_log:"; tail -15 "$build_log"
 		record 1 "ctest" "FAIL"
 	else
 		( cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure )
@@ -168,6 +172,14 @@ rc8t=$?
 banner 9 "fork-sources registration"
 bash tests/fork-sources-gate.sh
 [[ $? -eq 0 ]] && record 9 "fork-sources" "PASS" || record 9 "fork-sources" "FAIL"
+
+# ---- Gate 10: test-source registration ---------------------------------------
+# Gate 9 answers "is this file in a scope manifest"; it cannot answer "is this
+# test ever built". Three test sources were found unregistered by hand in one
+# night (one of which could not even compile), all while every gate was green.
+banner 10 "test-source registration"
+bash tests/unregistered-tests-gate.sh
+[[ $? -eq 0 ]] && record 10 "unregistered-tests" "PASS" || record 10 "unregistered-tests" "FAIL"
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'

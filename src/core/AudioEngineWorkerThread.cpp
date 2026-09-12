@@ -182,6 +182,10 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 
 
 
+//! How long an idle worker sleeps before re-checking m_quit. See the comment in
+//! run() - this bound is what stops a lost wake-up from stranding a worker.
+static constexpr unsigned long kQuitRecheckMs = 100;
+
 void AudioEngineWorkerThread::run()
 {
 	disableDenormals();
@@ -190,7 +194,22 @@ void AudioEngineWorkerThread::run()
 	while( m_quit == false )
 	{
 		m.lock();
-		queueReadyWaitCond->wait( &m );
+		// BOUNDED wait, and this bound is load-bearing. `quit()` sets m_quit and
+		// `startAndWaitForJobs()` wakes this condition, but the two are not atomic
+		// with respect to a worker arriving here: the flag is read at the top of the
+		// loop, outside the mutex, so a worker that is preempted between reading
+		// m_quit and reaching wait() misses the wake that was meant to release it and
+		// then sleeps for good. On a loaded machine that window is wide (measured:
+		// 13 of 64 PdcMixerTest runs, load average ~27, exactly one worker of 19
+		// stranded in wait()). A stranded worker then outlives the QThread object
+		// that owns it, and Qt answers that with
+		//   qFatal("QThread: Destroyed while thread is still running")
+		// i.e. SIGABRT during Engine::destroy(), blamed on whatever test was running.
+		// Re-checking every 100 ms bounds a lost wake-up instead of hanging on it.
+		// Cost: while the engine is idle each worker wakes, drains an empty queue and
+		// sleeps again 10 times a second; while it renders, wake-ups arrive every
+		// period and this timer never fires.
+		queueReadyWaitCond->wait( &m, kQuitRecheckMs );
 		globalJobQueue.run();
 		m.unlock();
 	}

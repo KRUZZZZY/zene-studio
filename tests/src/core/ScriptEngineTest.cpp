@@ -136,7 +136,14 @@ private slots:
 		QFETCH(QString, source);
 		QFETCH(int, expected);
 
-		const QString path = QDir(QDir::tempPath()).absoluteFilePath("lmms-version-test.lua");
+		// A private directory per call. QDir::tempPath() is shared with every other
+		// process on the box - including a sibling worktree running its own ctest -
+		// so a fixed file name there is read back by whoever wrote it last, and the
+		// test fails on another process's source. That is the "passes alone, fails
+		// under load" shape this file must not have.
+		QTemporaryDir versionHeaderDir;
+		QVERIFY(versionHeaderDir.isValid());
+		const QString path = QDir(versionHeaderDir.path()).absoluteFilePath("lmms-version-test.lua");
 		QFile file(path);
 		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
 		file.write(source.toUtf8());
