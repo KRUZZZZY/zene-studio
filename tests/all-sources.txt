@@ -385,6 +385,7 @@ include/VcaGroup.h
 include/VersionedSaveDialog.h
 include/VstSyncController.h
 include/VstSyncData.h
+include/WarpMarkers.h
 include/aeffectx.h
 include/base64.h
 include/embed.h
@@ -1142,6 +1143,7 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/ConfigMigrationTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
@@ -1199,6 +1201,7 @@ tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
 tests/src/core/VcaGroupTest.cpp
+tests/src/core/WarpMarkersTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
@@ -1215,6 +1218,7 @@ tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
+tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tools/mmpz-git/scratch/qtesc.cpp

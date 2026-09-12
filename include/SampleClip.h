@@ -26,9 +26,11 @@
 #define LMMS_SAMPLE_CLIP_H
 
 #include <memory>
+#include <span>
 #include "Clip.h"
 #include "Sample.h"
 #include "SampleWindow.h"
+#include "WarpMarkers.h"
 
 namespace lmms
 {
@@ -41,6 +43,22 @@ namespace gui
 class SampleClipView;
 
 } // namespace gui
+
+
+/*! Whether a clip's rate is set by the project or declared by the clip.
+ *
+ *  `FollowProject` is the default and the behaviour every project written
+ *  before #597 has: the clip's audio plays at its natural rate and the project
+ *  tempo only decides how many ticks that is. `SourceTempo` makes the clip a
+ *  **tempo leader**: it declares the tempo it was recorded at, and its content
+ *  is re-timed to the project grid (`projTempo / sourceTempo`), so one bar of
+ *  its music occupies one bar of the project whatever the project tempo is.
+ */
+enum class WarpTempoMode
+{
+	FollowProject = 0,
+	SourceTempo = 1,
+};
 
 
 class SampleClip : public Clip
@@ -97,6 +115,45 @@ public:
 	f_cnt_t sourceFrameAt(TimePos timelinePos) const override;
 	TimePos timelinePosAt(f_cnt_t sourceFrame) const override;
 
+	/*! The clip's own rate: source frames per project tick (#597).
+	 *
+	 *  For a `FollowProject` clip this is exactly `Engine::framesPerTick()`, so
+	 *  the mapping is the pre-warp one bit for bit. For a `SourceTempo` leader
+	 *  it is scaled by `projectTempo / sourceTempo`, which is what makes one bar
+	 *  of the clip's own music occupy one bar of the project.
+	 */
+	float clipFramesPerTick() const;
+
+	//! The clip's warp map. Empty means "no warp": the linear map is the answer.
+	const WarpMarkers& warpMarkers() const { return m_warp; }
+
+	/*! Authors the marker set (control thread). Returns false — leaving the
+	 *  previous set intact — for a set that is not strictly increasing in both
+	 *  coordinates, or one with more than `WarpMarkers::MaxMarkers` entries. */
+	bool setWarpMarkers(std::span<const WarpMarker> markers);
+	void clearWarpMarkers();
+
+	WarpTempoMode warpTempoMode() const { return m_tempoMode; }
+	void setWarpTempoMode(WarpTempoMode mode);
+
+	//! The tempo the clip was recorded at, in BPM; only read in `SourceTempo`.
+	float sourceTempo() const { return m_sourceTempo; }
+	void setSourceTempo(float bpm);
+
+	/*! The ticks the window `window` spans on the timeline under this clip's
+	 *  mapping. Equals the pre-warp `window.length() / framesPerTick()` for a
+	 *  clip with no markers and no source tempo, which is why `sampleLength()`
+	 *  is unchanged for every existing project. */
+	int windowTicksFor(const SampleWindow& window) const;
+
+	/*! True while this clip's playback is the pre-warp linear one: no markers
+	 *  and the default (project-following) tempo. SamplePlayHandle uses it to
+	 *  keep the historical length arithmetic bit for bit. */
+	bool rendersLinearly() const
+	{
+		return m_warp.empty() && m_tempoMode == WarpTempoMode::FollowProject;
+	}
+
 	void setStartTimeOffset(const TimePos& startTimeOffset) override;
 	gui::ClipView * createView( gui::TrackView * _tv ) override;
 
@@ -126,6 +183,15 @@ private:
 	//! never by the playback path - and mirrored into Sample's render-time frame
 	//! fields so drawing and Sample::render see it.
 	SampleWindow m_window;
+	//! The warp map (#597): markers pinning source frames to clip-relative
+	//! ticks. Empty for every project written before #597, and an empty map is
+	//! what makes the mapping the linear one (§2.4). A fixed-capacity value
+	//! type, so reading it on the audio thread allocates nothing.
+	WarpMarkers m_warp;
+	//! Follow the project tempo (default), or lead it with `m_sourceTempo`.
+	WarpTempoMode m_tempoMode = WarpTempoMode::FollowProject;
+	//! The clip's declared source tempo in BPM; only read in `SourceTempo`.
+	float m_sourceTempo = 0.0f;
 	BoolModel m_recordModel;
 	bool m_isPlaying;
 	int m_startFrameOffset;

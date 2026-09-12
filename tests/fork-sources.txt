@@ -43,6 +43,16 @@
 #     tests/all-sources.txt by default; add it to the awk pattern above only if it must carry the
 #     fork ratchets too, and then re-run this command.
 #
+#     Merged 2026-09-12 (integration wave 3C). The three post-alpha/warp test sources
+#     (ClipWarpPersistenceTest, WarpMarkersTest, SampleClipWarpTest) arrived registered HERE,
+#     where this file's own command cannot produce them: the awk allow-list above does not admit
+#     them and none of the three carries a fork-ratchet baseline, so admitting them would widen
+#     the fork ratchets for no measured reason. They are MOVED to their home,
+#     tests/all-sources.txt - whose own command produces all three, and which the paragraph above
+#     names as the default for a new fork test source. This is the same "put the entry where its
+#     home actually is" move post-alpha/stem-export's tool needed at wave 3A.
+#     include/WarpMarkers.h stays here: it is fork-NEW product code and the command derives it.
+#
 #     Merged 2026-09-12 (integration wave 3A). The two clip-lane entries arrived on the
 #     integration side of this merge and were hand-added there (their lane's own comment says
 #     so); the gate-hygiene side, branched before that lane landed, could not produce them. They
@@ -176,6 +186,7 @@ include/StemSeparation/StemTypes.h
 include/StemSplitController.h
 include/TrackRecorder.h
 include/VcaGroup.h
+include/WarpMarkers.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
 plugins/ClapEffect/ClapEffect.cpp

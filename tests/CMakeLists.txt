@@ -14,6 +14,7 @@ set(LMMS_TESTS
 	src/core/AutomatableModelTest.cpp
 	src/core/AutomationModesTest.cpp
 	src/core/ClipSerialisationTest.cpp
+	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/DataFileFormatTest.cpp
@@ -60,8 +61,10 @@ set(LMMS_TESTS
 	src/core/StemExportTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
+	src/core/WarpMarkersTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
+	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
 )
 
