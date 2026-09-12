@@ -189,3 +189,15 @@ src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 
+# ---- Agent control surface: the LV2 half of the device catalogue ----
+# Lane post-alpha/lv2-catalogue off post-alpha/cmd-plugins. LV2 devices are
+# enumerated through the LV2 host module's own discovery path
+# (SubPluginFeatures::listSubPluginKeys) into plugin.list, and loadable through
+# plugin.load. The extended product sources are already listed above under the
+# cmd-plugins entry (ControlDeviceSupport.{h,cpp}, ControlDeviceCatalogue.cpp,
+# ControlCommandsPlugin.cpp); the entries below are what this lane adds - the
+# hosted-format (LADSPA/LV2) catalogue + instantiation split out of
+# ControlDeviceSupport.cpp so no file crosses the line ratchet, and the
+# in-process catalogue test.
+src/core/ControlDeviceHosted.cpp
+tests/src/core/ControlDeviceCatalogueTest.cpp

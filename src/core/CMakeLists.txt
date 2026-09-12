@@ -51,6 +51,7 @@ set(LMMS_SRCS
 	core/ControlCommandsSurface.cpp
 	core/ControlCommandsTransport.cpp
 	core/ControlDeviceCatalogue.cpp
+	core/ControlDeviceHosted.cpp
 	core/ControlDeviceState.cpp
 	core/ControlDeviceSupport.cpp
 	core/ControlEditSupport.cpp

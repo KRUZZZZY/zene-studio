@@ -12,6 +12,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/ControlEditCommandsTest.cpp
+	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlRegistryTest.cpp
 	src/core/MathTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
@@ -92,7 +93,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# build tree to prove the Lua Instrument binding (spec G4). Plugin modules
 	# resolve LMMS core symbols from the host process at load time, so the test
 	# binary must export its symbols exactly like the lmms executable does.
-	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest")
+	# Tests that need the build tree's plugin modules (they resolve LMMS core
+	# symbols from the host process at load time, exactly like the lmms
+	# executable) get ENABLE_EXPORTS and the plugin directory. ScriptEngineTest
+	# does it for the Lua Instrument binding; ControlDeviceCatalogueTest does it
+	# so PluginFactory discovers lv2effect/lv2instrument and the LV2 half of the
+	# device catalogue is real rather than empty.
+	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
