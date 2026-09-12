@@ -1,0 +1,99 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-releaseprep/build/tests
+      Start  1: ArrayVectorTest
+      Start  2: AudioBufferTest
+ 1/47 Test  #1: ArrayVectorTest ..................   Passed    0.02 sec
+      Start  3: AudioBusHandleTest
+ 2/47 Test  #2: AudioBufferTest ..................   Passed    0.03 sec
+      Start  4: AudioBusTest
+ 3/47 Test  #3: AudioBusHandleTest ...............   Passed    1.38 sec
+      Start  5: AudioPortsModelTest
+ 4/47 Test  #4: AudioBusTest .....................   Passed    1.38 sec
+      Start  6: AudioPortsTest
+ 5/47 Test  #5: AudioPortsModelTest ..............   Passed    1.35 sec
+      Start  7: AutomatableModelTest
+ 6/47 Test  #6: AudioPortsTest ...................   Passed    1.38 sec
+      Start  8: LoudnessReportTest
+ 7/47 Test  #8: LoudnessReportTest ...............   Passed    1.32 sec
+      Start  9: ClipSerialisationTest
+ 8/47 Test  #7: AutomatableModelTest .............   Passed    1.39 sec
+      Start 10: LufsMeterTest
+ 9/47 Test  #9: ClipSerialisationTest ............   Passed    1.41 sec
+      Start 11: CrashReporterTest
+10/47 Test #10: LufsMeterTest ....................   Passed    1.98 sec
+      Start 12: AutomationModesTest
+11/47 Test #11: CrashReporterTest ................   Passed    0.67 sec
+      Start 13: MathTest
+12/47 Test #13: MathTest .........................   Passed    0.02 sec
+      Start 14: MidiLearnTest
+13/47 Test #12: AutomationModesTest ..............   Passed    1.38 sec
+      Start 15: MidiLearnThreadTest
+14/47 Test #14: MidiLearnTest ....................   Passed    1.59 sec
+      Start 16: MidiProbabilityPersistenceTest
+15/47 Test #16: MidiProbabilityPersistenceTest ...   Passed    0.03 sec
+      Start 17: MixerRoutingBackwardCompatTest
+16/47 Test #15: MidiLearnThreadTest ..............   Passed    1.44 sec
+      Start 18: MultiTrackRecorderTest
+17/47 Test #18: MultiTrackRecorderTest ...........   Passed    0.02 sec
+      Start 19: NoteRandomTest
+18/47 Test #19: NoteRandomTest ...................   Passed    0.02 sec
+      Start 20: NoteTransformTest
+19/47 Test #20: NoteTransformTest ................   Passed    0.03 sec
+      Start 21: PluginAudioPortsTest
+20/47 Test #17: MixerRoutingBackwardCompatTest ...   Passed    1.39 sec
+      Start 22: PluginScanCacheTest
+21/47 Test #22: PluginScanCacheTest ..............   Passed    0.08 sec
+      Start 23: ProjectRecoveryTest
+22/47 Test #23: ProjectRecoveryTest ..............   Passed    0.03 sec
+      Start 24: ProjectVersionTest
+23/47 Test #24: ProjectVersionTest ...............   Passed    0.02 sec
+      Start 25: RecordRingBufferTest
+24/47 Test #25: RecordRingBufferTest .............   Passed    0.03 sec
+      Start 26: RelativePathsTest
+25/47 Test #26: RelativePathsTest ................   Passed    0.03 sec
+      Start 27: RemotePluginAudioPortsTest
+26/47 Test #21: PluginAudioPortsTest .............   Passed    1.41 sec
+      Start 28: RemotePluginClientE2ETest
+27/47 Test #27: RemotePluginAudioPortsTest .......   Passed    2.02 sec
+      Start 29: RenderJobQueueTest
+28/47 Test #29: RenderJobQueueTest ...............   Passed    0.15 sec
+      Start 30: RoutingGraphTest
+29/47 Test #30: RoutingGraphTest .................   Passed    0.02 sec
+      Start 31: PdcMixerTest
+30/47 Test #28: RemotePluginClientE2ETest ........   Passed    1.54 sec
+      Start 32: ScriptBindingsTest
+31/47 Test #31: PdcMixerTest .....................   Passed    1.46 sec
+      Start 33: ScriptEngineTest
+32/47 Test #32: ScriptBindingsTest ...............   Passed    1.39 sec
+      Start 34: ScriptStabilisationTest
+33/47 Test #33: ScriptEngineTest .................   Passed    1.49 sec
+      Start 35: SlideNotesTest
+34/47 Test #35: SlideNotesTest ...................   Passed    0.03 sec
+      Start 36: StemExportTest
+35/47 Test #34: ScriptStabilisationTest ..........   Passed    1.40 sec
+      Start 37: TimelineTest
+36/47 Test #37: TimelineTest .....................   Passed    1.35 sec
+      Start 38: TwoTrackRecordingHarness
+37/47 Test #36: StemExportTest ...................   Passed    2.21 sec
+      Start 39: MidiLearnGuiTest
+38/47 Test #38: TwoTrackRecordingHarness .........   Passed    2.03 sec
+      Start 40: AutomationTrackTest
+39/47 Test #39: MidiLearnGuiTest .................   Passed    1.44 sec
+      Start 41: SampleClipWindowTest
+40/47 Test #40: AutomationTrackTest ..............   Passed    1.38 sec
+      Start 42: PluginPortsMigrationTest
+41/47 Test #41: SampleClipWindowTest .............   Passed    1.91 sec
+      Start 43: ClapBusMapTest
+42/47 Test #43: ClapBusMapTest ...................   Passed    0.01 sec
+      Start 44: ClapHostTest
+43/47 Test #44: ClapHostTest .....................   Passed    0.01 sec
+      Start 45: ClapEffectIntegrationTest
+44/47 Test #45: ClapEffectIntegrationTest ........   Passed    1.35 sec
+      Start 46: ZynSeparateProcessTest
+45/47 Test #46: ZynSeparateProcessTest ...........   Passed    1.98 sec
+      Start 47: AudioPluginTest
+46/47 Test #42: PluginPortsMigrationTest .........   Passed    4.30 sec
+47/47 Test #47: AudioPluginTest ..................   Passed    1.37 sec
+
+100% tests passed, 0 tests failed out of 47
+
+Total Test time (real) =  24.84 sec

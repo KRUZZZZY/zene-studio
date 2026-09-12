@@ -1,5 +1,5 @@
-name: Alpha feedback (v0.1.0-alpha)
-description: Report a bug, a crash, or something confusing in the v0.1.0-alpha build
+name: Alpha feedback (v0.2.0-alpha)
+description: Report a bug, a crash, or something confusing in the v0.2.0-alpha build
 title: "[alpha] "
 labels: ["alpha-feedback"]
 body:
@@ -10,7 +10,9 @@ body:
         without them we usually cannot reproduce the problem.
 
         **This build writes no log file.** There is nothing to attach from a log path: start the
-        app from a terminal and paste what it prints.
+        app from a terminal and paste what it prints. The one exception is a **crash**: the crash
+        reporter writes `<your working dir>/crash-reports/zene-crash-report.txt` and offers it at
+        the next start — attach that file if you have one.
 
         **Check the known-limitations page first:**
         https://github.com/KRUZZZZY/zene-studio/blob/main/docs/KNOWN-LIMITATIONS.md
@@ -22,8 +24,9 @@ body:
       label: Build
       description: |
         Which file did you download, and what does Help > About (or --version) say? A package from
-        the release tag reports 0.1.0-alpha; an earlier CI snapshot reports 1.3.0-alpha.
-      placeholder: "e.g. Linux AppImage x86_64, 0.1.0-alpha"
+        the release tag reports 0.2.0-alpha; a package built from an untagged commit reports the last
+        tag plus the commit count and hash (for example 0.1.0-alpha.123+34c1f4f).
+      placeholder: "e.g. Linux AppImage x86_64, 0.2.0-alpha"
     validations:
       required: true
 

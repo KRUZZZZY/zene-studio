@@ -1,0 +1,8 @@
+Configuring ZENE
+--------------------------
+* Project version             : 0.2.0-alpha
+*   Major version             : 0
+*   Minor version             : 2
+*   Release version           : 0
+*   Stage version             : alpha
+*   Build version             : 

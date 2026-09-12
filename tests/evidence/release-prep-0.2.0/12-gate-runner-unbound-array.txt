@@ -1,0 +1,8 @@
+--- BEFORE the fix: the file's own declaration lines (61-62) verbatim ---
+build/gate-logs/repro-file-before.sh: line 5: SKIPPED: unbound variable
+--- AFTER the fix: the same lines, now 'declare -a X=()' (66-67) ---
+no skips
+row=1|ctest|PASS
+--- AFTER, with one gate skipped (the path that was masked) ---
+skipped: 1 of 1 gates did not run
+skiprow=2|coverage|why

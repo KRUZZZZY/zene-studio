@@ -1,0 +1,21 @@
+================ SUMMARY ================
+gate   name                     result
+1      ctest                    PASS
+2      coverage                 SKIP
+3      no-tautology             PASS
+4      complexity               PASS
+5      mutation                 SKIP
+6      upstream-regression      FAIL
+7      file-length              PASS
+8      duplication              PASS
+9      fork-sources             PASS
+
+scope: fork (tests/fork-sources.txt) + tools — the enforced scope, the same one CI's
+       static-gates job runs. The WHOLE-TREE scope (gates 4/7/8 --scope all) was NOT
+       measured by this run; use --whole-tree for it (tests/QA-GATES.md, 'Scope policy').
+
+skipped: 2 of 9 gates did not run
+  gate 2 (coverage): --with-coverage was not passed — to run it: pass --with-coverage
+  gate 5 (mutation): --no-mutation was passed — to run it: drop --no-mutation
+
+RESULT: FAIL — see the failing gate above

@@ -132,6 +132,12 @@ jobs:
         # from, and the plugin module the option implies is looked up in the build
         # tree. v0.1.0-alpha passed every other step with both hosts skipped.
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
+      - name: Release version guard (the version, the documents and the tag must agree)
+        # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
+        # This one fails when the version this tree declares disagrees with the release notes and
+        # the README that name it, or when a tag build's ref is not v<version> — the two ways a
+        # release ships a version string no document (or no artefact) agrees with.
+        run: bash tests/release-version-gate.sh
       - name: Package
         run: |
           cmake --build build --target package
@@ -257,6 +263,12 @@ jobs:
         # from, and the plugin module the option implies is looked up in the build
         # tree. v0.1.0-alpha passed every other step with both hosts skipped.
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
+      - name: Release version guard (the version, the documents and the tag must agree)
+        # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
+        # This one fails when the version this tree declares disagrees with the release notes and
+        # the README that name it, or when a tag build's ref is not v<version> — the two ways a
+        # release ships a version string no document (or no artefact) agrees with.
+        run: bash tests/release-version-gate.sh
       - name: Package
         run: |
           cmake --build build --target package
@@ -393,6 +405,12 @@ jobs:
         # from, and the plugin module the option implies is looked up in the build
         # tree. v0.1.0-alpha passed every other step with both hosts skipped.
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
+      - name: Release version guard (the version, the documents and the tag must agree)
+        # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
+        # This one fails when the version this tree declares disagrees with the release notes and
+        # the README that name it, or when a tag build's ref is not v<version> — the two ways a
+        # release ships a version string no document (or no artefact) agrees with.
+        run: bash tests/release-version-gate.sh
       - name: Package
         run: |
           cmake --build build --target package
@@ -513,6 +531,12 @@ jobs:
         # from, and the plugin module the option implies is looked up in the build
         # tree. v0.1.0-alpha passed every other step with both hosts skipped.
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
+      - name: Release version guard (the version, the documents and the tag must agree)
+        # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
+        # This one fails when the version this tree declares disagrees with the release notes and
+        # the README that name it, or when a tag build's ref is not v<version> — the two ways a
+        # release ships a version string no document (or no artefact) agrees with.
+        run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
@@ -678,6 +702,13 @@ jobs:
         # tree. v0.1.0-alpha passed every other step with both hosts skipped.
         shell: bash
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
+      - name: Release version guard (the version, the documents and the tag must agree)
+        # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
+        # This one fails when the version this tree declares disagrees with the release notes and
+        # the README that name it, or when a tag build's ref is not v<version> — the two ways a
+        # release ships a version string no document (or no artefact) agrees with.
+        shell: bash
+        run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts
@@ -780,6 +811,12 @@ jobs:
         # from, and the plugin module the option implies is looked up in the build
         # tree. v0.1.0-alpha passed every other step with both hosts skipped.
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
+      - name: Release version guard (the version, the documents and the tag must agree)
+        # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
+        # This one fails when the version this tree declares disagrees with the release notes and
+        # the README that name it, or when a tag build's ref is not v<version> — the two ways a
+        # release ships a version string no document (or no artefact) agrees with.
+        run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
       - name: Upload artifacts

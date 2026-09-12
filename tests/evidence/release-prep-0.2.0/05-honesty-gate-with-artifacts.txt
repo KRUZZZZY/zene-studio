@@ -1,0 +1,16 @@
+=== release honesty: what the release documents vs what the build contains ===
+manifest : tests/advertised-features.tsv
+build    : build/lmmsversion.h  (generated header; the exact string the binary prints)
+artifacts: build
+
+  [PASS] vst3-hosting     ON matches ON; module build/plugins/libvst3effect.so
+  [FAIL] vst3-instrument-hosting WANT_VST3 says ON but no '*vst3instrument*.so/.dll/.dylib' exists under build: the module was never built
+         claim it must keep true: VST3 instrument hosting (one instrument per track, MIDI in to audio out) is in the release
+  [PASS] clap-hosting     ON matches ON; module build/plugins/libclapeffect.so
+  [PASS] session-view     OFF matches OFF
+  [PASS] wasm-sandbox     OFF,OFF matches OFF
+  [PASS] stem-separation  OFF matches OFF
+
+RESULT: FAIL — 1 of 6 documented feature(s) do not match this build
+Fix the build (provision the dependency; see .github/workflows/provision-plugin-hosting-deps.sh)
+or fix the documents, but do not ship this build with these documents.

@@ -462,7 +462,7 @@ if [ "$SELF_TEST_ONLY" -eq 1 ]; then
 else
 	banner "mutants: $SELECTED selected of $TOTAL candidates (seed $SEED)"
 fi
-declare -a ROWS
+declare -a ROWS=()
 killed=0 survived=0 invalid=0
 run_index=0
 

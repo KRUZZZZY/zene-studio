@@ -1,7 +1,8 @@
 # Releasing Zene Studio
 
-The runbook for publishing a release of Zene Studio. It documents the release that is happening
-now — **`v0.1.0-alpha`** — and the machinery behind it, so the next one is mechanical.
+The runbook for publishing a release of Zene Studio. It documents the machinery behind a release and the
+worked example of the one that actually shipped — **`v0.1.0-alpha`** — so the next one is mechanical. The
+0.2.0-alpha deltas are the section right after this one.
 
 ## The tag
 
@@ -22,6 +23,37 @@ reports `1.3.0-alpha...` instead — that string is build provenance, not a seco
 Pushing the tag triggers `.github/workflows/build.yml` — it runs on bare `push:` with no branch
 or tag filter. Its six job keys expand to **seven jobs**: `linux-x86_64`, `linux-arm64`,
 `macos-x86_64`, `macos-arm64`, `mingw64`, `msvc-x64`, `windows-arm64`.
+
+## 0.2.0-alpha — what changes in this runbook
+
+Everything above is the v0.1.0-alpha release *as it happened*, and it stays as the record. Four things
+differ for 0.2.0-alpha, and two of them are corrections to what the v0.1.0 text implies.
+
+**1. The version the build reports comes from the tag, not from `CMakeLists.txt`.**
+`cmake/modules/VersionInfo.cmake` runs `git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*'` at configure
+time and lets the result override the `VERSION_*` values whenever a tag is reachable. On the release commit,
+with the tag present, describe returns exactly `v0.2.0-alpha`, so the build reports **`0.2.0-alpha`**; on an
+untagged commit it reports `0.2.0-alpha.<commits-since-tag>+<hash>` (that is where the published alpha's
+`0.1.0-alpha.28+ccd07f4` strings came from — the string is build provenance, not a second product name).
+`CMakeLists.txt` now carries `VERSION_MINOR "2"`, which is the **fallback** used when git is unavailable or
+`-DFORCE_VERSION=internal` is passed, so a source tarball also reports 0.2.0-alpha. **Bump the version in
+`CMakeLists.txt` only as that fallback; the tag is what the release reports.**
+
+**2. The packages are `zene-0.2.0-alpha-*`.** The rename moved the package name from `lmms-*` to `zene-*`
+(`CPACK_PACKAGE_FILE_NAME = ${CMAKE_PROJECT_NAME}-${VERSION}-<platform>-<arch>`, generated as
+`zene-0.1.0-alpha.123+34c1f4f-linux-x86_64` for this base in `build/CPackConfig.cmake`), and the workflow's
+upload globs follow it. The `lmms-0.1.0-alpha-*` names in the commands below are the previous release's: read
+them as `zene-0.2.0-alpha-*`.
+
+**3. Every package job must pass the release-honesty guard before its package is worth publishing.**
+`bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` reads
+`tests/advertised-features.tsv` and fails when a feature the release documents as present is not explicitly
+ON in the build, when one it documents as absent is ON, or when the plug-in module a claim implies is missing
+from the build tree. It is a step in all six package jobs. A red guard means the documents and the artefacts
+disagree: stop, do not publish.
+
+**4. `if-no-files-found: error` is on every package-upload step.** A glob that matches nothing fails its job
+instead of uploading zero assets for that platform — the failure mode the v0.1.0-alpha release nearly shipped.
 
 ## Packages are artifacts first — a release only if you make one
 
@@ -78,38 +110,40 @@ gh run watch <run-id> --repo KRUZZZZY/zene-studio   # exits non-zero if the run 
 
 # 2. Download that run's artifacts.
 gh run download <run-id> --repo KRUZZZZY/zene-studio --dir dist
-find dist -type f -name 'lmms-*'                    # archive:false → one file per artifact
+find dist -type f -name 'zene-*'                    # archive:false → one file per artifact
 
 # 3. Smoke-test the Linux AppImage: run it headless and render a project (from the repo root).
-APP=dist/lmms-0.1.0-alpha-linux-x86_64.AppImage     # adjust to where step 2 put it
+APP=dist/zene-0.2.0-alpha-linux-x86_64.AppImage    # adjust to where step 2 put it
 chmod +x "$APP"
-QT_QPA_PLATFORM=offscreen "$APP" --version          # expect 0.1.0-alpha, not 1.3.0-alpha.*
-QT_QPA_PLATFORM=offscreen "$APP" render tests/emptyproject.mmp -o /tmp/zene-smoke.wav -f wav
-echo "EXIT=$?"; ls -l /tmp/zene-smoke.wav           # expect EXIT=0 and a non-empty WAV
+QT_QPA_PLATFORM=offscreen "$APP" --version          # expect "Zene Studio 0.2.0-alpha"
+QT_QPA_PLATFORM=offscreen "$APP" render tests/emptyproject.mmp -o build/zene-smoke.wav -f wav
+echo "EXIT=$?"; ls -l build/zene-smoke.wav           # expect EXIT=0 and a non-empty WAV
 
 # 4. SHA-256 every asset. The release notes promise a digest per file, so this is required.
-cd dist && sha256sum * > ../digests.txt && cd .. && cat digests.txt
+cd dist && sha256sum * > ../build/digests.txt && cd .. && cat build/digests.txt
 
 # 5. Build the release body: the notes, then the digests. Do not edit the notes file itself.
-cat docs/RELEASE-NOTES-v0.1.0-alpha.md > /tmp/zene-body.md
-{ echo; echo "## SHA-256 digests"; echo; echo '```'; cat digests.txt; echo '```'; } >> /tmp/zene-body.md
+cat docs/RELEASE-NOTES-v0.2.0-alpha.md > build/zene-body.md
+{ echo; echo "## SHA-256 digests"; echo; echo '```'; cat build/digests.txt; echo '```'; } >> build/zene-body.md
 
 # 6. Publish, listing only the assets that were actually downloaded.
-gh release create v0.1.0-alpha --repo KRUZZZZY/zene-studio \
-  --title "Zene Studio v0.1.0-alpha" \
-  --notes-file /tmp/zene-body.md \
-  dist/lmms-0.1.0-alpha-linux-x86_64.AppImage \
-  dist/lmms-0.1.0-alpha-linux-aarch64.AppImage \
-  dist/lmms-0.1.0-alpha-mac*arm64*.dmg \
-  dist/lmms-0.1.0-alpha-mac*x86_64*.dmg \
-  dist/lmms-0.1.0-alpha-msvc2022-win64.exe \
-  dist/lmms-0.1.0-alpha-mingw-win64.exe \
-  dist/lmms-0.1.0-alpha-clangarm64-arm64.exe
+gh release create v0.2.0-alpha --repo KRUZZZZY/zene-studio \
+  --title "Zene Studio v0.2.0-alpha" \
+  --notes-file build/zene-body.md \
+  dist/zene-0.2.0-alpha-linux-x86_64.AppImage \
+  dist/zene-0.2.0-alpha-linux-aarch64.AppImage \
+  dist/zene-0.2.0-alpha-mac*arm64*.dmg \
+  dist/zene-0.2.0-alpha-mac*x86_64*.dmg \
+  dist/zene-0.2.0-alpha-msvc2022-win64.exe \
+  dist/zene-0.2.0-alpha-mingw-win64.exe \
+  dist/zene-0.2.0-alpha-clangarm64-arm64.exe
 ```
 
-The `v0.1.0-alpha` tag already exists, so `gh release create` attaches to it rather than making a
-new one. The asset names above are the ones [RELEASE-NOTES-v0.1.0-alpha.md](RELEASE-NOTES-v0.1.0-alpha.md)
-advertises — if a job was skipped or failed, drop its line.
+The `v0.2.0-alpha` tag must **already exist** (the owner creates it): `gh release create` attaches to an
+existing tag rather than making one. If the tag is missing, stop — publishing would produce a release whose
+version and assets come from different commits. The asset names above are the previous release's platform
+suffixes with the new prefix and version (`zene-0.2.0-alpha-*`); confirm them against the actual downloaded
+artefact list, and if a job was skipped or failed, drop its line.
 
 ## Hazards
 

@@ -1,0 +1,14 @@
+changed file                                             verdict
+.github/ISSUE_TEMPLATE/alpha-feedback.yml                CI config (allowed, non-runtime)
+.github/ISSUE_TEMPLATE/bug_report.yml                    CI config (allowed, non-runtime)
+.github/ISSUE_TEMPLATE/feature_request.yml               CI config (allowed, non-runtime)
+.github/workflows/build.yml                              CI config (allowed, non-runtime)
+.github/workflows/checks.yml                             CI config (allowed, non-runtime)
+.github/workflows/deps-ubuntu-24.04-gcc.txt              CI config (allowed, non-runtime)
+.github/workflows/provision-plugin-hosting-deps.sh       CI config (allowed, non-runtime)
+.github/workflows/quality-gates.yml                      CI config (allowed, non-runtime)
+.gitignore                                               build/config (allowed)
+.yamllint                                                declared divergence -> wave R rename (018d2041f): the inline comment on the line-length rule still read 'be conforming to LMMS coding rules' -> 'Zene Studio coding rules'. Comment only; no rule, value or threshold changed.
+Brewfile                                                 declared divergence -> #609 CI: brew "mda-lv2" so the macOS runners have the LV2 bundle PluginPortsMigrationTest renders by URI (3d87d33ca)
+395:tools/ncpu-shim.c                                        VIOLATION: undeclared change to upstream-inherited code
+401:FAIL: Gate 6 violation(s) above — either revert the change, or declare it in

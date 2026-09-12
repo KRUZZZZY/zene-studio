@@ -58,8 +58,13 @@ for arg in "$@"; do
 	esac
 done
 
-declare -a RESULTS
-declare -a SKIPPED
+# NOTE: the `=()` on both arrays is load-bearing, not style. An array that is only *declared*
+# (`declare -a RESULTS`) is UNSET, and under `set -u` an expansion of it dies with
+# "<name>: unbound variable". `SKIPPED` is empty on precisely the best possible run — the one where
+# every gate executed — so the summary block used to fail exactly when it had nothing to skip, and
+# was masked on every run where a gate *did* skip. Same idiom as tests/fork-sources-gate.sh.
+declare -a RESULTS=()
+declare -a SKIPPED=()
 fail=0
 
 banner() { printf '\n================ Gate %s: %s ================\n' "$1" "$2"; }
