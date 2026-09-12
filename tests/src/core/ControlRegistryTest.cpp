@@ -210,7 +210,7 @@ private slots:
 		cmd.id = QStringLiteral("test.needs_human");
 		cmd.group = QStringLiteral("test");
 		cmd.verb = QStringLiteral("needs_human");
-		cmd.requiresDecl = {QStringLiteral("human")};
+		cmd.requiresDecl = QStringList{QStringLiteral("human")};
 		cmd.handler = [](const QJsonObject&) { return ControlResult::success(); };
 		registry->registerCommand(cmd);
 
@@ -229,7 +229,7 @@ private slots:
 		cmd.id = QStringLiteral("test.needs_display");
 		cmd.group = QStringLiteral("test");
 		cmd.verb = QStringLiteral("needs_display");
-		cmd.requiresDecl = {QStringLiteral("display")};
+		cmd.requiresDecl = QStringList{QStringLiteral("display")};
 		cmd.handler = [](const QJsonObject&) { return ControlResult::success(QJsonObject{{QStringLiteral("ran"), true}}); };
 		registry->registerCommand(cmd);
 

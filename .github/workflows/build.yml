@@ -469,6 +469,11 @@ jobs:
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
+      # This job runs on a Linux runner but builds a WINDOWS target, so the uname-based
+      # platform detection in tests/release-honesty-gate.sh would call it `linux` and demand
+      # the clap-hosting row that this job deliberately builds WITHOUT (-DWANT_CLAP=OFF) --
+      # a false failure on a job whose build is correct. Say what the target is instead.
+      RELEASE_HONESTY_PLATFORM: windows
     steps:
       - name: Configure git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -712,6 +717,10 @@ jobs:
         # from, and the plugin module the option implies is looked up in the build
         # tree. v0.1.0-alpha passed every other step with both hosts skipped.
         shell: bash
+        env:
+          # msvc-x64 runs on a Windows runner so uname already says windows; stated
+          # explicitly so the three Windows-target jobs are read the same way by eye.
+          RELEASE_HONESTY_PLATFORM: windows
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Release version guard (the version, the documents and the tag must agree)
         # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
@@ -759,6 +768,9 @@ jobs:
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
+      # Explicit for the same reason as mingw's: the platform the gate judges is the one
+      # this build TARGETS, not the one the runner happens to be.
+      RELEASE_HONESTY_PLATFORM: windows
     steps:
       - name: Check out
         uses: actions/checkout@v3

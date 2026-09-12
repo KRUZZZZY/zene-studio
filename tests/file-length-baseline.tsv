@@ -6,7 +6,7 @@ src/core/ScriptEngine.cpp	880
 plugins/ClapEffect/ClapHost.cpp	875
 plugins/Vst3Effect/Vst3Host.cpp	800
 src/wasm/WasmSandbox.cpp	597
+src/core/CrashReporter.cpp	564
 src/core/AudioPortsModel.cpp	549
-src/core/CrashReporter.cpp	549
 src/gui/PinConnector.cpp	529
 tests/src/tracks/SampleClipWindowTest.cpp	511

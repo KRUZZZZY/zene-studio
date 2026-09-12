@@ -199,9 +199,24 @@ unsigned long long programCounterFrom(void* context)
 // async-signal-safe list, but SYS_gettid is a direct kernel entry: no
 // allocation, no lock, no errno other than a thread-local write.  This is the
 // same call Breakpad and Crashpad make from their handlers.
+//
+// Darwin is the exception, and it is a deliberate one: it has no gettid and no
+// declared syscall() to reach one through, so the report carries 0 rather than
+// calling into pthread from a signal handler -- macos-arm64 and macos-x86_64
+// both failed this file with
+//   CrashReporter.cpp:204:43: error: no member named 'syscall' in the global
+//   namespace; did you mean 'sysconf'?
+// A tid from pthread_mach_thread_np(pthread_self()) is the obvious candidate and
+// is what Breakpad uses, but this box cannot compile Darwin code, so the release
+// does not depend on an API choice nobody here can test. The pc, the signal and
+// the backtrace are the report's payload; on macOS the tid field reads 0.
 unsigned long long currentThreadId()
 {
+#if defined(__APPLE__)
+	return 0;
+#else
 	return static_cast<unsigned long long>(::syscall(SYS_gettid));
+#endif
 }
 
 // ---- the signal handler ----
