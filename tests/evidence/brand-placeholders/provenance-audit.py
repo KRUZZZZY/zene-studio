@@ -155,7 +155,11 @@ ICON_DIRS = ["16x16", "16x16@2", "24x24", "24x24@2", "32x32", "32x32@2", "48x48"
              "64x64", "64x64@2", "128x128", "128x128@2", "256x256"]
 for d in ICON_DIRS:
     IDENTITY.append(f"cmake/linux/icons/{d}/apps/zene.png")
-    IDENTITY.append(f"cmake/linux/icons/{d}/mimetypes/application-x-lmms-project.png")
+    # Renamed 2026-09-12 from application-x-lmms-project.png so the raster icon name matches
+    # the declared MIME type application/x-zene-project at every size; the pixel bytes did not
+    # change with the rename.  Auditing a revision older than that rename finds the same file
+    # at .../application-x-lmms-project.png -- see docs/QDEBUG-CLASS-AND-MIME-RENAME.md.
+    IDENTITY.append(f"cmake/linux/icons/{d}/mimetypes/application-x-zene-project.png")
 
 
 def classify(path: str, upstream_path: str) -> str:

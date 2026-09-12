@@ -972,11 +972,13 @@ ADD_SUBDIRECTORY(cmake/install)
 # install headers
 
 IF(LMMS_BUILD_LINUX)
+	# The public header install root follows the product name: it was "include/lmms/"
+	# (the retired name) while every other install destination had already been renamed.
 	INSTALL(FILES ${LMMS_INCLUDES}
 		"${CMAKE_BINARY_DIR}/lmmsconfig.h"
 		"${CMAKE_BINARY_DIR}/lmmsversion.h"
 		"${CMAKE_SOURCE_DIR}/src/gui/embed.cpp"
-		DESTINATION "include/lmms/")
+		DESTINATION "include/${PROJECT_NAME}/")
 ENDIF(LMMS_BUILD_LINUX)
 
 #
@@ -989,7 +991,7 @@ ADD_CUSTOM_TARGET(distclean
 #
 # add tarball-target
 #
-SET(TMP "lmms-${VERSION}")
+SET(TMP "${CMAKE_PROJECT_NAME}-${VERSION}")
 ADD_CUSTOM_TARGET(dist
 			COMMAND make clean
 			COMMAND rm -rf "${TMP}"
@@ -997,7 +999,7 @@ ADD_CUSTOM_TARGET(dist
 			COMMAND cp CMakeLists.txt LICENSE.txt INSTALL.txt README.md "${TMP}"
 			COMMAND cp -r buildtools cmake data doc include plugins src "${TMP}"
 			COMMAND rm -rf `find "${TMP}" -name cmake_install.cmake` `find "${TMP}" -name Makefile` `find "${TMP}" -type d -name CMakeFiles` "${TMP}/CMakeCache.txt"
-			COMMAND tar cjf lmms-${VERSION}-src.tar.bz2 "${TMP}"
+			COMMAND tar cjf ${CMAKE_PROJECT_NAME}-${VERSION}-src.tar.bz2 "${TMP}"
 			COMMAND rm -rf "${TMP}")
 
 

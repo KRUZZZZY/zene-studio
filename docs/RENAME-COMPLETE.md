@@ -72,7 +72,7 @@ still in place as `docs/WAVE-R-RENAME.md` §4 describes.
 | written-file software tags (WAV/FLAC/OGG/MP3) + stem user agent | `src/core/audio/AudioFile*.cpp`, `src/core/StemModelStore.cpp`, `src/core/OnnxRuntimeStemSeparator.cpp` |
 | file-dialog filters, plugin type column + filter button, plugin-browser root, dialog titles | `src/gui/MainWindow.cpp`, `src/gui/modals/EffectSelectDialog.cpp`, `src/gui/PluginBrowser.cpp`, `src/gui/modals/ControllerConnectionDialog.cpp`, `src/core/Song.cpp` |
 | plugin descriptions shown in the browser | 11 plugin sources |
-| MIME: `application/x-zene-project`, clipboard `application/x-zene-*`, icon file | `cmake/linux/zene.desktop`, `cmake/linux/zene.xml`, `cmake/linux/icons/scalable/mimetypes/`, `include/Clipboard.h` |
+| MIME: `application/x-zene-project`, clipboard `application/x-zene-*`, icon files | `cmake/linux/zene.desktop`, `cmake/linux/zene.xml`, `cmake/linux/icons/*/mimetypes/` (**all 14 sizes** — the scalable SVG *and* the 13 raster PNGs, renamed 2026-09-12: see `docs/QDEBUG-CLASS-AND-MIME-RENAME.md`), `include/Clipboard.h` |
 | scripting API (`zene` / `--! zene-api`, legacy spellings kept working) | `src/core/ScriptEngine.cpp`, `src/core/ScriptBindings.cpp` |
 | built-in plugin logo resource key (`zene-plugin-logo`) | 29 call sites, the theme SVG, the tile PNG |
 
@@ -131,7 +131,7 @@ not in the unresolved set.
 | pattern | product tree (`src include plugins data cmake doc tools`) |
 |---|---|
 | `lmms-plugin-logo` | **0** |
-| `x-lmms` (MIME/clipboard) | **0** |
+| `x-lmms` (MIME/clipboard) | **0** (2026-09-12 — was **13**: the raster mimetype PNGs kept the upstream file name `application-x-lmms-project.png` while the declared type was already `application/x-zene-project`. Every one of them is a path, so this row's pattern did match them; the sweep's verdict was read past. See `docs/QDEBUG-CLASS-AND-MIME-RENAME.md`) |
 | `lmms_tile` | **0** |
 | `CarlaRack-LMMS` | **0** |
 | `"lmms"` client literal | **2 source files**, both deliberate read-both (`MidiJack.cpp` legacy config attribute, `ScriptBindings.cpp` Lua alias) |
