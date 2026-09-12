@@ -76,10 +76,11 @@ that matters).
 
 ### 1.3 Finding 1 — the sites changed, pre-fix and post-fix
 
-Five TUs needed the include. The four the audit named, plus `src/gui/embed.cpp` — the audit's
+Six translation units needed the include: the four the audit named, `src/gui/embed.cpp` — the audit's
 "one more candidate, flagged but not proven" (it is now proven: the emulation fails it at
 `embed.cpp:50:25` with the CI's error text, and adding the include clears it; the include is a
-no-op if the emulation was over-strict for it, which is the cheap side of the bet).
+no-op if the emulation was over-strict for it, which is the cheap side of the bet) — and
+`tests/src/wasm/WasmSandboxTest.cpp`, which this box cannot compile at all.
 
 | TU | `q*() <<` sites | pre-fix (emulation) | post-fix |
 |---|---|---|---|
@@ -90,12 +91,13 @@ no-op if the emulation was over-strict for it, which is the cheap side of the be
 | `src/gui/embed.cpp` | 50, 57 | `rc=1  embed.cpp:50:25: …` | rc=0 |
 | `tests/src/wasm/WasmSandboxTest.cpp` | 660 (`qInfo().noquote() <<`) | not in this box's build (WANT_WASM=OFF); fixed by inspection | not compilable here |
 
-Evidence: `03-prefix-sweep-class.log` (pre-fix, 84 TUs: **5 fail, 22 inconclusive, 79 clean**),
-`11-class-sweep.log` (post-fix), `01-selftest.log`. The 22 "inconclusive" pre-fix rows are build-tree
-artefacts of running the sweep before any build had run in this worktree — a generated
-`ui_about_dialog.h`, a `<name>.moc`, or (one case) a different incomplete type,
-`MidiClipView.cpp`'s `QSet<Track*>` — never counted as passes; the post-fix run is after the build,
-so nothing is inconclusive there.
+Evidence: `03-prefix-sweep-class.log` (pre-fix, 84 TUs: **5 fail, 22 inconclusive, 57 clean**),
+`11-class-sweep.log` (post-fix, 84 TUs: 0 fail, 1 inconclusive, 83 clean), `01-selftest.log`. The 22
+"inconclusive" pre-fix rows are build-tree artefacts of running the sweep before any build had run in
+this worktree — a generated `ui_about_dialog.h`, a `<name>.moc`, or (one case) a *different*
+incomplete type, `MidiClipView.cpp`'s `QSet<Track*>` — never counted as passes. The post-fix run is
+after the build, so its single inconclusive row is the same `QSet` side-effect of the shadow, not a
+missing artefact.
 
 The include is placed in the Qt include run in alphabetical position, with a three-line comment
 naming the mechanism, exactly as the ConfigManager fix did. It is compile-only: no behaviour, no
@@ -103,12 +105,13 @@ output, no ABI change.
 
 ### 1.4 Finding 1 — what was found already correct (not changed)
 
-* **79 of the 84** TUs in the class compiled clean under the emulation **before** the fix. The full
-  per-TU table is in `03-prefix-sweep-class.log`. That set includes every TU the audit cleared —
-  `tests/src/core/{ScriptEngineTest,StableTrackIdsTest,PluginScanCacheTest,PluginLogoResourceTest,
-  AudioBufferTest}.cpp` and `tests/src/plugins/PluginPortsMigrationTest.cpp` — and the ones the
-  project's own headers supply. In the post-fix run (`11-class-sweep.log`) **83 of the 84** are
-  clean and the 84th is the inconclusive row below.
+* **57 of the 84** TUs in the class compiled clean under the emulation **before** the fix (the other
+  22 rows of that run are the build-tree artefacts below, and 5 are the failures this commit fixes).
+  The full per-TU table is in `03-prefix-sweep-class.log`. That set includes every TU the audit
+  cleared — `tests/src/core/{ScriptEngineTest,StableTrackIdsTest,PluginScanCacheTest,
+  PluginLogoResourceTest,AudioBufferTest}.cpp` and `tests/src/plugins/PluginPortsMigrationTest.cpp` —
+  and the ones the project's own headers supply. In the post-fix run (`11-class-sweep.log`) **83 of
+  the 84** are clean and the 84th is the inconclusive row below.
 * **The only project header that supplies `QDebug` to other TUs is `include/PluginIssue.h`**
   (`#include <QDebug>` at line 28, for its `QDebug operator<<(QDebug, const PluginIssue&)`). That is
   the header the audit's "is not supplied it by one of the project's own headers" test turns on, and
@@ -119,8 +122,15 @@ output, no ABI change.
   needs wasmtime): its `qInfo().noquote() <<` at line 660 cannot be compiled here. It is fixed by
   inspection — one include, no behaviour — and the document says so instead of claiming a sweep
   verdict it does not have. Everything else under `tests/src/wasm/` is out of the class.
+* The 22 inconclusive pre-fix rows were: a generated `<name>.moc` (16 — the QtTest TUs),
+  `ui_about_dialog.h` (1, `MainWindow.cpp`), `ui_PatchesDialog.h` (4, `GigPlayer`/`Sf2Player` under
+  `plugins/` and their `tests/reference/` copies) and `MidiClipView.cpp`'s `QSet<Track*>` incomplete
+  type (1) — all "not a QDebug verdict", none counted as a pass. After the build ran, only the `QSet`
+  one remains, and it is a side-effect of the shadow: Qt6's `qdebug.h` transitively supplies `<QSet>`
+  for that file, so removing it makes `QSet<Track*>` incomplete. It is reported, not hidden, and it is
+  not a `QDebug` failure.
 * `tests/evidence/instrument-view-safety/qt-probe/probe-setwindowicon.cpp` streams with `<<` and
-  already includes `<QDebug>` (line 14).
+  already includes `<QDebug>` (line 14) — out of the class, nothing to change.
 
 ### 1.5 Ledger
 
