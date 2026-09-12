@@ -9,8 +9,10 @@ DSP — while keeping project files portable and the whole stack open source.
 
 ## Download
 
-**Zene Studio 0.1.0-alpha is the first public alpha** — [get it from the releases
-page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.1.0-alpha). Packages
+**Zene Studio 0.2.0-alpha is the current public alpha** — [get it from the releases
+page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.2.0-alpha) (the 0.2.0-alpha
+page appears when the release is published; until then the previous release is
+[v0.1.0-alpha](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.1.0-alpha)). Packages
 exist for Linux (x86_64 and aarch64, AppImage), macOS (Apple Silicon and Intel,
 `.dmg`) and Windows (x64 — two installers — and Windows on Arm), and only platforms
 whose build job is green have a package.
@@ -19,8 +21,10 @@ They are **unsigned**, so Windows SmartScreen and macOS Gatekeeper warn about an
 unknown developer; the release notes carry the one-time steps, and each file's
 SHA-256 digest is shown on the release page so you can check your download before
 running it. Read [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md) before you
-install: this alpha cannot host instrument plugins, cannot edit clips or take lanes,
-and hosts third-party plugins as **effects only**.
+install: this alpha is unfinished, VST3 **instrument** hosting is new and narrow
+(one instrument per track, proven only against the test instrument that ships in the
+source tree, and the plugin's own editor does not open), there are no clip-editing or
+take-lane tools, and **CLAP hosting is effects only**.
 
 ## What is Zene Studio
 
@@ -28,9 +32,13 @@ Zene Studio is an LMMS-derived digital audio workstation that combines:
 
 - **A modern multi-channel engine** — dynamic routing, sidechain sends, and
   parallel buses on an unbounded mixer.
-- **Native VST3 + CLAP effect hosting** — run modern VST3 and CLAP effects
-  alongside the built-in devices. Instrument hosting is **not** implemented yet:
-  the hosts are `Vst3Effect` and `ClapEffect`, effects only.
+- **Native VST3 hosting — effects and instruments** — run modern VST3 effects, and
+  load a VST3 **instrument** on a track: MIDI in, audio out. Instrument hosting is
+  new and narrow: one instrument per track, **no third-party instrument has been
+  tested by us** (the witness is the purpose-built test instrument that ships in the
+  source tree), the plugin's own editor does not open (parameters surface as the
+  host's generated grid), and there is no multi-out, no preset management and no
+  instrument latency compensation. **CLAP hosting is `ClapEffect` — effects only.**
 - **Two-track recording** (prototype) — capture two input channels into separate
   tracks. The capture path is hardware-verified; the surrounding workflow is not
   finished, so treat this as a prototype rather than a shipped feature.
