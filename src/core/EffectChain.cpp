@@ -208,9 +208,15 @@ void EffectChain::moveDown( Effect * _effect )
 {
 	if (_effect != m_effects.back())
 	{
+		// D5 (mixer concurrency audit): the swap changes the order of the
+		// vector a worker range-fors in processAudioBuffer(). Same idiom as
+		// appendEffect()/removeEffect()/clear() above: hold the change mutex
+		// so the reorder can only land between render periods.
+		Engine::audioEngine()->requestChangeInModel();
 		auto it = std::find(m_effects.begin(), m_effects.end(), _effect);
 		assert(it != m_effects.end());
 		std::swap(*std::next(it), *it);
+		Engine::audioEngine()->doneChangeInModel();
 	}
 }
 
@@ -221,9 +227,12 @@ void EffectChain::moveUp( Effect * _effect )
 {
 	if (_effect != m_effects.front())
 	{
+		// D5: see moveDown() above.
+		Engine::audioEngine()->requestChangeInModel();
 		auto it = std::find(m_effects.begin(), m_effects.end(), _effect);
 		assert(it != m_effects.end());
 		std::swap(*std::prev(it), *it);
+		Engine::audioEngine()->doneChangeInModel();
 	}
 }
 

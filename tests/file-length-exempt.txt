@@ -30,13 +30,19 @@
 # absence: the gate and tests/QA-GATES.md both named it for weeks while it did not exist, and
 # `--check` passed throughout.
 #
-# Current exemptions: NONE on this branch. Every file over 500 lines in every scope today is a
-# hand-written source that is grandfathered in its scope's baseline
-# (tests/file-length-baseline*.tsv) with the growth decision recorded one file at a time, or is
-# this fork's own code measured by the same rule as everything else. It is empty of entries on
-# purpose, not by omission.
+# Current exemptions: ONE - tests/src/core/MixerConcurrencyTest.cpp, below, with the reason the
+# lane that wrote the file gave for it. Merge train 3A #6 reconciled the file: the header above
+# is the gate-hygiene version (this contract), and the single entry is the mixer-concurrency
+# lane's own line, which is exactly the union its report predicted and this file's rules ask
+# for. Every other file over 500 lines in every scope is a hand-written source grandfathered in
+# its scope's baseline (tests/file-length-baseline*.tsv) with the growth decision recorded one
+# file at a time. Nothing else may be listed here to silence growth - see the contract above.
 #
-# Reconcile, do not duplicate: a sibling lane (mixer concurrency) adds the first entry to this
-# file - a 677-line tests/src/core/MixerConcurrencyTest.cpp - with its own reason in its own
-# commit, which is exactly what the contract above asks for. Where the two versions of this file
-# meet, the union is this header plus that entry line.
+# Reconcile, do not duplicate. A sibling lane (mixer concurrency) created its own copy of this
+# file to exempt a 677-line tests/src/core/MixerConcurrencyTest.cpp with its own reason in its
+# own commit, which is what the contract above asks for. The two versions met at integration on
+# 2026-09-12 (merge train 3A #6) and the union is this header plus that entry line, which is
+# what this file now is: the ONLY change the merge made to the lane's line is its position, and
+# the reason text is the lane's, verbatim.
+
+tests/src/core/MixerConcurrencyTest.cpp	Hand-written QTest file, 8 slots, one per graded concurrency/ordering defect (D1, D2(ii), D2(iii), D3, D4, D5, D6 + the "topology changes wait for the render period" slot). The lines are 441 code / 164 comment / 72 blank: the comments document why each scenario reproduces the defect (notably the D2(ii) reachability constraint and the render-period contract the tests must honour). Splitting it into two binaries would separate the prose from the code it explains and would invalidate the ThreadSanitizer before/after run names cited in docs/MIXER-CONCURRENCY-FIXES.md. Delete this line and Gate 7 will report the file loudly, which is the intended behaviour if a reviewer disagrees.

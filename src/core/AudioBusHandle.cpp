@@ -137,20 +137,31 @@ void AudioBusHandle::doProcessing()
 	m_bus.silenceAllChannels();
 
 	//qDebug( "Playhandles: %d", m_playHandles.size() );
-	for (PlayHandle* ph : m_playHandles) // now we mix all playhandle buffers into our internal buffer
 	{
-		if (auto phBuffer = ph->buffer(); phBuffer.data() != nullptr)
+		// D6 (mixer concurrency audit): addPlayHandle()/removePlayHandle()
+		// append to and erase from this QList under m_playHandleLock, and the
+		// lock is taken here for the same range: without it a reallocation or
+		// an erase under a live iteration is a use-after-free (the audited
+		// trace is a live note-on from the MIDI thread, which reaches
+		// AudioEngine::addPlayHandle -> AudioBusHandle::addPlayHandle while
+		// this loop is running on a worker). The critical section is a
+		// pointer-array scan plus the list's own append/erase.
+		const QMutexLocker playHandleLockGuard(&m_playHandleLock);
+		for (PlayHandle* ph : m_playHandles) // now we mix all playhandle buffers into our internal buffer
 		{
-			assert(phBuffer.size() == fpp);
-			if (ph->usesBuffer()
-				&& (ph->type() == PlayHandle::Type::NotePlayHandle
-					|| !MixHelpers::isSilent(phBuffer.data(), phBuffer.size())))
+			if (auto phBuffer = ph->buffer(); phBuffer.data() != nullptr)
 			{
-				m_bufferUsage = true;
-				MixHelpers::add(m_buffer.data(), phBuffer.data(), fpp);
+				assert(phBuffer.size() == fpp);
+				if (ph->usesBuffer()
+					&& (ph->type() == PlayHandle::Type::NotePlayHandle
+						|| !MixHelpers::isSilent(phBuffer.data(), phBuffer.size())))
+				{
+					m_bufferUsage = true;
+					MixHelpers::add(m_buffer.data(), phBuffer.data(), fpp);
+				}
+				ph->releaseBuffer(); 	// gets rid of playhandle's buffer and sets
+										// pointer to null, so if it doesn't get re-acquired we know to skip it next time
 			}
-			ph->releaseBuffer(); 	// gets rid of playhandle's buffer and sets
-									// pointer to null, so if it doesn't get re-acquired we know to skip it next time
 		}
 	}
 

@@ -21,6 +21,7 @@ set(LMMS_TESTS
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
+	src/core/MixerConcurrencyTest.cpp
 	src/core/MixerRoutingBackwardCompatTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/NoteRandomTest.cpp
