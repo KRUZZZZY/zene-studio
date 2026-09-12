@@ -1,0 +1,51 @@
+# Upstream-inherited production files this repo is allowed to change, one per line:
+#   <repo-relative path><TAB><reason>
+# The reason is MANDATORY — tests/no-upstream-regression-gate.sh fails (exit 2) on an
+# entry with an empty reason, and prints every reason it honours.
+#
+# POLICY (2026-09-11). Zene Studio is a product, not an upstream patch series. A blanket
+# ban on touching inherited code would forbid exactly the work a DAW needs — you cannot
+# implement plugin delay compensation without changing the mixer. What this file forbids
+# is *undeclared* divergence: a behavioural change to an inherited file that nobody wrote
+# down. Every entry here is deliberate and reviewed; anything NOT listed is still a
+# violation. Keep each change minimal and local, and ship a test beside it (the gate's
+# rule: fork-NEW fixes need a regression test in the same change).
+#
+# Reasons reference the task/commit that made the change, so a future rebase onto upstream
+# can see what this repo owes. When upstream's copy of a file is taken wholesale, delete
+# its entry here — an entry that no longer differs from the base is dead weight.
+#
+# (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
+# It never held a line, and Gate 6 was red from the first behavioural change.)
+
+Brewfile	#609 CI: brew "mda-lv2" so the macOS runners have the LV2 bundle PluginPortsMigrationTest renders by URI (3d87d33ca)
+include/AudioBuffer.h	#608 memory correctness: the channel access buffer (pointer table) is process-local, never allocated from a shared memory resource (746f6bd0e)
+include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's compensation graph
+include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
+include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
+include/Effect.h	#605 PDC: latency accessor on the effect interface
+include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+src/core/AudioBuffer.cpp	#608 memory correctness: access buffer always from the default resource; allocationSize() no longer reserves it in the shared region (746f6bd0e)
+src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment point (9e12a68f5)
+src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
+src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
+src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)
+src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+include/RemotePlugin.h	#589 planar-ports migration: sole ports-taking ctor, no-arg process(), planar updateAudioBuffer() layout contract
+include/RemotePluginBase.h	#589 planar-ports migration: single-channel count ids retired in place (kept numeric to refuse a stale pre-#589 client loudly)
+include/RemotePluginClient.h	#589 planar-ports migration: client process() over the host's planar shared block (const float* / float*)
+src/core/RemotePlugin.cpp	#589 planar-ports migration: ports allocate the shared block; counts owned by the ports model; removed count ids refused loudly
+plugins/VstBase/VstPlugin.h	#589 planar-ports migration: VstPlugin takes the ports controller instead of configuring split channels
+plugins/VstBase/VstPlugin.cpp	#589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings
+plugins/VstBase/RemoteVstPlugin.cpp	#589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize()
+plugins/VstEffect/VstEffect.h	#589 planar-ports migration: VstEffect is an AudioPlugin with dynamic planar ports
+plugins/VstEffect/VstEffect.cpp	#589 planar-ports migration: no-arg process(), planar wet/dry mixing, lock moved to processLock/processUnlock
+plugins/Vestige/Vestige.h	#589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports
+plugins/Vestige/Vestige.cpp	#589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin
+plugins/ZynAddSubFx/ZynAddSubFx.h	#589 planar-ports migration: instrument is a ConfigurableAudioPorts AudioPlugin (remote/local buffer switch)
+plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> processImpl(); setBufferType()/activate() on the local path; ports controller passed to the remote plugin
+plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
+plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
+plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes

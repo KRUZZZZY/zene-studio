@@ -1,0 +1,5 @@
+rev=INDEX changed-vs-base=1084
+manifests: fork=163 (dup 0) all=1193 (dup 0) tools=17 (dup 0)
+ledger=437 blank=[] ';;'=[]
+GATE6-REPLICA violations: NONE
+cross-manifest entries (fork∩tools, all∩tools): NONE

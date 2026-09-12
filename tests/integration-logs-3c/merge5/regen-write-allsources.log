@@ -1,0 +1,8 @@
+all-sources.txt      rev=INDEX entries=1193 duplicates=0 +6 -0 DOES-NOT-REPRODUCE
+   + include/Telemetry.h
+   + include/TelemetryConsentDialog.h
+   + include/TelemetryNetworkTransport.h
+   + src/core/Telemetry.cpp
+   + src/core/TelemetryNetworkTransport.cpp
+   + src/gui/TelemetryConsentDialog.cpp
+VERIFY RESULT: MISMATCH

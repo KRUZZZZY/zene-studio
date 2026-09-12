@@ -1,0 +1,277 @@
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+
+Checking submodules...
+-- Checking qt5-x11embed...
+--   Found src/3rdparty/qt5-x11embed/CMakeLists.txt
+-- Checking zynaddsubfx...
+--   Found plugins/ZynAddSubFx/zynaddsubfx/CMakeLists.txt
+-- Checking game-music-emu...
+--   Found plugins/FreeBoy/game-music-emu/CMakeLists.txt
+-- Checking adplug...
+--   Found plugins/OpulenZ/adplug/Makefile.am
+-- Checking veal...
+--   Found plugins/LadspaEffect/calf/veal/CMakeLists.txt
+-- Checking exprtk...
+--   Found plugins/Xpressive/exprtk/Makefile
+-- Checking ladspa...
+--   Found plugins/LadspaEffect/swh/ladspa/Makefile.am
+-- Checking tap-plugins...
+--   Found plugins/LadspaEffect/tap/tap-plugins/Makefile
+-- Checking weakjack...
+--   Found src/3rdparty/weakjack/weakjack/.gitignore
+-- Checking wiki...
+--   Found doc/wiki/Home.md
+-- Checking ringbuffer...
+--   Found src/3rdparty/ringbuffer/CMakeLists.txt
+-- Checking carla...
+--   Found plugins/CarlaBase/carla/Makefile
+-- Checking resid...
+--   Found plugins/Sid/resid/resid/Makefile.am
+-- Checking jack2...
+--   Found src/3rdparty/jack2/.gitignore
+-- Checking cmt...
+--   Found plugins/LadspaEffect/cmt/cmt/.gitignore
+-- Checking hiir...
+--   Found src/3rdparty/hiir/hiir/license.txt
+-- Checking portsmf...
+--   Found plugins/MidiImport/portsmf/CMakeLists.txt
+-- Done validating submodules.
+
+-- Found PkgConfig: /usr/bin/pkg-config (found version "1.8.1") 
+-- Found Git: /usr/bin/git (found version "2.43.0") 
+
+Configuring ZENE
+--------------------------
+* Project version             : 0.1.0-alpha.209+84bcfb6
+*   Major version             : 0
+*   Minor version             : 1
+*   Release version           : 0
+*   Stage version             : alpha
+*   Build version             : 209+84bcfb6
+*
+
+Optional Version Usage:
+--------------------------
+*   Override version:           -DFORCE_VERSION=x.x.x-x
+*   Ignore Git information:     -DFORCE_VERSION=internal
+
+PROCESSOR: x86_64
+Machine: x86_64-linux-gnu
+
+-- Target host is 64 bit, Intel
+-- Setting target microarchitecture to 'official'
+-- Looking for include file pthread.h
+-- Looking for include file pthread.h - found
+-- Looking for include file semaphore.h
+-- Looking for include file semaphore.h - found
+-- Looking for include file unistd.h
+-- Looking for include file unistd.h - found
+-- Looking for include file sys/ipc.h
+-- Looking for include file sys/ipc.h - found
+-- Looking for include file sys/times.h
+-- Looking for include file sys/times.h - found
+-- Looking for include file sys/prctl.h
+-- Looking for include file sys/prctl.h - found
+-- Looking for include file sched.h
+-- Looking for include file sched.h - found
+-- Looking for include file sys/soundcard.h
+-- Looking for include file sys/soundcard.h - found
+-- Looking for include file soundcard.h
+-- Looking for include file soundcard.h - not found
+-- Looking for include file fcntl.h
+-- Looking for include file fcntl.h - found
+-- Looking for include file sys/ioctl.h
+-- Looking for include file sys/ioctl.h - found
+-- Looking for include file process.h
+-- Looking for include file process.h - not found
+-- Looking for shm_open in rt
+-- Looking for shm_open in rt - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- Performing Test HAVE_STDATOMIC
+-- Performing Test HAVE_STDATOMIC - Success
+-- Found WrapAtomic: TRUE  
+-- Found OpenGL: /usr/lib/x86_64-linux-gnu/libOpenGL.so   
+-- Found WrapOpenGL: TRUE  
+-- Found XKB: /usr/lib/x86_64-linux-gnu/libxkbcommon.so (found suitable version "1.6.0", minimum required is "0.5.0") 
+-- Found WrapVulkanHeaders: /usr/include  
+-- Found Qt translations in /usr/share/qt6/translations
+-- Found SndFile: /usr/lib/x86_64-linux-gnu/libsndfile.so (found version "1.2.2") 
+-- Performing Test LMMS_HAVE_SF_COMPLEVEL
+-- Performing Test LMMS_HAVE_SF_COMPLEVEL - Success
+-- Found Perl: /usr/bin/perl (found version "5.38.2") 
+-- Found Lilv: /usr/lib/x86_64-linux-gnu/liblilv-0.so (found version "0.24.22") 
+-- Checking for module 'suil-0'
+--   Package 'suil-0', required by 'virtual:world', not found
+-- Checking for module 'carla-native-plugin'
+--   Package 'carla-native-plugin', required by 'virtual:world', not found
+-- Checking for module 'carla-standalone>=1.9.5'
+--   Package 'carla-standalone', required by 'virtual:world', not found
+-- Found SDL2: /usr/lib/x86_64-linux-gnu/libSDL2.so (found version "2.30.0") 
+-- Could NOT find STK (missing: STK_RAWWAVE_ROOT) 
+-- Could NOT find Portaudio (missing: Portaudio_LIBRARY Portaudio_INCLUDE_DIRS) 
+-- Could NOT find SoundIo (missing: SOUNDIO_LIBRARY SOUNDIO_INCLUDE_DIR) 
+-- Checking for module 'libpulse'
+--   Found libpulse, version 16.1
+-- Found PulseAudio Simple: /usr/lib/x86_64-linux-gnu/libpulse.so
+-- Could NOT find Lame (missing: Lame_LIBRARY Lame_INCLUDE_DIRS) 
+-- Found OggVorbis: /usr/lib/x86_64-linux-gnu/libogg.so (found version "1.3.7") 
+-- Looking for snd_seq_create_simple_port in asound
+-- Looking for snd_seq_create_simple_port in asound - found
+-- Found ALSA: /usr/lib/x86_64-linux-gnu/libasound.so
+-- Looking for include file machine/soundcard.h
+-- Looking for include file machine/soundcard.h - not found
+-- Looking for include file linux/awe_voice.h
+-- Looking for include file linux/awe_voice.h - not found
+-- Looking for include file awe_voice.h
+-- Looking for include file awe_voice.h - not found
+-- Looking for include file /usr/src/sys/i386/isa/sound/awe_voice.h
+-- Looking for include file /usr/src/sys/i386/isa/sound/awe_voice.h - not found
+-- Looking for include file /usr/src/sys/gnu/i386/isa/sound/awe_voice.h
+-- Looking for include file /usr/src/sys/gnu/i386/isa/sound/awe_voice.h - not found
+-- Looking for C++ include sys/asoundlib.h
+-- Looking for C++ include sys/asoundlib.h - found
+-- Looking for C++ include alsa/asoundlib.h
+-- Looking for C++ include alsa/asoundlib.h - found
+-- Looking for snd_pcm_resume in asound
+-- Looking for snd_pcm_resume in asound - found
+-- Found FFTW: /usr/include  
+-- Found X11: /usr/include   
+-- Looking for XOpenDisplay in /usr/lib/x86_64-linux-gnu/libX11.so;/usr/lib/x86_64-linux-gnu/libXext.so
+-- Looking for XOpenDisplay in /usr/lib/x86_64-linux-gnu/libX11.so;/usr/lib/x86_64-linux-gnu/libXext.so - found
+-- Looking for gethostbyname
+-- Looking for gethostbyname - found
+-- Looking for connect
+-- Looking for connect - found
+-- Looking for remove
+-- Looking for remove - found
+-- Looking for shmat
+-- Looking for shmat - found
+-- Looking for IceConnectionNumber in ICE
+-- Looking for IceConnectionNumber in ICE - found
+-- Found FLTK: fltk  
+-- Checking for module 'fluidsynth'
+--   Found fluidsynth, version 2.3.4
+-- Found FluidSynth: /usr/lib/x86_64-linux-gnu/libfluidsynth.so (found suitable version "2.3.4", minimum required is "1.1.7") 
+-- Checking for module 'gig'
+--   Found gig, version 4.3.0
+-- Looking for sio_open in sndio
+-- Looking for sio_open in sndio - found
+-- Found Sndio: /usr/lib/x86_64-linux-gnu/libsndio.so  
+-- Could NOT find Wine (missing: WINE_CXX WINE_INCLUDE_DIRS) 
+--   WINE_INCLUDE_DIR:     WINE_INCLUDE_DIR-NOTFOUND
+--   WINE_CXX:             WINE_CXX-NOTFOUND
+--   WINE_GCC:             WINE_GCC-NOTFOUND
+--   WINE_32_FLAGS:        
+--   WINE_64_FLAGS:        
+--   WINE_VERSION:         
+--   WINE_ASLR_ENABLED:    
+-- Found Samplerate: /usr/lib/x86_64-linux-gnu/libsamplerate.so (found suitable version "0.2.2", minimum required is "0.1.8") 
+-- Using Git to generate the CONTRIBUTORS file
+-- Using /home/kruzzzzy/.local/bin/ccache for compiler caching
+-- Could NOT find Wasmtime (missing: Wasmtime_LIBRARY Wasmtime_INCLUDE_DIR) 
+-- Looking for include file sys/mman.h
+-- Looking for include file sys/mman.h - found
+-- Performing Test COMPILER_HAS_HIDDEN_VISIBILITY
+-- Performing Test COMPILER_HAS_HIDDEN_VISIBILITY - Success
+-- Performing Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY
+-- Performing Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY - Success
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR - Success
+-- Found CLAP 1.2.10 headers (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build-telemetry-on/clap/include
+-- Found VST3 SDK 3.8 (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build-telemetry-on/vst3sdk
+-- Found ZLIB: /usr/lib/x86_64-linux-gnu/libz.so (found version "1.3")  
+CMake Warning at data/locale/CMakeLists.txt:10 (MESSAGE):
+  Cannot generate locales
+
+
+
+Installation Summary
+--------------------
+* Install Directory           : /usr/local
+
+Supported audio interfaces
+--------------------------
+* ALSA                        : OK
+* JACK                        : OK (weak linking enabled)
+* OSS                         : OK
+* Sndio                       : OK
+* PortAudio                   : not found, please install portaudio19-dev (or similar, version >= 1.9) ;if you require PortAudio support
+* libsoundio                  : not found, please install libsoundio if you require libsoundio support
+* PulseAudio                  : OK
+* SDL                         : OK
+
+Supported MIDI interfaces
+-------------------------
+* ALSA                        : OK
+* OSS                         : OK
+* Sndio                       : OK
+* JACK                        : OK (weak linking enabled)
+* WinMM                       : <not supported on this platform>
+* AppleMidi                   : <not supported on this platform>
+
+Supported file formats for project export
+-----------------------------------------
+* WAVE                        : OK
+* FLAC                        : OK
+* OGG/VORBIS                  : OK
+* MP3/Lame                    : not found, please install libmp3lame-dev (or similar)
+
+Optional plugins
+----------------
+* Lv2 plugins                 : OK
+* SUIL for plugin UIs         : not found, install it or set PKG_CONFIG_PATH appropriately
+* ZynAddSubFX instrument      : OK
+* Carla Patchbay & Rack       : OK (weak linking enabled)
+* SoundFont2 player           : OK
+* Sid instrument              : OK
+* Stk Mallets                 : not found, please install libstk-dev or libstk0-dev (or similar);if you require the Mallets instrument
+* VST plugin host             : OK
+  * 32-bit Windows host       : not found, please install (lib)wine-dev (or similar) - 64 bit systems additionally need gcc-multilib and g++-multilib
+  * 64-bit Windows host       : not found, please install (lib)wine-dev (or similar) - 64 bit systems additionally need gcc-multilib and g++-multilib
+* CALF LADSPA plugins         : OK
+* CAPS LADSPA plugins         : OK
+* CMT LADSPA plugins          : OK
+* TAP LADSPA plugins          : OK
+* SWH LADSPA plugins          : OK
+* GIG player                  : OK
+
+Developer options
+-----------------------------------------
+* Debug FP exceptions               : Disabled
+* Debug using AddressSanitizer      : Disabled
+* Debug using ThreadSanitizer       : Disabled
+* Debug using MemorySanitizer       : Disabled
+* Debug using UBSanitizer           : Disabled
+* Debug packaging commands          : Enabled
+* Profile using GNU profiler        : Disabled 
+* Test coverage instrumentation     : Disabled
+* Debug assertions                  : Disabled
+* Experimental Qt6 support          : Enabled
+* WASM DSP sandbox                  : Disabled (wasmtime C API not found; set WASMTIME_ROOT)
+
+
+-----------------------------------------------------------------
+IMPORTANT:
+after installing missing packages, remove CMakeCache.txt before
+running cmake again!
+-----------------------------------------------------------------
+
+
+
+-- Configuring done (6.2s)
+-- Generating done (1.3s)
+-- Build files have been written to: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build-telemetry-on
+ON_CONFIGURE_EXIT=0
