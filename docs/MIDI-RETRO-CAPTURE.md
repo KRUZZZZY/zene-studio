@@ -1,9 +1,13 @@
 # Retrospective MIDI capture — design
 
 **Status: design only, no C++ implementation.** Branch `next/midi-retro`, base `3fd5a4f3c`
-(the release-line tip), confirmed in-worktree with `git log --oneline -1` →
+(the release-line tip), confirmed in-worktree with `git rev-parse HEAD~1` →
+`3fd5a4f3c8acb9dcb26d9d27a7fd7d482ad8bde2`, whose subject is
 `3fd5a4f3c fix(gates): the manifest entry and the report citation, which the earlier commit left behind`,
-and `git rev-parse --abbrev-ref HEAD` → `next/midi-retro`.
+and `git rev-parse --abbrev-ref HEAD` → `next/midi-retro`. (This line used to cite
+`git log --oneline -1`, which confirms the base only until the document is committed; at any commit
+after it, that command prints the document's own commit. `git rev-parse HEAD~1` is true at the stated
+base and at every commit on top of it.)
 
 Every claim about the tree carries a `path:line` that was read on **this** branch. Claims that could
 not be settled without a build are marked **UNVERIFIED** and are questions for the implementation
@@ -40,7 +44,7 @@ handoff sentence being obeyed quoted.
 Its one consumer is the recording prototype: `TrackRecorder` holds it as
 `std::unique_ptr<RecordRingBuffer> m_ring; // allocated in the constructor`
 (`include/TrackRecorder.h:110`, constructed at `src/core/audio/TrackRecorder.cpp:41`), and the audio
-thread only calls `m_ring->writeStrided(...)` (`src/core/audio/TrackRecorder.cpp:154-158`).
+thread only calls `m_ring->writeStrided(...)` (`src/core/audio/TrackRecorder.cpp:159-160`).
 
 ### The four knowledge-base claims, checked against the file
 
@@ -52,10 +56,14 @@ thread only calls `m_ring->writeStrided(...)` (`src/core/audio/TrackRecorder.cpp
 | "`alignas(64)` false-sharing avoidance" | **Verified, with a precision correction.** All three index atomics carry `alignas(64)` (`:172-174`), which separates the three counters from each other onto their own cache lines. It does **not** align the data slots — `m_data` is a plain `std::vector<sample_t>` (`:168`) whose slots are shared between producer and consumer by design — and `alignas(64)` is a minimum, so on a machine with a larger cache line the guarantee is weaker than the phrase suggests. | `include/RecordRingBuffer.h:168, 172-174` |
 
 `m_capacity`, `m_mask` and the vector header occupy the first 40 bytes, so the three atomics land at
-offsets 64/128/192 with padding in between; that padding is the false-sharing avoidance, and it costs
-~176 bytes per ring. **Net result: two of the four claims stand exactly as written — allocation only
-in the ctor, and drop-newest overflow. The other two need the caveats above: the file asserts
-lock-freedom nowhere, and the alignment applies to the three indices, not to the slots.**
+offsets 64/128/192 with padding in between; that padding is the false-sharing avoidance, and by the
+declared layout it costs **192 bytes per ring** (24 bytes before the first atomic, 56 between the first
+and second, 56 between the second and third, and 56 trailing, where `sizeof` rounds the class up to its
+64-byte alignment: 256 total against 64 bytes of payload). **Net result: two of the four claims stand
+exactly as written — allocation only in the ctor, and drop-newest overflow. The other two need the
+caveats above: nothing in the file *machine-asserts* lock-freedom (`grep -n "static_assert\|is_lock_free"
+include/RecordRingBuffer.h` → no output, exit 1) — although the file does say "lock-free" in prose twice,
+at `:2` and `:41` — and the alignment applies to the three indices, not to the slots.**
 
 ### Is it usable as-is for MIDI events? No — a second, event-typed ring is needed
 
@@ -133,7 +141,7 @@ the right thing to lift:
   Five derive through `MidiClientRaw` (Sndio, Jack, Dummy, AlsaRaw, Oss) and three straight from
   `MidiClient` (Apple, WinMM, AlsaSeq). One client is open at a time — the opener picks one.
   The accessor at runtime is `AudioEngine::midiClient()`
-  (`src/core/ControlCommandsSettings.cpp:368`, `engine->midiClient()`).
+  (`src/core/ControlCommandsSettings.cpp:373`, `engine->midiClient()`).
 
 ### The receiving thread, the receive entry point, and the event type
 
@@ -463,9 +471,18 @@ The `midi` group already exists (`midi.device_list` `src/core/ControlCommandsSet
 | `midi.retro_capture_to_clip` | `{track (trk-<n>), length? (ticks)}` | `{clip, events, window_start, events_written, events_overwritten, unmatched_ons}` | `mutating = true`; one journal checkpoint over the clip, inverse via the existing `clip.delete` — the `note.add` shape (`src/core/ControlCommandsNotes.cpp` `registerNoteAdd`). |
 
 `requiresDecl`: leave empty (headless-safe) for all three if the implementation can take a snapshot
-with no GUI, which §3.5 allows; if the arm is genuinely GUI-state-only, declare
-`display` and say why in the description, exactly as `midi.learn_toggle` does
-(`src/core/ControlCommandsSettings.cpp:403-408`, which refuses typed when started `--no-gui`).
+with no GUI, which §3.5 allows; if the arm is genuinely GUI-state-only, declare `display` and say why
+in the description. The precedents in the tree are `telemetry.consent` — the only command that declares
+`display` (`src/core/ControlCommandsTelemetry.cpp:248`, `{"display", "human"}`) — and `transport.play`,
+which declares `device` (`src/core/ControlCommandsTransport.cpp:87`). **`midi.learn_toggle`, which this
+section used to cite as the `display` precedent, declares no `requiresDecl` at all**: a case-sensitive
+`grep -n "Requires\|requires" src/core/ControlCommandsSettings.cpp` returns one hit, the description
+string at `:260`; the only two declarers in the tree are the two above; and the comment block at
+`:403-408` says the opposite of what the old sentence claimed — *"no display, device or human is
+required — an offscreen instance arms the mode exactly like a visible one, which is why this command is
+swept headlessly instead of being allowlisted"*. Its typed refusal is for a `--no-gui` instance, i.e.
+handler behaviour, not a declared requirement. So `midi.learn_toggle` is the precedent for the
+*headless-safe* option, not the `display` one.
 **Which of the two applies is a decision for the implementation lane; the gate will force it either
 way.**
 
@@ -502,7 +519,9 @@ slot `ProducerPath_DoesNotAllocate` at `:238` — it resets `lmms::test::tlAlloc
 `lmms::test::tlCountAllocations = true`, runs 1000 `writeBlock` calls, and asserts the count is 0.
 The probe itself is `tests/src/core/AllocationProbe.h`: a `thread_local` flag and counter (`:37-40`),
 and replaceable global `operator new`/`new[]`/`delete` so that *every* C++ allocation in the test
-binary is counted on the thread that made it (`:54-76`). Fifteen test sources include it, among them
+binary is counted on the thread that made it (`:54-76`). Fourteen test sources include it (a
+`grep -rln "AllocationProbe.h" tests/src` returns fifteen paths, one of which is `AllocationProbe.h`
+itself, whose header comment names the file), among them
 `tests/src/core/RecordingRealtimeTest.cpp`, `tests/src/core/TwoTrackRecordingHarness.cpp` and
 `tests/src/tracks/SampleClipWindowTest.cpp`.
 
@@ -510,7 +529,7 @@ binary is counted on the thread that made it (`:54-76`). Fifteen test sources in
 path: `tests/src/core/MidiLearnThreadTest.cpp` asserts the *thread-of-write* discipline — it delivers
 through `deliverFromMidiInputThread(...)`, which uses a plain `std::thread` because "the real input
 paths are not all Qt threads - MidiJack delivers from a JACK callback thread" (`:74-75`) — but it is
-not among the fifteen files that include `AllocationProbe.h`. `MidiLearn` also exposes the seam a
+not among the fourteen files that include `AllocationProbe.h`. `MidiLearn` also exposes the seam a
 test asserts on for this purpose: `Qt::HANDLE lastBindingThreadId()` is documented as "the seam a
 test asserts on to prove the write is not on the MIDI input thread" (`include/MidiLearn.h:106-108`).
 So the new test is: push through `RetroMidiCapture::capture(...)` from a `std::thread` with
@@ -580,7 +599,7 @@ Consequences that follow, each checkable:
    the per-period relaxed store measurably free on the audio thread?
 3. Is `Ctrl+Shift+M` unclaimed across the whole shortcut table?
 4. Does the headless sweep accept `midi.retro_capture_arm` as headless-safe, or must it declare
-   `display` like `midi.learn_toggle`?
+   `display` (the way `telemetry.consent` does, `src/core/ControlCommandsTelemetry.cpp:248`)?
 5. Should the ring live on `MidiClient` (one per open client, per §2) or be replicated per `MidiPort`
    for the two owners — the second is closer to the owner's phrase and the first is what catches
    events no port subscribes to. §2 argues for the first on the evidence of
@@ -596,11 +615,11 @@ Every check below was run in `.../zene-next-midi-retro` on branch `next/midi-ret
 
 | # | Claim | How it was checked |
 | --- | --- | --- |
-| 1 | The branch is `next/midi-retro` at `3fd5a4f3c` | `git log --oneline -1`; `git rev-parse --abbrev-ref HEAD`; `git status --porcelain` (clean) |
+| 1 | The branch is `next/midi-retro`, based on `3fd5a4f3c` | `git rev-parse HEAD~1` → `3fd5a4f3c8acb9dcb26d9d27a7fd7d482ad8bde2`; `git rev-parse --abbrev-ref HEAD`; `git status --porcelain` (clean) |
 | 2 | `RecordRingBuffer`'s real API and lines | `cat -n include/RecordRingBuffer.h` (whole file, 180 lines) — every line number above is from that output |
 | 3 | Its one consumer is `TrackRecorder` | `grep -rn "RecordRingBuffer" --include=*.h --include=*.cpp .` → `src/core/audio/TrackRecorder.cpp:41`, `include/TrackRecorder.h:41,110`, plus the test and the two manifest files |
 | 4 | `sample_t` is `float` | `grep -n "sample_t\b" include/LmmsTypes.h` → `39:using sample_t = float;` |
-| 5 | No lock-free assertion in the ring | `grep -n "static_assert\|is_lock_free" include/RecordRingBuffer.h` → no output |
+| 5 | No *machine* lock-free assertion in the ring | `grep -n "static_assert\|is_lock_free" include/RecordRingBuffer.h` → no output, exit 1 (the file's prose at `:2` and `:41` does say "lock-free") |
 | 6 | `MidiEvent` carries two raw pointers | `sed -n '204,225p' include/MidiEvent.h` → `const char* m_sysExData;`, `const void* m_sourcePort;` |
 | 7 | **8** concrete `MidiClient` subclasses | `grep -rn "class .*public MidiClient" --include=*.h include \| grep -v 'class MidiClientRaw'` → 8 lines (output pasted in §2) |
 | 8 | The ALSA receive loop, its thread and its lock | `grep -n "void MidiAlsaSeq::run\|snd_seq_event_input\|m_seqMutex.lock()\|dest == nullptr\|switch( ev->type )" src/core/midi/MidiAlsaSeq.cpp`; `sed -n '469,560p'` and `'528,545p'` and `'560,625p'` |
@@ -627,3 +646,21 @@ across the whole shortcut table; whether `midi.retro_capture_arm` passes the hea
 declare `requires`; the contents of `ringbuffer/ringbuffer.h` (submodule absent from this worktree);
 and any assertion about the MIDI thread as a whole being allocation-free, which the evidence in §2
 actively contradicts for the `InstrumentTrack` path.
+
+---
+
+## Corrections applied after the independent audit (2026-09-12)
+
+The independent audit (`NEXT-WAVE1-DOC-AUDIT.md`, commit `c22fa23` in the workspace repo) read this
+document at `598bba392` and reported seven false claims. Every one was re-derived with its own command
+before the text was touched; the design, the decisions and the open questions are otherwise unchanged.
+
+1. **Base confirmation (header, §9 row 1).** Was: "base `3fd5a4f3c` … confirmed in-worktree with `git log --oneline -1` → `3fd5a4f3c fix(gates): …`". Now: `git rev-parse HEAD~1` → `3fd5a4f3c8acb9dcb26d9d27a7fd7d482ad8bde2` — at the commit the document is read at, `git log --oneline -1` prints `598bba392 docs(midi-retro): design for retrospective MIDI capture (owner item 14)`, i.e. the document's own commit, so that command confirms the base only before the commit.
+2. **§1, the `writeStrided` call site.** Was: `src/core/audio/TrackRecorder.cpp:154-158`. Now: `:159-160` — `grep -n "writeStrided\|m_ring" src/core/audio/TrackRecorder.cpp` → `159:\tconst auto pushed = m_ring->writeStrided(...)`, `160:\t\tDEFAULT_CHANNELS, …`; 154-158 is the comment and the channel load.
+3. **§1, "the file asserts lock-freedom nowhere".** Was: the file asserts lock-freedom nowhere. Now: nothing in the file *machine*-asserts it, but the file *states* it in prose twice — `grep -ni "lock.free" include/RecordRingBuffer.h` → `2: … lock-free single-producer/single-consumer ring buffer` and `41://! Lock-free SPSC ring buffer of mono sample frames (prototype, task #556).`; the machine assertion is still absent (`grep -n "static_assert\|is_lock_free" include/RecordRingBuffer.h` → no output, exit 1). Same distinction now in §9 row 5.
+4. **§1, the ring's padding.** Was: "~176 bytes per ring". Now: **192 bytes**, by the declared layout — 40-byte header (`m_capacity` 8 + `m_mask` 8 + `std::vector` header 24), three `alignas(64)` atomics at offsets 64/128/192, `sizeof` rounded up to the 64-byte class alignment: 256 total against 64 bytes of payload (24 + 56 + 56 + 56 = 192 of padding).
+5. **§2, the runtime accessor.** Was: `engine->midiClient()` at `src/core/ControlCommandsSettings.cpp:368`. Now: `:373` — `grep -n midiClient src/core/ControlCommandsSettings.cpp` → `370: engine->midiClientName()`, `373: MidiClient* client = engine != nullptr ? engine->midiClient() : nullptr;`; line 368 is `QJsonObject result;`.
+6. **§5, the `requiresDecl` precedent (and §8 question 4).** Was: declaring `display` "exactly as `midi.learn_toggle` does (`src/core/ControlCommandsSettings.cpp:403-408`, which refuses typed when started `--no-gui`)". Now: the `display` precedent is `telemetry.consent` and the `device` precedent is `transport.play`; `midi.learn_toggle` is named as the *headless-safe* precedent it actually is — `grep -n "Requires\|requires" src/core/ControlCommandsSettings.cpp` → one hit, the description string at `:260`; `grep -rn 'requiresDecl' src/core/*.cpp` → `ControlCommandsTelemetry.cpp:248 {"display","human"}` and `ControlCommandsTransport.cpp:87 {"device"}` only; `midi.learn_toggle`'s own comment at `:403-408` says "no display, device or human is required … which is why this command is swept headlessly instead of being allowlisted". The lane's two-way decision is unchanged.
+7. **§6, the probe's includers.** Was: "Fifteen test sources include it" / "not among the fifteen files". Now: fourteen — `grep -rln "AllocationProbe.h" tests/src` → 15 paths, one of which is `tests/src/core/AllocationProbe.h` itself (its own line-2 comment names the file), so fourteen test sources include it.
+
+**Audit claim that did not reproduce as stated.** The audit's row A6 prints the command `grep -n "lock-free" include/RecordRingBuffer.h` and two matching lines. Run case-sensitively that command prints only one line (`:2`), because `:41` begins "Lock-free"; `-i` is required for both, and the correction above and the audit's substance both hold. Every other §A finding reproduced exactly, including the line citations and the 15-vs-14 grep count.
