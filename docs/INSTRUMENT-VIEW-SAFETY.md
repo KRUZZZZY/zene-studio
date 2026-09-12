@@ -127,7 +127,7 @@ Thread 1 "Vst3InstrumentI" received signal SIGSEGV, Segmentation fault.
 
 ### 2.2 The mechanism, isolated in Qt itself
 
-A four-case probe (`tests/evidence/instrument-view-safety/qt-probe/probe-setwindowicon.cpp`, ~60
+A four-case probe (`tests/evidence/instrument-view-safety/qt-probe/probe-setwindowicon.cpp`, 69
 lines, Qt 6.4.2, standalone) calls `setWindowIcon(icon)` with the icon `loadPixmap()` returns on a
 miss (`QPixmap{1,1}`) on four widget shapes, on both platforms:
 
