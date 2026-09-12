@@ -99,6 +99,13 @@ that is this page's fault — report it and it gets added.
 
 ## What this alpha cannot do at all
 
+- **No CLAP hosting on Windows.** CLAP hosting ships on Linux and macOS in 0.2.1-alpha; the Windows builds are
+  configured with `-DWANT_CLAP=OFF` because the host loads its plugins through `dlopen`/`dlsym` and neither
+  MSVC nor MinGW provides `<dlfcn.h>`. VST3 effect hosting and VST3 instrument hosting **do** work on Windows.
+  `tests/advertised-features.tsv` carries this claim per platform and the release-honesty guard checks it in
+  both directions (present on Linux/macOS, asserted absent on Windows), so a future build that turns it on
+  without updating this page fails the release job.
+
 - **No instrument editor.** You can load a VST3 instrument and play it, but the plugin's own GUI **does not
   open**. What you get instead is the host's generated control grid, and we have **run it** rather than assumed
   it: with a VST3 instrument track loaded, the instrument window opens and lists the plugin's controls (verified

@@ -23,6 +23,14 @@
  *
  */
 
+// Darwin's <ucontext.h> refuses to declare the context accessors below unless
+// _XOPEN_SOURCE is defined before it is first included (macos-arm64 said so:
+// "ucontext.h:51:2: error: The deprecated ucontext routines require _XOPEN_SOURCE
+// to be defined"). Apple-only, so glibc's feature visibility is untouched.
+#if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
+	#define _XOPEN_SOURCE 700
+#endif
+
 #include "CrashReporter.h"
 
 #include "lmmsconfig.h"
@@ -154,7 +162,22 @@ const char* signalName(int sig)
 // signal ucontext.  Falls back to 0 rather than guessing.
 unsigned long long programCounterFrom(void* context)
 {
+#if defined(__APPLE__)
+	// Darwin's ucontext_t holds a POINTER to the machine context (Linux's is a struct)
+	// and names the thread state __ss on both architectures, while the program counter
+	// inside it is __pc on arm64 and __rip on x86_64. Taking the Linux shape here is
+	// what failed macos-arm64 ("no member named 'pc' in '__darwin_mcontext64'"); note
+	// that Darwin defines no REG_RIP, so the x86_64 half returned 0 before this branch.
+	if (context != nullptr)
+	{
+		const auto* uc = static_cast<const ucontext_t*>(context);
 #if defined(__aarch64__)
+		return static_cast<unsigned long long>(uc->uc_mcontext->__ss.__pc);
+#else
+		return static_cast<unsigned long long>(uc->uc_mcontext->__ss.__rip);
+#endif
+	}
+#elif defined(__aarch64__)
 	if (context != nullptr)
 	{
 		const auto* uc = static_cast<const ucontext_t*>(context);

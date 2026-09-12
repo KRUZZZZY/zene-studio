@@ -619,6 +619,18 @@ A **reported defect that is not fixed in this release**: a sample whose rate dif
 at the wrong pitch (a 48 kHz sample in a 44.1 kHz project is about 8.8 % sharp). It is recorded here rather
 than quietly dropped.
 
+**Platform scope, stated because it changed in this patch: CLAP hosting ships on Linux and macOS, not on
+Windows.** Every earlier build compiled the CLAP host out on *every* platform — that is the defect the
+`Fixed since the rehearsal build` section describes — so this patch is the first release whose Windows jobs
+even reach `plugins/ClapEffect/ClapHost.cpp`, and that file loads its plugins with `dlopen`/`dlsym`, which
+neither MSVC nor MinGW provides (`ClapHost.cpp:34:10: fatal error: dlfcn.h: No such file or directory`). Rather
+than ship a claim the download cannot meet, the three Windows jobs build with `-DWANT_CLAP=OFF`,
+`tests/advertised-features.tsv` records the claim per platform (`clap-hosting` is `linux,macos`), and the
+release-honesty guard asserts **on Windows** that `WANT_CLAP` is not ON and that no `clapeffect` module exists
+— the row is checked there too, in the opposite direction, rather than skipped. **VST3 is unaffected**: effect
+and instrument hosting ship on all seven platforms. Porting the CLAP loader to
+`LoadLibraryW`/`GetProcAddress` is the named next task for plugin hosting.
+
 ## Your projects
 
 Keep backups. Files saved by this build may not open in a later build, an older build, or in LMMS. An older

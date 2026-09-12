@@ -21,6 +21,17 @@ name: build
 # skipped" / "CLAP hosting skipped") while its release notes advertised both
 # hosts. The two cache steps hash the pin-bearing cmake modules, and the
 # Release-honesty guard step fails the job if a documented feature is compiled out.
+#
+# EXCEPTION (2026-09-12): the three Windows jobs pass -DWANT_CLAP=OFF, because the
+# CLAP host loads plugins with dlopen/dlsym and neither MinGW nor MSVC has <dlfcn.h>
+# (plugins/ClapEffect/ClapHost.cpp:34:10: fatal error: dlfcn.h: No such file or directory
+# — the v0.2.1-alpha tag run is the first Windows build ever to reach that file, CLAP
+# having been compiled out of every platform before this week's provisioning fix).
+# tests/advertised-features.tsv carries the claim per platform (clap-hosting is
+# `linux,macos`), and the honesty guard asserts the INVERSE on Windows — WANT_CLAP must
+# not be ON and no clapeffect module may exist — so the Windows jobs still check this
+# row rather than skipping it. Porting the loader to LoadLibraryW/GetProcAddress is the
+# named follow-up; the release notes and known-limitations state the scope.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -454,7 +465,7 @@ jobs:
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
         -DWANT_VST3=ON
-        -DWANT_CLAP=ON
+        -DWANT_CLAP=OFF
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
@@ -638,7 +649,7 @@ jobs:
             -DUSE_COMPILE_CACHE=ON `
             -DUSE_WERROR=ON `
             -DWANT_VST3=ON `
-            -DWANT_CLAP=ON `
+            -DWANT_CLAP=OFF `
             -DVCPKG_TARGET_TRIPLET="x64-windows" `
             -DVCPKG_HOST_TRIPLET="x64-windows" `
             -DVCPKG_MANIFEST_INSTALL="${{ env.should_install_manifest }}"
@@ -743,7 +754,7 @@ jobs:
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
         -DWANT_VST3=ON
-        -DWANT_CLAP=ON
+        -DWANT_CLAP=OFF
         -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
