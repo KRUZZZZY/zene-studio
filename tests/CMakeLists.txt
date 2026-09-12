@@ -16,6 +16,7 @@ set(LMMS_TESTS
 	src/core/CrashReporterTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
+	src/core/MidiLearnThreadTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
@@ -33,6 +34,7 @@ set(LMMS_TESTS
 	src/core/StemExportTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
+	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 )
 

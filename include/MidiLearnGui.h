@@ -1,6 +1,5 @@
 /*
- * MidiLearnGui.h - GUI side of global MIDI learn: tracks the control the user
- *                  focused and keeps the menu action in sync.
+ * MidiLearnGui.h - GUI side of global MIDI learn.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -27,6 +26,7 @@
 #define LMMS_GUI_MIDI_LEARN_GUI_H
 
 #include <QObject>
+#include <QTimer>
 
 #include "lmms_export.h"
 
@@ -41,6 +41,13 @@ namespace lmms::gui
 // and remembers the model-backed widget the user last pressed or focused. The
 // filter is only installed while armed, so with learn mode off (the default) the
 // GUI event stream is untouched.
+//
+// It also owns the *delivery* of a learn: a control-change arrives on the MIDI
+// input thread, which may not touch a model, so it leaves the request in
+// MidiLearn's lock-free slot and this object's timer drains it on the GUI
+// thread. A short poll is used deliberately - posting a queued invocation or an
+// event would allocate on the MIDI input thread, which is exactly what the
+// hand-off exists to avoid (see docs/MIDI-LEARN-RACE.md).
 class LMMS_EXPORT MidiLearnGui : public QObject
 {
 	Q_OBJECT
@@ -58,9 +65,25 @@ protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
-	MidiLearnGui() = default;
+	MidiLearnGui();
+
+	//! Drain a learn request the MIDI input thread left behind, then reconcile
+	//! the armed state. Runs on the GUI thread - this is the thread the binding
+	//! is created on.
+	void onBindTimer();
+
+	//! Bring the menu tick, the event filter and the timer in line with the real
+	//! armed state, whoever ended the learn: the user (the menu action) or a
+	//! control-change on the MIDI input thread. Without this the Edit menu tick
+	//! stays set until the menu is reopened.
+	void syncArmedState();
 
 	QAction* m_action = nullptr;
+
+	//! How often the GUI thread checks for a learn the MIDI input thread left
+	//! behind. Only runs while learn mode is armed, and each tick is one atomic
+	//! load when there is nothing to do.
+	QTimer m_bindTimer;
 };
 
 } // namespace lmms::gui
