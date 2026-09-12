@@ -3,8 +3,9 @@
 Worktree: `projects/lmms-fl-research/zene-pa-foreign` (branch `post-alpha/foreign-merge`).
 Entry tip: **`09e313c19`** — the tip train 3E left, with `git status --porcelain` empty apart from this
 train's own evidence directory. Exit: **two merge commits** — `b96d01d61` (unit 1) and `c639bbd61`
-(unit 2) — **one labelled fix-up commit** `0ddbb1ca1` between them, then the evidence commit and this
-report. `git log --oneline --merges 09e313c19..HEAD` names them without this report having to guess its
+(unit 2) — **one labelled fix-up commit** `0ddbb1ca1` between them, the evidence commit `1fab5e4f1`
+(this report included) and the tip-verification commit that follows it.
+`git log --oneline --merges 09e313c19..HEAD` names the two merges without this report having to guess its
 own tip.
 
 Nothing was pushed; no remote, PR, issue or **tag** was touched; `origin` (LMMS/lmms) and `messmerd`
@@ -358,6 +359,22 @@ Its other four files need no porting at all: `cmake/modules/VersionInfo.cmake` a
 to ours as an asserted superset. **So unit 2's entire residue in this line is those 12 lines** — the
 sharpest possible demonstration of the train's premise: unit 1 was the new content, unit 2 was a
 re-issue with one page-shaped exception.
+
+## Verification on the committed tip (the evidence files trip no gate)
+
+The whole bundle was run once more **on the committed evidence commit** (`1fab5e4f1`, i.e. with this
+train's 159 evidence files tracked), because a new `.py`/`.sh`/`.md`/`.wav` class under `tests/` is
+exactly what Gates 9, 10 and 7 read:
+
+```
+LOCAL_CI_EXIT=1 (85/86, agent_surface)   GATE9_EXIT=0   GATE6_EXIT=0   RUN_ALL_GATES_EXIT=1
+REGEN_INDEX_EXIT=0   REGEN_HEAD_EXIT=0   PRECOMMIT_EXIT=0   CONTRACT_ROWS=6   HONESTY_EXIT=0
+Gate 9: 241 fork-NEW · Gate 6: 435 changed paths / 447 entries · gates 3–10 PASS, gate 2 SKIP, gate 1 FAIL
+```
+
+**Every number is identical to the merge-2 state**, which is the point: the evidence commit itself
+changes no gate result, and the one red gate is the same `agent_surface` finding. `tests/integration-logs-3f/tip/`
+holds it, and `git status --porcelain` is clean apart from that directory before it is committed.
 
 ## Test expectations changed during this train
 

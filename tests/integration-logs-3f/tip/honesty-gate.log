@@ -1,0 +1,13 @@
+=== release honesty: what the release documents vs what the build contains ===
+manifest : tests/advertised-features.tsv
+build    : tests/integration-logs-3f/tip/version.txt  (lmms --version output: the "Build options:" line)
+artifacts: not given (module presence is not checked)
+
+  [PASS] vst3-hosting     ON matches ON
+  [PASS] vst3-instrument-hosting ON matches ON
+  [PASS] clap-hosting     ON matches ON
+  [PASS] session-view     OFF matches OFF
+  [PASS] wasm-sandbox     OFF,OFF matches OFF
+  [PASS] stem-separation  OFF matches OFF
+
+RESULT: PASS — all 6 documented feature(s) are what this build contains
