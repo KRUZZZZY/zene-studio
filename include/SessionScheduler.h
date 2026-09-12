@@ -316,6 +316,12 @@ private:
 	ActiveSlot* findSlot( int track, int scene ) noexcept;
 	ActiveSlot* claimSlot( int track, int scene ) noexcept;
 	void drainCommands( const SessionClockContext& ctx ) noexcept;
+	//! Applies a pending reset() request. True when everything was dropped.
+	bool consumeResetRequest() noexcept;
+	//! Moves the session clock for this period (SPEC A2's separate domain).
+	void advanceClock( const SessionClockContext& snapshot, f_cnt_t framesThisPeriod ) noexcept;
+	//! Fires whatever the clock has reached, one pass over the active slots.
+	void advanceSlots( const SessionClockContext& ctx ) noexcept;
 
 	std::array<ActiveSlot, MaxActiveSlots> m_active{};
 	CommandQueue m_queue;

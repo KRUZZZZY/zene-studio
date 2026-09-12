@@ -515,16 +515,24 @@ private slots:
 		lmms::test::tlCountAllocations = false;
 		producer.join();
 
+		// Let the clock pass the grid line the drained presses were scheduled
+		// for, so the launches they asked for actually fire. Deterministic:
+		// one grid step of 4-tick periods is 48 periods.
+		for( int period = 0; period < 60; ++period )
+		{
+			ctx.positionTicks += kTickStep;
+			scheduler.processAudio( ctx, kFramesPerPeriod );
+		}
+
 		QVERIFY2( producerDone.load(), "producer stalled - the queue never drained" );
 		QVERIFY2( processed == std::uint64_t( kCommands ),
 			qPrintable( QStringLiteral( "audio thread consumed %1 of %2 accepted commands" )
 				.arg( processed ).arg( kCommands ) ) );
-		// Refusals are expected here: the producer is faster than the audio
-		// period, so it hits the bounded queue and retries. What must hold is
-		// that a refusal is *counted* and that nothing accepted is lost - the
-		// assertion above is the loss half, this is the counting half.
-		QVERIFY2( scheduler.droppedCommands() > 0u,
-			"a full queue was never reported - the producer was not actually faster" );
+		// Nothing is asserted about droppedCommands() here: whether the queue
+		// ever filled depends on how the two threads interleave, and a test
+		// that only passes on a slow machine is not a test. That refusals are
+		// counted is pinned deterministically by
+		// aFullCommandQueueRefusesInsteadOfGrowing instead.
 		QVERIFY2( scheduler.completedLaunches() > 0u, "no launch ever completed" );
 		QVERIFY2( allocations == 0,
 			qPrintable( QStringLiteral( "audio thread allocated %1 times while draining" )

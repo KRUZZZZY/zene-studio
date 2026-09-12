@@ -93,88 +93,119 @@ tick_t launchTickAt( LaunchQuantisation quantisation, const SessionClockContext&
 // Pure launch state machine
 // ---------------------------------------------------------------------------
 
-void applyLaunchCommand( SlotLaunchState& state, LaunchMode mode,
-	LaunchQuantisation quantisation, LaunchCommandType command,
+namespace
+{
+
+//! Schedules `state` to enter `phase` at `pendingTick`. Nothing else changes.
+void scheduleAt( SlotLaunchState& state, SlotPhase phase, tick_t pendingTick ) noexcept
+{
+	state.phase = phase;
+	state.pendingTick = pendingTick;
+}
+
+
+//! Trigger / Gate / Toggle / Repeat, press half.
+void pressSlot( SlotLaunchState& state, LaunchMode mode, LaunchQuantisation quantisation,
 	const SessionClockContext& ctx ) noexcept
 {
-	const tick_t quantum = quantisationTicks( quantisation, ctx.ticksPerBar );
+	const tick_t at = launchTickAt( quantisation, ctx );
 
-	switch( command )
+	switch( mode )
 	{
-		case LaunchCommandType::Press:
-			switch( mode )
-			{
-				case LaunchMode::Toggle:
-					// Second press decides the opposite of what is scheduled:
-					// cancel a pending start, cancel a pending stop, or (from
-					// Idle) schedule a start.
-					if( state.phase == SlotPhase::LaunchPending )
-					{
-						state.phase = SlotPhase::Idle;
-						return;
-					}
-					if( state.phase == SlotPhase::Playing )
-					{
-						state.held = false;
-						state.phase = SlotPhase::StopPending;
-						state.pendingTick = launchTickAt( quantisation, ctx );
-						return;
-					}
-					if( state.phase == SlotPhase::StopPending )
-					{
-						state.phase = SlotPhase::Playing;
-						return;
-					}
-					break;
-
-				case LaunchMode::Gate:
-				case LaunchMode::Repeat:
-					// Held modes: the press arms the slot, the release is what
-					// ends it (and can cancel it before it ever starts).
-					state.held = true;
-					break;
-
-				case LaunchMode::Trigger:
-				default:
-					// Trigger ignores the release entirely, so held stays false
-					// and only an explicit stop ends it.
-					break;
-			}
-			// Trigger re-pressing a playing slot re-launches it from the grid
-			// line - same code path as a first press.
-			state.phase = SlotPhase::LaunchPending;
-			state.pendingTick = launchTickAt( quantisation, ctx );
-			state.retriggerTicks = quantum;
-			return;
-
-		case LaunchCommandType::Release:
-			if( mode == LaunchMode::Trigger || mode == LaunchMode::Toggle )
-			{
-				return;
-			}
-			state.held = false;
+		case LaunchMode::Toggle:
+			// The second press decides the opposite of what is scheduled:
+			// cancel a pending start, stop a playing clip, or cancel a
+			// pending stop.
 			if( state.phase == SlotPhase::LaunchPending )
 			{
-				// Released before the launch fired: it never plays at all.
 				state.phase = SlotPhase::Idle;
 				return;
 			}
 			if( state.phase == SlotPhase::Playing )
 			{
-				state.phase = SlotPhase::StopPending;
-				state.pendingTick = launchTickAt( quantisation, ctx );
-			}
-			return;
-
-		case LaunchCommandType::Stop:
-		default:
-			state.held = false;
-			if( state.phase == SlotPhase::Idle )
-			{
+				state.held = false;
+				scheduleAt( state, SlotPhase::StopPending, at );
 				return;
 			}
-			state.phase = SlotPhase::StopPending;
-			state.pendingTick = launchTickAt( quantisation, ctx );
+			if( state.phase == SlotPhase::StopPending )
+			{
+				state.phase = SlotPhase::Playing;
+				return;
+			}
+			break;
+
+		case LaunchMode::Gate:
+		case LaunchMode::Repeat:
+			// Held modes: the press arms the slot and the release is what ends
+			// it - and what cancels it before it ever starts.
+			state.held = true;
+			break;
+
+		case LaunchMode::Trigger:
+		default:
+			// Trigger ignores the release, so `held` stays false and only an
+			// explicit stop ends it. A re-press of a playing slot re-launches
+			// it from the grid line: same code path as the first press.
+			break;
+	}
+
+	state.retriggerTicks = quantisationTicks( quantisation, ctx.ticksPerBar );
+	scheduleAt( state, SlotPhase::LaunchPending, at );
+}
+
+
+//! Gate / Repeat, release half. Trigger and Toggle ignore the release.
+void releaseSlot( SlotLaunchState& state, LaunchMode mode, LaunchQuantisation quantisation,
+	const SessionClockContext& ctx ) noexcept
+{
+	if( mode == LaunchMode::Trigger || mode == LaunchMode::Toggle )
+	{
+		return;
+	}
+	state.held = false;
+	if( state.phase == SlotPhase::LaunchPending )
+	{
+		// Released before the launch fired: it never plays at all.
+		state.phase = SlotPhase::Idle;
+		return;
+	}
+	if( state.phase == SlotPhase::Playing )
+	{
+		scheduleAt( state, SlotPhase::StopPending, launchTickAt( quantisation, ctx ) );
+	}
+}
+
+
+//! Explicit stop, whatever the mode. A slot that never started stays idle.
+void stopSlot( SlotLaunchState& state, LaunchQuantisation quantisation,
+	const SessionClockContext& ctx ) noexcept
+{
+	state.held = false;
+	if( state.phase == SlotPhase::Idle )
+	{
+		return;
+	}
+	scheduleAt( state, SlotPhase::StopPending, launchTickAt( quantisation, ctx ) );
+}
+
+} // namespace
+
+
+void applyLaunchCommand( SlotLaunchState& state, LaunchMode mode,
+	LaunchQuantisation quantisation, LaunchCommandType command,
+	const SessionClockContext& ctx ) noexcept
+{
+	switch( command )
+	{
+		case LaunchCommandType::Press:
+			pressSlot( state, mode, quantisation, ctx );
+			return;
+		case LaunchCommandType::Release:
+			releaseSlot( state, mode, quantisation, ctx );
+			return;
+		case LaunchCommandType::Stop:
+		default:
+			stopSlot( state, quantisation, ctx );
 			return;
 	}
 }
@@ -326,25 +357,31 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
 }
 
 
-void SessionScheduler::processAudio( const SessionClockContext& snapshot,
-	f_cnt_t framesThisPeriod ) noexcept
+bool SessionScheduler::consumeResetRequest() noexcept
 {
 	const std::uint32_t generation = m_resetGeneration.load( std::memory_order_acquire );
-	if( generation != m_seenGeneration )
+	if( generation == m_seenGeneration )
 	{
-		m_seenGeneration = generation;
-		for( auto& slot : m_active )
-		{
-			slot = ActiveSlot{};
-		}
-		m_positionTicks = 0;
-		m_freeRunFrames = 0.0;
-		m_wasRunning = false;
-		// A project change starts a fresh session: the launch bookkeeping the
-		// model thread can read goes back to zero with the launch state.
-		m_launches.store( 0, std::memory_order_relaxed );
+		return false;
 	}
+	m_seenGeneration = generation;
+	for( auto& slot : m_active )
+	{
+		slot = ActiveSlot{};
+	}
+	m_positionTicks = 0;
+	m_freeRunFrames = 0.0;
+	m_wasRunning = false;
+	// A project change starts a fresh session: the launch bookkeeping the
+	// model thread can read goes back to zero with the launch state.
+	m_launches.store( 0, std::memory_order_relaxed );
+	return true;
+}
 
+
+void SessionScheduler::advanceClock( const SessionClockContext& snapshot,
+	f_cnt_t framesThisPeriod ) noexcept
+{
 	// The session clock is its own domain (SPEC A2). While the song transport
 	// runs the session clock follows it, so launches land on the arrangement's
 	// grid lines; while it is stopped the session clock free-runs, so a launch
@@ -353,25 +390,26 @@ void SessionScheduler::processAudio( const SessionClockContext& snapshot,
 	{
 		m_positionTicks = snapshot.positionTicks;
 		m_wasRunning = true;
+		return;
 	}
-	else if( snapshot.framesPerTick > 0.0f )
+	if( snapshot.framesPerTick <= 0.0f )
 	{
-		if( m_wasRunning )
-		{
-			m_freeRunFrames = static_cast<double>( m_positionTicks )
-				* static_cast<double>( snapshot.framesPerTick );
-			m_wasRunning = false;
-		}
-		m_freeRunFrames += static_cast<double>( framesThisPeriod );
-		m_positionTicks = static_cast<tick_t>(
-			m_freeRunFrames / static_cast<double>( snapshot.framesPerTick ) );
+		return;
 	}
+	if( m_wasRunning )
+	{
+		m_freeRunFrames = static_cast<double>( m_positionTicks )
+			* static_cast<double>( snapshot.framesPerTick );
+		m_wasRunning = false;
+	}
+	m_freeRunFrames += static_cast<double>( framesThisPeriod );
+	m_positionTicks = static_cast<tick_t>(
+		m_freeRunFrames / static_cast<double>( snapshot.framesPerTick ) );
+}
 
-	SessionClockContext ctx = snapshot;
-	ctx.positionTicks = m_positionTicks;
 
-	drainCommands( ctx );
-
+void SessionScheduler::advanceSlots( const SessionClockContext& ctx ) noexcept
+{
 	for( auto& slot : m_active )
 	{
 		if( slot.track < 0 )
@@ -390,6 +428,20 @@ void SessionScheduler::processAudio( const SessionClockContext& snapshot,
 			slot = ActiveSlot{};
 		}
 	}
+}
+
+
+void SessionScheduler::processAudio( const SessionClockContext& snapshot,
+	f_cnt_t framesThisPeriod ) noexcept
+{
+	consumeResetRequest();
+	advanceClock( snapshot, framesThisPeriod );
+
+	SessionClockContext ctx = snapshot;
+	ctx.positionTicks = m_positionTicks;
+
+	drainCommands( ctx );
+	advanceSlots( ctx );
 }
 
 
