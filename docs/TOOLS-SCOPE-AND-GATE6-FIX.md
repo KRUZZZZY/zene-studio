@@ -281,6 +281,31 @@ Gate 1's `ctest` is the 86/86 above, run from `build/tests` (the only directory 
 error, not a pass). No C++ was touched by this lane, so the 86/86 baseline is unchanged; the only
 rebuilt targets are the ones the mutation gate at Gate 5 rebuilds for itself.
 
+**A dedicated standalone `ctest`, and why it needed guarding.** The measurement above is valid
+but is Gate 1's; a standalone re-run is worth having, and it took three attempts. The first two
+(12:23 and 12:25) reported 17 of 86 as `***Not Run` with `[permission denied]` against the test
+binaries, and the third reported a *different* 17 — because another agent session was running
+`cmake --build build -j 4` **in this same worktree** at the time (`ps` showed the command, and
+that session has since created `tests/integration-logs-3f-undo/` and modified the C++ working
+tree in the `control.undo` crash path with its own instrumentation, uncommitted and not part of
+any commit here). Mid-relink a binary is briefly absent or not yet executable, so those runs
+measured a relink, not the code; their logs were overwritten and are not offered as evidence.
+The measurement that counts is the guarded one, `run-ctest-when-quiet.sh`, which waits for the
+build tree to go quiet before it runs and never builds anything itself:
+
+```
+$ bash tests/integration-logs-3f-bridge/run-ctest-when-quiet.sh > tests/integration-logs-3f-bridge/ctest-from-build-tests.log 2>&1; echo EXIT=$?
+=== ctest window: waited 65s for a quiet build tree (quiet checks: 3) ===
+100% tests passed, 0 tests failed out of 86
+Total Test time (real) = 125.28 sec
+=== ctest exit: 0 ===
+EXIT=0
+```
+
+So `ctest` from `build/tests` is **86/86, EXIT 0** on the pristine tree (Gate 1, 12:16) and
+again on the tree as the concurrent session had left it (the guarded run). Neither this lane's
+commits nor the bridge's arrival changes a single test outcome.
+
 ## 5. The bridge's own tests, and the one failure this lane did not fix
 
 With `ZENE_CONTROL_BINARY=<worktree>/build/zene` (the built binary of this very tree — the
