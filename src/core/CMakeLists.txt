@@ -36,13 +36,18 @@ set(LMMS_SRCS
 	core/Clipboard.cpp
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
+	core/ControlCommandsArrangement.cpp
+	core/ControlCommandsClip.cpp
 	core/ControlCommandsControl.cpp
 	core/ControlCommandsMixer.cpp
+	core/ControlCommandsNotes.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsTransport.cpp
+	core/ControlEditSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlServer.cpp
 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).
+	${CMAKE_SOURCE_DIR}/include/ControlEdit.h
 	${CMAKE_SOURCE_DIR}/include/ControlRegistry.h
 	${CMAKE_SOURCE_DIR}/include/ControlServer.h
 	core/Controller.cpp

@@ -170,6 +170,12 @@ LMMS_EXPORT void registerTransportCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerMixerCommands(ControlRegistry& registry);
 //! project.* and render.render
 LMMS_EXPORT void registerProjectCommands(ControlRegistry& registry);
+//! track.add/remove/rename/set_mute/set_solo/set_arm and arrangement.get_state
+LMMS_EXPORT void registerArrangementCommands(ControlRegistry& registry);
+//! clip.add/move/resize/split/delete/duplicate/select
+LMMS_EXPORT void registerClipCommands(ControlRegistry& registry);
+//! note.add/remove/move/resize/velocity_set/select and roll.get_state
+LMMS_EXPORT void registerNoteCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

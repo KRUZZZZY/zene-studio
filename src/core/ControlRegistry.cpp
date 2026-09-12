@@ -480,6 +480,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerTransportCommands(registry);
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
+	registerArrangementCommands(registry);
+	registerClipCommands(registry);
+	registerNoteCommands(registry);
 }
 
 } // namespace lmms

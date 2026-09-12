@@ -8,8 +8,14 @@ AF_UNIX socket with line-delimited JSON-RPC. It asserts:
   * the socket file is created with mode 0600 and is unlinked on exit;
   * control.ping / control.version / control.commands_list answer;
   * the full flow open -> read mixer -> set a channel volume -> render -> save;
-  * typed error paths (not_found, invalid_args);
-  * control.undo / control.redo reverse a recorded mutating command.
+  * the editing flow of the notes/clips/tracks group: add a track, add a clip,
+    add notes, move/resize/set the velocity of one, read it back through
+    roll.get_state, delete it, undo, read back - and the same for clip.add and
+    clip.delete against arrangement.get_state;
+  * typed error paths (not_found, invalid_args, refused), including a bogus
+    track id and out-of-range note values;
+  * control.undo / control.redo reverse a recorded mutating command;
+  * the transaction list, printed with its reversible flag per command.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-socket-integration.py <lmms> <project.mmp>
 Exit code 0 only when every assertion passed.
@@ -298,8 +304,243 @@ def main():
         if commands_recorded["mixer.add_channel"].get("reversible"):
             fail("mixer.add_channel must honestly report itself as not reversible", process, log_path)
 
+        # --- the editing flow: notes / clips / tracks (SPEC A16) ----------
+        # The fixture ships one pattern track with one clip. Its clip is a
+        # PatternClip: a real clip with a real id, but no note list, so the piano
+        # roll refuses it by type instead of pretending it is empty.
+        arrangement = ok_result(client.call(24, "arrangement.get_state"), 24)
+        if arrangement.get("track_count") != 1 or arrangement.get("clip_count") != 1:
+            fail("the fixture's arrangement is %r" % arrangement, process, log_path)
+        fixture_track = arrangement["tracks"][0]
+        fixture_clip = arrangement["clips"][0]
+        if fixture_track.get("id") != "trk-0" or fixture_clip.get("id") != "clip-0":
+            fail("stable ids are not trk-<n>/clip-<n>: %r %r" % (fixture_track, fixture_clip), process, log_path)
+        if fixture_clip.get("note_count") is not None:
+            fail("a PatternClip must report note_count null, got %r" % fixture_clip, process, log_path)
+        typed_error(client.call(25, "roll.get_state", {"clip": "clip-0"}), 25, "refused")
+
+        # A new instrument track and a clip on it.
+        added_track = ok_result(client.call(26, "track.add", {"type": "instrument"}), 26)
+        track = added_track.get("track")
+        if not track or not track.startswith("trk-"):
+            fail("track.add returned %r" % added_track, process, log_path)
+        if added_track.get("type") != "instrument" or not added_track.get("name"):
+            fail("track.add did not report the new track's type/name: %r" % added_track, process, log_path)
+
+        # track.rename / track.set_mute / track.set_solo, read back per track.
+        renamed = ok_result(client.call(261, "track.rename", {"track": track, "name": "Agent Track"}), 261)
+        muted = ok_result(client.call(262, "track.set_mute", {"track": track, "muted": True}), 262)
+        if renamed.get("name") != "Agent Track" or not muted.get("muted"):
+            fail("track.rename/track.set_mute did not report the new state: %r %r" % (renamed, muted),
+                 process, log_path)
+        track_read = ok_result(client.call(263, "track.get_state", {"track": track}), 263)
+        if track_read.get("name") != "Agent Track" or not track_read.get("muted"):
+            fail("track.get_state did not read the renamed/muted track back: %r" % track_read,
+                 process, log_path)
+
+        # Soloing is the product's whole solo action, not just a flag: TrackView
+        # connects the solo model's dataChanged to Track::toggleSolo(), so the
+        # soloed track is unmuted and every other track is muted. The assertions
+        # below pin that, rather than pretending set_solo writes one bit.
+        soloed = ok_result(client.call(264, "track.set_solo", {"track": track, "solo": True}), 264)
+        if not soloed.get("soloed"):
+            fail("track.set_solo did not report the new state: %r" % soloed, process, log_path)
+        after_solo = ok_result(client.call(265, "track.get_state", {"track": track}), 265)
+        if not after_solo.get("soloed") or after_solo.get("muted"):
+            fail("the solo action did not un-mute the soloed track: %r" % after_solo, process, log_path)
+        other = ok_result(client.call(266, "track.get_state", {"track": "trk-0"}), 266)
+        if not other.get("muted"):
+            fail("the solo action did not mute the other track: %r" % other, process, log_path)
+
+        # track.set_mute claims a real journal inverse: prove it with an undo.
+        remuted = ok_result(client.call(267, "track.set_mute", {"track": track, "muted": True}), 267)
+        if not remuted.get("muted"):
+            fail("track.set_mute did not mute again: %r" % remuted, process, log_path)
+        if not ok_result(client.call(268, "control.undo"), 268).get("undone"):
+            fail("control.undo reported nothing undone after track.set_mute", process, log_path)
+        after_undo_mute = ok_result(client.call(269, "track.get_state", {"track": track}), 269)
+        if after_undo_mute.get("muted"):
+            fail("undo of track.set_mute did not restore the unmuted state: %r" % after_undo_mute,
+                 process, log_path)
+
+        first_clip = ok_result(client.call(27, "clip.add", {"track": track, "position": 0, "length": 192}), 27)
+        clip = first_clip.get("clip")
+        if not clip or not clip.startswith("clip-"):
+            fail("clip.add returned %r" % first_clip, process, log_path)
+        # clip.add is claimed reversible (Track checkpoint): prove it with a real undo.
+        if not ok_result(client.call(28, "control.undo"), 28).get("undone"):
+            fail("control.undo reported nothing undone after clip.add", process, log_path)
+        after_undo = ok_result(client.call(29, "arrangement.get_state"), 29)
+        if after_undo.get("clip_count") != 1:
+            fail("undo of clip.add left %r clips" % after_undo.get("clip_count"), process, log_path)
+
+        # Create it again, then arrange two notes into it.
+        clip = ok_result(client.call(30, "clip.add", {"track": track, "position": 0, "length": 192}), 30).get("clip")
+        roll = ok_result(client.call(31, "roll.get_state", {"clip": clip}), 31)
+        if roll.get("notes") != [] or roll.get("clip") != clip:
+            fail("a fresh clip must roll as an empty note list: %r" % roll, process, log_path)
+
+        # clip.select remembers the clip for a roll.get_state that names none.
+        selected = ok_result(client.call(311, "clip.select", {"clip": clip}), 311)
+        if selected.get("selected_clip") != clip:
+            fail("clip.select returned %r" % selected, process, log_path)
+        selected_roll = ok_result(client.call(312, "roll.get_state"), 312)
+        if selected_roll.get("clip") != clip:
+            fail("roll.get_state did not fall back to the selected clip: %r" % selected_roll,
+                 process, log_path)
+
+        note_a = ok_result(client.call(32, "note.add",
+            {"clip": clip, "key": 60, "position": 0, "length": 24, "velocity": 100}), 32)
+        note_b = ok_result(client.call(33, "note.add",
+            {"clip": clip, "key": 64, "position": 48, "length": 24, "velocity": 64}), 33)
+        if not note_a.get("note", "").startswith("note-") or not note_b.get("note", "").startswith("note-"):
+            fail("note.add returned %r / %r" % (note_a, note_b), process, log_path)
+
+        roll = ok_result(client.call(34, "roll.get_state", {"clip": clip}), 34)
+        if roll.get("note_count") != 2:
+            fail("roll.get_state reports %r notes after two note.add calls" % roll.get("note_count"), process, log_path)
+        for note, key, velocity in zip(roll["notes"], (60, 64), (100, 64)):
+            if note.get("key") != key or note.get("clip") != clip:
+                fail("roll.get_state note %r does not carry its key/clip" % note, process, log_path)
+            if abs(float(note.get("velocity", -1)) - velocity) > 1e-6:
+                fail("roll.get_state note %r does not carry its velocity" % note, process, log_path)
+
+        moved = ok_result(client.call(35, "note.move",
+            {"clip": clip, "note": note_b["note"], "position": 96}), 35)
+        resized = ok_result(client.call(36, "note.resize",
+            {"clip": clip, "note": moved.get("note"), "length": 48}), 36)
+        velocity = ok_result(client.call(37, "note.velocity_set",
+            {"clip": clip, "note": moved.get("note"), "velocity": 30}), 37)
+        if moved.get("position") != 96 or resized.get("length") != 48:
+            fail("note.move/note.resize did not report the new geometry: %r %r" % (moved, resized), process, log_path)
+        if abs(float(velocity.get("velocity", -1)) - 30) > 1e-6:
+            fail("note.velocity_set did not report the new velocity: %r" % velocity, process, log_path)
+        ok_result(client.call(38, "note.select", {"clip": clip, "notes": [moved["note"]]}), 38)
+
+        roll = ok_result(client.call(39, "roll.get_state", {"clip": clip}), 39)
+        edited = [n for n in roll.get("notes", []) if n.get("id") == moved.get("note")]
+        if not edited:
+            fail("roll.get_state lost the edited note: %r" % roll, process, log_path)
+        edited = edited[0]
+        if edited.get("position") != 96 or edited.get("length") != 48:
+            fail("roll.get_state did not read back the move/resize: %r" % edited, process, log_path)
+        if abs(float(edited.get("velocity", -1)) - 30) > 1e-6:
+            fail("roll.get_state did not read back the velocity: %r" % edited, process, log_path)
+        if not edited.get("selected"):
+            fail("roll.get_state does not report the selected note: %r" % edited, process, log_path)
+
+        # Delete the edited note, undo, read it back.
+        removed = ok_result(client.call(40, "note.remove", {"clip": clip, "note": moved["note"]}), 40)
+        if removed.get("note_count") != 1:
+            fail("note.remove left %r notes" % removed.get("note_count"), process, log_path)
+        if not ok_result(client.call(41, "control.undo"), 41).get("undone"):
+            fail("control.undo reported nothing undone after note.remove", process, log_path)
+        roll = ok_result(client.call(42, "roll.get_state", {"clip": clip}), 42)
+        if roll.get("note_count") != 2:
+            fail("undo of note.remove did not restore the note: %r" % roll, process, log_path)
+
+        # Delete the clip, undo, read the arrangement back.
+        ok_result(client.call(43, "clip.delete", {"clip": clip}), 43)
+        after_delete = ok_result(client.call(44, "arrangement.get_state"), 44)
+        if after_delete.get("clip_count") != 1:
+            fail("clip.delete left %r clips" % after_delete.get("clip_count"), process, log_path)
+        if not ok_result(client.call(45, "control.undo"), 45).get("undone"):
+            fail("control.undo reported nothing undone after clip.delete", process, log_path)
+        after_restore = ok_result(client.call(46, "arrangement.get_state"), 46)
+        if after_restore.get("clip_count") != 2:
+            fail("undo of clip.delete did not restore the clip: %r" % after_restore, process, log_path)
+        clip = [c.get("id") for c in after_restore.get("clips", []) if c.get("id") != "clip-0"][0]
+
+        # --- clip.move / clip.resize / clip.split / clip.duplicate --------
+        moved_clip = ok_result(client.call(47, "clip.move", {"clip": clip, "position": 192}), 47)
+        resized_clip = ok_result(client.call(48, "clip.resize", {"clip": clip, "length": 240}), 48)
+        if moved_clip.get("position") != 192 or resized_clip.get("length") != 240:
+            fail("clip.move/clip.resize did not report the new geometry: %r %r"
+                 % (moved_clip, resized_clip), process, log_path)
+        # a cut at either end is refused, exactly as the GUI's split refuses it
+        typed_error(client.call(49, "clip.split", {"clip": clip, "position": 192}), 49, "invalid_args")
+        split = ok_result(client.call(50, "clip.split", {"clip": clip, "position": 288}), 50)
+        if not split.get("left") or not split.get("right") or split.get("left") == split.get("right"):
+            fail("clip.split returned %r" % split, process, log_path)
+        duplicated = ok_result(client.call(51, "clip.duplicate",
+            {"clip": split["right"], "position": 480}), 51)
+        if not duplicated.get("clip") or duplicated.get("source") != split.get("right"):
+            fail("clip.duplicate returned %r" % duplicated, process, log_path)
+
+        arrangement = ok_result(client.call(52, "arrangement.get_state"), 52)
+        if arrangement.get("clip_count") != 4:
+            fail("after split+duplicate the arrangement has %r clips: %r"
+                 % (arrangement.get("clip_count"), arrangement), process, log_path)
+        copy_roll = ok_result(client.call(53, "roll.get_state", {"clip": duplicated["clip"]}), 53)
+        if copy_roll.get("note_count") != 2:
+            fail("clip.duplicate did not copy the notes: %r" % copy_roll, process, log_path)
+
+        # --- typed errors of the new group --------------------------------
+        typed_error(client.call(54, "track.rename", {"track": "trk-999", "name": "x"}), 54, "not_found")
+        typed_error(client.call(55, "clip.add", {"track": "trk-999", "position": 0}), 55, "not_found")
+        # an out-of-range note key and an out-of-range velocity
+        typed_error(client.call(56, "note.add",
+            {"clip": copy_roll["clip"], "key": 300, "position": 0, "length": 12}), 56, "invalid_args")
+        typed_error(client.call(57, "note.velocity_set",
+            {"clip": copy_roll["clip"], "note": "note-0", "velocity": 9999}), 57, "invalid_args")
+        # track.set_arm is an honest refusal: no arm flag exists on a Track here.
+        typed_error(client.call(58, "track.set_arm", {"track": track, "armed": True}), 58, "refused")
+
+        # --- the transaction split, printed as evidence --------------------
+        transactions = ok_result(client.call(59, "control.transactions"), 59).get("transactions", [])
+        print("\n---- transactions (SPEC A16) ----")
+        for entry in transactions:
+            print("%-22s reversible=%-5s %s" % (entry.get("command"),
+                str(bool(entry.get("reversible"))).lower(), entry.get("mechanism")))
+        by_command = {}
+        for entry in transactions:
+            by_command.setdefault(entry.get("command"), entry)
+        for expected in ("note.add", "note.remove", "note.move", "note.resize",
+                         "note.velocity_set", "clip.add", "clip.delete", "clip.move",
+                         "clip.resize", "clip.split", "clip.duplicate", "track.rename",
+                         "track.set_mute"):
+            entry = by_command.get(expected)
+            if entry is None:
+                fail("no transaction recorded for %s" % expected, process, log_path)
+            if not entry.get("reversible"):
+                fail("%s was not recorded as reversible" % expected, process, log_path)
+        for expected in ("track.add", "clip.select", "note.select", "track.set_solo"):
+            entry = by_command.get(expected)
+            if entry is None:
+                fail("no transaction recorded for %s" % expected, process, log_path)
+            if entry.get("reversible"):
+                fail("%s must honestly report itself as not reversible" % expected, process, log_path)
+            if not entry.get("mechanism"):
+                fail("%s recorded no reason for being irreversible" % expected, process, log_path)
+
+        # --- track.remove, the one destructive command of the group --------
+        # (dry_run previews it; the real call is exercised here and its
+        # transaction is checked in a second read of the list.)
+        preview = ok_result(client.call(60, "track.remove", {"track": track, "dry_run": True}), 60)
+        if not preview.get("dry_run"):
+            fail("track.remove did not honour dry_run: %r" % preview, process, log_path)
+        still_there = ok_result(client.call(61, "arrangement.get_state"), 61)
+        if still_there.get("track_count") != 2:
+            fail("a dry_run removed the track anyway: %r" % still_there, process, log_path)
+
+        removed_track = ok_result(client.call(62, "track.remove", {"track": track}), 62)
+        if removed_track.get("removed") != track:
+            fail("track.remove returned %r" % removed_track, process, log_path)
+        final = ok_result(client.call(63, "arrangement.get_state"), 63)
+        if final.get("track_count") != 1 or final.get("clip_count") != 1:
+            fail("track.remove left %r / %r" % (final.get("track_count"), final.get("clip_count")),
+                 process, log_path)
+        transactions = ok_result(client.call(64, "control.transactions"), 64).get("transactions", [])
+        removals = [t for t in transactions if t.get("command") == "track.remove"]
+        if len(removals) != 2:
+            fail("expected a dry_run and a real transaction for track.remove, got %r" % removals,
+                 process, log_path)
+        if removals[0].get("reversible") or removals[-1].get("reversible"):
+            fail("track.remove must honestly report itself as not reversible: %r" % removals,
+                 process, log_path)
+
         # --- shutdown unlinks the socket ----------------------------------
-        client.call(23, "control.quit")
+        client.call(65, "control.quit")
         client.close()
         deadline = time.time() + 30.0
         while time.time() < deadline and process.poll() is None:
@@ -310,6 +551,10 @@ def main():
             fail("the control socket file was not unlinked on exit", process, log_path)
         if process.returncode != 0:
             fail("the app exited with %s" % process.returncode, process, log_path)
+    except (ConnectionError, TimeoutError, OSError, AssertionError) as error:
+        # A crash of the instance (or a dropped connection) is a failure of this
+        # test like any other: report it with the app log, not as a traceback.
+        fail("the session died or an assertion raised: %s" % error, process, log_path)
     finally:
         log_file.close()
         if process.poll() is None:
