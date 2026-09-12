@@ -6,10 +6,21 @@
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
-#   bash tests/run-all-gates.sh --whole-tree    # Gates 4, 7, 8 over all 1,095 first-party
-#                                               # files instead of the 99-file fork scope
-#                                               # (upstream code is grandfathered in
-#                                               # tests/*-baseline-all.tsv)
+#   bash tests/run-all-gates.sh --whole-tree    # Gates 4, 7, 8 over the whole-tree scope
+#                                               # (tests/all-sources.txt) instead of the
+#                                               # default fork scope (tests/fork-sources.txt).
+#                                               # Upstream code is grandfathered in
+#                                               # tests/*-baseline-all.tsv.
+#
+# SCOPE POLICY (2026-09-12). The default run is the ENFORCED scope: the fork scope plus the
+# tools scope, which is also what CI's static-gates job runs. The whole-tree scope is NOT
+# part of a default run, and saying so is the point of the summary's scope line: between the
+# post-alpha merges and 2026-09-12 the all-scope ratchets were red while every default run
+# and every CI job reported green, because nothing that runs by default measured them. The
+# all scope is now green (reconciled deliberately, with the reasons recorded in
+# tests/QA-GATES.md "Scope policy" and printed by the two --reanchor runs), and it is
+# refreshed with `--reanchor "reason"` at integration points, never silently. Run
+# `--whole-tree` before a freeze and before publishing a release.
 #
 # Gate 2 (coverage) and Gate 5 (mutation) stay fork-scoped: their runs are expensive and
 # their baselines are meaningful per-file. Whole-tree coverage is measured separately
@@ -165,6 +176,17 @@ for row in "${RESULTS[@]}"; do
 	IFS='|' read -r g n r <<< "$row"
 	printf '%-6s %-24s %s\n' "$g" "$n" "$r"
 done
+echo
+# The enforced scope, named on every run, and the one scope this run does NOT measure - so
+# "everything passed" can never be read as "the whole tree was measured". See SCOPE POLICY
+# in the header and tests/QA-GATES.md.
+if [[ "$SCOPE_ARG" == "--scope all" ]]; then
+	echo "scope: whole-tree (tests/all-sources.txt) + tools — gates 4, 7 and 8 were run over both"
+else
+	echo "scope: fork (tests/fork-sources.txt) + tools — the enforced scope, the same one CI's"
+	echo "       static-gates job runs. The WHOLE-TREE scope (gates 4/7/8 --scope all) was NOT"
+	echo "       measured by this run; use --whole-tree for it (tests/QA-GATES.md, 'Scope policy')."
+fi
 echo
 if [[ ${#SKIPPED[@]} -gt 0 ]]; then
 	printf 'skipped: %d of %d gates did not run\n' "${#SKIPPED[@]}" "${#RESULTS[@]}"

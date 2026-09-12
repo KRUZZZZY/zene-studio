@@ -1,0 +1,33 @@
+# Deliberate exceptions to the per-file line budget (Gate 7, <= 500 lines).
+#
+# tests/file-length-gate.sh reads this file for EVERY scope it measures (fork,
+# all, tools): a path listed here is not measured, so it can be neither a
+# grandfathered baseline entry nor a regression.
+#
+# When an exemption is the right instrument. Only for files a line budget does
+# not describe: generated tables and fixtures (wavetable / coefficient headers
+# emitted by a generator) and vendored data that is copied rather than written.
+#
+# When it is NOT. A file this repo maintains by hand must never be listed here
+# to silence growth. Growth in hand-written code is a decision, and the
+# recorded way to take it is `bash tests/file-length-gate.sh --reanchor
+# "<reason>"` (docs/CONVENTIONS.md rule 5), which names the file and its size
+# in the commit. Listing it here would hide the decision instead of recording
+# it, which is exactly what the ratchet exists to prevent.
+#
+# Format, one exemption per line:
+#
+#   <repo-relative path><TAB><why this file may exceed the 500-line target>
+#
+# The reason is mandatory: the gate exits 2 on a blank one rather than honouring
+# it, the same fail-closed rule tests/upstream-modifications.txt and
+# tests/coverage-entry-floor-exempt.txt follow. An exemption changes nothing
+# else - not the limit, not any other file, not any other scope.
+#
+# Current exemptions: NONE. Every file over 500 lines in every scope today is a
+# hand-written source that is grandfathered in its scope's baseline
+# (tests/file-length-baseline*.tsv) with the growth decision recorded, or is
+# this fork's own code measured by the same rule as everything else. The file
+# exists because the gate and tests/QA-GATES.md both name it as the exemption
+# home, and a documented fail-closed input that is absent is a fail-closed
+# violation. It is empty of entries on purpose, not by omission.

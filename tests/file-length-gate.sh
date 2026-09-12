@@ -11,14 +11,17 @@
 #   - a grandfathered file that GROWS by more than TOLERANCE lines fails;
 #   - a file that shrinks updates the baseline down (the ratchet only moves one way).
 #
-# Exemptions: add the repo-relative path to tests/file-length-exempt.txt with a reason
-# (generated tables/fixtures, vendored data). Exempt files are not measured.
+# Exemptions: add the repo-relative path to tests/file-length-exempt.txt with a
+# reason, tab-separated (generated tables/fixtures, vendored data). Exempt files
+# are not measured in any scope. A blank reason exits 2 - an exemption without a
+# stated reason is not honoured, the same fail-closed rule the divergence ledger
+# and the coverage entry floor follow.
 #
 # Usage:
 #   bash tests/file-length-gate.sh                        # ratchet: refresh the baseline, fail on regressions
 #   bash tests/file-length-gate.sh --check                # CI: never writes the baseline, STILL fails on regressions
 #   bash tests/file-length-gate.sh --reanchor "reason"    # deliberate, recorded baseline refresh
-#   bash tests/file-length-gate.sh --scope all            # whole tree (1,095 files) instead of the fork scope
+#   bash tests/file-length-gate.sh --scope all            # whole tree (every source in tests/all-sources.txt)
 #   bash tests/file-length-gate.sh --scope tools          # the fork's own tooling under tools/ (own baseline)
 #
 # NOTE (2026-09-11): `--check` used to print PASS unconditionally, so this ratchet could
@@ -50,7 +53,7 @@ done
 case "$SCOPE" in
 	fork) SOURCES="$HERE/fork-sources.txt" ;;
 	all)  SOURCES="$HERE/all-sources.txt"; BASELINE="$HERE/file-length-baseline-all.tsv"
-	      echo "file-length-gate: whole-tree scope (1,095 first-party files; upstream files are grandfathered, see docs/CONVENTIONS.md)" ;;
+	      echo "file-length-gate: whole-tree scope (every source in tests/all-sources.txt; upstream files are grandfathered, see docs/CONVENTIONS.md)" ;;
 	tools) SOURCES="$HERE/tools-sources.txt"; BASELINE="$HERE/file-length-baseline-tools.tsv"
 	      echo "file-length-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)" ;;
 	*) echo "unknown scope '$SCOPE' (use fork|all|tools)" >&2; exit 2 ;;
@@ -64,6 +67,20 @@ is_exempt() {
 	[[ -f "$EXEMPT" ]] || return 1
 	grep -vE '^\s*(#|$)' "$EXEMPT" | cut -f1 | grep -qxF "$1"
 }
+
+# Exemptions are fail-closed: a path without a stated reason is refused rather
+# than honoured, so the file cannot become a silent mute button for the ratchet.
+if [[ -f "$EXEMPT" ]]; then
+	while IFS=$'	' read -r ex_path ex_why; do
+		[[ "$ex_path" =~ ^[[:space:]]*# ]] && continue
+		[[ -z "${ex_path// /}" ]] && continue
+		if [[ -z "${ex_why// /}" ]]; then
+			echo "exempt error: tests/file-length-exempt.txt entry '$ex_path' has no reason" >&2
+			echo "an exemption must say why the file should not be measured (this gate refuses a blank one)" >&2
+			exit 2
+		fi
+	done < "$EXEMPT"
+fi
 
 current="$(mktemp)"
 while read -r f; do
@@ -118,10 +135,14 @@ while IFS=$'\t' read -r f n; do
 done < "$current"
 
 # files that dropped to or below the limit leave the baseline (ratchet down)
-while IFS=$'\t' read -r f n; do
+while IFS=$'	' read -r f n; do
 	[[ "$f" =~ ^# ]] && continue
 	[[ -z "${f// /}" ]] && continue
-	cur=$(awk -F'\t' -v p="$f" '$1==p {print $2}' "$current")
+	if is_exempt "$f"; then
+		echo "improved: $f is exempt (tests/file-length-exempt.txt) - not measured, dropped from the baseline"
+		continue
+	fi
+	cur=$(awk -F'	' -v p="$f" '$1==p {print $2}' "$current")
 	if [[ -z "$cur" ]]; then
 		echo "improved: $f is no longer a fork source - dropped from the baseline"
 	elif [[ "$cur" -le "$LIMIT" ]]; then
