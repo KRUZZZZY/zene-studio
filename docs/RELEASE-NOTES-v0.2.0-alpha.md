@@ -238,9 +238,11 @@ bridge's committed snapshot holds **70** (it is deliberately stale — a command
 missing from the DAW). And a wider surface line counts **87** by its own method (71 + 16,
 the sixteen being tail groups such as `record.*`, `import.*` and `export.*` that this release line does
 not carry). **That figure is that line's own tally, carried in the program workspace
-(`POST-ALPHA-PLAN.md`: "`registered ids in ControlCommands*.cpp | 87 | 71 + 16`") and is not measurable from
-this tree**, which is why it is named as a record rather than quoted as a count of the same kind as the ones
-above. **Quote a count with the thing it was counted over.**
+(`POST-ALPHA-PLAN.md`: "`registered ids in ControlCommands*.cpp | 87 | 71 + 16`", described there in the same
+words as "ids registered in the SOURCE (71 + 16) — a static count, right for its method") and is not measurable
+from this tree**, which is why it is named as a record rather than quoted as a count of the same kind as the
+ones above. (The record is a file-level citation on purpose: `POST-ALPHA-PLAN.md` was edited while this pass ran
+and the line it sat on moved.) **Quote a count with the thing it was counted over.**
 
 Every successful mutating command records one transaction naming the command, the class (stamped from
 the table, never from the handler), the before-state, the inverse descriptor, the call's own `reversible`
@@ -250,8 +252,8 @@ outlives the step it describes — `MaxTransactionBytes` (256 KiB) in total, a 6
 captured device state or track XML (`ControlSnapshotLimit`, `MaxTrackSnapshotChars`), and FIFO eviction whose
 evictions are **counted and reported** rather than hidden: `ControlRegistry`'s retained-record cap counts them
 and `control.transactions` returns the `evicted` count. (An earlier version of this sentence cited
-`include/ControlReversibility.h:143,149` for the bounds and `ControlCommandsArrangement.cpp:53` for the
-eviction — that line is `MaxTrackSnapshotChars`, a per-record cap, and the eviction accounting lives in
+`include/ControlReversibility.h:143,149` for the bounds and `src/core/ControlCommandsArrangement.cpp:53` for
+the eviction — that line is `MaxTrackSnapshotChars`, a per-record cap, and the eviction accounting lives in
 `ControlRegistry`.) The record does not survive a restart, and neither does
 the undo history.
 
@@ -490,7 +492,7 @@ prove the fallback; no test drives the surface against a real audio backend.
 
 - **The recorder no longer writes wraparound garbage for out-of-range samples.** Correction to an earlier
   assumption of ours: the **WAV and FLAC exporters already clipped** (`SFC_SET_CLIPPING` at
-  `AudioFileWave.cpp:89` / `AudioFileFlac.cpp:83`) — both verified in this tree — so exported files were never
+  `src/core/audio/AudioFileWave.cpp:89` / `src/core/audio/AudioFileFlac.cpp:83`) — both verified in this tree — so exported files were never
   corrupt. The wrap was on the **recorder's** writer, and it is **latent rather than always-on** — it cannot be
   reached until a track can be armed. It is fixed by clamping in C++ on the writer thread rather than by
   enabling the library flag, because the flag was measured to shift *in-range* negative samples by 1 LSB; the
@@ -546,8 +548,8 @@ prove the fallback; no test drives the surface against a real audio backend.
   DAW** (`returncode -11`), and every client died with the process. The fault was a null dereference in
   `PatternStore::updateComboBox()` (`src/core/PatternStore.cpp:203`) reached from
   `ProjectJournal::undo()` — *below* the call the GUI's Edit ▸ Undo makes, because the GUI's Ctrl+Z **is**
-  `Engine::projectJournal()->undo()` (`src/gui/MainWindow.cpp:1417-1420`), the identical call the socket
-  path makes. The mechanism in one line: a pattern-track destructor erased its entry from a static
+  `Engine::projectJournal()->undo()` (`MainWindow::undo()` in `src/gui/MainWindow.cpp`), the identical call
+  the socket path makes. The mechanism in one line: a pattern-track destructor erased its entry from a static
   registry, and a GUI slot then read that registry with `QMap::operator[]`, **which inserts a fabricated
   entry for the dying track**; the allocator reused that address for the replacement track, which derived
   its pattern number from the registry's size, leaving index 0 vacant while the count said 1 — so the
