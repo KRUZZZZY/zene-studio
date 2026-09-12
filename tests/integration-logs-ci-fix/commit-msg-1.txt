@@ -1,0 +1,51 @@
+fix(ci): the five causes behind the v0.2.0-alpha tag's 7/7-red build matrix
+
+The tag's build.yml run (34708003925, commit b099fd6cb) failed all seven jobs.
+They were five independent causes, not one, and two of them are not what the
+triage brief assumed. Each fix below names how it was verified; see
+docs/CI-TAG-FAILURES.md for the full record and the CI logs under
+tests/integration-logs-ci-fix/.
+
+1. linux-x86_64 + linux-arm64 -- src/core/ConfigManager.cpp:700
+   "invalid use of incomplete type 'class QDebug'". saveConfigFile()'s
+   unattended branch (the #625 headless divergence) logs with qWarning(), and
+   <QtGlobal> only forward-declares QDebug: include <QDebug> by name instead of
+   relying on a transitive include. Not a -Werror-promoted warning (it is a hard
+   error) and not Qt6 -- the failing jobs build Qt5, whose widget headers do not
+   drag QDebug in. Ledger reason added for the inherited file.
+
+2. macos-arm64 -- include/fenv.h "no member named '__control' in 'fenv_t'"
+   (6 errors). The upstream polyfill for feenableexcept poked fenv_t.__control /
+   __mxcsr, which Darwin only puts in the x86_64 fenv_t; on arm64 it is
+   { unsigned long long __fpsr; unsigned long long __fpcr; }, so the file is now
+   branched per architecture. The x86_64 branch is byte-identical to upstream; the
+   arm64 branch uses Darwin's own __fpcr trap-enable bits (FE_ALL_EXCEPT << 8),
+   noting the opposite polarity (a set FPCR bit traps where a set x87 control bit
+   masks) while keeping the x86 branch's return contract. The header must stay --
+   it is how feenableexcept reaches src/core/main.cpp's LMMS_DEBUG_FPE block.
+
+3. mingw64 -- "No CLAP headers at '<build>/clap/include/clap'" at
+   cmake/modules/ClapHeaders.cmake:45, with the provisioning step having just
+   cloned CLAP 1.2.10 into exactly that directory. The MinGW toolchain sets
+   CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY, which re-roots the HINTS under the
+   target sysroot so a build-tree checkout is invisible; NO_CMAKE_FIND_ROOT_PATH
+   on that one FIND_PATH is the fix. (Vst3Sdk.cmake tests absolute paths with
+   EXISTS and needs no equivalent.)
+
+4. msvc-x64 + windows-arm64 -- "CMake Error at
+   cmake/modules/InstallTargetDependencies.cmake:37: Not a target: lmms", also
+   not a provisioning failure. cmake/install/CMakeLists.txt:28 still passed
+   TARGETS lmms while the rename wave made the executable target zene
+   (src/CMakeLists.txt:150). The block is guarded by LMMS_BUILD_WIN32, so only
+   the Windows jobs reached it. TARGETS zene, ledger reason added.
+
+5. macos-x86_64 -- the VST3 SDK's module_mac.mm:22 refuses to build without ARC.
+   Set -fobjc-arc on that one source under APPLE, the SDK's own idiom
+   (public.sdk/samples/vst-hosting/audiohost/CMakeLists.txt). UNVERIFIED: no
+   Darwin toolchain exists on this box; CI is the verifier.
+
+Ledger: tests/upstream-modifications.txt declares the three inherited files this
+diverges -- include/fenv.h and cmake/install/CMakeLists.txt (two new entries) and
+an extra reason on the existing src/core/ConfigManager.cpp entry. No file is
+added to tests/fork-sources.txt or tests/all-sources.txt, so the ratchet scopes
+and baselines are unchanged.

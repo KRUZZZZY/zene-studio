@@ -17,3 +17,8 @@ Brewfile.lock.json
 /.cache/
 compile_commands.json
 /third_party/
+
+# Generated output of the CI-tag-failure verification harnesses under
+# tests/integration-logs-ci-fix/ (their run.sh regenerates it; only run.log and
+# the sources in each run.sh are tracked).
+tests/integration-logs-ci-fix/**/out/

@@ -1,0 +1,4 @@
+without-qdebug   must fail with the CI error                    compile exit 1   ok
+with-qdebug      must compile                                   compile exit 0   ok
+
+PASS: the missing <QDebug> reproduces the CI error, the include clears it
