@@ -127,7 +127,6 @@ private slots:
 	//! the bound retains".
 	void transactionRecordStatesItsBounds()
 	{
-		ControlRegistry* registry = ControlRegistry::instance();
 		const ControlResult report = run(QStringLiteral("control.transactions"));
 		QVERIFY2(report.ok, qPrintable(report.errorMessage));
 		QCOMPARE(report.result.value(QStringLiteral("cap_records")).toInt(),
