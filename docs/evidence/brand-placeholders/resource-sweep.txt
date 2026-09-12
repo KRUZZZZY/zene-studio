@@ -1,0 +1,13 @@
+first-party resource names referenced: 498
+call sites scanned:                    989
+call sites resolved:                   846
+UNRESOLVED call sites:                 3
+
+    arp_down_on  <- src/gui/LfoControllerDialog.cpp
+    arp_up_on  <- src/gui/LfoControllerDialog.cpp
+    logo  <- plugins/GranularPitchShifter/GranularPitchShifterControlDialog.cpp
+
+    probe 'zene-plugin-logo'     -> data/themes/default/zene-plugin-logo.svg
+    probe 'splash'               -> data/themes/default/splash.png
+    probe 'icon'                 -> data/themes/default/icon.png
+    probe 'background_artwork'   -> data/themes/classic/background_artwork.png

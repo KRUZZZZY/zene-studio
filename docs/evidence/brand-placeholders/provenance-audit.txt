@@ -1,0 +1,75 @@
+== Part A. Rename map origin/master -> HEAD~1 (images only) ==
+   cmake/linux/icons/128x128/apps/lmms.png  ->  cmake/linux/icons/128x128/apps/zene.png
+   cmake/linux/icons/128x128@2/apps/lmms.png  ->  cmake/linux/icons/128x128@2/apps/zene.png
+   cmake/linux/icons/16x16/apps/lmms.png  ->  cmake/linux/icons/16x16/apps/zene.png
+   cmake/linux/icons/16x16@2/apps/lmms.png  ->  cmake/linux/icons/16x16@2/apps/zene.png
+   cmake/linux/icons/24x24/apps/lmms.png  ->  cmake/linux/icons/24x24/apps/zene.png
+   cmake/linux/icons/24x24@2/apps/lmms.png  ->  cmake/linux/icons/24x24@2/apps/zene.png
+   cmake/linux/icons/256x256/apps/lmms.png  ->  cmake/linux/icons/256x256/apps/zene.png
+   cmake/linux/icons/32x32/apps/lmms.png  ->  cmake/linux/icons/32x32/apps/zene.png
+   cmake/linux/icons/32x32@2/apps/lmms.png  ->  cmake/linux/icons/32x32@2/apps/zene.png
+   cmake/linux/icons/48x48/apps/lmms.png  ->  cmake/linux/icons/48x48/apps/zene.png
+   cmake/linux/icons/48x48@2/apps/lmms.png  ->  cmake/linux/icons/48x48@2/apps/zene.png
+   cmake/linux/icons/64x64/apps/lmms.png  ->  cmake/linux/icons/64x64/apps/zene.png
+   cmake/linux/icons/64x64@2/apps/lmms.png  ->  cmake/linux/icons/64x64@2/apps/zene.png
+   cmake/linux/icons/scalable/apps/lmms.svg  ->  cmake/linux/icons/scalable/apps/zene.svg
+   cmake/linux/icons/scalable/mimetypes/application-x-lmms-project.svg  ->  cmake/linux/icons/scalable/mimetypes/application-x-zene-project.svg
+   data/backgrounds/lmms_tile.png  ->  data/backgrounds/zene_tile.png
+   data/themes/default/lmms-plugin-logo.svg  ->  data/themes/default/zene-plugin-logo.svg
+
+== Part B. Identity-artwork provenance (41 shipped files) ==
+   (the shipped state audited is 'HEAD~1'; set SHIPPED_REV to change it)
+path                                                                   bytes  vs origin/master                   metadata
+-------------------------------------------------------------------------------------------------------------------------
+cmake/apple/background.png                                             50759  IDENTICAL (same path)              IHDR 705x400 bit=8 colourtype=6
+cmake/apple/background@2x.png                                         116338  IDENTICAL (same path)              IHDR 1410x800 bit=8 colourtype=6 | zTXt: Raw profile type exif..x...in+.....)|........>....4Oof....") | iTXt: XML:com.adobe.xmp.....<?xpacket begin=".
+cmake/apple/icon.icns                                                  44942  IDENTICAL (same path)              (not a PNG)
+cmake/apple/project.icns                                               29340  IDENTICAL (same path)              (not a PNG)
+cmake/linux/icons/128x128/apps/zene.png                                 4499  IDENTICAL (renamed from lmms.png)  IHDR 128x128 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/128x128/mimetypes/application-x-lmms-project.png      2744  IDENTICAL (same path)              IHDR 128x128 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/128x128@2/apps/zene.png                               8656  IDENTICAL (renamed from lmms.png)  IHDR 256x256 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/128x128@2/mimetypes/application-x-lmms-project.png    5331  IDENTICAL (same path)              IHDR 256x256 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/16x16/apps/zene.png                                    549  IDENTICAL (renamed from lmms.png)  IHDR 16x16 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/16x16/mimetypes/application-x-lmms-project.png         446  IDENTICAL (same path)              IHDR 16x16 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/16x16@2/apps/zene.png                                  934  IDENTICAL (renamed from lmms.png)  IHDR 32x32 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/16x16@2/mimetypes/application-x-lmms-project.png       771  IDENTICAL (same path)              IHDR 32x32 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/24x24/apps/zene.png                                    799  IDENTICAL (renamed from lmms.png)  IHDR 24x24 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/24x24/mimetypes/application-x-lmms-project.png         681  IDENTICAL (same path)              IHDR 24x24 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/24x24@2/apps/zene.png                                 1449  IDENTICAL (renamed from lmms.png)  IHDR 48x48 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/24x24@2/mimetypes/application-x-lmms-project.png      1160  IDENTICAL (same path)              IHDR 48x48 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/256x256/apps/zene.png                                11360  IDENTICAL (renamed from lmms.png)  IHDR 256x256 bit=8 colourtype=6 | iTXt: XML:com.adobe.xmp.....<x:xmpmeta xmlns:x="adobe:ns:meta/" x:
+cmake/linux/icons/256x256/mimetypes/application-x-lmms-project.png      7689  IDENTICAL (same path)              IHDR 256x256 bit=8 colourtype=6 | iTXt: XML:com.adobe.xmp.....<x:xmpmeta xmlns:x="adobe:ns:meta/" x:
+cmake/linux/icons/32x32/apps/zene.png                                   1045  IDENTICAL (renamed from lmms.png)  IHDR 32x32 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/32x32/mimetypes/application-x-lmms-project.png         836  IDENTICAL (same path)              IHDR 32x32 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/32x32@2/apps/zene.png                                 1857  IDENTICAL (renamed from lmms.png)  IHDR 64x64 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/32x32@2/mimetypes/application-x-lmms-project.png      1326  IDENTICAL (same path)              IHDR 64x64 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/48x48/apps/zene.png                                   1298  IDENTICAL (renamed from lmms.png)  IHDR 48x48 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/48x48/mimetypes/application-x-lmms-project.png        1206  IDENTICAL (same path)              IHDR 48x48 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/48x48@2/apps/zene.png                                 2075  IDENTICAL (renamed from lmms.png)  IHDR 96x96 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/48x48@2/mimetypes/application-x-lmms-project.png      2106  IDENTICAL (same path)              IHDR 96x96 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/64x64/apps/zene.png                                   1703  IDENTICAL (renamed from lmms.png)  IHDR 64x64 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/64x64/mimetypes/application-x-lmms-project.png        1540  IDENTICAL (same path)              IHDR 64x64 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/64x64@2/apps/zene.png                                 3112  IDENTICAL (renamed from lmms.png)  IHDR 128x128 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/64x64@2/mimetypes/application-x-lmms-project.png      2744  IDENTICAL (same path)              IHDR 128x128 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/linux/icons/scalable/apps/zene.svg                                6125  IDENTICAL (renamed from lmms.svg)  sodipodi:docname=lmms.svg | inkscape:export-filename=64x64@2.png
+cmake/linux/icons/scalable/mimetypes/application-x-zene-project.svg     7983  ART IDENTICAL (3cbd2bbf25b7...), metadata renamed sodipodi:docname=application-x-zene-project.svg | inkscape:export-filename=/home/umcaruje/d/Dropbox/lmms icons/project-256x256.png
+cmake/nsis/assets/Logo.png                                              5220  IDENTICAL (same path)              IHDR 600x600 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/nsis/assets/SmallLogo.png                                         1743  IDENTICAL (same path)              IHDR 192x192 bit=8 colourtype=6 | tEXt: Software.www.inkscape.org
+cmake/nsis/icon.ico                                                   410598  IDENTICAL (same path)              (not a PNG)
+cmake/nsis/project.ico                                                410598  IDENTICAL (same path)              (not a PNG)
+data/backgrounds/newbg.png                                             17734  IDENTICAL (same path)              IHDR 420x215 bit=4 colourtype=3
+data/backgrounds/vinnie.png                                            11347  IDENTICAL (same path)              IHDR 384x383 bit=8 colourtype=0
+data/backgrounds/zene_tile.png                                           315  IDENTICAL (renamed from lmms_tile.png) IHDR 64x64 bit=1 colourtype=3
+data/themes/default/splash.png                                         82086  IDENTICAL (same path)              IHDR 681x573 bit=8 colourtype=2
+data/themes/default/zene-plugin-logo.svg                                1222  ART IDENTICAL (45346519bb38...), metadata renamed title=Zene Studio plugin logo | creator= | title=Rebecca Noel Ati | license=http://creativecommons.org/publicdomain/zero/1.0/
+
+== Part C. Totals ==
+   identical_same_path      24
+   identical_renamed        15
+   art_only                 2
+   differs                  0
+
+== Part D. Raw commands, for reproduction ==
+   git show origin/master:<upstream-path> | cmp - <shipped-path>; echo $?
+   git diff --name-status -M origin/master..HEAD~1 | grep '^R'
+   git diff origin/master:data/themes/default/lmms-plugin-logo.svg HEAD~1:data/themes/default/zene-plugin-logo.svg
