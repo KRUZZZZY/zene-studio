@@ -1,0 +1,6 @@
+configure EXIT=0   (log: build/configure.log)
+build EXIT=0   (log: build/build.log)
+ctest EXIT=0   (log: build/ctest.log)
+ctest totals: 100% tests passed, 0 tests failed out of 47
+  deviation: Qt5 development files not found: added -DWANT_QT6=ON (CI's runner installs qtbase5-dev; this box has Qt6 only)
+local-ci: overall exit=0 (0 = every executed step passed)

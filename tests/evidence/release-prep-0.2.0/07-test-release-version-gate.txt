@@ -1,0 +1,27 @@
+=== release-version-gate red/green harness (tree declares 0.2.0-alpha) ===
+
+--- the gate must PASS on what the tree actually is -------------------------------
+  OK   G0 real tree, nothing injected — exit 0 (expected 0)
+         [skip] tag: no v0.2.0-alpha tag exists yet (the owner creates it at freeze, Block C/F)
+       
+       RESULT: PASS — 0.2.0-alpha is the tree's, its release notes' and its download link's version
+  OK   G0b real tree, running from the release tag ref GITHUB_REF=refs/tags/v0.2.0-alpha — exit 0 (expected 0)
+
+--- the gate must FAIL on each injected defect -----------------------------------
+  OK   R1 release build running from refs/tags/v0.1.0-alpha — exit 1 (expected 1)
+         [FAIL] tag: the release ref is refs/tags/v0.1.0-alpha but this tree declares 0.2.0-alpha (expected v0.2.0-alpha) — the artefacts would report v0.1.0-alpha
+  OK   R2 tree says 0.3.0-alpha, the notes and README still say 0.2.0-alpha — exit 1 (expected 1)
+         [FAIL] docs: no docs/RELEASE-NOTES-v0.3.0-alpha.md — the release has no notes under its own version
+         [FAIL] README: the Download section links 'releases/tag/v0.2.0-alpha', not releases/tag/v0.3.0-alpha
+  OK   R3 README's Download section reverted to the previous release — exit 1 (expected 1)
+         [FAIL] README: the Download section links 'releases/tag/v0.1.0-alpha', not releases/tag/v0.2.0-alpha
+  OK   R4 no release notes under the declared version — exit 1 (expected 1)
+         [FAIL] docs: no docs/RELEASE-NOTES-v0.2.0-alpha.md — the release has no notes under its own version
+  OK   R5 HEAD tagged v0.1.0-alpha on a tree that declares 0.2.0-alpha — exit 1 (expected 1)
+         [FAIL] tag: HEAD is tagged v0.1.0-alpha but the tree declares 0.2.0-alpha — a tag on this commit must be v0.2.0-alpha
+  OK   R6 a v0.2.0-alpha tag exists on a commit HEAD does not descend from — exit 1 (expected 1)
+         [FAIL] tag: v0.2.0-alpha exists but HEAD does not descend from it — this tree is not the 0.2.0-alpha release
+
+=== summary ===
+controls: 8   passed: 8   failed: 0
+RESULT: PASS — every control behaved as declared; the gate is red on all six injected defects
