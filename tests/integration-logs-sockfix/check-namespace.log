@@ -1,0 +1,11 @@
+
+# namespace checks
+
+Error: include/ScriptLuaQtTypes.h: File has no namespace lmms
+Error: src/core/ControlDeviceHosted.cpp:139: Missing comment // LMMS_HAVE_LV2
+Error: src/core/ControlDeviceHosted.cpp:245: Missing comment // LMMS_HAVE_LV2
+Error: tools/ncpu-shim.c: File has no namespace lmms
+
+# summary
+
+4 errors.
