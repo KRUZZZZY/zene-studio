@@ -1,0 +1,63 @@
+src/core/AudioEngineWorkerThread.cpp                       rc=0   SAFE under Qt5 emulation
+src/core/AudioPortsModel.cpp                               rc=0   SAFE under Qt5 emulation
+src/core/ConfigManager.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/DataFile.cpp                                      rc=0   SAFE under Qt5 emulation
+src/core/EffectChain.cpp                                   rc=0   SAFE under Qt5 emulation
+src/core/ImportFilter.cpp                                  rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/core/ImportFilter.cpp:97:33: error: invalid use of incomplete type ‘class QDebug’
+src/core/LadspaManager.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/PeakController.cpp                                rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/core/PeakController.cpp:217:41: error: invalid use of incomplete type ‘class QDebug’
+src/core/Plugin.cpp                                        rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/core/Plugin.cpp:230:33: error: invalid use of incomplete type ‘class QDebug’
+src/core/PluginIssue.cpp                                   rc=0   SAFE under Qt5 emulation
+src/core/PluginFactory.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/PluginScanCache.cpp                               rc=0   SAFE under Qt5 emulation
+src/core/RemotePlugin.cpp                                  rc=0   SAFE under Qt5 emulation
+src/core/SampleBuffer.cpp                                  rc=0   SAFE under Qt5 emulation
+src/core/ScriptConsole.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/Song.cpp                                          rc=0   SAFE under Qt5 emulation
+src/core/VstSyncController.cpp                             rc=0   SAFE under Qt5 emulation
+src/core/lv2/Lv2ControlBase.cpp                            rc=0   SAFE under Qt5 emulation
+src/core/lv2/Lv2Proc.cpp                                   rc=0   SAFE under Qt5 emulation
+src/core/lv2/Lv2Manager.cpp                                rc=0   SAFE under Qt5 emulation
+src/gui/embed.cpp                                          rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/gui/embed.cpp:50:25: error: invalid use of incomplete type ‘class QDebug’
+src/gui/FileRevealer.cpp                                   rc=0   SAFE under Qt5 emulation
+src/gui/GuiApplication.cpp                                 rc=0   SAFE under Qt5 emulation
+src/gui/MainApplication.cpp                                rc=0   SAFE under Qt5 emulation
+src/gui/MainWindow.cpp                                     rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/include/AboutDialog.h:30:10: fatal error: ui_about_dialog.h: No such file or directory
+src/core/main.cpp                                          rc=0   SAFE under Qt5 emulation
+plugins/ClapEffect/ClapEffect.cpp                          rc=0   SAFE under Qt5 emulation
+plugins/LadspaEffect/LadspaEffect.cpp                      rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/plugins/LadspaEffect/LadspaEffect.cpp:462:33: error: invalid use of incomplete type ‘class QDebug’
+plugins/Lv2Effect/Lv2Effect.cpp                            rc=0   SAFE under Qt5 emulation
+plugins/Lv2Instrument/Lv2Instrument.cpp                    rc=0   SAFE under Qt5 emulation
+plugins/Lb302/Lb302.cpp                                    rc=0   SAFE under Qt5 emulation
+plugins/GigPlayer/GigPlayer.cpp                            rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/plugins/GigPlayer/PatchesDialog.h:29:10: fatal error: ui_PatchesDialog.h: No such file or directory
+plugins/Sf2Player/Sf2Player.cpp                            rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/plugins/Sf2Player/PatchesDialog.h:34:10: fatal error: ui_PatchesDialog.h: No such file or directory
+plugins/VstBase/VstPlugin.cpp                              rc=0   SAFE under Qt5 emulation
+plugins/Vst3Effect/Vst3Effect.cpp                          rc=0   SAFE under Qt5 emulation
+plugins/Vst3Effect/Vst3Host.cpp                            rc=0   SAFE under Qt5 emulation
+plugins/Vst3Instrument/Vst3Instrument.cpp                  rc=0   SAFE under Qt5 emulation
+plugins/Vst3Effect/Vst3Host.cpp                            rc=0   SAFE under Qt5 emulation
+plugins/ZynAddSubFx/zynaddsubfx/src/Misc/QtXmlWrapper.cpp  rc=0   SAFE under Qt5 emulation
+tests/src/core/PluginScanCacheTest.cpp                     rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/PluginScanCacheTest.cpp:670:10: fatal error: PluginScanCacheTest.moc: No such file or directory
+tests/src/core/ScriptEngineTest.cpp                        rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/ScriptEngineTest.cpp:627:10: fatal error: ScriptEngineTest.moc: No such file or directory
+tests/src/core/StableTrackIdsTest.cpp                      rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/StableTrackIdsTest.cpp:482:10: fatal error: StableTrackIdsTest.moc: No such file or directory
+tests/reference/Lb302/Lb302.cpp                            rc=0   SAFE under Qt5 emulation
+tests/reference/Lv2Effect/Lv2Effect.cpp                    rc=0   SAFE under Qt5 emulation
+tests/reference/Lv2Instrument/Lv2Instrument.cpp            rc=0   SAFE under Qt5 emulation
+tests/reference/Sf2Player/Sf2Player.cpp                    rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/reference/Sf2Player/PatchesDialog.h:34:10: fatal error: ui_PatchesDialog.h: No such file or directory
+tests/reference/GigPlayer/GigPlayer.cpp                    rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/reference/GigPlayer/PatchesDialog.h:29:10: fatal error: ui_PatchesDialog.h: No such file or directory
+plugins/ClapEffect/ClapEffect.cpp                          rc=0   SAFE under Qt5 emulation
+
+summary: 48 TU(s) swept, 13 fail under the Qt5 emulation
+  NEEDS <QDebug>: src/core/ImportFilter.cpp
+  NEEDS <QDebug>: src/core/PeakController.cpp
+  NEEDS <QDebug>: src/core/Plugin.cpp
+  NEEDS <QDebug>: src/gui/embed.cpp
+  NEEDS <QDebug>: src/gui/MainWindow.cpp
+  NEEDS <QDebug>: plugins/LadspaEffect/LadspaEffect.cpp
+  NEEDS <QDebug>: plugins/GigPlayer/GigPlayer.cpp
+  NEEDS <QDebug>: plugins/Sf2Player/Sf2Player.cpp
+  NEEDS <QDebug>: tests/src/core/PluginScanCacheTest.cpp
+  NEEDS <QDebug>: tests/src/core/ScriptEngineTest.cpp
+  NEEDS <QDebug>: tests/src/core/StableTrackIdsTest.cpp
+  NEEDS <QDebug>: tests/reference/Sf2Player/Sf2Player.cpp
+  NEEDS <QDebug>: tests/reference/GigPlayer/GigPlayer.cpp

@@ -12,7 +12,7 @@ of truth per mark and no bitmap is ever edited by hand.
         -> cmake/nsis/assets/{Logo,SmallLogo}.png, cmake/nsis/icon.ico
         -> cmake/apple/icon.icns, splash/background artwork
     cmake/linux/icons/scalable/mimetypes/application-x-zene-project.svg
-        -> every cmake/linux/icons/*/mimetypes/application-x-lmms-project.png
+        -> every cmake/linux/icons/*/mimetypes/application-x-zene-project.png
         -> cmake/nsis/project.ico, cmake/apple/project.icns
 
 Rendering goes through Qt's QSvgRenderer - the same engine the product uses in
@@ -274,7 +274,7 @@ def main() -> int:
     for d, px in ICON_DIRS.items():
         save_png(render_svg(APP_SVG, px), f"cmake/linux/icons/{d}/apps/zene.png")
         written.append(f"cmake/linux/icons/{d}/apps/zene.png")
-        p = f"cmake/linux/icons/{d}/mimetypes/application-x-lmms-project.png"
+        p = f"cmake/linux/icons/{d}/mimetypes/application-x-zene-project.png"
         save_png(render_svg(MIME_SVG, px), p)
         written.append(p)
 
@@ -345,7 +345,7 @@ def check() -> int:
     expect = {}
     for d, px in ICON_DIRS.items():
         expect[f"cmake/linux/icons/{d}/apps/zene.png"] = render_svg(APP_SVG, px)
-        expect[f"cmake/linux/icons/{d}/mimetypes/application-x-lmms-project.png"] = \
+        expect[f"cmake/linux/icons/{d}/mimetypes/application-x-zene-project.png"] = \
             render_svg(MIME_SVG, px)
     with tempfile.TemporaryDirectory() as td:
         for rel, img in expect.items():

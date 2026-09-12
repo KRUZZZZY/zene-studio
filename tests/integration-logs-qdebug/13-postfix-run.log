@@ -1,0 +1,19 @@
+--- shadow: Qt6 headers minus the seven <QtCore/qdebug.h> includes ---
+shadow EXIT=0
+shadow: build/qt5-shadow (7 header(s) stripped of <QtCore/qdebug.h>; Qt6 root /usr/include/x86_64-linux-gnu/qt6)
+
+--- self-test: the emulation must reproduce the CI error ---
+selftest EXIT=0
+SELFTEST as-is      rc=0   
+SELFTEST no-qdebug  rc=1   /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/build/qdebug-selftest/no-qdebug-ConfigManager.cpp:705:33: error: invalid use of incomplete type ‘class QDebug’
+
+SELFTEST PASS: the shadow reproduces the CI error (one include is the difference)
+
+--- sweep: every TU in the build inside the class ---
+sweep EXIT=0
+src/gui/clips/MidiClipView.cpp                             rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/gui/clips/MidiClipView.cpp:166:22: error: aggregate ‘QSet<lmms::Track*> m_changedTracks’ has incomplete type and cannot be defined
+summary: 84 TU(s) swept, 0 fail under the Qt5 emulation, 1 inconclusive
+  INCONCLUSIVE (not a QDebug verdict): src/gui/clips/MidiClipView.cpp
+
+PASS: the self-test reproduces the CI error and no TU in the class needs <QDebug>
+SWEEP_EXIT=0

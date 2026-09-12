@@ -260,7 +260,10 @@ grep, so that grep stays a meaningful test of the tree rather than of this repor
   `src/core/audio/AudioPulseAudio.cpp:129`, `:177`, `src/core/midi/MidiJack.cpp:171`) — renaming it
   breaks users' saved patchbay connections and stream routing.
 * **Registered MIME identifiers**: `application/x-lmms-project` (file association) and the clipboard
-  types `application/x-lmms-stringpair` / `application/x-lmms-clipboard`.
+  types `application/x-lmms-stringpair` / `application/x-lmms-clipboard`. *(Superseded: rename layer 1
+  renamed these to `application/x-zene-project` / `application/x-zene-*`; the raster mimetype icon
+  files followed on 2026-09-12 — see `docs/QDEBUG-CLASS-AND-MIME-RENAME.md`. Kept as the wave-R
+  record of the decision at the time.)*
 * **Upstream URLs and identities**: `.gitmodules` submodule URLs, `lmms.io`, `github.com/LMMS/*`,
   `.mailmap` entries, `.tx/config` resource key, `.github/FUNDING.yml` and issue-template
   `config.yml` (they point at the upstream project's own Discord/donation page — the text is true of

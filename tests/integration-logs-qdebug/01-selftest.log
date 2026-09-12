@@ -1,0 +1,4 @@
+SELFTEST as-is      rc=0   
+SELFTEST no-qdebug  rc=1   /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/build/qdebug-selftest/no-qdebug-ConfigManager.cpp:705:33: error: invalid use of incomplete type ‘class QDebug’
+
+SELFTEST PASS: the shadow reproduces the CI error (one include is the difference)

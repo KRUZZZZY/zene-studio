@@ -33,6 +33,9 @@
 #include "PluginFactory.h"
 
 #include <QCoreApplication>
+// qInfo().noquote() << ... at line 660 needs the complete QDebug; <QtGlobal> only
+// forward-declares the class (see docs/QDEBUG-CLASS-AND-MIME-RENAME.md).
+#include <QDebug>
 #include <QDir>
 #include <QDomDocument>
 #include <QFile>
