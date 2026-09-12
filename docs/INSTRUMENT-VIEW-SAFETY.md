@@ -364,6 +364,17 @@ RUN_ALL_GATES_EXIT=0
 `--with-coverage`** and **Gate 5 (mutation) was skipped by flag**, so this is a PASS-WITH-SKIPS, not a
 pass on those two axes.
 
+Both were re-run **after** the three commits landed, with the committed tree, because Gate 6 reads
+`git diff <base>..HEAD` and an uncommitted working tree hides a file from it:
+`GATE6_FINAL_EXIT=0` (32 files in the ledger, 0 violations) and `RUN_ALL_GATES_FINAL_EXIT=0` with the
+same PASS/SKIP table. The committed evidence for both runs is
+`tests/evidence/instrument-view-safety/gates/{gate6-final.log,run-all-gates-final.log}`. The first
+Gate 6 run in this lane (before the commit) did catch a real mistake worth recording: the evidence
+tree was originally under `docs/evidence/`, and Gate 6 classifies only `*.md` under `docs/` as
+documentation, so a `docs/evidence/**` tree of logs, screenshots and scripts is reported as an
+undeclared change to upstream-inherited code. It moved to `tests/evidence/` (`tests/**` is allowed),
+and the reason is written down in §9 so the next lane does not repeat it.
+
 **Gate 9 does not exist on this branch** — `bash tests/fork-sources-gate.sh` →
 `GATE9_EXIT=127` (`No such file or directory`), exactly as the brief anticipated. No result is claimed
 for it.
@@ -373,9 +384,10 @@ for it.
 ## 8. Proposed wording for the release documents
 
 **Not applied here** (`docs/KNOWN-LIMITATIONS.md` and the release notes are the orchestrator's to
-edit). This supersedes the second half of the hosting lane's §7 wording, which said the parameter view
-"may not construct" and left the crash open; that is now settled, and the editor limitation is the
-one that remains true.
+edit). The hosting lane's §7 draft is compatible with this and is *extended*, not replaced: it says
+the grid is what a user gets instead of the plug-in's own editor, and its §9.2 left the grid's
+construction unverified because of this crash. That open item is now closed — what a user meets is the
+editor limitation alone.
 
 > **VST3 instruments: opening the instrument window shows LMMS' generated parameter grid, not the
 > plug-in's own editor.** A VST3 instrument loads onto an instrument track, plays MIDI with
