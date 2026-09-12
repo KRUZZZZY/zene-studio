@@ -49,3 +49,8 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	#589 planar-ports migration: play() -> proce
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+
+# (2026-09-12) render-determinism lane: the offline render's job scheduling.
+include/AudioEngineWorkerThread.h	render determinism (render-determinism lane): public switch ProjectRenderer sets so an export's jobs run on one thread (docs/RENDER-DETERMINISM.md)
+src/core/AudioEngineWorkerThread.cpp	render determinism (render-determinism lane): storage for that switch plus the inline branch in startAndWaitForJobs()
+src/core/ProjectRenderer.cpp	render determinism (render-determinism lane): holds the switch for the duration of an export; live playback is untouched

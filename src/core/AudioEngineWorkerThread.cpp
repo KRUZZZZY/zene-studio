@@ -28,6 +28,8 @@
 #include <QMutex>
 #include <QWaitCondition>
 
+#include <atomic>
+
 #include "AudioEngine.h"
 #include "Hardware.h"
 #include "ThreadableJob.h"
@@ -39,6 +41,19 @@ namespace lmms
 AudioEngineWorkerThread::JobQueue AudioEngineWorkerThread::globalJobQueue;
 QWaitCondition * AudioEngineWorkerThread::queueReadyWaitCond = nullptr;
 QList<AudioEngineWorkerThread *> AudioEngineWorkerThread::workerThreads;
+
+//! Off when the engine starts: live playback keeps the pool (see the header).
+static std::atomic<bool> s_deterministicProcessing{false};
+
+void AudioEngineWorkerThread::setDeterministicProcessing(bool deterministic)
+{
+	s_deterministicProcessing.store(deterministic, std::memory_order_release);
+}
+
+bool AudioEngineWorkerThread::deterministicProcessing()
+{
+	return s_deterministicProcessing.load(std::memory_order_acquire);
+}
 
 // implementation of internal JobQueue
 void AudioEngineWorkerThread::JobQueue::reset( OperationMode _opMode )
@@ -145,6 +160,17 @@ void AudioEngineWorkerThread::quit()
 
 void AudioEngineWorkerThread::startAndWaitForJobs()
 {
+	if (deterministicProcessing())
+	{
+		// Deterministic offline rendering (ProjectRenderer): the calling thread takes
+		// every job, so nothing about the result depends on which worker was awake.
+		// run() drains in Dynamic mode, so a job that queues another job (the mixer's
+		// dependency-driven channels do) is picked up in the same call.
+		globalJobQueue.run();
+		globalJobQueue.wait();
+		return;
+	}
+
 	queueReadyWaitCond->wakeAll();
 	// The last worker-thread is never started. Instead it's processed "inline"
 	// i.e. within the global AudioEngine thread. This way we can reduce latencies

@@ -108,6 +108,25 @@ public:
 
 	static void startAndWaitForJobs();
 
+	/**
+	 * @brief Process every job on the calling thread instead of handing it to the pool.
+	 *
+	 * The worker pool exists for live playback, where deadline misses are worse than a
+	 * scheduling decision. In an OFFLINE render that trade is backwards: which thread
+	 * runs which job is a property of the host and of the moment, and a render whose
+	 * effect chains amplify a one-ULP difference into a different waveform stops being
+	 * reproducible run to run (measured in docs/RENDER-DETERMINISM.md). With this set,
+	 * ProjectRenderer's render thread does all the work itself, exactly once per job,
+	 * in queue order.
+	 *
+	 * Set it for the duration of an export, never for live playback. The setting is
+	 * process-global and read only by the engine thread that calls
+	 * startAndWaitForJobs(), so it does not need a lock; it is atomic so the render
+	 * thread and a late worker cannot disagree about it.
+	 */
+	static void setDeterministicProcessing(bool deterministic);
+	static bool deterministicProcessing();
+
 
 private:
 	void run() override;

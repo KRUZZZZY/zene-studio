@@ -29,6 +29,7 @@
 #include "Song.h"
 #include "PerfLog.h"
 
+#include "AudioEngineWorkerThread.h"
 #include "AudioFileWave.h"
 #include "AudioFileOgg.h"
 #include "AudioFileMP3.h"
@@ -37,6 +38,46 @@
 
 namespace lmms
 {
+
+
+namespace
+{
+
+/*! Render this export's audio periods on this one thread.
+ *
+ * The engine hands each period's play-handles, bus effects and mixer channels to a
+ * worker pool sized by QThread::idealThreadCount() - 1, so which thread runs which job
+ * is a scheduling decision that varies run to run. For live playback that is the right
+ * trade; for an export it is not, because a file that renders differently every time
+ * cannot be mastered, delivered, or used as a behaviour-preservation reference.
+ *
+ * Measured on data/projects/shorties/DirtyLove.mmpz (15 LADSPA effects): three runs of
+ * the pooled renderer gave three different files, while a single-threaded render of the
+ * same project gave the same bytes four times out of four. See
+ * docs/RENDER-DETERMINISM.md for the measurements and for the projects that are
+ * unaffected either way.
+ *
+ * Scope: exactly the render thread's own periods. Live playback never sets this, and
+ * the flag is restored even when the export aborts.
+ */
+class DeterministicRenderScope
+{
+public:
+	DeterministicRenderScope()
+	{
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
+	}
+
+	~DeterministicRenderScope()
+	{
+		AudioEngineWorkerThread::setDeterministicProcessing(false);
+	}
+
+	DeterministicRenderScope(const DeterministicRenderScope&) = delete;
+	DeterministicRenderScope& operator=(const DeterministicRenderScope&) = delete;
+};
+
+} // namespace
 
 
 const std::array<ProjectRenderer::FileEncodeDevice, 5> ProjectRenderer::fileEncodeDevices
@@ -154,6 +195,9 @@ void ProjectRenderer::startProcessing()
 void ProjectRenderer::run()
 {
 	PerfLogTimer perfLog("Project Render");
+
+	// Everything below renders on this thread alone; see DeterministicRenderScope.
+	const DeterministicRenderScope deterministicRender;
 
 	Engine::getSong()->startExport();
 	// Skip first empty buffer.
