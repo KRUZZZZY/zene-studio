@@ -69,13 +69,31 @@
 #   3 required  the value that must hold: ON, OFF, or an exact string
 #   4 module    plugin module basename to find in the build tree ('-' for none)
 #   5 claim     the sentence this row keeps true, quoted when the gate fails
+#   6 platforms where the claim holds: '*' (or empty) for every platform, or a comma
+#               list drawn from linux,macos,windows. On a platform NOT listed here the
+#               gate asserts the INVERSE — the option must not be ON and the module
+#               must not exist under --artifacts — so a platform is never silently
+#               unchecked; see the platform section in tests/release-honesty-gate.sh.
+#
+# WHY clap-hosting IS SCOPED TO linux,macos (2026-09-12). The CLAP host loads its
+# plugins with dlopen/dlsym (<dlfcn.h>), and neither MinGW nor MSVC provides that
+# header, so the Windows half of the loader does not exist in the code. That went
+# unnoticed until now because CLAP was compiled out of EVERY platform's release build
+# (the v0.1.0-alpha defect above), and the provisioning fix that makes the CLAP headers
+# visible to the MinGW job turned the Windows target on for the first time — the tag run
+# of v0.2.1-alpha is the first Windows build that ever reached ClapHost.cpp:
+#   plugins/ClapEffect/ClapHost.cpp:34:10: fatal error: dlfcn.h: No such file or directory
+# The honest options were to port the loader now (unverifiable on the development box:
+# no MinGW or MSVC toolchain is installed there) or to scope the claim and name the port
+# as the next task. The 0.2.1 patch takes the second: Windows ships without CLAP, and the
+# release notes and the known-limitations page say so in as many words.
 #
 # A feature documented as ABSENT is a row too (required OFF). If a build turns one
 # on, the documents understate that build and the release is dishonest in the other
 # direction, so the gate fails on it as well.
-vst3-hosting	WANT_VST3	ON	vst3effect	VST3 hosting (effects) is in the release
-vst3-instrument-hosting	WANT_VST3	ON	vst3instrument	VST3 instrument hosting (one instrument per track, MIDI in to audio out) is in the release
-clap-hosting	WANT_CLAP	ON	clapeffect	CLAP hosting (effects) is in the release
-session-view	WANT_SESSION_VIEW	OFF	-	The Session View (clip launcher and launch scheduler) is documented as absent from these builds
-wasm-sandbox	WANT_WASM	OFF	-	The WASM DSP sandbox is documented as absent from these builds
-stem-separation	WANT_STEM_SPLIT	OFF	-	Offline stem separation is documented as absent from these builds
+vst3-hosting	WANT_VST3	ON	vst3effect	VST3 hosting (effects) is in the release	*
+vst3-instrument-hosting	WANT_VST3	ON	vst3instrument	VST3 instrument hosting (one instrument per track, MIDI in to audio out) is in the release	*
+clap-hosting	WANT_CLAP	ON	clapeffect	CLAP hosting (effects) is in the release on Linux and macOS; the Windows builds in this release document it as absent	linux,macos
+session-view	WANT_SESSION_VIEW	OFF	-	The Session View (clip launcher and launch scheduler) is documented as absent from these builds	*
+wasm-sandbox	WANT_WASM	OFF	-	The WASM DSP sandbox is documented as absent from these builds	*
+stem-separation	WANT_STEM_SPLIT	OFF	-	Offline stem separation is documented as absent from these builds	*
