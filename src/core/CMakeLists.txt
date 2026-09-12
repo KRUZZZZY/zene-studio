@@ -39,6 +39,7 @@ set(LMMS_SRCS
 	core/ControlCommandsControl.cpp
 	core/ControlCommandsMixer.cpp
 	core/ControlCommandsProject.cpp
+	core/ControlCommandsSurface.cpp
 	core/ControlCommandsTransport.cpp
 	core/ControlRegistry.cpp
 	core/ControlSchema.cpp

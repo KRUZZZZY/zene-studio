@@ -1,0 +1,17 @@
+# agent-surface allowlist - commands that may NOT be swept headlessly
+#
+# SPEC A15 requires every declared command to be reachable headless. A command
+# that genuinely needs a display, an audio device or a human declares that in its
+# `requires` field (SPEC A13) and is listed here with a one-line reason instead
+# of being exercised by the sweep.
+#
+# The rule is deliberately tight: tests/agent-surface-gate.py refuses an entry
+# whose command declares no `requires` value (it has no excuse, so it gets run),
+# and refuses an entry naming a command the registry does not declare.
+#
+# Format: <command.id><TAB><reason>
+#
+# EMPTY ON PURPOSE (2026-09-11). The first control-surface slice declares no
+# `requires` anywhere, so every one of its commands is exercised by the sweep.
+# The file exists so the next command that honestly needs a display has an
+# obvious, reviewed place to say so.

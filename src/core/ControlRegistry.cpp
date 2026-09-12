@@ -371,6 +371,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerTransportCommands(registry);
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
+	registerSurfaceCommands(registry);
 }
 
 } // namespace lmms

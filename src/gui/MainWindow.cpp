@@ -345,6 +345,9 @@ void MainWindow::finalize()
 	m_redoAction = addAction(edit_menu, "edit_redo", tr("Redo"),
 		QKeySequence::Redo, &MainWindow::redo);
 
+	// A11/A15: these two actions declare the registry commands they implement.
+	m_undoAction->setData(QStringLiteral("control.undo"));
+	m_redoAction->setData(QStringLiteral("control.redo"));
 	m_undoAction->setShortcutContext(Qt::ApplicationShortcut);
 	m_redoAction->setShortcutContext(Qt::ApplicationShortcut);
 

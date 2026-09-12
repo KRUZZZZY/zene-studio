@@ -237,6 +237,8 @@ LMMS_EXPORT void registerTransportCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerMixerCommands(ControlRegistry& registry);
 //! project.* and render.render
 LMMS_EXPORT void registerProjectCommands(ControlRegistry& registry);
+//! control.surface_report - the live menu/toolbar reflection (SPEC A15).
+LMMS_EXPORT void registerSurfaceCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control
