@@ -84,10 +84,14 @@ if [[ ! -d build ]]; then
 	echo "no build/ — configure first: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON && cmake --build build -j4"
 	record 1 "ctest" "SKIP" "no configured build/ directory"
 else
-	cmake --build build -j4 > /tmp/gate1-build.log 2>&1
+	# The log goes inside the build tree, not /tmp: a disk reclaim has already
+	# destroyed one verification's evidence in this program, and two concurrent
+	# gate runs in sibling worktrees would otherwise clobber one shared file.
+	build_log="build/gate1-build.log"
+	cmake --build build -j4 > "$build_log" 2>&1
 	build_rc=$?
 	if [[ $build_rc -ne 0 ]]; then
-		echo "build FAILED (exit $build_rc) — tail:"; tail -15 /tmp/gate1-build.log
+		echo "build FAILED (exit $build_rc) — tail of $build_log:"; tail -15 "$build_log"
 		record 1 "ctest" "FAIL"
 	else
 		( cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure )
@@ -157,6 +161,7 @@ rc8t=$?
 banner 9 "fork-sources registration"
 bash tests/fork-sources-gate.sh
 [[ $? -eq 0 ]] && record 9 "fork-sources" "PASS" || record 9 "fork-sources" "FAIL"
+
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
