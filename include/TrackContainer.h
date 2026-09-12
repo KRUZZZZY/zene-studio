@@ -103,6 +103,25 @@ signals:
 	void trackRemoved();
 	void trackMoved();
 
+	/*! Emitted immediately before a serialization restore clears this
+	 * container's tracks, so that the container's views can take themselves
+	 * down FIRST.
+	 *
+	 * The order is load-bearing and it is the order the rest of the tree
+	 * already keeps: TrackContainerView::deleteTrackView() deletes the view and
+	 * then the track, and Song::clearProject() clears the editor views before
+	 * it clears the container. A TrackView sets Qt::WA_DeleteOnClose and closes
+	 * itself from its track's destroyedTrack() signal, so when a track is
+	 * deleted underneath a live view the view's destructor runs later, from a
+	 * DEFERRED event - i.e. after the track it views is gone - and
+	 * ~InstrumentTrackView() then dereferences that dead track through
+	 * model(). Measured as SIGSEGV in the release configuration (members read
+	 * at a null base + 0x308) on a plain `control.undo`; see
+	 * docs/UNDO-RELEASE-CONFIG.md. The restore path was the only one that did
+	 * not announce itself.
+	 */
+	void aboutToClearTracks();
+
 protected:
 	static AutomatedValueMap automatedValuesFromTracks(const TrackList &tracks, TimePos timeStart, int clipNum = -1);
 

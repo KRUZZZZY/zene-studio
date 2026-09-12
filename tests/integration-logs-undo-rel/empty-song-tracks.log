@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/tests/integration-logs-undo-rel/empty-song-tracks.py", line 6, in <module>
+    i=H.Instance()
+      ^^^^^^^^^^^^
+  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/tools/mcp-zene-control/tests/harness.py", line 111, in __init__
+    self.binary = binary or binary_path()
+                            ^^^^^^^^^^^^^
+  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/tools/mcp-zene-control/tests/harness.py", line 52, in binary_path
+    raise RuntimeError(
+RuntimeError: no Zene Studio binary at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/build-release/zene; set ZENE_CONTROL_BINARY to a build that accepts --control-socket (the zene-pa-agentctl lane's build/lmms)
+EXIT=1

@@ -87,6 +87,15 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 	bool journalRestore = _this.parentNode().nodeName() == "journaldata";
 	if( journalRestore )
 	{
+		// The container's views first, then its tracks. A TrackView is deleted
+		// from a DEFERRED event once its track dies (Qt::WA_DeleteOnClose,
+		// closed from the track's destroyedTrack() signal), so deleting the
+		// tracks first leaves the views - and the instrument windows they own -
+		// dereferencing their model after it is gone. Measured: SIGSEGV in
+		// ~InstrumentTrackView() on a plain `control.undo`, release
+		// configuration only. See TrackContainer::aboutToClearTracks() and
+		// docs/UNDO-RELEASE-CONFIG.md.
+		emit aboutToClearTracks();
 		clearAllTracks();
 	}
 

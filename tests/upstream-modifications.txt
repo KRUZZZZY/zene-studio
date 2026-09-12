@@ -571,7 +571,7 @@ src/core/Plugin.cpp	#625 headless load: the 'Plugin not found' and 'Error while 
 src/core/ProjectJournal.cpp	#623 SPEC A16: implements the two flavours; undo()/redo() now restore a whole step and carry the reverse action, and a step with no reverse empties the redo stack rather than replaying an older entry (post-alpha/reversibility)
 src/core/SampleBuffer.cpp	#625 headless load: the 'Failed to load sample' boxes are not opened in an unattended run (they fire while a project loads)
 src/core/Track.cpp	#628 SPEC-stable-ids slice 1: the Track constructor allocates the id, saveTrack writes it as an `id` ATTRIBUTE on the track's own element, loadTrack takes the file's value (or keeps the constructor's for a legacy element), all guarded so presetMode never writes one (SPEC-stable-ids.md 3.1/3.3); #623: initialise m_mutedBeforeSolo in the constructor. It was read uninitialised by saveTrack, which writes it to the project file as an int, so the SAME fresh track saved as mutedBeforeSolo=1 in one run and 48 in the next - measured by the intermittently failing StableTrackIdsTest and by the byte-determinism promise the serializer makes (post-alpha/reversibility); merge train 3F: the incoming unit's initialiser list placed m_mutedBeforeSolo before m_mutedModel while include/Track.h declares it after, which the release configuration's -Werror=reorder rejects (the merge's first build failure, and the file is byte-identical to the unit's own, so it is the unit's defect, not a merge artefact); the entry is moved to declaration order - C++ initialises in declaration order either way, so this is a no-op
-src/core/TrackContainer.cpp	#625 headless load: the application-modal 'Loading project...' progress window is not created in an unattended run (its Cancel button is the only way to stop a load)
+src/core/TrackContainer.cpp	#625 headless load: the application-modal 'Loading project...' progress window is not created in an unattended run (its Cancel button is the only way to stop a load); fix(control-undo): TrackContainer::loadSettings() emits aboutToClearTracks() before clearAllTracks() on a journal restore. The restore deleted tracks under live views; a view is deleted from a deferred event once its track dies, and its destructor reads that dead track - measured SIGSEGV in ~InstrumentTrackView() at a null base + 0x308 (docs/UNDO-RELEASE-CONFIG.md)
 
 # --- fix(control-undo): the four paths of the undo SIGSEGV (2026-09-12) ---------
 # docs/CONTROL-UNDO-CONNECTION-DROP.md. `control.undo` unwinds the engine's own
@@ -594,3 +594,25 @@ include/PatternTrack.h	fix(control-undo): PatternTrack::patternIndex() reads the
 src/tracks/PatternTrack.cpp	fix(control-undo): the five registry reads that are not the constructor's insert (play() x2, saveTrackSpecificSettings' two reads, the destructor's own read) use s_infoMap.value(this); swapPatternTracks keeps operator[] because it assigns - it swaps two live tracks' numbers (docs/CONTROL-UNDO-CONNECTION-DROP.md)
 src/core/PatternStore.cpp	fix(control-undo): updateComboBox() skips a pattern index whose PatternTrack::findPatternTrack() is nullptr. numOfPatterns() counts the Song's pattern tracks while findPatternTrack() searches PatternTrack's own registry, so the two can disagree; the disagreement is fixed at its source, and this guard is why the next one degrades to a missing combobox row instead of killing the process the clients are connected to (docs/CONTROL-UNDO-CONNECTION-DROP.md)
 src/gui/tracks/PatternTrackView.cpp	fix(control-undo): ~PatternTrackView() and close() read PatternTrack::s_infoMap with value() - they run from the destroyedTrack() signal after the track's own destructor erased its entry, so operator[] there manufactured the ghost entry that made the next track's number collide (docs/CONTROL-UNDO-CONNECTION-DROP.md)
+
+# --- fix(control-undo): the release-configuration SIGSEGV after the reply -----
+# docs/UNDO-RELEASE-CONFIG.md. `transport.set_tempo {"bpm":128}` then `control.undo`
+# on an untouched new project (the default project: an instrument, sample, pattern
+# and automation track) replies ok and then dies with SIGSEGV, 8 of 8 runs, on the
+# release configuration only. The undo restores a Song checkpoint, whose
+# TrackContainer::loadSettings tears the container down and rebuilds it
+# (clearAllTracks()). It deleted the TRACKS while their views were still up.
+# A TrackView sets Qt::WA_DeleteOnClose and closes itself from the track's
+# destroyedTrack() signal, so the view is deleted from a DEFERRED event, i.e.
+# after the track it views is gone; ~InstrumentTrackView() then reads the dead
+# model (`delete model()->m_midiPort.m_readablePortsMenu`). From the crash
+# frame: SIGSEGV at si_addr 0x308 with rdi 0 - `model()`'s dynamic_cast returns
+# nullptr on the destroyed track and the null base is dereferenced at the member's
+# offset. The order the rest of the tree keeps is view-then-track
+# (TrackContainerView::deleteTrackView(), Song::clearProject() clearing the editor
+# views first); the serialization-restore path was the one that did not announce
+# itself. The change is that announcement plus the slot that answers it: no view
+# or track behaviour is altered on any other path.
+include/TrackContainer.h	fix(control-undo): new signal TrackContainer::aboutToClearTracks(), emitted before a serialization restore deletes this container's tracks so its views can take themselves down first (docs/UNDO-RELEASE-CONFIG.md)
+include/TrackContainerView.h	fix(control-undo): TrackContainerView::removeAllTrackViews() slot - answers aboutToClearTracks() by deleting this container's views while the tracks they view are still alive (docs/UNDO-RELEASE-CONFIG.md)
+src/gui/editors/TrackContainerView.cpp	fix(control-undo): TrackContainerView connects TrackContainer::aboutToClearTracks() to removeAllTrackViews() (direct connection: the tracks are deleted by the next statement) and implements it. This is the view-then-track order TrackContainerView::deleteTrackView() and Song::clearProject() already use (docs/UNDO-RELEASE-CONFIG.md)
