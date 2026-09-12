@@ -1,0 +1,14 @@
+Auto-merging include/ProjectRenderer.h
+Auto-merging src/core/CMakeLists.txt
+Auto-merging src/core/ProjectRenderer.cpp
+CONFLICT (content): Merge conflict in src/core/ProjectRenderer.cpp
+Auto-merging src/core/main.cpp
+CONFLICT (content): Merge conflict in src/core/main.cpp
+Auto-merging tests/CMakeLists.txt
+CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+Auto-merging tests/fork-sources.txt
+CONFLICT (content): Merge conflict in tests/fork-sources.txt
+Auto-merging tests/upstream-modifications.txt
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1

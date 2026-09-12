@@ -1,0 +1,7 @@
+fmt : 1 ch, 44100 Hz, 4 bit, block 16
+fmt : 16 bytes  sha256 3b9b8f3ae2f92cd966db8fa02134f6f6b7ac1db3a8a7734c
+LIST: 44 bytes  sha256 9fdb1a38dd4d3f13b577d93fb83e54e74413a50c8ba3b0dc b'INFOISFT \x00\x00\x00Zene Studio (libsndfile-1.2.2)\x00\x00'
+data: 2177024 bytes  sha256 b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b
+total file bytes: 2177120
+full file sha256: 943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526
+frames: 544256

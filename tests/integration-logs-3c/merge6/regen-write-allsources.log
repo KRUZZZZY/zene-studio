@@ -1,0 +1,8 @@
+all-sources.txt      rev=INDEX entries=1199 duplicates=0 +6 -0 DOES-NOT-REPRODUCE
+   + include/MasteringChain.h
+   + include/MasteringJob.h
+   + src/core/MasteringChain.cpp
+   + src/core/MasteringJob.cpp
+   + tests/src/core/MasteringTest.cpp
+   + tests/src/core/MasteringTestSupport.h
+VERIFY RESULT: MISMATCH

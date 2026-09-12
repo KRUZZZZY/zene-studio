@@ -1,0 +1,3 @@
+tools-sources.txt    rev=INDEX entries=18 duplicates=0 +1 -0 DOES-NOT-REPRODUCE
+   + tools/auto-mastering-demo.py
+VERIFY RESULT: MISMATCH

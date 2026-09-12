@@ -1,0 +1,19 @@
+  main.cpp hunk 1: help text lists exportstems AND master
+  main.cpp hunk 2: locals unified (one -o flag, one headless exit code)
+  main.cpp hunk 3: exportstems AND master action arms
+  main.cpp hunk 4: both action names in the needs-an-input list
+  main.cpp hunk 5: if(mastering){theirs} else {ours' stem-aware block}; the duplicate pre-stems base block git left in the shared text is deleted
+  main.cpp: the duplicate -o assignment removed
+  ProjectRenderer.cpp: the deterministic scope AND the render counter
+  tests/CMakeLists.txt hunk 1a: ours' four entries kept
+  tests/CMakeLists.txt hunk 1b: MasteringTest.cpp added once, in sorted position (the lane's LufsMeterTest line was already present)
+  tests/CMakeLists.txt hunk 2: ours' block (marker removed)
+  tests/CMakeLists.txt hunk 2: both set_tests_properties blocks, one ENVIRONMENT line each (the shared line consumed once)
+  fork-sources.txt: ours' three entries kept; the tools/ entry belongs in tests/tools-sources.txt (the brief's own fix, as for the stem-export tool)
+  fork-sources.txt: the lane's 2 test sources moved to tests/all-sources.txt
+  no conflict marker anywhere
+Traceback (most recent call last):
+  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/tests/integration-logs-3c/tools/resolve_merge6_product.py", line 256, in <module>
+    assert "outputSpecified" not in m and "scriptExitCode" not in m
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

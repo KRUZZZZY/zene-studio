@@ -1,0 +1,3 @@
+943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  tests/integration-logs-3c/final/render-final-1.wav
+943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  tests/integration-logs-3c/final/render-final-2.wav
+run-2 artifact removed after hashing (identical to run 1; 3A's precedent - reproducible binary does not go into history)
