@@ -1,0 +1,98 @@
+REGRESSION  include/AudioPlugin.h: 85.48% -> 71.43%  (14 of 98 covered lines lost; legacy row: no instrumented-line count was recorded when this baseline was written, so the recorded percentage cannot be compared like-for-like (re-record it with --reanchor-file and a reason))
+REGRESSION  include/AudioPorts.h: 91.43% -> 56.65%  (81 of 233 covered lines lost; legacy row: no instrumented-line count was recorded when this baseline was written, so the recorded percentage cannot be compared like-for-like (re-record it with --reanchor-file and a reason))
+REGRESSION  include/RemotePluginAudioPorts.h: 100.00% -> 79.52%  (17 of 83 covered lines lost; legacy row: no instrumented-line count was recorded when this baseline was written, so the recorded percentage cannot be compared like-for-like (re-record it with --reanchor-file and a reason))
+improved    src/core/ScriptBindings.cpp: 97.52% -> 97.80%
+improved    src/core/ScriptEngine.cpp: 90.40% -> 90.98%
+new         include/LatencyCompensation.h: 100.00%
+new         include/LoudnessReport.h: 100.00%
+new         include/LufsMeter.h: 100.00%
+new         include/PluginScanCache.h: 100.00%
+new         include/ProjectRecovery.h: 100.00%
+new         include/SampleWindow.h: 100.00%
+new         include/ScriptLuaQtTypes.h: 86.67%
+new         include/ScriptPackage.h: 100.00%
+new         src/core/CrashReporter.cpp: 80.93%
+new         src/core/LatencyCompensation.cpp: 86.59%
+new         src/core/LoudnessReport.cpp: 85.56%
+new         src/core/LufsMeter.cpp: 100.00%
+new         src/core/MidiLearn.cpp: 95.95%
+new         src/core/NoteRandom.cpp: 100.00%
+new         src/core/NoteTransform.cpp: 97.39%
+new         src/core/PluginScanCache.cpp: 88.55%
+new         src/core/ProjectRecovery.cpp: 96.43%
+new         src/core/ScriptApiVersion.cpp: 100.00%
+new         src/core/ScriptCommandQueue.cpp: 100.00%
+new         src/core/ScriptConsole.cpp: 100.00%
+new         src/core/ScriptPackage.cpp: 98.08%
+new         src/gui/MidiLearnGui.cpp: 86.00%
+new         tests/src/core/ClipSerialisationTest.cpp: 98.89%
+new         tests/src/core/LufsMeterTest.cpp: 99.47%
+new         tests/src/core/MidiLearnTest.cpp: 98.31%
+new         tests/src/core/StemExportTest.cpp: 100.00%
+new         tests/src/core/StemExportTestSupport.h: 94.71%
+new         tests/src/tracks/SampleClipWindowTest.cpp: 100.00%
+unmeasured-by-config  include/StemSeparation/StemSeparator.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  include/StemSeparation/StemTypes.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  include/StemSplitController.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/ExternalProcessStemSeparator.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemJobManager.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemModelStore.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemTrackBuilder.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/gui/StemSplitController.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+note: 39 baseline row(s) have no recorded instrumented-line count and were compared with the pre-2026-09-12 arithmetic: include/AudioBus.h, include/AudioPlugin.h, include/AudioPorts.h, include/AudioPortsModel.h, include/DpiHelper.h ...
+
+tracefile line coverage: 84.34%  (4523/5363 lines over 67 files)
+entry floor: 50.00% for files not yet in the baseline (COVERAGE_ENTRY_FLOOR; 0 declared exemption(s))
+scope: 139 entries in tests/fork-sources.txt; 67 produced a record in this capture; 72 did not
+       the line-coverage number above is a claim about those 67 files, NOT about the 139-entry scope
+       (per-entry reason for the gap: python3 docs/coverage-green/classify-scope.py build-coverage/coverage/coverage-fork.info <build-dir>)
+baseline-scope line coverage: 76.19%  (2298/3016 lines over 39 files in the baseline)
+
+RE-ANCHORED (single file): include/AudioPorts.h -> 56.65% (LF 233, LH 132)
+reason: legacy row migrated to the LF-aware format. The file is byte-identical to the baseline commit (git diff 961052a0c HEAD -- include/AudioPorts.h is empty) and covers 132 of 233 instrumented lines. The recorded 91.43% was divided into an instrumented-line count this configuration no longer produces: the baseline entry set include/ scope was 493 instrumented lines at 2026-09-09 (tests/QA-GATES.md) and is 687 today. The old arithmetic's 81-line loss would require 213 covered lines, but the file did not change and no test was deleted, so covered lines were <= 132 either way: the whole drop is the denominator moving 144 -> 233 (1.61x), not lost coverage.
+
+RE-ANCHORED (single file): include/RemotePluginAudioPorts.h -> 79.52% (LF 83, LH 66)
+reason: legacy row migrated to the LF-aware format. 0845c339c changed +6/-1 lines and removed ZERO executable line (its new m_frames = 0 IS executed, by failedReallocationLeavesBuffersInactive), so covered lines cannot have fallen; the recorded 100.00% was therefore taken at an instrumented-line count of at most 66 (what this run covers) against 83 today. The 17 unhit lines are all ConfigurableAudioPorts (226-277), the local-buffer half, instantiated but driven by no test in this configuration.
+
+RE-ANCHORED (single file): include/AudioPlugin.h -> 71.43% (LF 98, LH 70)
+reason: legacy row migrated to the LF-aware format, with a named residual. 038522b81 removed 7 executable lines and added 38, and covered lines did not fall (70 today), so the recorded 85.48% was taken at an instrumented-line count of at most 90 against 98 today: at least 8 of the 28 unhit lines are the denominator moving. RESIDUAL NOT COVERED: the new m_audioPorts.active() early return (172-176) and the rewritten legacy-bridge switch (347-355) are the file's own new code that no test drives, and the ports-routed instrument path (playImpl, 164-192) has no fixture. Recorded as a follow-up rather than papered over with a number-moving test.
+migrated legacy row: include/AudioBus.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 18)
+migrated legacy row: include/AudioPlugin.h: 71.43% (no recorded instrumented-line count) -> 71.43% (LF 98)
+migrated legacy row: include/AudioPorts.h: 56.65% (no recorded instrumented-line count) -> 56.65% (LF 233)
+migrated legacy row: include/AudioPortsModel.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 27)
+migrated legacy row: include/DpiHelper.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 7)
+migrated legacy row: include/LmmsPolyfill.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 2)
+migrated legacy row: include/MultiTrackRecorder.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 1)
+migrated legacy row: include/PinConnector.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 5)
+migrated legacy row: include/PluginAudioPorts.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 83)
+migrated legacy row: include/RecordRingBuffer.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 51)
+migrated legacy row: include/RemotePluginAudioPorts.h: 79.52% (no recorded instrumented-line count) -> 79.52% (LF 83)
+migrated legacy row: include/RoutingGraph.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 9)
+migrated legacy row: include/RoutingNode.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 8)
+migrated legacy row: include/RoutingNodes.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 14)
+migrated legacy row: include/ScriptBindings.h: 85.71% (no recorded instrumented-line count) -> 85.71% (LF 42)
+migrated legacy row: include/ScriptEngine.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 1)
+migrated legacy row: include/TrackRecorder.h: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 5)
+migrated legacy row: plugins/NeuralAmp/NeuralAmpControlDialog.cpp: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 43)
+migrated legacy row: plugins/NeuralAmp/NeuralAmpControlDialog.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 2)
+migrated legacy row: plugins/NeuralAmp/NeuralAmpControls.cpp: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 17)
+migrated legacy row: plugins/NeuralAmp/NeuralAmpControls.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 6)
+migrated legacy row: plugins/NeuralAmp/NeuralAmpEffect.cpp: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 88)
+migrated legacy row: plugins/NeuralAmp/NeuralAmpEffect.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 2)
+migrated legacy row: plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 4)
+migrated legacy row: plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 1)
+migrated legacy row: plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 7)
+migrated legacy row: plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 6)
+migrated legacy row: plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 37)
+migrated legacy row: plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 2)
+migrated legacy row: src/core/AudioBus.cpp: 95.77% (no recorded instrumented-line count) -> 95.77% (LF 142)
+migrated legacy row: src/core/AudioPortsModel.cpp: 99.22% (no recorded instrumented-line count) -> 99.22% (LF 258)
+migrated legacy row: src/core/RoutingGraph.cpp: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 194)
+migrated legacy row: src/core/RoutingNode.cpp: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 41)
+migrated legacy row: src/core/RoutingNodes.cpp: 96.10% (no recorded instrumented-line count) -> 96.10% (LF 77)
+migrated legacy row: src/core/ScriptBindings.cpp: 97.52% (no recorded instrumented-line count) -> 97.80% (LF 635)
+migrated legacy row: src/core/ScriptEngine.cpp: 90.40% (no recorded instrumented-line count) -> 90.98% (LF 410)
+migrated legacy row: src/core/audio/MultiTrackRecorder.cpp: 100.00% (no recorded instrumented-line count) -> 100.00% (LF 24)
+migrated legacy row: src/core/audio/TrackRecorder.cpp: 90.62% (no recorded instrumented-line count) -> 90.62% (LF 64)
+migrated legacy row: src/gui/PinConnector.cpp: 0.00% (no recorded instrumented-line count) -> 0.00% (LF 269)
+baseline updated: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage-green/tests/coverage-baseline.tsv

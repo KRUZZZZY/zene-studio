@@ -1,0 +1,84 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+*** WEAK-JACK: initializing
+*** WEAK-JACK: OK. (0)
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+********* Start testing of MidiLearnGuiTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+[New Thread 0x7ffff27966c0 (LWP 575729)]
+[New Thread 0x7ffff1f956c0 (LWP 575730)]
+[New Thread 0x7ffff17946c0 (LWP 575731)]
+[New Thread 0x7ffff0f936c0 (LWP 575732)]
+[Thread 0x7ffff0f936c0 (LWP 575732) exited]
+[Thread 0x7ffff17946c0 (LWP 575731) exited]
+[Thread 0x7ffff1f956c0 (LWP 575730) exited]
+[Thread 0x7ffff27966c0 (LWP 575729) exited]
+[New Thread 0x7ffff0f936c0 (LWP 575791)]
+[New Thread 0x7ffff17946c0 (LWP 575792)]
+[New Thread 0x7ffff1f956c0 (LWP 575793)]
+[New Thread 0x7ffff27966c0 (LWP 575794)]
+[New Thread 0x7fffe3fff6c0 (LWP 575795)]
+[New Thread 0x7fffe37fe6c0 (LWP 575796)]
+[New Thread 0x7fffe2ffd6c0 (LWP 575799)]
+[New Thread 0x7fffe27fc6c0 (LWP 575802)]
+[New Thread 0x7fffe1ffb6c0 (LWP 575805)]
+[New Thread 0x7fffe17fa6c0 (LWP 575806)]
+[New Thread 0x7fffe0ff96c0 (LWP 575807)]
+[New Thread 0x7fffc3fff6c0 (LWP 575808)]
+[New Thread 0x7fffc37fe6c0 (LWP 575809)]
+[New Thread 0x7fffc2ffd6c0 (LWP 575811)]
+[New Thread 0x7fffc27fc6c0 (LWP 575812)]
+[New Thread 0x7fffc1ffb6c0 (LWP 575814)]
+[New Thread 0x7fffc17fa6c0 (LWP 575815)]
+[New Thread 0x7fffc0ff96c0 (LWP 575817)]
+[New Thread 0x7fffa3fff6c0 (LWP 575818)]
+QDEBUG : MidiLearnGuiTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 200 msecs.
+QDEBUG : MidiLearnGuiTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : MidiLearnGuiTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+[New Thread 0x7fffa37fe6c0 (LWP 575904)]
+PASS   : MidiLearnGuiTest::initTestCase()
+[New Thread 0x7fffa2ffd6c0 (LWP 575906)]
+[Thread 0x7fffa2ffd6c0 (LWP 575906) exited]
+
+Thread 1 "MidiLearnGuiTes" received signal SIGSEGV, Segmentation fault.
+0x00007ffff7457328 in QAction::isChecked() const () from /lib/x86_64-linux-gnu/libQt6Gui.so.6
+#0  0x00007ffff7457328 in QAction::isChecked() const () from /lib/x86_64-linux-gnu/libQt6Gui.so.6
+#1  0x0000555556042c21 in lmms::gui::MidiLearnGui::setArmed (this=0x5555572ad940 <lmms::gui::MidiLearnGui::instance()::s_instance>, armed=false) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage-green/src/gui/MidiLearnGui.cpp:132
+#2  0x0000555555ab3620 in MidiLearnGuiTest::cleanup (this=0x7fffffffd6b0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage-green/tests/src/gui/MidiLearnGuiTest.cpp:62
+#3  0x0000555555ab1232 in MidiLearnGuiTest::qt_static_metacall (_o=0x7fffffffd6b0, _c=QMetaObject::InvokeMetaMethod, _id=2, _a=0x7fffffffcf40) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage-green/build-coverage/tests/MidiLearnGuiTest_autogen/include/MidiLearnGuiTest.moc:114
+#4  0x00007ffff634700d in QMetaMethod::invoke(QObject*, Qt::ConnectionType, QGenericReturnArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument, QGenericArgument) const () from /lib/x86_64-linux-gnu/libQt6Core.so.6
+#5  0x00007ffff7767623 in ?? () from /lib/x86_64-linux-gnu/libQt6Test.so.6
+#6  0x00007ffff7774ecf in QTest::qRun() () from /lib/x86_64-linux-gnu/libQt6Test.so.6
+#7  0x00007ffff776a397 in QTest::qExec(QObject*, int, char**) () from /lib/x86_64-linux-gnu/libQt6Test.so.6
+#8  0x0000555555ab0f78 in main (argc=1, argv=0x7fffffffd808) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage-green/tests/src/gui/MidiLearnGuiTest.cpp:131
+  Id   Target Id                                            Frame 
+* 1    Thread 0x7ffff4769980 (LWP 575305) "MidiLearnGuiTes" 0x00007ffff7457328 in QAction::isChecked() const () from /lib/x86_64-linux-gnu/libQt6Gui.so.6
+  6    Thread 0x7ffff0f936c0 (LWP 575791) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  7    Thread 0x7ffff17946c0 (LWP 575792) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  8    Thread 0x7ffff1f956c0 (LWP 575793) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  9    Thread 0x7ffff27966c0 (LWP 575794) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  10   Thread 0x7fffe3fff6c0 (LWP 575795) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  11   Thread 0x7fffe37fe6c0 (LWP 575796) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  12   Thread 0x7fffe2ffd6c0 (LWP 575799) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  13   Thread 0x7fffe27fc6c0 (LWP 575802) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  14   Thread 0x7fffe1ffb6c0 (LWP 575805) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  15   Thread 0x7fffe17fa6c0 (LWP 575806) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  16   Thread 0x7fffe0ff96c0 (LWP 575807) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  17   Thread 0x7fffc3fff6c0 (LWP 575808) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  18   Thread 0x7fffc37fe6c0 (LWP 575809) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  19   Thread 0x7fffc2ffd6c0 (LWP 575811) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  20   Thread 0x7fffc27fc6c0 (LWP 575812) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  21   Thread 0x7fffc1ffb6c0 (LWP 575814) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  22   Thread 0x7fffc17fa6c0 (LWP 575815) "lmms::AudioEngi" 0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x555557446204) at ./nptl/futex-internal.c:57
+  23   Thread 0x7fffc0ff96c0 (LWP 575817) "lmms::AudioEngi" 0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x555557446200) at ./nptl/futex-internal.c:57
+  24   Thread 0x7fffa3fff6c0 (LWP 575818) "lmms::AudioEngi" futex_wait (private=0, expected=2, futex_word=0x5555574461b0) at ../sysdeps/nptl/futex-internal.h:146
+  25   Thread 0x7fffa37fe6c0 (LWP 575904) "lmms::AudioDumm" futex_wait (private=0, expected=3, futex_word=0x5555574461ec) at ../sysdeps/nptl/futex-internal.h:146

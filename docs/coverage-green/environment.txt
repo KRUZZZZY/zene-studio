@@ -1,0 +1,12 @@
+date: 2026-09-12T02:51:09+01:00
+branch: post-alpha/coverage-green
+head: 65a02ba97d808f62cbca087e4d7072d4b5425648
+base: 0a92be489b00a79d955bed6d091713ee892f71eb
+
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+lcov: lcov: LCOV version 2.0-1
+cmake: cmake version 3.28.3
+Qt: 6.4.2
+configure: cmake -B build-coverage -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON -DWANT_COVERAGE=ON
+run: COVERAGE_JOBS=4 bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+flags: WANT_CLAP=AUTO WANT_VST3=AUTO WANT_WASM=ON WANT_STEM_SPLIT=OFF WANT_SESSION_VIEW=OFF WANT_VST=ON WANT_LV2=ON

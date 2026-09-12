@@ -1,0 +1,152 @@
+=== include/AudioPlugin.h: 98 instrumented lines, 70 hit, 28 missed (71.43%)
+      157: auto audioPortsModel() const -> const AudioPortsModel* final
+      159: return m_audioPorts.active()
+      160: ? &m_audioPorts.model()
+      161: : nullptr;
+      164: void playImpl(std::span<SampleFrame> inOut) final
+      166: if (!processLock())
+      169: return;
+      172: if (!m_audioPorts.active())
+      175: processUnlock();
+      176: return;
+      179: auto temp = inOut.data();
+      180: auto bus = AudioBus{&temp, 1, inOut.size()};
+      181: auto router = m_audioPorts.getRouter();
+      183: router.process(bus, [this](auto... buffers) {
+      184: [[maybe_unused]] const auto status = this->processImpl(buffers...);
+      185: assert(status == ProcessStatus::Continue); // Only Continue is allowed for now
+      186: return ProcessStatus::Continue;
+      189: processUnlock();
+      192: void playNoteImpl(NotePlayHandle* notesToPlay, std::span<SampleFrame> inOut) final
+      203: }
+      329: return Effect::ProcessStatus::Continue;
+      347: case lmms::ProcessStatus::ContinueIfNotQuiet:
+      348: return Effect::ProcessStatus::ContinueIfNotQuiet;
+      349: case lmms::ProcessStatus::Sleep:
+      350: return Effect::ProcessStatus::Sleep;
+      351: default:
+      352: break;
+      355: return Effect::ProcessStatus::Continue;
+
+=== include/RemotePluginAudioPorts.h: 83 instrumented lines, 66 hit, 17 missed (79.52%)
+      226: auto isRemote() const -> bool { return m_isRemote; }
+      252: auto initialized() const -> bool override
+      254: return isRemote()
+      255: ? RemotePluginAudioPorts<settings>::initialized()
+      256: : m_localBuffer.initialized();
+      259: auto input() -> PlanarBufferView<SampleT, settings.inputs> override
+      261: return isRemote()
+      262: ? RemotePluginAudioPorts<settings>::input()
+      263: : m_localBuffer.input();
+      266: auto output() -> PlanarBufferView<SampleT, settings.outputs> override
+      268: return isRemote()
+      269: ? RemotePluginAudioPorts<settings>::output()
+      270: : m_localBuffer.output();
+      273: auto frames() const -> f_cnt_t override
+      275: return isRemote()
+      276: ? RemotePluginAudioPorts<settings>::frames()
+      277: : m_localBuffer.frames();
+
+=== include/AudioPorts.h: 233 instrumented lines, 132 hit, 101 missed (56.65%)
+      134: class AudioPortsBuffer<settings, false> : public AudioPortsBufferBase
+      199: status = processNormally(coreInOut, *processorBuffers, std::forward<F>(processFunc));
+      408: inline auto convertSample(const In sample) -> Out
+      412: return static_cast<Out>(sample);
+      423: inline void AudioPortsRouter<settings>::send(
+      427: assert(m_ap->in().channelCount() != DynamicChannelCount);
+      428: if (m_ap->in().channelCount() == 0) { return; }
+      431: const auto inSizeConstrained = m_ap->trackChannelsUpperBound() / 2;
+      432: assert(inSizeConstrained <= in.channelPairs());
+      434: for (ch_cnt_t outChannel = 0; outChannel < out.channels(); ++outChannel)
+      436: SampleT* outPtr = out.bufferPtr(outChannel);
+      439: std::fill_n(outPtr, out.frames(), SampleT{});
+      441: for (std::uint8_t inChannelPairIdx = 0; inChannelPairIdx < inSizeConstrained; ++inChannelPairIdx)
+      443: const float* inPtr = in[inChannelPairIdx]; // track channel pair - 2-channel interleaved
+      445: const std::uint8_t inChannel = inChannelPairIdx * 2;
+      446: const std::uint8_t enabledPins =
+      447: (static_cast<std::uint8_t>(m_ap->in().enabled(inChannel, outChannel)) << 1u)
+      448: | static_cast<std::uint8_t>(m_ap->in().enabled(inChannel + 1, outChannel));
+      450: switch (enabledPins)
+      452: case 0b00: break;
+      453: case 0b01: // R channel only
+      455: for (f_cnt_t frame = 0; frame < in.frames(); ++frame)
+      457: outPtr[frame] += convertSample<SampleT>(inPtr[frame * 2 + 1]);
+      459: break;
+      461: case 0b10: // L channel only
+      463: for (f_cnt_t frame = 0; frame < in.frames(); ++frame)
+      465: outPtr[frame] += convertSample<SampleT>(inPtr[frame * 2]);
+      467: break;
+      469: case 0b11: // Both channels
+      471: for (f_cnt_t frame = 0; frame < in.frames(); ++frame)
+      473: outPtr[frame] += convertSample<SampleT>(inPtr[frame * 2] + inPtr[frame * 2 + 1]);
+      475: break;
+      477: default:
+      478: unreachable();
+      486: inline void AudioPortsRouter<settings>::receive(
+      490: assert(m_ap->out().channelCount() != DynamicChannelCount);
+      491: if (m_ap->out().channelCount() == 0) { return; }
+      494: const auto inOutSizeConstrained = m_ap->trackChannelsUpperBound() / 2;
+      495: assert(inOutSizeConstrained <= inOut.channelPairs());
+      502: const auto routeNx2 = [&](float* outPtr, ch_cnt_t outChannel, auto usedTrackChannels) {
+      503: constexpr std::uint8_t utc = usedTrackChannels();
+      511: const auto samples = inOut.frames() * 2;
+      520: std::fill_n(outPtr, samples, 0.f);
+      524: for (f_cnt_t sampleIdx = 0; sampleIdx < samples; sampleIdx += 2)
+      528: outPtr[sampleIdx] = 0.f;
+      532: outPtr[sampleIdx + 1] = 0.f;
+      537: for (ch_cnt_t inChannel = 0; inChannel < in.channels(); ++inChannel)
+      539: const SampleT* inPtr = in.bufferPtr(inChannel);
+      544: if (m_ap->out().enabled(outChannel, inChannel))
+      546: if (m_ap->out().enabled(outChannel + 1, inChannel))
+      548: for (f_cnt_t sampleIdx = 0; sampleIdx < samples; sampleIdx += 2)
+      550: outPtr[sampleIdx]     += inPtr[sampleIdx / 2];
+      551: outPtr[sampleIdx + 1] += inPtr[sampleIdx / 2];
+      556: for (f_cnt_t sampleIdx = 0; sampleIdx < samples; sampleIdx += 2)
+      558: outPtr[sampleIdx] += inPtr[sampleIdx / 2];
+      562: else if (m_ap->out().enabled(outChannel + 1, inChannel))
+      564: for (f_cnt_t sampleIdx = 0; sampleIdx < samples; sampleIdx += 2)
+      566: outPtr[sampleIdx + 1] += inPtr[sampleIdx / 2];
+      573: if (!m_ap->out().enabled(outChannel, inChannel)) { continue; }
+      575: for (f_cnt_t sampleIdx = 0; sampleIdx < samples; sampleIdx += 2)
+      577: outPtr[sampleIdx] += inPtr[sampleIdx / 2];
+      583: if (!m_ap->out().enabled(outChannel + 1, inChannel)) { continue; }
+      585: for (f_cnt_t sampleIdx = 0; sampleIdx < samples; sampleIdx += 2)
+      587: outPtr[sampleIdx + 1] += inPtr[sampleIdx / 2];
+      594: for (std::uint8_t outChannelPairIdx = 0; outChannelPairIdx < inOutSizeConstrained; ++outChannelPairIdx)
+      596: float* outPtr = inOut[outChannelPairIdx]; // track channel pair - 2-channel interleaved
+      597: const auto outChannel = static_cast<ch_cnt_t>(outChannelPairIdx * 2);
+      599: const std::uint8_t usedTrackChannels =
+      600: (static_cast<std::uint8_t>(m_ap->out().usedTrackChannels()[outChannel]) << 1u)
+      601: | static_cast<std::uint8_t>(m_ap->out().usedTrackChannels()[outChannel + 1]);
+      603: switch (usedTrackChannels)
+      605: case 0b00:
+      607: break;
+      608: case 0b01:
+      609: routeNx2(outPtr, outChannel, std::integral_constant<std::uint8_t, 0b01>{});
+      610: break;
+      611: case 0b10:
+      612: routeNx2(outPtr, outChannel, std::integral_constant<std::uint8_t, 0b10>{});
+      613: break;
+      614: case 0b11:
+      615: routeNx2(outPtr, outChannel, std::integral_constant<std::uint8_t, 0b11>{});
+      616: break;
+      617: default:
+      618: unreachable();
+      707: default:
+      708: unreachable();
+      806: default:
+      807: unreachable();
+      840: const auto processorIn = processorBuffers.input();
+      841: const auto processorOut = processorBuffers.output();
+      846: send(coreInOut, processorIn);
+      850: status = processFunc(processorIn, processorOut);
+      855: receive(processorOut, coreInOut);
+      874: const auto processorInOut = processorBuffers.inputOutput();
+      877: if (m_ap->in().channelCount() != 0)
+      879: assert(processorInOut.data() != nullptr);
+      880: std::memcpy(processorInOut.data(), coreBuffer.data(), coreBuffer.dataSizeBytes());
+      885: status = processFunc(processorInOut);
+      890: if (m_ap->out().channelCount() != 0)
+      892: assert(processorInOut.data() != nullptr);
+      893: std::memcpy(coreBuffer.data(), processorInOut.data(), coreBuffer.dataSizeBytes());
+
