@@ -1,0 +1,459 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+control socket listening on /tmp/zene-control-test-wa0bbhs4/zene.sock
+[New Thread 0x7ffff054f6c0 (LWP 2738620)]
+[New Thread 0x7fffefd4e6c0 (LWP 2738621)]
+[New Thread 0x7fffef54d6c0 (LWP 2738622)]
+[New Thread 0x7fffeed4c6c0 (LWP 2738623)]
+[Thread 0x7fffeed4c6c0 (LWP 2738623) exited]
+[Thread 0x7fffefd4e6c0 (LWP 2738621) exited]
+[Thread 0x7fffef54d6c0 (LWP 2738622) exited]
+[Thread 0x7ffff054f6c0 (LWP 2738620) exited]
+[New Thread 0x7fffeed4c6c0 (LWP 2738624)]
+[New Thread 0x7fffef54d6c0 (LWP 2738625)]
+[New Thread 0x7fffefd4e6c0 (LWP 2738626)]
+[New Thread 0x7ffff054f6c0 (LWP 2738627)]
+[New Thread 0x7fffee4c96c0 (LWP 2738628)]
+[New Thread 0x7fffedcc86c0 (LWP 2738629)]
+[New Thread 0x7fffed4c76c0 (LWP 2738630)]
+[New Thread 0x7fffeccc66c0 (LWP 2738631)]
+[New Thread 0x7fffc7fff6c0 (LWP 2738632)]
+[New Thread 0x7fffcffff6c0 (LWP 2738633)]
+[New Thread 0x7fffcf7fe6c0 (LWP 2738634)]
+[New Thread 0x7fffceffd6c0 (LWP 2738635)]
+[New Thread 0x7fffce7fc6c0 (LWP 2738636)]
+[New Thread 0x7fffcdffb6c0 (LWP 2738637)]
+[New Thread 0x7fffcd7fa6c0 (LWP 2738638)]
+[New Thread 0x7fffccff96c0 (LWP 2738639)]
+[New Thread 0x7fffc77fe6c0 (LWP 2738640)]
+[New Thread 0x7fffc6ffd6c0 (LWP 2738641)]
+[New Thread 0x7fffc67fc6c0 (LWP 2738642)]
+Lv2 plugin SUMMARY: 73 of 87  loaded in 143 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+[New Thread 0x7fffc55ff6c0 (LWP 2738643)]
+[New Thread 0x7fffc4dfe6c0 (LWP 2738644)]
+Error loading icon pixmap "setup": "File not found"
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+[New Thread 0x7fff8d5946c0 (LWP 2738697)]
+[New Thread 0x7fff84bff6c0 (LWP 2738698)]
+[New Thread 0x7fff8cd936c0 (LWP 2738699)]
+[New Thread 0x7fff87fff6c0 (LWP 2738700)]
+[New Thread 0x7fff877fe6c0 (LWP 2738701)]
+[New Thread 0x7fff86ffd6c0 (LWP 2738702)]
+[New Thread 0x7fff867fc6c0 (LWP 2738703)]
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support setParent!
+
+Thread 1 "zene" received signal SIGSEGV, Segmentation fault.
+0x000055555583ac1a in lmms::PatternStore::updateComboBox (this=0x5555563a4be0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/PatternStore.cpp:203
+203			m_patternComboBoxModel.addItem(pt->name());
+
+===== SIGNAL / STOP REASON =====
+Last stopped for thread 1 (Thread 0x7ffff15b8c80 (LWP 2738611)).
+	Using the running image of child process 2738611.
+Program stopped at 0x55555583ac1a.
+It stopped with signal SIGSEGV, Segmentation fault.
+
+===== CRASH FRAME =====
+#0  0x000055555583ac1a in lmms::PatternStore::updateComboBox (this=0x5555563a4be0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/PatternStore.cpp:203
+203			m_patternComboBoxModel.addItem(pt->name());
+Line 203 of "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/PatternStore.cpp" is at address 0x55555583a940 <_ZN4lmms12PatternStore21createClipsForPatternEi> but contains no code.
+pt = 0x0
+i = 0
+curPattern = 0
+
+--- the loop counter and the count it is bounded by ---
+$1 = 0
+$2 = 0
+$3 = 1
+
+===== BACKTRACE (all threads, 16 frames) =====
+
+Thread 33 (Thread 0x7fff867fc6c0 (LWP 2738703) "Thread (pooled)"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x7fff867fb800, op=137, expected=0, futex_word=0x555557fae874) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=0, abstime=0x7fff867fb800, clockid=0, expected=0, futex_word=0x555557fae874) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555557fae874, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fff867fb800, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fff867fb800, clockid=1, mutex=0x555557fae820, cond=0x555557fae848) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555557fae848, mutex=0x555557fae820, abstime=0x7fff867fb800) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7cad2 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#9  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 32 (Thread 0x7fff86ffd6c0 (LWP 2738702) "Thread (pooled)"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x7fff86ffc800, op=137, expected=0, futex_word=0x555557f9abb4) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=0, abstime=0x7fff86ffc800, clockid=0, expected=0, futex_word=0x555557f9abb4) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555557f9abb4, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fff86ffc800, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fff86ffc800, clockid=1, mutex=0x555557f9ab60, cond=0x555557f9ab88) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555557f9ab88, mutex=0x555557f9ab60, abstime=0x7fff86ffc800) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7cad2 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#9  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 31 (Thread 0x7fff877fe6c0 (LWP 2738701) "Thread (pooled)"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x7fff877fd800, op=137, expected=0, futex_word=0x555557f9e7d0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=0, abstime=0x7fff877fd800, clockid=0, expected=0, futex_word=0x555557f9e7d0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555557f9e7d0, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fff877fd800, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fff877fd800, clockid=1, mutex=0x555557f9e780, cond=0x555557f9e7a8) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555557f9e7a8, mutex=0x555557f9e780, abstime=0x7fff877fd800) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7cad2 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#9  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 30 (Thread 0x7fff87fff6c0 (LWP 2738700) "Thread (pooled)"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x7fff87ffe800, op=137, expected=0, futex_word=0x555557f988d4) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=0, abstime=0x7fff87ffe800, clockid=0, expected=0, futex_word=0x555557f988d4) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555557f988d4, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fff87ffe800, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fff87ffe800, clockid=1, mutex=0x555557f98880, cond=0x555557f988a8) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555557f988a8, mutex=0x555557f98880, abstime=0x7fff87ffe800) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7cad2 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#9  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 29 (Thread 0x7fff8cd936c0 (LWP 2738699) "Thread (pooled)"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x7fff8cd92800, op=137, expected=0, futex_word=0x555557f98384) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=0, abstime=0x7fff8cd92800, clockid=0, expected=0, futex_word=0x555557f98384) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555557f98384, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fff8cd92800, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fff8cd92800, clockid=1, mutex=0x555557f98330, cond=0x555557f98358) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555557f98358, mutex=0x555557f98330, abstime=0x7fff8cd92800) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7cad2 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#9  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 28 (Thread 0x7fff84bff6c0 (LWP 2738698) "Thread (pooled)"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x7fff84bfe800, op=137, expected=0, futex_word=0x555557f97e54) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=0, abstime=0x7fff84bfe800, clockid=0, expected=0, futex_word=0x555557f97e54) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555557f97e54, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fff84bfe800, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fff84bfe800, clockid=1, mutex=0x555557f97e00, cond=0x555557f97e28) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555557f97e28, mutex=0x555557f97e00, abstime=0x7fff84bfe800) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7cad2 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#9  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 27 (Thread 0x7fff8d5946c0 (LWP 2738697) "Thread (pooled)"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=0, cancel=true, abstime=0x7fff8d593800, op=137, expected=0, futex_word=0x555557f08cc0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=0, abstime=0x7fff8d593800, clockid=0, expected=0, futex_word=0x555557f08cc0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555557f08cc0, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fff8d593800, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fff8d593800, clockid=1, mutex=0x555557f08c70, cond=0x555557f08c98) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555557f08c98, mutex=0x555557f08c70, abstime=0x7fff8d593800) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7cad2 in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#8  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#9  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 26 (Thread 0x7fffc4dfe6c0 (LWP 2738644) "lmms::AudioDumm"):
+#0  futex_wait (private=0, expected=2, futex_word=0x55555640eeb0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait (futex=futex@entry=0x55555640eeb0, private=0) at ./nptl/lowlevellock.c:49
+#2  0x00007ffff5aa0237 in lll_mutex_lock_optimized (mutex=0x55555640eeb0) at ./nptl/pthread_mutex_lock.c:48
+#3  ___pthread_mutex_lock (mutex=0x55555640eeb0) at ./nptl/pthread_mutex_lock.c:128
+#4  0x00005555556e25ca in __gthread_mutex_lock (__mutex=0x55555640eeb0) at /usr/include/x86_64-linux-gnu/c++/13/bits/gthr-default.h:749
+#5  __gthread_recursive_mutex_lock (__mutex=0x55555640eeb0) at /usr/include/x86_64-linux-gnu/c++/13/bits/gthr-default.h:811
+#6  std::recursive_mutex::lock (this=0x55555640eeb0) at /usr/include/c++/13/mutex:120
+#7  std::lock_guard<std::recursive_mutex>::lock_guard (__m=..., this=<synthetic pointer>) at /usr/include/c++/13/bits/std_mutex.h:249
+#8  lmms::AudioEngine::renderNextPeriod (this=0x55555640ebe0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngine.cpp:368
+#9  0x00005555556c3882 in lmms::AudioDummy::run (this=0x555556ce5f20) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/src/lmmsobjs_autogen/DGKZTCOIDE/../../../../include/AudioDevice.h:93
+#10 0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#11 0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#12 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 25 (Thread 0x7fffc55ff6c0 (LWP 2738643) "lmms::MidiAlsaS"):
+#0  0x00007ffff5b1b79d in __GI___poll (fds=0x7fff90001350, nfds=2, timeout=250) at ../sysdeps/unix/sysv/linux/poll.c:29
+#1  0x00005555558ec651 in poll (__timeout=250, __nfds=2, __fds=0x7fff90001350) at /usr/include/x86_64-linux-gnu/bits/poll2.h:39
+#2  lmms::MidiAlsaSeq::run (this=0x555556ccbc30) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/midi/MidiAlsaSeq.cpp:471
+#3  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#4  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#5  0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 24 (Thread 0x7fffc67fc6c0 (LWP 2738642) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffc67fb830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffc67fb830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffc67fb830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffc67fb830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffc67fb830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x555556452f60) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 23 (Thread 0x7fffc6ffd6c0 (LWP 2738641) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffc6ffc830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffc6ffc830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffc6ffc830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffc6ffc830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffc6ffc830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555563ec580) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 22 (Thread 0x7fffc77fe6c0 (LWP 2738640) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffc77fd830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffc77fd830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffc77fd830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffc77fd830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffc77fd830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555563ed7c0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 21 (Thread 0x7fffccff96c0 (LWP 2738639) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffccff8830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffccff8830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffccff8830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffccff8830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffccff8830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x555556468e40) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 20 (Thread 0x7fffcd7fa6c0 (LWP 2738638) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffcd7f9830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffcd7f9830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffcd7f9830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffcd7f9830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffcd7f9830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555563ea590) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 19 (Thread 0x7fffcdffb6c0 (LWP 2738637) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffcdffa830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffcdffa830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffcdffa830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffcdffa830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffcdffa830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555564382d0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 18 (Thread 0x7fffce7fc6c0 (LWP 2738636) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffce7fb830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffce7fb830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffce7fb830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffce7fb830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffce7fb830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x555556448f00) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 17 (Thread 0x7fffceffd6c0 (LWP 2738635) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffceffc830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffceffc830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffceffc830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffceffc830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffceffc830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x55555649ec90) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 16 (Thread 0x7fffcf7fe6c0 (LWP 2738634) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffcf7fd830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffcf7fd830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffcf7fd830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffcf7fd830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffcf7fd830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x555556452630) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 15 (Thread 0x7fffcffff6c0 (LWP 2738633) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffcfffe830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffcfffe830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffcfffe830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffcfffe830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffcfffe830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x555556498a70) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 14 (Thread 0x7fffc7fff6c0 (LWP 2738632) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffc7ffe830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffc7ffe830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffc7ffe830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffc7ffe830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffc7ffe830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x55555649ab90) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 13 (Thread 0x7fffeccc66c0 (LWP 2738631) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffeccc5830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffeccc5830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffeccc5830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffeccc5830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffeccc5830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x555556479770) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 12 (Thread 0x7fffed4c76c0 (LWP 2738630) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffed4c6830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffed4c6830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffed4c6830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffed4c6830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffed4c6830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555564a1f10) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 11 (Thread 0x7fffedcc86c0 (LWP 2738629) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffedcc7830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffedcc7830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffedcc7830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffedcc7830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffedcc7830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555563e7c70) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 10 (Thread 0x7fffee4c96c0 (LWP 2738628) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffee4c8830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffee4c8830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffee4c8830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffee4c8830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffee4c8830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x55555644ec20) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 9 (Thread 0x7ffff054f6c0 (LWP 2738627) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7ffff054e830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7ffff054e830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7ffff054e830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7ffff054e830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7ffff054e830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555564745a0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 8 (Thread 0x7fffefd4e6c0 (LWP 2738626) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffefd4d830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffefd4d830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffefd4d830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffefd4d830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffefd4d830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555563f6840) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 7 (Thread 0x7fffef54d6c0 (LWP 2738625) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffef54c830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffef54c830, clockid=0, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffef54c830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffef54c830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffef54c830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x55555640c790) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 6 (Thread 0x7fffeed4c6c0 (LWP 2738624) "lmms::AudioEngi"):
+#0  0x00007ffff5a98e51 in __futex_abstimed_wait_common64 (private=40928, cancel=true, abstime=0x7fffeed4b830, op=137, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=40928, abstime=0x7fffeed4b830, clockid=1115224542, expected=0, futex_word=0x555556464464) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x555556464464, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x7fffeed4b830, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x00007ffff5a9bd6e in __pthread_cond_wait_common (abstime=0x7fffeed4b830, clockid=1, mutex=0x555556464410, cond=0x555556464438) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=0x555556464438, mutex=0x555556464410, abstime=0x7fffeed4b830) at ./nptl/pthread_cond_wait.c:652
+#5  0x00007ffff6a76b93 in QWaitCondition::wait(QMutex*, QDeadlineTimer) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#6  0x00007ffff6a7d0be in QWaitCondition::wait(QMutex*, unsigned long) () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#7  0x00005555556e59ee in lmms::AudioEngineWorkerThread::run (this=0x5555563eb470) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/AudioEngineWorkerThread.cpp:212
+#8  0x00007ffff6a7c48d in ??? () at /lib/x86_64-linux-gnu/libQt6Core.so.6
+#9  0x00007ffff5a9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#10 0x00007ffff5b29ecc in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7ffff15b8c80 (LWP 2738611) "zene"):
+#0  0x000055555583ac1a in lmms::PatternStore::updateComboBox (this=0x5555563a4be0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/PatternStore.cpp:203
+#1  0x0000555555a21f39 in lmms::PatternTrack::PatternTrack (this=this@entry=0x555556f9b480, tc=tc@entry=0x55555641a6c0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/include/Engine.h:76
+#2  0x00005555558b57e8 in lmms::Track::create (tt=<optimized out>, tc=tc@entry=0x55555641a6c0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/Track.cpp:140
+#3  0x00005555558b5cca in lmms::Track::create (element=..., tc=tc@entry=0x55555641a6c0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/Track.cpp:174
+#4  0x00005555558b9ffc in lmms::TrackContainer::loadSettings (this=0x55555641a6c0, _this=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/TrackContainer.cpp:146
+#5  0x00005555558a5e46 in lmms::SerializingObject::restoreState (this=0x55555641a6f0, element=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/SerializingObject.cpp:71
+#6  0x0000555555808cf5 in lmms::JournallingObject::restoreState (this=this@entry=0x55555641a6f0, _this=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/JournallingObject.cpp:92
+#7  0x0000555555851f55 in lmms::ProjectJournal::restoreState (this=this@entry=0x555556377640, saved=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/ProjectJournal.cpp:87
+#8  0x0000555555852c8a in lmms::ProjectJournal::restoreStep (this=this@entry=0x555556377640, step=..., redo=redo@entry=0x7fffffffaed0) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/ProjectJournal.cpp:110
+#9  0x0000555555855452 in lmms::ProjectJournal::undo (this=0x555556377640) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/ProjectJournal.cpp:126
+#10 0x000055555572aede in lmms::(anonymous namespace)::undoThroughJournal (command=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/ControlCommandsControl.cpp:252
+#11 0x000055555572bfb1 in lmms::(anonymous namespace)::undoLastCommand (registry=...) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/ControlCommandsControl.cpp:308
+#12 0x000055555572cac4 in operator() (__closure=<optimized out>) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/src/core/ControlCommandsControl.cpp:333
+#13 std::__invoke_impl<lmms::ControlResult, lmms::(anonymous namespace)::registerUndoCommand(lmms::ControlRegistry&)::<lambda(const QJsonObject&)>&, const QJsonObject&> (__f=<optimized out>) at /usr/include/c++/13/bits/invoke.h:61
+#14 std::__invoke_r<lmms::ControlResult, lmms::(anonymous namespace)::registerUndoCommand(lmms::ControlRegistry&)::<lambda(const QJsonObject&)>&, const QJsonObject&> (__fn=<optimized out>) at /usr/include/c++/13/bits/invoke.h:116
+#15 std::_Function_handler<lmms::ControlResult(const QJsonObject&), lmms::(anonymous namespace)::registerUndoCommand(lmms::ControlRegistry&)::<lambda(const QJsonObject&)> >::_M_invoke(const std::_Any_data &, const QJsonObject &) (__functor=<optimized out>, __args#0=<optimized out>) at /usr/include/c++/13/bits/std_function.h:291

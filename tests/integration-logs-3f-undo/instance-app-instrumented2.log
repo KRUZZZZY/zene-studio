@@ -1,0 +1,73 @@
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+control socket listening on /tmp/zene-control-test-3dukqk86/zene.sock
+ZENEDBG Track::create type=6 tc=0x652d90c20000
+Lv2 plugin SUMMARY: 73 of 87  loaded in 146 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+ZENEDBG Track::create type=0 tc=0x652d9158a390
+Error loading icon pixmap "setup": "File not found"
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+ZENEDBG clearAllTracks this=0x652d90baeda0 tracks=0
+ZENEDBG clearAllTracks this=0x652d90c20000 tracks=0
+ZENEDBG loadSettings this=0x652d90c20000 journalRestore=0 tracks=0 parent=song
+ZENEDBG Track::create type=0 tc=0x652d90c20000
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+ZENEDBG Track::create type=2 tc=0x652d90c20000
+ZENEDBG Track::create type=1 tc=0x652d90c20000
+ZENEDBG ctor ENTER this=0x652d92402bf0 tc=0x652d90c20000 s_infoMap.size()=0
+ZENEDBG map[ctor-enter] size=0:
+ZENEDBG map[ctor-after-insert] size=1: {0x652d92402bf0:0}
+ZENEDBG updateComboBox this=0x652d90baeda0 numOfPatterns()=1
+ZENEDBG map[updateComboBox-enter] size=1: {0x652d92402bf0:0}
+ZENEDBG   i=0 pt=0x652d92402bf0
+ZENEDBG loadSettings this=0x652d90baeda0 journalRestore=0 tracks=0 parent=patterntrack
+ZENEDBG Track::create type=0 tc=0x652d90baeda0
+ZENEDBG Track::create type=5 tc=0x652d90c20000
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+ZENEDBG dtor ENTER this=0x652d92402bf0 tc=0x652d90c20000 pattern=0 s_infoMap.size()=1
+ZENEDBG map[dtor-enter-before-removePattern] size=1: {0x652d92402bf0:0}
+ZENEDBG map[dtor-after-removePattern] size=1: {0x652d92402bf0:0}
+ZENEDBG map[dtor-after-remove] size=0:
+ZENEDBG map[dtor-after-removeTrack] size=0:
+ZENEDBG updateComboBox this=0x652d90baeda0 numOfPatterns()=0
+ZENEDBG map[updateComboBox-enter] size=0:
+ZENEDBG map[dtor-after-updateComboBox] size=0:
+ZENEDBG clearAllTracks this=0x652d90baeda0 tracks=0
+ZENEDBG clearAllTracks this=0x652d90c20000 tracks=0
+ZENEDBG loadSettings this=0x652d90c20000 journalRestore=0 tracks=0 parent=song
+ZENEDBG Track::create type=1 tc=0x652d90c20000
+ZENEDBG ctor ENTER this=0x652d92402bf0 tc=0x652d90c20000 s_infoMap.size()=0
+ZENEDBG map[ctor-enter] size=0:
+ZENEDBG map[ctor-after-insert] size=1: {0x652d92402bf0:0}
+ZENEDBG updateComboBox this=0x652d90baeda0 numOfPatterns()=1
+ZENEDBG map[updateComboBox-enter] size=1: {0x652d92402bf0:0}
+ZENEDBG   i=0 pt=0x652d92402bf0
+ZENEDBG loadSettings this=0x652d90baeda0 journalRestore=0 tracks=0 parent=patterntrack
+ZENEDBG Track::create type=0 tc=0x652d90baeda0
+This plugin does not support setParent!
+ZENEDBG loadSettings this=0x652d90c20000 journalRestore=1 tracks=1 parent=journaldata
+ZENEDBG clearAllTracks this=0x652d90c20000 tracks=1
+ZENEDBG dtor ENTER this=0x652d92402bf0 tc=0x652d90c20000 pattern=0 s_infoMap.size()=1
+ZENEDBG map[dtor-enter-before-removePattern] size=1: {0x652d92402bf0:0}
+ZENEDBG map[dtor-after-removePattern] size=1: {0x652d92402bf0:0}
+ZENEDBG map[dtor-after-remove] size=0:
+ZENEDBG map[dtor-after-removeTrack] size=0:
+ZENEDBG updateComboBox this=0x652d90baeda0 numOfPatterns()=0
+ZENEDBG map[updateComboBox-enter] size=0:
+ZENEDBG map[dtor-after-updateComboBox] size=0:
+ZENEDBG Track::create type=1 tc=0x652d90c20000
+ZENEDBG ctor ENTER this=0x652d92402bf0 tc=0x652d90c20000 s_infoMap.size()=1
+ZENEDBG map[ctor-enter] size=1: {0x652d92402bf0:0}
+ZENEDBG map[ctor-after-insert] size=1: {0x652d92402bf0:1}
+ZENEDBG updateComboBox this=0x652d90baeda0 numOfPatterns()=1
+ZENEDBG map[updateComboBox-enter] size=1: {0x652d92402bf0:1}
+ZENEDBG   i=0 pt=(nil)

@@ -1,0 +1,115 @@
+{
+  "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/zene",
+  "socket_path": "/tmp/zene-control-test-dvknkj2o/zene.sock",
+  "steps": [
+    {
+      "step": "project.open",
+      "reply": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "error_count": 0,
+          "errors": [],
+          "file": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tools/mcp-zene-control/tests/data/agent-control-fixture.mmp",
+          "format_upgraded": true,
+          "ids_assigned": 2,
+          "loaded_with_errors": false,
+          "tempo": 140,
+          "track_count": 1
+        }
+      }
+    },
+    {
+      "step": "transport.set_tempo",
+      "reply": {
+        "id": 2,
+        "ok": true,
+        "result": {
+          "tempo": 128
+        }
+      }
+    },
+    {
+      "step": "control.transactions",
+      "reply": {
+        "id": 3,
+        "ok": true,
+        "result": {
+          "cap_bytes": 262144,
+          "cap_records": 100,
+          "capped": false,
+          "count": 2,
+          "evicted": 0,
+          "retained_bytes": 386,
+          "transactions": [
+            {
+              "before": {
+                "previous_file": "",
+                "previous_sha256": ""
+              },
+              "bytes": 275,
+              "class": "irreversible",
+              "command": "project.open",
+              "inverse": {
+                "args": {
+                  "path": ""
+                },
+                "op": "project.open"
+              },
+              "mechanism": "none: the displaced session is not snapshotted; only the file path and its hash are recorded, so the caller can see what it replaced. UNSAVED changes to the previous session are lost",
+              "reversible": false
+            },
+            {
+              "before": {
+                "tempo": 140
+              },
+              "bytes": 111,
+              "class": "true_inverse",
+              "command": "transport.set_tempo",
+              "inverse": {
+                "args": {
+                  "bpm": 140
+                },
+                "op": "transport.set_tempo"
+              },
+              "mechanism": "ProjectJournal (Song checkpoint)",
+              "reversible": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "step": "control.undo",
+      "reply": {
+        "__exception__": "ConnectionError: the instance closed the connection"
+      }
+    },
+    {
+      "step": "process_alive_after_undo",
+      "reply": true
+    },
+    {
+      "step": "same_connection_ping",
+      "reply": {
+        "__exception__": "BrokenPipeError: [Errno 32] Broken pipe"
+      }
+    },
+    {
+      "step": "socket_file_exists",
+      "reply": true
+    },
+    {
+      "step": "process_alive_after_1s",
+      "reply": false
+    },
+    {
+      "step": "fresh_connection",
+      "reply": {
+        "__exception__": "ConnectionRefusedError: [Errno 111] Connection refused"
+      }
+    }
+  ],
+  "process_returncode": -11,
+  "log_tail": "y-entry] size=0:\nZENEDBG addTrack this=0x56c6638d34a0 track=0x56c6652ca080\nZENEDBG map[addTrack-before-emit-trackAdded] size=0:\nZENEDBG map[addTrack-after-emit-trackAdded] size=0:\nZENEDBG map[Track-base-ctor-after-addTrack] size=0:\nZENEDBG ctor ENTER this=0x56c6652ca080 tc=0x56c6638d34a0 s_infoMap.size()=0\nZENEDBG map[ctor-enter] size=0:\nZENEDBG map[ctor-after-insert] size=1: {0x56c6652ca080:0}\nZENEDBG updateComboBox this=0x56c663823000 numOfPatterns()=1\nZENEDBG map[updateComboBox-enter] size=1: {0x56c6652ca080:0}\nZENEDBG   i=0 pt=0x56c6652ca080\nZENEDBG loadSettings this=0x56c663823000 journalRestore=0 tracks=0 parent=patterntrack\nZENEDBG Track::create type=0 tc=0x56c663823000\nZENEDBG Track::Track body entry this=0x56c6651f3c00 tc=0x56c663823000\nZENEDBG map[Track-base-ctor-body-entry] size=1: {0x56c6652ca080:0}\nZENEDBG addTrack this=0x56c663823000 track=0x56c6651f3c00\nZENEDBG map[addTrack-before-emit-trackAdded] size=1: {0x56c6652ca080:0}\nZENEDBG map[addTrack-after-emit-trackAdded] size=1: {0x56c6652ca080:0}\nZENEDBG map[Track-base-ctor-after-addTrack] size=1: {0x56c6652ca080:0}\nZENEDBG patternIndex READ this=0x56c6652ca080 known=1 size=1\nThis plugin does not support setParent!\nZENEDBG s_infoMap[this] READ at saveTrackSpecificSettings this=0x56c6652ca080 known=1 size=1\nZENEDBG s_infoMap[this] READ at saveTrackSpecificSettings this=0x56c6652ca080 known=1 size=1\nZENEDBG loadSettings this=0x56c6638d34a0 journalRestore=1 tracks=1 parent=journaldata\nZENEDBG clearAllTracks this=0x56c6638d34a0 tracks=1\nZENEDBG dtor ENTER this=0x56c6652ca080 tc=0x56c6638d34a0 pattern=0 s_infoMap.size()=1\nZENEDBG map[dtor-enter-before-removePattern] size=1: {0x56c6652ca080:0}\nZENEDBG map[dtor-after-removePattern] size=1: {0x56c6652ca080:0}\nZENEDBG map[dtor-after-remove] size=0:\nZENEDBG map[dtor-after-removeTrack] size=0:\nZENEDBG updateComboBox this=0x56c663823000 numOfPatterns()=0\nZENEDBG map[updateComboBox-enter] size=0:\nZENEDBG map[dtor-after-updateComboBox] size=0:\nZENEDBG map[~Track-entry] size=0:\nZENEDBG map[~Track-after-emit-destroyedTrack] size=1: {0x56c6652ca080:0}\nZENEDBG map[~Track-after-delete-clips] size=1: {0x56c6652ca080:0}\nZENEDBG map[~Track-after-removeTrack] size=1: {0x56c6652ca080:0}\nZENEDBG Track::create type=1 tc=0x56c6638d34a0\nZENEDBG Track::Track body entry this=0x56c6652ca080 tc=0x56c6638d34a0\nZENEDBG map[Track-base-ctor-body-entry] size=1: {0x56c6652ca080:0}\nZENEDBG addTrack this=0x56c6638d34a0 track=0x56c6652ca080\nZENEDBG map[addTrack-before-emit-trackAdded] size=1: {0x56c6652ca080:0}\nZENEDBG map[addTrack-after-emit-trackAdded] size=1: {0x56c6652ca080:0}\nZENEDBG map[Track-base-ctor-after-addTrack] size=1: {0x56c6652ca080:0}\nZENEDBG ctor ENTER this=0x56c6652ca080 tc=0x56c6638d34a0 s_infoMap.size()=1\nZENEDBG map[ctor-enter] size=1: {0x56c6652ca080:0}\nZENEDBG map[ctor-after-insert] size=1: {0x56c6652ca080:1}\nZENEDBG updateComboBox this=0x56c663823000 numOfPatterns()=1\nZENEDBG map[updateComboBox-enter] size=1: {0x56c6652ca080:1}\nZENEDBG   i=0 pt=(nil)\n"
+}

@@ -1,0 +1,55 @@
+control.undo connection-drop lane — final verification, on the committed tree
+==========================================================================
+
+Worktree : /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign
+Branch   : post-alpha/foreign-merge (nothing pushed, no tag, origin/messmerd unwritten)
+Base     : e35beecd9 (the tip this lane started from)
+Commits  : f52b2d924  fix(control-undo): a registry read that registered the caller killed the DAW
+           58160fe0b  docs+evidence(control-undo): the mechanism, the stack, the fix and the proof
+                      (the evidence commit that contains this file; its hash cannot be written
+                       inside itself, so treat `git log -1 --format=%h` as authoritative)
+
+Binary under test: build/zene, RelWithDebInfo, configured from the committed C++ of f52b2d924.
+No C++ changed between the fix build and this run (the only commits above it touch tests/, docs/
+and the ledger), so no rebuild was required and none was done.
+
+Raw probe (tests/integration-logs-3f-undo/probe-undo.py, no MCP, no bridge)
+  before: probe-before.log      control.undo -> ConnectionError, returncode -11 (SIGSEGV)
+  after : probe-after.log       control.undo -> ok, undone=true, undone_command=transport.set_tempo;
+                                process alive after 1s, same connection and a fresh connection both ok
+
+Behavioural assertions (verify-undo-replies.py)
+  verify-after.log              8/8 ok, exit 0 — reply, live connection, tempo restored to the
+                                recorded inverse (140), transactions/redo/undo still answering
+
+Bridge suite, post-commit re-run against the committed tree
+  command: cd tools/mcp-zene-control && ZENE_CONTROL_BINARY=<worktree>/build/zene python3 -m pytest tests/ -q
+  pytest-committed-tree.log     PYTEST_EXIT=0   64 passed in 21.22s
+  (the pre-commit run of the same command is pytest-after.log: 64 passed in 21.42s, exit 0;
+   pytest-test11-after.log: test_11_mutating_command_undo_and_transactions PASSED by name)
+
+ctest, post-commit re-run from <build>/tests
+  command: ctest --test-dir build/tests --output-on-failure
+  ctest-committed-tree.log      CTEST_EXIT=0    100% tests passed, 0 tests failed out of 86
+  (the pre-commit run is ctest-after.log, identical totals)
+
+Render determinism (the change must not move the audio path)
+  command: QT_QPA_PLATFORM=offscreen build/zene render data/projects/shorties/sv-DnB-Startup.mmpz -o <out> -f wav
+  render-after-sha256.txt       RENDER_1_EXIT=0 RENDER_2_EXIT=0
+                                943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526  (x2, 2177120 bytes)
+  render-after-chunks.log       data chunk payload sha256 b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca
+                                identical to tests/integration-logs-3f/final/render-sha256.txt
+
+Gates
+  tests/no-upstream-regression-gate.sh   GATE6_EXIT=0 PASS, 439 changed path(s) declared, ledger 451 entries
+                                         (gate6-after.log)
+  regen.py --head                        fork-sources.txt REPRODUCES, all-sources.txt REPRODUCES,
+                                         tools-sources.txt DOES-NOT-REPRODUCE +0/-21 (pre-existing:
+                                         a hand-written comment block in its body, added by 8131b1ac9,
+                                         which the documented regeneration command cannot emit;
+                                         no entry is missing and no manifest is touched by this lane)
+                                         (manifest-verify-head.log)
+
+Instrumentation policy: the temporary ZENEDBG diagnostics that produced
+instance-app-instrumented*.log were reverted with `git checkout --` before the fix was written, and
+f52b2d924 contains none of them. The instrumented build is NOT the build that was tested.

@@ -1,0 +1,115 @@
+{
+  "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tests/integration-logs-3f-undo/gdb-wrapper.sh",
+  "socket_path": "/tmp/zene-control-test-wa0bbhs4/zene.sock",
+  "steps": [
+    {
+      "step": "project.open",
+      "reply": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "error_count": 0,
+          "errors": [],
+          "file": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/tools/mcp-zene-control/tests/data/agent-control-fixture.mmp",
+          "format_upgraded": true,
+          "ids_assigned": 2,
+          "loaded_with_errors": false,
+          "tempo": 140,
+          "track_count": 1
+        }
+      }
+    },
+    {
+      "step": "transport.set_tempo",
+      "reply": {
+        "id": 2,
+        "ok": true,
+        "result": {
+          "tempo": 128
+        }
+      }
+    },
+    {
+      "step": "control.transactions",
+      "reply": {
+        "id": 3,
+        "ok": true,
+        "result": {
+          "cap_bytes": 262144,
+          "cap_records": 100,
+          "capped": false,
+          "count": 2,
+          "evicted": 0,
+          "retained_bytes": 386,
+          "transactions": [
+            {
+              "before": {
+                "previous_file": "",
+                "previous_sha256": ""
+              },
+              "bytes": 275,
+              "class": "irreversible",
+              "command": "project.open",
+              "inverse": {
+                "args": {
+                  "path": ""
+                },
+                "op": "project.open"
+              },
+              "mechanism": "none: the displaced session is not snapshotted; only the file path and its hash are recorded, so the caller can see what it replaced. UNSAVED changes to the previous session are lost",
+              "reversible": false
+            },
+            {
+              "before": {
+                "tempo": 140
+              },
+              "bytes": 111,
+              "class": "true_inverse",
+              "command": "transport.set_tempo",
+              "inverse": {
+                "args": {
+                  "bpm": 140
+                },
+                "op": "transport.set_tempo"
+              },
+              "mechanism": "ProjectJournal (Song checkpoint)",
+              "reversible": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "step": "control.undo",
+      "reply": {
+        "__exception__": "ConnectionError: the instance closed the connection"
+      }
+    },
+    {
+      "step": "process_alive_after_undo",
+      "reply": true
+    },
+    {
+      "step": "same_connection_ping",
+      "reply": {
+        "__exception__": "BrokenPipeError: [Errno 32] Broken pipe"
+      }
+    },
+    {
+      "step": "socket_file_exists",
+      "reply": true
+    },
+    {
+      "step": "process_alive_after_1s",
+      "reply": false
+    },
+    {
+      "step": "fresh_connection",
+      "reply": {
+        "__exception__": "ConnectionRefusedError: [Errno 111] Connection refused"
+      }
+    }
+  ],
+  "process_returncode": 0,
+  "log_tail": ""
+}

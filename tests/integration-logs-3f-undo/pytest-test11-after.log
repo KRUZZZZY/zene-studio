@@ -1,0 +1,242 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/kruzzzzy/Documents/AI_KOS_PROJECT
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.14.2, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 6 items / 5 deselected / 1 selected
+
+tests/test_mcp_e2e.py::ZeneControlBridgeE2E::test_11_mutating_command_undo_and_transactions PASSED [100%]
+
+======================= 1 passed, 5 deselected in 3.54s ========================
+
+---- module fixture ----
+{
+  "socket_s": 0.1,
+  "engine_ready_s": 1.748,
+  "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-foreign/build/zene",
+  "socket_path": "/tmp/zene-control-test-x95iwm_b/zene.sock",
+  "daw_commands": 74,
+  "command_list_source": "live",
+  "instance_exit": 0,
+  "transcript_path": "/tmp/zene-control-state-9d7nfpnz/mcp-transcript.json"
+}
+
+---- MCP transcript (every request/response) ----
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_project_open",
+  "arguments": {
+    "path": "/tmp/zene-undo-xn0vjl6g/agent-control-fixture.mmp"
+  },
+  "is_error": false,
+  "elapsed_s": 0.059,
+  "summary": "project.open: ok in 0.02s (error_count=0, errors=[], file=/tmp/zene-undo-xn0vjl6g/agent-control-fixture.mmp, format_upgraded=True)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_project_open",
+    "command": "project.open",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.016,
+    "result": {
+      "error_count": 0,
+      "errors": [],
+      "file": "/tmp/zene-undo-xn0vjl6g/agent-control-fixture.mmp",
+      "format_upgraded": true,
+      "ids_assigned": 2,
+      "loaded_with_errors": false,
+      "tempo": 140,
+      "track_count": 1
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-x95iwm_b/zene.sock"
+    },
+    "summary": "project.open: ok in 0.02s (error_count=0, errors=[], file=/tmp/zene-undo-xn0vjl6g/agent-control-fixture.mmp, format_upgraded=True)"
+  },
+  "step": 1
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_transport_set_tempo",
+  "arguments": {
+    "bpm": 128
+  },
+  "is_error": false,
+  "elapsed_s": 0.016,
+  "summary": "transport.set_tempo: ok in 0.01s (tempo=128)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_transport_set_tempo",
+    "command": "transport.set_tempo",
+    "mutating": true,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.007,
+    "result": {
+      "tempo": 128
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-x95iwm_b/zene.sock"
+    },
+    "summary": "transport.set_tempo: ok in 0.01s (tempo=128)"
+  },
+  "step": 2
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_transport_get_state",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.009,
+  "summary": "transport.get_state: ok in 0.00s (master_volume=100, paused=False, playing=False, position_ticks=0)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_transport_get_state",
+    "command": "transport.get_state",
+    "mutating": false,
+    "engine_free": false,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "master_volume": 100,
+      "paused": false,
+      "playing": false,
+      "position_ticks": 0,
+      "tempo": 128
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-x95iwm_b/zene.sock"
+    },
+    "summary": "transport.get_state: ok in 0.00s (master_volume=100, paused=False, playing=False, position_ticks=0)"
+  },
+  "step": 3
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_control_transactions",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.01,
+  "summary": "control.transactions: ok in 0.00s (cap_bytes=262144, cap_records=100, capped=False, count=2)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_control_transactions",
+    "command": "control.transactions",
+    "mutating": false,
+    "engine_free": true,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.0,
+    "result": {
+      "cap_bytes": 262144,
+      "cap_records": 100,
+      "capped": false,
+      "count": 2,
+      "evicted": 0,
+      "retained_bytes": 386,
+      "transactions": [
+        {
+          "before": {
+            "previous_file": "",
+            "previous_sha256": ""
+          },
+          "bytes": 275,
+          "class": "irreversible",
+          "command": "project.open",
+          "inverse": {
+            "args": {
+              "path": ""
+            },
+            "op": "project.open"
+          },
+          "mechanism": "none: the displaced session is not snapshotted; only the file path and its hash are recorded, so the caller can see what it replaced. UNSAVED changes to the previous session are lost",
+          "reversible": false
+        },
+        {
+          "before": {
+            "tempo": 140
+          },
+          "bytes": 111,
+          "class": "true_inverse",
+          "command": "transport.set_tempo",
+          "inverse": {
+            "args": {
+              "bpm": 140
+            },
+            "op": "transport.set_tempo"
+          },
+          "mechanism": "ProjectJournal (Song checkpoint)",
+          "reversible": true
+        }
+      ]
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-x95iwm_b/zene.sock"
+    },
+    "summary": "control.transactions: ok in 0.00s (cap_bytes=262144, cap_records=100, capped=False, count=2)"
+  },
+  "step": 4
+}
+{
+  "kind": "tools_call",
+  "phase": "undo",
+  "tool": "zene_control_undo",
+  "arguments": {},
+  "is_error": false,
+  "elapsed_s": 0.018,
+  "summary": "control.undo: ok in 0.01s (can_redo=True, can_undo=False, mechanism=lmms::ProjectJournal, undone=True)",
+  "structured": {
+    "ok": true,
+    "tool": "zene_control_undo",
+    "command": "control.undo",
+    "mutating": false,
+    "engine_free": true,
+    "timeout_s": 30.0,
+    "elapsed_s": 0.009,
+    "result": {
+      "can_redo": true,
+      "can_undo": false,
+      "mechanism": "lmms::ProjectJournal",
+      "undone": true,
+      "undone_command": "transport.set_tempo"
+    },
+    "instance": {
+      "version": "0.1.0-alpha.295+76e3639",
+      "proto": 1,
+      "engine_ready": true,
+      "socket_path": "/tmp/zene-control-test-x95iwm_b/zene.sock"
+    },
+    "summary": "control.undo: ok in 0.01s (can_redo=True, can_undo=False, mechanism=lmms::ProjectJournal, undone=True)"
+  },
+  "step": 5
+}
+{
+  "kind": "undo",
+  "phase": "undo",
+  "commands": [
+    "project.open",
+    "transport.set_tempo"
+  ],
+  "undone": true,
+  "step": 6
+}
+
+MCP E2E: 6 recorded exchanges; fixture socket 0.1s, engine ready 1.748s, 74 DAW commands

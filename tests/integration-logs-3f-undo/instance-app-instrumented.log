@@ -1,0 +1,42 @@
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+control socket listening on /tmp/zene-control-test-jzou4g1i/zene.sock
+Lv2 plugin SUMMARY: 73 of 87  loaded in 112 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+Error loading icon pixmap "setup": "File not found"
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+ZENEDBG clearAllTracks this=0x6535407e6ae0 tracks=0
+ZENEDBG clearAllTracks this=0x653540894dc0 tracks=0
+ZENEDBG loadSettings this=0x653540894dc0 journalRestore=0 tracks=0 parent=song
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+ZENEDBG ctor this=0x653541c638f0 tc=0x653540894dc0 s_infoMap.size()=0
+ZENEDBG updateComboBox this=0x6535407e6ae0 numOfPatterns()=1
+ZENEDBG   i=0 pt=0x653541c638f0
+ZENEDBG loadSettings this=0x6535407e6ae0 journalRestore=0 tracks=0 parent=patterntrack
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+ZENEDBG dtor this=0x653541c638f0 tc=0x653540894dc0 pattern=0 s_infoMap.size()=1
+ZENEDBG updateComboBox this=0x6535407e6ae0 numOfPatterns()=0
+ZENEDBG clearAllTracks this=0x6535407e6ae0 tracks=0
+ZENEDBG clearAllTracks this=0x653540894dc0 tracks=0
+ZENEDBG loadSettings this=0x653540894dc0 journalRestore=0 tracks=0 parent=song
+ZENEDBG ctor this=0x653541e184c0 tc=0x653540894dc0 s_infoMap.size()=0
+ZENEDBG updateComboBox this=0x6535407e6ae0 numOfPatterns()=1
+ZENEDBG   i=0 pt=0x653541e184c0
+ZENEDBG loadSettings this=0x6535407e6ae0 journalRestore=0 tracks=0 parent=patterntrack
+This plugin does not support setParent!
+ZENEDBG loadSettings this=0x653540894dc0 journalRestore=1 tracks=1 parent=journaldata
+ZENEDBG clearAllTracks this=0x653540894dc0 tracks=1
+ZENEDBG dtor this=0x653541e184c0 tc=0x653540894dc0 pattern=0 s_infoMap.size()=1
+ZENEDBG updateComboBox this=0x6535407e6ae0 numOfPatterns()=0
+ZENEDBG ctor this=0x653541e184c0 tc=0x653540894dc0 s_infoMap.size()=1
+ZENEDBG updateComboBox this=0x6535407e6ae0 numOfPatterns()=1
+ZENEDBG   i=0 pt=(nil)

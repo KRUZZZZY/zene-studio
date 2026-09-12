@@ -1,0 +1,101 @@
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+control socket listening on /tmp/zene-control-test-tx89v3gr/zene.sock
+ZENEDBG Track::create type=6 tc=0x57f89bd38780
+Lv2 plugin SUMMARY: 73 of 87  loaded in 142 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+ZENEDBG Track::create type=0 tc=0x57f89c6949d0
+ZENEDBG addTrack this=0x57f89c6949d0 track=0x57f89c6b4c90
+ZENEDBG map[addTrack-before-emit-trackAdded] size=0:
+ZENEDBG map[addTrack-after-emit-trackAdded] size=0:
+Error loading icon pixmap "setup": "File not found"
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+ZENEDBG clearAllTracks this=0x57f89bd7f920 tracks=0
+ZENEDBG clearAllTracks this=0x57f89bd38780 tracks=0
+ZENEDBG loadSettings this=0x57f89bd38780 journalRestore=0 tracks=0 parent=song
+ZENEDBG Track::create type=0 tc=0x57f89bd38780
+ZENEDBG addTrack this=0x57f89bd38780 track=0x57f89d346d50
+ZENEDBG map[addTrack-before-emit-trackAdded] size=0:
+ZENEDBG map[addTrack-after-emit-trackAdded] size=0:
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+ZENEDBG Track::create type=2 tc=0x57f89bd38780
+ZENEDBG addTrack this=0x57f89bd38780 track=0x57f89d51d720
+ZENEDBG map[addTrack-before-emit-trackAdded] size=0:
+ZENEDBG map[addTrack-after-emit-trackAdded] size=0:
+ZENEDBG Track::create type=1 tc=0x57f89bd38780
+ZENEDBG addTrack this=0x57f89bd38780 track=0x57f89d176f00
+ZENEDBG map[addTrack-before-emit-trackAdded] size=0:
+ZENEDBG map[addTrack-after-emit-trackAdded] size=0:
+ZENEDBG ctor ENTER this=0x57f89d176f00 tc=0x57f89bd38780 s_infoMap.size()=0
+ZENEDBG map[ctor-enter] size=0:
+ZENEDBG map[ctor-after-insert] size=1: {0x57f89d176f00:0}
+ZENEDBG updateComboBox this=0x57f89bd7f920 numOfPatterns()=1
+ZENEDBG map[updateComboBox-enter] size=1: {0x57f89d176f00:0}
+ZENEDBG   i=0 pt=0x57f89d176f00
+ZENEDBG loadSettings this=0x57f89bd7f920 journalRestore=0 tracks=0 parent=patterntrack
+ZENEDBG Track::create type=0 tc=0x57f89bd7f920
+ZENEDBG addTrack this=0x57f89bd7f920 track=0x57f89d526e90
+ZENEDBG map[addTrack-before-emit-trackAdded] size=1: {0x57f89d176f00:0}
+ZENEDBG map[addTrack-after-emit-trackAdded] size=1: {0x57f89d176f00:0}
+ZENEDBG Track::create type=5 tc=0x57f89bd38780
+ZENEDBG addTrack this=0x57f89bd38780 track=0x57f89bfba9c0
+ZENEDBG map[addTrack-before-emit-trackAdded] size=1: {0x57f89d176f00:0}
+ZENEDBG map[addTrack-after-emit-trackAdded] size=1: {0x57f89d176f00:0}
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+ZENEDBG dtor ENTER this=0x57f89d176f00 tc=0x57f89bd38780 pattern=0 s_infoMap.size()=1
+ZENEDBG map[dtor-enter-before-removePattern] size=1: {0x57f89d176f00:0}
+ZENEDBG map[dtor-after-removePattern] size=1: {0x57f89d176f00:0}
+ZENEDBG map[dtor-after-remove] size=0:
+ZENEDBG map[dtor-after-removeTrack] size=0:
+ZENEDBG updateComboBox this=0x57f89bd7f920 numOfPatterns()=0
+ZENEDBG map[updateComboBox-enter] size=0:
+ZENEDBG map[dtor-after-updateComboBox] size=0:
+ZENEDBG clearAllTracks this=0x57f89bd7f920 tracks=0
+ZENEDBG clearAllTracks this=0x57f89bd38780 tracks=0
+ZENEDBG loadSettings this=0x57f89bd38780 journalRestore=0 tracks=0 parent=song
+ZENEDBG Track::create type=1 tc=0x57f89bd38780
+ZENEDBG addTrack this=0x57f89bd38780 track=0x57f89d176f00
+ZENEDBG map[addTrack-before-emit-trackAdded] size=0:
+ZENEDBG map[addTrack-after-emit-trackAdded] size=0:
+ZENEDBG ctor ENTER this=0x57f89d176f00 tc=0x57f89bd38780 s_infoMap.size()=0
+ZENEDBG map[ctor-enter] size=0:
+ZENEDBG map[ctor-after-insert] size=1: {0x57f89d176f00:0}
+ZENEDBG updateComboBox this=0x57f89bd7f920 numOfPatterns()=1
+ZENEDBG map[updateComboBox-enter] size=1: {0x57f89d176f00:0}
+ZENEDBG   i=0 pt=0x57f89d176f00
+ZENEDBG loadSettings this=0x57f89bd7f920 journalRestore=0 tracks=0 parent=patterntrack
+ZENEDBG Track::create type=0 tc=0x57f89bd7f920
+ZENEDBG addTrack this=0x57f89bd7f920 track=0x57f89d45d390
+ZENEDBG map[addTrack-before-emit-trackAdded] size=1: {0x57f89d176f00:0}
+ZENEDBG map[addTrack-after-emit-trackAdded] size=1: {0x57f89d176f00:0}
+ZENEDBG patternIndex READ this=0x57f89d176f00 known=1 size=1
+This plugin does not support setParent!
+ZENEDBG loadSettings this=0x57f89bd38780 journalRestore=1 tracks=1 parent=journaldata
+ZENEDBG clearAllTracks this=0x57f89bd38780 tracks=1
+ZENEDBG dtor ENTER this=0x57f89d176f00 tc=0x57f89bd38780 pattern=0 s_infoMap.size()=1
+ZENEDBG map[dtor-enter-before-removePattern] size=1: {0x57f89d176f00:0}
+ZENEDBG map[dtor-after-removePattern] size=1: {0x57f89d176f00:0}
+ZENEDBG map[dtor-after-remove] size=0:
+ZENEDBG map[dtor-after-removeTrack] size=0:
+ZENEDBG updateComboBox this=0x57f89bd7f920 numOfPatterns()=0
+ZENEDBG map[updateComboBox-enter] size=0:
+ZENEDBG map[dtor-after-updateComboBox] size=0:
+ZENEDBG Track::create type=1 tc=0x57f89bd38780
+ZENEDBG addTrack this=0x57f89bd38780 track=0x57f89d176f00
+ZENEDBG map[addTrack-before-emit-trackAdded] size=1: {0x57f89d176f00:0}
+ZENEDBG map[addTrack-after-emit-trackAdded] size=1: {0x57f89d176f00:0}
+ZENEDBG ctor ENTER this=0x57f89d176f00 tc=0x57f89bd38780 s_infoMap.size()=1
+ZENEDBG map[ctor-enter] size=1: {0x57f89d176f00:0}
+ZENEDBG map[ctor-after-insert] size=1: {0x57f89d176f00:1}
+ZENEDBG updateComboBox this=0x57f89bd7f920 numOfPatterns()=1
+ZENEDBG map[updateComboBox-enter] size=1: {0x57f89d176f00:1}
+ZENEDBG   i=0 pt=(nil)
