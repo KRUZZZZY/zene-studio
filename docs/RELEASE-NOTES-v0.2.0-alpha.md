@@ -571,7 +571,10 @@ prove the fallback; no test drives the surface against a real audio backend.
 
 ## Known limitations
 
-This is an alpha and the list is long; a separate **known limitations** page covers it in detail. The short
+This is an alpha and the list is long; a separate **known limitations** page covers it in detail — that page
+is `docs/KNOWN-LIMITATIONS.md`, and **there is no version-suffixed 0.2.0 limitations file** (the 0.1.0 page,
+`docs/KNOWN-LIMITATIONS-v0.1.0-alpha.md`, is the one it replaced), so a process looking for the suffixed name
+will not find the page this text points at. The short
 version: no instrument editor; instrument hosting is one-per-track and proven only against our own test
 instrument; no clip editing gestures, take lanes or comping; no plugin-scanning interface worth the name; no
 stable project format; no measured crash-free rate (the reporter is new); VCA groups and racks exist in the

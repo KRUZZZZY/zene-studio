@@ -5,7 +5,8 @@ that is this page's fault — report it and it gets added.
 
 > **Verification convention.** `[VERIFY AT FREEZE]` marks a claim that must be re-checked against the built
 > artefact before it ships; nothing carrying it goes out unverified, and no unverified claim goes out without
-> one. Applied verbatim from `drafts/KNOWN-LIMITATIONS-v0.2.0-alpha-DRAFT.md` (reviewed) on
+> one. This page's path is `docs/KNOWN-LIMITATIONS.md` — there is no version-suffixed 0.2.0 limitations file.
+> Applied verbatim from `drafts/KNOWN-LIMITATIONS-v0.2.0-alpha-DRAFT.md` (reviewed) on
 > `post-alpha/release-prep` (base `post-alpha/integration` @ `34c1f4f86`) except for the marker resolutions
 > noted inline; the resolution table is `docs/RELEASE-PREP-0.2.0.md` §3.
 
