@@ -92,9 +92,12 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 		// closed from the track's destroyedTrack() signal), so deleting the
 		// tracks first leaves the views - and the instrument windows they own -
 		// dereferencing their model after it is gone. Measured: SIGSEGV in
-		// ~InstrumentTrackView() on a plain `control.undo`, release
-		// configuration only. See TrackContainer::aboutToClearTracks() and
-		// docs/UNDO-RELEASE-CONFIG.md.
+		// ~InstrumentTrackView() on a plain `control.undo`, in ANY session whose
+		// Song holds a track whose view touches its model while dying -- an
+		// instrument track does; a pattern-track-only fixture does not, which is
+		// why an earlier probe appeared to clear it. NOT a Debug/Release
+		// difference: both configurations die in the same frame. See
+		// TrackContainer::aboutToClearTracks() and docs/UNDO-RELEASE-CONFIG.md.
 		emit aboutToClearTracks();
 		clearAllTracks();
 	}
