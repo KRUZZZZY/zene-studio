@@ -236,6 +236,16 @@ All logs under `tests/integration-logs-qdebug/`; every exit code recorded unpipe
 | `bash tests/no-upstream-regression-gate.sh` | `21-…log` | **PASS** — 457 changed paths declared (was 443); the ledger holds 470 entries (was 456) |
 | `python3 tests/scripted/check-namespace` | `22-…log` | **0 errors** |
 | `bash tests/release-version-gate.sh` | `23-…log` | **PASS** — 0.2.1-alpha is the tree's, its release notes' and its download link's version |
+| `bash tests/run-all-gates.sh --no-mutation` | `24-…log` | **PASS-WITH-SKIPS (exit 3)** — 8 of 10 gates run and PASS (ctest, no-tautology, complexity, upstream-regression, file-length, duplication, fork-sources, unregistered-tests); 2 and 5 skipped in that run (5 was then run on its own, below) |
+| `bash tests/mutation-gate.sh` | `25-…log` | **PASS** — kill score 88.5% (≥ 80%) on `src/core/RoutingGraph.cpp` |
+
+Gate 2 (coverage) was skipped and does not need to run, and the reason is checked rather than
+asserted: **none of the six files this change touches is in `tests/fork-sources.txt`** — the enforced
+coverage scope (`grep -c '^src/core/Plugin.cpp$' tests/fork-sources.txt` → 0, and the same for the
+other five). The added lines are a comment and an `#include`, i.e. lines gcov does not count as
+executable, so no whole-tree coverage number moves either — but that claim is not what the gate would
+measure. `run-all-gates` reports its own run as INCOMPLETE rather than green, which is the honest
+reading and is why the log is committed as it printed.
 
 The gate logs above are the runs **on the committed tree** (both commits in), because Gate 6 and Gate 9
 diff `base..HEAD`: an uncommitted fix is invisible to them.

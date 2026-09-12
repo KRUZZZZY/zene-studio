@@ -1,0 +1,94 @@
+
+==== control: unmutated source must build and pass ====
+pristine sha256: 1fc2d8fb3fe015e94468cd77e8fb285805198f6074258e0c7ced217c8632f163
+control: pristine TU recompiled, test binary passed 3/3 runs
+
+==== mutants: 30 selected of 170 candidates (seed 0) ====
+  #   site                           rule           mutation                                   build    result
+  --------------------------------------------------------------------------------------------------------------------
+  1   src/core/RoutingGraph.cpp:134  cmp-eq         == -> !=                                   ok       KILLED
+  2   src/core/RoutingGraph.cpp:101  cmp-ge         >= -> <=                                   ok       KILLED
+  3   src/core/RoutingGraph.cpp:159  cmp-lt         < -> >                                     ok       KILLED
+  4   src/core/RoutingGraph.cpp:358  cmp-ne         != -> ==                                   ok       KILLED
+  5   src/core/RoutingGraph.cpp:148  const-neg-one  -1 -> 0                                    ok       KILLED
+  6   src/core/RoutingGraph.cpp:44   const-one      1 -> 0                                     ok       SURVIVED
+  7   src/core/RoutingGraph.cpp:230  const-zero     0 -> 1                                     ok       KILLED
+  8   src/core/RoutingGraph.cpp:354  dec-inc        -- -> ++                                   ok       KILLED
+  9   src/core/RoutingGraph.cpp:339  greater-less   std::greater<int> -> std::less<int>        ok       KILLED
+  10  src/core/RoutingGraph.cpp:330  inc-dec        ++ -> --                                   ok       KILLED
+  11  src/core/RoutingGraph.cpp:133  logic-and      && -> ||                                   no-build INVALID
+  12  src/core/RoutingGraph.cpp:81   logic-or       || -> &&                                   ok       KILLED
+  13  src/core/RoutingGraph.cpp:205  min-max        std::min -> std::max                       ok       KILLED
+  14  src/core/RoutingGraph.cpp:280  neg-drop       if (! -> if (                              ok       KILLED
+  15  src/core/RoutingGraph.cpp:171  ret-false      return false -> return true                ok       KILLED
+  16  src/core/RoutingGraph.cpp:126  ret-true       return true -> return false                ok       KILLED
+  17  src/core/RoutingGraph.cpp:226  stmt-delete    delete: graphElement.setAttribute(QStringLiteral("frames"), static_cast<qulonglong>(m_frames)); ok       SURVIVED
+  18  src/core/RoutingGraph.cpp:233  cmp-eq         == -> !=                                   no-build INVALID
+  19  src/core/RoutingGraph.cpp:165  cmp-ge         >= -> <=                                   ok       KILLED
+  20  src/core/RoutingGraph.cpp:101  cmp-lt         < -> >                                     ok       KILLED
+  21  src/core/RoutingGraph.cpp:197  cmp-ne         != -> ==                                   no-build INVALID
+  22  src/core/RoutingGraph.cpp:50   const-neg-one  -1 -> 0                                    ok       KILLED
+  23  src/core/RoutingGraph.cpp:210  const-zero     0 -> 1                                     ok       KILLED
+  24  src/core/RoutingGraph.cpp:53   inc-dec        ++ -> --                                   ok       SURVIVED
+  25  src/core/RoutingGraph.cpp:112  logic-and      && -> ||                                   no-build INVALID
+  26  src/core/RoutingGraph.cpp:101  logic-or       || -> &&                                   ok       KILLED
+  27  src/core/RoutingGraph.cpp:204  min-max        std::min -> std::max                       ok       KILLED
+  28  src/core/RoutingGraph.cpp:192  neg-drop       if (! -> if (                              ok       KILLED
+  29  src/core/RoutingGraph.cpp:280  ret-false      return false -> return true                ok       KILLED
+  30  src/core/RoutingGraph.cpp:173  ret-true       return true -> return false                ok       KILLED
+
+==== final control: tree restored, pristine source still builds and passes ====
+final control: pristine source recompiled, test binary passed
+note: uncommitted paths unrelated to the sweep (not caused by this run):
+ M docs/QDEBUG-CLASS-AND-MIME-RENAME.md
+?? tests/integration-logs-qdebug/24-run-all-gates.exit
+?? tests/integration-logs-qdebug/24-run-all-gates.log
+?? tests/integration-logs-qdebug/25-mutation-gate.log
+?? tests/integration-logs-qdebug/25.exit
+
+==== result ====
+mutation-gate: src/core/RoutingGraph.cpp
+candidates generated : 170
+mutants run          : 30 (seed 0; deterministic stratified sample)
+valid mutants        : 26
+  killed             : 23
+  survived           : 3
+invalid (no build)   : 4
+kill score           : 23/26 = 88.5%  (threshold 80%)
+
+mutant table (build ok => the mutated TU really was recompiled and relinked):
+  #   site                           rule           mutation                                   build    result
+  1   src/core/RoutingGraph.cpp:134  cmp-eq         == -> !=                                   ok       KILLED
+  2   src/core/RoutingGraph.cpp:101  cmp-ge         >= -> <=                                   ok       KILLED
+  3   src/core/RoutingGraph.cpp:159  cmp-lt         < -> >                                     ok       KILLED
+  4   src/core/RoutingGraph.cpp:358  cmp-ne         != -> ==                                   ok       KILLED
+  5   src/core/RoutingGraph.cpp:148  const-neg-one  -1 -> 0                                    ok       KILLED
+  6   src/core/RoutingGraph.cpp:44   const-one      1 -> 0                                     ok       SURVIVED
+  7   src/core/RoutingGraph.cpp:230  const-zero     0 -> 1                                     ok       KILLED
+  8   src/core/RoutingGraph.cpp:354  dec-inc        -- -> ++                                   ok       KILLED
+  9   src/core/RoutingGraph.cpp:339  greater-less   std::greater<int> -> std::less<int>        ok       KILLED
+  10  src/core/RoutingGraph.cpp:330  inc-dec        ++ -> --                                   ok       KILLED
+  11  src/core/RoutingGraph.cpp:133  logic-and      && -> ||                                   no-build INVALID
+  12  src/core/RoutingGraph.cpp:81   logic-or       || -> &&                                   ok       KILLED
+  13  src/core/RoutingGraph.cpp:205  min-max        std::min -> std::max                       ok       KILLED
+  14  src/core/RoutingGraph.cpp:280  neg-drop       if (! -> if (                              ok       KILLED
+  15  src/core/RoutingGraph.cpp:171  ret-false      return false -> return true                ok       KILLED
+  16  src/core/RoutingGraph.cpp:126  ret-true       return true -> return false                ok       KILLED
+  17  src/core/RoutingGraph.cpp:226  stmt-delete    delete: graphElement.setAttribute(QStringLiteral("frames"), static_cast<qulonglong>(m_frames)); ok       SURVIVED
+  18  src/core/RoutingGraph.cpp:233  cmp-eq         == -> !=                                   no-build INVALID
+  19  src/core/RoutingGraph.cpp:165  cmp-ge         >= -> <=                                   ok       KILLED
+  20  src/core/RoutingGraph.cpp:101  cmp-lt         < -> >                                     ok       KILLED
+  21  src/core/RoutingGraph.cpp:197  cmp-ne         != -> ==                                   no-build INVALID
+  22  src/core/RoutingGraph.cpp:50   const-neg-one  -1 -> 0                                    ok       KILLED
+  23  src/core/RoutingGraph.cpp:210  const-zero     0 -> 1                                     ok       KILLED
+  24  src/core/RoutingGraph.cpp:53   inc-dec        ++ -> --                                   ok       SURVIVED
+  25  src/core/RoutingGraph.cpp:112  logic-and      && -> ||                                   no-build INVALID
+  26  src/core/RoutingGraph.cpp:101  logic-or       || -> &&                                   ok       KILLED
+  27  src/core/RoutingGraph.cpp:204  min-max        std::min -> std::max                       ok       KILLED
+  28  src/core/RoutingGraph.cpp:192  neg-drop       if (! -> if (                              ok       KILLED
+  29  src/core/RoutingGraph.cpp:280  ret-false      return false -> return true                ok       KILLED
+  30  src/core/RoutingGraph.cpp:173  ret-true       return true -> return false                ok       KILLED
+
+invalid mutants are excluded from the score; survivors are listed above and
+named in tests/QA-GATES.md Gate 5. Logs: build/mutation-gate/logs/
+PASS: kill score 88.5% >= 80%
