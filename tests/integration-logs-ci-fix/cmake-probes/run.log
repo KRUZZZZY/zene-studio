@@ -1,0 +1,6 @@
+clap-before  fails at ClapHeaders.cmake:45                  exit 1, line 45      ok
+clap-after   finds CLAP 1.2.10                              exit 0               ok
+tgt-lmms     fails: Not a target: lmms                      exit 1               ok
+tgt-zene     accepts the renamed target                     exit 0               ok
+
+PASS: both Windows configure causes reproduced, both fixes effective

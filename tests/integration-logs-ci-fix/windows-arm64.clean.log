@@ -1,0 +1,2068 @@
+﻿2026-09-12T17:21:52.5769327Z Current runner version: '2.337.0'
+2026-09-12T17:21:52.5801656Z ##[group]Runner Image Provisioner
+2026-09-12T17:21:52.5802500Z Hosted Compute Agent
+2026-09-12T17:21:52.5802957Z Version: 20260828.587
+2026-09-12T17:21:52.5803793Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-12T17:21:52.5804393Z Build Date: 2026-08-28T16:44:25Z
+2026-09-12T17:21:52.5804945Z Worker ID: {f0409bc2-a724-4270-9868-67b6b422178e}
+2026-09-12T17:21:52.5805529Z Azure Region: southcentralus
+2026-09-12T17:21:52.5806016Z ##[endgroup]
+2026-09-12T17:21:52.5807871Z ##[group]Operating System
+2026-09-12T17:21:52.5808405Z Microsoft Windows 11
+2026-09-12T17:21:52.5808843Z 10.0.26200
+2026-09-12T17:21:52.5809242Z Enterprise
+2026-09-12T17:21:52.5809646Z ##[endgroup]
+2026-09-12T17:21:52.5810066Z ##[group]Runner Image
+2026-09-12T17:21:52.5810522Z Image: windows-11-arm64
+2026-09-12T17:21:52.5810984Z Version: 20260906.161.1
+2026-09-12T17:21:52.5813399Z Included Software: https://github.com/actions/runner-images/blob/win11-arm64/20260906.161/images/windows/Windows11-Arm64-Readme.md
+2026-09-12T17:21:52.5814855Z Image Release: https://github.com/actions/runner-images/releases/tag/win11-arm64%2F20260906.161
+2026-09-12T17:21:52.5815666Z ##[endgroup]
+2026-09-12T17:21:52.5816697Z ##[group]GITHUB_TOKEN Permissions
+2026-09-12T17:21:52.5819222Z Contents: read
+2026-09-12T17:21:52.5819691Z Metadata: read
+2026-09-12T17:21:52.5820116Z Packages: read
+2026-09-12T17:21:52.5820534Z ##[endgroup]
+2026-09-12T17:21:52.5823184Z Secret source: Actions
+2026-09-12T17:21:52.5824416Z Cache mode: write
+2026-09-12T17:21:52.5825080Z Prepare workflow directory
+2026-09-12T17:21:52.6330217Z Prepare all required actions
+2026-09-12T17:21:52.6382554Z Getting action download info
+2026-09-12T17:21:52.9199877Z Download action repository 'actions/checkout@v3' (SHA:a37ce9120846195fa4ece8f58b268e6043cb2f26)
+2026-09-12T17:21:53.2566247Z Download action repository 'actions/cache@v3' (SHA:6f8efc29b200d32929f49075959781ed54ec270c)
+2026-09-12T17:21:53.7000241Z Download action repository 'msys2/setup-msys2@v2' (SHA:66cd2cce69caa17b53920067426061ca1de3a884)
+2026-09-12T17:21:54.0225031Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-09-12T17:21:54.3868123Z Download action repository 'actions/upload-artifact@v7' (SHA:043fb46d1a93c77aae656e7c1c64a875d1fc6a0a)
+2026-09-12T17:21:54.7785600Z Complete job name: windows-arm64
+2026-09-12T17:21:54.9523117Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T17:21:54.9533951Z ##[group]Run actions/checkout@v3
+2026-09-12T17:21:54.9535011Z with:
+2026-09-12T17:21:54.9535587Z   fetch-depth: 0
+2026-09-12T17:21:54.9536173Z   submodules: recursive
+2026-09-12T17:21:54.9536835Z   repository: KRUZZZZY/zene-studio
+2026-09-12T17:21:54.9543247Z   token: ***
+2026-09-12T17:21:54.9543833Z   ssh-strict: true
+2026-09-12T17:21:54.9544451Z   persist-credentials: true
+2026-09-12T17:21:54.9545104Z   clean: true
+2026-09-12T17:21:54.9545709Z   sparse-checkout-cone-mode: true
+2026-09-12T17:21:54.9546452Z   fetch-tags: false
+2026-09-12T17:21:54.9547028Z   lfs: false
+2026-09-12T17:21:54.9547600Z   set-safe-directory: true
+2026-09-12T17:21:54.9548333Z   allow-unsafe-pr-checkout: false
+2026-09-12T17:21:54.9549523Z env:
+2026-09-12T17:21:54.9551172Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:21:54.9552927Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:21:54.9553515Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:21:54.9554123Z   MAKEFLAGS: -j2
+2026-09-12T17:21:54.9554696Z ##[endgroup]
+2026-09-12T17:21:55.1649411Z (node:1796) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T17:21:55.1665648Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T17:21:55.1767279Z Syncing repository: KRUZZZZY/zene-studio
+2026-09-12T17:21:55.1769643Z ##[group]Getting Git version info
+2026-09-12T17:21:55.1770549Z Working directory is 'C:\a\zene-studio\zene-studio'
+2026-09-12T17:21:55.2825282Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-12T17:21:55.6895304Z git version 2.55.0.windows.5
+2026-09-12T17:21:55.6956513Z ##[endgroup]
+2026-09-12T17:21:55.7000191Z Temporarily overriding HOME='C:\a\_temp\c9219b0c-89a7-4db9-8a17-4d9165965a0a' before making global git config changes
+2026-09-12T17:21:55.7002043Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-12T17:21:55.7008088Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory C:\a\zene-studio\zene-studio
+2026-09-12T17:21:55.7840849Z Deleting the contents of 'C:\a\zene-studio\zene-studio'
+2026-09-12T17:21:55.7849836Z ##[group]Initializing the repository
+2026-09-12T17:21:55.7857056Z [command]"C:\Program Files\Git\bin\git.exe" init C:\a\zene-studio\zene-studio
+2026-09-12T17:21:55.9223295Z Initialized empty Git repository in C:/a/zene-studio/zene-studio/.git/
+2026-09-12T17:21:55.9291292Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/KRUZZZZY/zene-studio
+2026-09-12T17:21:55.9995185Z ##[endgroup]
+2026-09-12T17:21:55.9996231Z ##[group]Disabling automatic garbage collection
+2026-09-12T17:21:56.0001869Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-09-12T17:21:56.0522822Z ##[endgroup]
+2026-09-12T17:21:56.0523817Z ##[group]Setting up auth
+2026-09-12T17:21:56.0524915Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-12T17:21:56.1046329Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-12T17:21:58.5058981Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-12T17:21:58.5598624Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-12T17:21:59.7509130Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-09-12T17:21:59.8049139Z ##[endgroup]
+2026-09-12T17:21:59.8050010Z ##[group]Fetching the repository
+2026-09-12T17:21:59.8061892Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --prune --progress --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2026-09-12T17:22:01.0462350Z remote: Enumerating objects: 103411, done.        
+2026-09-12T17:22:01.0462792Z remote: Counting objects:   0% (1/5478)        
+2026-09-12T17:22:01.0463109Z remote: Counting objects:   1% (55/5478)        
+2026-09-12T17:22:01.0463402Z remote: Counting objects:   2% (110/5478)        
+2026-09-12T17:22:01.0463698Z remote: Counting objects:   3% (165/5478)        
+2026-09-12T17:22:01.0464009Z remote: Counting objects:   4% (220/5478)        
+2026-09-12T17:22:01.0464290Z remote: Counting objects:   5% (274/5478)        
+2026-09-12T17:22:01.0464570Z remote: Counting objects:   6% (329/5478)        
+2026-09-12T17:22:01.0464866Z remote: Counting objects:   7% (384/5478)        
+2026-09-12T17:22:01.0465181Z remote: Counting objects:   8% (439/5478)        
+2026-09-12T17:22:01.0465462Z remote: Counting objects:   9% (494/5478)        
+2026-09-12T17:22:01.0465741Z remote: Counting objects:  10% (548/5478)        
+2026-09-12T17:22:01.0466038Z remote: Counting objects:  11% (603/5478)        
+2026-09-12T17:22:01.0467768Z remote: Counting objects:  12% (658/5478)        
+2026-09-12T17:22:01.0468111Z remote: Counting objects:  13% (713/5478)        
+2026-09-12T17:22:01.0468435Z remote: Counting objects:  14% (767/5478)        
+2026-09-12T17:22:01.0468721Z remote: Counting objects:  15% (822/5478)        
+2026-09-12T17:22:01.0469004Z remote: Counting objects:  16% (877/5478)        
+2026-09-12T17:22:01.0469302Z remote: Counting objects:  17% (932/5478)        
+2026-09-12T17:22:01.0469583Z remote: Counting objects:  18% (987/5478)        
+2026-09-12T17:22:01.0469873Z remote: Counting objects:  19% (1041/5478)        
+2026-09-12T17:22:01.0470170Z remote: Counting objects:  20% (1096/5478)        
+2026-09-12T17:22:01.0470455Z remote: Counting objects:  21% (1151/5478)        
+2026-09-12T17:22:01.0470776Z remote: Counting objects:  22% (1206/5478)        
+2026-09-12T17:22:01.0471171Z remote: Counting objects:  23% (1260/5478)        
+2026-09-12T17:22:01.0471455Z remote: Counting objects:  24% (1315/5478)        
+2026-09-12T17:22:01.0471747Z remote: Counting objects:  25% (1370/5478)        
+2026-09-12T17:22:01.0472040Z remote: Counting objects:  26% (1425/5478)        
+2026-09-12T17:22:01.0472325Z remote: Counting objects:  27% (1480/5478)        
+2026-09-12T17:22:01.0472607Z remote: Counting objects:  28% (1534/5478)        
+2026-09-12T17:22:01.0472894Z remote: Counting objects:  29% (1589/5478)        
+2026-09-12T17:22:01.0473186Z remote: Counting objects:  30% (1644/5478)        
+2026-09-12T17:22:01.0473683Z remote: Counting objects:  31% (1699/5478)        
+2026-09-12T17:22:01.0473997Z remote: Counting objects:  32% (1753/5478)        
+2026-09-12T17:22:01.0474347Z remote: Counting objects:  33% (1808/5478)        
+2026-09-12T17:22:01.0474635Z remote: Counting objects:  34% (1863/5478)        
+2026-09-12T17:22:01.0474919Z remote: Counting objects:  35% (1918/5478)        
+2026-09-12T17:22:01.0475206Z remote: Counting objects:  36% (1973/5478)        
+2026-09-12T17:22:01.0475492Z remote: Counting objects:  37% (2027/5478)        
+2026-09-12T17:22:01.0475789Z remote: Counting objects:  38% (2082/5478)        
+2026-09-12T17:22:01.0476071Z remote: Counting objects:  39% (2137/5478)        
+2026-09-12T17:22:01.0476364Z remote: Counting objects:  40% (2192/5478)        
+2026-09-12T17:22:01.0476649Z remote: Counting objects:  41% (2246/5478)        
+2026-09-12T17:22:01.0477942Z remote: Counting objects:  42% (2301/5478)        
+2026-09-12T17:22:01.0478623Z remote: Counting objects:  43% (2356/5478)        
+2026-09-12T17:22:01.0478922Z remote: Counting objects:  44% (2411/5478)        
+2026-09-12T17:22:01.0479210Z remote: Counting objects:  45% (2466/5478)        
+2026-09-12T17:22:01.0479493Z remote: Counting objects:  46% (2520/5478)        
+2026-09-12T17:22:01.0479794Z remote: Counting objects:  47% (2575/5478)        
+2026-09-12T17:22:01.0480079Z remote: Counting objects:  48% (2630/5478)        
+2026-09-12T17:22:01.0480368Z remote: Counting objects:  49% (2685/5478)        
+2026-09-12T17:22:01.0491705Z remote: Counting objects:  50% (2739/5478)        
+2026-09-12T17:22:01.0492190Z remote: Counting objects:  51% (2794/5478)        
+2026-09-12T17:22:01.0492489Z remote: Counting objects:  52% (2849/5478)        
+2026-09-12T17:22:01.0492776Z remote: Counting objects:  53% (2904/5478)        
+2026-09-12T17:22:01.0493067Z remote: Counting objects:  54% (2959/5478)        
+2026-09-12T17:22:01.0493369Z remote: Counting objects:  55% (3013/5478)        
+2026-09-12T17:22:01.0493653Z remote: Counting objects:  56% (3068/5478)        
+2026-09-12T17:22:01.0493937Z remote: Counting objects:  57% (3123/5478)        
+2026-09-12T17:22:01.0494217Z remote: Counting objects:  58% (3178/5478)        
+2026-09-12T17:22:01.0494502Z remote: Counting objects:  59% (3233/5478)        
+2026-09-12T17:22:01.0494793Z remote: Counting objects:  60% (3287/5478)        
+2026-09-12T17:22:01.0495081Z remote: Counting objects:  61% (3342/5478)        
+2026-09-12T17:22:01.0495369Z remote: Counting objects:  62% (3397/5478)        
+2026-09-12T17:22:01.0496073Z remote: Counting objects:  63% (3452/5478)        
+2026-09-12T17:22:01.0496364Z remote: Counting objects:  64% (3506/5478)        
+2026-09-12T17:22:01.0496649Z remote: Counting objects:  65% (3561/5478)        
+2026-09-12T17:22:01.0496932Z remote: Counting objects:  66% (3616/5478)        
+2026-09-12T17:22:01.0497215Z remote: Counting objects:  67% (3671/5478)        
+2026-09-12T17:22:01.0497504Z remote: Counting objects:  68% (3726/5478)        
+2026-09-12T17:22:01.0497789Z remote: Counting objects:  69% (3780/5478)        
+2026-09-12T17:22:01.0498078Z remote: Counting objects:  70% (3835/5478)        
+2026-09-12T17:22:01.0498650Z remote: Counting objects:  71% (3890/5478)        
+2026-09-12T17:22:01.0498958Z remote: Counting objects:  72% (3945/5478)        
+2026-09-12T17:22:01.0499242Z remote: Counting objects:  73% (3999/5478)        
+2026-09-12T17:22:01.0499527Z remote: Counting objects:  74% (4054/5478)        
+2026-09-12T17:22:01.0499811Z remote: Counting objects:  75% (4109/5478)        
+2026-09-12T17:22:01.0500103Z remote: Counting objects:  76% (4164/5478)        
+2026-09-12T17:22:01.0500385Z remote: Counting objects:  77% (4219/5478)        
+2026-09-12T17:22:01.0500671Z remote: Counting objects:  78% (4273/5478)        
+2026-09-12T17:22:01.0500963Z remote: Counting objects:  79% (4328/5478)        
+2026-09-12T17:22:01.0501273Z remote: Counting objects:  80% (4383/5478)        
+2026-09-12T17:22:01.0501563Z remote: Counting objects:  81% (4438/5478)        
+2026-09-12T17:22:01.0501844Z remote: Counting objects:  82% (4492/5478)        
+2026-09-12T17:22:01.0502125Z remote: Counting objects:  83% (4547/5478)        
+2026-09-12T17:22:01.0502405Z remote: Counting objects:  84% (4602/5478)        
+2026-09-12T17:22:01.0502686Z remote: Counting objects:  85% (4657/5478)        
+2026-09-12T17:22:01.0502969Z remote: Counting objects:  86% (4712/5478)        
+2026-09-12T17:22:01.0503251Z remote: Counting objects:  87% (4766/5478)        
+2026-09-12T17:22:01.0503547Z remote: Counting objects:  88% (4821/5478)        
+2026-09-12T17:22:01.0503829Z remote: Counting objects:  89% (4876/5478)        
+2026-09-12T17:22:01.0504112Z remote: Counting objects:  90% (4931/5478)        
+2026-09-12T17:22:01.0504396Z remote: Counting objects:  91% (4985/5478)        
+2026-09-12T17:22:01.0504681Z remote: Counting objects:  92% (5040/5478)        
+2026-09-12T17:22:01.0505297Z remote: Counting objects:  93% (5095/5478)        
+2026-09-12T17:22:01.0505644Z remote: Counting objects:  94% (5150/5478)        
+2026-09-12T17:22:01.0505931Z remote: Counting objects:  95% (5205/5478)        
+2026-09-12T17:22:01.0506245Z remote: Counting objects:  96% (5259/5478)        
+2026-09-12T17:22:01.0506528Z remote: Counting objects:  97% (5314/5478)        
+2026-09-12T17:22:01.0506810Z remote: Counting objects:  98% (5369/5478)        
+2026-09-12T17:22:01.0507094Z remote: Counting objects:  99% (5424/5478)        
+2026-09-12T17:22:01.0507376Z remote: Counting objects: 100% (5478/5478)        
+2026-09-12T17:22:01.0507683Z remote: Counting objects: 100% (5478/5478), done.        
+2026-09-12T17:22:01.0507992Z remote: Compressing objects:   0% (1/2293)        
+2026-09-12T17:22:01.0508284Z remote: Compressing objects:   1% (23/2293)        
+2026-09-12T17:22:01.0508584Z remote: Compressing objects:   2% (46/2293)        
+2026-09-12T17:22:01.0508884Z remote: Compressing objects:   3% (69/2293)        
+2026-09-12T17:22:01.0509179Z remote: Compressing objects:   4% (92/2293)        
+2026-09-12T17:22:01.0509475Z remote: Compressing objects:   5% (115/2293)        
+2026-09-12T17:22:01.0509779Z remote: Compressing objects:   6% (138/2293)        
+2026-09-12T17:22:01.0510079Z remote: Compressing objects:   7% (161/2293)        
+2026-09-12T17:22:01.0510378Z remote: Compressing objects:   8% (184/2293)        
+2026-09-12T17:22:01.0510677Z remote: Compressing objects:   9% (207/2293)        
+2026-09-12T17:22:01.0510976Z remote: Compressing objects:  10% (230/2293)        
+2026-09-12T17:22:01.0511625Z remote: Compressing objects:  11% (253/2293)        
+2026-09-12T17:22:01.0511929Z remote: Compressing objects:  12% (276/2293)        
+2026-09-12T17:22:01.0512229Z remote: Compressing objects:  13% (299/2293)        
+2026-09-12T17:22:01.0512529Z remote: Compressing objects:  14% (322/2293)        
+2026-09-12T17:22:01.0512830Z remote: Compressing objects:  15% (344/2293)        
+2026-09-12T17:22:01.0513136Z remote: Compressing objects:  16% (367/2293)        
+2026-09-12T17:22:01.0513435Z remote: Compressing objects:  17% (390/2293)        
+2026-09-12T17:22:01.0513734Z remote: Compressing objects:  18% (413/2293)        
+2026-09-12T17:22:01.0514033Z remote: Compressing objects:  19% (436/2293)        
+2026-09-12T17:22:01.0514349Z remote: Compressing objects:  20% (459/2293)        
+2026-09-12T17:22:01.0514649Z remote: Compressing objects:  21% (482/2293)        
+2026-09-12T17:22:01.0514947Z remote: Compressing objects:  22% (505/2293)        
+2026-09-12T17:22:01.0515247Z remote: Compressing objects:  23% (528/2293)        
+2026-09-12T17:22:01.0515552Z remote: Compressing objects:  24% (551/2293)        
+2026-09-12T17:22:01.0515854Z remote: Compressing objects:  25% (574/2293)        
+2026-09-12T17:22:01.0516151Z remote: Compressing objects:  26% (597/2293)        
+2026-09-12T17:22:01.0516451Z remote: Compressing objects:  27% (620/2293)        
+2026-09-12T17:22:01.0516757Z remote: Compressing objects:  28% (643/2293)        
+2026-09-12T17:22:01.0517072Z remote: Compressing objects:  29% (665/2293)        
+2026-09-12T17:22:01.0534373Z remote: Compressing objects:  30% (688/2293)        
+2026-09-12T17:22:01.0534876Z remote: Compressing objects:  31% (711/2293)        
+2026-09-12T17:22:01.0535196Z remote: Compressing objects:  32% (734/2293)        
+2026-09-12T17:22:01.0535500Z remote: Compressing objects:  33% (757/2293)        
+2026-09-12T17:22:01.0535800Z remote: Compressing objects:  34% (780/2293)        
+2026-09-12T17:22:01.0536101Z remote: Compressing objects:  35% (803/2293)        
+2026-09-12T17:22:01.0536415Z remote: Compressing objects:  36% (826/2293)        
+2026-09-12T17:22:01.0536714Z remote: Compressing objects:  37% (849/2293)        
+2026-09-12T17:22:01.0537012Z remote: Compressing objects:  38% (872/2293)        
+2026-09-12T17:22:01.0537312Z remote: Compressing objects:  39% (895/2293)        
+2026-09-12T17:22:01.0538007Z remote: Compressing objects:  40% (918/2293)        
+2026-09-12T17:22:01.0538370Z remote: Compressing objects:  41% (941/2293)        
+2026-09-12T17:22:01.0538887Z remote: Compressing objects:  42% (964/2293)        
+2026-09-12T17:22:01.0539192Z remote: Compressing objects:  43% (986/2293)        
+2026-09-12T17:22:01.2251929Z remote: Compressing objects:  44% (1009/2293)        
+2026-09-12T17:22:01.2252831Z remote: Compressing objects:  45% (1032/2293)        
+2026-09-12T17:22:01.2253187Z remote: Compressing objects:  46% (1055/2293)        
+2026-09-12T17:22:01.2253502Z remote: Compressing objects:  47% (1078/2293)        
+2026-09-12T17:22:01.2254149Z remote: Compressing objects:  48% (1101/2293)        
+2026-09-12T17:22:01.2254819Z remote: Compressing objects:  49% (1124/2293)        
+2026-09-12T17:22:01.2255168Z remote: Compressing objects:  50% (1147/2293)        
+2026-09-12T17:22:01.2255482Z remote: Compressing objects:  51% (1170/2293)        
+2026-09-12T17:22:01.2255800Z remote: Compressing objects:  52% (1193/2293)        
+2026-09-12T17:22:01.2256127Z remote: Compressing objects:  53% (1216/2293)        
+2026-09-12T17:22:01.2256437Z remote: Compressing objects:  54% (1239/2293)        
+2026-09-12T17:22:01.2256749Z remote: Compressing objects:  55% (1262/2293)        
+2026-09-12T17:22:01.2257059Z remote: Compressing objects:  56% (1285/2293)        
+2026-09-12T17:22:01.2257367Z remote: Compressing objects:  57% (1308/2293)        
+2026-09-12T17:22:01.2257674Z remote: Compressing objects:  58% (1330/2293)        
+2026-09-12T17:22:01.2257988Z remote: Compressing objects:  59% (1353/2293)        
+2026-09-12T17:22:01.2258297Z remote: Compressing objects:  60% (1376/2293)        
+2026-09-12T17:22:01.2259910Z remote: Compressing objects:  61% (1399/2293)        
+2026-09-12T17:22:01.2260233Z remote: Compressing objects:  62% (1422/2293)        
+2026-09-12T17:22:01.2260545Z remote: Compressing objects:  63% (1445/2293)        
+2026-09-12T17:22:01.2260857Z remote: Compressing objects:  64% (1468/2293)        
+2026-09-12T17:22:01.2261175Z remote: Compressing objects:  65% (1491/2293)        
+2026-09-12T17:22:01.2261486Z remote: Compressing objects:  66% (1514/2293)        
+2026-09-12T17:22:01.2262322Z remote: Compressing objects:  67% (1537/2293)        
+2026-09-12T17:22:01.2263146Z remote: Compressing objects:  68% (1560/2293)        
+2026-09-12T17:22:01.2263710Z remote: Compressing objects:  69% (1583/2293)        
+2026-09-12T17:22:01.2264210Z remote: Compressing objects:  70% (1606/2293)        
+2026-09-12T17:22:01.2264538Z remote: Compressing objects:  71% (1629/2293)        
+2026-09-12T17:22:01.2264857Z remote: Compressing objects:  72% (1651/2293)        
+2026-09-12T17:22:01.2265187Z remote: Compressing objects:  73% (1674/2293)        
+2026-09-12T17:22:01.2265496Z remote: Compressing objects:  74% (1697/2293)        
+2026-09-12T17:22:01.2265808Z remote: Compressing objects:  75% (1720/2293)        
+2026-09-12T17:22:01.2266115Z remote: Compressing objects:  76% (1743/2293)        
+2026-09-12T17:22:01.2266436Z remote: Compressing objects:  77% (1766/2293)        
+2026-09-12T17:22:01.2266743Z remote: Compressing objects:  78% (1789/2293)        
+2026-09-12T17:22:01.2267053Z remote: Compressing objects:  79% (1812/2293)        
+2026-09-12T17:22:01.2267362Z remote: Compressing objects:  80% (1835/2293)        
+2026-09-12T17:22:01.2267668Z remote: Compressing objects:  81% (1858/2293)        
+2026-09-12T17:22:01.2267976Z remote: Compressing objects:  82% (1881/2293)        
+2026-09-12T17:22:01.2268281Z remote: Compressing objects:  83% (1904/2293)        
+2026-09-12T17:22:01.2268590Z remote: Compressing objects:  84% (1927/2293)        
+2026-09-12T17:22:01.2268905Z remote: Compressing objects:  85% (1950/2293)        
+2026-09-12T17:22:01.2269222Z remote: Compressing objects:  86% (1972/2293)        
+2026-09-12T17:22:01.2269530Z remote: Compressing objects:  87% (1995/2293)        
+2026-09-12T17:22:01.2269836Z remote: Compressing objects:  88% (2018/2293)        
+2026-09-12T17:22:01.2271029Z remote: Compressing objects:  89% (2041/2293)        
+2026-09-12T17:22:01.2271480Z remote: Compressing objects:  90% (2064/2293)        
+2026-09-12T17:22:01.2271800Z remote: Compressing objects:  91% (2087/2293)        
+2026-09-12T17:22:01.2272730Z remote: Compressing objects:  92% (2110/2293)        
+2026-09-12T17:22:01.2273213Z remote: Compressing objects:  93% (2133/2293)        
+2026-09-12T17:22:01.2273541Z remote: Compressing objects:  94% (2156/2293)        
+2026-09-12T17:22:01.2273864Z remote: Compressing objects:  95% (2179/2293)        
+2026-09-12T17:22:01.2274176Z remote: Compressing objects:  96% (2202/2293)        
+2026-09-12T17:22:01.2274502Z remote: Compressing objects:  97% (2225/2293)        
+2026-09-12T17:22:01.2274812Z remote: Compressing objects:  98% (2248/2293)        
+2026-09-12T17:22:01.2275118Z remote: Compressing objects:  99% (2271/2293)        
+2026-09-12T17:22:01.2275430Z remote: Compressing objects: 100% (2293/2293)        
+2026-09-12T17:22:01.2275773Z remote: Compressing objects: 100% (2293/2293), done.        
+2026-09-12T17:22:01.3990169Z Receiving objects:   0% (1/103411)
+2026-09-12T17:22:01.4306376Z Receiving objects:   1% (1035/103411)
+2026-09-12T17:22:01.4372145Z Receiving objects:   2% (2069/103411)
+2026-09-12T17:22:01.4432992Z Receiving objects:   3% (3103/103411)
+2026-09-12T17:22:01.4583380Z Receiving objects:   4% (4137/103411)
+2026-09-12T17:22:01.4645432Z Receiving objects:   5% (5171/103411)
+2026-09-12T17:22:01.4719134Z Receiving objects:   6% (6205/103411)
+2026-09-12T17:22:01.4783644Z Receiving objects:   7% (7239/103411)
+2026-09-12T17:22:01.4843069Z Receiving objects:   8% (8273/103411)
+2026-09-12T17:22:01.4908541Z Receiving objects:   9% (9307/103411)
+2026-09-12T17:22:01.4953668Z Receiving objects:  10% (10342/103411)
+2026-09-12T17:22:01.5002241Z Receiving objects:  11% (11376/103411)
+2026-09-12T17:22:01.5057190Z Receiving objects:  12% (12410/103411)
+2026-09-12T17:22:01.5338837Z Receiving objects:  13% (13444/103411)
+2026-09-12T17:22:01.7720719Z Receiving objects:  14% (14478/103411)
+2026-09-12T17:22:01.8315446Z Receiving objects:  15% (15512/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.8721672Z Receiving objects:  16% (16546/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.9120939Z Receiving objects:  17% (17580/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.9407113Z Receiving objects:  18% (18614/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.9473805Z Receiving objects:  19% (19649/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.9537081Z Receiving objects:  20% (20683/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.9594543Z Receiving objects:  21% (21717/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.9701147Z Receiving objects:  22% (22751/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:01.9826768Z Receiving objects:  23% (23785/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.0133656Z Receiving objects:  24% (24819/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.0352060Z Receiving objects:  25% (25853/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.0453233Z Receiving objects:  26% (26887/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.0622280Z Receiving objects:  27% (27921/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.0708319Z Receiving objects:  28% (28956/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.0803229Z Receiving objects:  29% (29990/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.0949079Z Receiving objects:  30% (31024/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1043171Z Receiving objects:  31% (32058/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1088689Z Receiving objects:  32% (33092/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1115487Z Receiving objects:  33% (34126/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1186739Z Receiving objects:  34% (35160/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1331786Z Receiving objects:  35% (36194/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1407614Z Receiving objects:  36% (37228/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1453353Z Receiving objects:  37% (38263/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1518860Z Receiving objects:  38% (39297/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1589657Z Receiving objects:  39% (40331/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1623628Z Receiving objects:  40% (41365/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1851728Z Receiving objects:  41% (42399/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.1902465Z Receiving objects:  42% (43433/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2007421Z Receiving objects:  43% (44467/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2058669Z Receiving objects:  44% (45501/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2120733Z Receiving objects:  45% (46535/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2184245Z Receiving objects:  46% (47570/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2255663Z Receiving objects:  47% (48604/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2299442Z Receiving objects:  48% (49638/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2419456Z Receiving objects:  49% (50672/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2528428Z Receiving objects:  50% (51706/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2598633Z Receiving objects:  51% (52740/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2632053Z Receiving objects:  52% (53774/103411), 21.02 MiB | 42.02 MiB/s
+2026-09-12T17:22:02.2784315Z Receiving objects:  52% (54166/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.2922403Z Receiving objects:  53% (54808/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3184702Z Receiving objects:  54% (55842/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3425531Z Receiving objects:  55% (56877/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3496853Z Receiving objects:  56% (57911/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3585175Z Receiving objects:  57% (58945/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3707093Z Receiving objects:  58% (59979/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3778186Z Receiving objects:  59% (61013/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3824239Z Receiving objects:  60% (62047/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.3865900Z Receiving objects:  61% (63081/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.4141759Z Receiving objects:  62% (64115/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.4363207Z Receiving objects:  63% (65149/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.4421485Z Receiving objects:  64% (66184/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.4569485Z Receiving objects:  65% (67218/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.4912229Z Receiving objects:  66% (68252/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.4966616Z Receiving objects:  67% (69286/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.4982167Z Receiving objects:  68% (70320/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.5049717Z Receiving objects:  69% (71354/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.5097206Z Receiving objects:  70% (72388/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.5198756Z Receiving objects:  71% (73422/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.5270848Z Receiving objects:  72% (74456/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.5286635Z Receiving objects:  73% (75491/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.6126162Z Receiving objects:  74% (76525/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.6541887Z Receiving objects:  75% (77559/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.6634035Z Receiving objects:  76% (78593/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.6716698Z Receiving objects:  77% (79627/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.7693382Z Receiving objects:  78% (80661/103411), 55.49 MiB | 55.48 MiB/s
+2026-09-12T17:22:02.7792974Z Receiving objects:  79% (81695/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.7868849Z Receiving objects:  80% (82729/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.7924720Z Receiving objects:  81% (83763/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8120803Z Receiving objects:  82% (84798/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8153801Z Receiving objects:  83% (85832/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8208352Z Receiving objects:  84% (86866/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8339198Z Receiving objects:  85% (87900/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8674914Z Receiving objects:  86% (88934/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8755946Z Receiving objects:  87% (89968/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8844182Z Receiving objects:  88% (91002/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.8864924Z Receiving objects:  89% (92036/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:02.9083199Z Receiving objects:  90% (93070/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:03.5148889Z Receiving objects:  91% (94105/103411), 85.72 MiB | 57.13 MiB/s
+2026-09-12T17:22:03.7362687Z Receiving objects:  91% (94782/103411), 114.63 MiB | 57.30 MiB/s
+2026-09-12T17:22:03.7512775Z Receiving objects:  92% (95139/103411), 114.63 MiB | 57.30 MiB/s
+2026-09-12T17:22:03.7555654Z Receiving objects:  93% (96173/103411), 114.63 MiB | 57.30 MiB/s
+2026-09-12T17:22:03.7643980Z Receiving objects:  94% (97207/103411), 114.63 MiB | 57.30 MiB/s
+2026-09-12T17:22:03.7804008Z Receiving objects:  95% (98241/103411), 140.69 MiB | 56.27 MiB/s
+2026-09-12T17:22:03.8458925Z Receiving objects:  96% (99275/103411), 140.69 MiB | 56.27 MiB/s
+2026-09-12T17:22:04.0208371Z Receiving objects:  97% (100309/103411), 140.69 MiB | 56.27 MiB/s
+2026-09-12T17:22:04.2833691Z Receiving objects:  98% (101343/103411), 140.69 MiB | 56.27 MiB/s
+2026-09-12T17:22:04.3047326Z Receiving objects:  98% (101737/103411), 162.79 MiB | 54.26 MiB/s
+2026-09-12T17:22:04.3065644Z Receiving objects:  99% (102377/103411), 162.79 MiB | 54.26 MiB/s
+2026-09-12T17:22:04.3068738Z remote: Total 103411 (delta 3298), reused 4895 (delta 3111), pack-reused 97933 (from 3)        
+2026-09-12T17:22:04.3073524Z Receiving objects: 100% (103411/103411), 162.79 MiB | 54.26 MiB/s
+2026-09-12T17:22:04.3073959Z Receiving objects: 100% (103411/103411), 164.38 MiB | 53.98 MiB/s, done.
+2026-09-12T17:22:04.3209303Z Resolving deltas:   0% (0/76635)
+2026-09-12T17:22:04.3245280Z Resolving deltas:   1% (767/76635)
+2026-09-12T17:22:04.3284535Z Resolving deltas:   2% (1533/76635)
+2026-09-12T17:22:04.3323195Z Resolving deltas:   3% (2300/76635)
+2026-09-12T17:22:04.3363214Z Resolving deltas:   4% (3066/76635)
+2026-09-12T17:22:04.3406756Z Resolving deltas:   5% (3832/76635)
+2026-09-12T17:22:04.3459645Z Resolving deltas:   6% (4599/76635)
+2026-09-12T17:22:04.3503706Z Resolving deltas:   7% (5365/76635)
+2026-09-12T17:22:04.3557749Z Resolving deltas:   8% (6131/76635)
+2026-09-12T17:22:04.3594178Z Resolving deltas:   9% (6898/76635)
+2026-09-12T17:22:04.3636411Z Resolving deltas:  10% (7664/76635)
+2026-09-12T17:22:04.3672112Z Resolving deltas:  11% (8431/76635)
+2026-09-12T17:22:04.3707496Z Resolving deltas:  12% (9197/76635)
+2026-09-12T17:22:04.3743934Z Resolving deltas:  13% (9963/76635)
+2026-09-12T17:22:04.3801823Z Resolving deltas:  14% (10729/76635)
+2026-09-12T17:22:04.3860193Z Resolving deltas:  15% (11496/76635)
+2026-09-12T17:22:04.3895297Z Resolving deltas:  16% (12262/76635)
+2026-09-12T17:22:04.3940905Z Resolving deltas:  17% (13028/76635)
+2026-09-12T17:22:04.3987147Z Resolving deltas:  18% (13795/76635)
+2026-09-12T17:22:04.4022721Z Resolving deltas:  19% (14561/76635)
+2026-09-12T17:22:04.4065879Z Resolving deltas:  20% (15327/76635)
+2026-09-12T17:22:04.4122238Z Resolving deltas:  21% (16094/76635)
+2026-09-12T17:22:04.4165535Z Resolving deltas:  22% (16861/76635)
+2026-09-12T17:22:04.4213617Z Resolving deltas:  23% (17627/76635)
+2026-09-12T17:22:04.4255822Z Resolving deltas:  24% (18393/76635)
+2026-09-12T17:22:04.4291479Z Resolving deltas:  25% (19159/76635)
+2026-09-12T17:22:04.4329659Z Resolving deltas:  26% (19926/76635)
+2026-09-12T17:22:04.4379284Z Resolving deltas:  27% (20692/76635)
+2026-09-12T17:22:04.4410660Z Resolving deltas:  28% (21458/76635)
+2026-09-12T17:22:04.4445008Z Resolving deltas:  29% (22225/76635)
+2026-09-12T17:22:04.4500869Z Resolving deltas:  30% (22991/76635)
+2026-09-12T17:22:04.4537253Z Resolving deltas:  31% (23757/76635)
+2026-09-12T17:22:04.4575163Z Resolving deltas:  32% (24524/76635)
+2026-09-12T17:22:04.4616483Z Resolving deltas:  33% (25290/76635)
+2026-09-12T17:22:04.4655166Z Resolving deltas:  34% (26056/76635)
+2026-09-12T17:22:04.4691161Z Resolving deltas:  35% (26823/76635)
+2026-09-12T17:22:04.4728811Z Resolving deltas:  36% (27589/76635)
+2026-09-12T17:22:04.4766656Z Resolving deltas:  37% (28355/76635)
+2026-09-12T17:22:04.4801632Z Resolving deltas:  38% (29122/76635)
+2026-09-12T17:22:04.4837664Z Resolving deltas:  39% (29888/76635)
+2026-09-12T17:22:04.4882845Z Resolving deltas:  40% (30654/76635)
+2026-09-12T17:22:04.6099536Z Resolving deltas:  41% (31421/76635)
+2026-09-12T17:22:04.9260897Z Resolving deltas:  42% (32187/76635)
+2026-09-12T17:22:05.0841280Z Resolving deltas:  43% (32954/76635)
+2026-09-12T17:22:05.1013814Z Resolving deltas:  44% (33720/76635)
+2026-09-12T17:22:05.1220991Z Resolving deltas:  45% (34486/76635)
+2026-09-12T17:22:05.1221515Z Resolving deltas:  46% (35253/76635)
+2026-09-12T17:22:05.1230806Z Resolving deltas:  47% (36019/76635)
+2026-09-12T17:22:05.1307376Z Resolving deltas:  48% (36785/76635)
+2026-09-12T17:22:05.1426624Z Resolving deltas:  49% (37552/76635)
+2026-09-12T17:22:05.1570079Z Resolving deltas:  50% (38318/76635)
+2026-09-12T17:22:05.1597958Z Resolving deltas:  51% (39084/76635)
+2026-09-12T17:22:05.1919785Z Resolving deltas:  52% (39851/76635)
+2026-09-12T17:22:05.1974546Z Resolving deltas:  53% (40617/76635)
+2026-09-12T17:22:05.2133349Z Resolving deltas:  54% (41383/76635)
+2026-09-12T17:22:05.2271475Z Resolving deltas:  55% (42150/76635)
+2026-09-12T17:22:05.2360802Z Resolving deltas:  56% (42916/76635)
+2026-09-12T17:22:05.2478349Z Resolving deltas:  57% (43682/76635)
+2026-09-12T17:22:05.2656729Z Resolving deltas:  58% (44449/76635)
+2026-09-12T17:22:05.2936416Z Resolving deltas:  59% (45215/76635)
+2026-09-12T17:22:05.3055201Z Resolving deltas:  60% (45981/76635)
+2026-09-12T17:22:05.3137679Z Resolving deltas:  61% (46748/76635)
+2026-09-12T17:22:05.3185749Z Resolving deltas:  61% (47021/76635)
+2026-09-12T17:22:05.3285266Z Resolving deltas:  62% (47514/76635)
+2026-09-12T17:22:05.3391891Z Resolving deltas:  63% (48281/76635)
+2026-09-12T17:22:05.3457916Z Resolving deltas:  64% (49047/76635)
+2026-09-12T17:22:05.3537382Z Resolving deltas:  65% (49813/76635)
+2026-09-12T17:22:05.3809688Z Resolving deltas:  66% (50580/76635)
+2026-09-12T17:22:05.3929641Z Resolving deltas:  67% (51346/76635)
+2026-09-12T17:22:05.4022487Z Resolving deltas:  68% (52114/76635)
+2026-09-12T17:22:05.4109165Z Resolving deltas:  69% (52879/76635)
+2026-09-12T17:22:05.4193003Z Resolving deltas:  70% (53645/76635)
+2026-09-12T17:22:05.4304471Z Resolving deltas:  71% (54411/76635)
+2026-09-12T17:22:05.4371251Z Resolving deltas:  72% (55178/76635)
+2026-09-12T17:22:05.4435789Z Resolving deltas:  73% (55944/76635)
+2026-09-12T17:22:05.4678350Z Resolving deltas:  74% (56710/76635)
+2026-09-12T17:22:05.4865199Z Resolving deltas:  75% (57477/76635)
+2026-09-12T17:22:05.5026576Z Resolving deltas:  76% (58243/76635)
+2026-09-12T17:22:05.5165987Z Resolving deltas:  77% (59009/76635)
+2026-09-12T17:22:05.5528868Z Resolving deltas:  78% (59776/76635)
+2026-09-12T17:22:05.5748691Z Resolving deltas:  79% (60542/76635)
+2026-09-12T17:22:05.5861928Z Resolving deltas:  80% (61308/76635)
+2026-09-12T17:22:05.6022030Z Resolving deltas:  81% (62075/76635)
+2026-09-12T17:22:05.6425653Z Resolving deltas:  82% (62841/76635)
+2026-09-12T17:22:05.6455734Z Resolving deltas:  83% (63608/76635)
+2026-09-12T17:22:05.6596571Z Resolving deltas:  84% (64374/76635)
+2026-09-12T17:22:05.6776419Z Resolving deltas:  85% (65140/76635)
+2026-09-12T17:22:05.6952462Z Resolving deltas:  86% (65907/76635)
+2026-09-12T17:22:05.7476803Z Resolving deltas:  87% (66673/76635)
+2026-09-12T17:22:05.9582230Z Resolving deltas:  88% (67439/76635)
+2026-09-12T17:22:05.9992274Z Resolving deltas:  89% (68206/76635)
+2026-09-12T17:22:06.0112014Z Resolving deltas:  90% (68972/76635)
+2026-09-12T17:22:06.0212639Z Resolving deltas:  91% (69738/76635)
+2026-09-12T17:22:06.0330430Z Resolving deltas:  92% (70505/76635)
+2026-09-12T17:22:06.0425117Z Resolving deltas:  93% (71271/76635)
+2026-09-12T17:22:06.0469782Z Resolving deltas:  94% (72038/76635)
+2026-09-12T17:22:06.0533992Z Resolving deltas:  95% (72805/76635)
+2026-09-12T17:22:06.0590646Z Resolving deltas:  96% (73571/76635)
+2026-09-12T17:22:06.0636540Z Resolving deltas:  97% (74336/76635)
+2026-09-12T17:22:06.0817096Z Resolving deltas:  98% (75103/76635)
+2026-09-12T17:22:06.1199257Z Resolving deltas:  99% (75869/76635)
+2026-09-12T17:22:06.1200195Z Resolving deltas: 100% (76635/76635)
+2026-09-12T17:22:06.1200807Z Resolving deltas: 100% (76635/76635), done.
+2026-09-12T17:22:08.3751775Z From https://github.com/KRUZZZZY/zene-studio
+2026-09-12T17:22:08.3752226Z  * [new branch]          archive/fork-readme     -> origin/archive/fork-readme
+2026-09-12T17:22:08.3752691Z  * [new branch]          feat/session-view-model -> origin/feat/session-view-model
+2026-09-12T17:22:08.3753134Z  * [new branch]          integration/round2      -> origin/integration/round2
+2026-09-12T17:22:08.3753503Z  * [new branch]          main                    -> origin/main
+2026-09-12T17:22:08.3754347Z  * [new branch]          part-c-slice8           -> origin/part-c-slice8
+2026-09-12T17:22:08.3754777Z  * [new branch]          part-c-slice8-gigplayer -> origin/part-c-slice8-gigplayer
+2026-09-12T17:22:08.3755233Z  * [new branch]          standards/quality-gates -> origin/standards/quality-gates
+2026-09-12T17:22:08.3756055Z  * [new branch]          standards/quality-gates-port -> origin/standards/quality-gates-port
+2026-09-12T17:22:08.3756492Z  * [new tag]             v0.1.0-alpha            -> v0.1.0-alpha
+2026-09-12T17:22:08.3756817Z  * [new tag]             v0.2.0-alpha            -> v0.2.0-alpha
+2026-09-12T17:22:08.3831100Z [command]"C:\Program Files\Git\bin\git.exe" tag --list v0.2.0-alpha
+2026-09-12T17:22:08.4382269Z v0.2.0-alpha
+2026-09-12T17:22:08.4443518Z [command]"C:\Program Files\Git\bin\git.exe" rev-parse refs/tags/v0.2.0-alpha
+2026-09-12T17:22:08.4996264Z 7c75745082399941cb247f3c3fa1245a5c38deb1
+2026-09-12T17:22:08.5066785Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules origin +b099fd6cb41394ebf364c755b227ee9980e24970:refs/tags/v0.2.0-alpha
+2026-09-12T17:22:08.5949147Z From https://github.com/KRUZZZZY/zene-studio
+2026-09-12T17:22:08.5949579Z  t [tag update]          b099fd6cb41394ebf364c755b227ee9980e24970 -> v0.2.0-alpha
+2026-09-12T17:22:08.6004553Z ##[endgroup]
+2026-09-12T17:22:08.6004907Z ##[group]Determining the checkout info
+2026-09-12T17:22:08.6007928Z ##[endgroup]
+2026-09-12T17:22:08.6008266Z ##[group]Checking out the ref
+2026-09-12T17:22:08.6016132Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/tags/v0.2.0-alpha
+2026-09-12T17:22:09.8626716Z Updating files:   6% (467/7323)
+2026-09-12T17:22:11.4846169Z Updating files:   7% (513/7323)
+2026-09-12T17:22:11.7327722Z Updating files:   7% (581/7323)
+2026-09-12T17:22:12.5014301Z Updating files:   7% (582/7323)
+2026-09-12T17:22:13.8412921Z Updating files:   8% (586/7323)
+2026-09-12T17:22:14.6433394Z Updating files:   8% (590/7323)
+2026-09-12T17:22:14.7921430Z Updating files:   9% (660/7323)
+2026-09-12T17:22:14.8970456Z Updating files:   9% (698/7323)
+2026-09-12T17:22:15.0975255Z Updating files:  10% (733/7323)
+2026-09-12T17:22:15.1879372Z Updating files:  11% (806/7323)
+2026-09-12T17:22:15.2594084Z Updating files:  12% (879/7323)
+2026-09-12T17:22:15.4710552Z Updating files:  13% (952/7323)
+2026-09-12T17:22:15.5644071Z Updating files:  14% (1026/7323)
+2026-09-12T17:22:15.6545874Z Updating files:  15% (1099/7323)
+2026-09-12T17:22:15.7211055Z Updating files:  16% (1172/7323)
+2026-09-12T17:22:15.7861817Z Updating files:  17% (1245/7323)
+2026-09-12T17:22:15.7946939Z Updating files:  17% (1308/7323)
+2026-09-12T17:22:15.8867742Z Updating files:  18% (1319/7323)
+2026-09-12T17:22:15.9602514Z Updating files:  19% (1392/7323)
+2026-09-12T17:22:16.1624958Z Updating files:  20% (1465/7323)
+2026-09-12T17:22:16.2313399Z Updating files:  21% (1538/7323)
+2026-09-12T17:22:16.2935195Z Updating files:  22% (1612/7323)
+2026-09-12T17:22:16.3699833Z Updating files:  23% (1685/7323)
+2026-09-12T17:22:16.4258335Z Updating files:  24% (1758/7323)
+2026-09-12T17:22:16.4852142Z Updating files:  25% (1831/7323)
+2026-09-12T17:22:16.5514744Z Updating files:  26% (1904/7323)
+2026-09-12T17:22:16.6570842Z Updating files:  27% (1978/7323)
+2026-09-12T17:22:16.7387439Z Updating files:  28% (2051/7323)
+2026-09-12T17:22:16.7868424Z Updating files:  29% (2124/7323)
+2026-09-12T17:22:16.8136477Z Updating files:  29% (2169/7323)
+2026-09-12T17:22:16.8971917Z Updating files:  30% (2197/7323)
+2026-09-12T17:22:17.0917146Z Updating files:  31% (2271/7323)
+2026-09-12T17:22:17.2423043Z Updating files:  32% (2344/7323)
+2026-09-12T17:22:17.3521822Z Updating files:  33% (2417/7323)
+2026-09-12T17:22:17.3959271Z Updating files:  34% (2490/7323)
+2026-09-12T17:22:17.4363375Z Updating files:  35% (2564/7323)
+2026-09-12T17:22:17.4972330Z Updating files:  36% (2637/7323)
+2026-09-12T17:22:17.5823549Z Updating files:  37% (2710/7323)
+2026-09-12T17:22:17.6350994Z Updating files:  38% (2783/7323)
+2026-09-12T17:22:17.7157224Z Updating files:  39% (2856/7323)
+2026-09-12T17:22:17.7998974Z Updating files:  40% (2930/7323)
+2026-09-12T17:22:17.8061220Z Updating files:  40% (2996/7323)
+2026-09-12T17:22:17.8811613Z Updating files:  41% (3003/7323)
+2026-09-12T17:22:17.9544802Z Updating files:  42% (3076/7323)
+2026-09-12T17:22:18.0918870Z Updating files:  43% (3149/7323)
+2026-09-12T17:22:19.0679706Z Updating files:  44% (3223/7323)
+2026-09-12T17:22:19.1093300Z Updating files:  44% (3247/7323)
+2026-09-12T17:22:19.2186367Z Updating files:  45% (3296/7323)
+2026-09-12T17:22:19.3852354Z Updating files:  46% (3369/7323)
+2026-09-12T17:22:19.5547749Z Updating files:  47% (3442/7323)
+2026-09-12T17:22:19.6906634Z Updating files:  48% (3516/7323)
+2026-09-12T17:22:19.8170406Z Updating files:  49% (3589/7323)
+2026-09-12T17:22:19.8373594Z Updating files:  49% (3638/7323)
+2026-09-12T17:22:19.9236165Z Updating files:  50% (3662/7323)
+2026-09-12T17:22:20.0195376Z Updating files:  51% (3735/7323)
+2026-09-12T17:22:20.0793907Z Updating files:  52% (3808/7323)
+2026-09-12T17:22:20.1407700Z Updating files:  53% (3882/7323)
+2026-09-12T17:22:20.2058866Z Updating files:  54% (3955/7323)
+2026-09-12T17:22:20.2557902Z Updating files:  55% (4028/7323)
+2026-09-12T17:22:20.3052316Z Updating files:  56% (4101/7323)
+2026-09-12T17:22:20.4403446Z Updating files:  57% (4175/7323)
+2026-09-12T17:22:20.4903804Z Updating files:  58% (4248/7323)
+2026-09-12T17:22:20.5448438Z Updating files:  59% (4321/7323)
+2026-09-12T17:22:20.6289313Z Updating files:  60% (4394/7323)
+2026-09-12T17:22:20.6731258Z Updating files:  61% (4468/7323)
+2026-09-12T17:22:20.9389199Z Updating files:  62% (4541/7323)
+2026-09-12T17:22:21.0742421Z Updating files:  62% (4561/7323)
+2026-09-12T17:22:21.1232047Z Updating files:  63% (4614/7323)
+2026-09-12T17:22:21.1664445Z Updating files:  64% (4687/7323)
+2026-09-12T17:22:21.2143031Z Updating files:  65% (4760/7323)
+2026-09-12T17:22:21.2554990Z Updating files:  66% (4834/7323)
+2026-09-12T17:22:21.3079079Z Updating files:  67% (4907/7323)
+2026-09-12T17:22:21.3528613Z Updating files:  68% (4980/7323)
+2026-09-12T17:22:21.3961792Z Updating files:  69% (5053/7323)
+2026-09-12T17:22:21.4480054Z Updating files:  70% (5127/7323)
+2026-09-12T17:22:21.4979736Z Updating files:  71% (5200/7323)
+2026-09-12T17:22:21.5405694Z Updating files:  72% (5273/7323)
+2026-09-12T17:22:21.5869348Z Updating files:  73% (5346/7323)
+2026-09-12T17:22:21.6456879Z Updating files:  74% (5420/7323)
+2026-09-12T17:22:21.7112007Z Updating files:  75% (5493/7323)
+2026-09-12T17:22:21.7963879Z Updating files:  76% (5566/7323)
+2026-09-12T17:22:21.8302276Z Updating files:  77% (5639/7323)
+2026-09-12T17:22:21.8584796Z Updating files:  77% (5675/7323)
+2026-09-12T17:22:21.9205752Z Updating files:  78% (5712/7323)
+2026-09-12T17:22:21.9765455Z Updating files:  79% (5786/7323)
+2026-09-12T17:22:22.0370053Z Updating files:  80% (5859/7323)
+2026-09-12T17:22:22.1420445Z Updating files:  81% (5932/7323)
+2026-09-12T17:22:22.3118910Z Updating files:  82% (6005/7323)
+2026-09-12T17:22:22.3721742Z Updating files:  83% (6079/7323)
+2026-09-12T17:22:22.4612155Z Updating files:  84% (6152/7323)
+2026-09-12T17:22:22.5121963Z Updating files:  85% (6225/7323)
+2026-09-12T17:22:22.5617189Z Updating files:  86% (6298/7323)
+2026-09-12T17:22:22.6177466Z Updating files:  87% (6372/7323)
+2026-09-12T17:22:22.6715919Z Updating files:  88% (6445/7323)
+2026-09-12T17:22:22.7251815Z Updating files:  89% (6518/7323)
+2026-09-12T17:22:22.7744443Z Updating files:  90% (6591/7323)
+2026-09-12T17:22:22.8254282Z Updating files:  91% (6664/7323)
+2026-09-12T17:22:22.8314546Z Updating files:  92% (6738/7323)
+2026-09-12T17:22:22.8771867Z Updating files:  92% (6748/7323)
+2026-09-12T17:22:22.9302736Z Updating files:  93% (6811/7323)
+2026-09-12T17:22:22.9904681Z Updating files:  94% (6884/7323)
+2026-09-12T17:22:23.0400830Z Updating files:  95% (6957/7323)
+2026-09-12T17:22:23.0993379Z Updating files:  96% (7031/7323)
+2026-09-12T17:22:23.1516572Z Updating files:  97% (7104/7323)
+2026-09-12T17:22:23.2037530Z Updating files:  98% (7177/7323)
+2026-09-12T17:22:23.2581735Z Updating files:  99% (7250/7323)
+2026-09-12T17:22:23.2582010Z Updating files: 100% (7323/7323)
+2026-09-12T17:22:23.2582233Z Updating files: 100% (7323/7323), done.
+2026-09-12T17:22:23.2798504Z Note: switching to 'refs/tags/v0.2.0-alpha'.
+2026-09-12T17:22:23.2798731Z 
+2026-09-12T17:22:23.2798908Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-12T17:22:23.2799337Z changes and commit them, and you can discard any commits you make in this
+2026-09-12T17:22:23.2799757Z state without impacting any branches by switching back to a branch.
+2026-09-12T17:22:23.2800005Z 
+2026-09-12T17:22:23.2800167Z If you want to create a new branch to retain commits you create, you may
+2026-09-12T17:22:23.2800559Z do so (now or later) by using -c with the switch command. Example:
+2026-09-12T17:22:23.2800805Z 
+2026-09-12T17:22:23.2800910Z   git switch -c <new-branch-name>
+2026-09-12T17:22:23.2801060Z 
+2026-09-12T17:22:23.2801144Z Or undo this operation with:
+2026-09-12T17:22:23.2801278Z 
+2026-09-12T17:22:23.2801348Z   git switch -
+2026-09-12T17:22:23.2801447Z 
+2026-09-12T17:22:23.2801633Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-12T17:22:23.2801915Z 
+2026-09-12T17:22:23.2802218Z HEAD is now at b099fd6cb docs(limitations): the coverage paragraph now quotes the final capture, with its universe
+2026-09-12T17:22:23.3073145Z ##[endgroup]
+2026-09-12T17:22:23.3073803Z ##[group]Setting up auth for fetching submodules
+2026-09-12T17:22:23.3074387Z [command]"C:\Program Files\Git\bin\git.exe" config --global http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-09-12T17:22:23.3647866Z [command]"C:\Program Files\Git\bin\git.exe" config --global --unset-all url.https://github.com/.insteadOf
+2026-09-12T17:22:23.4205140Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add url.https://github.com/.insteadOf git@github.com:
+2026-09-12T17:22:23.4772193Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add url.https://github.com/.insteadOf org-74453315@github.com:
+2026-09-12T17:22:23.5321455Z ##[endgroup]
+2026-09-12T17:22:23.5321795Z ##[group]Fetching submodules
+2026-09-12T17:22:23.5329069Z [command]"C:\Program Files\Git\bin\git.exe" submodule sync --recursive
+2026-09-12T17:22:25.5767980Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 submodule update --init --force --recursive
+2026-09-12T17:22:26.8422123Z Submodule 'doc/wiki' (https://github.com/lmms/lmms.wiki.git) registered for path 'doc/wiki'
+2026-09-12T17:22:26.8446728Z Submodule 'plugins/CarlaBase/carla' (https://github.com/falktx/carla) registered for path 'plugins/CarlaBase/carla'
+2026-09-12T17:22:26.8471908Z Submodule 'plugins/FreeBoy/game-music-emu' (https://github.com/libgme/game-music-emu.git) registered for path 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:22:26.8498360Z Submodule 'plugins/LadspaEffect/calf/veal' (https://github.com/lmms/veal) registered for path 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:22:26.8528923Z Submodule 'plugins/LadspaEffect/cmt/cmt' (https://github.com/lmms/cmt) registered for path 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:22:26.8555813Z Submodule 'plugins/LadspaEffect/swh/ladspa' (https://github.com/swh/ladspa) registered for path 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:22:26.8582191Z Submodule 'plugins/LadspaEffect/tap/tap-plugins' (https://github.com/lmms/tap-plugins) registered for path 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:22:26.8608744Z Submodule 'plugins/MidiImport/portsmf' (https://github.com/portsmf/portsmf) registered for path 'plugins/MidiImport/portsmf'
+2026-09-12T17:22:26.8636025Z Submodule 'plugins/OpulenZ/adplug' (https://github.com/adplug/adplug.git) registered for path 'plugins/OpulenZ/adplug'
+2026-09-12T17:22:26.8663356Z Submodule 'plugins/Sid/resid/resid' (https://github.com/libsidplayfp/resid) registered for path 'plugins/Sid/resid/resid'
+2026-09-12T17:22:26.8693366Z Submodule 'plugins/Xpressive/exprtk' (https://github.com/ArashPartow/exprtk) registered for path 'plugins/Xpressive/exprtk'
+2026-09-12T17:22:26.8723068Z Submodule 'plugins/ZynAddSubFx/zynaddsubfx' (https://github.com/lmms/zynaddsubfx.git) registered for path 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:22:26.8750333Z Submodule 'src/3rdparty/hiir/hiir' (https://github.com/LostRobotMusic/hiir) registered for path 'src/3rdparty/hiir/hiir'
+2026-09-12T17:22:26.8777838Z Submodule 'src/3rdparty/jack2' (https://github.com/jackaudio/jack2) registered for path 'src/3rdparty/jack2'
+2026-09-12T17:22:26.8805971Z Submodule 'src/3rdparty/qt5-x11embed' (https://github.com/Lukas-W/qt5-x11embed.git) registered for path 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:22:26.8835545Z Submodule 'src/3rdparty/ringbuffer' (https://github.com/JohannesLorenz/ringbuffer.git) registered for path 'src/3rdparty/ringbuffer'
+2026-09-12T17:22:26.8864332Z Submodule 'src/3rdparty/weakjack/weakjack' (https://github.com/x42/weakjack.git) registered for path 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:22:26.9313033Z Cloning into 'C:/a/zene-studio/zene-studio/doc/wiki'...
+2026-09-12T17:22:28.0096718Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/CarlaBase/carla'...
+2026-09-12T17:22:34.0140187Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/FreeBoy/game-music-emu'...
+2026-09-12T17:22:34.9487440Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/LadspaEffect/calf/veal'...
+2026-09-12T17:22:37.5783896Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/LadspaEffect/cmt/cmt'...
+2026-09-12T17:22:38.2929231Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/LadspaEffect/swh/ladspa'...
+2026-09-12T17:22:39.1181561Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/LadspaEffect/tap/tap-plugins'...
+2026-09-12T17:22:40.0397227Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/MidiImport/portsmf'...
+2026-09-12T17:22:40.8495554Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/OpulenZ/adplug'...
+2026-09-12T17:22:42.3377440Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/Sid/resid/resid'...
+2026-09-12T17:22:43.1777831Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/Xpressive/exprtk'...
+2026-09-12T17:22:44.4914505Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/ZynAddSubFx/zynaddsubfx'...
+2026-09-12T17:22:45.9135966Z Cloning into 'C:/a/zene-studio/zene-studio/src/3rdparty/hiir/hiir'...
+2026-09-12T17:22:46.6904424Z Cloning into 'C:/a/zene-studio/zene-studio/src/3rdparty/jack2'...
+2026-09-12T17:22:48.5093620Z Cloning into 'C:/a/zene-studio/zene-studio/src/3rdparty/qt5-x11embed'...
+2026-09-12T17:22:49.2074270Z Cloning into 'C:/a/zene-studio/zene-studio/src/3rdparty/ringbuffer'...
+2026-09-12T17:22:50.0167500Z Cloning into 'C:/a/zene-studio/zene-studio/src/3rdparty/weakjack/weakjack'...
+2026-09-12T17:22:50.7595151Z Submodule path 'doc/wiki': checked out '538199fb0b8928b4d3ea7218745ef1845b73dee3'
+2026-09-12T17:22:53.9663607Z Submodule path 'plugins/CarlaBase/carla': checked out '66afe24a08790732cc17d81d4b846a1e0cfa0118'
+2026-09-12T17:22:53.9887292Z Submodule 'source/native-plugins/external' (https://github.com/falkTX/Carla-Plugins) registered for path 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:22:54.0379331Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/CarlaBase/carla/source/native-plugins/external'...
+2026-09-12T17:22:55.6531084Z Submodule path 'plugins/CarlaBase/carla/source/native-plugins/external': checked out '3c0026dad5d940abd52b9a8d73fcf271357a12fe'
+2026-09-12T17:22:55.8809840Z Submodule path 'plugins/FreeBoy/game-music-emu': checked out '21a064ea66a5cdf71910e207c4756095c266814f'
+2026-09-12T17:22:56.7540664Z Submodule path 'plugins/LadspaEffect/calf/veal': checked out '789d0faf9faed430f48dfb93cf74e04afe88e39f'
+2026-09-12T17:22:56.9197174Z Submodule path 'plugins/LadspaEffect/cmt/cmt': checked out '24599fb45b99fff6302136f13adb3817e5833e7d'
+2026-09-12T17:22:57.1838189Z Submodule path 'plugins/LadspaEffect/swh/ladspa': checked out '0f54d2430febb4d5f02d13132dd91d7345e080b5'
+2026-09-12T17:22:57.3348739Z Submodule path 'plugins/LadspaEffect/tap/tap-plugins': checked out '85640223047d49a305e90ba1b92303eb066ba474'
+2026-09-12T17:22:57.5000844Z Submodule path 'plugins/MidiImport/portsmf': checked out '081261bcfd8faca4cee8560010de34831c0dea97'
+2026-09-12T17:22:57.9084563Z Submodule path 'plugins/OpulenZ/adplug': checked out '3ed6617ec00022dfab574c27710d9071a6032c87'
+2026-09-12T17:22:58.0659727Z Submodule path 'plugins/Sid/resid/resid': checked out 'ef72462f5fa0682d099413512b764ae479e77f9b'
+2026-09-12T17:22:58.2405501Z Submodule path 'plugins/Xpressive/exprtk': checked out 'a4b17d543f072d2e3ba564e4bc5c3a0d2b05c338'
+2026-09-12T17:22:58.5614056Z Submodule path 'plugins/ZynAddSubFx/zynaddsubfx': checked out '66a42efcc72d4d75a70412795f1510c4297ab826'
+2026-09-12T17:22:58.5829028Z Submodule 'instruments' (https://github.com/zynaddsubfx/instruments) registered for path 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:22:58.6380995Z Cloning into 'C:/a/zene-studio/zene-studio/plugins/ZynAddSubFx/zynaddsubfx/instruments'...
+2026-09-12T17:23:00.8232679Z Submodule path 'plugins/ZynAddSubFx/zynaddsubfx/instruments': checked out 'c5c912131b31df5fdf372d2f06a25aaf2375837f'
+2026-09-12T17:23:01.0536100Z Submodule path 'src/3rdparty/hiir/hiir': checked out '4a9a1e67fa6f8ce7688e1c0c8a2b017cecd206a3'
+2026-09-12T17:23:02.0269767Z Submodule path 'src/3rdparty/jack2': checked out 'ac334fabfb56989e9115ee6e2a77c1f6162d14fb'
+2026-09-12T17:23:02.1672054Z Submodule path 'src/3rdparty/qt5-x11embed': checked out '499d737c8e8d6882c55ef6d26981d313b296e5ca'
+2026-09-12T17:23:02.1891357Z Submodule '3rdparty/ECM' (https://github.com/KDE/extra-cmake-modules.git) registered for path 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:23:02.2315407Z Cloning into 'C:/a/zene-studio/zene-studio/src/3rdparty/qt5-x11embed/3rdparty/ECM'...
+2026-09-12T17:23:05.3380996Z Submodule path 'src/3rdparty/qt5-x11embed/3rdparty/ECM': checked out '1f820dc98d0a520c175433bcbb0098327d82aac6'
+2026-09-12T17:23:05.4908511Z Submodule path 'src/3rdparty/ringbuffer': checked out '1c46ef34a28d4637b43fb6d5ebb31d38c05f4bd8'
+2026-09-12T17:23:05.6214599Z Submodule path 'src/3rdparty/weakjack/weakjack': checked out 'fd11655be3b2efd6082968ecfe53f9cfe88bda2b'
+2026-09-12T17:23:05.6573763Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local gc.auto 0"
+2026-09-12T17:23:07.1156982Z Entering 'doc/wiki'
+2026-09-12T17:23:07.3760792Z Entering 'plugins/CarlaBase/carla'
+2026-09-12T17:23:07.4664128Z Entering 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:23:07.5607219Z Entering 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:23:07.6522893Z Entering 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:23:07.7452035Z Entering 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:23:07.8382623Z Entering 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:23:07.9309029Z Entering 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:23:08.0223414Z Entering 'plugins/MidiImport/portsmf'
+2026-09-12T17:23:08.1157502Z Entering 'plugins/OpulenZ/adplug'
+2026-09-12T17:23:08.2102530Z Entering 'plugins/Sid/resid/resid'
+2026-09-12T17:23:08.3073747Z Entering 'plugins/Xpressive/exprtk'
+2026-09-12T17:23:08.4066708Z Entering 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:23:08.4994149Z Entering 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:23:08.5965497Z Entering 'src/3rdparty/hiir/hiir'
+2026-09-12T17:23:08.6893741Z Entering 'src/3rdparty/jack2'
+2026-09-12T17:23:08.7822124Z Entering 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:23:08.8722939Z Entering 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:23:08.9682145Z Entering 'src/3rdparty/ringbuffer'
+2026-09-12T17:23:09.0586784Z Entering 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:23:09.1651746Z ##[endgroup]
+2026-09-12T17:23:09.1652304Z ##[group]Persisting credentials for submodules
+2026-09-12T17:23:09.1666451Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'url\.https\:\/\/github\.com\/\.insteadOf' && git config --local --unset-all 'url.https://github.com/.insteadOf' || :\""
+2026-09-12T17:23:10.4218274Z Entering 'doc/wiki'
+2026-09-12T17:23:10.5941076Z Entering 'plugins/CarlaBase/carla'
+2026-09-12T17:23:10.7654319Z Entering 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:23:10.9418201Z Entering 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:23:11.1118576Z Entering 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:23:11.2875337Z Entering 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:23:11.4572359Z Entering 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:23:11.6258415Z Entering 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:23:11.7994688Z Entering 'plugins/MidiImport/portsmf'
+2026-09-12T17:23:11.9707999Z Entering 'plugins/OpulenZ/adplug'
+2026-09-12T17:23:12.1373392Z Entering 'plugins/Sid/resid/resid'
+2026-09-12T17:23:12.3064270Z Entering 'plugins/Xpressive/exprtk'
+2026-09-12T17:23:12.4757271Z Entering 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:23:12.6425025Z Entering 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:23:12.8136556Z Entering 'src/3rdparty/hiir/hiir'
+2026-09-12T17:23:12.9840856Z Entering 'src/3rdparty/jack2'
+2026-09-12T17:23:13.1530593Z Entering 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:23:13.3191433Z Entering 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:23:13.4969925Z Entering 'src/3rdparty/ringbuffer'
+2026-09-12T17:23:13.6672579Z Entering 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:23:13.8519273Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ***' && git config --local --show-origin --name-only --get-regexp remote.origin.url\""
+2026-09-12T17:23:15.1087162Z Entering 'doc/wiki'
+2026-09-12T17:23:15.2741495Z file:C:/a/zene-studio/zene-studio/.git/modules/doc/wiki/config	remote.origin.url
+2026-09-12T17:23:15.3046845Z Entering 'plugins/CarlaBase/carla'
+2026-09-12T17:23:15.4733801Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/CarlaBase/carla/config	remote.origin.url
+2026-09-12T17:23:15.5009468Z Entering 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:23:15.6645268Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/CarlaBase/carla/modules/source/native-plugins/external/config	remote.origin.url
+2026-09-12T17:23:15.6958583Z Entering 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:23:15.8581620Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/FreeBoy/game-music-emu/config	remote.origin.url
+2026-09-12T17:23:15.8881805Z Entering 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:23:16.0550575Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/LadspaEffect/calf/veal/config	remote.origin.url
+2026-09-12T17:23:16.0848073Z Entering 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:23:16.2487577Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/LadspaEffect/cmt/cmt/config	remote.origin.url
+2026-09-12T17:23:16.2785628Z Entering 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:23:16.4437695Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/LadspaEffect/swh/ladspa/config	remote.origin.url
+2026-09-12T17:23:16.4742673Z Entering 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:23:16.6405563Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/LadspaEffect/tap/tap-plugins/config	remote.origin.url
+2026-09-12T17:23:16.6706839Z Entering 'plugins/MidiImport/portsmf'
+2026-09-12T17:23:16.8387788Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/MidiImport/portsmf/config	remote.origin.url
+2026-09-12T17:23:16.8679610Z Entering 'plugins/OpulenZ/adplug'
+2026-09-12T17:23:17.0330488Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/OpulenZ/adplug/config	remote.origin.url
+2026-09-12T17:23:17.0614127Z Entering 'plugins/Sid/resid/resid'
+2026-09-12T17:23:17.2287053Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/Sid/resid/resid/config	remote.origin.url
+2026-09-12T17:23:17.2582527Z Entering 'plugins/Xpressive/exprtk'
+2026-09-12T17:23:17.4256173Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/Xpressive/exprtk/config	remote.origin.url
+2026-09-12T17:23:17.4554876Z Entering 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:23:17.6228107Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/ZynAddSubFx/zynaddsubfx/config	remote.origin.url
+2026-09-12T17:23:17.6505836Z Entering 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:23:17.8187747Z file:C:/a/zene-studio/zene-studio/.git/modules/plugins/ZynAddSubFx/zynaddsubfx/modules/instruments/config	remote.origin.url
+2026-09-12T17:23:17.8512678Z Entering 'src/3rdparty/hiir/hiir'
+2026-09-12T17:23:18.0203394Z file:C:/a/zene-studio/zene-studio/.git/modules/src/3rdparty/hiir/hiir/config	remote.origin.url
+2026-09-12T17:23:18.0505822Z Entering 'src/3rdparty/jack2'
+2026-09-12T17:23:18.2134377Z file:C:/a/zene-studio/zene-studio/.git/modules/src/3rdparty/jack2/config	remote.origin.url
+2026-09-12T17:23:18.2437202Z Entering 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:23:18.4103564Z file:C:/a/zene-studio/zene-studio/.git/modules/src/3rdparty/qt5-x11embed/config	remote.origin.url
+2026-09-12T17:23:18.4374179Z Entering 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:23:18.6063827Z file:C:/a/zene-studio/zene-studio/.git/modules/src/3rdparty/qt5-x11embed/modules/3rdparty/ECM/config	remote.origin.url
+2026-09-12T17:23:18.6390181Z Entering 'src/3rdparty/ringbuffer'
+2026-09-12T17:23:18.8014561Z file:C:/a/zene-studio/zene-studio/.git/modules/src/3rdparty/ringbuffer/config	remote.origin.url
+2026-09-12T17:23:18.8299429Z Entering 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:23:18.9945078Z file:C:/a/zene-studio/zene-studio/.git/modules/src/3rdparty/weakjack/weakjack/config	remote.origin.url
+2026-09-12T17:23:19.0640563Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"
+2026-09-12T17:23:20.2982789Z Entering 'doc/wiki'
+2026-09-12T17:23:20.3938984Z Entering 'plugins/CarlaBase/carla'
+2026-09-12T17:23:20.4858637Z Entering 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:23:20.5817319Z Entering 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:23:20.6740610Z Entering 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:23:20.7676095Z Entering 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:23:20.8619801Z Entering 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:23:20.9563470Z Entering 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:23:21.0514776Z Entering 'plugins/MidiImport/portsmf'
+2026-09-12T17:23:21.1452538Z Entering 'plugins/OpulenZ/adplug'
+2026-09-12T17:23:21.2398289Z Entering 'plugins/Sid/resid/resid'
+2026-09-12T17:23:21.3354010Z Entering 'plugins/Xpressive/exprtk'
+2026-09-12T17:23:21.4312444Z Entering 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:23:21.5249108Z Entering 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:23:21.6244415Z Entering 'src/3rdparty/hiir/hiir'
+2026-09-12T17:23:21.7189214Z Entering 'src/3rdparty/jack2'
+2026-09-12T17:23:21.8125141Z Entering 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:23:21.9010179Z Entering 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:23:21.9958621Z Entering 'src/3rdparty/ringbuffer'
+2026-09-12T17:23:22.0926923Z Entering 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:23:22.2021380Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --add 'url.https://github.com/.insteadOf' 'org-74453315@github.com:'"
+2026-09-12T17:23:23.4680303Z Entering 'doc/wiki'
+2026-09-12T17:23:23.5642647Z Entering 'plugins/CarlaBase/carla'
+2026-09-12T17:23:23.6563831Z Entering 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:23:23.7520316Z Entering 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:23:23.8446098Z Entering 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:23:23.9395516Z Entering 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:23:24.0337712Z Entering 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:23:24.1270807Z Entering 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:23:24.2200450Z Entering 'plugins/MidiImport/portsmf'
+2026-09-12T17:23:24.3132120Z Entering 'plugins/OpulenZ/adplug'
+2026-09-12T17:23:24.4084014Z Entering 'plugins/Sid/resid/resid'
+2026-09-12T17:23:24.5025375Z Entering 'plugins/Xpressive/exprtk'
+2026-09-12T17:23:24.5987877Z Entering 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:23:24.6900537Z Entering 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:23:24.7881721Z Entering 'src/3rdparty/hiir/hiir'
+2026-09-12T17:23:24.8830303Z Entering 'src/3rdparty/jack2'
+2026-09-12T17:23:24.9797360Z Entering 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:23:25.0735869Z Entering 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:23:25.1732922Z Entering 'src/3rdparty/ringbuffer'
+2026-09-12T17:23:25.2698515Z Entering 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:23:25.3780208Z ##[endgroup]
+2026-09-12T17:23:25.4325738Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format='%H'
+2026-09-12T17:23:25.4810812Z 'b099fd6cb41394ebf364c755b227ee9980e24970'
+2026-09-12T17:23:25.7421935Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T17:23:25.7424079Z ##[group]Run actions/cache@v3
+2026-09-12T17:23:25.7435166Z with:
+2026-09-12T17:23:25.7435544Z   key: windows-arm64-7ea9702a6a08e1df8e93989551984b4a6bf73543e3de08f77486e256d640894c
+2026-09-12T17:23:25.7435970Z   restore-keys: windows-arm64-
+
+2026-09-12T17:23:25.7436218Z   path: \msys64\var\cache\pacman\pkg
+2026-09-12T17:23:25.7436457Z   enableCrossOsArchive: false
+2026-09-12T17:23:25.7436670Z   fail-on-cache-miss: false
+2026-09-12T17:23:25.7436867Z   lookup-only: false
+2026-09-12T17:23:25.7437062Z env:
+2026-09-12T17:23:25.7437700Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:23:25.7438357Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:23:25.7438533Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:23:25.7438716Z   MAKEFLAGS: -j2
+2026-09-12T17:23:25.7438879Z ##[endgroup]
+2026-09-12T17:23:25.9553853Z (node:4452) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T17:23:25.9554499Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T17:23:26.3491867Z Cache hit for: windows-arm64-7ea9702a6a08e1df8e93989551984b4a6bf73543e3de08f77486e256d640894c
+2026-09-12T17:23:26.3608980Z (node:4452) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-12T17:23:26.5319162Z Received 207 of 207 (100.0%), 0.0 MBs/sec
+2026-09-12T17:23:26.5321804Z Cache Size: ~0 MB (207 B)
+2026-09-12T17:23:26.5354120Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf C:/a/_temp/3724ffa5-8f3c-415e-bd8b-f71733c6854a/cache.tzst -P -C C:/a/zene-studio/zene-studio --force-local --use-compress-program "zstd -d"
+2026-09-12T17:23:26.8014888Z Cache restored successfully
+2026-09-12T17:23:26.8133122Z Cache restored from key: windows-arm64-7ea9702a6a08e1df8e93989551984b4a6bf73543e3de08f77486e256d640894c
+2026-09-12T17:23:26.8591093Z ##[group]Run msys2/setup-msys2@v2
+2026-09-12T17:23:26.8591472Z with:
+2026-09-12T17:23:26.8591646Z   msystem: CLANGARM64
+2026-09-12T17:23:26.8591832Z   update: true
+2026-09-12T17:23:26.8592005Z   path-type: minimal
+2026-09-12T17:23:26.8592187Z   release: true
+2026-09-12T17:23:26.8592374Z   platform-check-severity: fatal
+2026-09-12T17:23:26.8592593Z   cache: true
+2026-09-12T17:23:26.8592748Z env:
+2026-09-12T17:23:26.8593763Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:23:26.8594468Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:23:26.8594657Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:23:26.8594844Z   MAKEFLAGS: -j2
+2026-09-12T17:23:26.8595013Z ##[endgroup]
+2026-09-12T17:23:27.1109002Z ##[group]Downloading MSYS2...
+2026-09-12T17:23:28.3754822Z ##[endgroup]
+2026-09-12T17:23:28.3755179Z ##[group]Extracting MSYS2...
+2026-09-12T17:23:28.3775050Z [command]C:\hostedtoolcache\windows\msys2-installer\0.0.20260611\x64\base.exe -y
+2026-09-12T17:23:28.7859954Z 
+2026-09-12T17:23:28.7860888Z 7-Zip SFX 25.01 ZS v1.5.7 R4 (x64) : Copyright (c) 1999-2025 Igor Pavlov, 2016-2026 Tino Reichardt, 2022-2026 Sergey G. Brester : 2026-01-10
+2026-09-12T17:23:28.7861523Z 
+2026-09-12T17:23:28.7861867Z Extracting archive: C:\hostedtoolcache\windows\msys2-installer\0.0.20260611\x64\base.exe
+2026-09-12T17:23:28.7873315Z --
+2026-09-12T17:23:28.7886307Z Path = C:\hostedtoolcache\windows\msys2-installer\0.0.20260611\x64\base.exe
+2026-09-12T17:23:28.7886808Z Type = 7z
+2026-09-12T17:23:28.7886908Z 
+2026-09-12T17:23:28.9867239Z   0%
+2026-09-12T17:23:28.9867486Z     
+2026-09-12T17:23:29.1895552Z   0% 174 - msys64\usr\lib\perl5\core_perl\IO
+2026-09-12T17:23:29.1896123Z                                             
+2026-09-12T17:23:29.3912386Z   0% 458 - msys64\usr\share\locale\nb\LC_MESSAGES
+2026-09-12T17:23:29.3912770Z                                                  
+2026-09-12T17:23:29.5936862Z   0% 717 - msys64\usr\share\perl5\core_perl\Test2\Plugin
+2026-09-12T17:23:29.5937229Z                                                         
+2026-09-12T17:23:29.7983487Z   0% 973 - msys64\var\lib\pacman\local\getent-2.18.90-6
+2026-09-12T17:23:29.7983850Z                                                        
+2026-09-12T17:23:30.0137862Z   0% 1209 - msys64\usr\bin\xzegrep
+2026-09-12T17:23:30.0138160Z                                   
+2026-09-12T17:23:30.3625366Z   3% 1422 - msys64\usr\lib\perl5\core_perl\SDBM_File.pm
+2026-09-12T17:23:30.5633696Z                                                        
+2026-09-12T17:23:30.5634072Z   3% 1637 - msys64\usr\lib\terminfo\61\ampex-232
+2026-09-12T17:23:30.5634352Z                                                 
+2026-09-12T17:23:30.7679977Z   3% 1887 - msys64\usr\lib\terminfo\62\bq300-pc-rv
+2026-09-12T17:23:30.7680326Z                                                   
+2026-09-12T17:23:30.9699357Z   3% 2111 - msys64\usr\lib\terminfo\64\d430-unix-w-ccc
+2026-09-12T17:23:30.9700116Z                                                       
+2026-09-12T17:23:31.1741235Z   3% 2358 - msys64\usr\lib\terminfo\66\f100
+2026-09-12T17:23:31.1741567Z                                            
+2026-09-12T17:23:31.3776641Z   4% 2591 - msys64\usr\lib\terminfo\69\ibm+color
+2026-09-12T17:23:31.3776982Z                                                 
+2026-09-12T17:23:31.5795376Z   4% 2829 - msys64\usr\lib\terminfo\6d\mostlike
+2026-09-12T17:23:31.5795703Z                                                
+2026-09-12T17:23:31.7814968Z   4% 3052 - msys64\usr\lib\terminfo\6f\o31
+2026-09-12T17:23:31.7815291Z                                           
+2026-09-12T17:23:31.9845205Z   4% 3252 - msys64\usr\lib\terminfo\71\qansi-w
+2026-09-12T17:23:31.9845541Z                                               
+2026-09-12T17:23:32.1889748Z   4% 3477 - msys64\usr\lib\terminfo\74\tek4015-sm
+2026-09-12T17:23:32.1892165Z                                                  
+2026-09-12T17:23:32.3948362Z   4% 3720 - msys64\usr\lib\terminfo\74\tw52-m
+2026-09-12T17:23:32.3948694Z                                              
+2026-09-12T17:23:32.5939251Z   4% 3948 - msys64\usr\lib\terminfo\77\wy325-42w
+2026-09-12T17:23:32.5939587Z                                                 
+2026-09-12T17:23:32.7995268Z   4% 4189 - msys64\usr\lib\terminfo\78\xnuppc-200x64
+2026-09-12T17:23:32.7995617Z                                                     
+2026-09-12T17:23:33.0004497Z   4% 4419 - msys64\usr\share\bash-completion\completions\apt-cache
+2026-09-12T17:23:33.0004903Z                                                                   
+2026-09-12T17:23:33.5160020Z   5% 4617 - msys64\usr\share\bash-completion\completions\gcc-8
+2026-09-12T17:23:33.5160409Z                                                               
+2026-09-12T17:23:33.7159616Z   5% 4696 - msys64\usr\share\bash-completion\completions\iftop
+2026-09-12T17:23:33.7160036Z                                                               
+2026-09-12T17:23:33.9071108Z   5% 4948 - msys64\usr\share\bash-completion\completions\puppetqd
+2026-09-12T17:23:33.9071500Z                                                                  
+2026-09-12T17:23:34.1098409Z   5% 5187 - msys64\usr\share\bash-completion\completions\wtf
+2026-09-12T17:23:34.1098801Z                                                             
+2026-09-12T17:23:34.3826075Z   5% 5460 - msys64\usr\share\bash-completion\completions\_tanzu
+2026-09-12T17:23:34.3826503Z                                                                
+2026-09-12T17:23:34.5784476Z   7% 5654 - msys64\usr\share\doc\libunistring\libunistring_3.html
+2026-09-12T17:23:34.5785253Z                                                                  
+2026-09-12T17:23:34.7827376Z   8% 5842 - msys64\usr\share\gtk-doc\html\p11-kit\p11-kit.devhelp2
+2026-09-12T17:23:34.7827781Z                                                                   
+2026-09-12T17:23:34.9857882Z  11% 6037 - msys64\usr\share\locale\ca\LC_MESSAGES\tar.mo
+2026-09-12T17:23:34.9858239Z                                                          
+2026-09-12T17:23:35.1889555Z  15% 6206 - msys64\usr\share\locale\et\LC_MESSAGES\tar.mo
+2026-09-12T17:23:35.1889910Z                                                          
+2026-09-12T17:23:35.4557605Z  19% 6390 - msys64\usr\share\locale\it\LC_MESSAGES\gettext-tools.mo
+2026-09-12T17:23:35.4558012Z                                                                    
+2026-09-12T17:23:35.6573205Z  22% 6555 - msys64\usr\share\locale\pl\LC_MESSAGES\gawk.mo
+2026-09-12T17:23:35.6573576Z                                                           
+2026-09-12T17:23:35.8678107Z  27% 6733 - msys64\usr\share\locale\sr\LC_MESSAGES\xz.mo
+2026-09-12T17:23:35.8678622Z                                                         
+2026-09-12T17:23:36.0628930Z  30% 6818 - msys64\usr\share\locale\vi\LC_MESSAGES\gdbm.mo
+2026-09-12T17:23:36.0629337Z                                                           
+2026-09-12T17:23:36.2661212Z  32% 7009 - msys64\usr\share\man\de\man1\lzmainfo.1.gz
+2026-09-12T17:23:36.2661569Z                                                       
+2026-09-12T17:23:36.4845638Z  32% 7234 - msys64\usr\share\man\man1\gpgconf.1.gz
+2026-09-12T17:23:36.4845975Z                                                   
+2026-09-12T17:23:36.6895495Z  32% 7509 - msys64\usr\share\man\man1\sync.1.gz
+2026-09-12T17:23:36.6895827Z                                                
+2026-09-12T17:23:36.8903397Z  33% 7740 - msys64\usr\share\man\man3\CURLINFO_HTTPAUTH_AVAIL.3.gz
+2026-09-12T17:23:36.8903803Z                                                                   
+2026-09-12T17:23:37.5442550Z  33% 7980 - msys64\usr\share\man\man3\CURLOPT_PROGRESSFUNCTION.3.gz
+2026-09-12T17:23:37.5442957Z                                                                    
+2026-09-12T17:23:37.7477143Z  33% 8203 - msys64\usr\share\man\man3\curl_pushheader_byname.3.gz
+2026-09-12T17:23:37.7478635Z                                                                  
+2026-09-12T17:23:37.9380394Z  33% 8452 - msys64\usr\share\man\man3\getwin.3x.gz
+2026-09-12T17:23:37.9380729Z                                                   
+2026-09-12T17:23:38.1412528Z  33% 8691 - msys64\usr\share\man\man3\libssh2_knownhost_checkp.3.gz
+2026-09-12T17:23:38.1413598Z                                                                    
+2026-09-12T17:23:38.3435370Z  33% 8826 - msys64\usr\share\man\man3\menu_grey.3x.gz
+2026-09-12T17:23:38.3436176Z                                                      
+2026-09-12T17:23:38.5569547Z  34% 9071 - msys64\usr\share\man\man3\set_current_field.3x.gz
+2026-09-12T17:23:38.5570673Z                                                              
+2026-09-12T17:23:38.7979886Z  34% 9323 - msys64\usr\share\man\man3\winnwstr.3x.gz
+2026-09-12T17:23:38.7980386Z                                                     
+2026-09-12T17:23:39.0008439Z  34% 9360 - msys64\usr\share\man\man3\_nc_free_tinfo.3x.gz
+2026-09-12T17:23:39.0008837Z                                                           
+2026-09-12T17:23:39.2051681Z  35% 9558 - msys64\usr\share\mintty\lang\nb.po
+2026-09-12T17:23:39.2052024Z                                               
+2026-09-12T17:23:39.4082209Z  39% 9753 - msys64\usr\share\perl5\core_per . ls\CBuilder\Platform\android.pm
+2026-09-12T17:23:39.4082643Z                                                                              
+2026-09-12T17:23:39.6101850Z  41% 9940 - msys64\usr\share\perl5\core_perl\perlfaq.pm
+2026-09-12T17:23:39.6102837Z                                                        
+2026-09-12T17:23:39.9045297Z  42% 10120 - msys64\usr\share\perl5\core_perl\Test2\Compare\Undef.pm
+2026-09-12T17:23:39.9045861Z                                                                     
+2026-09-12T17:23:40.1042066Z  42% 10258 - msys64\usr\share\perl5\core_perl\Test2\Workflow.pm
+2026-09-12T17:23:40.1042970Z                                                                
+2026-09-12T17:23:40.2975074Z  44% 10433 - msys64\usr\share\perl5\core_perl\unicore\lib\Ccc\NK.pl
+2026-09-12T17:23:40.2976030Z                                                                    
+2026-09-12T17:23:40.5037095Z  44% 10620 - msys64\usr\share\perl5\core_perl\unicore\lib\Jg\Reh.pl
+2026-09-12T17:23:40.5037752Z                                                                    
+2026-09-12T17:23:40.7065541Z  44% 10822 - msys64\usr\share\perl5\core_perl\unicore\lib\Scx\Bopo.pl
+2026-09-12T17:23:40.7066001Z                                                                      
+2026-09-12T17:23:40.9108550Z  46% 11005 - msys64\usr\share\readline\hist_erasedups.c
+2026-09-12T17:23:40.9108913Z                                                        
+2026-09-12T17:23:41.1101202Z  46% 11237 - msys64\usr\share\terminfo\61\ansi+pp
+2026-09-12T17:23:41.1101561Z                                                  
+2026-09-12T17:23:41.3131909Z  46% 11486 - msys64\usr\share\terminfo\63\c108-rv
+2026-09-12T17:23:41.3132533Z                                                  
+2026-09-12T17:23:42.0766886Z  47% 11638 - msys64\usr\share\terminfo\64\d230c
+2026-09-12T17:23:42.0767670Z                                                
+2026-09-12T17:23:42.2673013Z  47% 11735 - msys64\usr\share\terminfo\64\d470
+2026-09-12T17:23:42.2673337Z                                               
+2026-09-12T17:23:42.4688649Z  47% 11973 - msys64\usr\share\terminfo\67\gnome-2012
+2026-09-12T17:23:42.4689053Z                                                     
+2026-09-12T17:23:42.6722833Z  47% 12212 - msys64\usr\share\terminfo\69\ibmvga-c
+2026-09-12T17:23:42.6723179Z                                                   
+2026-09-12T17:23:42.8758562Z  47% 12362 - msys64\usr\share\terminfo\6d\mime340
+2026-09-12T17:23:42.8758900Z                                                  
+2026-09-12T17:23:43.0794575Z  47% 12593 - msys64\usr\share\terminfo\6e\ntconsole-35-nti
+2026-09-12T17:23:43.0795367Z                                                           
+2026-09-12T17:23:43.2828441Z  47% 12828 - msys64\usr\share\terminfo\71\qdcons
+2026-09-12T17:23:43.2829361Z                                                 
+2026-09-12T17:23:43.4870234Z  47% 13062 - msys64\usr\share\terminfo\74\tek4027
+2026-09-12T17:23:43.4870578Z                                                  
+2026-09-12T17:23:43.6890638Z  47% 13305 - msys64\usr\share\terminfo\75\unknown
+2026-09-12T17:23:43.6891059Z                                                  
+2026-09-12T17:23:43.9026442Z  47% 13539 - msys64\usr\share\terminfo\77\wy350-wvb
+2026-09-12T17:23:43.9026795Z                                                    
+2026-09-12T17:23:44.1039025Z  47% 13720 - msys64\usr\share\terminfo\78\x1750
+2026-09-12T17:23:44.1039342Z                                                
+2026-09-12T17:23:44.3479149Z  47% 13961 - msys64\usr\share\zoneinfo\Africa\Lubumbashi
+2026-09-12T17:23:44.3479507Z                                                         
+2026-09-12T17:23:44.5469247Z  48% 14152 - msys64\usr\share\zoneinfo\Antarctica\Macquarie
+2026-09-12T17:23:44.5469629Z                                                            
+2026-09-12T17:23:44.7513181Z  48% 14388 - msys64\usr\share\zoneinfo\Europe\Nicosia
+2026-09-12T17:23:44.7513529Z                                                      
+2026-09-12T17:23:44.9526775Z  48% 14624 - msys64\usr\share\zoneinfo\posix\America\Guadeloupe
+2026-09-12T17:23:44.9527168Z                                                                
+2026-09-12T17:23:45.1577812Z  48% 14833 - msys64\usr\share\zoneinfo\posix\Asia\Vladivostok
+2026-09-12T17:23:45.1578196Z                                                              
+2026-09-12T17:23:45.3600743Z  48% 15052 - msys64\usr\share\zoneinfo\posix\Pacific\Majuro
+2026-09-12T17:23:45.3601111Z                                                            
+2026-09-12T17:23:45.5641719Z  48% 15206 - msys64\usr\share\zoneinfo\right\America\Curacao
+2026-09-12T17:23:45.5642138Z                                                             
+2026-09-12T17:23:45.7682993Z  48% 15416 - msys64\usr\share\zoneinfo\right\Asia\Shanghai
+2026-09-12T17:23:45.7683359Z                                                           
+2026-09-12T17:23:45.9749213Z  48% 15640 - msys64\usr\share\zoneinfo\right\Pacific\Fakaofo
+2026-09-12T17:23:45.9749741Z                                                             
+2026-09-12T17:23:46.1745028Z  48% 15884 - msys64\var\lib\pacman\local\libksba-1.8.0-1\files
+2026-09-12T17:23:46.1745735Z                                                               
+2026-09-12T17:23:46.3755246Z  50% 16074 - msys64\clang64.exe
+2026-09-12T17:23:46.3755531Z                                
+2026-09-12T17:23:46.5803824Z  56% 16237 - msys64\usr\bin\mintty.exe
+2026-09-12T17:23:46.5804309Z                                       
+2026-09-12T17:23:46.8151868Z  68% 16330 - msys64\usr\bin\msys-sqlite3-0.dll
+2026-09-12T17:23:47.0186717Z                                               
+2026-09-12T17:23:47.0187088Z  79% 16360 - msys64\usr\bin\pactree.exe
+2026-09-12T17:23:47.0187339Z                                        
+2026-09-12T17:23:47.2142752Z  91% 16509 - msys64\usr\lib\gnupg\gpg-protect-tool.exe
+2026-09-12T17:23:47.2147956Z                                                       
+2026-09-12T17:23:47.2148240Z Everything is Ok
+2026-09-12T17:23:47.2195239Z ##[endgroup]
+2026-09-12T17:23:47.2195823Z ##[group]Disable Key Refresh...
+2026-09-12T17:23:47.2219642Z ##[endgroup]
+2026-09-12T17:23:47.2250775Z ##[group]Restoring package cache...
+2026-09-12T17:23:47.5165439Z Cache hit for restore-key: msys2-pkgs-upd:true-conf:eda2906f-files:49f9132bd63a1e6bfe9a806f77b48911b8253110365469745767c6f938f4dfff
+2026-09-12T17:23:49.2540343Z Received 30586213 of 30586213 (100.0%), 18.5 MBs/sec
+2026-09-12T17:23:49.2543926Z Cache Size: ~29 MB (30586213 B)
+2026-09-12T17:23:49.2575073Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf C:/a/_temp/b4e754f1-d000-413f-8211-05e212f4ac75/cache.tzst -P -C C:/a/zene-studio/zene-studio --force-local --use-compress-program "zstd -d"
+2026-09-12T17:23:49.6956656Z Cache restored successfully
+2026-09-12T17:23:49.6991973Z Cache restore for msys2-pkgs-upd:true-conf:eda2906f, got msys2-pkgs-upd:true-conf:eda2906f-files:49f9132bd63a1e6bfe9a806f77b48911b8253110365469745767c6f938f4dfff
+2026-09-12T17:23:49.6993506Z Cache restore for msys2-pkgs-upd:true-conf:eda2906f, got msys2-pkgs-upd:true-conf:eda2906f-files:49f9132bd63a1e6bfe9a806f77b48911b8253110365469745767c6f938f4dfff
+2026-09-12T17:23:49.6997479Z ##[endgroup]
+2026-09-12T17:23:49.6997848Z ##[group]Starting MSYS2 for the first time...
+2026-09-12T17:23:49.8281800Z [command]C:\Windows\system32\cmd.exe /D /S /C C:\a\_temp\setup-msys2\msys2.cmd -c "'uname' '-a'"
+2026-09-12T17:23:50.4488664Z MSYS2 is starting for the first time. Executing the initial setup.
+2026-09-12T17:23:51.0231940Z Copying skeleton files.
+2026-09-12T17:23:51.0232714Z These files are for the users to personalise their msys2 experience.
+2026-09-12T17:23:51.0233219Z 
+2026-09-12T17:23:51.0233440Z They will never be overwritten nor automatically updated.
+2026-09-12T17:23:51.0233684Z 
+2026-09-12T17:23:51.2428392Z './.bashrc' -> '/home/runneradmin/.bashrc'
+2026-09-12T17:23:51.3403463Z './.bash_profile' -> '/home/runneradmin/.bash_profile'
+2026-09-12T17:23:51.4335263Z './.profile' -> '/home/runneradmin/.profile'
+2026-09-12T17:23:51.7360732Z 'C:\Windows\system32\drivers\etc\hosts' -> '/etc/hosts'
+2026-09-12T17:23:52.0058986Z 'C:\Windows\system32\drivers\etc\protocol' -> '/etc/protocols'
+2026-09-12T17:23:52.2757304Z 'C:\Windows\system32\drivers\etc\services' -> '/etc/services'
+2026-09-12T17:23:52.5622676Z 'C:\Windows\system32\drivers\etc\networks' -> '/etc/networks'
+2026-09-12T17:23:53.6561178Z gpg: /etc/pacman.d/gnupg/trustdb.gpg: trustdb created
+2026-09-12T17:23:53.6630086Z gpg: no ultimately trusted keys found
+2026-09-12T17:23:55.1908763Z gpg: starting migration from earlier GnuPG versions
+2026-09-12T17:23:55.3800141Z gpg: porting secret keys from '/etc/pacman.d/gnupg/secring.gpg' to gpg-agent
+2026-09-12T17:23:55.3811630Z gpg: migration succeeded
+2026-09-12T17:23:55.5075590Z ==> Generating pacman master key. This may take some time.
+2026-09-12T17:23:55.5968506Z gpg: Generating pacman keyring master key...
+2026-09-12T17:23:58.5717397Z gpg: directory '/etc/pacman.d/gnupg/openpgp-revocs.d' created
+2026-09-12T17:23:58.6196092Z gpg: revocation certificate stored as '/etc/pacman.d/gnupg/openpgp-revocs.d/25A690A9DA8910A0F9510A14760729A2C9B034D4.rev'
+2026-09-12T17:23:58.6197313Z gpg: Done
+2026-09-12T17:23:58.7068937Z ==> Updating trust database...
+2026-09-12T17:23:58.8249793Z gpg: marginals needed: 3  completes needed: 1  trust model: pgp
+2026-09-12T17:23:58.8257718Z gpg: depth: 0  valid:   1  signed:   0  trust: 0-, 0q, 0n, 0m, 0f, 1u
+2026-09-12T17:23:59.4351739Z ==> Appending keys from msys2.gpg...
+2026-09-12T17:24:02.1448797Z ==> Locally signing trusted keys in keyring...
+2026-09-12T17:24:03.9959389Z   -> Locally signed 5 keys.
+2026-09-12T17:24:04.0898917Z ==> Importing owner trust values...
+2026-09-12T17:24:04.1834210Z gpg: setting ownertrust to 4
+2026-09-12T17:24:04.1834524Z gpg: setting ownertrust to 4
+2026-09-12T17:24:04.1834757Z gpg: setting ownertrust to 4
+2026-09-12T17:24:04.1834986Z gpg: setting ownertrust to 4
+2026-09-12T17:24:04.1835212Z gpg: setting ownertrust to 4
+2026-09-12T17:24:04.2801889Z ==> Disabling revoked keys in keyring...
+2026-09-12T17:24:05.2608242Z   -> Disabled 4 keys.
+2026-09-12T17:24:05.3559125Z ==> Updating trust database...
+2026-09-12T17:24:05.4773895Z gpg: marginals needed: 3  completes needed: 1  trust model: pgp
+2026-09-12T17:24:05.4847108Z gpg: depth: 0  valid:   1  signed:   5  trust: 0-, 0q, 0n, 0m, 0f, 1u
+2026-09-12T17:24:05.4913048Z gpg: depth: 1  valid:   5  signed:   6  trust: 0-, 0q, 0n, 5m, 0f, 0u
+2026-09-12T17:24:05.4941707Z gpg: depth: 2  valid:   3  signed:   2  trust: 3-, 0q, 0n, 0m, 0f, 0u
+2026-09-12T17:24:05.6761401Z pacman-key (pacman) 6.1.0
+2026-09-12T17:24:05.6762983Z Copyright (c) 2010-2024 Pacman Development Team <pacman-dev@lists.archlinux.org>.
+2026-09-12T17:24:05.6763387Z 
+2026-09-12T17:24:05.7690757Z This is free software; see the source for copying conditions.
+2026-09-12T17:24:05.7691182Z There is NO WARRANTY, to the extent permitted by law.
+2026-09-12T17:24:07.0617687Z Initial setup complete. MSYS2 is now ready to use.
+2026-09-12T17:24:07.1153729Z MINGW64_NT-10.0-26200-ARM64 runnervm7i6hl 3.6.9-01d6c708.x86_64 2026-05-24 10:45 UTC x86_64 Msys
+2026-09-12T17:24:07.1269625Z ##[endgroup]
+2026-09-12T17:24:07.1271156Z ##[group]Disable CheckSpace...
+2026-09-12T17:24:07.2378279Z [command]C:\Windows\system32\cmd.exe /D /S /C C:\a\_temp\setup-msys2\msys2.cmd -c "'sed' '-i' 's/^CheckSpace/#CheckSpace/g' '/etc/pacman.conf'"
+2026-09-12T17:24:07.9051766Z ##[endgroup]
+2026-09-12T17:24:07.9052222Z ##[group]Updating packages...
+2026-09-12T17:24:08.0153820Z [command]C:\Windows\system32\cmd.exe /D /S /C C:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-Syuu' '--overwrite' '*'"
+2026-09-12T17:24:10.4180669Z :: Synchronizing package databases...
+2026-09-12T17:24:12.4576065Z  clangarm64 downloading...
+2026-09-12T17:24:12.4585153Z  mingw32 downloading...
+2026-09-12T17:24:12.4585489Z  mingw64 downloading...
+2026-09-12T17:24:12.4585703Z  ucrt64 downloading...
+2026-09-12T17:24:12.4585900Z  clang64 downloading...
+2026-09-12T17:24:12.4586102Z  msys downloading...
+2026-09-12T17:24:13.8022191Z :: Starting core system upgrade...
+2026-09-12T17:24:14.1822926Z warning: terminate other MSYS2 programs before proceeding
+2026-09-12T17:24:14.1823302Z resolving dependencies...
+2026-09-12T17:24:14.1827469Z looking for conflicting packages...
+2026-09-12T17:24:14.2070536Z 
+2026-09-12T17:24:14.2071517Z Packages (1) msys2-runtime-3.6.10-4
+2026-09-12T17:24:14.2071761Z 
+2026-09-12T17:24:14.2071851Z Total Download Size:    1.97 MiB
+2026-09-12T17:24:14.2072085Z Total Installed Size:   6.33 MiB
+2026-09-12T17:24:14.2072323Z Net Upgrade Size:      -0.20 MiB
+2026-09-12T17:24:14.2072473Z 
+2026-09-12T17:24:14.2077168Z :: Proceed with installation? [Y/n] 
+2026-09-12T17:24:14.2077517Z :: Retrieving packages...
+2026-09-12T17:24:15.9330280Z  msys2-runtime-3.6.10-4-x86_64 downloading...
+2026-09-12T17:24:15.9330605Z checking keyring...
+2026-09-12T17:24:16.0535883Z checking package integrity...
+2026-09-12T17:24:16.3340001Z loading package files...
+2026-09-12T17:24:16.3419572Z checking for file conflicts...
+2026-09-12T17:24:16.3445340Z :: Processing package changes...
+2026-09-12T17:24:16.3446782Z upgrading msys2-runtime...
+2026-09-12T17:24:16.7032120Z :: To complete this update all MSYS2 processes including this terminal will be closed. Confirm to proceed [Y/n] 
+2026-09-12T17:24:17.8359478Z ##[endgroup]
+2026-09-12T17:24:17.8360364Z ##[group]Killing remaining tasks...
+2026-09-12T17:24:17.9500471Z [command]C:\Windows\system32\taskkill.exe /F /FI "MODULES eq msys-2.0.dll"
+2026-09-12T17:24:18.1607254Z 
+2026-09-12T17:24:18.1607754Z INFO: No tasks running with the specified criteria.
+2026-09-12T17:24:18.1660703Z ##[endgroup]
+2026-09-12T17:24:18.1661157Z ##[group]Final system upgrade...
+2026-09-12T17:24:18.2756233Z [command]C:\Windows\system32\cmd.exe /D /S /C C:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-Syuu' '--overwrite' '*'"
+2026-09-12T17:24:20.5893341Z :: Synchronizing package databases...
+2026-09-12T17:24:21.5019124Z  clangarm64 downloading...
+2026-09-12T17:24:21.5019435Z  mingw32 downloading...
+2026-09-12T17:24:21.5019646Z  mingw64 downloading...
+2026-09-12T17:24:21.5019884Z  ucrt64 downloading...
+2026-09-12T17:24:21.5020084Z  clang64 downloading...
+2026-09-12T17:24:21.5020290Z  msys downloading...
+2026-09-12T17:24:22.8905426Z :: Starting core system upgrade...
+2026-09-12T17:24:23.2387299Z  there is nothing to do
+2026-09-12T17:24:23.2387658Z :: Starting full system upgrade...
+2026-09-12T17:24:23.3086544Z resolving dependencies...
+2026-09-12T17:24:23.3207482Z looking for conflicting packages...
+2026-09-12T17:24:23.3453732Z 
+2026-09-12T17:24:23.3456602Z Packages (37) bash-completion-2.18.0-1  bsdtar-3.8.9-1  ca-certificates-20260816-1  curl-8.22.0-1  findutils-4.11.0-2  gawk-5.4.1-1  gcc-libs-15.3.0-1  gnupg-2.4.9-3  inetutils-2.8-1  libcurl-8.22.0-1  libexpat-2.8.4-1  libffi-3.8.0-1  libgcrypt-1.12.4-1  libgnutls-3.8.13-2  libhogweed-4.0-1  libksba-1.8.1-1  liblzma-5.8.4-1  libnettle-4.0-1  libnghttp2-1.70.0-1  libnghttp3-1.18.0-1  libngtcp2-1.25.0-1  libopenssl-3.6.4-1  libp11-kit-0.26.5-1  libpcre2_8-10.48-1  libpsl-0.23.2-1  libsqlite-3.53.4-1  msys2-keyring-1~20260814-1  nano-9.2-1  nettle-4.0-1  openssl-3.6.4-1  p11-kit-0.26.5-1  pacman-contrib-1.10.6-2  perl-5.42.3-1  pinentry-1.3.3-1  tzcode-2026c-1  wget-1.25.0-2  xz-5.8.4-1
+2026-09-12T17:24:23.3459126Z 
+2026-09-12T17:24:23.3459220Z Total Download Size:     1.68 MiB
+2026-09-12T17:24:23.3459460Z Total Installed Size:  115.68 MiB
+2026-09-12T17:24:23.3459702Z Net Upgrade Size:       -1.11 MiB
+2026-09-12T17:24:23.3459852Z 
+2026-09-12T17:24:23.3530700Z :: Proceed with installation? [Y/n] 
+2026-09-12T17:24:23.3531048Z :: Retrieving packages...
+2026-09-12T17:24:24.4969882Z  xz-5.8.4-1-x86_64 downloading...
+2026-09-12T17:24:24.4970217Z  libgcrypt-1.12.4-1-x86_64 downloading...
+2026-09-12T17:24:24.4970485Z  inetutils-2.8-1-x86_64 downloading...
+2026-09-12T17:24:24.4970738Z  libksba-1.8.1-1-x86_64 downloading...
+2026-09-12T17:24:24.4970985Z  liblzma-5.8.4-1-x86_64 downloading...
+2026-09-12T17:24:24.4971223Z checking keyring...
+2026-09-12T17:24:24.6136980Z checking package integrity...
+2026-09-12T17:24:34.3547057Z loading package files...
+2026-09-12T17:24:34.4978882Z checking for file conflicts...
+2026-09-12T17:24:34.5645854Z :: Running pre-transaction hooks...
+2026-09-12T17:24:34.5646233Z (1/1) Removing old entries from the info directory file...
+2026-09-12T17:24:34.9366320Z :: Processing package changes...
+2026-09-12T17:24:34.9366905Z upgrading bash-completion...
+2026-09-12T17:24:36.7184838Z upgrading gcc-libs...
+2026-09-12T17:24:36.7462670Z upgrading libexpat...
+2026-09-12T17:24:36.7543948Z upgrading liblzma...
+2026-09-12T17:24:36.7630641Z upgrading libopenssl...
+2026-09-12T17:24:36.8019465Z upgrading bsdtar...
+2026-09-12T17:24:36.8180992Z upgrading openssl...
+2026-09-12T17:24:37.0186727Z upgrading findutils...
+2026-09-12T17:24:37.1548765Z upgrading libffi...
+2026-09-12T17:24:37.1746148Z upgrading libpcre2_8...
+2026-09-12T17:24:37.1833812Z upgrading libp11-kit...
+2026-09-12T17:24:37.1946244Z upgrading p11-kit...
+2026-09-12T17:24:37.4641916Z upgrading ca-certificates...
+2026-09-12T17:24:39.3332710Z upgrading libnghttp3...
+2026-09-12T17:24:39.3449620Z upgrading libngtcp2...
+2026-09-12T17:24:39.3594410Z upgrading libnghttp2...
+2026-09-12T17:24:39.3706530Z upgrading libpsl...
+2026-09-12T17:24:39.3887578Z upgrading libcurl...
+2026-09-12T17:24:39.3996007Z upgrading curl...
+2026-09-12T17:24:40.2312881Z upgrading gawk...
+2026-09-12T17:24:40.4522588Z upgrading libgcrypt...
+2026-09-12T17:24:40.4725256Z upgrading libhogweed...
+2026-09-12T17:24:40.4806183Z upgrading libnettle...
+2026-09-12T17:24:40.4892980Z upgrading libgnutls...
+2026-09-12T17:24:40.5778189Z upgrading libksba...
+2026-09-12T17:24:40.5931270Z upgrading libsqlite...
+2026-09-12T17:24:40.6096126Z upgrading nettle...
+2026-09-12T17:24:40.6248020Z upgrading pinentry...
+2026-09-12T17:24:40.6368133Z upgrading gnupg...
+2026-09-12T17:24:46.2738516Z ==> Appending keys from msys2.gpg...
+2026-09-12T17:24:48.1635966Z ==> Updating trust database...
+2026-09-12T17:24:48.2303818Z gpg: no need for a trustdb check
+2026-09-12T17:24:48.6059334Z upgrading inetutils...
+2026-09-12T17:24:48.6407927Z upgrading msys2-keyring...
+2026-09-12T17:24:49.7358511Z ==> Appending keys from msys2.gpg...
+2026-09-12T17:24:51.5206601Z ==> Updating trust database...
+2026-09-12T17:24:51.5884380Z gpg: next trustdb check due at 2027-02-10
+2026-09-12T17:24:51.9268044Z upgrading nano...
+2026-09-12T17:24:52.1289589Z upgrading xz...
+2026-09-12T17:24:52.8091018Z upgrading pacman-contrib...
+2026-09-12T17:24:52.9135396Z New optional dependencies for pacman-contrib
+2026-09-12T17:24:52.9136183Z     perl: for pacsearch [installed]
+2026-09-12T17:24:52.9136527Z     vim: default diff program for pacdiff
+2026-09-12T17:24:52.9136782Z upgrading perl...
+2026-09-12T17:24:56.4905215Z upgrading tzcode...
+2026-09-12T17:25:01.2282977Z upgrading wget...
+2026-09-12T17:25:01.4427809Z :: Running post-transaction hooks...
+2026-09-12T17:25:01.4428159Z (1/1) Updating the info directory file...
+2026-09-12T17:25:08.3312014Z ##[endgroup]
+2026-09-12T17:25:08.3323838Z ##[group]Saving package cache...
+2026-09-12T17:25:08.4465604Z [command]C:\Windows\system32\cmd.exe /D /S /C C:\a\_temp\setup-msys2\msys2.cmd -c "'paccache' '-r' '-f' '-u' '-k0'"
+2026-09-12T17:25:11.2014218Z ==> no candidate packages found for pruning
+2026-09-12T17:25:11.3301852Z [command]C:\Windows\system32\cmd.exe /D /S /C C:\a\_temp\setup-msys2\msys2.cmd -c "'paccache' '-r' '-f' '-k1'"
+2026-09-12T17:25:12.6253952Z 
+2026-09-12T17:25:12.7037386Z ==> finished: 1 packages removed (disk space saved: 1.97 MiB)
+2026-09-12T17:25:13.0706725Z [command]"C:\Program Files\Git\usr\bin\tar.exe" --posix -cf cache.tzst --exclude cache.tzst -P -C C:/a/zene-studio/zene-studio --files-from manifest.txt --force-local --use-compress-program "zstd -T0"
+2026-09-12T17:25:14.4563140Z Sent 32346383 of 32346383 (100.0%), 31.5 MBs/sec
+2026-09-12T17:25:14.6421871Z Cache saved as ID 7623209779 using key msys2-pkgs-upd:true-conf:eda2906f-files:4b458754f4ef9b20e3c7685deb995323fa86bc3ca9d73321fb9d6d54ea7b3f3e
+2026-09-12T17:25:14.7557001Z [command]C:\Windows\system32\cmd.exe /D /S /C C:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-Scc'"
+2026-09-12T17:25:17.0712955Z 
+2026-09-12T17:25:17.0713567Z Cache directory: /var/cache/pacman/pkg/
+2026-09-12T17:25:17.1074668Z :: Do you want to remove ALL files from cache? [Y/n] 
+2026-09-12T17:25:17.1075016Z removing all files from cache...
+2026-09-12T17:25:17.1075180Z 
+2026-09-12T17:25:17.1075275Z Database directory: /var/lib/pacman/
+2026-09-12T17:25:17.1119049Z :: Do you want to remove unused repositories? [Y/n] 
+2026-09-12T17:25:17.1119413Z removing unused sync repositories...
+2026-09-12T17:25:17.1221495Z ##[endgroup]
+2026-09-12T17:25:17.1626455Z ##[group]Run pacman --needed --noconfirm -S - < .github/workflows/deps-msys2-clangarm64.txt
+2026-09-12T17:25:17.1627255Z pacman --needed --noconfirm -S - < .github/workflows/deps-msys2-clangarm64.txt
+2026-09-12T17:25:17.1639770Z shell: C:\a\_temp\setup-msys2\msys2.CMD {0}
+2026-09-12T17:25:17.1640059Z env:
+2026-09-12T17:25:17.1640702Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:25:17.1641375Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:25:17.1641568Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:25:17.1641764Z   MAKEFLAGS: -j2
+2026-09-12T17:25:17.1641953Z   MSYSTEM: CLANGARM64
+2026-09-12T17:25:17.1642144Z ##[endgroup]
+2026-09-12T17:25:17.8244765Z error: failed to reopen stdin for reading: (No such file or directory)
+2026-09-12T17:25:19.8277672Z warning: base-2022.06-1 is up to date -- skipping
+2026-09-12T17:25:19.8278497Z warning: filesystem-2026.03.06-1 is up to date -- skipping
+2026-09-12T17:25:19.8278879Z warning: msys2-runtime-3.6.10-4 is up to date -- skipping
+2026-09-12T17:25:19.8279427Z resolving dependencies...
+2026-09-12T17:25:19.8621031Z looking for conflicting packages...
+2026-09-12T17:25:19.8990541Z warning: dependency cycle detected:
+2026-09-12T17:25:19.8991126Z warning: mingw-w64-clang-aarch64-harfbuzz will be installed before its mingw-w64-clang-aarch64-freetype dependency
+2026-09-12T17:25:19.9009851Z 
+2026-09-12T17:25:19.9033033Z Packages (171) binutils-2.47-1  bison-3.8.2-5  diffutils-3.12-1  dos2unix-7.5.7-1  flex-2.6.4-4  heimdal-7.8.0-5  heimdal-libs-7.8.0-5  libcbor-0.14.0-2  libedit-20240808_3.1-1  libfido2-1.17.0-1  m4-1.4.21-1  make-4.4.1-3  mingw-w64-clang-aarch64-brotli-1.2.0-1  mingw-w64-clang-aarch64-bzip2-1.0.8-4  mingw-w64-clang-aarch64-c-ares-1.34.8-1  mingw-w64-clang-aarch64-ca-certificates-20260816-1  mingw-w64-clang-aarch64-clang-libs-22.1.8-2  mingw-w64-clang-aarch64-compiler-rt-22.1.8-2  mingw-w64-clang-aarch64-cppdap-1.65.r11.g6464cd7-1  mingw-w64-clang-aarch64-crt-14.0.0.r375.g9c1abbbf5-1  mingw-w64-clang-aarch64-curl-8.22.0-1  mingw-w64-clang-aarch64-dbus-1.16.2-4  mingw-w64-clang-aarch64-double-conversion-3.4.0-1  mingw-w64-clang-aarch64-expat-2.8.4-2  mingw-w64-clang-aarch64-flac-1.5.0-2  mingw-w64-clang-aarch64-fmt-12.2.0-1  mingw-w64-clang-aarch64-fontconfig-2.18.3-1  mingw-w64-clang-aarch64-freetype-2.14.3-1  mingw-w64-clang-aarch64-gettext-runtime-1.0-1  mingw-w64-clang-aarch64-glib2-2.90.0-1  mingw-w64-clang-aarch64-gmp-6.3.0-2  mingw-w64-clang-aarch64-gnutls-3.8.13-3  mingw-w64-clang-aarch64-graphite2-1.3.15-1  mingw-w64-clang-aarch64-harfbuzz-14.4.0-1  mingw-w64-clang-aarch64-headers-14.0.0.r375.g9c1abbbf5-1  mingw-w64-clang-aarch64-hiredis-1.3.0-2  mingw-w64-clang-aarch64-hwloc-2.14.0-1  mingw-w64-clang-aarch64-icu-78.3-4  mingw-w64-clang-aarch64-jsoncpp-1.9.8-1  mingw-w64-clang-aarch64-lame-3.100-3  mingw-w64-clang-aarch64-libarchive-3.8.9-6  mingw-w64-clang-aarch64-libb2-0.98.1-3  mingw-w64-clang-aarch64-libblake3-1.8.7-1  mingw-w64-clang-aarch64-libc++-22.1.8-1  mingw-w64-clang-aarch64-libffi-3.8.0-1  mingw-w64-clang-aarch64-libiconv-1.19-1  mingw-w64-clang-aarch64-libidn2-2.3.8-4  mingw-w64-clang-aarch64-libjpeg-turbo-3.2.0-1  mingw-w64-clang-aarch64-libltdl-2.6.2-1  mingw-w64-clang-aarch64-libogg-1.3.6-1  mingw-w64-clang-aarch64-libpng-1.6.58-1  mingw-w64-clang-aarch64-libpsl-0.21.5-3  mingw-w64-clang-aarch64-libssh2-1.11.1-2  mingw-w64-clang-aarch64-libsystre-1.0.2-3  mingw-w64-clang-aarch64-libtasn1-4.21.0-1  mingw-w64-clang-aarch64-libtre-0.9.0-2  mingw-w64-clang-aarch64-libunistring-1.4.2-1  mingw-w64-clang-aarch64-libunwind-22.1.8-1  mingw-w64-clang-aarch64-libuv-1.52.1-1  mingw-w64-clang-aarch64-libvorbis-1.3.7-3  mingw-w64-clang-aarch64-libwinpthread-14.0.0.r375.g9c1abbbf5-1  mingw-w64-clang-aarch64-libxml2-2.15.4-1  mingw-w64-clang-aarch64-lld-22.1.8-2  mingw-w64-clang-aarch64-llvm-libs-22.1.8-2  mingw-w64-clang-aarch64-llvm-openmp-22.1.8-1  mingw-w64-clang-aarch64-llvm-tools-22.1.8-2  mingw-w64-clang-aarch64-lz4-1.10.0-1  mingw-w64-clang-aarch64-md4c-0.5.3-1  mingw-w64-clang-aarch64-mpdecimal-4.0.1-3  mingw-w64-clang-aarch64-mpg123-1.33.7-1  mingw-w64-clang-aarch64-ncurses-6.6-4  mingw-w64-clang-aarch64-nettle-4.0-1  mingw-w64-clang-aarch64-nghttp2-1.70.0-1  mingw-w64-clang-aarch64-nghttp3-1.18.0-1  mingw-w64-clang-aarch64-ngtcp2-1.25.0-1  mingw-w64-clang-aarch64-ninja-1.13.2-1  mingw-w64-clang-aarch64-openssl-3.6.4-1  mingw-w64-clang-aarch64-opus-1.6.1-1  mingw-w64-clang-aarch64-p11-kit-0.26.5-1  mingw-w64-clang-aarch64-pcre2-10.48-3  mingw-w64-clang-aarch64-pkgconf-1~3.0.7-1  mingw-w64-clang-aarch64-portaudio-1~19.7.0-7  mingw-w64-clang-aarch64-python-3.14.7-1  mingw-w64-clang-aarch64-python-packaging-26.3-1  mingw-w64-clang-aarch64-readline-8.3.003-1  mingw-w64-clang-aarch64-rhash-1.4.6-1  mingw-w64-clang-aarch64-sdl3-3.4.16-1  mingw-w64-clang-aarch64-serd-0.32.8-1  mingw-w64-clang-aarch64-sord-0.16.22-1  mingw-w64-clang-aarch64-sqlite3-3.53.4-1  mingw-w64-clang-aarch64-sratom-0.6.22-1  mingw-w64-clang-aarch64-tbb-2023.1.0-1  mingw-w64-clang-aarch64-tcl-8.6.18-1  mingw-w64-clang-aarch64-termcap-1.3.1-7  mingw-w64-clang-aarch64-tk-8.6.18-1  mingw-w64-clang-aarch64-tzdata-2026c-1  mingw-w64-clang-aarch64-vulkan-loader-1~1.4.357.0-1  mingw-w64-clang-aarch64-wineditline-2.208-1  mingw-w64-clang-aarch64-winpthreads-14.0.0.r375.g9c1abbbf5-1  mingw-w64-clang-aarch64-xxhash-0.8.3-2  mingw-w64-clang-aarch64-xz-5.8.4-1  mingw-w64-clang-aarch64-zix-0.8.0-1  mingw-w64-clang-aarch64-zlib-1.3.2-2  mingw-w64-clang-aarch64-zstd-1.5.7-2  mingw-w64-clang-x86_64-fmt-12.2.0-1  mingw-w64-clang-x86_64-hiredis-1.3.0-2  mingw-w64-clang-x86_64-hwloc-2.14.0-1  mingw-w64-clang-x86_64-libblake3-1.8.7-1  mingw-w64-clang-x86_64-libc++-22.1.8-1  mingw-w64-clang-x86_64-libltdl-2.6.2-1  mingw-w64-clang-x86_64-libunwind-22.1.8-1  mingw-w64-clang-x86_64-openssl-3.6.4-1  mingw-w64-clang-x86_64-tbb-2023.1.0-1  mingw-w64-clang-x86_64-xxhash-0.8.3-2  mingw-w64-clang-x86_64-zstd-1.5.7-2  openssh-10.5p1-2  patch-2.7.6-3  perl-Authen-SASL-2.2100-1  perl-Class-Inspector-1.36-1  perl-Clone-0.50-2  perl-Convert-BinHex-1.125-2  perl-Encode-Locale-1.05-2  perl-Error-0.17030-1  perl-Exporter-Tiny-1.006003-1  perl-File-Listing-6.16-1  perl-File-ShareDir-1.118-1  perl-HTML-Parser-3.85-1  perl-HTML-Tagset-3.24-1  perl-HTTP-Cookies-6.12-1  perl-HTTP-Daemon-6.17-1  perl-HTTP-Date-6.08-1  perl-HTTP-Message-7.04-1  perl-HTTP-Negotiate-6.01-3  perl-IO-HTML-1.004-2  perl-IO-Socket-SSL-2.099-1  perl-IO-Stringy-2.113-3  perl-LWP-MediaTypes-6.05-1  perl-List-MoreUtils-XS-0.430-5  perl-MIME-tools-5.518-1  perl-MailTools-2.22-1  perl-Net-HTTP-6.24-1  perl-Net-SMTP-SSL-1.04-2  perl-Net-SSLeay-1.96-1  perl-TermReadKey-2.38-8  perl-TimeDate-2.35-1  perl-Try-Tiny-0.32-1  perl-URI-5.37-1  perl-WWW-RobotRules-6.03-1  perl-http-cookiejar-0.014-1  perl-libwww-6.83-2  base-devel-2026.08-3  git-2.55.0-1  mingw-w64-clang-aarch64-SDL2-2.32.10-1  mingw-w64-clang-aarch64-ccache-4.14-1  mingw-w64-clang-aarch64-clang-22.1.8-2  mingw-w64-clang-aarch64-cmake-4.4.3-2  mingw-w64-clang-aarch64-fftw-3.3.11-1  mingw-w64-clang-aarch64-fltk-1.4.5-1  mingw-w64-clang-aarch64-fluidsynth-2.6.0-1  mingw-w64-clang-aarch64-libgig-4.5.2-1  mingw-w64-clang-aarch64-libsamplerate-0.2.2-1  mingw-w64-clang-aarch64-libsndfile-1.2.2-1  mingw-w64-clang-aarch64-lilv-0.26.4-1  mingw-w64-clang-aarch64-lv2-1.18.10-1  mingw-w64-clang-aarch64-qt5-base-5.15.19+kde+r96-1  mingw-w64-clang-aarch64-qt5-svg-5.15.19+kde+r5-1  mingw-w64-clang-aarch64-stk-5.0.1-1  mingw-w64-clang-x86_64-ccache-4.14-1  mingw-w64-clang-x86_64-nsis-3.12-1  perl-List-MoreUtils-0.430-2  perl-XML-Parser-2.59-1
+2026-09-12T17:25:19.9054889Z 
+2026-09-12T17:25:19.9055004Z Total Download Size:    279.94 MiB
+2026-09-12T17:25:19.9055251Z Total Installed Size:  1788.95 MiB
+2026-09-12T17:25:19.9055423Z 
+2026-09-12T17:25:19.9055557Z :: Proceed with installation? [Y/n] 
+2026-09-12T17:25:19.9055806Z :: Retrieving packages...
+2026-09-12T17:25:37.3807468Z  mingw-w64-clang-aarch64-clang-22.1.8-2-any downloading...
+2026-09-12T17:25:37.3809230Z  mingw-w64-clang-aarch64-llvm-libs-22.1.8-2-any downloading...
+2026-09-12T17:25:37.3809743Z  mingw-w64-clang-aarch64-python-3.14.7-1-any downloading...
+2026-09-12T17:25:37.3810125Z  mingw-w64-clang-aarch64-icu-78.3-4-any downloading...
+2026-09-12T17:25:37.3810509Z  mingw-w64-clang-aarch64-clang-libs-22.1.8-2-any downloading...
+2026-09-12T17:25:37.3810952Z  mingw-w64-clang-aarch64-llvm-tools-22.1.8-2-any downloading...
+2026-09-12T17:25:37.3811901Z  mingw-w64-clang-aarch64-qt5-base-5.15.19+kde+r96-1-any downloading...
+2026-09-12T17:25:37.3812357Z  mingw-w64-clang-aarch64-cmake-4.4.3-2-any downloading...
+2026-09-12T17:25:37.3812737Z  mingw-w64-clang-aarch64-openssl-3.6.4-1-any downloading...
+2026-09-12T17:25:37.3813117Z  mingw-w64-clang-x86_64-openssl-3.6.4-1-any downloading...
+2026-09-12T17:25:37.3813428Z  git-2.55.0-1-x86_64 downloading...
+2026-09-12T17:25:37.3813807Z  mingw-w64-clang-aarch64-headers-14.0.0.r375.g9c1abbbf5-1-any downloading...
+2026-09-12T17:25:37.3814212Z  binutils-2.47-1-x86_64 downloading...
+2026-09-12T17:25:37.3814525Z  mingw-w64-clang-aarch64-glib2-2.90.0-1-any downloading...
+2026-09-12T17:25:37.3814895Z  mingw-w64-clang-aarch64-lld-22.1.8-2-any downloading...
+2026-09-12T17:25:37.3815281Z  mingw-w64-clang-aarch64-sqlite3-3.53.4-1-any downloading...
+2026-09-12T17:25:37.3815663Z  mingw-w64-clang-aarch64-tcl-8.6.18-1-any downloading...
+2026-09-12T17:25:37.3816045Z  mingw-w64-clang-aarch64-gnutls-3.8.13-3-any downloading...
+2026-09-12T17:25:37.3816445Z  mingw-w64-clang-aarch64-libarchive-3.8.9-6-any downloading...
+2026-09-12T17:25:37.3816834Z  mingw-w64-clang-aarch64-sdl3-3.4.16-1-any downloading...
+2026-09-12T17:25:37.3817199Z  mingw-w64-clang-aarch64-tk-8.6.18-1-any downloading...
+2026-09-12T17:25:37.3817558Z  mingw-w64-clang-aarch64-fltk-1.4.5-1-any downloading...
+2026-09-12T17:25:37.3817984Z  mingw-w64-clang-aarch64-crt-14.0.0.r375.g9c1abbbf5-1-any downloading...
+2026-09-12T17:25:37.3818407Z  mingw-w64-clang-x86_64-libc++-22.1.8-1-any downloading...
+2026-09-12T17:25:37.3818795Z  mingw-w64-clang-aarch64-harfbuzz-14.4.0-1-any downloading...
+2026-09-12T17:25:37.3819188Z  mingw-w64-clang-aarch64-libc++-22.1.8-1-any downloading...
+2026-09-12T17:25:37.3819571Z  mingw-w64-clang-aarch64-curl-8.22.0-1-any downloading...
+2026-09-12T17:25:37.3819929Z  mingw-w64-clang-x86_64-nsis-3.12-1-any downloading...
+2026-09-12T17:25:37.3820694Z  mingw-w64-clang-aarch64-ncurses-6.6-4-any downloading...
+2026-09-12T17:25:37.3821068Z  mingw-w64-clang-aarch64-fftw-3.3.11-1-any downloading...
+2026-09-12T17:25:37.3821473Z  mingw-w64-clang-aarch64-libsamplerate-0.2.2-1-any downloading...
+2026-09-12T17:25:37.3821881Z  mingw-w64-clang-aarch64-pcre2-10.48-3-any downloading...
+2026-09-12T17:25:37.3822248Z  mingw-w64-clang-aarch64-SDL2-2.32.10-1-any downloading...
+2026-09-12T17:25:37.3822632Z  openssh-10.5p1-2-x86_64 downloading...
+2026-09-12T17:25:37.3822969Z  mingw-w64-clang-aarch64-libxml2-2.15.4-1-any downloading...
+2026-09-12T17:25:37.3823351Z  mingw-w64-clang-aarch64-xz-5.8.4-1-any downloading...
+2026-09-12T17:25:37.3823661Z  heimdal-libs-7.8.0-5-x86_64 downloading...
+2026-09-12T17:25:37.3824015Z  mingw-w64-clang-aarch64-libunistring-1.4.2-1-any downloading...
+2026-09-12T17:25:37.3831658Z  bison-3.8.2-5-x86_64 downloading...
+2026-09-12T17:25:37.3832000Z  mingw-w64-clang-aarch64-stk-5.0.1-1-any downloading...
+2026-09-12T17:25:37.3832398Z  mingw-w64-clang-aarch64-libiconv-1.19-1-any downloading...
+2026-09-12T17:25:37.3832816Z  mingw-w64-clang-aarch64-libjpeg-turbo-3.2.0-1-any downloading...
+2026-09-12T17:25:37.3833230Z  mingw-w64-clang-aarch64-libgig-4.5.2-1-any downloading...
+2026-09-12T17:25:37.3833598Z  mingw-w64-clang-x86_64-ccache-4.14-1-any downloading...
+2026-09-12T17:25:37.3833948Z  mingw-w64-clang-aarch64-nettle-4.0-1-any downloading...
+2026-09-12T17:25:37.3835124Z  mingw-w64-clang-aarch64-freetype-2.14.3-1-any downloading...
+2026-09-12T17:25:37.3835545Z  mingw-w64-clang-x86_64-hwloc-2.14.0-1-any downloading...
+2026-09-12T17:25:37.3836259Z  mingw-w64-clang-aarch64-ccache-4.14-1-any downloading...
+2026-09-12T17:25:37.3836699Z  mingw-w64-clang-aarch64-p11-kit-0.26.5-1-any downloading...
+2026-09-12T17:25:37.3837092Z  mingw-w64-clang-aarch64-hwloc-2.14.0-1-any downloading...
+2026-09-12T17:25:37.3837452Z  mingw-w64-clang-x86_64-zstd-1.5.7-2-any downloading...
+2026-09-12T17:25:37.3837809Z  mingw-w64-clang-aarch64-dbus-1.16.2-4-any downloading...
+2026-09-12T17:25:37.3838136Z  heimdal-7.8.0-5-x86_64 downloading...
+2026-09-12T17:25:37.3838470Z  mingw-w64-clang-aarch64-fluidsynth-2.6.0-1-any downloading...
+2026-09-12T17:25:37.3838858Z  mingw-w64-clang-aarch64-gmp-6.3.0-2-any downloading...
+2026-09-12T17:25:37.3839248Z  mingw-w64-clang-aarch64-readline-8.3.003-1-any downloading...
+2026-09-12T17:25:37.3839579Z  make-4.4.1-3-x86_64 downloading...
+2026-09-12T17:25:37.3839881Z  mingw-w64-clang-aarch64-zstd-1.5.7-2-any downloading...
+2026-09-12T17:25:37.3840295Z  mingw-w64-clang-aarch64-cppdap-1.65.r11.g6464cd7-1-any downloading...
+2026-09-12T17:25:37.3840764Z  mingw-w64-clang-aarch64-llvm-openmp-22.1.8-1-any downloading...
+2026-09-12T17:25:37.3841181Z  mingw-w64-clang-aarch64-mpg123-1.33.7-1-any downloading...
+2026-09-12T17:25:37.3841578Z  mingw-w64-clang-aarch64-libsndfile-1.2.2-1-any downloading...
+2026-09-12T17:25:37.3841918Z  dos2unix-7.5.7-1-x86_64 downloading...
+2026-09-12T17:25:37.3842233Z  mingw-w64-clang-aarch64-brotli-1.2.0-1-any downloading...
+2026-09-12T17:25:37.3842609Z  mingw-w64-clang-aarch64-flac-1.5.0-2-any downloading...
+2026-09-12T17:25:37.3843030Z  mingw-w64-clang-aarch64-ca-certificates-20260816-1-any downloading...
+2026-09-12T17:25:37.3843449Z  mingw-w64-clang-x86_64-tbb-2023.1.0-1-any downloading...
+2026-09-12T17:25:37.3843819Z  mingw-w64-clang-aarch64-libpng-1.6.58-1-any downloading...
+2026-09-12T17:25:37.3844234Z  mingw-w64-clang-aarch64-gettext-runtime-1.0-1-any downloading...
+2026-09-12T17:25:37.3844591Z  diffutils-3.12-1-x86_64 downloading...
+2026-09-12T17:25:37.3844910Z  mingw-w64-clang-aarch64-tbb-2023.1.0-1-any downloading...
+2026-09-12T17:25:37.3845306Z  mingw-w64-clang-aarch64-libvorbis-1.3.7-3-any downloading...
+2026-09-12T17:25:37.3845701Z  mingw-w64-clang-aarch64-opus-1.6.1-1-any downloading...
+2026-09-12T17:25:37.3846060Z  mingw-w64-clang-aarch64-lame-3.100-3-any downloading...
+2026-09-12T17:25:37.3846377Z  flex-2.6.4-4-x86_64 downloading...
+2026-09-12T17:25:37.3846690Z  mingw-w64-clang-aarch64-libssh2-1.11.1-2-any downloading...
+2026-09-12T17:25:37.3848040Z  mingw-w64-clang-aarch64-c-ares-1.34.8-1-any downloading...
+2026-09-12T17:25:37.3848448Z  mingw-w64-clang-aarch64-ngtcp2-1.25.0-1-any downloading...
+2026-09-12T17:25:37.3848854Z  mingw-w64-clang-aarch64-fontconfig-2.18.3-1-any downloading...
+2026-09-12T17:25:37.3849305Z  mingw-w64-clang-aarch64-python-packaging-26.3-1-any downloading...
+2026-09-12T17:25:37.3850031Z  m4-1.4.21-1-x86_64 downloading...
+2026-09-12T17:25:37.3850341Z  mingw-w64-clang-x86_64-fmt-12.2.0-1-any downloading...
+2026-09-12T17:25:37.3850694Z  mingw-w64-clang-aarch64-fmt-12.2.0-1-any downloading...
+2026-09-12T17:25:37.3851074Z  mingw-w64-clang-aarch64-rhash-1.4.6-1-any downloading...
+2026-09-12T17:25:37.3851668Z  mingw-w64-clang-aarch64-portaudio-1~19.7.0-7-any downloading...
+2026-09-12T17:25:37.3852033Z  perl-Net-SSLeay-1.96-1-x86_64 downloading...
+2026-09-12T17:25:37.3852371Z  mingw-w64-clang-aarch64-tzdata-2026c-1-any downloading...
+2026-09-12T17:25:37.3852759Z  mingw-w64-clang-aarch64-libogg-1.3.6-1-any downloading...
+2026-09-12T17:25:37.3853135Z  mingw-w64-clang-aarch64-libuv-1.52.1-1-any downloading...
+2026-09-12T17:25:37.3853526Z  mingw-w64-clang-aarch64-libtasn1-4.21.0-1-any downloading...
+2026-09-12T17:25:37.3853925Z  mingw-w64-clang-aarch64-nghttp2-1.70.0-1-any downloading...
+2026-09-12T17:25:37.3854359Z  mingw-w64-clang-aarch64-vulkan-loader-1~1.4.357.0-1-any downloading...
+2026-09-12T17:25:37.3854741Z  perl-MIME-tools-5.518-1-any downloading...
+2026-09-12T17:25:37.3855071Z  mingw-w64-clang-aarch64-ninja-1.13.2-1-any downloading...
+2026-09-12T17:25:37.3856070Z  mingw-w64-clang-aarch64-qt5-svg-5.15.19+kde+r5-1-any downloading...
+2026-09-12T17:25:37.3856781Z  mingw-w64-clang-aarch64-expat-2.8.4-2-any downloading...
+2026-09-12T17:25:37.3857172Z  mingw-w64-clang-aarch64-libidn2-2.3.8-4-any downloading...
+2026-09-12T17:25:37.3857712Z  mingw-w64-clang-aarch64-jsoncpp-1.9.8-1-any downloading...
+2026-09-12T17:25:37.3858065Z  perl-IO-Socket-SSL-2.099-1-any downloading...
+2026-09-12T17:25:37.3858414Z  mingw-w64-clang-aarch64-lz4-1.10.0-1-any downloading...
+2026-09-12T17:25:37.3858740Z  perl-XML-Parser-2.59-1-x86_64 downloading...
+2026-09-12T17:25:37.3859089Z  mingw-w64-clang-aarch64-mpdecimal-4.0.1-3-any downloading...
+2026-09-12T17:25:37.3859471Z  mingw-w64-clang-aarch64-lv2-1.18.10-1-any downloading...
+2026-09-12T17:25:37.3859839Z  mingw-w64-clang-aarch64-lilv-0.26.4-1-any downloading...
+2026-09-12T17:25:37.3860213Z  mingw-w64-clang-aarch64-pkgconf-1~3.0.7-1-any downloading...
+2026-09-12T17:25:37.3860613Z  mingw-w64-clang-aarch64-graphite2-1.3.15-1-any downloading...
+2026-09-12T17:25:37.3861009Z  mingw-w64-clang-x86_64-xxhash-0.8.3-2-any downloading...
+2026-09-12T17:25:37.3861382Z  mingw-w64-clang-aarch64-nghttp3-1.18.0-1-any downloading...
+2026-09-12T17:25:37.3861790Z  perl-libwww-6.83-2-any downloading...
+2026-09-12T17:25:37.3862172Z  mingw-w64-clang-aarch64-xxhash-0.8.3-2-any downloading...
+2026-09-12T17:25:37.3871119Z  mingw-w64-clang-aarch64-md4c-0.5.3-1-any downloading...
+2026-09-12T17:25:37.3871527Z  mingw-w64-clang-x86_64-hiredis-1.3.0-2-any downloading...
+2026-09-12T17:25:37.3871891Z  mingw-w64-clang-aarch64-zlib-1.3.2-2-any downloading...
+2026-09-12T17:25:37.3872210Z  perl-URI-5.37-1-any downloading...
+2026-09-12T17:25:37.3872524Z  mingw-w64-clang-aarch64-hiredis-1.3.0-2-any downloading...
+2026-09-12T17:25:37.3872852Z  patch-2.7.6-3-x86_64 downloading...
+2026-09-12T17:25:37.3873158Z  mingw-w64-clang-aarch64-bzip2-1.0.8-4-any downloading...
+2026-09-12T17:25:37.3873488Z  libedit-20240808_3.1-1-x86_64 downloading...
+2026-09-12T17:25:37.3873922Z  mingw-w64-clang-aarch64-libpsl-0.21.5-3-any downloading...
+2026-09-12T17:25:37.3874336Z  mingw-w64-clang-aarch64-compiler-rt-22.1.8-2-any downloading...
+2026-09-12T17:25:37.3874687Z  libfido2-1.17.0-1-x86_64 downloading...
+2026-09-12T17:25:37.3874971Z  perl-HTML-Parser-3.85-1-x86_64 downloading...
+2026-09-12T17:25:37.3875313Z  mingw-w64-clang-aarch64-libtre-0.9.0-2-any downloading...
+2026-09-12T17:25:37.3876033Z  perl-HTTP-Message-7.04-1-any downloading...
+2026-09-12T17:25:37.3876373Z  mingw-w64-clang-aarch64-serd-0.32.8-1-any downloading...
+2026-09-12T17:25:37.3876758Z  mingw-w64-clang-aarch64-libunwind-22.1.8-1-any downloading...
+2026-09-12T17:25:37.3877154Z  mingw-w64-clang-x86_64-libunwind-22.1.8-1-any downloading...
+2026-09-12T17:25:37.3877579Z  mingw-w64-clang-aarch64-double-conversion-3.4.0-1-any downloading...
+2026-09-12T17:25:37.3877957Z  perl-TimeDate-2.35-1-any downloading...
+2026-09-12T17:25:37.3878411Z  mingw-w64-clang-aarch64-wineditline-2.208-1-any downloading...
+2026-09-12T17:25:37.3878808Z  mingw-w64-clang-x86_64-libltdl-2.6.2-1-any downloading...
+2026-09-12T17:25:37.3879181Z  mingw-w64-clang-aarch64-libltdl-2.6.2-1-any downloading...
+2026-09-12T17:25:37.3879510Z  perl-MailTools-2.22-1-any downloading...
+2026-09-12T17:25:37.3879833Z  mingw-w64-clang-aarch64-sord-0.16.22-1-any downloading...
+2026-09-12T17:25:37.3880201Z  mingw-w64-clang-aarch64-libffi-3.8.0-1-any downloading...
+2026-09-12T17:25:37.3880570Z  mingw-w64-clang-aarch64-zix-0.8.0-1-any downloading...
+2026-09-12T17:25:37.3880892Z  perl-IO-Stringy-2.113-3-any downloading...
+2026-09-12T17:25:37.3881316Z  mingw-w64-clang-aarch64-winpthreads-14.0.0.r375.g9c1abbbf5-1-any downloading...
+2026-09-12T17:25:37.3881758Z  perl-Authen-SASL-2.2100-1-any downloading...
+2026-09-12T17:25:37.3882080Z  perl-List-MoreUtils-XS-0.430-5-x86_64 downloading...
+2026-09-12T17:25:37.3882414Z  perl-List-MoreUtils-0.430-2-any downloading...
+2026-09-12T17:25:37.3882759Z  mingw-w64-clang-x86_64-libblake3-1.8.7-1-any downloading...
+2026-09-12T17:25:37.3884028Z  mingw-w64-clang-aarch64-sratom-0.6.22-1-any downloading...
+2026-09-12T17:25:37.3884505Z  mingw-w64-clang-aarch64-libblake3-1.8.7-1-any downloading...
+2026-09-12T17:25:37.3884866Z  perl-Convert-BinHex-1.125-2-any downloading...
+2026-09-12T17:25:37.3885307Z  mingw-w64-clang-aarch64-libwinpthread-14.0.0.r375.g9c1abbbf5-1-any downloading...
+2026-09-12T17:25:37.3885805Z  mingw-w64-clang-aarch64-termcap-1.3.1-7-any downloading...
+2026-09-12T17:25:37.3886182Z  mingw-w64-clang-aarch64-libb2-0.98.1-3-any downloading...
+2026-09-12T17:25:37.3886529Z  perl-Exporter-Tiny-1.006003-1-any downloading...
+2026-09-12T17:25:37.3887077Z  libcbor-0.14.0-2-x86_64 downloading...
+2026-09-12T17:25:37.3887362Z  perl-HTTP-Cookies-6.12-1-any downloading...
+2026-09-12T17:25:37.3887642Z  perl-Net-HTTP-6.24-1-any downloading...
+2026-09-12T17:25:37.3887908Z  perl-Error-0.17030-1-any downloading...
+2026-09-12T17:25:37.3888188Z  perl-TermReadKey-2.38-8-x86_64 downloading...
+2026-09-12T17:25:37.3888493Z  perl-HTTP-Daemon-6.17-1-any downloading...
+2026-09-12T17:25:37.3888789Z  perl-LWP-MediaTypes-6.05-1-any downloading...
+2026-09-12T17:25:37.3889078Z  perl-Try-Tiny-0.32-1-any downloading...
+2026-09-12T17:25:37.3889342Z  perl-Clone-0.50-2-x86_64 downloading...
+2026-09-12T17:25:37.3889602Z  perl-IO-HTML-1.004-2-any downloading...
+2026-09-12T17:25:37.3889886Z  perl-WWW-RobotRules-6.03-1-any downloading...
+2026-09-12T17:25:37.3890206Z  perl-Class-Inspector-1.36-1-x86_64 downloading...
+2026-09-12T17:25:37.3890525Z  perl-http-cookiejar-0.014-1-any downloading...
+2026-09-12T17:25:37.3890839Z  perl-File-ShareDir-1.118-1-x86_64 downloading...
+2026-09-12T17:25:37.3891156Z  perl-HTTP-Negotiate-6.01-3-any downloading...
+2026-09-12T17:25:37.3891458Z  perl-Encode-Locale-1.05-2-any downloading...
+2026-09-12T17:25:37.3891753Z  perl-HTML-Tagset-3.24-1-any downloading...
+2026-09-12T17:25:37.3892041Z  perl-File-Listing-6.16-1-any downloading...
+2026-09-12T17:25:37.3892327Z  perl-HTTP-Date-6.08-1-any downloading...
+2026-09-12T17:25:37.3892669Z  mingw-w64-clang-aarch64-libsystre-1.0.2-3-any downloading...
+2026-09-12T17:25:37.3893023Z  perl-Net-SMTP-SSL-1.04-2-any downloading...
+2026-09-12T17:25:37.3893306Z  base-devel-2026.08-3-any downloading...
+2026-09-12T17:25:37.3893554Z checking keyring...
+2026-09-12T17:25:37.5559804Z checking package integrity...
+2026-09-12T17:26:26.0556170Z loading package files...
+2026-09-12T17:26:27.0199987Z checking for file conflicts...
+2026-09-12T17:26:30.1905556Z :: Processing package changes...
+2026-09-12T17:26:30.1906121Z installing binutils...
+2026-09-12T17:26:30.8285500Z installing m4...
+2026-09-12T17:26:30.8414982Z installing bison...
+2026-09-12T17:26:31.1725672Z installing diffutils...
+2026-09-12T17:26:31.2479243Z installing dos2unix...
+2026-09-12T17:26:31.4347691Z installing flex...
+2026-09-12T17:26:31.4972575Z installing make...
+2026-09-12T17:26:31.5588071Z installing patch...
+2026-09-12T17:26:31.5680527Z Optional dependencies for patch
+2026-09-12T17:26:31.5680805Z     ed: for patch -e functionality
+2026-09-12T17:26:31.5681089Z installing base-devel...
+2026-09-12T17:26:31.5722890Z installing libedit...
+2026-09-12T17:26:31.6316202Z installing heimdal-libs...
+2026-09-12T17:26:31.6608370Z installing heimdal...
+2026-09-12T17:26:32.8343622Z installing libcbor...
+2026-09-12T17:26:32.8398783Z installing libfido2...
+2026-09-12T17:26:32.8459510Z installing openssh...
+2026-09-12T17:26:32.9144822Z installing perl-Error...
+2026-09-12T17:26:32.9545679Z installing perl-Authen-SASL...
+2026-09-12T17:26:32.9962479Z installing perl-Encode-Locale...
+2026-09-12T17:26:33.0073813Z installing perl-HTTP-Date...
+2026-09-12T17:26:33.0180317Z installing perl-File-Listing...
+2026-09-12T17:26:33.0309936Z installing perl-HTML-Tagset...
+2026-09-12T17:26:33.0414959Z installing perl-Clone...
+2026-09-12T17:26:33.0509933Z installing perl-IO-HTML...
+2026-09-12T17:26:33.0615345Z installing perl-LWP-MediaTypes...
+2026-09-12T17:26:33.0760219Z installing perl-URI...
+2026-09-12T17:26:33.2219609Z installing perl-HTTP-Message...
+2026-09-12T17:26:33.2569333Z installing perl-HTML-Parser...
+2026-09-12T17:26:33.2852623Z installing perl-HTTP-Cookies...
+2026-09-12T17:26:33.2999581Z installing perl-HTTP-Daemon...
+2026-09-12T17:26:33.3083823Z installing perl-http-cookiejar...
+2026-09-12T17:26:33.3205221Z installing perl-HTTP-Negotiate...
+2026-09-12T17:26:33.3311969Z installing perl-Net-HTTP...
+2026-09-12T17:26:33.3520073Z installing perl-WWW-RobotRules...
+2026-09-12T17:26:33.3688699Z installing perl-Try-Tiny...
+2026-09-12T17:26:33.3817779Z installing perl-libwww...
+2026-09-12T17:26:33.4534822Z Optional dependencies for perl-libwww
+2026-09-12T17:26:33.4535483Z     perl-LWP-Protocol-https: for https:// url schemes
+2026-09-12T17:26:33.4535843Z installing perl-Convert-BinHex...
+2026-09-12T17:26:33.8755749Z module test... pass.
+2026-09-12T17:26:33.8772490Z installing perl-IO-Stringy...
+2026-09-12T17:26:33.9225471Z installing perl-TimeDate...
+2026-09-12T17:26:34.0599822Z installing perl-MailTools...
+2026-09-12T17:26:34.1113142Z installing perl-MIME-tools...
+2026-09-12T17:26:34.1891907Z installing perl-Net-SSLeay...
+2026-09-12T17:26:34.3640419Z installing perl-IO-Socket-SSL...
+2026-09-12T17:26:34.3852702Z installing perl-Net-SMTP-SSL...
+2026-09-12T17:26:34.3933167Z installing perl-TermReadKey...
+2026-09-12T17:26:34.4092856Z installing git...
+2026-09-12T17:26:35.5667757Z Optional dependencies for git
+2026-09-12T17:26:35.5668292Z     python: various helper scripts
+2026-09-12T17:26:35.5668696Z     subversion: git svn
+2026-09-12T17:26:35.5669035Z     aspell: spell checking in git gui
+2026-09-12T17:26:35.5669513Z installing mingw-w64-clang-aarch64-libunwind...
+2026-09-12T17:26:35.5892783Z installing mingw-w64-clang-aarch64-libc++...
+2026-09-12T17:26:39.1387647Z installing mingw-w64-clang-aarch64-libiconv...
+2026-09-12T17:26:39.1897593Z installing mingw-w64-clang-aarch64-vulkan-loader...
+2026-09-12T17:26:39.2128614Z installing mingw-w64-clang-aarch64-SDL2...
+2026-09-12T17:26:39.3687257Z installing mingw-w64-clang-aarch64-fmt...
+2026-09-12T17:26:39.4175025Z installing mingw-w64-clang-aarch64-xxhash...
+2026-09-12T17:26:39.4496344Z installing mingw-w64-clang-aarch64-zstd...
+2026-09-12T17:26:39.4817974Z installing mingw-w64-clang-aarch64-openssl...
+2026-09-12T17:26:50.7237411Z Optional dependencies for mingw-w64-clang-aarch64-openssl
+2026-09-12T17:26:50.7237877Z     mingw-w64-clang-aarch64-ca-certificates [pending]
+2026-09-12T17:26:50.7238650Z installing mingw-w64-clang-aarch64-hiredis...
+2026-09-12T17:26:50.7798075Z installing mingw-w64-clang-aarch64-libltdl...
+2026-09-12T17:26:50.7942817Z installing mingw-w64-clang-aarch64-hwloc...
+2026-09-12T17:26:51.4564838Z Optional dependencies for mingw-w64-clang-aarch64-hwloc
+2026-09-12T17:26:51.4565401Z     mingw-w64-clang-aarch64-cairo
+2026-09-12T17:26:51.4565681Z installing mingw-w64-clang-aarch64-tbb...
+2026-09-12T17:26:51.6929566Z installing mingw-w64-clang-aarch64-libblake3...
+2026-09-12T17:26:51.7158125Z installing mingw-w64-clang-aarch64-ccache...
+2026-09-12T17:26:51.7483339Z installing mingw-w64-clang-aarch64-libffi...
+2026-09-12T17:26:51.7688554Z installing mingw-w64-clang-aarch64-zlib...
+2026-09-12T17:26:51.7855498Z installing mingw-w64-clang-aarch64-libxml2...
+2026-09-12T17:26:52.3345223Z Optional dependencies for mingw-w64-clang-aarch64-libxml2
+2026-09-12T17:26:52.3345677Z     mingw-w64-clang-aarch64-python: Python bindings [pending]
+2026-09-12T17:26:52.6853427Z installing mingw-w64-clang-aarch64-llvm-libs...
+2026-09-12T17:26:52.6853819Z installing mingw-w64-clang-aarch64-clang-libs...
+2026-09-12T17:26:52.9383139Z installing mingw-w64-clang-aarch64-compiler-rt...
+2026-09-12T17:26:52.9728126Z installing mingw-w64-clang-aarch64-llvm-tools...
+2026-09-12T17:26:54.3228180Z installing mingw-w64-clang-aarch64-headers...
+2026-09-12T17:27:01.6271987Z installing mingw-w64-clang-aarch64-crt...
+2026-09-12T17:27:02.9900561Z installing mingw-w64-clang-aarch64-lld...
+2026-09-12T17:27:03.1137466Z installing mingw-w64-clang-aarch64-libwinpthread...
+2026-09-12T17:27:03.1237767Z installing mingw-w64-clang-aarch64-winpthreads...
+2026-09-12T17:27:03.1411156Z installing mingw-w64-clang-aarch64-clang...
+2026-09-12T17:27:05.7273873Z Optional dependencies for mingw-w64-clang-aarch64-clang
+2026-09-12T17:27:05.7274266Z     mingw-w64-clang-aarch64-llvm=22.1.8
+2026-09-12T17:27:05.7274559Z installing mingw-w64-clang-aarch64-cppdap...
+2026-09-12T17:27:05.7729899Z installing mingw-w64-clang-aarch64-c-ares...
+2026-09-12T17:27:05.9784159Z installing mingw-w64-clang-aarch64-brotli...
+2026-09-12T17:27:06.1687032Z installing mingw-w64-clang-aarch64-gettext-runtime...
+2026-09-12T17:27:06.4450979Z installing mingw-w64-clang-aarch64-libunistring...
+2026-09-12T17:27:06.5252417Z installing mingw-w64-clang-aarch64-libidn2...
+2026-09-12T17:27:06.5764288Z installing mingw-w64-clang-aarch64-libpsl...
+2026-09-12T17:27:06.5923603Z installing mingw-w64-clang-aarch64-libtasn1...
+2026-09-12T17:27:06.6636192Z installing mingw-w64-clang-aarch64-p11-kit...
+2026-09-12T17:27:06.9376592Z installing mingw-w64-clang-aarch64-ca-certificates...
+2026-09-12T17:27:08.2334957Z installing mingw-w64-clang-aarch64-libssh2...
+2026-09-12T17:27:08.4798257Z installing mingw-w64-clang-aarch64-nghttp2...
+2026-09-12T17:27:08.5379740Z installing mingw-w64-clang-aarch64-gmp...
+2026-09-12T17:27:08.5624111Z installing mingw-w64-clang-aarch64-nettle...
+2026-09-12T17:27:08.6639385Z installing mingw-w64-clang-aarch64-gnutls...
+2026-09-12T17:27:10.5073066Z installing mingw-w64-clang-aarch64-ngtcp2...
+2026-09-12T17:27:10.5487475Z installing mingw-w64-clang-aarch64-nghttp3...
+2026-09-12T17:27:10.5743015Z installing mingw-w64-clang-aarch64-curl...
+2026-09-12T17:27:11.3213234Z installing mingw-w64-clang-aarch64-expat...
+2026-09-12T17:27:11.3508343Z installing mingw-w64-clang-aarch64-jsoncpp...
+2026-09-12T17:27:11.3851400Z installing mingw-w64-clang-aarch64-bzip2...
+2026-09-12T17:27:11.4175936Z installing mingw-w64-clang-aarch64-libb2...
+2026-09-12T17:27:11.4326074Z installing mingw-w64-clang-aarch64-lz4...
+2026-09-12T17:27:11.4576070Z installing mingw-w64-clang-aarch64-wineditline...
+2026-09-12T17:27:11.5916357Z installing mingw-w64-clang-aarch64-pcre2...
+2026-09-12T17:27:11.9250755Z installing mingw-w64-clang-aarch64-xz...
+2026-09-12T17:27:12.4033123Z installing mingw-w64-clang-aarch64-libarchive...
+2026-09-12T17:27:12.5712078Z installing mingw-w64-clang-aarch64-libuv...
+2026-09-12T17:27:12.6140120Z installing mingw-w64-clang-aarch64-ninja...
+2026-09-12T17:27:12.6232445Z installing mingw-w64-clang-aarch64-pkgconf...
+2026-09-12T17:27:12.6621214Z installing mingw-w64-clang-aarch64-rhash...
+2026-09-12T17:27:12.7182413Z installing mingw-w64-clang-aarch64-cmake...
+2026-09-12T17:27:19.1634637Z Optional dependencies for mingw-w64-clang-aarch64-cmake
+2026-09-12T17:27:19.1635185Z     mingw-w64-clang-aarch64-emacs: for cmake emacs mode
+2026-09-12T17:27:19.1635541Z installing mingw-w64-clang-aarch64-llvm-openmp...
+2026-09-12T17:27:19.1842198Z installing mingw-w64-clang-aarch64-fftw...
+2026-09-12T17:27:19.2682863Z installing mingw-w64-clang-aarch64-libpng...
+2026-09-12T17:27:19.3062350Z installing mingw-w64-clang-aarch64-libjpeg-turbo...
+2026-09-12T17:27:19.5012291Z installing mingw-w64-clang-aarch64-fltk...
+2026-09-12T17:27:19.8208197Z installing mingw-w64-clang-aarch64-mpdecimal...
+2026-09-12T17:27:19.8445210Z installing mingw-w64-clang-aarch64-libtre...
+2026-09-12T17:27:19.8662832Z installing mingw-w64-clang-aarch64-libsystre...
+2026-09-12T17:27:19.8856353Z installing mingw-w64-clang-aarch64-ncurses...
+2026-09-12T17:27:29.6844112Z installing mingw-w64-clang-aarch64-tcl...
+2026-09-12T17:27:33.1510791Z installing mingw-w64-clang-aarch64-sqlite3...
+2026-09-12T17:27:33.4696759Z installing mingw-w64-clang-aarch64-tk...
+2026-09-12T17:27:34.5639138Z installing mingw-w64-clang-aarch64-tzdata...
+2026-09-12T17:27:39.3041622Z installing mingw-w64-clang-aarch64-python...
+2026-09-12T17:27:56.8942008Z installing mingw-w64-clang-aarch64-python-packaging...
+2026-09-12T17:27:57.0215065Z installing mingw-w64-clang-aarch64-glib2...
+2026-09-12T17:27:58.3638851Z installing mingw-w64-clang-aarch64-libogg...
+2026-09-12T17:27:58.5164548Z installing mingw-w64-clang-aarch64-flac...
+2026-09-12T17:27:58.5659460Z installing mingw-w64-clang-aarch64-lame...
+2026-09-12T17:27:58.6028259Z installing mingw-w64-clang-aarch64-libvorbis...
+2026-09-12T17:27:58.8233245Z installing mingw-w64-clang-aarch64-mpg123...
+2026-09-12T17:27:58.8709517Z Optional dependencies for mingw-w64-clang-aarch64-mpg123
+2026-09-12T17:27:58.8709926Z     mingw-w64-clang-aarch64-SDL2 [installed]
+2026-09-12T17:27:58.8710215Z     mingw-w64-clang-aarch64-openal
+2026-09-12T17:27:58.8710495Z     mingw-w64-clang-aarch64-portaudio [pending]
+2026-09-12T17:27:58.8715407Z installing mingw-w64-clang-aarch64-opus...
+2026-09-12T17:27:58.8970033Z installing mingw-w64-clang-aarch64-libsndfile...
+2026-09-12T17:27:58.9759481Z installing mingw-w64-clang-aarch64-portaudio...
+2026-09-12T17:27:59.0367150Z installing mingw-w64-clang-aarch64-termcap...
+2026-09-12T17:27:59.0467238Z installing mingw-w64-clang-aarch64-readline...
+2026-09-12T17:27:59.3734584Z installing mingw-w64-clang-aarch64-sdl3...
+2026-09-12T17:27:59.5327153Z installing mingw-w64-clang-aarch64-fluidsynth...
+2026-09-12T17:27:59.6084289Z installing mingw-w64-clang-aarch64-libgig...
+2026-09-12T17:27:59.6712114Z installing mingw-w64-clang-aarch64-libsamplerate...
+2026-09-12T17:27:59.7165101Z installing mingw-w64-clang-aarch64-serd...
+2026-09-12T17:27:59.7320269Z installing mingw-w64-clang-aarch64-zix...
+2026-09-12T17:27:59.9365186Z installing mingw-w64-clang-aarch64-sord...
+2026-09-12T17:27:59.9549071Z installing mingw-w64-clang-aarch64-lv2...
+2026-09-12T17:28:00.3100150Z Optional dependencies for mingw-w64-clang-aarch64-lv2
+2026-09-12T17:28:00.3100618Z     mingw-w64-clang-aarch64-lv2-docs: for developer documentation
+2026-09-12T17:28:00.3101022Z     mingw-w64-clang-aarch64-python-lxml: for lv2specgen.py
+2026-09-12T17:28:00.3101414Z     mingw-w64-clang-aarch64-python-markdown: for lv2specgen.py
+2026-09-12T17:28:00.3101850Z     mingw-w64-clang-aarch64-python-pygments: for lv2specgen.py
+2026-09-12T17:28:00.3102247Z     mingw-w64-clang-aarch64-python-rdflib: for lv2specgen.py
+2026-09-12T17:28:00.3102631Z     mingw-w64-clang-aarch64-sord: for lv2_validate [installed]
+2026-09-12T17:28:00.3102983Z installing mingw-w64-clang-aarch64-sratom...
+2026-09-12T17:28:00.3256369Z installing mingw-w64-clang-aarch64-lilv...
+2026-09-12T17:28:00.3562117Z installing mingw-w64-clang-aarch64-dbus...
+2026-09-12T17:28:00.4265600Z Optional dependencies for mingw-w64-clang-aarch64-dbus
+2026-09-12T17:28:00.4266032Z     mingw-w64-clang-aarch64-dbus-doc: html documentation
+2026-09-12T17:28:00.4266403Z installing mingw-w64-clang-aarch64-double-conversion...
+2026-09-12T17:28:00.4631770Z installing mingw-w64-clang-aarch64-graphite2...
+2026-09-12T17:28:00.9368807Z installing mingw-w64-clang-aarch64-harfbuzz...
+2026-09-12T17:28:01.0555661Z installing mingw-w64-clang-aarch64-freetype...
+2026-09-12T17:28:01.1469162Z installing mingw-w64-clang-aarch64-fontconfig...
+2026-09-12T17:28:08.1271037Z updating font cache... done.
+2026-09-12T17:28:08.1288457Z installing mingw-w64-clang-aarch64-icu...
+2026-09-12T17:28:08.8128923Z installing mingw-w64-clang-aarch64-md4c...
+2026-09-12T17:28:08.8368682Z installing mingw-w64-clang-aarch64-qt5-base...
+2026-09-12T17:28:15.2858322Z Optional dependencies for mingw-w64-clang-aarch64-qt5-base
+2026-09-12T17:28:15.2858815Z     mingw-w64-clang-aarch64-firebird: Firebird/iBase driver
+2026-09-12T17:28:15.2859238Z     mingw-w64-clang-aarch64-libmariadbclient: MySQL/MariaDB driver
+2026-09-12T17:28:15.2859643Z     mingw-w64-clang-aarch64-postgresql: PostgreSQL driver
+2026-09-12T17:28:15.2860089Z     mingw-w64-clang-aarch64-angleproject: ANGLE OpenGL ES API translation layer
+2026-09-12T17:28:15.2860510Z installing mingw-w64-clang-aarch64-qt5-svg...
+2026-09-12T17:28:15.3510356Z installing mingw-w64-clang-aarch64-stk...
+2026-09-12T17:28:15.7623649Z installing mingw-w64-clang-x86_64-nsis...
+2026-09-12T17:28:16.6475065Z installing mingw-w64-clang-x86_64-libunwind...
+2026-09-12T17:28:16.6666527Z installing mingw-w64-clang-x86_64-libc++...
+2026-09-12T17:28:19.9399783Z installing mingw-w64-clang-x86_64-fmt...
+2026-09-12T17:28:19.9872362Z installing mingw-w64-clang-x86_64-xxhash...
+2026-09-12T17:28:20.0166705Z installing mingw-w64-clang-x86_64-zstd...
+2026-09-12T17:28:20.0487925Z installing mingw-w64-clang-x86_64-openssl...
+2026-09-12T17:28:31.1347605Z Optional dependencies for mingw-w64-clang-x86_64-openssl
+2026-09-12T17:28:31.1348002Z     mingw-w64-clang-x86_64-ca-certificates
+2026-09-12T17:28:31.1348293Z installing mingw-w64-clang-x86_64-hiredis...
+2026-09-12T17:28:31.1893951Z installing mingw-w64-clang-x86_64-libltdl...
+2026-09-12T17:28:31.2037025Z installing mingw-w64-clang-x86_64-hwloc...
+2026-09-12T17:28:31.8590540Z Optional dependencies for mingw-w64-clang-x86_64-hwloc
+2026-09-12T17:28:31.8590909Z     mingw-w64-clang-x86_64-cairo
+2026-09-12T17:28:31.8596954Z installing mingw-w64-clang-x86_64-tbb...
+2026-09-12T17:28:32.1162662Z installing mingw-w64-clang-x86_64-libblake3...
+2026-09-12T17:28:32.1411124Z installing mingw-w64-clang-x86_64-ccache...
+2026-09-12T17:28:32.1735043Z installing perl-Exporter-Tiny...
+2026-09-12T17:28:32.1939875Z installing perl-List-MoreUtils-XS...
+2026-09-12T17:28:32.2112991Z installing perl-List-MoreUtils...
+2026-09-12T17:28:32.2242615Z installing perl-Class-Inspector...
+2026-09-12T17:28:32.2382750Z installing perl-File-ShareDir...
+2026-09-12T17:28:32.2601265Z installing perl-XML-Parser...
+2026-09-12T17:28:33.0590346Z :: Running post-transaction hooks...
+2026-09-12T17:28:33.0590699Z (1/2) Updating fontconfig cache...
+2026-09-12T17:28:33.2803741Z (2/2) Updating the info directory file...
+2026-09-12T17:28:36.4407239Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T17:28:36.4408715Z ##[group]Run actions/cache@v3
+2026-09-12T17:28:36.4408975Z with:
+2026-09-12T17:28:36.4409197Z   key: ccache-msys2-refs/tags/v0.2.0-alpha-34708003925
+2026-09-12T17:28:36.4409842Z   restore-keys: ccache-msys2-refs/tags/v0.2.0-alpha-
+ccache-msys2-
+
+2026-09-12T17:28:36.4410603Z   path: ~\AppData\Local\ccache
+2026-09-12T17:28:36.4410847Z   enableCrossOsArchive: false
+2026-09-12T17:28:36.4411077Z   fail-on-cache-miss: false
+2026-09-12T17:28:36.4411295Z   lookup-only: false
+2026-09-12T17:28:36.4411479Z env:
+2026-09-12T17:28:36.4412141Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:28:36.4412815Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:28:36.4413010Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:28:36.4413206Z   MAKEFLAGS: -j2
+2026-09-12T17:28:36.4413394Z   MSYSTEM: CLANGARM64
+2026-09-12T17:28:36.4413580Z ##[endgroup]
+2026-09-12T17:28:36.6545114Z (node:4816) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T17:28:36.6545791Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T17:28:36.9546182Z Cache hit for restore-key: ccache-msys2-refs/heads/main-34643190172
+2026-09-12T17:28:36.9662482Z (node:4816) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-12T17:28:38.1405441Z Received 54525952 of 92742800 (58.8%), 50.9 MBs/sec
+2026-09-12T17:28:39.8419821Z Received 92742800 of 92742800 (100.0%), 32.5 MBs/sec
+2026-09-12T17:28:39.8426135Z Cache Size: ~88 MB (92742800 B)
+2026-09-12T17:28:39.8469139Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf C:/a/_temp/938de307-445e-4813-a133-3c737d8ef763/cache.tzst -P -C C:/a/zene-studio/zene-studio --force-local --use-compress-program "zstd -d"
+2026-09-12T17:28:48.0301924Z Cache restored successfully
+2026-09-12T17:28:48.0495630Z Cache restored from key: ccache-msys2-refs/heads/main-34643190172
+2026-09-12T17:28:48.2689122Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T17:28:48.2690550Z ##[group]Run actions/cache@v4
+2026-09-12T17:28:48.2690787Z with:
+2026-09-12T17:28:48.2690969Z   path: build/vst3sdk
+2026-09-12T17:28:48.2691575Z   key: vst3sdk-Windows-7ef5858724960f65fbd54c5e3fe6cdd1a7e488fc8f3fd3ac5bd910a54853e476
+2026-09-12T17:28:48.2692029Z   enableCrossOsArchive: false
+2026-09-12T17:28:48.2692269Z   fail-on-cache-miss: false
+2026-09-12T17:28:48.2692489Z   lookup-only: false
+2026-09-12T17:28:48.2693070Z   save-always: false
+2026-09-12T17:28:48.2693311Z env:
+2026-09-12T17:28:48.2693966Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:28:48.2694646Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:28:48.2695071Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:28:48.2695338Z   MAKEFLAGS: -j2
+2026-09-12T17:28:48.2695530Z   MSYSTEM: CLANGARM64
+2026-09-12T17:28:48.2695728Z ##[endgroup]
+2026-09-12T17:28:48.4820572Z (node:5896) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T17:28:48.4821302Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T17:28:48.7920195Z Cache not found for input keys: vst3sdk-Windows-7ef5858724960f65fbd54c5e3fe6cdd1a7e488fc8f3fd3ac5bd910a54853e476
+2026-09-12T17:28:48.9939441Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T17:28:48.9940926Z ##[group]Run actions/cache@v4
+2026-09-12T17:28:48.9941161Z with:
+2026-09-12T17:28:48.9941708Z   path: build/clap
+2026-09-12T17:28:48.9942070Z   key: clap-Windows-2e41b0015a0be001cef4b455929a26ef0f41f4b05fe46236702bc6b66f70c967
+2026-09-12T17:28:48.9942503Z   enableCrossOsArchive: false
+2026-09-12T17:28:48.9942745Z   fail-on-cache-miss: false
+2026-09-12T17:28:48.9942964Z   lookup-only: false
+2026-09-12T17:28:48.9943167Z   save-always: false
+2026-09-12T17:28:48.9943362Z env:
+2026-09-12T17:28:48.9944036Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:28:48.9944748Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:28:48.9944949Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:28:48.9945156Z   MAKEFLAGS: -j2
+2026-09-12T17:28:48.9945344Z   MSYSTEM: CLANGARM64
+2026-09-12T17:28:48.9945540Z ##[endgroup]
+2026-09-12T17:28:49.2013301Z (node:8660) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T17:28:49.2014013Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T17:28:49.4906364Z Cache not found for input keys: clap-Windows-2e41b0015a0be001cef4b455929a26ef0f41f4b05fe46236702bc6b66f70c967
+2026-09-12T17:28:49.5225762Z ##[group]Run bash .github/workflows/provision-plugin-hosting-deps.sh build
+2026-09-12T17:28:49.5226427Z bash .github/workflows/provision-plugin-hosting-deps.sh build
+2026-09-12T17:28:49.5230021Z shell: C:\a\_temp\setup-msys2\msys2.CMD {0}
+2026-09-12T17:28:49.5230295Z env:
+2026-09-12T17:28:49.5230918Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:28:49.5231599Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:28:49.5231796Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:28:49.5231998Z   MAKEFLAGS: -j2
+2026-09-12T17:28:49.5232189Z   MSYSTEM: CLANGARM64
+2026-09-12T17:28:49.5232384Z ##[endgroup]
+2026-09-12T17:28:51.5073019Z ##[group]provision the pinned plugin-hosting dependencies
+2026-09-12T17:28:51.5079947Z VST3 SDK: fetching v3.8.1_build_84 (3cdf9ca5d) from https://github.com/steinbergmedia/vst3sdk.git into /c/a/zene-studio/zene-studio/build/vst3sdk
+2026-09-12T17:28:51.6369717Z Cloning into '/c/a/zene-studio/zene-studio/build/vst3sdk'...
+2026-09-12T17:28:52.6537220Z Note: switching to '3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96'.
+2026-09-12T17:28:52.6537552Z 
+2026-09-12T17:28:52.6537745Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-12T17:28:52.6538206Z changes and commit them, and you can discard any commits you make in this
+2026-09-12T17:28:52.6550901Z state without impacting any branches by switching back to a branch.
+2026-09-12T17:28:52.6551317Z 
+2026-09-12T17:28:52.6551518Z If you want to create a new branch to retain commits you create, you may
+2026-09-12T17:28:52.6551969Z do so (now or later) by using -c with the switch command. Example:
+2026-09-12T17:28:52.6552228Z 
+2026-09-12T17:28:52.6552355Z   git switch -c <new-branch-name>
+2026-09-12T17:28:52.6552524Z 
+2026-09-12T17:28:52.6552613Z Or undo this operation with:
+2026-09-12T17:28:52.6552761Z 
+2026-09-12T17:28:52.6552836Z   git switch -
+2026-09-12T17:28:52.6552954Z 
+2026-09-12T17:28:52.6553156Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-12T17:28:52.6553447Z 
+2026-09-12T17:28:54.1578945Z Submodule 'base' (https://github.com/steinbergmedia/vst3_base) registered for path 'base'
+2026-09-12T17:28:54.1626963Z Submodule 'cmake' (https://github.com/steinbergmedia/vst3_cmake) registered for path 'cmake'
+2026-09-12T17:28:54.1676452Z Submodule 'pluginterfaces' (https://github.com/steinbergmedia/vst3_pluginterfaces) registered for path 'pluginterfaces'
+2026-09-12T17:28:54.1813880Z Submodule 'public.sdk' (https://github.com/steinbergmedia/vst3_public_sdk) registered for path 'public.sdk'
+2026-09-12T17:28:54.3161881Z Cloning into '/c/a/zene-studio/zene-studio/build/vst3sdk/base'...
+2026-09-12T17:28:55.2183406Z Cloning into '/c/a/zene-studio/zene-studio/build/vst3sdk/cmake'...
+2026-09-12T17:28:56.2051081Z Cloning into '/c/a/zene-studio/zene-studio/build/vst3sdk/pluginterfaces'...
+2026-09-12T17:28:57.2562754Z Cloning into '/c/a/zene-studio/zene-studio/build/vst3sdk/public.sdk'...
+2026-09-12T17:28:59.4054393Z Submodule path 'base': checked out 'fcf9da0bd27a16f7f03773a3a39822f28f5c8477'
+2026-09-12T17:28:59.6976823Z Submodule path 'cmake': checked out '054c9143cbb8d47fc4694e473f2ee3b4d951a8f5'
+2026-09-12T17:29:00.0283095Z Submodule path 'pluginterfaces': checked out '4f547e8e102b47de4a8b8aaf343c73b700786372'
+2026-09-12T17:29:01.5337461Z Submodule path 'public.sdk': checked out '586dc5e6c8012c3e4b01c79389375cbe96bdb1da'
+2026-09-12T17:29:01.6983140Z CLAP: fetching 1.2.10 (195b42a00) from https://github.com/free-audio/clap.git into /c/a/zene-studio/zene-studio/build/clap
+2026-09-12T17:29:01.8141069Z Cloning into '/c/a/zene-studio/zene-studio/build/clap'...
+2026-09-12T17:29:02.8263291Z Note: switching to '195b42a004144fab0b3cf95e9c067187d15365b7'.
+2026-09-12T17:29:02.8263619Z 
+2026-09-12T17:29:02.8263806Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-12T17:29:02.8266297Z changes and commit them, and you can discard any commits you make in this
+2026-09-12T17:29:02.8266892Z state without impacting any branches by switching back to a branch.
+2026-09-12T17:29:02.8267162Z 
+2026-09-12T17:29:02.8267342Z If you want to create a new branch to retain commits you create, you may
+2026-09-12T17:29:02.8267774Z do so (now or later) by using -c with the switch command. Example:
+2026-09-12T17:29:02.8268022Z 
+2026-09-12T17:29:02.8268113Z   git switch -c <new-branch-name>
+2026-09-12T17:29:02.8268281Z 
+2026-09-12T17:29:02.8268373Z Or undo this operation with:
+2026-09-12T17:29:02.8268525Z 
+2026-09-12T17:29:02.8268605Z   git switch -
+2026-09-12T17:29:02.8268716Z 
+2026-09-12T17:29:02.8268923Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-12T17:29:02.8269224Z 
+2026-09-12T17:29:03.1045119Z plugin-hosting dependencies provisioned into /c/a/zene-studio/zene-studio/build:
+2026-09-12T17:29:03.1045928Z   VST3 SDK v3.8.1_build_84 (3cdf9ca5d, MIT)  -> /c/a/zene-studio/zene-studio/build/vst3sdk
+2026-09-12T17:29:03.1046439Z   CLAP     1.2.10 (195b42a00, MIT)  -> /c/a/zene-studio/zene-studio/build/clap
+2026-09-12T17:29:03.1047047Z ##[endgroup]
+2026-09-12T17:29:03.1657706Z ##[group]Run /clang64/bin/ccache.exe --zero-stats
+2026-09-12T17:29:03.1658274Z /clang64/bin/ccache.exe --zero-stats
+2026-09-12T17:29:03.1658566Z cmake -B build $CMAKE_OPTS
+2026-09-12T17:29:03.1662266Z shell: C:\a\_temp\setup-msys2\msys2.CMD {0}
+2026-09-12T17:29:03.1662546Z env:
+2026-09-12T17:29:03.1663168Z   CMAKE_OPTS: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
+2026-09-12T17:29:03.1663853Z   CCACHE_MAXSIZE: 0
+2026-09-12T17:29:03.1664077Z   CCACHE_NOCOMPRESS: 1
+2026-09-12T17:29:03.1664281Z   MAKEFLAGS: -j2
+2026-09-12T17:29:03.1664549Z   MSYSTEM: CLANGARM64
+2026-09-12T17:29:03.1664752Z ##[endgroup]
+2026-09-12T17:29:04.2076491Z Statistics zeroed
+2026-09-12T17:29:04.5979883Z -- Building for: Ninja
+2026-09-12T17:29:04.5980220Z -- The C compiler identification is Clang 22.1.8
+2026-09-12T17:29:04.9025600Z -- The CXX compiler identification is Clang 22.1.8
+2026-09-12T17:29:05.0271549Z -- Detecting C compiler ABI info
+2026-09-12T17:29:05.4492596Z -- Detecting C compiler ABI info - done
+2026-09-12T17:29:05.4953889Z -- Check for working C compiler: C:/a/_temp/msys64/clangarm64/bin/cc.exe - skipped
+2026-09-12T17:29:05.4958149Z -- Detecting C compile features
+2026-09-12T17:29:05.4963364Z -- Detecting C compile features - done
+2026-09-12T17:29:05.6170502Z -- Detecting CXX compiler ABI info
+2026-09-12T17:29:05.9816529Z -- Detecting CXX compiler ABI info - done
+2026-09-12T17:29:06.0206481Z -- Check for working CXX compiler: C:/a/_temp/msys64/clangarm64/bin/c++.exe - skipped
+2026-09-12T17:29:06.0211106Z -- Detecting CXX compile features
+2026-09-12T17:29:06.0221146Z -- Detecting CXX compile features - done
+2026-09-12T17:29:06.0581839Z 
+2026-09-12T17:29:06.0582256Z Checking submodules...
+2026-09-12T17:29:06.0626225Z -- Checking qt5-x11embed...
+2026-09-12T17:29:06.0627892Z --   Found src/3rdparty/qt5-x11embed/CMakeLists.txt
+2026-09-12T17:29:06.0628579Z -- Checking zynaddsubfx...
+2026-09-12T17:29:06.0628915Z --   Found plugins/ZynAddSubFx/zynaddsubfx/CMakeLists.txt
+2026-09-12T17:29:06.0629248Z -- Checking game-music-emu...
+2026-09-12T17:29:06.0629534Z --   Found plugins/FreeBoy/game-music-emu/CMakeLists.txt
+2026-09-12T17:29:06.0629838Z -- Checking adplug...
+2026-09-12T17:29:06.0631731Z --   Found plugins/OpulenZ/adplug/Makefile.am
+2026-09-12T17:29:06.0632019Z -- Checking veal...
+2026-09-12T17:29:06.0632279Z --   Found plugins/LadspaEffect/calf/veal/CMakeLists.txt
+2026-09-12T17:29:06.0632584Z -- Checking exprtk...
+2026-09-12T17:29:06.0634058Z --   Found plugins/Xpressive/exprtk/Makefile
+2026-09-12T17:29:06.0634371Z -- Checking ladspa...
+2026-09-12T17:29:06.0635893Z --   Found plugins/LadspaEffect/swh/ladspa/Makefile.am
+2026-09-12T17:29:06.0636212Z -- Checking tap-plugins...
+2026-09-12T17:29:06.0636906Z --   Found plugins/LadspaEffect/tap/tap-plugins/Makefile
+2026-09-12T17:29:06.0637214Z -- Checking weakjack...
+2026-09-12T17:29:06.0639675Z --   Found src/3rdparty/weakjack/weakjack/.gitignore
+2026-09-12T17:29:06.0639972Z -- Checking wiki...
+2026-09-12T17:29:06.0642618Z --   Found doc/wiki/Home.md
+2026-09-12T17:29:06.0642877Z -- Checking ringbuffer...
+2026-09-12T17:29:06.0644307Z --   Found src/3rdparty/ringbuffer/CMakeLists.txt
+2026-09-12T17:29:06.0644629Z -- Checking carla...
+2026-09-12T17:29:06.0645350Z --   Found plugins/CarlaBase/carla/Makefile
+2026-09-12T17:29:06.0645619Z -- Checking resid...
+2026-09-12T17:29:06.0647639Z --   Found plugins/Sid/resid/resid/Makefile.am
+2026-09-12T17:29:06.0647936Z -- Checking jack2...
+2026-09-12T17:29:06.0650211Z --   Found src/3rdparty/jack2/.gitignore
+2026-09-12T17:29:06.0650488Z -- Checking cmt...
+2026-09-12T17:29:06.0652812Z --   Found plugins/LadspaEffect/cmt/cmt/.gitignore
+2026-09-12T17:29:06.0653107Z -- Checking hiir...
+2026-09-12T17:29:06.0656212Z --   Found src/3rdparty/hiir/hiir/license.txt
+2026-09-12T17:29:06.0656491Z -- Checking portsmf...
+2026-09-12T17:29:06.0659394Z --   Found plugins/MidiImport/portsmf/CMakeLists.txt
+2026-09-12T17:29:06.0659890Z -- Done validating submodules.
+2026-09-12T17:29:06.0660059Z 
+2026-09-12T17:29:06.0912612Z -- Found PkgConfig: C:/a/_temp/msys64/clangarm64/bin/pkg-config.exe (found version "3.0.7")
+2026-09-12T17:29:06.1456750Z -- Found Git: C:/a/_temp/msys64/usr/bin/git.exe (found version "2.55.0")
+2026-09-12T17:29:06.2047751Z 
+2026-09-12T17:29:06.2048247Z Configuring ZENE
+2026-09-12T17:29:06.2048540Z --------------------------
+2026-09-12T17:29:06.2057510Z * Project version             : 0.2.0-alpha
+2026-09-12T17:29:06.2057819Z *   Major version             : 0
+2026-09-12T17:29:06.2058099Z *   Minor version             : 2
+2026-09-12T17:29:06.2058339Z *   Release version           : 0
+2026-09-12T17:29:06.2058582Z *   Stage version             : alpha
+2026-09-12T17:29:06.2058831Z *   Build version             : 0
+2026-09-12T17:29:06.2059057Z *
+2026-09-12T17:29:06.2059145Z 
+2026-09-12T17:29:06.2059229Z Optional Version Usage:
+2026-09-12T17:29:06.2059454Z --------------------------
+2026-09-12T17:29:06.2059718Z *   Override version:           -DFORCE_VERSION=x.x.x-x
+2026-09-12T17:29:06.2060067Z *   Ignore Git information:     -DFORCE_VERSION=internal
+2026-09-12T17:29:06.2060288Z 
+2026-09-12T17:29:06.2060383Z PROCESSOR: ARM64
+2026-09-12T17:29:06.2060581Z -- Target host is 64 bit, ARM
+2026-09-12T17:29:06.2060856Z -- Setting target microarchitecture to 'official'
+2026-09-12T17:29:06.2061163Z -- Looking for include file pthread.h
+2026-09-12T17:29:06.8142191Z -- Looking for include file pthread.h - found
+2026-09-12T17:29:06.8143071Z -- Looking for include file semaphore.h
+2026-09-12T17:29:07.1790644Z -- Looking for include file semaphore.h - found
+2026-09-12T17:29:07.1791837Z -- Looking for include file unistd.h
+2026-09-12T17:29:07.5482672Z -- Looking for include file unistd.h - found
+2026-09-12T17:29:07.5483699Z -- Looking for include file sys/ipc.h
+2026-09-12T17:29:07.7719271Z -- Looking for include file sys/ipc.h - not found
+2026-09-12T17:29:07.7720020Z -- Looking for include file sys/times.h
+2026-09-12T17:29:08.0030067Z -- Looking for include file sys/times.h - not found
+2026-09-12T17:29:08.0030916Z -- Looking for include file sys/prctl.h
+2026-09-12T17:29:08.2337190Z -- Looking for include file sys/prctl.h - not found
+2026-09-12T17:29:08.2338029Z -- Looking for include file sched.h
+2026-09-12T17:29:08.6175498Z -- Looking for include file sched.h - found
+2026-09-12T17:29:08.6176569Z -- Looking for include file sys/soundcard.h
+2026-09-12T17:29:08.8519819Z -- Looking for include file sys/soundcard.h - not found
+2026-09-12T17:29:08.8520807Z -- Looking for include file soundcard.h
+2026-09-12T17:29:09.0821031Z -- Looking for include file soundcard.h - not found
+2026-09-12T17:29:09.0821784Z -- Looking for include file fcntl.h
+2026-09-12T17:29:09.4439325Z -- Looking for include file fcntl.h - found
+2026-09-12T17:29:09.4440653Z -- Looking for include file sys/ioctl.h
+2026-09-12T17:29:09.6633872Z -- Looking for include file sys/ioctl.h - not found
+2026-09-12T17:29:09.6634791Z -- Looking for include file process.h
+2026-09-12T17:29:10.0290660Z -- Looking for include file process.h - found
+2026-09-12T17:29:10.0298724Z -- Looking for shm_open in rt
+2026-09-12T17:29:10.3734514Z -- Looking for shm_open in rt - not found
+2026-09-12T17:29:10.4630527Z -- Found SndFile: C:/a/_temp/msys64/clangarm64/bin/libsndfile-1.dll (found version "1.2.2")
+2026-09-12T17:29:10.4636080Z -- Performing Test LMMS_HAVE_SF_COMPLEVEL
+2026-09-12T17:29:10.8941421Z -- Performing Test LMMS_HAVE_SF_COMPLEVEL - Success
+2026-09-12T17:29:10.9757204Z -- Found Perl: C:/a/_temp/msys64/usr/bin/perl.exe (found version "5.42.3")
+2026-09-12T17:29:13.1824727Z -- Found Lilv: C:/a/_temp/msys64/clangarm64/lib/liblilv-0.dll.a (found version "0.26.4")
+2026-09-12T17:29:13.1828351Z -- Checking for module 'suil-0'
+2026-09-12T17:29:13.2110244Z --   Package 'suil-0' not found
+2026-09-12T17:29:13.2115548Z -- Checking for module 'carla-native-plugin'
+2026-09-12T17:29:13.2394637Z --   Package 'carla-native-plugin' not found
+2026-09-12T17:29:13.2399163Z -- Checking for module 'carla-standalone>=1.9.5'
+2026-09-12T17:29:13.2674708Z --   Package 'carla-standalone' not found
+2026-09-12T17:29:13.2767515Z -- Found SDL2: C:/a/_temp/msys64/clangarm64/bin/SDL2.dll (found version "2.32.10")
+2026-09-12T17:29:13.3479169Z -- Found STK: C:/a/_temp/msys64/clangarm64/lib/libstk.dll.a
+2026-09-12T17:29:13.3531853Z -- Found Portaudio: C:/a/_temp/msys64/clangarm64/bin/libportaudio.dll (found version "19")
+2026-09-12T17:29:14.8985577Z -- Found Lame: C:/a/_temp/msys64/clangarm64/lib/libmp3lame.dll.a (found version "3.100")
+2026-09-12T17:29:15.9760105Z -- Found OggVorbis: C:/a/_temp/msys64/clangarm64/bin/libogg-0.dll (found version "1.3.7")
+2026-09-12T17:29:16.5754409Z -- Found FFTW: C:/a/_temp/msys64/clangarm64/include
+2026-09-12T17:29:16.6205347Z -- Found FLTK: C:/a/_temp/msys64/clangarm64/lib/libfltk.dll.a
+2026-09-12T17:29:16.6345111Z -- Checking for module 'fluidsynth'
+2026-09-12T17:29:16.7087326Z --   Found fluidsynth, version 2.6.0
+2026-09-12T17:29:16.9296174Z -- Found FluidSynth: C:/a/_temp/msys64/clangarm64/lib/libfluidsynth-3.dll.a (found suitable version "2.6.0", minimum required is "1.1.7")
+2026-09-12T17:29:16.9298801Z -- Checking for module 'gig'
+2026-09-12T17:29:17.0035474Z --   Found gig, version 4.5.2
+2026-09-12T17:29:17.2018209Z -- Found Samplerate: C:/a/_temp/msys64/clangarm64/bin/libsamplerate-0.dll (found suitable version "0.2.2", minimum required is "0.1.8")
+2026-09-12T17:29:17.2047568Z -- Using Git to generate the CONTRIBUTORS file
+2026-09-12T17:29:17.5121683Z -- Using C:/a/_temp/msys64/clangarm64/bin/ccache.exe for compiler caching
+2026-09-12T17:29:17.5182499Z -- Could NOT find Wasmtime (missing: Wasmtime_LIBRARY Wasmtime_INCLUDE_DIR) 
+2026-09-12T17:29:17.5692712Z -- Looking for include file sys/mman.h
+2026-09-12T17:29:17.7976888Z -- Looking for include file sys/mman.h - not found
+2026-09-12T17:29:17.8268432Z -- Performing Test COMPILER_HAS_DEPRECATED_ATTR
+2026-09-12T17:29:18.1944069Z -- Performing Test COMPILER_HAS_DEPRECATED_ATTR - Success
+2026-09-12T17:29:18.2851204Z -- Found CLAP 1.2.10 headers (MIT) at C:/a/zene-studio/zene-studio/build/clap/include
+2026-09-12T17:29:18.8850950Z CMake Warning at plugins/VstBase/RemoteVstPlugin32.cmake:51 (MESSAGE):
+2026-09-12T17:29:18.8851482Z   Can't build RemoteVstPlugin32, unknown environment.  Please supply
+2026-09-12T17:29:18.8851904Z   CMAKE_TOOLCHAIN_FILE_32 and optionally CMAKE_PREFIX_PATH_32
+2026-09-12T17:29:18.8852241Z Call Stack (most recent call first):
+2026-09-12T17:29:18.8852520Z   plugins/VstBase/CMakeLists.txt:52 (INCLUDE)
+2026-09-12T17:29:18.8852749Z 
+2026-09-12T17:29:18.8852752Z 
+2026-09-12T17:29:19.5601751Z -- Found VST3 SDK 3.8 (MIT) at C:/a/zene-studio/zene-studio/build/vst3sdk
+2026-09-12T17:29:19.5717467Z -- Found VST3 SDK 3.8 (MIT) at C:/a/zene-studio/zene-studio/build/vst3sdk
+2026-09-12T17:29:19.6497082Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+2026-09-12T17:29:20.0371595Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed
+2026-09-12T17:29:20.0371983Z -- Looking for pthread_create in pthreads
+2026-09-12T17:29:20.3936718Z -- Looking for pthread_create in pthreads - not found
+2026-09-12T17:29:20.3937146Z -- Looking for pthread_create in pthread
+2026-09-12T17:29:20.7550151Z -- Looking for pthread_create in pthread - found
+2026-09-12T17:29:20.7564895Z -- Found Threads: TRUE
+2026-09-12T17:29:20.7943721Z -- Found ZLIB: C:/a/_temp/msys64/clangarm64/lib/libz.dll.a (found version "1.3.2")
+2026-09-12T17:29:20.8656526Z CMake Warning at data/locale/CMakeLists.txt:10 (MESSAGE):
+2026-09-12T17:29:20.8656929Z   Cannot generate locales
+2026-09-12T17:29:20.8657078Z 
+2026-09-12T17:29:20.8657082Z 
+2026-09-12T17:29:21.2026022Z CMake Error at cmake/modules/InstallTargetDependencies.cmake:37 (message):
+2026-09-12T17:29:21.2026465Z   Not a target: lmms
+2026-09-12T17:29:21.2026687Z Call Stack (most recent call first):
+2026-09-12T17:29:21.2027484Z   cmake/install/CMakeLists.txt:26 (INSTALL_TARGET_DEPENDENCIES)
+2026-09-12T17:29:21.2027771Z 
+2026-09-12T17:29:21.2027776Z 
+2026-09-12T17:29:21.2123687Z -- Configuring incomplete, errors occurred!
+2026-09-12T17:29:21.2519148Z ##[error]Process completed with exit code 1.
+2026-09-12T17:29:21.2919927Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T17:29:21.2921307Z Post job cleanup.
+2026-09-12T17:29:21.4583777Z (node:10328) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T17:29:21.4584480Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T17:29:21.5760052Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-12T17:29:21.6241921Z git version 2.55.0.windows.5
+2026-09-12T17:29:21.6331055Z Temporarily overriding HOME='C:\a\_temp\526bf3ed-0d27-4be3-a31d-14457f5b1c33' before making global git config changes
+2026-09-12T17:29:21.6331819Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-12T17:29:21.6339142Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory C:\a\zene-studio\zene-studio
+2026-09-12T17:29:21.6882639Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-12T17:29:21.7412408Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-12T17:29:22.9796564Z Entering 'doc/wiki'
+2026-09-12T17:29:23.1461716Z Entering 'plugins/CarlaBase/carla'
+2026-09-12T17:29:23.3125155Z Entering 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:29:23.4831884Z Entering 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:29:23.6481936Z Entering 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:29:23.8146416Z Entering 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:29:23.9848178Z Entering 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:29:24.1506696Z Entering 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:29:24.3189373Z Entering 'plugins/MidiImport/portsmf'
+2026-09-12T17:29:24.4846710Z Entering 'plugins/OpulenZ/adplug'
+2026-09-12T17:29:24.6491306Z Entering 'plugins/Sid/resid/resid'
+2026-09-12T17:29:24.8142233Z Entering 'plugins/Xpressive/exprtk'
+2026-09-12T17:29:24.9794937Z Entering 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:29:25.1426038Z Entering 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:29:25.3141028Z Entering 'src/3rdparty/hiir/hiir'
+2026-09-12T17:29:25.4765071Z Entering 'src/3rdparty/jack2'
+2026-09-12T17:29:25.6436687Z Entering 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:29:25.8074441Z Entering 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:29:25.9781295Z Entering 'src/3rdparty/ringbuffer'
+2026-09-12T17:29:26.1426291Z Entering 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:29:26.3280295Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-12T17:29:26.3770240Z http.https://github.com/.extraheader
+2026-09-12T17:29:26.3828972Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2026-09-12T17:29:26.4391436Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-12T17:29:27.6958017Z Entering 'doc/wiki'
+2026-09-12T17:29:27.8341262Z http.https://github.com/.extraheader
+2026-09-12T17:29:27.9203452Z Entering 'plugins/CarlaBase/carla'
+2026-09-12T17:29:28.0579756Z http.https://github.com/.extraheader
+2026-09-12T17:29:28.1424959Z Entering 'plugins/CarlaBase/carla/source/native-plugins/external'
+2026-09-12T17:29:28.2817482Z http.https://github.com/.extraheader
+2026-09-12T17:29:28.3705683Z Entering 'plugins/FreeBoy/game-music-emu'
+2026-09-12T17:29:28.5128054Z http.https://github.com/.extraheader
+2026-09-12T17:29:28.5986876Z Entering 'plugins/LadspaEffect/calf/veal'
+2026-09-12T17:29:28.7365997Z http.https://github.com/.extraheader
+2026-09-12T17:29:28.8216278Z Entering 'plugins/LadspaEffect/cmt/cmt'
+2026-09-12T17:29:28.9581344Z http.https://github.com/.extraheader
+2026-09-12T17:29:29.0420328Z Entering 'plugins/LadspaEffect/swh/ladspa'
+2026-09-12T17:29:29.1805199Z http.https://github.com/.extraheader
+2026-09-12T17:29:29.2651199Z Entering 'plugins/LadspaEffect/tap/tap-plugins'
+2026-09-12T17:29:29.4012329Z http.https://github.com/.extraheader
+2026-09-12T17:29:29.4852350Z Entering 'plugins/MidiImport/portsmf'
+2026-09-12T17:29:29.6252530Z http.https://github.com/.extraheader
+2026-09-12T17:29:29.7108248Z Entering 'plugins/OpulenZ/adplug'
+2026-09-12T17:29:29.8459967Z http.https://github.com/.extraheader
+2026-09-12T17:29:29.9316307Z Entering 'plugins/Sid/resid/resid'
+2026-09-12T17:29:30.0664438Z http.https://github.com/.extraheader
+2026-09-12T17:29:30.1510929Z Entering 'plugins/Xpressive/exprtk'
+2026-09-12T17:29:30.2882071Z http.https://github.com/.extraheader
+2026-09-12T17:29:30.3749036Z Entering 'plugins/ZynAddSubFx/zynaddsubfx'
+2026-09-12T17:29:30.5100736Z http.https://github.com/.extraheader
+2026-09-12T17:29:30.5925762Z Entering 'plugins/ZynAddSubFx/zynaddsubfx/instruments'
+2026-09-12T17:29:30.7280777Z http.https://github.com/.extraheader
+2026-09-12T17:29:30.8139883Z Entering 'src/3rdparty/hiir/hiir'
+2026-09-12T17:29:30.9495253Z http.https://github.com/.extraheader
+2026-09-12T17:29:31.0362692Z Entering 'src/3rdparty/jack2'
+2026-09-12T17:29:31.1715703Z http.https://github.com/.extraheader
+2026-09-12T17:29:31.2552436Z Entering 'src/3rdparty/qt5-x11embed'
+2026-09-12T17:29:31.3907049Z http.https://github.com/.extraheader
+2026-09-12T17:29:31.4744575Z Entering 'src/3rdparty/qt5-x11embed/3rdparty/ECM'
+2026-09-12T17:29:31.6139108Z http.https://github.com/.extraheader
+2026-09-12T17:29:31.7022660Z Entering 'src/3rdparty/ringbuffer'
+2026-09-12T17:29:31.8395175Z http.https://github.com/.extraheader
+2026-09-12T17:29:31.9263573Z Entering 'src/3rdparty/weakjack/weakjack'
+2026-09-12T17:29:32.0639616Z http.https://github.com/.extraheader
+2026-09-12T17:29:32.1866985Z Cleaning up orphan processes
+2026-09-12T17:29:32.2242077Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache@v3, actions/cache@v4, actions/checkout@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

@@ -1,0 +1,7 @@
+arm64-fixed      compiles, all checks pass                harness exit 0         ok
+arm64-before     fails: no member named __control         compile exit 1         ok
+x86_64-fixed     compiles, all checks pass                harness exit 0         ok
+x86_64-before    compiles, all checks pass                harness exit 0         ok
+x86-branch       identical to the pre-fix branch          empty diff             ok
+
+PASS: include/fenv.h handles both Darwin fenv_t layouts; x86_64 unchanged

@@ -1,0 +1,7 @@
+test(ci): re-run both gates on the final tree, and record the measurements in the doc
+
+Both gates exit 0 at the tip of fix/ci-tag-failures; the no-upstream-regression
+log is refreshed because the two commits after it added paths the gate
+tabulates. docs/CI-TAG-FAILURES.md now carries the final tree's own measurements
+(configure/build/ctest exit codes, the 86-test count, both gates, and the
+check-namespace errors that remain).

@@ -1,0 +1,32 @@
+docs(ci): the v0.2.0-alpha failure record and the harnesses that verified the fixes
+
+docs/CI-TAG-FAILURES.md is the record: the two runs (build.yml 34708003925 7/7
+failed, checks.yml 34708003952 scripted-checks failed), the five distinct causes,
+each one's verbatim error, its fix, and exactly how that fix was verified or why
+it could not be -- including the three claims the brief made that the logs
+contradict (the QDebug failure is a hard error and a Qt5 job, not a
+-Werror/Qt6 one; macos-x86_64 fails on ARC, not on fenv.h; and neither Windows
+cause is about the VST3/CLAP provisioning, which worked on all three Windows
+jobs).
+
+It also names what was NOT fixed: the four pre-existing check-namespace errors,
+with the honest fix for each (including tools/ncpu-shim.c, where the checker
+reports "File has no namespace lmms" about a C file -- a false positive whose
+fix belongs in the checker's own known_no_namespace_lmms list, which the
+previous commit to this repository did not do either).
+
+tests/integration-logs-ci-fix/ holds the evidence: the seven ANSI-stripped job
+logs, the check-namespace log, the local provision/configure/build/ctest logs and
+the two gate logs, plus three self-contained verification harnesses (exit 0 when
+every expectation holds):
+
+  qdebug-probe/     the missing <QDebug>: red without the include, green with it
+  fenv-arch-check/  compiles and RUNS include/fenv.h for both Darwin fenv_t
+                    layouts, and diffs the x86_64 branch against the pre-fix text
+  cmake-probes/     drives the real ClapHeaders.cmake under the MinGW find policy
+                    and the real InstallTargetDependencies.cmake with TARGETS
+                    lmms vs zene
+
+Each harness writes its probes into a gitignored out/ directory (new .gitignore
+entry) so tests/ gains no standalone translation units and no scope manifest
+moves.

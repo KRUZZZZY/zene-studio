@@ -25,8 +25,21 @@ SET(LMMS_CLAP_PATH "${CMAKE_BINARY_DIR}/clap"
 SET(LMMS_CLAP_FETCH "OFF"
 	CACHE BOOL "Fetch the pinned CLAP headers at configure time")
 
+# NO_CMAKE_FIND_ROOT_PATH is required for the cross-compile jobs. The CLAP
+# headers are third-party headers with no target-architecture content, and they
+# are provisioned INSIDE the build tree (as the note above says), but the MinGW
+# toolchain sets CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY, so a plain FIND_PATH
+# re-roots the HINT below under the target sysroot and cannot see
+# "${LMMS_CLAP_PATH}/include" at all. That is how the mingw64 job failed to
+# configure while the native jobs found the very same checkout:
+#   CMake Error at cmake/modules/ClapHeaders.cmake:45 (MESSAGE):
+#     No CLAP headers at '<src>/build/clap/include/clap'.
+# Un-roots the one HINT that points into the build tree; the ordinary default
+# search paths stay rooted, so a host-installed clap/clap.h cannot be picked up
+# in place of the pinned checkout.
 FIND_PATH(LMMS_CLAP_INCLUDE_DIR clap/clap.h
 	HINTS "${LMMS_CLAP_PATH}/include"
+	NO_CMAKE_FIND_ROOT_PATH
 	DOC "Directory containing clap/clap.h")
 
 IF(NOT LMMS_CLAP_INCLUDE_DIR AND LMMS_CLAP_FETCH)
