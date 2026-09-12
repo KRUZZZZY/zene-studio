@@ -7,7 +7,7 @@
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
-#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -16,7 +16,7 @@
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -44,14 +44,21 @@
 #     (511) taken by a recorded re-anchor - and moving them would narrow the fork scope. The awk
 #     allow-list above was extended by exactly those two names, and the file now reproduces from
 #     the command under "Regenerate with".
-#   * tools/local-ci.sh - a shell script, so outside the C/C++ extension set of the product
-#     command; it is admitted by the second, explicit pathspec line above. Its extension is
-#     deliberately NOT added to the first line's grep: doing so also admits five fork-authored
-#     .sh harness scripts under plugins/RnnoiseDenoiser/testdata/, which would widen the fork
-#     scope onto shell tooling that belongs in tests/tools-sources.txt if anywhere. It is
-#     registered HERE rather than in tests/tools-sources.txt because the fork-scoped ratchets
-#     already measured it when that list was added, and moving it would narrow the fork scope.
-#     That reason is recorded in tests/tools-sources.txt's header too.
+#   * tools/local-ci.sh and tools/ncpu-shim.c - the second, explicit pathspec line above. Both are
+#     admitted by name rather than by widening the extension filter, because widening it also
+#     admits five fork-authored .sh harness scripts under plugins/RnnoiseDenoiser/testdata/,
+#     which would put shell tooling in the product scope.
+#     - tools/local-ci.sh is registered HERE rather than in tests/tools-sources.txt because the
+#       fork-scoped ratchets already measured it when that list was added, and moving it would
+#       narrow the fork scope. Its reason is recorded in tests/tools-sources.txt's header too.
+#     - tools/ncpu-shim.c was registered by the post-alpha/render-determinism lane (2026-09-12)
+#       and is kept here at integration. It is a C source and therefore already on
+#       tests/all-sources.txt's list (that list is `git ls-files` over the C/C++ extension set);
+#       its presence here as well is what Gate 6 needs, because Gate 6 classifies a tools/ path
+#       by tests/tools-sources.txt and consults no other list - registering it there instead
+#       would be the same allowance by a different route, and the file is 93 lines with no
+#       function over the complexity target, so the fork ratchets it widens are clean.
+#       tests/tools-sources.txt's subtraction regex names it and does not repeat it.
 #   * tools/stem-export-demo.py used to be a second hand-added tools/ entry in this file. It was
 #     moved to tests/tools-sources.txt on 2026-09-12 (gate hygiene): tooling has one home, and
 #     that list is the home tests/tools-sources.txt itself declares for tools/. It is not in the
@@ -222,3 +229,4 @@ tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/tracks/SampleClipWindowTest.cpp
 tools/local-ci.sh
+tools/ncpu-shim.c

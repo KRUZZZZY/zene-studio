@@ -35,12 +35,14 @@
 # a Gate 9 failure, not an omission from this list. The collation is pinned to C for the same
 # reason the other two manifests pin it.
 # Members of that set which already have a home are NOT repeated here - one file, one
-# home: the four C++ scratch probes (tools/mmpz-git/scratch/*.cpp), # (added by post-alpha/render-determinism, 2026-09-12) and tools/wasm/wat2wasm.cpp are in
-# tests/all-sources.txt (the whole-tree first-party C/C++ scope - its list is `git ls-files`
-# over the C/C++ extension set, so a tools/ C or C++ file lands in it whether or not anyone
-# remembered; this file's command subtracts them), and tools/local-ci.sh is in
-# tests/fork-sources.txt (it was already measured by the fork scope when this list was
-# added, and moving it would narrow that scope).
+# home: the four C++ scratch probes (tools/mmpz-git/scratch/*.cpp) and
+# tools/wasm/wat2wasm.cpp are in tests/all-sources.txt (the whole-tree first-party C/C++
+# scope - its list is `git ls-files` over the C/C++ extension set, so a tools/ C or C++ file
+# lands in it whether or not anyone remembered); tools/ncpu-shim.c and tools/local-ci.sh are
+# in tests/fork-sources.txt (post-alpha/render-determinism registered ncpu-shim.c there and it
+# is kept there at integration - see that file's header - and local-ci.sh was already measured
+# by the fork scope when this list was added, so moving it would narrow that scope). This
+# file's command subtracts all six.
 # Gate 9 accepts membership in any of the three lists, and reports a tools/ source that
 # is in none of them.
 #
@@ -69,17 +71,19 @@
 
 
 # ADDED AT INTEGRATION, 2026-09-12 (merge train 3A #3, post-alpha/render-determinism).
-# The render-determinism lane registered these three under tools/ in tests/fork-sources.txt. That is
-# the second hand-added tools/ entry that file has carried, and it has the same two problems the
-# gate-hygiene pass fixed for tools/stem-export-demo.py: tests/fork-sources.txt is the C/C++ PRODUCT
-# scope whose ratchets have their own per-scope baselines, and its own regeneration command cannot
-# produce a tools/ path (its only tools/ pathspec is tools/local-ci.sh). They are moved here, where
-# tooling has its one home, with their reasons unchanged in substance. Measured before registering:
+# The render-determinism lane registered three new tools/ files in tests/fork-sources.txt, which cannot
+# work: that file's own regeneration command admits tools/ paths only by name and none of these three
+# is named. Two of them - render-determinism-compare.py and render-determinism-probe.sh, both Python or
+# shell - are moved here, where tooling has its one home. The third, tools/ncpu-shim.c, is a C source
+# and is kept in tests/fork-sources.txt instead, for the reason its own header records: it is on
+# tests/all-sources.txt's list automatically (that list is `git ls-files` over the C/C++ extension set),
+# but Gate 6 classifies a tools/ path by the list below and by no other, so removing it from
+# tests/fork-sources.txt turned Gate 6 red on the merged tree - measured, then fixed by putting it back.
+# It is named in this file's subtraction regex and is not repeated here.
+#
 # Registered here: render-determinism-compare.py (402 lines) and render-determinism-probe.sh (142),
-# both under the 500-line target and over no complexity target. tools/ncpu-shim.c, the lane's third
-# file, is a C source, so it already has its home in tests/all-sources.txt (see the members
-# paragraph above): it is named in this file's subtraction regex and is not repeated here.
-# The reason each exists is in docs/RENDER-DETERMINISM.md.
+# both under the 500-line target and over no complexity target. The reason each exists is in
+# docs/RENDER-DETERMINISM.md.
 tools/make_stub_model.py
 tools/mmpz-git/demo_check.py
 tools/mmpz-git/demo_edits.py
