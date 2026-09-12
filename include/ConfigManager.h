@@ -300,7 +300,7 @@ private:
 	QString m_gigDir;
 	QString m_themeDir;
 	QString m_backgroundPicFile;
-	QString m_lmmsRcFile;
+	QString m_configFile;
 	QString m_version;
 	unsigned int m_configVersion;
 	QStringList m_recentlyOpenedProjects;
@@ -313,6 +313,31 @@ private:
 
 	friend class Engine;
 };
+
+
+// ---------------------------------------------------------------------------
+// ConfigMigration — adopting pre-rename (LMMS-era) user state.
+//
+// The product renamed its config file, its working directory and its portable
+// workspace directory.  A naive rename of those paths would orphan every
+// existing install's settings and the folder its projects live in, so the first
+// run *adopts* the old state: the legacy item is renamed into place, and if that
+// cannot be done the old location keeps being used rather than silently pointing
+// at an empty new one.
+//
+// Both functions are pure path arithmetic (no singleton, no qApp), which is what
+// makes them testable: tests/src/core/ConfigMigrationTest.cpp seeds a temporary
+// directory with old-style state and asserts it is honoured.
+//
+// The old spellings below are the ONLY place in product code where the pre-rename
+// file/directory names may still appear, and they appear in order to be adopted,
+// never to be written.
+// ---------------------------------------------------------------------------
+namespace ConfigMigration
+{
+	LMMS_EXPORT QString adoptConfigFile( const QString & newFile, const QString & legacyFile );
+	LMMS_EXPORT QString adoptWorkingDir( const QString & newDir, const QString & legacyDir );
+}
 
 
 } // namespace lmms

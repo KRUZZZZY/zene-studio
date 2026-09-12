@@ -760,7 +760,7 @@ void MainWindow::openProject()
 {
 	if( mayChangeProject(false) )
 	{
-		FileDialog ofd( this, tr( "Open Project" ), "", tr( "LMMS (*.mmp *.mmpz)" ) );
+		FileDialog ofd( this, tr( "Open Project" ), "", tr( "Zene Studio (*.mmp *.mmpz)" ) );
 
 		ofd.setDirectory( ConfigManager::inst()->userProjectsDir() );
 		ofd.setFileMode( FileDialog::ExistingFiles );
@@ -836,8 +836,8 @@ bool MainWindow::saveProjectAs()
 {
 	auto optionsWidget = new SaveOptionsWidget(Engine::getSong()->getSaveOptions());
 	VersionedSaveDialog sfd( this, optionsWidget, tr( "Save Project" ), "",
-			tr( "LMMS Project" ) + " (*.mmpz *.mmp);;" +
-				tr( "LMMS Project Template" ) + " (*.mpt)" );
+			tr( "Zene Studio Project" ) + " (*.mmpz *.mmp);;" +
+				tr( "Zene Studio Project Template" ) + " (*.mpt)" );
 	QString f = Engine::getSong()->projectFileName();
 	if( f != "" )
 	{

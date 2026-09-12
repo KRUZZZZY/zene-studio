@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!DOCTYPE multimedia-project>
-<multimediaproject creator="Linux MultiMedia Studio (LMMS)" creatorversion="0.0.9" type="channelsettings" version="1.0" >
+<multimediaproject creator="Zene Studio" creatorversion="0.0.9" type="channelsettings" version="1.0" >
   <head/>
   <channelsettings>
     <channeltrack surpos="134219776" muted="0" mixch="0" tbidx="1" baseoct="5" vol="100" name="Freaky Bass" basetone="9" >

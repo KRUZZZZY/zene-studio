@@ -63,7 +63,7 @@ Plugin::Descriptor PLUGIN_EXPORT synthetic_plugin_descriptor =
 	"LMMS test suite",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 };
 

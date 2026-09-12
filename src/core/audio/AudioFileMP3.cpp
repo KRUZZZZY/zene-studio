@@ -121,7 +121,7 @@ bool AudioFileMP3::initEncoder()
 
 	// Add a comment
 	id3tag_init(m_lame);
-	id3tag_set_comment(m_lame, "Created with LMMS");
+	id3tag_set_comment(m_lame, "Created with Zene Studio");
 
 	return lame_init_params(m_lame) != -1;
 }

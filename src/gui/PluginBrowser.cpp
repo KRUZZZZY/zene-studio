@@ -181,9 +181,9 @@ void PluginBrowser::addPlugins()
 		}
 	);
 
-	// Add a root node to the tree for native LMMS plugins
-	const auto lmmsRoot = addRoot("LMMS");
-	lmmsRoot->setExpanded(true);
+	// Add a root node to the tree for native plugins
+	const auto nativeRoot = addRoot("Zene Studio");
+	nativeRoot->setExpanded(true);
 
 	// Add all of the descriptors to the tree
 	for (const auto desc : descs)
@@ -206,7 +206,7 @@ void PluginBrowser::addPlugins()
 		}
 		else
 		{
-			addPlugin(Plugin::Descriptor::SubPluginFeatures::Key(desc, desc->name), lmmsRoot);
+			addPlugin(Plugin::Descriptor::SubPluginFeatures::Key(desc, desc->name), nativeRoot);
 		}
 	}
 }

@@ -125,7 +125,7 @@ namespace
 
 
 DataFile::DataFile( Type type ) :
-	QDomDocument( "lmms-project" ),
+	QDomDocument( "zene-project" ),
 	m_fileName(""),
 	m_content(),
 	m_head(),
@@ -133,10 +133,10 @@ DataFile::DataFile( Type type ) :
 	m_fileVersion( UPGRADE_METHODS.size() )
 {
 	appendChild( createProcessingInstruction("xml", "version=\"1.0\""));
-	QDomElement root = createElement( "lmms-project" );
+	QDomElement root = createElement( "zene-project" );
 	root.setAttribute( "version", m_fileVersion );
 	root.setAttribute( "type", typeName( type ) );
-	root.setAttribute( "creator", "LMMS" );
+	root.setAttribute( "creator", "Zene Studio" );
 	root.setAttribute( "creatorversion", LMMS_VERSION );
 	root.setAttribute("creatorplatform", QSysInfo::kernelType());
 	root.setAttribute("creatorplatformtype", QSysInfo::productType());
@@ -306,7 +306,43 @@ void DataFile::write( QTextStream & _strm )
 		cleanMetaNodes( documentElement() );
 	}
 
-	save(_strm, 2);
+	// Write-new: a document this build saves carries the new root element, even
+	// when it was read from a pre-rename file.  The reader has never keyed off
+	// the root's tag name (it uses documentElement()), which is what makes
+	// read-both possible; this is the other half.
+	documentElement().setTagName( "zene-project" );
+
+	// ...and it records THIS program as the one that wrote it.  `upgrade()` sets
+	// these only for files old enough to need an upgrade, so a file that is
+	// already at the current version would otherwise be re-saved still claiming
+	// the pre-rename name as its creator.
+	documentElement().setAttribute( "creator", "Zene Studio" );
+	documentElement().setAttribute( "creatorversion", LMMS_VERSION );
+
+	// ...and the `<!DOCTYPE ...>` a legacy file carries is dropped, because a file
+	// this build writes has no DOCTYPE (see the DataFile(Type) constructor) and
+	// emitting a pre-rename doctype beside the new root element states something
+	// about the format that is not true.  QDomDocument keeps a parsed doctype in
+	// a private member that QDomNode::removeChild cannot reach, so the line is
+	// dropped at the output boundary.
+	QString xml;
+	{
+		QTextStream ts( &xml );
+		save( ts, 2 );
+	}
+	if( xml.contains( QLatin1String( "<!DOCTYPE" ) ) )
+	{
+		QStringList lines = xml.split( QLatin1Char( '\n' ) );
+		for( int i = lines.size() - 1; i >= 0; --i )
+		{
+			if( lines.at( i ).trimmed().startsWith( QLatin1String( "<!DOCTYPE" ) ) )
+			{
+				lines.removeAt( i );
+			}
+		}
+		xml = lines.join( QLatin1Char( '\n' ) );
+	}
+	_strm << xml;
 }
 
 
@@ -1700,7 +1736,11 @@ void DataFile::upgrade_1_3_0()
 void DataFile::upgrade_noHiddenAutomationTracks()
 {
 	// convert global automation tracks to non-hidden
-	QDomElement song = firstChildElement("lmms-project")
+	// Read-both: files written before the rename carry the legacy root name,
+	// files written since carry the new one.  Both must be honoured here.
+	QDomElement root = firstChildElement("zene-project");
+	if (root.isNull()) { root = firstChildElement("lmms-project"); }
+	QDomElement song = root
 		.firstChildElement("song");
 	QDomElement trackContainer = song.firstChildElement("trackcontainer");
 	QDomElement globalAutomationTrack = song.firstChildElement("track");
@@ -2151,7 +2191,7 @@ void DataFile::upgrade()
 	// update document meta data
 	documentElement().setAttribute( "version", m_fileVersion );
 	documentElement().setAttribute( "type", typeName( type() ) );
-	documentElement().setAttribute( "creator", "LMMS" );
+	documentElement().setAttribute( "creator", "Zene Studio" );
 	documentElement().setAttribute( "creatorversion", LMMS_VERSION );
 	documentElement().setAttribute("creatorplatform", QSysInfo::kernelType());
 	documentElement().setAttribute("creatorplatformtype", QSysInfo::productType());
@@ -2233,6 +2273,9 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 		// compareType defaults to All, so it doesn't have to be set here
 		ProjectVersion createdWith = root.attribute("creatorversion");
 		ProjectVersion openedWith = LMMS_VERSION;
+		// Report the name the file itself records: files written before the
+		// rename say LMMS, files written by this build say Zene Studio.
+		const QString createdBy = root.attribute("creator", "LMMS");
 
 		if (createdWith.setCompareType(ProjectVersion::CompareType::Minor)
 		 !=  openedWith.setCompareType(ProjectVersion::CompareType::Minor)
@@ -2243,8 +2286,8 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 
 			gui::TextFloat::displayMessage(
 				SongEditor::tr("Version difference"),
-				SongEditor::tr("This %1 was created with LMMS %2")
-				.arg(projectType).arg(createdWith.getVersion()),
+				SongEditor::tr("This %1 was created with %2 %3")
+				.arg(projectType, createdBy, createdWith.getVersion()),
 				embed::getIconPixmap("whatsthis", 24, 24),
 				2500
 			);

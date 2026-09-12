@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
-<!DOCTYPE lmms-project>
-<lmms-project creator="LMMS" version="1.0" type="song" creatorversion="1.2.0">
+<!DOCTYPE zene-project>
+<zene-project creator="Zene Studio" version="1.0" type="song" creatorversion="1.2.0">
   <head timesig_numerator="4" bpm="130" timesig_denominator="4" mastervol="102" masterpitch="0"/>
   <song>
     <trackcontainer maximized="0" height="212" visible="1" minimized="0" x="5" y="5" type="song" width="600">
@@ -215,4 +215,4 @@ p, li { white-space: pre-wrap; }
     <timeline lp1pos="1536" lpstate="1" lp0pos="0"/>
     <controllers/>
   </song>
-</lmms-project>
+</zene-project>

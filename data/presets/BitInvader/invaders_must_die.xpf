@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
-<!DOCTYPE lmms-project>
-<lmms-project version="1.0" creator="LMMS" creatorversion="1.0.93" type="instrumenttracksettings">
+<!DOCTYPE zene-project>
+<zene-project version="1.0" creator="Zene Studio" creatorversion="1.0.93" type="instrumenttracksettings">
   <head/>
   <instrumenttracksettings muted="0" type="0" name="Invaders must die" solo="0">
     <instrumenttrack pan="0" mixch="11" pitchrange="1" pitch="0" basenote="45" vol="30.2">
@@ -35,4 +35,4 @@
       </fxchain>
     </instrumenttrack>
   </instrumenttracksettings>
-</lmms-project>
+</zene-project>

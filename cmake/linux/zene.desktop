@@ -14,4 +14,4 @@ Exec=zene %f
 Terminal=false
 Type=Application
 Categories=Qt;AudioVideo;Audio;Midi;
-MimeType=application/x-lmms-project;
+MimeType=application/x-zene-project;

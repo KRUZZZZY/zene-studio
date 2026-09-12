@@ -91,7 +91,7 @@ GuiApplication::GuiApplication()
 	// Immediately register our SIGINT handler
 	createSocketNotifier();
 
-	// prompt the user to create the Zene Studio working directory (e.g. ~/Documents/lmms) if it doesn't exist
+	// prompt the user to create the Zene Studio working directory (e.g. ~/Documents/Zene Studio) if it doesn't exist
 	if ( !ConfigManager::inst()->hasWorkingDir() &&
 		QMessageBox::question( nullptr,
 				tr( "Working directory" ),

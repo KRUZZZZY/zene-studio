@@ -49,7 +49,7 @@ extern "C" {
 		"Martin Pavelek <he29/dot/HS/at/gmail/dot/com>",
 		0x0112,
 		Plugin::Type::Effect,
-		new PixmapLoader("lmms-plugin-logo"),
+		new PixmapLoader("zene-plugin-logo"),
 		nullptr,
 		nullptr,
 	};

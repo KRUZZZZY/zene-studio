@@ -88,7 +88,7 @@ bool AudioFileWave::startEncoding()
 	// Prevent fold overs when encountering clipped data
 	sf_command(m_sf, SFC_SET_CLIPPING, nullptr, SF_TRUE);
 
-	sf_set_string ( m_sf, SF_STR_SOFTWARE, "LMMS" );
+	sf_set_string ( m_sf, SF_STR_SOFTWARE, "Zene Studio" );
 
 	return true;
 }

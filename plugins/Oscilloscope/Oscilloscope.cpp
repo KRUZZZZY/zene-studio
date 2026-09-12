@@ -40,7 +40,7 @@ Plugin::Descriptor PLUGIN_EXPORT oscilloscope_plugin_descriptor =
 	"Keratin <3",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr,
 };

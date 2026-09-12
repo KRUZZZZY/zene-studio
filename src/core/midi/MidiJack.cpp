@@ -168,10 +168,16 @@ jack_client_t* MidiJack::jackClient()
 
 QString MidiJack::probeDevice()
 {
-	QString jid = ConfigManager::inst()->value( "midijack", "lmms" );
+	// The client name lives under the "zene" attribute; the pre-rename "lmms"
+	// attribute is still read so an adopted config keeps the user's device.
+	QString jid = ConfigManager::inst()->value( "midijack", "zene" );
 	if( jid.isEmpty() )
 	{
-		return "lmms";
+		jid = ConfigManager::inst()->value( "midijack", "lmms" );
+	}
+	if( jid.isEmpty() )
+	{
+		return "Zene Studio";
 	}
 	return jid;
 }

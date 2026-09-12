@@ -47,7 +47,7 @@ Plugin::Descriptor PLUGIN_EXPORT wasm_effect_plugin_descriptor =
 	"LMMS WASM DSP sandbox contributors",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr
 };

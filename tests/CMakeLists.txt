@@ -11,12 +11,14 @@ set(LMMS_TESTS
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
-	src/core/LoudnessReportTest.cpp
-	src/core/ClipSerialisationTest.cpp
-	src/core/LufsMeterTest.cpp
-	src/core/CrashReporterTest.cpp
 	src/core/AutomationModesTest.cpp
+	src/core/ClipSerialisationTest.cpp
+	src/core/ConfigMigrationTest.cpp
+	src/core/CrashReporterTest.cpp
+	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
+	src/core/LoudnessReportTest.cpp
+	src/core/LufsMeterTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
@@ -26,6 +28,7 @@ set(LMMS_TESTS
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
+	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
 	src/core/ProjectOpenIntegrityTest.cpp
@@ -208,6 +211,15 @@ set_tests_properties(RemotePluginClientE2ETest PROPERTIES
 # ProjectRenderer + AudioFileWave) on a project it writes to a temporary
 # directory, so it needs the same headless Qt platform as the test above.
 set_tests_properties(StemExportTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# PluginLogoResourceTest loads a QPixmap through the product's own artwork search
+# path, so it needs a QGuiApplication and therefore a Qt platform plugin.  It
+# exists because a resource that does not resolve is silent: embed::loadSvgPixmap
+# warns and returns a 1x1 transparent pixmap, so nothing fails while every plugin
+# dialog renders blank.
+set_tests_properties(PluginLogoResourceTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

@@ -264,9 +264,9 @@ struct HostedPlugin::Impl
 	{
 		host.clap_version = CLAP_VERSION_INIT;
 		host.host_data = this;
-		host.name = "LMMS";
-		host.vendor = "LMMS contributors";
-		host.url = "https://lmms.io";
+		host.name = "Zene Studio";
+		host.vendor = "Zene Studio";
+		host.url = "https://github.com/KRUZZZZY/zene-studio";
 		host.version = "1.0.0";
 		host.get_extension = &Impl::getExtension;
 		host.request_restart = &Impl::requestRestart;

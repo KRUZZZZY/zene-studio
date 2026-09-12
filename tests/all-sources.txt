@@ -1129,7 +1129,9 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ConfigMigrationTest.cpp
 tests/src/core/CrashReporterTest.cpp
+tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
@@ -1143,6 +1145,7 @@ tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
+tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp
 tests/src/core/PdcMixerTest.cpp
 tests/src/core/PhaseDMixerTestSupport.h

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
-<!DOCTYPE lmms-project>
-<lmms-project version="1.0" type="instrumenttracksettings" creatorversion="1.2.2" creator="LMMS">
+<!DOCTYPE zene-project>
+<zene-project version="1.0" type="instrumenttracksettings" creatorversion="1.2.2" creator="Zene Studio">
   <head/>
   <instrumenttracksettings name="Kick" muted="0" solo="0" type="0">
     <instrumenttrack vol="100" pitch="0" pitchrange="1" pan="0" mixch="0" usemasterpitch="1" basenote="57">
@@ -23,4 +23,4 @@
       </fxchain>
     </instrumenttrack>
   </instrumenttracksettings>
-</lmms-project>
+</zene-project>

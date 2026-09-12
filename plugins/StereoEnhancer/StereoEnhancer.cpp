@@ -44,7 +44,7 @@ Plugin::Descriptor PLUGIN_EXPORT stereoenhancer_plugin_descriptor =
 	"Lou Herard <lherard/at/gmail.com>",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr,
 } ;

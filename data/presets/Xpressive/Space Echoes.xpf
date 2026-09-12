@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
-<!DOCTYPE lmms-project>
-<lmms-project type="instrumenttracksettings" version="1.0" creator="LMMS" creatorversion="1.2.0.538">
+<!DOCTYPE zene-project>
+<zene-project type="instrumenttracksettings" version="1.0" creator="Zene Studio" creatorversion="1.2.0.538">
   <head/>
   <instrumenttracksettings type="0" name="Space Echoes" muted="0" solo="0">
     <instrumenttrack pan="0" usemasterpitch="1" vol="100" pitchrange="1" basenote="57" pitch="0" mixch="0">
@@ -19,4 +19,4 @@
       <fxchain numofeffects="0" enabled="0"/>
     </instrumenttrack>
   </instrumenttracksettings>
-</lmms-project>
+</zene-project>

@@ -28,7 +28,7 @@ Plugin::Descriptor PLUGIN_EXPORT hydrogenimport_plugin_descriptor =
 	LMMS_STRINGIFY( PLUGIN_NAME ),
 	"Hydrogen Import",
 	QT_TRANSLATE_NOOP( "PluginBrowser",
-				"Filter for importing Hydrogen files into LMMS" ),
+				"Filter for importing Hydrogen files into Zene Studio" ),
 	"frank mather",
 	0x0100,
 	Plugin::Type::ImportFilter,

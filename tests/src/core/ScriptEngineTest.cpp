@@ -174,9 +174,37 @@ private slots:
 		for (const QString& line : log) { qInfo().noquote() << "lua:" << line; }
 		QVERIFY2(log.filter("Hello from Lua Lua 5.4").size() == 1,
 			qPrintable(log.join('|')));
-		QVERIFY2(log.filter("LMMS Lua API 0.1").size() == 1,
+		QVERIFY2(log.filter("Zene Studio Lua API 0.1").size() == 1,
 			qPrintable(log.join('|')));
 		QVERIFY2(log.contains("hello.lua finished"), qPrintable(log.join('|')));
+	}
+
+	// The scripting namespace and API header were renamed `zene`; both
+	// pre-rename spellings must keep working, because that is the contract every
+	// script written against the published alpha was written to.
+	void testLegacyNamespaceAndHeaderStillRun()
+	{
+		using namespace lmms;
+		QString error;
+
+		const auto legacy = ScriptEngine::instance()->runString(
+			"--! lmms-api 0.1\n"
+			"lmms.log():info('legacy-namespace-ok ' .. lmms.ticksPerBar())\n",
+			&error);
+		QVERIFY2(legacy == ScriptEngine::RunResult::Ok, qPrintable(error));
+		const QStringList legacyLog = ScriptEngine::instance()->takeLogMessages();
+		QVERIFY2(legacyLog.filter("legacy-namespace-ok").size() == 1,
+			qPrintable(legacyLog.join('|')));
+
+		error.clear();
+		const auto renamed = ScriptEngine::instance()->runString(
+			"--! zene-api 0.1\n"
+			"zene.log():info('new-namespace-ok ' .. zene.ticksPerBar())\n",
+			&error);
+		QVERIFY2(renamed == ScriptEngine::RunResult::Ok, qPrintable(error));
+		const QStringList renamedLog = ScriptEngine::instance()->takeLogMessages();
+		QVERIFY2(renamedLog.filter("new-namespace-ok").size() == 1,
+			qPrintable(renamedLog.join('|')));
 	}
 
 	// --- G2: Transport/Song + Pattern/Note bound; example 1 on a real project ---
@@ -393,7 +421,7 @@ assert(string ~= nil and table ~= nil and math ~= nil, "safe stdlib missing")
 		using namespace lmms;
 		auto* engine = ScriptEngine::instance();
 		QVERIFY(engine->workerThread() != nullptr);
-		QCOMPARE(engine->workerThread()->objectName(), QStringLiteral("lmms-lua-script-worker"));
+		QCOMPARE(engine->workerThread()->objectName(), QStringLiteral("zene-lua-script-worker"));
 		QVERIFY2(engine->workerThread() != QThread::currentThread(),
 			"scripts must not run on the calling (UI/audio) thread");
 		QVERIFY2(engine->workerThread() != Engine::audioEngine()->thread(),

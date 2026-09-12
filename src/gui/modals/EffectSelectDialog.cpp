@@ -93,7 +93,7 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 		else
 		{
 			name = it->desc->displayName;
-			type = "LMMS";
+			type = "Zene Studio";
 		}
 		m_sourceModel.setItem(row, 0, new QStandardItem(name));
 		m_sourceModel.setItem(row, 1, new QStandardItem(type));
@@ -108,8 +108,8 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 
 	QVBoxLayout* leftSectionLayout = new QVBoxLayout();
 
-	QStringList buttonLabels = { tr("All"), "LMMS", "LADSPA", "LV2", "VST" };
-	QStringList buttonSearchString = { "", "LMMS", "LADSPA", "LV2", "VST" };
+	QStringList buttonLabels = { tr("All"), "Zene Studio", "LADSPA", "LV2", "VST" };
+	QStringList buttonSearchString = { "", "Zene Studio", "LADSPA", "LV2", "VST" };
 
 	for (int i = 0; i < buttonLabels.size(); ++i)
 	{
