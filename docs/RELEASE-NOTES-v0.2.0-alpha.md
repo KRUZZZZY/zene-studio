@@ -680,30 +680,37 @@ Resolved against the tree and the binary at `post-alpha/release-prep` base `34c1
    `build/lmmsversion.h` reports the same commit. So the release's assets are
    `zene-0.2.0-alpha-<platform>.<ext>`; the per-platform extension list is the release job's upload glob
    (`.github/workflows/build.yml`, `.AppImage` / `.dmg` / `.exe`).
-4. **Cross-check every capability line against `tests/advertised-features.tsv`.** *Done — except the
-   enforcement half, which is **not** green on either build on this box and is not claimed to be.*
+4. **Cross-check every capability line against `tests/advertised-features.tsv`.** *Done, and the enforcement
+   half is green on the release configuration.*
    The manifest binds **compile-time capability**, and it carries six rows: the three hosts this release
    documents as present (`vst3effect`, `vst3instrument`, `clapeffect`) and the three features it documents as
    absent (`session-view`, `wasm-sandbox`, `stem-separation`). It is not, and by its own header cannot be, a row
    per runtime feature — so "delete any claim not represented in the manifest" taken literally would delete
    these notes. The runtime bullets are guarded by their tests. **The guard that binds the manifest to a binary
-   is `tests/release-honesty-gate.sh`**, and its mechanism is what this item can assert: it fails a feature the
-   release documents as present when the build under test does not report that option `ON` (`AUTO` is not `ON`
-   — the script's own header says so), it exits 1 on any mismatch, and the six build jobs in
-   `.github/workflows/build.yml` run it against the binary they have just built. Run against the two binaries
-   that exist here it does **not** pass: `3 of 6` rows on `build-coverage/zene` (the three hosts report `AUTO`)
-   and `1 of 6` on `build/zene` (a stale `WANT_SESSION_VIEW=ON` left in that directory's cache). **The
-   release-configuration build whose options would let the gate read six of six is being run by the release
-   engineer (`scripts/release-verify.sh`); until that run has been observed, item 4 is not Done.** Checked line
-   by line in `docs/RELEASE-PREP-0.2.0.md` §4.
+   is `tests/release-honesty-gate.sh`**, and this item states its measured result rather than a promise:
+   **6 of 6 rows match** — the three hosts `ON matches ON` and named as modules (`libvst3effect.so`,
+   `libvst3instrument.so`, `libclapeffect.so`), and session view, the WASM sandbox and stem separation
+   `OFF matches OFF`, with the run's own line `RESULT: PASS — all 6 documented feature(s) are what this build
+   contains` (`tests/integration-logs-release-verify/honesty-guard.log`). The mechanism, unchanged: it fails a
+   feature the release documents as present when the build under test does not report that option `ON` (`AUTO`
+   is not `ON` — the script's own header says so), it fails a documented-absent feature that reports `ON`, it
+   exits 1 on any mismatch, and the six build jobs in `.github/workflows/build.yml` run it against the binary
+   they have just built. Run against the two older, non-release build directories that happen to sit on this
+   box it does **not** pass: `3 of 6` rows on `build-coverage/zene` (the three hosts report `AUTO`) and `1 of 6`
+   on `build/zene` (a stale `WANT_SESSION_VIEW=ON` left in that directory's cache) — those directories are
+   configured against the manifest, not the release, and the guard is right to fail them; the release run above
+   is this item's evidence. Checked line by line in `docs/RELEASE-PREP-0.2.0.md` §4.
 5. **Have an independent reader compare this text against the built binary, not against the plans.**
    **Done — `docs/INDEPENDENT-NOTES-READ.md`.** An independent reader read this file and the limitations page
    claim by claim against `build-coverage/zene`, `build/zene` and the tree: **127 claims, 108 TRUE, 12 FALSE and
    6 UNVERIFIABLE by its own header count** (its table lists seven UNVERIFIABLE rows, because it counts the two
    policy statements as one item). Its findings are applied to this file and to `docs/KNOWN-LIMITATIONS.md`,
    and the per-item record of the application — what changed, the command run, and its output — is
-   `docs/AUDIT-FIX-PASS.md`. **One item stays open on purpose**: freeze item 4's enforcement half is pending the
-   release-configuration run, and both documents now say so instead of claiming a green.
+   `docs/AUDIT-FIX-PASS.md`. **The item that stayed open on purpose is now closed**: freeze item 4's
+   enforcement half was held back for the release-configuration run, which read
+   `RESULT: PASS — all 6 documented feature(s) are what this build contains`
+   (`tests/integration-logs-release-verify/honesty-guard.log`), so item 4 states the result instead of
+   deferring it.
 6. **Delete any claim not represented in `tests/advertised-features.tsv`.** See item 4: the manifest's scope is
    compile-time capability, stated in its own header ("the build options that must hold for that claim to be
    true"), and its five-column schema has no room for a runtime feature. Read as a command to delete every

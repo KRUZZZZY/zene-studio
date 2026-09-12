@@ -151,15 +151,18 @@ that is this page's fault — report it and it gets added.
   options, re-stated from the build this page was applied against:
   `WANT_WASM='OFF'`, `WANT_STEM_SPLIT='OFF'` (`build/lmmsversion.h`, the same text the binary prints on its
   `Build options:` line). **What enforces "everything the release notes document as present is in this build"
-  is `tests/release-honesty-gate.sh`, and its result on the shipping build is not asserted here.** The guard's
-  mechanism is the checkable half, and it is what is claimed: it fails a documented-present feature when the
-  build under test does not report that option `ON` (`AUTO` is not `ON` — the script's own header says so), it
-  exits 1 on any mismatch, and the six build jobs in `.github/workflows/build.yml` run it against the binary
-  they have just built. Run against the two binaries on this box it does **not** pass (3 of 6 rows on
-  `build-coverage/zene`, 1 of 6 on `build/zene`), and the release-configuration build whose options would let it
-  read six of six is being run by the release engineer (`scripts/release-verify.sh`). Until that run is
-  observed, read this as the claim the guard exists to test, not as a green. The two features above are
-  deliberately absent either way.
+  is `tests/release-honesty-gate.sh`, and on this release's configuration it passes every row.** The guard's
+  mechanism is the checkable half: it fails a documented-present feature when the build under test does not
+  report that option `ON` (`AUTO` is not `ON` — the script's own header says so), it fails a documented-absent
+  feature that reports `ON`, it exits 1 on any mismatch, and the six build jobs in
+  `.github/workflows/build.yml` run it against the binary they have just built. **Measured on this release's
+  configuration: 6 of 6 rows match** — the three plugin hosts `ON matches ON` and named as modules
+  (`libvst3effect.so`, `libvst3instrument.so`, `libclapeffect.so`), and session view, the WASM sandbox and
+  stem separation `OFF matches OFF` (`RESULT: PASS — all 6 documented feature(s) are what this build contains`,
+  `tests/integration-logs-release-verify/honesty-guard.log`). Run against the two older, non-release build
+  directories that happen to sit on this box it does not pass (3 of 6 rows on `build-coverage/zene`, 1 of 6 on
+  `build/zene`) — those directories are configured against the manifest, and the guard is right to fail them;
+  the release run above is this claim's evidence. The two features above are deliberately absent either way.
 
 ## Where the quality bars are not met yet
 
