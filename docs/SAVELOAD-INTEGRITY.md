@@ -384,9 +384,9 @@ would be wrong. What is still true, and what the wording below says, is the advi
 
 ## 6. What I did not do, and the limits of these fixes
 
-- **I did not edit `docs/`.** `docs/KNOWN-LIMITATIONS.md` and `docs/RELEASE-NOTES-*.md` are another
-  lane's files; the wording for the four gaps is quoted in §5.1 for central application. The only
-  file this branch adds under `docs/` is this report.
+- **I did not edit the other files under `docs/`.** `docs/KNOWN-LIMITATIONS.md` and
+  `docs/RELEASE-NOTES-*.md` are another lane's files; the wording for the four gaps is quoted in
+  §5.1 for central application. The only file this branch adds under `docs/` is this report.
 - **I did not touch the older builds' readers.** D6's loss is in code that is already shipped
   elsewhere; §5 says what was done instead.
 - **The general unknown-element case is not fixed.** A build without `WANT_SESSION_VIEW` now
