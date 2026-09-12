@@ -1,8 +1,14 @@
+=== Zene Studio artwork resource-resolution sweep ===
+=== exit 0 while the unresolved set is exactly the pinned pre-existing baseline ===
+
+--- A. normal run ---
+$ python3 tests/brand-resource-sweep.py
 first-party resource names referenced: 498
 call sites scanned:                    989
 call sites resolved:                   846
-UNRESOLVED call sites:                 3
+UNRESOLVED call sites:                 3  (3 pre-existing baseline, 0 NEW)
 
+  pre-existing (pinned in KNOWN_PREEXISTING; not this change's):
     arp_down_on  <- src/gui/LfoControllerDialog.cpp
     arp_up_on  <- src/gui/LfoControllerDialog.cpp
     logo  <- plugins/GranularPitchShifter/GranularPitchShifterControlDialog.cpp
@@ -11,3 +17,59 @@ UNRESOLVED call sites:                 3
     probe 'splash'               -> data/themes/default/splash.png
     probe 'icon'                 -> data/themes/default/icon.png
     probe 'background_artwork'   -> data/themes/classic/background_artwork.png
+EXIT=0
+
+--- B. NEGATIVE CONTROL: hide the plugin logo so a NEW name stops resolving ---
+$ mv data/themes/default/zene-plugin-logo.svg .sweep-negctl.bak
+first-party resource names referenced: 498
+call sites scanned:                    989
+call sites resolved:                   818
+UNRESOLVED call sites:                 31  (3 pre-existing baseline, 28 NEW)
+
+  pre-existing (pinned in KNOWN_PREEXISTING; not this change's):
+    arp_down_on  <- src/gui/LfoControllerDialog.cpp
+    arp_up_on  <- src/gui/LfoControllerDialog.cpp
+    logo  <- plugins/GranularPitchShifter/GranularPitchShifterControlDialog.cpp
+
+  NEW - these fail the sweep:
+    zene-plugin-logo  <- plugins/Amplifier/Amplifier.cpp
+    zene-plugin-logo  <- plugins/BassBooster/BassBooster.cpp
+    zene-plugin-logo  <- plugins/Bitcrush/Bitcrush.cpp
+    zene-plugin-logo  <- plugins/Compressor/Compressor.cpp
+    zene-plugin-logo  <- plugins/CrossoverEQ/CrossoverEQ.cpp
+    zene-plugin-logo  <- plugins/Delay/DelayEffect.cpp
+    zene-plugin-logo  <- plugins/Dispersion/Dispersion.cpp
+    zene-plugin-logo  <- plugins/DualFilter/DualFilter.cpp
+    zene-plugin-logo  <- plugins/DynamicsProcessor/DynamicsProcessor.cpp
+    zene-plugin-logo  <- plugins/Eq/EqEffect.cpp
+    zene-plugin-logo  <- plugins/Flanger/FlangerEffect.cpp
+    zene-plugin-logo  <- plugins/FrequencyShifter/FrequencyShifterEffect.cpp
+    zene-plugin-logo  <- plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp
+    zene-plugin-logo  <- plugins/LOMM/LOMM.cpp
+    zene-plugin-logo  <- plugins/MultitapEcho/MultitapEcho.cpp
+    zene-plugin-logo  <- plugins/NeuralAmp/NeuralAmpEffect.cpp
+    zene-plugin-logo  <- plugins/Oscilloscope/Oscilloscope.cpp
+    zene-plugin-logo  <- plugins/PeakControllerEffect/PeakControllerEffect.cpp
+    zene-plugin-logo  <- plugins/ReverbSC/ReverbSC.cpp
+    zene-plugin-logo  <- plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
+    zene-plugin-logo  <- plugins/SlewDistortion/SlewDistortion.cpp
+    zene-plugin-logo  <- plugins/SlewDistortion/SlewDistortionControlDialog.cpp
+    zene-plugin-logo  <- plugins/SpectrumAnalyzer/Analyzer.cpp
+    zene-plugin-logo  <- plugins/StereoEnhancer/StereoEnhancer.cpp
+    zene-plugin-logo  <- plugins/StereoMatrix/StereoMatrix.cpp
+    zene-plugin-logo  <- plugins/Vectorscope/Vectorscope.cpp
+    zene-plugin-logo  <- plugins/WasmEffect/WasmEffect.cpp
+    zene-plugin-logo  <- plugins/WaveShaper/WaveShaper.cpp
+
+    probe 'zene-plugin-logo'     -> None
+    probe 'splash'               -> data/themes/default/splash.png
+    probe 'icon'                 -> data/themes/default/icon.png
+    probe 'background_artwork'   -> data/themes/classic/background_artwork.png
+EXIT=1
+
+$ mv .sweep-negctl.bak data/themes/default/zene-plugin-logo.svg   # restore
+restored
+
+--- C. back to green, and --strict (counts the pre-existing baseline too) ---
+NORMAL_EXIT=0
+STRICT_EXIT=1

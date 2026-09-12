@@ -99,6 +99,20 @@ def resolves(name: str, plugin_dir: str | None) -> str | None:
     return None
 
 
+# Names that do NOT resolve on the base branch either.  They are pinned here so this sweep is a
+# RATCHET: it exits 0 while the unresolved set is exactly this, and fails the moment a new name
+# stops resolving.  Every entry was measured pre-existing - see docs/BRAND-PLACEHOLDERS.md.
+KNOWN_PREEXISTING = {
+    # src/gui/LfoControllerDialog.cpp does not ship arp_down_on/arp_up_on; the file is
+    # untouched by the brand-placeholder change (last upstream change ed0f288c8).
+    ("arp_down_on", "src/gui/LfoControllerDialog.cpp"),
+    ("arp_up_on", "src/gui/LfoControllerDialog.cpp"),
+    # plugins/GranularPitchShifter has no logo.png at all, so its dialog's window icon has
+    # always been the 1x1 fallback.  An upstream defect, reported not fixed.
+    ("logo", "plugins/GranularPitchShifter/GranularPitchShifterControlDialog.cpp"),
+}
+
+
 def scan_call_sites() -> tuple[dict[str, set[str]], int]:
     """Every (name -> referencing files) pair in first-party code, and the raw call count."""
     names: dict[str, set[str]] = {}
@@ -135,13 +149,22 @@ def resolve_call_sites(names: dict[str, set[str]]) -> tuple[list[tuple[str, str]
 
 def print_report(names: dict[str, set[str]], occurrences: int,
                  unresolved: list[tuple[str, str]], resolved: int, quiet: bool) -> None:
+    fresh = sorted(set(unresolved) - KNOWN_PREEXISTING)
+    known = sorted(set(unresolved) & KNOWN_PREEXISTING)
     print(f"first-party resource names referenced: {len(names)}")
     print(f"call sites scanned:                    {occurrences}")
     print(f"call sites resolved:                   {resolved}")
-    print(f"UNRESOLVED call sites:                 {len(unresolved)}")
-    if unresolved:
+    print(f"UNRESOLVED call sites:                 {len(unresolved)}"
+          f"  ({len(known)} pre-existing baseline, {len(fresh)} NEW)")
+    if known:
         print()
-        for name, f in unresolved:
+        print("  pre-existing (pinned in KNOWN_PREEXISTING; not this change's):")
+        for name, f in known:
+            print(f"    {name}  <- {f}")
+    if fresh:
+        print()
+        print("  NEW - these fail the sweep:")
+        for name, f in fresh:
             print(f"    {name}  <- {f}")
     if quiet:
         return
@@ -153,8 +176,11 @@ def print_report(names: dict[str, set[str]], occurrences: int,
 def main() -> int:
     names, occurrences = scan_call_sites()
     unresolved, resolved = resolve_call_sites(names)
+    strict = "--strict" in sys.argv
     print_report(names, occurrences, unresolved, resolved, "--quiet" in sys.argv)
-    return 1 if unresolved else 0
+    if strict:
+        return 1 if unresolved else 0
+    return 1 if set(unresolved) - KNOWN_PREEXISTING else 0
 
 
 if __name__ == "__main__":

@@ -220,27 +220,47 @@ the product resolves:
   path (`src/gui/GuiApplication.cpp:108`) — so the name resolves **from the plugin's own directory**;
 * otherwise it resolves against the theme search path (`GuiApplication.cpp:106–108`).
 
-Result on this tree (`tests/evidence/brand-placeholders/resource-sweep.txt`):
+Result on this tree (full text, with the negative control, in
+`tests/evidence/brand-placeholders/resource-sweep.txt`):
 
 ```
 first-party resource names referenced: 498
 call sites scanned:                    989
 call sites resolved:                   846
-UNRESOLVED call sites:                 3
+UNRESOLVED call sites:                 3  (3 pre-existing baseline, 0 NEW)
 
+  pre-existing (pinned in KNOWN_PREEXISTING; not this change's):
     arp_down_on  <- src/gui/LfoControllerDialog.cpp
     arp_up_on    <- src/gui/LfoControllerDialog.cpp
     logo         <- plugins/GranularPitchShifter/GranularPitchShifterControlDialog.cpp
+EXIT=0
 ```
 
 **`zene-plugin-logo` resolves to `data/themes/default/zene-plugin-logo.svg`** — the placeholder is
 behind the renamed key.
 
+The sweep is a **ratchet**, not a tally: it exits 0 while the unresolved set is exactly the pinned
+pre-existing baseline and fails on anything new. It was shown to go **red** — the negative control
+hides the plugin logo and the sweep reports **28 NEW unresolved call sites**, exit 1:
+
+```
+--- NEGATIVE CONTROL: hide the plugin logo so a NEW name stops resolving ---
+UNRESOLVED call sites:  31  (3 pre-existing baseline, 28 NEW)
+  NEW - these fail the sweep:
+    zene-plugin-logo  <- plugins/Amplifier/Amplifier.cpp
+    zene-plugin-logo  <- plugins/BassBooster/BassBooster.cpp
+    … 26 more, one per plugin …
+EXIT=1
+```
+
+That is also an independent confirmation of the live call-site count (**28 under `plugins/`** plus
+one test fixture — see §8). `--strict` makes the baseline itself fatal; it exits 1 here.
+
 **All three unresolved names are pre-existing, and none is this change's:**
 
 | Name | Referenced from | Pre-existing? | Evidence |
 |---|---|---|---|
-| `arp_down_on` | `src/gui/LfoControllerDialog.cpp` | **yes** | file not in this change set (`git diff --name-only HEAD~1 HEAD -- …` → 0 lines); same two names the rename lane found |
+| `arp_down_on` | `src/gui/LfoControllerDialog.cpp` | **yes** | file not in this change set (`git diff --name-only <base> HEAD -- …` → 0 lines); same two names the rename lane found |
 | `arp_up_on` | `src/gui/LfoControllerDialog.cpp` | **yes** | as above |
 | `logo` | `plugins/GranularPitchShifter/GranularPitchShifterControlDialog.cpp:146` | **yes — and missed by the rename lane's sweep** | the plugin directory genuinely contains no `logo.*` (only `artwork.png`, `help_*`, `prefilter_*`); the file was last touched by upstream `478f5345d` and is not in this change set |
 
@@ -426,8 +446,10 @@ guessed at:
 * **`tests/src/core/PluginLogoResourceTest.cpp`** — pre-existing (rename lane); **re-run in both
   directions** against the replaced file, because this change alters exactly what it covers. Not
   modified.
-* **`tests/brand-resource-sweep.py`** — new. The sweep of §3b, runnable and exit-coded
-  (non-zero if any name fails to resolve). Registered in `tests/fork-sources.txt`.
+* **`tests/brand-resource-sweep.py`** — new. The sweep of §3b, runnable and exit-coded as a
+  **ratchet**: exit 0 while the unresolved set is exactly the pinned pre-existing baseline, exit 1
+  the moment a new name stops resolving (`--strict` also fails on the baseline). Its negative
+  control is in §3b. Registered in `tests/fork-sources.txt`.
 * **`tests/evidence/brand-placeholders/verify-placeholders.py`** — new. The dimension/metadata/container/byte-identity
   checks of §3c.
 * **`tools/brand/rasterise-placeholders.py --check`** — new. The negative-capable control: exit 0
