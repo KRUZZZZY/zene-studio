@@ -1,0 +1,11 @@
+release                empty-minimal      FAIL undo_ok=True alive_1s=False rc=-11
+release                fixture-minimal    PASS undo_ok=True alive_1s=True rc=None
+release                empty-probe        FAIL undo_ok=True alive_1s=False rc=-11
+release                fixture-probe      PASS undo_ok=True alive_1s=True rc=None
+# /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/tests/integration-logs-undo-rel/matrix-release.jsonl
+### matrix release run 2 (unfixed)
+release                empty-minimal      FAIL undo_ok=True alive_1s=False rc=-11
+release                fixture-minimal    PASS undo_ok=True alive_1s=True rc=None
+release                empty-probe        FAIL undo_ok=True alive_1s=False rc=-11
+release                fixture-probe      PASS undo_ok=True alive_1s=True rc=None
+# /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/tests/integration-logs-undo-rel/matrix-release.jsonl

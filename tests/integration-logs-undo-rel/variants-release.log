@@ -1,0 +1,6 @@
+release    ping-only          PASS alive_after_wait=True rc=None
+release    tempo-only         PASS alive_after_wait=True rc=None
+release    undo-only          PASS alive_after_wait=True rc=None
+release    tempo-then-undo    FAIL alive_after_wait=False rc=-11
+release    undo-slow          FAIL alive_after_wait=False rc=-11
+# /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/tests/integration-logs-undo-rel/variants-release.jsonl

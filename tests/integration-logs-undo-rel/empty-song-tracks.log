@@ -1,11 +1,87 @@
-Traceback (most recent call last):
-  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/tests/integration-logs-undo-rel/empty-song-tracks.py", line 6, in <module>
-    i=H.Instance()
-      ^^^^^^^^^^^^
-  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/tools/mcp-zene-control/tests/harness.py", line 111, in __init__
-    self.binary = binary or binary_path()
-                            ^^^^^^^^^^^^^
-  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/tools/mcp-zene-control/tests/harness.py", line 52, in binary_path
-    raise RuntimeError(
-RuntimeError: no Zene Studio binary at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel-fix/build-release/zene; set ZENE_CONTROL_BINARY to a build that accepts --control-socket (the zene-pa-agentctl lane's build/lmms)
-EXIT=1
+{
+ "ping": {
+  "id": 1,
+  "ok": true,
+  "result": {
+   "audio": {
+    "device": "Dummy (no sound output)",
+    "requested": "Dummy (no sound output)",
+    "sound_output": true,
+    "start_failed": false,
+    "state": "ok"
+   },
+   "engine_ready": true,
+   "pong": true,
+   "proto": 1,
+   "version": "0.1.0-alpha.328+3fd5a4f"
+  }
+ },
+ "project_get_state": {
+  "id": 2,
+  "ok": true,
+  "result": {
+   "file": "",
+   "modified": true,
+   "playing": false,
+   "revisions": {
+    "count": 0,
+    "file": "",
+    "max_revision_bytes": 8388608,
+    "max_total_bytes": 25165824,
+    "policy": "keep-3",
+    "retained_bytes": 0,
+    "revisions": []
+   },
+   "tempo": 140,
+   "track_count": 4,
+   "tracks": [
+    "trk-0",
+    "trk-1",
+    "trk-2",
+    "trk-4"
+   ]
+  }
+ },
+ "track_list": {
+  "id": 3,
+  "ok": true,
+  "result": {
+   "count": 4,
+   "tracks": [
+    {
+     "id": "trk-0",
+     "index": 0,
+     "muted": false,
+     "name": "TripleOscillator",
+     "soloed": false,
+     "type": "instrument"
+    },
+    {
+     "id": "trk-1",
+     "index": 1,
+     "muted": false,
+     "name": "Sample track",
+     "soloed": false,
+     "type": "sample"
+    },
+    {
+     "id": "trk-2",
+     "index": 2,
+     "muted": false,
+     "name": "Pattern 0",
+     "soloed": false,
+     "type": "pattern"
+    },
+    {
+     "id": "trk-4",
+     "index": 3,
+     "muted": false,
+     "name": "Automation track",
+     "soloed": false,
+     "type": "automation"
+    }
+   ]
+  }
+ }
+}
+EXIT=0

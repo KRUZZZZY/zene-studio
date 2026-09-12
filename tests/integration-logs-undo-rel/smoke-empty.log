@@ -1,0 +1,54 @@
+{
+  "label": "smoke-empty",
+  "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-undo-rel/build-release/zene",
+  "steps": {
+    "ping": {
+      "id": 1,
+      "ok": true,
+      "result": {
+        "audio": {
+          "device": "Dummy (no sound output)",
+          "requested": "Dummy (no sound output)",
+          "sound_output": true,
+          "start_failed": false,
+          "state": "ok"
+        },
+        "engine_ready": true,
+        "pong": true,
+        "proto": 1,
+        "version": "0.1.0-alpha.328+3fd5a4f"
+      }
+    },
+    "set_tempo_128": {
+      "id": 2,
+      "ok": true,
+      "result": {
+        "tempo": 128
+      }
+    },
+    "undo": {
+      "id": 3,
+      "ok": true,
+      "result": {
+        "can_redo": true,
+        "can_undo": true,
+        "mechanism": "lmms::ProjectJournal",
+        "undone": true,
+        "undone_command": "transport.set_tempo"
+      }
+    },
+    "next_request": {
+      "__exception__": "ConnectionResetError: [Errno 104] Connection reset by peer"
+    },
+    "tempo_after_undo": {
+      "__exception__": "BrokenPipeError: [Errno 32] Broken pipe"
+    }
+  },
+  "socket_ready_s": 0.1,
+  "engine_ready_s": 1.86,
+  "alive_after_undo": false,
+  "process_returncode": -11,
+  "log_tail": "QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'\ncontrol socket listening on /tmp/zene-control-test-npg8rvmp/zene.sock\nLv2 plugin SUMMARY: 73 of 87  loaded in 114 msecs.\nFor details about not loaded plugins, please set\n  environment variable \"LMMS_LV2_DEBUG\" to nonempty.\nBlocked Lv2 Plugins: 10 of 87 \n  If you want to enable them (dangerous!), please set\n  environment variable \"LMMS_ENABLE_BLOCKED_PLUGINS\" to nonempty.\nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nThis plugin does not support raise()\nplugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)\nThis plugin does not support setParent!\nThis plugin does not support setParent!\nThis plugin does not support setParent!\n",
+  "failed": true
+}
+SMOKE_EXIT=1
