@@ -81,12 +81,30 @@ bool deviceParameters(const ControlTarget& target, const QString& pluginId,
 	return true;
 }
 
+//! Index of a model within a list of non-const models, from a const view of it.
+//! `QList::indexOf`'s Qt5 overload takes `AutomatableModel* const&`, so calling it with a
+//! `const AutomatableModel*` is a hard error on every Qt5 CI job (the Qt6 build on the
+//! development box accepts it through its templated overload, which is why this only ever
+//! failed in CI):
+//!   ControlCommandsPluginParams.cpp:89:72: error: binding reference of type
+//!     'lmms::AutomatableModel* const&' to 'const lmms::AutomatableModel*' discards qualifiers
+//! Comparing the pointers directly is independent of both the Qt version and the overload set,
+//! and needs no const_cast.
+int indexOfModel(const QList<AutomatableModel*>& models, const AutomatableModel* model)
+{
+	for (int i = 0; i < models.size(); ++i)
+	{
+		if (models.at(i) == model) { return i; }
+	}
+	return -1;
+}
+
 //! One parameter plus the plugin it belongs to.
 ControlResult parameterResult(const QString& target, const QString& pluginId,
 	const QString& pluginName, const AutomatableModel* model,
 	const QList<AutomatableModel*>& models)
 {
-	QJsonObject entry = controlParameterJson(model, models.indexOf(model));
+	QJsonObject entry = controlParameterJson(model, indexOfModel(models, model));
 	QJsonObject result;
 	result.insert(QStringLiteral("target"), target);
 	result.insert(QStringLiteral("plugin"), pluginId);
@@ -208,7 +226,7 @@ void registerParamSet(ControlRegistry& registry)
 		result.insert(QStringLiteral("device_plugin"), pluginName);
 		result.insert(QStringLiteral("previous"), static_cast<double>(previous));
 		result.insert(QStringLiteral("parameter"),
-			controlParameterJson(model, models.indexOf(model)));
+			controlParameterJson(model, indexOfModel(models, model)));
 
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("target"), target.id);

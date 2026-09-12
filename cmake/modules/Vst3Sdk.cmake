@@ -180,6 +180,21 @@ SET_TARGET_PROPERTIES(lmms_vst3_sdk PROPERTIES
 TARGET_COMPILE_DEFINITIONS(lmms_vst3_sdk PUBLIC
 	"$<$<CONFIG:Debug>:DEVELOPMENT=1>"
 	"$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>")
+IF(MSVC)
+	# The SDK decides its own C++ level from __cplusplus
+	# (pluginterfaces/base/fplatform.h: `#define SMTG_CPP20 (__cplusplus >= 202002L)`),
+	# and MSVC reports __cplusplus as 199711L unless /Zc:__cplusplus is passed. So
+	# without this flag the SDK takes its pre-C++20 path while the compiler IS C++20,
+	# and module_win32.cpp fails to compile at all:
+	#   module_win32.cpp(427): error C2664: 'addToPathList': cannot convert argument 2
+	#     from 'std::basic_string<char8_t,...>' to 'const std::string &'
+	# (under C++20 generic_u8string() returns std::u8string; the pre-C++20 branch
+	# assumes it returns std::string). src/CMakeLists.txt:161 already passes this flag
+	# to lmmsobjs; this target is compiled separately and needs it too. /permissive- is
+	# deliberately NOT added here: this is third-party source and the SDK is only
+	# known to build against the flag set its own build uses.
+	TARGET_COMPILE_OPTIONS(lmms_vst3_sdk PRIVATE "/Zc:__cplusplus")
+ENDIF()
 IF(UNIX AND NOT APPLE)
 	TARGET_LINK_LIBRARIES(lmms_vst3_sdk PUBLIC dl)
 ELSEIF(APPLE)
