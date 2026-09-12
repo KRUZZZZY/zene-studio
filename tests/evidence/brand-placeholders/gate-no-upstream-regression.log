@@ -333,35 +333,6 @@ docs/RELEASE-NOTES-v0.1.0-alpha.md                       docs (allowed)
 docs/RENAME-COMPLETE.md                                  docs (allowed)
 docs/STATUS.md                                           docs (allowed)
 docs/WAVE-R-RENAME.md                                    docs (allowed)
-docs/evidence/brand-placeholders/audit-provenance.sh     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gate-9-sibling-copy.txt VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gate-fork-sources.log   VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gate-no-upstream-regression.log VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gen.log                 VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/local-ci.log            VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/pre-change-dims.txt     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/provenance-audit.py     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/provenance-audit.txt    VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/app-16.png       VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/app64-64.png     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/check-app.png    VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/check-mime.png   VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/check-plugin.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-app-16.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-app-32.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-mime-16.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-mime-32.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-plugin-16.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-plugin-32.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/mime-16.png      VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/orig-48.png      VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/orig-plugin-logo.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/plugin-16.png    VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/plugin64-64.png  VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/preview.py       VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/resource-sweep.txt      VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/verify-placeholders.py  VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/verify-placeholders.txt VIOLATION: undeclared change to upstream-inherited code
 docs/phase-f/CRITERIA-TO-EVIDENCE.md                     docs (allowed)
 docs/phase-f/PER-BRANCH-REVIEWABILITY.md                 docs (allowed)
 docs/phase-f/RELEASE-NOTES-mixer-v2.md                   docs (allowed)
@@ -492,6 +463,28 @@ tests/coverage-baseline-all.tsv                          tests (allowed)
 tests/coverage-baseline.tsv                              tests (allowed)
 tests/coverage-gate.sh                                   tests (allowed)
 tests/duplication-gate.sh                                tests (allowed)
+tests/evidence/brand-placeholders/audit-provenance.sh    tests (allowed)
+tests/evidence/brand-placeholders/gate-9-sibling-copy.txt tests (allowed)
+tests/evidence/brand-placeholders/gate-fork-sources.log  tests (allowed)
+tests/evidence/brand-placeholders/gate-no-upstream-regression.log tests (allowed)
+tests/evidence/brand-placeholders/gen.log                tests (allowed)
+tests/evidence/brand-placeholders/local-ci.exit          tests (allowed)
+tests/evidence/brand-placeholders/local-ci.log           tests (allowed)
+tests/evidence/brand-placeholders/local-ci.txt           tests (allowed)
+tests/evidence/brand-placeholders/plugin-logo-test-red-green.txt tests (allowed)
+tests/evidence/brand-placeholders/pre-change-dims.txt    tests (allowed)
+tests/evidence/brand-placeholders/provenance-audit.py    tests (allowed)
+tests/evidence/brand-placeholders/provenance-audit.txt   tests (allowed)
+tests/evidence/brand-placeholders/render/check-app.png   tests (allowed)
+tests/evidence/brand-placeholders/render/check-mime.png  tests (allowed)
+tests/evidence/brand-placeholders/render/check-plugin.png tests (allowed)
+tests/evidence/brand-placeholders/render/orig-plugin-logo.png tests (allowed)
+tests/evidence/brand-placeholders/render/preview.py      tests (allowed)
+tests/evidence/brand-placeholders/resource-sweep.txt     tests (allowed)
+tests/evidence/brand-placeholders/run-all-gates.exit     tests (allowed)
+tests/evidence/brand-placeholders/run-all-gates.txt      tests (allowed)
+tests/evidence/brand-placeholders/verify-placeholders.py tests (allowed)
+tests/evidence/brand-placeholders/verify-placeholders.txt tests (allowed)
 tests/file-length-baseline-all.tsv                       tests (allowed)
 tests/file-length-baseline.tsv                           tests (allowed)
 tests/file-length-gate.sh                                tests (allowed)
@@ -534,5 +527,4 @@ tools/local-ci.sh                                        fork-NEW (allowed)
 tools/mmpz-git/run-demo.sh                               declared divergence -> wave R rename: demo script invokes the renamed binary
 vcpkg.json                                               declared divergence -> wave R rename: vcpkg manifest name follows the CMake project rename
 
-FAIL: Gate 6 violation(s) above — either revert the change, or declare it in
-      tests/upstream-modifications.txt with a reason and ship a regression test.
+PASS: every change to upstream-inherited code since 01148947ea4d8bdb05c237942758d61acc867223 is declared (393 file(s) in the ledger)

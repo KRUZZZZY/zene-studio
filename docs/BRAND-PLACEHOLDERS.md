@@ -174,26 +174,40 @@ test covers, so it was run **in both directions**.
 
 ```bash
 # green — resource present
-cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R PluginLogoResourceTest --output-on-failure
+cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginLogoResourceTest
 
 # red control — move the placeholder out of the way, so the assertion is not vacuous
-mv data/themes/default/zene-plugin-logo.svg /tmp/…   # (restored immediately)
+mv data/themes/default/zene-plugin-logo.svg .g-red-control.svg.bak   # restored immediately
 ```
 
-Both directions are pasted, with unpiped exit codes, in
-`tests/evidence/brand-placeholders/`:
+Observed, exit codes unpiped (full text: `tests/evidence/brand-placeholders/plugin-logo-test-red-green.txt`):
 
-* `plugin-logo-test-red-green.txt` — the red→green pair
-* `ctest-results.txt` — the full suite from `build/tests`
+```
+GREEN      QINFO : plugin logo 'zene-plugin-logo' resolved to 48 x 48 px from the artwork search path
+           Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 15ms          GREEN_EXIT=0
 
-The test asserts three things that a build cannot: the pixmap is not null, it is **not the 1×1
-fallback** (`width() > 1 && height() > 1`), and it contains **at least one visible pixel**. The
-inverse case is pinned in the same file
-(`aMissingResourceIsTheOnePixelFallback`), which is what makes the assertion non-vacuous.
+RED        FAIL!  : pluginLogoLoads() 'logo.width() > 1 && logo.height() > 1' returned FALSE.
+           (the plugin logo is the 1x1 fallback pixmap: the resource did not resolve)
+           Totals: 3 passed, 1 failed, 0 skipped, 0 blacklisted, 7ms           RED_EXIT=1
 
-> **The exact numbers observed on this tree are in `ctest-results.txt`; they are not restated here
-> from memory.** The suite ran from `build/tests`, never from the top-level build dir, and a
-> `0 tests` result is treated as an error, not a pass.
+GREEN      restored, re-run: 4 passed, 0 failed                            GREEN_AGAIN_EXIT=0
+```
+
+The green line is the proof that matters: the **placeholder** resolves through the product's own
+artwork search path to a real **48×48** pixmap, not the fallback. The red control shows the
+assertion can fail, so the green is not vacuous.
+
+The **full suite** ran from `build/tests` via `tools/local-ci.sh --no-build`:
+
+```
+ctest EXIT=0         100% tests passed, 0 tests failed out of 28
+local-ci: overall exit=0
+```
+
+28 tests, not 0 — a `0 tests` result is treated as an error, never a pass. Full log:
+`tests/evidence/brand-placeholders/local-ci.txt`. (`local-ci.log` is the earlier full
+configure+build run, which reached `[100%] Built target PluginPortsMigrationTest` with **0
+`error:` lines** in `build/build.log`.)
 
 ### 3b. Resource-resolution sweep
 
@@ -283,8 +297,31 @@ both halves of any art rename whose content changes.
 |---|---|---|---|
 | `fork-sources-gate.sh` | `bash tests/fork-sources-gate.sh` | **127** | **the script does not exist on this branch** — `fork-sources-gate.sh` is absent from `tests/`. Reported as 127, not claimed as a pass. |
 | Gate 6 — no upstream regression | `bash tests/no-upstream-regression-gate.sh` | **0** | `PASS: every change to upstream-inherited code since 01148947ea… is declared (393 file(s) in the ledger)` |
-| `run-all-gates.sh` | `bash tests/run-all-gates.sh` | see `run-all-gates.txt` | |
+| `run-all-gates.sh` | `bash tests/run-all-gates.sh` | **0** | `RESULT: PASS — every executed gate passed` (Gate 2 SKIP) |
 | Gate 9 | — | **127 / not on this branch** | see below |
+
+`run-all-gates.sh` summary, as measured (`tests/evidence/brand-placeholders/run-all-gates.txt`):
+
+```
+gate   name                     result
+1      ctest                    PASS      2  coverage    SKIP
+3      no-tautology             PASS      4  complexity  PASS
+5      mutation                 PASS      6  upstream-regression  PASS
+7      file-length              PASS      8  duplication PASS
+RESULT: PASS — every executed gate passed
+```
+
+**Two gates failed on my first pass and were fixed, not declared away.** That history is worth
+recording because both failures were self-inflicted and neither was visible from the build:
+
+| Gate | What failed | Fix |
+|---|---|---|
+| 4 — per-method complexity | `tests/brand-resource-sweep.py: main` measured **CCN 12** against a target of ≤ 10 — `REGRESSION: new function over target` | split into `scan_call_sites` / `resolve_call_sites` / `print_report`; the same was done to `provenance-audit.py: main` (CCN 14). `lizard -C 10` now reports nothing over target |
+| 6 — no upstream regression | the evidence directory at `docs/evidence/**` matched **none** of the gate's allowlist patterns (`.sh/.py/.txt/.log/.png` are not `tests/**`, not build config, not `*.md`), so **29 evidence files read as undeclared divergence** | moved to `tests/evidence/brand-placeholders/`, which `tests/**` explicitly allows. Declaring non-product evidence in the shared divergence ledger would have been noise |
+
+Both are green on the committed tip. The lesson for the next lane: `tests/**` is the only tree this
+repo's Gate 6 treats as free, and a `.py` helper anywhere in scope is measured by the complexity
+ratchet.
 
 **Gate 9 does not exist on this branch.** `post-alpha/gate-debt` is **not** an ancestor of HEAD
 (`git merge-base --is-ancestor post-alpha/gate-debt HEAD` → non-zero), and `find . -name

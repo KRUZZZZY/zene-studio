@@ -2,65 +2,65 @@
 ================ Gate 1: unit tests (ctest) ================
 Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-placeholder/build/tests
       Start  1: ArrayVectorTest
- 1/28 Test  #1: ArrayVectorTest ..................   Passed    0.02 sec
+ 1/28 Test  #1: ArrayVectorTest ..................   Passed    0.03 sec
       Start  2: AudioBufferTest
  2/28 Test  #2: AudioBufferTest ..................   Passed    0.03 sec
       Start  3: AudioBusHandleTest
- 3/28 Test  #3: AudioBusHandleTest ...............   Passed    1.39 sec
+ 3/28 Test  #3: AudioBusHandleTest ...............   Passed    1.44 sec
       Start  4: AudioBusTest
- 4/28 Test  #4: AudioBusTest .....................   Passed    1.34 sec
+ 4/28 Test  #4: AudioBusTest .....................   Passed    1.41 sec
       Start  5: AudioPortsModelTest
- 5/28 Test  #5: AudioPortsModelTest ..............   Passed    1.40 sec
+ 5/28 Test  #5: AudioPortsModelTest ..............   Passed    1.34 sec
       Start  6: AudioPortsTest
- 6/28 Test  #6: AudioPortsTest ...................   Passed    1.39 sec
+ 6/28 Test  #6: AudioPortsTest ...................   Passed    1.42 sec
       Start  7: AutomatableModelTest
- 7/28 Test  #7: AutomatableModelTest .............   Passed    1.34 sec
+ 7/28 Test  #7: AutomatableModelTest .............   Passed    1.35 sec
       Start  8: ConfigMigrationTest
- 8/28 Test  #8: ConfigMigrationTest ..............   Passed    0.02 sec
+ 8/28 Test  #8: ConfigMigrationTest ..............   Passed    0.03 sec
       Start  9: DataFileFormatTest
- 9/28 Test  #9: DataFileFormatTest ...............   Passed    0.03 sec
+ 9/28 Test  #9: DataFileFormatTest ...............   Passed    0.02 sec
       Start 10: MathTest
 10/28 Test #10: MathTest .........................   Passed    0.02 sec
       Start 11: MultiTrackRecorderTest
-11/28 Test #11: MultiTrackRecorderTest ...........   Passed    0.03 sec
+11/28 Test #11: MultiTrackRecorderTest ...........   Passed    0.02 sec
       Start 12: PluginLogoResourceTest
-12/28 Test #12: PluginLogoResourceTest ...........   Passed    0.05 sec
+12/28 Test #12: PluginLogoResourceTest ...........   Passed    0.04 sec
       Start 13: PluginAudioPortsTest
-13/28 Test #13: PluginAudioPortsTest .............   Passed    1.38 sec
+13/28 Test #13: PluginAudioPortsTest .............   Passed    1.34 sec
       Start 14: ProjectVersionTest
 14/28 Test #14: ProjectVersionTest ...............   Passed    0.02 sec
       Start 15: RecordRingBufferTest
 15/28 Test #15: RecordRingBufferTest .............   Passed    0.03 sec
       Start 16: RelativePathsTest
-16/28 Test #16: RelativePathsTest ................   Passed    0.03 sec
+16/28 Test #16: RelativePathsTest ................   Passed    0.02 sec
       Start 17: RemotePluginAudioPortsTest
-17/28 Test #17: RemotePluginAudioPortsTest .......   Passed    2.05 sec
+17/28 Test #17: RemotePluginAudioPortsTest .......   Passed    1.96 sec
       Start 18: RemotePluginClientE2ETest
-18/28 Test #18: RemotePluginClientE2ETest ........   Passed    1.53 sec
+18/28 Test #18: RemotePluginClientE2ETest ........   Passed    1.51 sec
       Start 19: RoutingGraphTest
 19/28 Test #19: RoutingGraphTest .................   Passed    0.03 sec
       Start 20: PdcMixerTest
-20/28 Test #20: PdcMixerTest .....................   Passed    1.39 sec
+20/28 Test #20: PdcMixerTest .....................   Passed    1.37 sec
       Start 21: ScriptBindingsTest
-21/28 Test #21: ScriptBindingsTest ...............   Passed    1.40 sec
+21/28 Test #21: ScriptBindingsTest ...............   Passed    1.34 sec
       Start 22: ScriptEngineTest
-22/28 Test #22: ScriptEngineTest .................   Passed    1.52 sec
+22/28 Test #22: ScriptEngineTest .................   Passed    1.49 sec
       Start 23: SlideNotesTest
-23/28 Test #23: SlideNotesTest ...................   Passed    0.02 sec
+23/28 Test #23: SlideNotesTest ...................   Passed    0.03 sec
       Start 24: TimelineTest
 24/28 Test #24: TimelineTest .....................   Passed    1.38 sec
       Start 25: TwoTrackRecordingHarness
-25/28 Test #25: TwoTrackRecordingHarness .........   Passed    2.02 sec
+25/28 Test #25: TwoTrackRecordingHarness .........   Passed    2.04 sec
       Start 26: AutomationTrackTest
-26/28 Test #26: AutomationTrackTest ..............   Passed    1.35 sec
+26/28 Test #26: AutomationTrackTest ..............   Passed    1.34 sec
       Start 27: PluginPortsMigrationTest
-27/28 Test #27: PluginPortsMigrationTest .........   Passed    4.30 sec
+27/28 Test #27: PluginPortsMigrationTest .........   Passed    4.28 sec
       Start 28: AudioPluginTest
-28/28 Test #28: AudioPluginTest ..................   Passed    1.34 sec
+28/28 Test #28: AudioPluginTest ..................   Passed    1.37 sec
 
 100% tests passed, 0 tests failed out of 28
 
-Total Test time (real) =  26.87 sec
+Total Test time (real) =  26.67 sec
 
 ================ Gate 2: coverage ratchet ================
 skipped (pass --with-coverage)
@@ -101,8 +101,8 @@ Out of scope (helper executables, not QTest classes):
 PASS: every registered test file has test slots and real assertions, no literal tautologies
 
 ================ Gate 4: per-method complexity ================
-#TOTAL	824	24
-complexity-gate: 824 functions in fork sources; 24 exceed CCN 10
+#TOTAL	844	23
+complexity-gate: 844 functions in fork sources; 23 exceed CCN 10
 
 Functions over the CCN target (grandfathered if in the baseline):
   CCN      NLOC   LEN    function
@@ -125,7 +125,6 @@ Functions over the CCN target (grandfathered if in the baseline):
   13       75     87     lmms::vst3::HostedPlugin::prepare@508-594@plugins/Vst3Effect/Vst3Host.cpp
   12       53     61     lmms::vst3::HostedPlugin::process@639-699@plugins/Vst3Effect/Vst3Host.cpp
   12       68     80     lmms::wasm::WasmWorker::processSlot@155-234@src/wasm/WasmWorker.cpp
-  12       38     42     main@102-143@tests/brand-resource-sweep.py
   11       22     22     lmms::clap::describe@65-86@plugins/ClapEffect/ClapHost.cpp
   11       35     41     lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp
   11       71     80     lmms::StemModelStore::download@203-282@src/core/StemModelStore.cpp
@@ -151,10 +150,8 @@ src/core/ScriptEngine.cpp: lmms::ScriptEngine::resolveProjectPath has 44 NLOC, 1
 src/gui/PinConnector.cpp: lmms::gui::PinConnector::paintEvent has 96 NLOC, 14 CCN, 1026 token, 0 PARAM, 130 length, 0 ND
 src/wasm/WasmSandbox.cpp: lmms::wasm::WasmSandbox::loadModuleBytes has 75 NLOC, 15 CCN, 418 token, 3 PARAM, 85 length, 0 ND
 src/wasm/WasmWorker.cpp: lmms::wasm::WasmWorker::processSlot has 68 NLOC, 12 CCN, 530 token, 2 PARAM, 80 length, 0 ND
-tests/brand-resource-sweep.py: main has 38 NLOC, 12 CCN, 289 token, 0 PARAM, 42 length, 0 ND
 
-REGRESSION: new function over target: main@102-143@tests/brand-resource-sweep.py (CCN 12)
-FAIL: complexity ratchet regressed (check mode: baseline not written)
+PASS (check mode: no regressions; baseline not written)
 
 ================ Gate 5: mutation testing (src/core/RoutingGraph.cpp) ================
 
@@ -199,11 +196,8 @@ control: pristine TU recompiled, test binary passed 3/3 runs
 ==== final control: tree restored, pristine source still builds and passes ====
 final control: pristine source recompiled, test binary passed
 note: uncommitted paths unrelated to the sweep (not caused by this run):
- M docs/evidence/brand-placeholders/gate-9-sibling-copy.txt
-?? docs/evidence/brand-placeholders/local-ci.exit
-?? docs/evidence/brand-placeholders/local-ci.txt
-?? docs/evidence/brand-placeholders/plugin-logo-test-red-green.txt
-?? docs/evidence/brand-placeholders/run-all-gates.txt
+ D tests/evidence/brand-placeholders/run-all-gates.exit
+ M tests/evidence/brand-placeholders/run-all-gates.txt
 
 ==== result ====
 mutation-gate: src/core/RoutingGraph.cpp
@@ -568,35 +562,6 @@ doc/CMakeLists.txt                                       build/config (allowed)
 doc/Doxyfile.in                                          declared divergence -> wave R rename: generated documentation project name follows the rename
 docs/BRAND-PLACEHOLDERS.md                               docs (allowed)
 docs/CONVENTIONS.md                                      docs (allowed)
-docs/evidence/brand-placeholders/audit-provenance.sh     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gate-9-sibling-copy.txt VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gate-fork-sources.log   VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gate-no-upstream-regression.log VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/gen.log                 VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/local-ci.log            VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/pre-change-dims.txt     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/provenance-audit.py     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/provenance-audit.txt    VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/app-16.png       VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/app64-64.png     VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/check-app.png    VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/check-mime.png   VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/check-plugin.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-app-16.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-app-32.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-mime-16.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-mime-32.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-plugin-16.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/fixed-plugin-32.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/mime-16.png      VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/orig-48.png      VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/orig-plugin-logo.png VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/plugin-16.png    VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/plugin64-64.png  VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/render/preview.py       VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/resource-sweep.txt      VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/verify-placeholders.py  VIOLATION: undeclared change to upstream-inherited code
-docs/evidence/brand-placeholders/verify-placeholders.txt VIOLATION: undeclared change to upstream-inherited code
 docs/KNOWN-LIMITATIONS.md                                docs (allowed)
 docs/LOCAL-CI.md                                         docs (allowed)
 DOCS-NAMING.md                                           docs (allowed)
@@ -745,6 +710,28 @@ tests/coverage-baseline-all.tsv                          tests (allowed)
 tests/coverage-baseline.tsv                              tests (allowed)
 tests/coverage-gate.sh                                   tests (allowed)
 tests/duplication-gate.sh                                tests (allowed)
+tests/evidence/brand-placeholders/audit-provenance.sh    tests (allowed)
+tests/evidence/brand-placeholders/gate-9-sibling-copy.txt tests (allowed)
+tests/evidence/brand-placeholders/gate-fork-sources.log  tests (allowed)
+tests/evidence/brand-placeholders/gate-no-upstream-regression.log tests (allowed)
+tests/evidence/brand-placeholders/gen.log                tests (allowed)
+tests/evidence/brand-placeholders/local-ci.exit          tests (allowed)
+tests/evidence/brand-placeholders/local-ci.log           tests (allowed)
+tests/evidence/brand-placeholders/local-ci.txt           tests (allowed)
+tests/evidence/brand-placeholders/plugin-logo-test-red-green.txt tests (allowed)
+tests/evidence/brand-placeholders/pre-change-dims.txt    tests (allowed)
+tests/evidence/brand-placeholders/provenance-audit.py    tests (allowed)
+tests/evidence/brand-placeholders/provenance-audit.txt   tests (allowed)
+tests/evidence/brand-placeholders/render/check-app.png   tests (allowed)
+tests/evidence/brand-placeholders/render/check-mime.png  tests (allowed)
+tests/evidence/brand-placeholders/render/check-plugin.png tests (allowed)
+tests/evidence/brand-placeholders/render/orig-plugin-logo.png tests (allowed)
+tests/evidence/brand-placeholders/render/preview.py      tests (allowed)
+tests/evidence/brand-placeholders/resource-sweep.txt     tests (allowed)
+tests/evidence/brand-placeholders/run-all-gates.exit     tests (allowed)
+tests/evidence/brand-placeholders/run-all-gates.txt      tests (allowed)
+tests/evidence/brand-placeholders/verify-placeholders.py tests (allowed)
+tests/evidence/brand-placeholders/verify-placeholders.txt tests (allowed)
 tests/file-length-baseline-all.tsv                       tests (allowed)
 tests/file-length-baseline.tsv                           tests (allowed)
 tests/file-length-gate.sh                                tests (allowed)
@@ -789,11 +776,10 @@ tools/mmpz-git/run-demo.sh                               declared divergence -> 
 vcpkg.json                                               declared divergence -> wave R rename: vcpkg manifest name follows the CMake project rename
 .yamllint                                                declared divergence -> wave R rename: yamllint ignore path follows the renamed desktop file (no runtime effect)
 
-FAIL: Gate 6 violation(s) above — either revert the change, or declare it in
-      tests/upstream-modifications.txt with a reason and ship a regression test.
+PASS: every change to upstream-inherited code since 01148947ea4d8bdb05c237942758d61acc867223 is declared (393 file(s) in the ledger)
 
 ================ Gate 7: per-file length (<=500 ratchet) ================
-file-length-gate: 102 fork sources measured; 8 exceed 500 lines
+file-length-gate: 104 fork sources measured; 8 exceed 500 lines
 
   lines  file
   1222   src/core/ScriptBindings.cpp
@@ -808,7 +794,7 @@ file-length-gate: 102 fork sources measured; 8 exceed 500 lines
 PASS (check mode: no regressions; baseline not written)
 
 ================ Gate 8: token duplication (<5%) ================
-duplication-gate: scanning 102 fork sources (min-lines 25, min-tokens 120, threshold 5%)
+duplication-gate: scanning 104 fork sources (min-lines 25, min-tokens 120, threshold 5%)
 
 PASS: duplicated lines 1.08% (budget 5%)
 
@@ -817,10 +803,10 @@ gate   name                     result
 1      ctest                    PASS
 2      coverage                 SKIP
 3      no-tautology             PASS
-4      complexity               FAIL
+4      complexity               PASS
 5      mutation                 PASS
-6      upstream-regression      FAIL
+6      upstream-regression      PASS
 7      file-length              PASS
 8      duplication              PASS
 
-RESULT: FAIL — see the failing gate above
+RESULT: PASS — every executed gate passed
