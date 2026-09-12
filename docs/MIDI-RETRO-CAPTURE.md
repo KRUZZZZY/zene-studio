@@ -664,3 +664,53 @@ before the text was touched; the design, the decisions and the open questions ar
 7. **§6, the probe's includers.** Was: "Fifteen test sources include it" / "not among the fifteen files". Now: fourteen — `grep -rln "AllocationProbe.h" tests/src` → 15 paths, one of which is `tests/src/core/AllocationProbe.h` itself (its own line-2 comment names the file), so fourteen test sources include it.
 
 **Audit claim that did not reproduce as stated.** The audit's row A6 prints the command `grep -n "lock-free" include/RecordRingBuffer.h` and two matching lines. Run case-sensitively that command prints only one line (`:2`), because `:41` begins "Lock-free"; `-i` is required for both, and the correction above and the audit's substance both hold. Every other §A finding reproduced exactly, including the line citations and the 15-vs-14 grep count.
+## 10. Implementation note — commit 3 landed (slice 2, 2026-09-12)
+
+Written by the implementation lane on `next/midi-retro-impl`, on top of slice 1 (`3abae78fb`: the
+ring, the two receive seams, the off-by-default arm, the allocation-counter test). Files:
+`src/core/ControlCommandsMidi.cpp` (the three commands and their helpers),
+`src/core/RetroMidiClipWriter.cpp` + `include/RetroMidiClipWriter.h` (the note matcher, split out so
+the core unit test links it without the GUI), `include/RetroMidiCaptureSettings.h` +
+`src/core/RetroMidiCaptureSettings.cpp` (the persisted switch), `src/gui/MainWindow.cpp` (the two
+menu actions), `include/ControlRegistry.h`/`src/core/ControlRegistry.cpp` (registration),
+`src/core/ControlReversibilityTable.cpp` (the three contract rows the A16 test demands), and
+`tests/src/core/RetroMidiCaptureCommandsTest.cpp` (14 slots by QtTest's own count: 12 test cases plus
+`initTestCase`/`cleanupTestCase`).
+
+**The `requiresDecl` decision §5 left open: all three commands declare NOTHING.** Arming, reading
+the ring and writing the window reach a typed result with no display, no device and no human, which
+`tests/agent-surface-gate.py` proved by sweeping all three
+(`build/tests/agent-surface-report.json`: `midi.retro_capture_arm` → `ok`,
+`midi.retro_capture_status` → `ok`, `midi.retro_capture_to_clip` → typed `not_found`, "the capture
+window is empty"; the allowlist is unchanged and still holds its one entry). The §5 sentence that
+offered `midi.learn_toggle` as the `display` precedent is **superseded**: the corrected precedents
+are `telemetry.consent` (`display, human`) and `transport.play` (`device`), and `midi.learn_toggle`
+declares nothing — which is exactly the option this feature took.
+
+**The persisted key's home, corrected.** §3.6 put `midi/retrocapture` in the capture object's
+constructor; slice 1 showed that constructor runs before `main()` (a file-static `MidiClient`), so
+the read is a null dereference there. It now lives in `src/core/RetroMidiCaptureSettings.cpp`, is
+written by the arm command only when the mode actually moves, and is applied by
+`applyPersistedRetroCaptureArm()` from `MainWindow::finalize()` — the first point where qApp exists
+AND a MIDI client is open.
+
+**`writeWindowToClip`'s shape differs from §4 in one respect:** it returns a
+`RetroMidiClipWrite` counters struct (notes / unmatchedOns / unmatchedOffs / skipped / consumed /
+window bounds) rather than a `bool`, because §3.7 requires the caller to REPORT truncation
+(`unmatched_ons`) instead of being told the capture was clean. The matcher itself is §3.7 as
+specified: arrival-order FIFO per (channel, key), note-on velocity 0 treated as a release, lengths
+clamped to one tick, unmatched note-ons closed at the window's end (the newest tick a NOTE event
+carries), non-note events counted and written nowhere.
+
+**Menu.** `Edit > Arm MIDI Capture` (checkable, `midi.retro_capture_arm`) and `Edit > Capture MIDI`
+(`midi.retro_capture_to_clip`) sit beside `Edit > MIDI Learn`; both declare their command in
+`QAction::data` and their slots invoke that same command (SPEC A11/A15). **No keyboard shortcut was
+taken**: §5's open question 3 (`Ctrl+Shift+M` free across the whole shortcut table) is still
+unverified, and taking an unverified key is worse than taking none.
+
+**Still UNVERIFIED after this slice** (needs hardware or a live session, not a build): that the ALSA
+and raw clients deliver on the thread §2 assumes; that the sequencer tick and the published tick
+agree; that `Ctrl+Shift+M` is free; and the MIDI thread's end-to-end allocation profile, which §2
+records is already non-zero for `InstrumentTrack`. The probe-backed tests cover the ring and the
+capture object, not the whole input path.
+

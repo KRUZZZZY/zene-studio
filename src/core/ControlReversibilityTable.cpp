@@ -144,6 +144,16 @@ const ReversibilityRow kRows[] = {
 		"same container: the clip list is part of the Track's serialized state",
 		"ProjectJournal (Track checkpoint)",
 		""),
+	R("midi.retro_capture_to_clip", RC::TrueInverse, true,
+		"the clip it materialises the captured window into is a NEW clip inside a "
+		"Track, and a Track checkpoint carries every clip it holds - the same "
+		"container argument as clip.add. One checkpoint covers the whole capture, "
+		"so ONE control.undo removes the clip and every note in it together",
+		"ProjectJournal (Track checkpoint): the checkpoint is taken before "
+		"Track::createClip() and the notes go through MidiClip::addNote() inside it, "
+		"so Track::restoreState re-loads the track without the new clip. The "
+		"transaction records clip.delete as its inverse operation",
+		""),
 	R("clip.duplicate", RC::TrueInverse, true,
 		"the duplicate is a second clip in the same Track",
 		"ProjectJournal (Track checkpoint)",
@@ -267,6 +277,7 @@ const ReversibilityRow kRows[] = {
 	R("control.version", RC::NotMutating, false, "reads the version strings", "no write", ""),
 	R("dsp.get_state", RC::NotMutating, false, "reads the device chains", "no write", ""),
 	R("midi.device_list", RC::NotMutating, false, "reads the MIDI client", "no write", ""),
+	R("midi.retro_capture_status", RC::NotMutating, false, "reads the capture ring and the MIDI client", "no write", ""),
 	R("mixer.get_state", RC::NotMutating, false, "reads the mixer", "no write", ""),
 	R("plugin.list", RC::NotMutating, false, "reads the device catalogue", "no write", ""),
 	R("plugin.param_get", RC::NotMutating, false, "reads a parameter", "no write", ""),

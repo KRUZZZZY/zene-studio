@@ -198,6 +198,19 @@ const ReversibilityRow kPassiveRows[] = {
 		"nothing to reverse: calling midi.learn_toggle again is the operation a "
 		"client calls, and setArmed() keeps the Edit menu tick in step",
 		""),
+	R("midi.retro_capture_arm", RC::NotMutating, false,
+		"the armed flag is mode state on the capture object "
+		"(std::atomic<bool> m_armed next to the ring, include/RetroMidiCapture.h): no "
+		"model, no song and no journal checkpoint is written, so the registry records "
+		"no transaction. The command DOES write the config file's midi/retrocapture "
+		"key, and only when the mode actually moved; ConfigManager is not a "
+		"JournallingObject, so that scalar is the persistent default of the mode, not "
+		"project state - the settings.set precedent, whose config write is likewise "
+		"outside the project journal",
+		"nothing to reverse: calling midi.retro_capture_arm with 'armed': false (or "
+		"calling it again) is the operation a client calls, and the Edit > Arm MIDI "
+		"Capture action re-reads the real state whenever the menu is opened",
+		""),
 	R("control.set_undo_coalescing", RC::NotMutating, false,
 		"it sets the WINDOW the control surface groups a same-command-same-target run in: control-surface grouping state, not project state. It cannot change, destroy or restore anything already on the stack, and it is reported by control.undo_depth",
 		"no write. The window is not carried by any project file; it affects only how LATER commands are grouped, and 0 disables coalescing entirely, which is what reproduces the pre-0.3.0 behaviour exactly",

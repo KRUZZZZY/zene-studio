@@ -401,7 +401,25 @@ LMMS_EXPORT void registerPluginPresetCommands(ControlRegistry& registry);
 //! dsp.get_state - the device-chain read-back (SPEC A14).
 LMMS_EXPORT void registerDspCommands(ControlRegistry& registry);
 //! settings.*, audio.*, midi.* and app.version.
+//! (midi.retro_capture_* live in registerMidiRetroCaptureCommands below.)
 LMMS_EXPORT void registerSettingsCommands(ControlRegistry& registry);
+//! midi.retro_capture_arm / midi.retro_capture_status / midi.retro_capture_to_clip
+//! - the retrospective MIDI capture surface (owner item 14,
+//! docs/MIDI-RETRO-CAPTURE.md). The arm switch is mode state (no transaction); the
+//! to-clip command is one journalled Track checkpoint over the clip it creates.
+LMMS_EXPORT void registerMidiRetroCaptureCommands(ControlRegistry& registry);
+/*! Apply the persisted `midi/retrocapture` config key to the live MIDI client.
+ *
+ *  Called from the GUI's startup path (MainWindow::finalize), which is the first
+ *  place qApp exists AND a MIDI client is open. Reading the key anywhere earlier
+ *  is a null dereference: one MidiClient in this tree is a file-static global
+ *  built before main(), and ConfigManager's constructor dereferences qApp
+ *  (docs/MIDI-RETRO-CAPTURE.md 3.6, corrected by slice 1).
+ *
+ *  Idempotent and silent when there is no client: the default ("0") disarms, so
+ *  a fresh instance keeps the feature off.
+ */
+LMMS_EXPORT void applyPersistedRetroCaptureArm();
 //! automation.get_state and automation.mode_set.
 LMMS_EXPORT void registerAutomationCommands(ControlRegistry& registry);
 //! automation.add_point / automation.remove_point / automation.clear.

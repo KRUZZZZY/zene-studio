@@ -437,6 +437,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerPluginCommands(registry);
 	registerDspCommands(registry);
 	registerSettingsCommands(registry);
+	registerMidiRetroCaptureCommands(registry);
 	registerAutomationCommands(registry);
 	registerAutomationEditCommands(registry);
 	registerWarpCommands(registry);

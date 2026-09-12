@@ -62,6 +62,7 @@ set(LMMS_TESTS
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
+	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
 	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerConcurrencyTest.cpp
@@ -1460,6 +1461,10 @@ set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
 # above. TempoMapTest additionally drives Song::processNextBuffer() itself, so it
 # needs the same headless platform.
 set_tests_properties(ControlTempoMapCommandsTest TempoMapPersistenceTest TempoMapTest PROPERTIES
+# The retrospective MIDI capture surface (owner item 14) builds a real Engine,
+# a MIDI client and MidiClips and drives the registry commands, so it needs a
+# Qt platform plugin even though nothing opens a window.
+set_tests_properties(RetroMidiCaptureCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The stable-id tests construct a full Engine and drive project.open/save through
 # the control registry, so they need a Qt platform plugin even though nothing

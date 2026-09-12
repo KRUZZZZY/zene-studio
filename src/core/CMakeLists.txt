@@ -124,6 +124,7 @@ set(LMMS_SRCS
 	core/ControlCommandsModulator.cpp
 	core/ControlCommandsModulatorRoutes.cpp
 	core/ControlCommandsNoteExpression.cpp
+	core/ControlCommandsMidi.cpp
 	core/ControlCommandsNotes.cpp
 	core/ControlCommandsPlugin.cpp
 	core/ControlCommandsPluginParams.cpp
@@ -278,6 +279,8 @@ set(LMMS_SRCS
 	core/RackZones.cpp
 	core/RenderManager.cpp
 	core/RetroMidiCapture.cpp
+	core/RetroMidiCaptureSettings.cpp
+	core/RetroMidiClipWriter.cpp
 	core/RingBuffer.cpp
 	core/RoutingChainNodes.cpp
 	core/RoutingGraph.cpp

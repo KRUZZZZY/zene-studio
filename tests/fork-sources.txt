@@ -313,6 +313,8 @@ include/RecordRingBuffer.h
 include/RecordingJournal.h
 include/RemotePluginAudioPorts.h
 include/RetroMidiCapture.h
+include/RetroMidiCaptureSettings.h
+include/RetroMidiClipWriter.h
 include/RetroMidiRing.h
 include/RoutingChainNodes.h
 include/RoutingGraph.h
@@ -432,6 +434,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
+src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
@@ -517,6 +520,8 @@ src/core/RackNodes.cpp
 src/core/RackZones.cpp
 src/core/RecordingJournal.cpp
 src/core/RetroMidiCapture.cpp
+src/core/RetroMidiCaptureSettings.cpp
+src/core/RetroMidiClipWriter.cpp
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp

@@ -38,6 +38,7 @@
 #include <QMessageBox>
 #include <QShortcut>
 #include <QSplitter>
+#include <QStatusBar>
 
 #include "AboutDialog.h"
 #include "AudioEngine.h"
@@ -372,6 +373,38 @@ void MainWindow::finalize()
 	m_midiLearnAction->setData(QStringLiteral("midi.learn_toggle"));
 	MidiLearnGui::instance()->setAction(m_midiLearnAction);
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateMidiLearnAction()));
+
+	// Retrospective MIDI capture (owner item 14, docs/MIDI-RETRO-CAPTURE.md):
+	// arm the bounded recent-event ring, then write what was just played into a
+	// clip. Both actions declare the registry command they implement and their
+	// slots invoke that same command - one implementation for the menu item, the
+	// shortcut and the agent surface (SPEC-zene-studio.md A11/A15), exactly as
+	// the MIDI Learn action beside them does.
+	//
+	// No keyboard shortcut: Ctrl+Shift+M reads naturally next to the other
+	// Ctrl+Shift+<letter> bindings, but whether any other file claims it is
+	// UNVERIFIED without the built shortcut table (docs/MIDI-RETRO-CAPTURE.md 5,
+	// open question 3), and taking an unverified key is worse than taking none.
+	m_armRetroCaptureAction = edit_menu->addAction(embed::getIconPixmap("setup_midi"),
+		tr("Arm MIDI Capture"), this, SLOT(toggleMidiRetroCapture()));
+	m_armRetroCaptureAction->setCheckable(true);
+	m_armRetroCaptureAction->setToolTip(tr("Keep the most recent MIDI input events in a bounded "
+		"ring, off by default. Arm this, play, then Capture MIDI"));
+	m_armRetroCaptureAction->setData(QStringLiteral("midi.retro_capture_arm"));
+
+	m_captureMidiAction = edit_menu->addAction(embed::getIconPixmap("setup_midi"),
+		tr("Capture MIDI"), this, SLOT(captureMidiToClip()));
+	m_captureMidiAction->setToolTip(tr("Write the captured MIDI events into a new clip on the "
+		"selected track (nothing to capture unless capture is armed)"));
+	m_captureMidiAction->setData(QStringLiteral("midi.retro_capture_to_clip"));
+	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateMidiRetroCaptureActions()));
+
+	// The arm switch is persisted (the config key midi/retrocapture), and this is
+	// the first point where reading it is safe: qApp exists and the engine has a
+	// MIDI client. RetroMidiCapture's own constructor runs before main(), where a
+	// ConfigManager read is a null dereference (slice 1, and the header comment of
+	// src/core/ControlCommandsMidi.cpp).
+	applyPersistedRetroCaptureArm();
 
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateUndoRedoButtons()));
 
@@ -1411,6 +1444,89 @@ void MainWindow::updateMidiLearnAction()
 	// A successful learn disarms MidiLearn from the MIDI input thread, so the
 	// action re-reads the real state whenever the edit menu is opened.
 	m_midiLearnAction->setChecked(MidiLearnGui::instance()->isArmed());
+}
+
+
+void MainWindow::toggleMidiRetroCapture()
+{
+	// A11: the menu item drives the SAME registry command an agent calls. Qt has
+	// already flipped the tick; the command is told which state the user asked
+	// for, so the mode cannot disagree with the check mark.
+	const bool wanted = m_armRetroCaptureAction->isChecked();
+	const ControlResult result = ControlRegistry::instance()->invoke(
+		QStringLiteral("midi.retro_capture_arm"),
+		QJsonObject{{QStringLiteral("armed"), wanted}});
+	if( !result.ok )
+	{
+		// Nothing armed - there is no MIDI client yet, or the engine is still
+		// starting. Put the tick back where the real state is: the menu must
+		// never claim a mode that was not armed.
+		updateMidiRetroCaptureActions();
+	}
+	else
+	{
+		m_armRetroCaptureAction->setChecked(
+			result.result.value(QStringLiteral("armed")).toBool());
+	}
+}
+
+
+void MainWindow::captureMidiToClip()
+{
+	// A11: the menu item invokes the registry command; the command owns the
+	// target-track rule (the selected clip's track, else the song's first
+	// instrument track) so the menu and an agent cannot disagree about where a
+	// capture lands.
+	const ControlResult result = ControlRegistry::instance()->invoke(
+		QStringLiteral("midi.retro_capture_to_clip"));
+	if( result.ok )
+	{
+		const QString clip = result.result.value(QStringLiteral("clip")).toString();
+		const int written = result.result.value(QStringLiteral("events_written")).toInt();
+		const int unmatched = result.result.value(QStringLiteral("unmatched_ons")).toInt();
+		// Non-modal feedback: a transient status line, never a box the user has
+		// to dismiss after a successful capture. An unmatched note-on means the
+		// window was cut off, so it is said out loud rather than left in the log.
+		QString message = tr( "Captured %1 note(s) into %2" ).arg( written ).arg( clip );
+		if( unmatched > 0 )
+		{
+			message += tr( " - %1 note-on(s) had no release inside the window and were closed "
+				"at its end" ).arg( unmatched );
+		}
+		statusBar()->showMessage( message, 8000 );
+		return;
+	}
+	// A refusal is normal (no capture armed, nothing played, no instrument
+	// track). Say it where it can be read - a modal box only when a human is
+	// actually there (the same rule the first-run setup dialog follows).
+	if( lmms::isUnattendedRun() )
+	{
+		fprintf( stderr, "MainWindow: capture MIDI refused: %s\n",
+			result.errorMessage.toUtf8().constData() );
+		fflush( stderr );
+		return;
+	}
+	QMessageBox::warning( this, tr( "Capture MIDI" ), result.errorMessage );
+}
+
+
+void MainWindow::updateMidiRetroCaptureActions()
+{
+	// Armed state is engine state, and the capture can be disarmed from outside
+	// this window (an agent calling midi.retro_capture_arm), so the action
+	// re-reads the real state whenever the edit menu is opened.
+	const ControlResult status = ControlRegistry::instance()->invoke(
+		QStringLiteral("midi.retro_capture_status"));
+	if( !status.ok )
+	{
+		m_armRetroCaptureAction->setChecked(false);
+		m_captureMidiAction->setEnabled(false);
+		return;
+	}
+	m_armRetroCaptureAction->setChecked(
+		status.result.value(QStringLiteral("armed")).toBool());
+	m_captureMidiAction->setEnabled(
+		status.result.value(QStringLiteral("events_buffered")).toInt() > 0);
 }
 
 

@@ -338,6 +338,8 @@ include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
 include/RetroMidiCapture.h
+include/RetroMidiCaptureSettings.h
+include/RetroMidiClipWriter.h
 include/RetroMidiRing.h
 include/RingBuffer.h
 include/RmsHelper.h
@@ -926,6 +928,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
+src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
@@ -1061,6 +1064,8 @@ src/core/RecordingJournal.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
 src/core/RetroMidiCapture.cpp
+src/core/RetroMidiCaptureSettings.cpp
+src/core/RetroMidiClipWriter.cpp
 src/core/RingBuffer.cpp
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
@@ -1372,6 +1377,7 @@ tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RenderJobQueueTest.cpp
+tests/src/core/RetroMidiCaptureCommandsTest.cpp
 tests/src/core/RetroMidiRingTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h

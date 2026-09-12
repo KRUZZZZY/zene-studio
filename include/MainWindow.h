@@ -175,6 +175,13 @@ public slots:
 	void toggleMidiLearn();
 	void updateMidiLearnAction();
 
+	// Retrospective MIDI capture (owner item 14): the Edit menu's two actions.
+	// Both invoke the registry command they declare - one implementation for the
+	// menu item and the agent surface (SPEC A11/A15).
+	void toggleMidiRetroCapture();
+	void captureMidiToClip();
+	void updateMidiRetroCaptureActions();
+
 	void autoSave();
 
 private slots:
@@ -238,6 +245,8 @@ private:
 	QAction * m_undoAction;
 	QAction * m_redoAction;
 	QAction * m_midiLearnAction;
+	QAction * m_armRetroCaptureAction;
+	QAction * m_captureMidiAction;
 	QList<PluginView *> m_tools;
 	bool m_toolsMenuPopulated = false;
 
