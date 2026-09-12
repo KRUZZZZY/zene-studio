@@ -155,7 +155,13 @@ tests/control-stable-ids.py
 # One socket harness for every control-surface test (2026-09-12): the #626 harness and
 # the #625 headless-load harness had drifted into two Instance/Client classes and two
 # names for "the bounded wait expired", so they were collapsed into this module.
+# Split 2026-09-12 (Gate 7, the 500-line per-file ratchet): this is the CORE (Instance,
+# Client, the bounds, the readiness poll, the assertion helpers); the `check_*` payloads
+# and the multi-instance flow helpers live in tests/control_socket_flows.py, which every
+# case test imports alongside this module. Both halves are registered so the ratchets
+# measure both — a split that hides half the code from the gate would be a dodge.
 tests/control_socket_harness.py
+tests/control_socket_flows.py
 # The #626 tests: both shutdown reproductions, the documented readiness order, the
 # no-audio-device report, and the negative controls that prove each of those can
 # fail (a check that cannot fail is not evidence).

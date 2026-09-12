@@ -43,9 +43,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from control_socket_flows import parse_args, report_pre_fix  # noqa: E402
 from control_socket_harness import (  # noqa: E402
     OPEN_TIMEOUT, PING_TIMEOUT, Blocked, Transcript, connect, fail, ok, ok_result,
-    parse_args, report_pre_fix, start_instance, wait_ready,
+    start_instance, wait_ready,
 )
 
 USAGE = __doc__

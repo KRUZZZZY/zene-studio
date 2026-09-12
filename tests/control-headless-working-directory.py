@@ -43,9 +43,12 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from control_socket_flows import (  # noqa: E402
+    diagnose_block, healthy_control, parse_args, report_pre_fix,
+)
 from control_socket_harness import (  # noqa: E402
-    PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, diagnose_block, fail,
-    healthy_control, ok, parse_args, report_pre_fix, start_instance, wait_ready,
+    PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, fail, ok,
+    start_instance, wait_ready,
 )
 
 USAGE = __doc__

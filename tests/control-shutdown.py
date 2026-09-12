@@ -24,9 +24,10 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from control_socket_flows import check_clean_shutdown, check_ping_shape  # noqa: E402
 from control_socket_harness import (  # noqa: E402
     BROKEN_DEVICE, BROKEN_DEVICE_ENV, DEFAULT_DEVICE, Client, Instance, Problems,
-    Timeout, check_clean_shutdown, check_ping_shape, dump, finish,
+    Timeout, dump, finish,
 )
 
 CONNECT_TIMEOUT = 60.0
