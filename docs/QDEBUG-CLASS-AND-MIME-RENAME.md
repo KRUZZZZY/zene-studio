@@ -177,12 +177,13 @@ the NSIS/Apple asset lists and `data/**` do not mention the mimetype raster name
 
 ### 2.3 `CMakeLists.txt` — two shipped-name destinations
 
-1. **`CMakeLists.txt:979`** `DESTINATION "include/lmms/"` — the public header install root (LINUX
+1. **`CMakeLists.txt:979`** (the line the audit named; 981 after this change) `DESTINATION
+   "include/lmms/"` — the public header install root (LINUX
    only; `${LMMS_INCLUDES}` + `lmmsconfig.h` + `lmmsversion.h` + `embed.cpp`). Every other install
    destination had already been renamed; this one still carried the retired product name.
    Now `DESTINATION "include/${PROJECT_NAME}/"`, so a future rename cannot leave it behind again.
    Nothing in the tree installs to or `#include`s `<lmms/…>`, so nothing consumes it.
-2. **`CMakeLists.txt:993,1003`** (found in the same class, not in the audit) — the `dist` target
+2. **`CMakeLists.txt:994,1002`** (993/1003 before the change; found in the same class, not in the audit) — the `dist` target
    built `${TMP} = "lmms-${VERSION}"` and tarred `lmms-${VERSION}-src.tar.bz2`. That is a *shipped
    artefact name*, so it is a trace, not an identifier: now `${CMAKE_PROJECT_NAME}-…`
    (`zene-0.2.1-alpha-src.tar.bz2`). Nothing in the tree referenced the old tarball name.
