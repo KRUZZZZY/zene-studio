@@ -1,0 +1,1883 @@
+
+Checking submodules...
+-- Checking qt5-x11embed...
+--   Found src/3rdparty/qt5-x11embed/CMakeLists.txt
+-- Checking zynaddsubfx...
+--   Found plugins/ZynAddSubFx/zynaddsubfx/CMakeLists.txt
+-- Checking game-music-emu...
+--   Found plugins/FreeBoy/game-music-emu/CMakeLists.txt
+-- Checking adplug...
+--   Found plugins/OpulenZ/adplug/Makefile.am
+-- Checking veal...
+--   Found plugins/LadspaEffect/calf/veal/CMakeLists.txt
+-- Checking exprtk...
+--   Found plugins/Xpressive/exprtk/Makefile
+-- Checking ladspa...
+--   Found plugins/LadspaEffect/swh/ladspa/Makefile.am
+-- Checking tap-plugins...
+--   Found plugins/LadspaEffect/tap/tap-plugins/Makefile
+-- Checking weakjack...
+--   Found src/3rdparty/weakjack/weakjack/.gitignore
+-- Checking wiki...
+--   Found doc/wiki/Home.md
+-- Checking ringbuffer...
+--   Found src/3rdparty/ringbuffer/CMakeLists.txt
+-- Checking carla...
+--   Found plugins/CarlaBase/carla/Makefile
+-- Checking resid...
+--   Found plugins/Sid/resid/resid/Makefile.am
+-- Checking jack2...
+--   Found src/3rdparty/jack2/.gitignore
+-- Checking cmt...
+--   Found plugins/LadspaEffect/cmt/cmt/.gitignore
+-- Checking hiir...
+--   Found src/3rdparty/hiir/hiir/license.txt
+-- Checking portsmf...
+--   Found plugins/MidiImport/portsmf/CMakeLists.txt
+-- Done validating submodules.
+
+
+Configuring ZENE
+--------------------------
+* Project version             : 0.1.0-alpha.324+6b593df
+*   Major version             : 0
+*   Minor version             : 1
+*   Release version           : 0
+*   Stage version             : alpha
+*   Build version             : 324+6b593df
+*
+
+Optional Version Usage:
+--------------------------
+*   Override version:           -DFORCE_VERSION=x.x.x-x
+*   Ignore Git information:     -DFORCE_VERSION=internal
+
+PROCESSOR: x86_64
+Machine: x86_64-linux-gnu
+
+-- Target host is 64 bit, Intel
+-- Setting target microarchitecture to 'official'
+-- Found Qt translations in /usr/share/qt6/translations
+-- Checking for module 'suil-0'
+--   Package 'suil-0', required by 'virtual:world', not found
+-- Checking for module 'carla-native-plugin'
+--   Package 'carla-native-plugin', required by 'virtual:world', not found
+-- Checking for module 'carla-standalone>=1.9.5'
+--   Package 'carla-standalone', required by 'virtual:world', not found
+-- Could NOT find STK (missing: STK_RAWWAVE_ROOT) 
+-- Could NOT find Portaudio (missing: Portaudio_LIBRARY Portaudio_INCLUDE_DIRS) 
+-- Could NOT find SoundIo (missing: SOUNDIO_LIBRARY SOUNDIO_INCLUDE_DIR) 
+-- Could NOT find Lame (missing: Lame_LIBRARY Lame_INCLUDE_DIRS) 
+-- Found ALSA: /usr/lib/x86_64-linux-gnu/libasound.so
+-- Could NOT find Wine (missing: WINE_CXX WINE_INCLUDE_DIRS) 
+--   WINE_INCLUDE_DIR:     WINE_INCLUDE_DIR-NOTFOUND
+--   WINE_CXX:             WINE_CXX-NOTFOUND
+--   WINE_GCC:             WINE_GCC-NOTFOUND
+--   WINE_32_FLAGS:        
+--   WINE_64_FLAGS:        
+--   WINE_VERSION:         
+--   WINE_ASLR_ENABLED:    
+-- Using Git to generate the CONTRIBUTORS file
+-- Using /home/kruzzzzy/.local/bin/ccache for compiler caching
+-- Could NOT find Wasmtime (missing: Wasmtime_LIBRARY Wasmtime_INCLUDE_DIR) 
+-- Found CLAP 1.2.10 headers (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/clap/include
+-- Found VST3 SDK 3.8 (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/vst3sdk
+-- Found VST3 SDK 3.8 (MIT) at /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/vst3sdk
+CMake Warning at data/locale/CMakeLists.txt:10 (MESSAGE):
+  Cannot generate locales
+
+
+
+Installation Summary
+--------------------
+* Install Directory           : /usr/local
+
+Supported audio interfaces
+--------------------------
+* ALSA                        : OK
+* JACK                        : OK (weak linking enabled)
+* OSS                         : OK
+* Sndio                       : OK
+* PortAudio                   : not found, please install portaudio19-dev (or similar, version >= 1.9) ;if you require PortAudio support
+* libsoundio                  : not found, please install libsoundio if you require libsoundio support
+* PulseAudio                  : OK
+* SDL                         : OK
+
+Supported MIDI interfaces
+-------------------------
+* ALSA                        : OK
+* OSS                         : OK
+* Sndio                       : OK
+* JACK                        : OK (weak linking enabled)
+* WinMM                       : <not supported on this platform>
+* AppleMidi                   : <not supported on this platform>
+
+Supported file formats for project export
+-----------------------------------------
+* WAVE                        : OK
+* FLAC                        : OK
+* OGG/VORBIS                  : OK
+* MP3/Lame                    : not found, please install libmp3lame-dev (or similar)
+
+Optional plugins
+----------------
+* Lv2 plugins                 : OK
+* SUIL for plugin UIs         : not found, install it or set PKG_CONFIG_PATH appropriately
+* ZynAddSubFX instrument      : OK
+* Carla Patchbay & Rack       : OK (weak linking enabled)
+* SoundFont2 player           : OK
+* Sid instrument              : OK
+* Stk Mallets                 : not found, please install libstk-dev or libstk0-dev (or similar);if you require the Mallets instrument
+* VST plugin host             : OK
+  * 32-bit Windows host       : not found, please install (lib)wine-dev (or similar) - 64 bit systems additionally need gcc-multilib and g++-multilib
+  * 64-bit Windows host       : not found, please install (lib)wine-dev (or similar) - 64 bit systems additionally need gcc-multilib and g++-multilib
+* CALF LADSPA plugins         : OK
+* CAPS LADSPA plugins         : OK
+* CMT LADSPA plugins          : OK
+* TAP LADSPA plugins          : OK
+* SWH LADSPA plugins          : OK
+* GIG player                  : OK
+
+Developer options
+-----------------------------------------
+* Debug FP exceptions               : Disabled
+* Debug using AddressSanitizer      : Disabled
+* Debug using ThreadSanitizer       : Disabled
+* Debug using MemorySanitizer       : Disabled
+* Debug using UBSanitizer           : Disabled
+* Debug packaging commands          : Enabled
+* Profile using GNU profiler        : Disabled 
+* Test coverage instrumentation     : Disabled
+* Debug assertions                  : Disabled
+* Experimental Qt6 support          : Enabled
+* WASM DSP sandbox                  : Disabled (wasmtime C API not found; set WASMTIME_ROOT)
+
+
+-----------------------------------------------------------------
+IMPORTANT:
+after installing missing packages, remove CMakeCache.txt before
+running cmake again!
+-----------------------------------------------------------------
+
+
+
+-- Configuring done (1.3s)
+-- Generating done (1.4s)
+-- Build files have been written to: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build
+[  0%] Built target weakjack
+[  0%] Built target carla_native-plugin
+[  0%] Built target ringbuffer
+[  1%] Built target lua
+[  1%] Built target tap_chorusflanger
+[  1%] Built target tap_autopan
+[  1%] Built target tap_deesser
+[  2%] Built target caps
+[  2%] Built target tap_doubler
+[  2%] Built target tap_dynamics_m
+[  2%] Built target tap_dynamics_st
+[  2%] Built target tap_echo
+[  2%] Built target tap_eqbw
+[  2%] Built target tap_eq
+[  2%] Built target tap_limiter
+[  2%] Built target tap_pinknoise
+[  2%] Built target tap_reflector
+[  3%] Built target tap_pitch
+[  3%] Built target tap_reverb
+[  3%] Built target tap_rotspeak
+[  3%] Built target tap_sigmoid
+[  3%] Built target tap_tremolo
+[  3%] Built target tap_tubewarmth
+[  3%] Built target tap_vibrato
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/alias_1407.dir/ladspa/alias_1407.c.o
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/amp_1181.dir/ladspa/amp_1181.c.o
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/allpass_1895.dir/ladspa/allpass_1895.c.o
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/am_pitchshift_1433.dir/ladspa/am_pitchshift_1433.c.o
+[  3%] Linking C shared module ../../ladspa/allpass_1895.so
+[  3%] Linking C shared module ../../ladspa/alias_1407.so
+[  3%] Linking C shared module ../../ladspa/amp_1181.so
+[  3%] Linking C shared module ../../ladspa/am_pitchshift_1433.so
+[  3%] Built target alias_1407
+[  3%] Built target allpass_1895
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/blo.dir/ladspa/util/blo.c.o
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/iir.dir/ladspa/util/iir.c.o
+[  3%] Built target amp_1181
+[  3%] Linking C static library libblo.a
+[  3%] Built target am_pitchshift_1433
+[  3%] Linking C static library libiir.a
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bode_shifter_1431.dir/ladspa/bode_shifter_1431.c.o
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bode_shifter_cv_1432.dir/ladspa/bode_shifter_cv_1432.c.o
+[  3%] Built target blo
+[  3%] Linking C shared module ../../ladspa/bode_shifter_1431.so
+[  3%] Linking C shared module ../../ladspa/bode_shifter_cv_1432.so
+[  3%] Built target iir
+[  3%] Building C object plugins/LadspaEffect/swh/CMakeFiles/chebstortion_1430.dir/ladspa/chebstortion_1430.c.o
+[  4%] Building C object plugins/LadspaEffect/swh/CMakeFiles/comb_1190.dir/ladspa/comb_1190.c.o
+[  4%] Built target bode_shifter_1431
+[  4%] Linking C shared module ../../ladspa/comb_1190.so
+[  4%] Built target bode_shifter_cv_1432
+[  4%] Linking C shared module ../../ladspa/chebstortion_1430.so
+[  4%] Building C object plugins/LadspaEffect/swh/CMakeFiles/comb_1887.dir/ladspa/comb_1887.c.o
+[  4%] Linking C shared module ../../ladspa/comb_1887.so
+[  4%] Building C object plugins/LadspaEffect/swh/CMakeFiles/comb_splitter_1411.dir/ladspa/comb_splitter_1411.c.o
+[  4%] Built target comb_1190
+[  4%] Linking C shared module ../../ladspa/comb_splitter_1411.so
+[  4%] Built target chebstortion_1430
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/const_1909.dir/ladspa/const_1909.c.o
+[  5%] Linking C shared module ../../ladspa/const_1909.so
+[  5%] Built target comb_1887
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/crossover_dist_1404.dir/ladspa/crossover_dist_1404.c.o
+[  5%] Built target comb_splitter_1411
+[  5%] Linking C shared module ../../ladspa/crossover_dist_1404.so
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dc_remove_1207.dir/ladspa/dc_remove_1207.c.o
+[  5%] Built target const_1909
+[  5%] Linking C shared module ../../ladspa/dc_remove_1207.so
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/debug_1184.dir/ladspa/debug_1184.c.o
+[  5%] Linking C shared module ../../ladspa/debug_1184.so
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/decay_1886.dir/ladspa/decay_1886.c.o
+[  5%] Built target crossover_dist_1404
+[  5%] Linking C shared module ../../ladspa/decay_1886.so
+[  5%] Built target dc_remove_1207
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/decimator_1202.dir/ladspa/decimator_1202.c.o
+[  5%] Built target debug_1184
+[  5%] Building C object plugins/LadspaEffect/swh/CMakeFiles/declip_1195.dir/ladspa/declip_1195.c.o
+[  5%] Linking C shared module ../../ladspa/decimator_1202.so
+[  5%] Linking C shared module ../../ladspa/declip_1195.so
+[  6%] Built target decay_1886
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/delay_1898.dir/ladspa/delay_1898.c.o
+[  6%] Linking C shared module ../../ladspa/delay_1898.so
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/delayorama_1402.dir/ladspa/delayorama_1402.c.o
+[  6%] Built target decimator_1202
+[  6%] Built target declip_1195
+[  6%] Linking C shared module ../../ladspa/delayorama_1402.so
+[  6%] Building C object plugins/LadspaEffect/swh/CMakeFiles/diode_1185.dir/ladspa/diode_1185.c.o
+[  7%] Built target delay_1898
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/divider_1186.dir/ladspa/divider_1186.c.o
+[  7%] Linking C shared module ../../ladspa/diode_1185.so
+[  7%] Linking C shared module ../../ladspa/divider_1186.so
+[  7%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dj_eq_1901.dir/ladspa/dj_eq_1901.c.o
+[  7%] Built target delayorama_1402
+[  7%] Linking C shared module ../../ladspa/dj_eq_1901.so
+[  7%] Built target diode_1185
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dj_flanger_1438.dir/ladspa/dj_flanger_1438.c.o
+[  8%] Built target divider_1186
+[  8%] Linking C shared module ../../ladspa/dj_flanger_1438.so
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/dyson_compress_1403.dir/ladspa/dyson_compress_1403.c.o
+[  8%] Built target dj_eq_1901
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/fad_delay_1192.dir/ladspa/fad_delay_1192.c.o
+[  8%] Linking C shared module ../../ladspa/dyson_compress_1403.so
+[  8%] Linking C shared module ../../ladspa/fad_delay_1192.so
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/fast_lookahead_limiter_1913.dir/ladspa/fast_lookahead_limiter_1913.c.o
+[  8%] Built target dj_flanger_1438
+[  8%] Linking C shared module ../../ladspa/fast_lookahead_limiter_1913.so
+[  8%] Building C object plugins/LadspaEffect/swh/CMakeFiles/flanger_1191.dir/ladspa/flanger_1191.c.o
+[  8%] Built target fad_delay_1192
+[  9%] Built target dyson_compress_1403
+[  9%] Linking C shared module ../../ladspa/flanger_1191.so
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/foldover_1213.dir/ladspa/foldover_1213.c.o
+[  9%] Building C object plugins/LadspaEffect/swh/CMakeFiles/fm_osc_1415.dir/ladspa/fm_osc_1415.c.o
+[  9%] Built target fast_lookahead_limiter_1913
+[  9%] Linking C shared module ../../ladspa/foldover_1213.so
+[ 10%] Linking C shared module ../../ladspa/fm_osc_1415.so
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/foverdrive_1196.dir/ladspa/foverdrive_1196.c.o
+[ 10%] Built target flanger_1191
+[ 10%] Linking C shared module ../../ladspa/foverdrive_1196.so
+[ 10%] Built target fm_osc_1415
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/freq_tracker_1418.dir/ladspa/freq_tracker_1418.c.o
+[ 10%] Built target foldover_1213
+[ 10%] Linking C shared module ../../ladspa/freq_tracker_1418.so
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gate_1410.dir/ladspa/gate_1410.c.o
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gate_1921.dir/ladspa/gate_1921.c.o
+[ 10%] Built target foverdrive_1196
+[ 10%] Linking C shared module ../../ladspa/gate_1410.so
+[ 10%] Built target freq_tracker_1418
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/giant_flange_1437.dir/ladspa/giant_flange_1437.c.o
+[ 10%] Linking C shared module ../../ladspa/giant_flange_1437.so
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gong_1424.dir/ladspa/gong_1424.c.o
+[ 10%] Linking C shared module ../../ladspa/gong_1424.so
+[ 10%] Built target gate_1410
+[ 10%] Built target giant_flange_1437
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gong_beater_1439.dir/ladspa/gong_beater_1439.c.o
+[ 10%] Linking C shared module ../../ladspa/gong_beater_1439.so
+[ 10%] Built target gong_1424
+[ 10%] Built target gsm
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gverb.dir/ladspa/gverb/gverb.c.o
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/hard_limiter_1413.dir/ladspa/hard_limiter_1413.c.o
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gverb.dir/ladspa/gverb/gverbdsp.c.o
+[ 10%] Linking C shared module ../../ladspa/hard_limiter_1413.so
+[ 10%] Built target gong_beater_1439
+[ 10%] Linking C static library libgverb.a
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/harmonic_gen_1220.dir/ladspa/harmonic_gen_1220.c.o
+[ 10%] Linking C shared module ../../ladspa/harmonic_gen_1220.so
+[ 10%] Built target hard_limiter_1413
+[ 10%] Built target gverb
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/highpass_iir_1890.dir/ladspa/highpass_iir_1890.c.o
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/hermes_filter_1200.dir/ladspa/hermes_filter_1200.c.o
+[ 10%] Linking C shared module ../../ladspa/highpass_iir_1890.so
+[ 10%] Built target harmonic_gen_1220
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/hilbert_1440.dir/ladspa/hilbert_1440.c.o
+[ 10%] Linking C shared module ../../ladspa/hilbert_1440.so
+[ 10%] Linking C shared module ../../ladspa/hermes_filter_1200.so
+[ 10%] Built target highpass_iir_1890
+[ 10%] Building C object plugins/LadspaEffect/swh/CMakeFiles/imp_1199.dir/ladspa/imp_1199.c.o
+[ 10%] Built target hilbert_1440
+[ 10%] Built target hermes_filter_1200
+[ 11%] Linking C shared module ../../ladspa/imp_1199.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/impulse_1885.dir/ladspa/impulse_1885.c.o
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/inv_1429.dir/ladspa/inv_1429.c.o
+[ 11%] Linking C shared module ../../ladspa/impulse_1885.so
+[ 11%] Linking C shared module ../../ladspa/inv_1429.so
+[ 11%] Built target imp_1199
+[ 11%] Built target impulse_1885
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/karaoke_1409.dir/ladspa/karaoke_1409.c.o
+[ 11%] Linking C shared module ../../ladspa/gate_1921.so
+[ 11%] Built target inv_1429
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/latency_1914.dir/ladspa/latency_1914.c.o
+[ 11%] Linking C shared module ../../ladspa/karaoke_1409.so
+[ 11%] Linking C shared module ../../ladspa/latency_1914.so
+[ 11%] Building C object plugins/LadspaEffect/swh/CMakeFiles/lcr_delay_1436.dir/ladspa/lcr_delay_1436.c.o
+[ 11%] Linking C shared module ../../ladspa/lcr_delay_1436.so
+[ 11%] Built target gate_1921
+[ 11%] Built target karaoke_1409
+[ 12%] Built target latency_1914
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/lowpass_iir_1891.dir/ladspa/lowpass_iir_1891.c.o
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/ls_filter_1908.dir/ladspa/ls_filter_1908.c.o
+[ 12%] Building C object plugins/LadspaEffect/swh/CMakeFiles/matrix_ms_st_1421.dir/ladspa/matrix_ms_st_1421.c.o
+[ 12%] Built target lcr_delay_1436
+[ 12%] Linking C shared module ../../ladspa/lowpass_iir_1891.so
+[ 12%] Linking C shared module ../../ladspa/matrix_ms_st_1421.so
+[ 12%] Linking C shared module ../../ladspa/ls_filter_1908.so
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/matrix_spatialiser_1422.dir/ladspa/matrix_spatialiser_1422.c.o
+[ 13%] Linking C shared module ../../ladspa/matrix_spatialiser_1422.so
+[ 13%] Built target matrix_ms_st_1421
+[ 13%] Built target lowpass_iir_1891
+[ 13%] Built target ls_filter_1908
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/matrix_st_ms_1420.dir/ladspa/matrix_st_ms_1420.c.o
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/mbeq_1197.dir/ladspa/mbeq_1197.c.o
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/mod_delay_1419.dir/ladspa/mod_delay_1419.c.o
+[ 13%] Linking C shared module ../../ladspa/matrix_st_ms_1420.so
+[ 13%] Built target matrix_spatialiser_1422
+[ 13%] Linking C shared module ../../ladspa/mbeq_1197.so
+[ 13%] Linking C shared module ../../ladspa/mod_delay_1419.so
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/multivoice_chorus_1201.dir/ladspa/multivoice_chorus_1201.c.o
+[ 13%] Linking C shared module ../../ladspa/multivoice_chorus_1201.so
+[ 13%] Built target matrix_st_ms_1420
+[ 13%] Built target mbeq_1197
+[ 13%] Built target mod_delay_1419
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/notch_iir_1894.dir/ladspa/notch_iir_1894.c.o
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pitchscale.dir/ladspa/util/pitchscale.c.o
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/phasers_1217.dir/ladspa/phasers_1217.c.o
+[ 13%] Linking C shared module ../../ladspa/notch_iir_1894.so
+[ 13%] Built target multivoice_chorus_1201
+[ 13%] Linking C static library libpitchscale.a
+[ 13%] Linking C shared module ../../ladspa/phasers_1217.so
+[ 13%] Building C object plugins/LadspaEffect/swh/CMakeFiles/plate_1423.dir/ladspa/plate_1423.c.o
+[ 13%] Built target pitchscale
+[ 13%] Linking C shared module ../../ladspa/plate_1423.so
+[ 14%] Built target notch_iir_1894
+[ 14%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pointer_cast_1910.dir/ladspa/pointer_cast_1910.c.o
+[ 15%] Built target phasers_1217
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/rate_shifter_1417.dir/ladspa/rate_shifter_1417.c.o
+[ 15%] Linking C shared module ../../ladspa/pointer_cast_1910.so
+[ 15%] Linking C shared module ../../ladspa/rate_shifter_1417.so
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/retro_flange_1208.dir/ladspa/retro_flange_1208.c.o
+[ 15%] Built target plate_1423
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/revdelay_1605.dir/ladspa/revdelay_1605.c.o
+[ 15%] Linking C shared module ../../ladspa/retro_flange_1208.so
+[ 15%] Built target rate_shifter_1417
+[ 15%] Built target pointer_cast_1910
+[ 15%] Linking C shared module ../../ladspa/revdelay_1605.so
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/ringmod_1188.dir/ladspa/ringmod_1188.c.o
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/satan_maximiser_1408.dir/ladspa/satan_maximiser_1408.c.o
+[ 15%] Linking C shared module ../../ladspa/ringmod_1188.so
+[ 15%] Linking C shared module ../../ladspa/satan_maximiser_1408.so
+[ 15%] Built target retro_flange_1208
+[ 15%] Built target revdelay_1605
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/db.dir/ladspa/util/db.c.o
+[ 15%] Linking C static library libdb.a
+[ 15%] Built target ringmod_1188
+[ 15%] Built target rms
+[ 15%] Built target satan_maximiser_1408
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/shaper_1187.dir/ladspa/shaper_1187.c.o
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sifter_1210.dir/ladspa/sifter_1210.c.o
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sin_cos_1881.dir/ladspa/sin_cos_1881.c.o
+[ 15%] Built target db
+[ 15%] Linking C shared module ../../ladspa/shaper_1187.so
+[ 15%] Linking C shared module ../../ladspa/sifter_1210.so
+[ 15%] Linking C shared module ../../ladspa/sin_cos_1881.so
+[ 15%] Building C object plugins/LadspaEffect/swh/CMakeFiles/single_para_1203.dir/ladspa/single_para_1203.c.o
+[ 15%] Linking C shared module ../../ladspa/single_para_1203.so
+[ 15%] Built target sifter_1210
+[ 16%] Built target sin_cos_1881
+[ 16%] Built target shaper_1187
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sinus_wavewrapper_1198.dir/ladspa/sinus_wavewrapper_1198.c.o
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/smooth_decimate_1414.dir/ladspa/smooth_decimate_1414.c.o
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/split_1406.dir/ladspa/split_1406.c.o
+[ 16%] Linking C shared module ../../ladspa/smooth_decimate_1414.so
+[ 16%] Linking C shared module ../../ladspa/sinus_wavewrapper_1198.so
+[ 16%] Built target single_para_1203
+[ 16%] Linking C shared module ../../ladspa/split_1406.so
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/step_muxer_1212.dir/ladspa/step_muxer_1212.c.o
+[ 16%] Linking C shared module ../../ladspa/step_muxer_1212.so
+[ 16%] Built target smooth_decimate_1414
+[ 16%] Built target split_1406
+[ 16%] Built target sinus_wavewrapper_1198
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/surround_encoder_1401.dir/ladspa/surround_encoder_1401.c.o
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/svf_1214.dir/ladspa/svf_1214.c.o
+[ 16%] Linking C shared module ../../ladspa/surround_encoder_1401.so
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/tape_delay_1211.dir/ladspa/tape_delay_1211.c.o
+[ 16%] Built target step_muxer_1212
+[ 16%] Linking C shared module ../../ladspa/svf_1214.so
+[ 16%] Linking C shared module ../../ladspa/tape_delay_1211.so
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/transient_1206.dir/ladspa/transient_1206.c.o
+[ 16%] Built target surround_encoder_1401
+[ 16%] Linking C shared module ../../ladspa/transient_1206.so
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/triple_para_1204.dir/ladspa/triple_para_1204.c.o
+[ 16%] Built target svf_1214
+[ 16%] Built target tape_delay_1211
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/valve_1209.dir/ladspa/valve_1209.c.o
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/valve_rect_1405.dir/ladspa/valve_rect_1405.c.o
+[ 16%] Built target transient_1206
+[ 16%] Linking C shared module ../../ladspa/valve_1209.so
+[ 16%] Linking C shared module ../../ladspa/valve_rect_1405.so
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/vocoder_1337.dir/ladspa/vocoder_1337.c.o
+[ 16%] Linking C shared module ../../ladspa/vocoder_1337.so
+[ 16%] Built target valve_1209
+[ 16%] Built target valve_rect_1405
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/vynil_1905.dir/ladspa/vynil_1905.c.o
+[ 16%] Building C object plugins/LadspaEffect/swh/CMakeFiles/wave_terrain_1412.dir/ladspa/wave_terrain_1412.c.o
+[ 16%] Linking C shared module ../../ladspa/vynil_1905.so
+[ 16%] Built target vocoder_1337
+[ 17%] Linking C shared module ../../ladspa/wave_terrain_1412.so
+[ 17%] Building C object plugins/LadspaEffect/swh/CMakeFiles/xfade_1915.dir/ladspa/xfade_1915.c.o
+[ 17%] Linking C shared module ../../ladspa/xfade_1915.so
+[ 17%] Built target vynil_1905
+[ 17%] Built target wave_terrain_1412
+[ 17%] Building C object plugins/LadspaEffect/swh/CMakeFiles/zm1_1428.dir/ladspa/zm1_1428.c.o
+[ 17%] Linking C shared module ../../ladspa/zm1_1428.so
+[ 18%] Built target cmt
+[ 18%] Built target xfade_1915
+[ 18%] Built target adplug
+[ 18%] Built target zm1_1428
+[ 19%] Built target veal
+[ 19%] Built target gme
+[ 20%] Built target rnnoise_vendored
+[ 20%] Performing build step for 'NativeLinuxRemoteVstPlugin64'
+[ 21%] Built target resid_objects
+[ 21%] Linking C shared module ../../ladspa/triple_para_1204.so
+[ 22%] Built target lmms_vst3_sdk
+[100%] Built target NativeLinuxRemoteVstPlugin64
+[ 22%] No install step for 'NativeLinuxRemoteVstPlugin64'
+[ 22%] Built target triple_para_1204
+[ 25%] Built target zynaddsubfx_synth
+[ 25%] Built target zynaddsubfx_nio
+[ 25%] Completed 'NativeLinuxRemoteVstPlugin64'
+[ 25%] Built target FakeRemotePluginClient_autogen_timestamp_deps
+[ 25%] Built target ClapBusMapTest_autogen_timestamp_deps
+[ 26%] Built target NativeLinuxRemoteVstPlugin64
+[ 26%] Built target clap-test-gain_autogen_timestamp_deps
+[ 26%] Built target lmmsobjs_autogen_timestamp_deps
+[ 28%] Built target zynaddsubfx_gui
+[ 28%] Building C object plugins/LadspaEffect/swh/CMakeFiles/analogue_osc_1416.dir/ladspa/analogue_osc_1416.c.o
+[ 28%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bandpass_a_iir_1893.dir/ladspa/bandpass_a_iir_1893.c.o
+[ 28%] Building C object plugins/LadspaEffect/swh/CMakeFiles/bandpass_iir_1892.dir/ladspa/bandpass_iir_1892.c.o
+[ 28%] Building C object plugins/LadspaEffect/swh/CMakeFiles/butterworth_1902.dir/ladspa/butterworth_1902.c.o
+[ 28%] Linking C shared module ../../ladspa/bandpass_a_iir_1893.so
+[ 29%] Linking C shared module ../../ladspa/bandpass_iir_1892.so
+[ 29%] Built target bandpass_a_iir_1893
+[ 29%] Linking C shared module ../../ladspa/butterworth_1902.so
+[ 29%] Built target bandpass_iir_1892
+[ 29%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gsm_1215.dir/ladspa/gsm_1215.c.o
+[ 29%] Linking C shared module ../../ladspa/gsm_1215.so
+[ 30%] Building C object plugins/LadspaEffect/swh/CMakeFiles/gverb_1216.dir/ladspa/gverb_1216.c.o
+[ 30%] Built target butterworth_1902
+[ 30%] Linking C shared module ../../ladspa/gverb_1216.so
+[ 30%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pitch_scale_1193.dir/ladspa/pitch_scale_1193.c.o
+[ 30%] Linking C shared module ../../ladspa/pitch_scale_1193.so
+[ 30%] Built target gsm_1215
+[ 30%] Built target gverb_1216
+[ 30%] Building C object plugins/LadspaEffect/swh/CMakeFiles/pitch_scale_1194.dir/ladspa/pitch_scale_1194.c.o
+[ 30%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc1_1425.dir/ladspa/sc1_1425.c.o
+[ 30%] Linking C shared module ../../ladspa/pitch_scale_1194.so
+[ 30%] Built target pitch_scale_1193
+[ 31%] Linking C shared module ../../ladspa/sc1_1425.so
+[ 31%] Linking C shared module ../../ladspa/analogue_osc_1416.so
+[ 31%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc2_1426.dir/ladspa/sc2_1426.c.o
+[ 31%] Linking C shared module ../../ladspa/sc2_1426.so
+[ 31%] Built target pitch_scale_1194
+[ 31%] Built target analogue_osc_1416
+[ 31%] Built target sc1_1425
+[ 31%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc3_1427.dir/ladspa/sc3_1427.c.o
+[ 31%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc4_1882.dir/ladspa/sc4_1882.c.o
+[ 31%] Building C object plugins/LadspaEffect/swh/CMakeFiles/sc4m_1916.dir/ladspa/sc4m_1916.c.o
+[ 31%] Linking C shared module ../../ladspa/sc3_1427.so
+[ 31%] Linking C shared module ../../ladspa/sc4_1882.so
+[ 31%] Built target sc2_1426
+[ 31%] Linking C shared module ../../ladspa/sc4m_1916.so
+[ 31%] Building C object plugins/LadspaEffect/swh/CMakeFiles/se4_1883.dir/ladspa/se4_1883.c.o
+[ 31%] Linking C shared module ../../ladspa/se4_1883.so
+[ 31%] Built target sc4_1882
+[ 31%] Built target sc3_1427
+[ 31%] Built target sc4m_1916
+[ 31%] Built target ZynAddSubFxCore
+[ 31%] Automatic MOC for target FakeRemotePluginClient
+[ 31%] Built target se4_1883
+[ 31%] Built target clap-test-gain_autogen
+[ 31%] Built target FakeRemotePluginClient_autogen
+[ 31%] Built target RemoteZynAddSubFx
+[ 31%] Built target clap-test-gain
+[ 31%] Automatic MOC for target ClapBusMapTest
+[ 31%] Built target ClapHostTest_autogen_timestamp_deps
+[ 31%] Built target FakeRemotePluginClient
+[ 31%] Built target ClapBusMapTest_autogen
+[ 31%] Built target ClapBusMapTest
+[ 31%] Automatic MOC for target ClapHostTest
+[ 31%] Built target ClapHostTest_autogen
+[ 31%] Built target ClapHostTest
+[ 31%] Automatic MOC and UIC for target lmmsobjs
+[ 31%] Built target lmmsobjs_autogen
+[ 31%] Generating qrc_lmms.cpp
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/lmmsobjs_autogen/mocs_compilation.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioBusHandle.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioEngine.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioEngineWorkerThread.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AudioPortsModel.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AutomatableModel.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/AutomationClip.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/BandLimitedWave.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ConfigManager.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/CrashReporter.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsArrangement.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsClip.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlAutomationSupport.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsAutomation.cpp.o
+[ 32%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsAutomationEdit.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsControl.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsDsp.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsMixer.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsNotes.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPlugin.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPluginParams.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPluginPreset.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsPluginState.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsArrangementState.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsProject.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsProjectFiles.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsScript.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsSettings.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsSurface.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsTelemetry.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsTransport.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceCatalogue.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceHosted.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceState.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlDeviceSupport.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlEditSupport.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlRegistry.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlReversibility.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlReversibilityTable.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlSchema.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlVocabulary.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlServer.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlSession.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Controller.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControllerConnection.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/DataFile.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Effect.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/EffectChain.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Engine.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/EnvelopeAndLfoParameters.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Mixer.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/VcaGroup.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ImportFilter.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Instrument.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/InstrumentFunctions.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/InstrumentPlayHandle.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/InstrumentSoundShaping.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/JournallingObject.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/MasteringJob.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/LfoController.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Metronome.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Microtuner.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/MidiLearn.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/NotePlayHandle.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Oscillator.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/PathUtil.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/PatternClip.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/PatternStore.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/PeakController.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Piano.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/PlayHandle.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Plugin.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/PresetPreviewPlayHandle.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ProjectJournal.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ProjectIds.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ProjectRenderer.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ProjectRevisions.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/RemotePlugin.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Rack.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/RackNodes.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/RenderManager.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/RingBuffer.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/RoutingChainNodes.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Sample.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/SampleBuffer.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/SampleClip.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/SampleDecoder.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/SamplePlayHandle.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/SampleRecordHandle.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ScriptBindings.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ScriptEngine.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Song.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/TempoSyncKnobModel.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Timeline.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Track.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/TrackContainer.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/UnattendedRun.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/UpgradeExtendedNoteRange.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Clip.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/VstSyncController.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/StepRecorder.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioAlsa.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioDevice.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioFileDevice.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioFileFlac.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioFileWave.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioJack.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioOss.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioSndio.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioPulseAudio.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioSampleRecorder.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/audio/AudioSdl.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/lv2/Lv2Proc.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/lv2/Lv2Manager.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiAlsaSeq.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiController.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiJack.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/midi/MidiPort.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/Telemetry.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/AutomatableModelView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/ControllerRackView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/EffectControlDialog.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/EffectRackView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/EffectView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/FileBrowser.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/GuiApplication.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/LfoControllerDialog.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/Lv2ViewBase.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MainApplication.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MicrotunerConfig.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MidiCCRackView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MidiLearnGui.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MixerChannelView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/MixerView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/PluginBrowser.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/ProjectNotes.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/SampleTrackWindow.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/SampleThumbnail.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/SendButtonIndicator.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/AutomationClipView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/ClipView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/MidiClipView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/PatternClipView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/clips/SampleClipView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/AutomationEditor.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/Editor.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/PatternEditor.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/PianoRoll.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/PositionLine.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/SongEditor.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/TimeLineWidget.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/editors/TrackContainerView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/EnvelopeAndLfoView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/EnvelopeGraph.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentMidiIOView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentTuningView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentSoundShapingView.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentTrackWindow.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/InstrumentView.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/LfoGraph.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/instrument/PianoView.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/menus/RecentProjectsMenu.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/menus/TemplatesMenu.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/AboutDialog.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/ControllerConnectionDialog.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/EffectSelectDialog.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/ExportProjectDialog.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/SetupDialog.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/modals/VersionedSaveDialog.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/AutomationTrackView.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/InstrumentTrackView.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/PatternTrackView.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/SampleTrackView.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackContentWidget.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackLabelButton.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackOperationsWidget.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackGrip.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/tracks/TrackView.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/CPULoadWidget.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/FloatModelEditorBase.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/Graph.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/Oscilloscope.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/TempoSyncBarModelEditor.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/TempoSyncKnob.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/gui/widgets/TimeDisplayWidget.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/AutomationTrack.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/InstrumentTrack.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/MidiClip.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/PatternTrack.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/tracks/SampleTrack.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/lmmsobjs.dir/qrc_lmms.cpp.o
+[ 45%] Built target lmmsobjs
+[ 45%] Built target AudioBusHandleTest_autogen_timestamp_deps
+[ 45%] Built target zene_autogen_timestamp_deps
+[ 45%] Built target ArrayVectorTest_autogen_timestamp_deps
+[ 45%] Built target AudioBufferTest_autogen_timestamp_deps
+[ 45%] Built target AudioPortsModelTest_autogen_timestamp_deps
+[ 45%] Built target AudioEngineTeardownTest_autogen_timestamp_deps
+[ 45%] Built target AudioBusTest_autogen_timestamp_deps
+[ 45%] Built target AudioPortsTest_autogen_timestamp_deps
+[ 45%] Built target AutomationModesTest_autogen_timestamp_deps
+[ 45%] Built target AutomatableModelTest_autogen_timestamp_deps
+[ 45%] Built target ClipSerialisationTest_autogen_timestamp_deps
+[ 45%] Built target ClipWarpPersistenceTest_autogen_timestamp_deps
+[ 45%] Built target ConfigMigrationTest_autogen_timestamp_deps
+[ 45%] Built target ControlDeviceCatalogueTest_autogen_timestamp_deps
+[ 45%] Built target ControlAutomationScriptTest_autogen_timestamp_deps
+[ 45%] Built target ControlEditCommandsTest_autogen_timestamp_deps
+[ 45%] Built target ControlRegistryTest_autogen_timestamp_deps
+[ 45%] Built target CrashReporterTest_autogen_timestamp_deps
+[ 45%] Built target DataFileFormatTest_autogen_timestamp_deps
+[ 45%] Built target DataFileSaveIntegrityTest_autogen_timestamp_deps
+[ 45%] Built target LoudnessReportTest_autogen_timestamp_deps
+[ 45%] Built target MasteringTest_autogen_timestamp_deps
+[ 45%] Built target MathTest_autogen_timestamp_deps
+[ 45%] Built target LufsMeterTest_autogen_timestamp_deps
+[ 45%] Built target MidiLearnTest_autogen_timestamp_deps
+[ 45%] Built target MidiLearnThreadTest_autogen_timestamp_deps
+[ 45%] Built target MidiProbabilityPersistenceTest_autogen_timestamp_deps
+[ 45%] Built target MixerAbRegressionTest_autogen_timestamp_deps
+[ 45%] Built target MixerConcurrencyTest_autogen_timestamp_deps
+[ 45%] Built target MixerRoutingBackwardCompatTest_autogen_timestamp_deps
+[ 45%] Built target MpeInputPathTest_autogen_timestamp_deps
+[ 45%] Built target MpeExpressionTest_autogen_timestamp_deps
+[ 45%] Built target MpeNoteStorageTest_autogen_timestamp_deps
+[ 45%] Built target MultiTrackRecorderTest_autogen_timestamp_deps
+[ 45%] Built target NoteRandomTest_autogen_timestamp_deps
+[ 45%] Built target NoteTransformTest_autogen_timestamp_deps
+[ 45%] Built target PhaseFChannelScaleTest_autogen_timestamp_deps
+[ 45%] Built target PluginAudioPortsTest_autogen_timestamp_deps
+[ 45%] Built target PluginLogoResourceTest_autogen_timestamp_deps
+[ 45%] Built target ProjectOpenIntegrityTest_autogen_timestamp_deps
+[ 45%] Built target ProjectVersionTest_autogen_timestamp_deps
+[ 45%] Built target ProjectRecoveryTest_autogen_timestamp_deps
+[ 45%] Built target RackTest_autogen_timestamp_deps
+[ 45%] Built target RecordClipTest_autogen_timestamp_deps
+[ 45%] Built target RecordRingBufferTest_autogen_timestamp_deps
+[ 45%] Built target RecordingRealtimeTest_autogen_timestamp_deps
+[ 45%] Built target RelativePathsTest_autogen_timestamp_deps
+[ 45%] Built target ReversibilityContractTest_autogen_timestamp_deps
+[ 45%] Built target ReversibilityUndoTest_autogen_timestamp_deps
+[ 45%] Built target RemotePluginAudioPortsTest_autogen_timestamp_deps
+[ 45%] Built target RemotePluginClientE2ETest_autogen_timestamp_deps
+[ 45%] Built target RenderJobQueueTest_autogen_timestamp_deps
+[ 45%] Built target RoutingGraphLiveTest_autogen_timestamp_deps
+[ 45%] Built target PdcMixerTest_autogen_timestamp_deps
+[ 45%] Built target VcaGroupTest_autogen_timestamp_deps
+[ 45%] Built target RoutingGraphTest_autogen_timestamp_deps
+[ 45%] Built target ScriptBindingsTest_autogen_timestamp_deps
+[ 45%] Built target ScriptStabilisationTest_autogen_timestamp_deps
+[ 45%] Built target ScriptEngineTest_autogen_timestamp_deps
+[ 45%] Built target SlideNotesTest_autogen_timestamp_deps
+[ 45%] Built target StableTrackIdsTest_autogen_timestamp_deps
+[ 45%] Built target StemExportTest_autogen_timestamp_deps
+[ 45%] Built target TimelineTest_autogen_timestamp_deps
+[ 45%] Built target TelemetryTest_autogen_timestamp_deps
+[ 45%] Built target TwoTrackRecordingHarness_autogen_timestamp_deps
+[ 45%] Built target WarpMarkersTest_autogen_timestamp_deps
+[ 45%] Built target AutomationTrackTest_autogen_timestamp_deps
+[ 45%] Built target MidiLearnGuiTest_autogen_timestamp_deps
+[ 45%] Built target SampleClipWarpTest_autogen_timestamp_deps
+[ 45%] Built target SampleClipWindowTest_autogen_timestamp_deps
+[ 45%] Built target SessionSchedulerTest_autogen_timestamp_deps
+[ 45%] Built target SessionModelTest_autogen_timestamp_deps
+[ 45%] Automatic MOC and UIC for target zene
+[ 45%] Built target SessionSchedulerRenderTest_autogen_timestamp_deps
+[ 45%] Built target zene_autogen
+[ 45%] Automatic MOC for target ArrayVectorTest
+[ 45%] Built target ArrayVectorTest_autogen
+[ 45%] Automatic MOC for target AudioBufferTest
+[ 45%] Automatic MOC for target AudioBusHandleTest
+[ 45%] Automatic MOC for target AudioBusTest
+[ 45%] Built target AudioBufferTest_autogen
+[ 46%] Automatic MOC for target AudioEngineTeardownTest
+[ 46%] Built target AudioBusTest_autogen
+[ 46%] Automatic MOC for target AudioPortsModelTest
+[ 46%] Automatic MOC for target AudioPortsTest
+[ 46%] Built target AudioBusHandleTest_autogen
+[ 46%] Built target AudioEngineTeardownTest_autogen
+[ 46%] Automatic MOC for target AutomationModesTest
+[ 46%] Built target AudioPortsModelTest_autogen
+[ 46%] Automatic MOC for target AutomatableModelTest
+[ 46%] Built target AutomatableModelTest_autogen
+[ 46%] Built target AudioPortsTest_autogen
+[ 46%] Automatic MOC for target ClipWarpPersistenceTest
+[ 46%] Automatic MOC for target ConfigMigrationTest
+[ 46%] Automatic MOC for target ClipSerialisationTest
+[ 46%] Built target ConfigMigrationTest_autogen
+[ 46%] Automatic MOC for target ControlAutomationScriptTest
+[ 46%] Built target AutomationModesTest_autogen
+[ 46%] Automatic MOC for target ControlDeviceCatalogueTest
+[ 46%] Built target ClipSerialisationTest_autogen
+[ 46%] Built target ClipWarpPersistenceTest_autogen
+[ 46%] Automatic MOC for target ControlEditCommandsTest
+[ 46%] Automatic MOC for target ControlRegistryTest
+[ 46%] Built target ControlAutomationScriptTest_autogen
+[ 46%] Automatic MOC for target CrashReporterTest
+[ 46%] Built target ControlDeviceCatalogueTest_autogen
+[ 46%] Automatic MOC for target DataFileFormatTest
+[ 46%] Built target DataFileFormatTest_autogen
+[ 46%] Built target ControlEditCommandsTest_autogen
+[ 46%] Built target ControlRegistryTest_autogen
+[ 46%] Automatic MOC for target DataFileSaveIntegrityTest
+[ 46%] Built target DataFileSaveIntegrityTest_autogen
+[ 46%] Automatic MOC for target LoudnessReportTest
+[ 46%] Automatic MOC for target MasteringTest
+[ 46%] Built target LoudnessReportTest_autogen
+[ 47%] Automatic MOC for target LufsMeterTest
+[ 47%] Built target CrashReporterTest_autogen
+[ 47%] Built target LufsMeterTest_autogen
+[ 47%] Automatic MOC for target MathTest
+[ 47%] Automatic MOC for target MidiLearnTest
+[ 47%] Built target MathTest_autogen
+[ 47%] Automatic MOC for target MidiLearnThreadTest
+[ 47%] Automatic MOC for target MidiProbabilityPersistenceTest
+[ 47%] Built target MidiProbabilityPersistenceTest_autogen
+[ 47%] Automatic MOC for target MixerAbRegressionTest
+[ 47%] Built target MasteringTest_autogen
+[ 47%] Automatic MOC for target MixerConcurrencyTest
+[ 47%] Built target MidiLearnThreadTest_autogen
+[ 47%] Built target MidiLearnTest_autogen
+[ 47%] Automatic MOC for target MpeExpressionTest
+[ 47%] Automatic MOC for target MixerRoutingBackwardCompatTest
+[ 47%] Built target MixerAbRegressionTest_autogen
+[ 47%] Automatic MOC for target MpeInputPathTest
+[ 47%] Built target MixerConcurrencyTest_autogen
+[ 47%] Automatic MOC for target MpeNoteStorageTest
+[ 47%] Built target MpeNoteStorageTest_autogen
+[ 47%] Built target MpeExpressionTest_autogen
+[ 47%] Automatic MOC for target NoteRandomTest
+[ 47%] Built target MixerRoutingBackwardCompatTest_autogen
+[ 47%] Automatic MOC for target MultiTrackRecorderTest
+[ 47%] Built target NoteRandomTest_autogen
+[ 47%] Built target MultiTrackRecorderTest_autogen
+[ 47%] Automatic MOC for target NoteTransformTest
+[ 47%] Automatic MOC for target PhaseFChannelScaleTest
+[ 47%] Built target NoteTransformTest_autogen
+[ 47%] Automatic MOC for target PluginLogoResourceTest
+[ 47%] Built target MpeInputPathTest_autogen
+[ 47%] Built target PluginLogoResourceTest_autogen
+[ 47%] Automatic MOC for target ProjectOpenIntegrityTest
+[ 47%] Automatic MOC for target ProjectRecoveryTest
+[ 47%] Automatic MOC for target PluginAudioPortsTest
+[ 47%] Built target ProjectRecoveryTest_autogen
+[ 47%] Automatic MOC for target ProjectVersionTest
+[ 47%] Built target ProjectVersionTest_autogen
+[ 47%] Automatic MOC for target RackTest
+[ 47%] Built target PluginAudioPortsTest_autogen
+[ 47%] Automatic MOC for target RecordClipTest
+[ 47%] Built target PhaseFChannelScaleTest_autogen
+[ 47%] Built target RecordClipTest_autogen
+[ 47%] Automatic MOC for target RecordRingBufferTest
+[ 47%] Automatic MOC for target RecordingRealtimeTest
+[ 47%] Built target ProjectOpenIntegrityTest_autogen
+[ 47%] Built target RecordRingBufferTest_autogen
+[ 47%] Automatic MOC for target ReversibilityContractTest
+[ 47%] Automatic MOC for target RelativePathsTest
+[ 47%] Built target RelativePathsTest_autogen
+[ 47%] Automatic MOC for target ReversibilityUndoTest
+[ 47%] Built target RackTest_autogen
+[ 48%] Automatic MOC for target RemotePluginAudioPortsTest
+[ 48%] Built target RecordingRealtimeTest_autogen
+[ 48%] Built target ReversibilityContractTest_autogen
+[ 48%] Automatic MOC for target RenderJobQueueTest
+[ 48%] Automatic MOC for target RemotePluginClientE2ETest
+[ 48%] Built target ReversibilityUndoTest_autogen
+[ 48%] Built target RemotePluginAudioPortsTest_autogen
+[ 48%] Automatic MOC for target RoutingGraphLiveTest
+[ 48%] Automatic MOC for target RoutingGraphTest
+[ 48%] Built target RoutingGraphTest_autogen
+[ 48%] Automatic MOC for target PdcMixerTest
+[ 48%] Built target RemotePluginClientE2ETest_autogen
+[ 48%] Automatic MOC for target VcaGroupTest
+[ 48%] Built target RenderJobQueueTest_autogen
+[ 48%] Automatic MOC for target ScriptBindingsTest
+[ 48%] Built target RoutingGraphLiveTest_autogen
+[ 48%] Automatic MOC for target ScriptEngineTest
+[ 48%] Built target PdcMixerTest_autogen
+[ 48%] Built target VcaGroupTest_autogen
+[ 48%] Automatic MOC for target ScriptStabilisationTest
+[ 48%] Automatic MOC for target SlideNotesTest
+[ 48%] Built target ScriptBindingsTest_autogen
+[ 48%] Automatic MOC for target StableTrackIdsTest
+[ 48%] Built target ScriptEngineTest_autogen
+[ 48%] Automatic MOC for target StemExportTest
+[ 48%] Built target ScriptStabilisationTest_autogen
+[ 48%] Automatic MOC for target TelemetryTest
+[ 48%] Built target TelemetryTest_autogen
+[ 48%] Built target SlideNotesTest_autogen
+[ 48%] Automatic MOC for target TwoTrackRecordingHarness
+[ 48%] Built target TwoTrackRecordingHarness_autogen
+[ 48%] Automatic MOC for target TimelineTest
+[ 48%] Built target StableTrackIdsTest_autogen
+[ 48%] Automatic MOC for target WarpMarkersTest
+[ 48%] Built target WarpMarkersTest_autogen
+[ 48%] Automatic MOC for target MidiLearnGuiTest
+[ 48%] Automatic MOC for target AutomationTrackTest
+[ 48%] Built target StemExportTest_autogen
+[ 48%] Automatic MOC for target SampleClipWarpTest
+[ 48%] Built target TimelineTest_autogen
+[ 48%] Automatic MOC for target SampleClipWindowTest
+[ 48%] Built target MidiLearnGuiTest_autogen
+[ 48%] Automatic MOC for target SessionModelTest
+[ 48%] Built target AutomationTrackTest_autogen
+[ 48%] Automatic MOC for target SessionSchedulerTest
+[ 48%] Built target SessionSchedulerTest_autogen
+[ 48%] Automatic MOC for target SessionSchedulerRenderTest
+[ 48%] Built target SampleClipWarpTest_autogen
+[ 48%] Building CXX object src/CMakeFiles/zene.dir/core/main.cpp.o
+[ 48%] Built target SampleClipWindowTest_autogen
+[ 48%] Linking CXX executable ArrayVectorTest
+[ 48%] Built target SessionModelTest_autogen
+[ 48%] Linking CXX executable AudioBufferTest
+[ 48%] Built target SessionSchedulerRenderTest_autogen
+[ 48%] Building CXX object tests/CMakeFiles/AudioBusHandleTest.dir/src/core/AudioBusHandleTest.cpp.o
+[ 48%] Built target ArrayVectorTest
+[ 48%] Linking CXX executable AudioBusTest
+[ 48%] Built target AudioBufferTest
+[ 48%] Building CXX object tests/CMakeFiles/AudioEngineTeardownTest.dir/src/core/AudioEngineTeardownTest.cpp.o
+[ 48%] Linking CXX executable ../zene
+[ 48%] Built target AudioBusTest
+[ 48%] Building CXX object tests/CMakeFiles/AudioPortsModelTest.dir/src/core/AudioPortsModelTest.cpp.o
+[ 48%] Linking CXX executable AudioBusHandleTest
+[ 48%] Built target zene
+[ 48%] Building CXX object tests/CMakeFiles/AudioPortsTest.dir/src/core/AudioPortsTest.cpp.o
+[ 48%] Linking CXX executable AudioEngineTeardownTest
+[ 48%] Built target AudioBusHandleTest
+[ 48%] Linking CXX executable AutomatableModelTest
+[ 48%] Built target AudioEngineTeardownTest
+[ 48%] Building CXX object tests/CMakeFiles/AutomationModesTest.dir/src/core/AutomationModesTest.cpp.o
+[ 48%] Built target AutomatableModelTest
+[ 48%] Building CXX object tests/CMakeFiles/ClipSerialisationTest.dir/src/core/ClipSerialisationTest.cpp.o
+[ 48%] Linking CXX executable AudioPortsModelTest
+[ 48%] Linking CXX executable AudioPortsTest
+[ 48%] Built target AudioPortsModelTest
+[ 48%] Building CXX object tests/CMakeFiles/ClipWarpPersistenceTest.dir/src/core/ClipWarpPersistenceTest.cpp.o
+[ 48%] Built target AudioPortsTest
+[ 48%] Linking CXX executable ConfigMigrationTest
+[ 49%] Linking CXX executable AutomationModesTest
+[ 49%] Linking CXX executable ClipSerialisationTest
+[ 49%] Built target ConfigMigrationTest
+[ 50%] Building CXX object tests/CMakeFiles/ControlAutomationScriptTest.dir/ControlAutomationScriptTest_autogen/mocs_compilation.cpp.o
+[ 50%] Building CXX object tests/CMakeFiles/ControlAutomationScriptTest.dir/src/core/ControlAutomationScriptTest.cpp.o
+[ 50%] Built target AutomationModesTest
+[ 50%] Building CXX object tests/CMakeFiles/ControlDeviceCatalogueTest.dir/ControlDeviceCatalogueTest_autogen/mocs_compilation.cpp.o
+[ 50%] Building CXX object tests/CMakeFiles/ControlDeviceCatalogueTest.dir/src/core/ControlDeviceCatalogueTest.cpp.o
+[ 50%] Built target ClipSerialisationTest
+[ 50%] Building CXX object tests/CMakeFiles/ControlEditCommandsTest.dir/ControlEditCommandsTest_autogen/mocs_compilation.cpp.o
+[ 50%] Building CXX object tests/CMakeFiles/ControlEditCommandsTest.dir/src/core/ControlEditCommandsTest.cpp.o
+[ 50%] Linking CXX executable ClipWarpPersistenceTest
+[ 50%] Built target ClipWarpPersistenceTest
+[ 50%] Building CXX object tests/CMakeFiles/ControlRegistryTest.dir/ControlRegistryTest_autogen/mocs_compilation.cpp.o
+[ 50%] Building CXX object tests/CMakeFiles/ControlRegistryTest.dir/src/core/ControlRegistryTest.cpp.o
+[ 50%] Linking CXX executable ControlAutomationScriptTest
+[ 50%] Linking CXX executable ControlDeviceCatalogueTest
+[ 50%] Linking CXX executable ControlEditCommandsTest
+[ 50%] Built target ControlAutomationScriptTest
+[ 50%] Building CXX object tests/CMakeFiles/CrashReporterTest.dir/src/core/CrashReporterTest.cpp.o
+[ 50%] Built target ControlDeviceCatalogueTest
+[ 50%] Linking CXX executable DataFileFormatTest
+[ 50%] Built target ControlEditCommandsTest
+[ 50%] Linking CXX executable DataFileSaveIntegrityTest
+[ 50%] Linking CXX executable ControlRegistryTest
+[ 51%] Built target DataFileFormatTest
+[ 51%] Linking CXX executable LoudnessReportTest
+[ 51%] Built target DataFileSaveIntegrityTest
+[ 51%] Linking CXX executable LufsMeterTest
+[ 51%] Built target ControlRegistryTest
+[ 51%] Building CXX object tests/CMakeFiles/MasteringTest.dir/src/core/MasteringTest.cpp.o
+[ 51%] Built target LoudnessReportTest
+[ 51%] Linking CXX executable MathTest
+[ 51%] Linking CXX executable CrashReporterTest
+[ 51%] Built target LufsMeterTest
+[ 51%] Building CXX object tests/CMakeFiles/MidiLearnTest.dir/src/core/MidiLearnTest.cpp.o
+[ 51%] Built target MathTest
+[ 51%] Building CXX object tests/CMakeFiles/MidiLearnThreadTest.dir/src/core/MidiLearnThreadTest.cpp.o
+[ 51%] Built target CrashReporterTest
+[ 51%] Linking CXX executable MidiProbabilityPersistenceTest
+[ 51%] Built target MidiProbabilityPersistenceTest
+[ 51%] Building CXX object tests/CMakeFiles/MixerAbRegressionTest.dir/src/core/MixerAbRegressionTest.cpp.o
+[ 51%] Linking CXX executable MasteringTest
+[ 51%] Linking CXX executable MidiLearnTest
+[ 51%] Built target MasteringTest
+[ 51%] Building CXX object tests/CMakeFiles/MixerConcurrencyTest.dir/src/core/MixerConcurrencyTest.cpp.o
+[ 52%] Linking CXX executable MidiLearnThreadTest
+[ 52%] Built target MidiLearnTest
+[ 52%] Building CXX object tests/CMakeFiles/MixerRoutingBackwardCompatTest.dir/src/core/MixerRoutingBackwardCompatTest.cpp.o
+[ 52%] Built target MidiLearnThreadTest
+[ 53%] Building CXX object tests/CMakeFiles/MpeExpressionTest.dir/src/core/MpeExpressionTest.cpp.o
+[ 53%] Linking CXX executable MixerAbRegressionTest
+[ 53%] Built target MixerAbRegressionTest
+[ 53%] Building CXX object tests/CMakeFiles/MpeInputPathTest.dir/src/core/MpeInputPathTest.cpp.o
+[ 53%] Linking CXX executable MixerConcurrencyTest
+[ 53%] Linking CXX executable MixerRoutingBackwardCompatTest
+[ 53%] Linking CXX executable MpeExpressionTest
+[ 53%] Built target MixerConcurrencyTest
+[ 53%] Linking CXX executable MpeNoteStorageTest
+[ 53%] Built target MixerRoutingBackwardCompatTest
+[ 53%] Linking CXX executable MultiTrackRecorderTest
+[ 53%] Built target MpeExpressionTest
+[ 53%] Linking CXX executable NoteRandomTest
+[ 53%] Linking CXX executable MpeInputPathTest
+[ 53%] Built target MpeNoteStorageTest
+[ 53%] Linking CXX executable NoteTransformTest
+[ 53%] Built target MultiTrackRecorderTest
+[ 54%] Building CXX object tests/CMakeFiles/PhaseFChannelScaleTest.dir/src/core/PhaseFChannelScaleTest.cpp.o
+[ 54%] Built target NoteRandomTest
+[ 54%] Linking CXX executable PluginLogoResourceTest
+[ 54%] Built target MpeInputPathTest
+[ 54%] Building CXX object tests/CMakeFiles/PluginAudioPortsTest.dir/src/core/PluginAudioPortsTest.cpp.o
+[ 54%] Built target NoteTransformTest
+[ 54%] Building CXX object tests/CMakeFiles/ProjectOpenIntegrityTest.dir/src/core/ProjectOpenIntegrityTest.cpp.o
+[ 54%] Built target PluginLogoResourceTest
+[ 54%] Linking CXX executable ProjectRecoveryTest
+[ 54%] Built target ProjectRecoveryTest
+[ 54%] Linking CXX executable ProjectVersionTest
+[ 54%] Linking CXX executable PhaseFChannelScaleTest
+[ 54%] Linking CXX executable ProjectOpenIntegrityTest
+[ 54%] Linking CXX executable PluginAudioPortsTest
+[ 54%] Built target ProjectVersionTest
+[ 54%] Building CXX object tests/CMakeFiles/RackTest.dir/src/core/RackTest.cpp.o
+[ 54%] Built target PhaseFChannelScaleTest
+[ 54%] Linking CXX executable RecordClipTest
+[ 54%] Built target ProjectOpenIntegrityTest
+[ 54%] Linking CXX executable RecordRingBufferTest
+[ 54%] Built target PluginAudioPortsTest
+[ 54%] Building CXX object tests/CMakeFiles/RecordingRealtimeTest.dir/src/core/RecordingRealtimeTest.cpp.o
+[ 55%] Built target RecordClipTest
+[ 55%] Linking CXX executable RelativePathsTest
+[ 55%] Built target RecordRingBufferTest
+[ 55%] Building CXX object tests/CMakeFiles/ReversibilityContractTest.dir/ReversibilityContractTest_autogen/mocs_compilation.cpp.o
+[ 55%] Building CXX object tests/CMakeFiles/ReversibilityContractTest.dir/src/core/ReversibilityContractTest.cpp.o
+[ 55%] Built target RelativePathsTest
+[ 55%] Building CXX object tests/CMakeFiles/ReversibilityUndoTest.dir/ReversibilityUndoTest_autogen/mocs_compilation.cpp.o
+[ 55%] Building CXX object tests/CMakeFiles/ReversibilityUndoTest.dir/src/core/ReversibilityUndoTest.cpp.o
+[ 55%] Linking CXX executable RackTest
+[ 55%] Linking CXX executable RecordingRealtimeTest
+[ 55%] Built target RackTest
+[ 55%] Building CXX object tests/CMakeFiles/RemotePluginAudioPortsTest.dir/src/core/RemotePluginAudioPortsTest.cpp.o
+[ 55%] Linking CXX executable ReversibilityContractTest
+[ 55%] Built target RecordingRealtimeTest
+[ 55%] Building CXX object tests/CMakeFiles/RemotePluginClientE2ETest.dir/src/core/RemotePluginClientE2ETest.cpp.o
+[ 55%] Built target ReversibilityContractTest
+[ 55%] Building CXX object tests/CMakeFiles/RenderJobQueueTest.dir/src/core/RenderJobQueueTest.cpp.o
+[ 56%] Linking CXX executable ReversibilityUndoTest
+[ 56%] Linking CXX executable RemotePluginAudioPortsTest
+[ 56%] Built target ReversibilityUndoTest
+[ 56%] Building CXX object tests/CMakeFiles/RoutingGraphLiveTest.dir/src/core/RoutingGraphLiveTest.cpp.o
+[ 56%] Linking CXX executable RemotePluginClientE2ETest
+[ 56%] Linking CXX executable RenderJobQueueTest
+[ 56%] Built target RemotePluginAudioPortsTest
+[ 56%] Linking CXX executable RoutingGraphTest
+[ 56%] Built target RemotePluginClientE2ETest
+[ 56%] Building CXX object tests/CMakeFiles/PdcMixerTest.dir/src/core/PdcMixerTest.cpp.o
+[ 56%] Built target RenderJobQueueTest
+[ 56%] Building CXX object tests/CMakeFiles/VcaGroupTest.dir/src/core/VcaGroupTest.cpp.o
+[ 56%] Built target RoutingGraphTest
+[ 57%] Building CXX object tests/CMakeFiles/ScriptBindingsTest.dir/src/core/ScriptBindingsTest.cpp.o
+[ 57%] Linking CXX executable RoutingGraphLiveTest
+[ 57%] Built target RoutingGraphLiveTest
+[ 57%] Building CXX object tests/CMakeFiles/ScriptEngineTest.dir/src/core/ScriptEngineTest.cpp.o
+[ 57%] Linking CXX executable PdcMixerTest
+[ 57%] Linking CXX executable ScriptBindingsTest
+[ 57%] Linking CXX executable VcaGroupTest
+[ 57%] Built target PdcMixerTest
+[ 57%] Building CXX object tests/CMakeFiles/ScriptStabilisationTest.dir/src/core/ScriptStabilisationTest.cpp.o
+[ 57%] Built target ScriptBindingsTest
+[ 57%] Building CXX object tests/CMakeFiles/SlideNotesTest.dir/src/core/SlideNotesTest.cpp.o
+[ 57%] Built target VcaGroupTest
+[ 57%] Building CXX object tests/CMakeFiles/StableTrackIdsTest.dir/StableTrackIdsTest_autogen/mocs_compilation.cpp.o
+[ 57%] Building CXX object tests/CMakeFiles/StableTrackIdsTest.dir/src/core/StableTrackIdsTest.cpp.o
+[ 57%] Linking CXX executable ScriptEngineTest
+[ 57%] Built target ScriptEngineTest
+[ 57%] Building CXX object tests/CMakeFiles/StemExportTest.dir/src/core/StemExportTest.cpp.o
+[ 57%] Linking CXX executable SlideNotesTest
+[ 57%] Linking CXX executable ScriptStabilisationTest
+[ 57%] Linking CXX executable StableTrackIdsTest
+[ 57%] Built target SlideNotesTest
+[ 57%] Linking CXX executable TelemetryTest
+[ 57%] Built target ScriptStabilisationTest
+[ 57%] Building CXX object tests/CMakeFiles/TimelineTest.dir/src/core/TimelineTest.cpp.o
+[ 57%] Built target StableTrackIdsTest
+[ 57%] Linking CXX executable TwoTrackRecordingHarness
+[ 57%] Built target TelemetryTest
+[ 57%] Linking CXX executable WarpMarkersTest
+[ 57%] Built target TwoTrackRecordingHarness
+[ 57%] Building CXX object tests/CMakeFiles/MidiLearnGuiTest.dir/src/gui/MidiLearnGuiTest.cpp.o
+[ 57%] Linking CXX executable StemExportTest
+[ 57%] Built target WarpMarkersTest
+[ 57%] Building CXX object tests/CMakeFiles/AutomationTrackTest.dir/src/tracks/AutomationTrackTest.cpp.o
+[ 57%] Linking CXX executable TimelineTest
+[ 57%] Built target StemExportTest
+[ 57%] Building CXX object tests/CMakeFiles/SampleClipWarpTest.dir/src/tracks/SampleClipWarpTest.cpp.o
+[ 58%] Built target TimelineTest
+[ 58%] Building CXX object tests/CMakeFiles/SampleClipWindowTest.dir/src/tracks/SampleClipWindowTest.cpp.o
+[ 58%] Linking CXX executable MidiLearnGuiTest
+[ 58%] Linking CXX executable AutomationTrackTest
+[ 58%] Built target MidiLearnGuiTest
+[ 58%] Building CXX object tests/CMakeFiles/SessionModelTest.dir/src/core/SessionModelTest.cpp.o
+[ 58%] Linking CXX executable SampleClipWarpTest
+[ 58%] Built target AutomationTrackTest
+[ 58%] Linking CXX executable SessionSchedulerTest
+[ 58%] Linking CXX executable SampleClipWindowTest
+[ 58%] Built target SampleClipWarpTest
+[ 58%] Building CXX object tests/CMakeFiles/SessionSchedulerRenderTest.dir/src/core/SessionSchedulerRenderTest.cpp.o
+[ 59%] Built target SessionSchedulerTest
+[ 59%] Built target partc_ref_amplifier_autogen_timestamp_deps
+[ 59%] Built target partc_ref_bassbooster_autogen_timestamp_deps
+[ 59%] Built target partc_ref_bitcrush_autogen_timestamp_deps
+[ 59%] Built target partc_ref_dualfilter_autogen_timestamp_deps
+[ 59%] Built target partc_ref_waveshaper_autogen_timestamp_deps
+[ 59%] Built target partc_ref_flanger_autogen_timestamp_deps
+[ 59%] Built target partc_ref_delay_autogen_timestamp_deps
+[ 59%] Built target partc_ref_compressor_autogen_timestamp_deps
+[ 59%] Built target partc_ref_crossovereq_autogen_timestamp_deps
+[ 59%] Built target partc_ref_dynamicsprocessor_autogen_timestamp_deps
+[ 59%] Built target partc_ref_lomm_autogen_timestamp_deps
+[ 59%] Built target partc_ref_multitapecho_autogen_timestamp_deps
+[ 59%] Built target partc_ref_reverbsc_autogen_timestamp_deps
+[ 59%] Built target partc_ref_stereoenhancer_autogen_timestamp_deps
+[ 59%] Built target partc_ref_stereomatrix_autogen_timestamp_deps
+[ 59%] Built target partc_ref_dispersion_autogen_timestamp_deps
+[ 59%] Built target partc_ref_vectorscope_autogen_timestamp_deps
+[ 59%] Built target partc_ref_analyzer_autogen_timestamp_deps
+[ 59%] Built target partc_ref_granularpitchshifter_autogen_timestamp_deps
+[ 59%] Built target partc_ref_eq_autogen_timestamp_deps
+[ 59%] Built target partc_ref_freeboy_autogen_timestamp_deps
+[ 59%] Built target partc_ref_nes_autogen_timestamp_deps
+[ 59%] Built target partc_ref_sid_autogen_timestamp_deps
+[ 59%] Built target partc_ref_opulenz_autogen_timestamp_deps
+[ 59%] Built target partc_ref_sfxr_autogen_timestamp_deps
+[ 59%] Built target partc_ref_bitinvader_autogen_timestamp_deps
+[ 59%] Built target partc_ref_watsyn_autogen_timestamp_deps
+[ 59%] Built target partc_ref_xpressive_autogen_timestamp_deps
+[ 59%] Built target partc_ref_vibedstrings_autogen_timestamp_deps
+[ 59%] Built target partc_ref_kicker_autogen_timestamp_deps
+[ 59%] Built target partc_ref_tripleoscillator_autogen_timestamp_deps
+[ 59%] Built target partc_ref_monstro_autogen_timestamp_deps
+[ 59%] Built target partc_ref_organic_autogen_timestamp_deps
+[ 59%] Built target partc_ref_audiofileprocessor_autogen_timestamp_deps
+[ 59%] Built target partc_ref_lb302_autogen_timestamp_deps
+[ 59%] Built target partc_ref_ladspaeffect_autogen_timestamp_deps
+[ 59%] Built target partc_ref_frequencyshifter_autogen_timestamp_deps
+[ 59%] Built target partc_ref_oscilloscope_autogen_timestamp_deps
+[ 59%] Built target partc_ref_slewdistortion_autogen_timestamp_deps
+[ 59%] Built target partc_ref_lv2effect_autogen_timestamp_deps
+[ 59%] Built target partc_ref_lv2instrument_autogen_timestamp_deps
+[ 59%] Built target partc_ref_sf2player_autogen_timestamp_deps
+[ 59%] Built target partc_ref_gigplayer_autogen_timestamp_deps
+[ 59%] Built target synthetic_audio_plugin_autogen_timestamp_deps
+[ 59%] Building CXX object plugins/AudioFileProcessor/CMakeFiles/audiofileprocessor.dir/AudioFileProcessor.cpp.o
+[ 59%] Built target SampleClipWindowTest
+[ 59%] Building CXX object plugins/AudioFileProcessor/CMakeFiles/audiofileprocessor.dir/AudioFileProcessorView.cpp.o
+[ 59%] Linking CXX executable SessionModelTest
+[ 59%] Built target SessionModelTest
+[ 59%] Building CXX object plugins/Kicker/CMakeFiles/kicker.dir/Kicker.cpp.o
+[ 59%] Linking CXX executable SessionSchedulerRenderTest
+[ 59%] Building CXX object plugins/AudioFileProcessor/CMakeFiles/audiofileprocessor.dir/AudioFileProcessorWaveView.cpp.o
+[ 59%] Building CXX object plugins/AudioFileProcessor/CMakeFiles/audiofileprocessor.dir/moc_AudioFileProcessor.cpp.o
+[ 59%] Built target SessionSchedulerRenderTest
+[ 59%] Building CXX object plugins/TripleOscillator/CMakeFiles/tripleoscillator.dir/TripleOscillator.cpp.o
+[ 59%] Building CXX object plugins/AudioFileProcessor/CMakeFiles/audiofileprocessor.dir/moc_AudioFileProcessorWaveView.cpp.o
+[ 59%] Linking CXX shared module ../libkicker.so
+[ 59%] Building CXX object plugins/TripleOscillator/CMakeFiles/tripleoscillator.dir/moc_TripleOscillator.cpp.o
+[ 59%] Built target kicker
+[ 59%] Building CXX object plugins/Amplifier/CMakeFiles/amplifier.dir/Amplifier.cpp.o
+[ 59%] Linking CXX shared module ../libaudiofileprocessor.so
+[ 59%] Built target audiofileprocessor
+[ 59%] Building CXX object plugins/BassBooster/CMakeFiles/bassbooster.dir/BassBooster.cpp.o
+[ 59%] Building CXX object plugins/BitInvader/CMakeFiles/bitinvader.dir/BitInvader.cpp.o
+[ 59%] Linking CXX shared module ../libtripleoscillator.so
+[ 59%] Built target tripleoscillator
+[ 59%] Building CXX object plugins/Bitcrush/CMakeFiles/bitcrush.dir/Bitcrush.cpp.o
+[ 59%] Building CXX object plugins/Amplifier/CMakeFiles/amplifier.dir/AmplifierControls.cpp.o
+[ 59%] Building CXX object plugins/BassBooster/CMakeFiles/bassbooster.dir/BassBoosterControls.cpp.o
+[ 60%] Building CXX object plugins/Amplifier/CMakeFiles/amplifier.dir/AmplifierControlDialog.cpp.o
+[ 60%] Linking CXX shared module ../libbitinvader.so
+[ 61%] Built target bitinvader
+[ 61%] Building CXX object plugins/Amplifier/CMakeFiles/amplifier.dir/moc_AmplifierControls.cpp.o
+[ 61%] Building CXX object plugins/Bitcrush/CMakeFiles/bitcrush.dir/BitcrushControls.cpp.o
+[ 61%] Building CXX object plugins/BassBooster/CMakeFiles/bassbooster.dir/BassBoosterControlDialog.cpp.o
+[ 61%] Building CXX object plugins/BassBooster/CMakeFiles/bassbooster.dir/moc_BassBoosterControls.cpp.o
+[ 61%] Linking CXX shared module ../libamplifier.so
+[ 61%] Built target amplifier
+[ 61%] Building CXX object plugins/CarlaBase/CMakeFiles/carlabase.dir/Carla.cpp.o
+[ 61%] Building CXX object plugins/Bitcrush/CMakeFiles/bitcrush.dir/BitcrushControlDialog.cpp.o
+[ 61%] Building CXX object plugins/Bitcrush/CMakeFiles/bitcrush.dir/moc_BitcrushControls.cpp.o
+[ 61%] Linking CXX shared module ../libbassbooster.so
+[ 61%] Built target bassbooster
+[ 61%] Building CXX object plugins/ClapEffect/CMakeFiles/clapeffect.dir/ClapEffect.cpp.o
+[ 61%] Building CXX object plugins/ClapEffect/CMakeFiles/clapeffect.dir/ClapEffectControlDialog.cpp.o
+[ 61%] Linking CXX shared module ../libbitcrush.so
+[ 62%] Linking CXX shared library ../libcarlabase.so
+[ 62%] Built target bitcrush
+[ 62%] Building CXX object plugins/Compressor/CMakeFiles/compressor.dir/Compressor.cpp.o
+[ 62%] Built target carlabase
+[ 62%] Building CXX object plugins/Compressor/CMakeFiles/compressor.dir/CompressorControls.cpp.o
+[ 62%] Building CXX object plugins/ClapEffect/CMakeFiles/clapeffect.dir/ClapEffectControls.cpp.o
+[ 62%] Building CXX object plugins/ClapEffect/CMakeFiles/clapeffect.dir/moc_ClapEffectControls.cpp.o
+[ 62%] Building CXX object plugins/Compressor/CMakeFiles/compressor.dir/CompressorControlDialog.cpp.o
+[ 62%] Building CXX object plugins/CrossoverEQ/CMakeFiles/crossovereq.dir/CrossoverEQ.cpp.o
+[ 62%] Building CXX object plugins/Compressor/CMakeFiles/compressor.dir/moc_Compressor.cpp.o
+[ 62%] Linking CXX shared module ../libclapeffect.so
+[ 63%] Built target clapeffect
+[ 63%] Building CXX object plugins/Delay/CMakeFiles/delay.dir/DelayEffect.cpp.o
+[ 63%] Building CXX object plugins/Delay/CMakeFiles/delay.dir/DelayControls.cpp.o
+[ 63%] Building CXX object plugins/CrossoverEQ/CMakeFiles/crossovereq.dir/CrossoverEQControls.cpp.o
+[ 63%] Building CXX object plugins/Compressor/CMakeFiles/compressor.dir/moc_CompressorControls.cpp.o
+[ 63%] Building CXX object plugins/Compressor/CMakeFiles/compressor.dir/__/Eq/moc_EqFader.cpp.o
+[ 63%] Building CXX object plugins/Delay/CMakeFiles/delay.dir/DelayControlsDialog.cpp.o
+[ 63%] Building CXX object plugins/Delay/CMakeFiles/delay.dir/moc_DelayControls.cpp.o
+[ 63%] Building CXX object plugins/CrossoverEQ/CMakeFiles/crossovereq.dir/CrossoverEQControlDialog.cpp.o
+[ 63%] Linking CXX shared module ../libcompressor.so
+[ 63%] Built target compressor
+[ 63%] Building CXX object plugins/Dispersion/CMakeFiles/dispersion.dir/Dispersion.cpp.o
+[ 63%] Building CXX object plugins/CrossoverEQ/CMakeFiles/crossovereq.dir/moc_CrossoverEQControls.cpp.o
+[ 63%] Building CXX object plugins/Delay/CMakeFiles/delay.dir/__/Eq/moc_EqFader.cpp.o
+[ 63%] Building CXX object plugins/Dispersion/CMakeFiles/dispersion.dir/DispersionControls.cpp.o
+[ 63%] Building CXX object plugins/Dispersion/CMakeFiles/dispersion.dir/DispersionControlDialog.cpp.o
+[ 63%] Linking CXX shared module ../libcrossovereq.so
+[ 63%] Built target crossovereq
+[ 63%] Building CXX object plugins/Dispersion/CMakeFiles/dispersion.dir/moc_DispersionControls.cpp.o
+[ 63%] Linking CXX shared module ../libdelay.so
+[ 63%] Building CXX object plugins/DualFilter/CMakeFiles/dualfilter.dir/DualFilter.cpp.o
+[ 63%] Built target delay
+[ 63%] Building CXX object plugins/DynamicsProcessor/CMakeFiles/dynamicsprocessor.dir/DynamicsProcessor.cpp.o
+[ 63%] Building CXX object plugins/DynamicsProcessor/CMakeFiles/dynamicsprocessor.dir/DynamicsProcessorControls.cpp.o
+[ 63%] Linking CXX shared module ../libdispersion.so
+[ 63%] Built target dispersion
+[ 63%] Building CXX object plugins/Eq/CMakeFiles/eq.dir/EqEffect.cpp.o
+[ 63%] Building CXX object plugins/DualFilter/CMakeFiles/dualfilter.dir/DualFilterControls.cpp.o
+[ 63%] Building CXX object plugins/DynamicsProcessor/CMakeFiles/dynamicsprocessor.dir/DynamicsProcessorControlDialog.cpp.o
+[ 63%] Building CXX object plugins/DualFilter/CMakeFiles/dualfilter.dir/DualFilterControlDialog.cpp.o
+[ 63%] Building CXX object plugins/DynamicsProcessor/CMakeFiles/dynamicsprocessor.dir/moc_DynamicsProcessorControls.cpp.o
+[ 63%] Building CXX object plugins/Eq/CMakeFiles/eq.dir/EqCurve.cpp.o
+[ 63%] Building CXX object plugins/DualFilter/CMakeFiles/dualfilter.dir/moc_DualFilterControls.cpp.o
+[ 63%] Building CXX object plugins/Flanger/CMakeFiles/flanger.dir/FlangerEffect.cpp.o
+[ 63%] Linking CXX shared module ../libdynamicsprocessor.so
+[ 63%] Linking CXX shared module ../libdualfilter.so
+[ 63%] Built target dynamicsprocessor
+[ 63%] Building CXX object plugins/Flanger/CMakeFiles/flanger.dir/FlangerControls.cpp.o
+[ 63%] Built target dualfilter
+[ 63%] Building CXX object plugins/Eq/CMakeFiles/eq.dir/EqControls.cpp.o
+[ 63%] Building CXX object plugins/Eq/CMakeFiles/eq.dir/EqControlsDialog.cpp.o
+[ 63%] Building CXX object plugins/Flanger/CMakeFiles/flanger.dir/FlangerControlsDialog.cpp.o
+[ 63%] Building CXX object plugins/Flanger/CMakeFiles/flanger.dir/moc_FlangerControls.cpp.o
+[ 63%] Building CXX object plugins/Eq/CMakeFiles/eq.dir/EqSpectrumView.cpp.o
+[ 63%] Building CXX object plugins/Eq/CMakeFiles/eq.dir/moc_EqControls.cpp.o
+[ 63%] Building CXX object plugins/Eq/CMakeFiles/eq.dir/moc_EqFader.cpp.o
+[ 63%] Linking CXX shared module ../libflanger.so
+[ 63%] Built target flanger
+[ 63%] Building CXX object plugins/FrequencyShifter/CMakeFiles/frequencyshifter.dir/FrequencyShifterEffect.cpp.o
+[ 64%] Building CXX object plugins/FrequencyShifter/CMakeFiles/frequencyshifter.dir/FrequencyShifterControls.cpp.o
+[ 64%] Building CXX object plugins/FrequencyShifter/CMakeFiles/frequencyshifter.dir/FrequencyShifterControlDialog.cpp.o
+[ 65%] Linking CXX shared module ../libeq.so
+[ 65%] Built target eq
+[ 65%] Building CXX object plugins/GranularPitchShifter/CMakeFiles/granularpitchshifter.dir/GranularPitchShifterEffect.cpp.o
+[ 65%] Building CXX object plugins/FrequencyShifter/CMakeFiles/frequencyshifter.dir/moc_FrequencyShifterEffect.cpp.o
+[ 65%] Building CXX object plugins/FrequencyShifter/CMakeFiles/frequencyshifter.dir/moc_FrequencyShifterControls.cpp.o
+[ 65%] Building CXX object plugins/GranularPitchShifter/CMakeFiles/granularpitchshifter.dir/GranularPitchShifterControls.cpp.o
+[ 65%] Building CXX object plugins/GranularPitchShifter/CMakeFiles/granularpitchshifter.dir/GranularPitchShifterControlDialog.cpp.o
+[ 65%] Building CXX object plugins/HydrogenImport/CMakeFiles/hydrogenimport.dir/HydrogenImport.cpp.o
+[ 65%] Linking CXX shared module ../libfrequencyshifter.so
+[ 65%] Building CXX object plugins/GranularPitchShifter/CMakeFiles/granularpitchshifter.dir/moc_GranularPitchShifterControls.cpp.o
+[ 65%] Built target frequencyshifter
+[ 66%] Building CXX object plugins/LadspaBrowser/CMakeFiles/ladspabrowser.dir/LadspaPortDialog.cpp.o
+[ 66%] Building CXX object plugins/LadspaEffect/CMakeFiles/ladspaeffect.dir/LadspaEffect.cpp.o
+[ 66%] Linking CXX shared module ../libgranularpitchshifter.so
+[ 67%] Built target granularpitchshifter
+[ 67%] Linking CXX shared module ../libhydrogenimport.so
+[ 67%] Building CXX object plugins/LOMM/CMakeFiles/lomm.dir/LOMM.cpp.o
+[ 67%] Linking CXX shared module ../libladspabrowser.so
+[ 67%] Built target hydrogenimport
+[ 67%] Building CXX object plugins/Lv2Effect/CMakeFiles/lv2effect.dir/Lv2Effect.cpp.o
+[ 67%] Built target ladspabrowser
+[ 67%] Building CXX object plugins/Lv2Instrument/CMakeFiles/lv2instrument.dir/Lv2Instrument.cpp.o
+[ 67%] Building CXX object plugins/LadspaEffect/CMakeFiles/ladspaeffect.dir/LadspaControls.cpp.o
+[ 67%] Building CXX object plugins/Lv2Effect/CMakeFiles/lv2effect.dir/Lv2FxControls.cpp.o
+[ 67%] Linking CXX shared module ../liblv2instrument.so
+[ 67%] Built target lv2instrument
+[ 67%] Building CXX object plugins/Lv2Effect/CMakeFiles/lv2effect.dir/Lv2FxControlDialog.cpp.o
+[ 67%] Building CXX object plugins/LOMM/CMakeFiles/lomm.dir/LOMMControls.cpp.o
+[ 67%] Building CXX object plugins/LadspaEffect/CMakeFiles/ladspaeffect.dir/LadspaControlDialog.cpp.o
+[ 67%] Building CXX object plugins/LadspaEffect/CMakeFiles/ladspaeffect.dir/LadspaMatrixControlDialog.cpp.o
+[ 67%] Building CXX object plugins/Lv2Effect/CMakeFiles/lv2effect.dir/moc_Lv2Effect.cpp.o
+[ 67%] Building CXX object plugins/LOMM/CMakeFiles/lomm.dir/LOMMControlDialog.cpp.o
+[ 67%] Building CXX object plugins/LadspaEffect/CMakeFiles/ladspaeffect.dir/moc_LadspaEffect.cpp.o
+[ 67%] Building CXX object plugins/LadspaEffect/CMakeFiles/ladspaeffect.dir/moc_LadspaControls.cpp.o
+[ 67%] Building CXX object plugins/Lv2Effect/CMakeFiles/lv2effect.dir/moc_Lv2FxControls.cpp.o
+[ 67%] Building CXX object plugins/Lb302/CMakeFiles/lb302.dir/Lb302.cpp.o
+[ 67%] Building CXX object plugins/LOMM/CMakeFiles/lomm.dir/moc_LOMM.cpp.o
+[ 67%] Linking CXX shared module ../libladspaeffect.so
+[ 67%] Linking CXX shared module ../liblv2effect.so
+[ 67%] Built target ladspaeffect
+[ 67%] Building CXX object plugins/MidiImport/CMakeFiles/midiimport.dir/MidiImport.cpp.o
+[ 68%] Built target lv2effect
+[ 68%] Building CXX object plugins/MidiExport/CMakeFiles/midiexport.dir/MidiExport.cpp.o
+[ 68%] Building CXX object plugins/LOMM/CMakeFiles/lomm.dir/moc_LOMMControls.cpp.o
+[ 68%] Building CXX object plugins/Lb302/CMakeFiles/lb302.dir/moc_Lb302.cpp.o
+[ 68%] Linking CXX shared module ../libmidiimport.so
+[ 68%] Built target midiimport
+[ 68%] Building CXX object plugins/MultitapEcho/CMakeFiles/multitapecho.dir/MultitapEcho.cpp.o
+[ 68%] Linking CXX shared module ../libmidiexport.so
+[ 68%] Built target midiexport
+[ 68%] Building CXX object plugins/Monstro/CMakeFiles/monstro.dir/Monstro.cpp.o
+[ 68%] Linking CXX shared module ../liblomm.so
+[ 69%] Built target lomm
+[ 69%] Building CXX object plugins/Nes/CMakeFiles/nes.dir/Nes.cpp.o
+[ 69%] Linking CXX shared module ../liblb302.so
+[ 69%] Built target lb302
+[ 69%] Building CXX object plugins/MultitapEcho/CMakeFiles/multitapecho.dir/MultitapEchoControls.cpp.o
+[ 69%] Building CXX object plugins/MultitapEcho/CMakeFiles/multitapecho.dir/MultitapEchoControlDialog.cpp.o
+[ 69%] Building CXX object plugins/MultitapEcho/CMakeFiles/multitapecho.dir/moc_MultitapEchoControls.cpp.o
+[ 69%] Linking CXX shared module ../libnes.so
+[ 69%] Built target nes
+[ 69%] Building CXX object plugins/NeuralAmp/CMakeFiles/neuralamp.dir/NeuralAmpEffect.cpp.o
+[ 69%] Building CXX object plugins/OpulenZ/CMakeFiles/opulenz.dir/OpulenZ.cpp.o
+[ 69%] Building CXX object plugins/Monstro/CMakeFiles/monstro.dir/moc_Monstro.cpp.o
+[ 69%] Linking CXX shared module ../libmultitapecho.so
+[ 69%] Built target multitapecho
+[ 69%] Building CXX object plugins/Organic/CMakeFiles/organic.dir/Organic.cpp.o
+[ 69%] Linking CXX shared module ../libmonstro.so
+[ 70%] Built target monstro
+[ 70%] Building CXX object plugins/Oscilloscope/CMakeFiles/oscilloscope.dir/Oscilloscope.cpp.o
+[ 70%] Building CXX object plugins/NeuralAmp/CMakeFiles/neuralamp.dir/NeuralAmpControls.cpp.o
+[ 70%] Linking CXX shared module ../libopulenz.so
+[ 70%] Built target opulenz
+[ 70%] Building CXX object plugins/FreeBoy/CMakeFiles/freeboy.dir/FreeBoy.cpp.o
+[ 70%] Linking CXX shared module ../liborganic.so
+[ 70%] Building CXX object plugins/NeuralAmp/CMakeFiles/neuralamp.dir/NeuralAmpControlDialog.cpp.o
+[ 70%] Built target organic
+[ 70%] Building CXX object plugins/Patman/CMakeFiles/patman.dir/Patman.cpp.o
+[ 70%] Building CXX object plugins/Oscilloscope/CMakeFiles/oscilloscope.dir/OscilloscopeControls.cpp.o
+[ 70%] Linking CXX shared module ../libfreeboy.so
+[ 70%] Building CXX object plugins/NeuralAmp/CMakeFiles/neuralamp.dir/moc_NeuralAmpEffect.cpp.o
+[ 70%] Built target freeboy
+[ 70%] Building CXX object plugins/NeuralAmp/CMakeFiles/neuralamp.dir/moc_NeuralAmpControls.cpp.o
+[ 70%] Building CXX object plugins/Oscilloscope/CMakeFiles/oscilloscope.dir/OscilloscopeControlDialog.cpp.o
+[ 70%] Building CXX object plugins/Patman/CMakeFiles/patman.dir/moc_Patman.cpp.o
+[ 70%] Building CXX object plugins/Oscilloscope/CMakeFiles/oscilloscope.dir/OscilloscopeGraph.cpp.o
+[ 70%] Linking CXX shared module ../libneuralamp.so
+[ 71%] Building CXX object plugins/Oscilloscope/CMakeFiles/oscilloscope.dir/moc_OscilloscopeControls.cpp.o
+[ 71%] Built target neuralamp
+[ 71%] Building CXX object plugins/PeakControllerEffect/CMakeFiles/peakcontrollereffect.dir/PeakControllerEffect.cpp.o
+[ 71%] Linking CXX shared module ../libpatman.so
+[ 71%] Built target patman
+[ 71%] Built target gigplayer_autogen_timestamp_deps
+[ 71%] Building CXX object plugins/PeakControllerEffect/CMakeFiles/peakcontrollereffect.dir/PeakControllerEffectControls.cpp.o
+[ 71%] Building CXX object plugins/Oscilloscope/CMakeFiles/oscilloscope.dir/moc_OscilloscopeGraph.cpp.o
+[ 71%] Building CXX object plugins/ReverbSC/CMakeFiles/reverbsc.dir/ReverbSC.cpp.o
+[ 71%] Building CXX object plugins/PeakControllerEffect/CMakeFiles/peakcontrollereffect.dir/PeakControllerEffectControlDialog.cpp.o
+[ 71%] Building CXX object plugins/PeakControllerEffect/CMakeFiles/peakcontrollereffect.dir/moc_PeakControllerEffectControls.cpp.o
+[ 71%] Linking CXX shared module ../liboscilloscope.so
+[ 71%] Built target oscilloscope
+[ 71%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/RnnoiseDenoiserEffect.cpp.o
+[ 72%] Building CXX object plugins/ReverbSC/CMakeFiles/reverbsc.dir/ReverbSCControls.cpp.o
+[ 72%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/RnnoiseDenoiserControls.cpp.o
+[ 72%] Linking CXX shared module ../libpeakcontrollereffect.so
+[ 72%] Built target peakcontrollereffect
+[ 72%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/RnnoiseDenoiserControlDialog.cpp.o
+[ 72%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/moc_RnnoiseDenoiserEffect.cpp.o
+[ 72%] Building CXX object plugins/RnnoiseDenoiser/CMakeFiles/rnnoisedenoiser.dir/moc_RnnoiseDenoiserControls.cpp.o
+[ 72%] Building CXX object plugins/ReverbSC/CMakeFiles/reverbsc.dir/ReverbSCControlDialog.cpp.o
+[ 72%] Building CXX object plugins/ReverbSC/CMakeFiles/reverbsc.dir/moc_ReverbSCControls.cpp.o
+[ 72%] Built target sf2player_autogen_timestamp_deps
+[ 72%] Building CXX object plugins/Sfxr/CMakeFiles/sfxr.dir/Sfxr.cpp.o
+[ 72%] Linking CXX shared module ../librnnoisedenoiser.so
+[ 72%] Building CXX object plugins/Sid/CMakeFiles/sid.dir/SidInstrument.cpp.o
+[ 72%] Built target rnnoisedenoiser
+[ 72%] Building CXX object plugins/SlewDistortion/CMakeFiles/slewdistortion.dir/SlewDistortion.cpp.o
+[ 72%] Linking CXX shared module ../libreverbsc.so
+[ 72%] Built target reverbsc
+[ 72%] Building CXX object plugins/SlicerT/CMakeFiles/slicert.dir/SlicerT.cpp.o
+[ 72%] Linking CXX shared module ../libsfxr.so
+[ 72%] Built target sfxr
+[ 72%] Building CXX object plugins/SlewDistortion/CMakeFiles/slewdistortion.dir/SlewDistortionControls.cpp.o
+[ 72%] Building CXX object plugins/Sid/CMakeFiles/sid.dir/moc_SidInstrument.cpp.o
+[ 72%] Building CXX object plugins/SlicerT/CMakeFiles/slicert.dir/SlicerTView.cpp.o
+[ 72%] Building CXX object plugins/SlicerT/CMakeFiles/slicert.dir/SlicerTWaveform.cpp.o
+[ 72%] Building CXX object plugins/SlewDistortion/CMakeFiles/slewdistortion.dir/SlewDistortionControlDialog.cpp.o
+[ 72%] Linking CXX shared module ../libsid.so
+[ 72%] Built target sid
+[ 72%] Building CXX object plugins/SlewDistortion/CMakeFiles/slewdistortion.dir/moc_SlewDistortion.cpp.o
+[ 72%] Building CXX object plugins/SlicerT/CMakeFiles/slicert.dir/moc_SlicerT.cpp.o
+[ 72%] Building CXX object plugins/SlicerT/CMakeFiles/slicert.dir/moc_SlicerTWaveform.cpp.o
+[ 72%] Building CXX object plugins/SlewDistortion/CMakeFiles/slewdistortion.dir/moc_SlewDistortionControls.cpp.o
+[ 72%] Building CXX object plugins/SpectrumAnalyzer/CMakeFiles/analyzer.dir/Analyzer.cpp.o
+[ 72%] Building CXX object plugins/SpectrumAnalyzer/CMakeFiles/analyzer.dir/SaProcessor.cpp.o
+[ 72%] Linking CXX shared module ../libslicert.so
+[ 73%] Built target slicert
+[ 73%] Building CXX object plugins/StereoEnhancer/CMakeFiles/stereoenhancer.dir/StereoEnhancer.cpp.o
+[ 73%] Linking CXX shared module ../libslewdistortion.so
+[ 73%] Built target slewdistortion
+[ 73%] Building CXX object plugins/StereoMatrix/CMakeFiles/stereomatrix.dir/StereoMatrix.cpp.o
+[ 73%] Building CXX object plugins/SpectrumAnalyzer/CMakeFiles/analyzer.dir/SaControls.cpp.o
+[ 73%] Building CXX object plugins/SpectrumAnalyzer/CMakeFiles/analyzer.dir/SaControlsDialog.cpp.o
+[ 73%] Building CXX object plugins/StereoEnhancer/CMakeFiles/stereoenhancer.dir/StereoEnhancerControls.cpp.o
+[ 73%] Building CXX object plugins/StereoMatrix/CMakeFiles/stereomatrix.dir/StereoMatrixControls.cpp.o
+[ 73%] Building CXX object plugins/StereoMatrix/CMakeFiles/stereomatrix.dir/StereoMatrixControlDialog.cpp.o
+[ 73%] Building CXX object plugins/SpectrumAnalyzer/CMakeFiles/analyzer.dir/SaSpectrumView.cpp.o
+[ 74%] Building CXX object plugins/StereoEnhancer/CMakeFiles/stereoenhancer.dir/StereoEnhancerControlDialog.cpp.o
+[ 74%] Building CXX object plugins/TapTempo/CMakeFiles/taptempo.dir/TapTempo.cpp.o
+[ 74%] Building CXX object plugins/StereoMatrix/CMakeFiles/stereomatrix.dir/moc_StereoMatrixControls.cpp.o
+[ 74%] Building CXX object plugins/StereoEnhancer/CMakeFiles/stereoenhancer.dir/moc_StereoEnhancerControls.cpp.o
+[ 74%] Building CXX object plugins/SpectrumAnalyzer/CMakeFiles/analyzer.dir/SaWaterfallView.cpp.o
+[ 74%] Linking CXX shared module ../libstereomatrix.so
+[ 74%] Linking CXX shared module ../libtaptempo.so
+[ 74%] Built target stereomatrix
+[ 74%] Building CXX object plugins/VstBase/vstbase/CMakeFiles/vstbase.dir/__/VstPlugin.cpp.o
+[ 75%] Built target taptempo
+[ 75%] Building CXX object plugins/Vst3Effect/CMakeFiles/vst3effect.dir/Vst3Effect.cpp.o
+[ 75%] Linking CXX shared module ../libstereoenhancer.so
+[ 75%] Built target stereoenhancer
+[ 75%] Building CXX object plugins/Vst3Instrument/CMakeFiles/vst3instrument.dir/Vst3Instrument.cpp.o
+[ 75%] Building CXX object plugins/SpectrumAnalyzer/CMakeFiles/analyzer.dir/moc_SaControls.cpp.o
+[ 75%] Building CXX object plugins/Vst3Effect/CMakeFiles/vst3effect.dir/Vst3EffectControlDialog.cpp.o
+[ 75%] Linking CXX shared module ../libanalyzer.so
+[ 75%] Building CXX object plugins/Vst3Instrument/CMakeFiles/vst3instrument.dir/Vst3InstrumentView.cpp.o
+[ 76%] Built target analyzer
+[ 76%] Building CXX object plugins/Watsyn/CMakeFiles/watsyn.dir/Watsyn.cpp.o
+[ 76%] Linking CXX shared library ../../libvstbase.so
+[ 76%] Built target vstbase
+[ 76%] Building CXX object plugins/WaveShaper/CMakeFiles/waveshaper.dir/WaveShaper.cpp.o
+[ 76%] Building CXX object plugins/Vst3Effect/CMakeFiles/vst3effect.dir/Vst3EffectControls.cpp.o
+[ 76%] Building CXX object plugins/Vst3Instrument/CMakeFiles/vst3instrument.dir/moc_Vst3Instrument.cpp.o
+[ 76%] Building CXX object plugins/WaveShaper/CMakeFiles/waveshaper.dir/WaveShaperControls.cpp.o
+[ 76%] Linking CXX shared module ../libwatsyn.so
+[ 76%] Built target watsyn
+[ 76%] Building CXX object plugins/Vectorscope/CMakeFiles/vectorscope.dir/Vectorscope.cpp.o
+[ 76%] Building CXX object plugins/Vst3Effect/CMakeFiles/vst3effect.dir/moc_Vst3EffectControls.cpp.o
+[ 76%] Linking CXX shared module ../libvst3instrument.so
+[ 76%] Built target vst3instrument
+[ 76%] Building CXX object plugins/WaveShaper/CMakeFiles/waveshaper.dir/WaveShaperControlDialog.cpp.o
+[ 76%] Building CXX object plugins/WaveShaper/CMakeFiles/waveshaper.dir/moc_WaveShaperControls.cpp.o
+[ 76%] Linking CXX shared module ../libvst3effect.so
+[ 77%] Built target vst3effect
+[ 77%] Building CXX object plugins/Vibed/CMakeFiles/vibedstrings.dir/Vibed.cpp.o
+[ 77%] Building CXX object plugins/Vectorscope/CMakeFiles/vectorscope.dir/VecControls.cpp.o
+[ 77%] Building CXX object plugins/Vectorscope/CMakeFiles/vectorscope.dir/VecControlsDialog.cpp.o
+[ 77%] Linking CXX shared module ../libwaveshaper.so
+[ 77%] Built target waveshaper
+[ 77%] Building CXX object plugins/Vectorscope/CMakeFiles/vectorscope.dir/VectorView.cpp.o
+[ 77%] Building CXX object plugins/Vibed/CMakeFiles/vibedstrings.dir/VibratingString.cpp.o
+[ 77%] Building CXX object plugins/Vectorscope/CMakeFiles/vectorscope.dir/moc_VecControls.cpp.o
+[ 77%] Building CXX object plugins/Xpressive/CMakeFiles/xpressive.dir/Xpressive.cpp.o
+[ 77%] Linking CXX shared module ../libvibedstrings.so
+[ 77%] Building CXX object plugins/Xpressive/CMakeFiles/xpressive.dir/ExprSynth.cpp.o
+[ 78%] Built target vibedstrings
+[ 78%] Building CXX object plugins/ZynAddSubFx/CMakeFiles/zynaddsubfx.dir/ZynAddSubFx.cpp.o
+[ 78%] Linking CXX shared module ../libvectorscope.so
+[ 79%] Built target vectorscope
+[ 79%] Built target PhaseDSidechainTest_autogen_timestamp_deps
+[ 79%] Built target PluginScanCacheTest_autogen_timestamp_deps
+[ 79%] Automatic MOC for target partc_ref_amplifier
+[ 79%] Built target partc_ref_amplifier_autogen
+[ 79%] Automatic MOC for target partc_ref_bassbooster
+[ 79%] Built target partc_ref_bassbooster_autogen
+[ 79%] Automatic MOC for target partc_ref_bitcrush
+[ 79%] Built target partc_ref_bitcrush_autogen
+[ 79%] Building CXX object plugins/ZynAddSubFx/CMakeFiles/zynaddsubfx.dir/moc_ZynAddSubFx.cpp.o
+[ 79%] Automatic MOC for target partc_ref_dualfilter
+[ 79%] Built target partc_ref_dualfilter_autogen
+[ 79%] Automatic MOC for target partc_ref_waveshaper
+[ 79%] Built target partc_ref_waveshaper_autogen
+[ 79%] Automatic MOC for target partc_ref_flanger
+[ 79%] Built target partc_ref_flanger_autogen
+[ 79%] Automatic MOC for target partc_ref_delay
+[ 79%] Built target partc_ref_delay_autogen
+[ 79%] Automatic MOC for target partc_ref_compressor
+[ 79%] Automatic MOC for target partc_ref_crossovereq
+[ 79%] Built target partc_ref_compressor_autogen
+[ 79%] Automatic MOC for target partc_ref_dynamicsprocessor
+[ 79%] Built target partc_ref_crossovereq_autogen
+[ 79%] Automatic MOC for target partc_ref_lomm
+[ 79%] Linking CXX shared module ../libzynaddsubfx.so
+[ 79%] Built target partc_ref_dynamicsprocessor_autogen
+[ 79%] Automatic MOC for target partc_ref_multitapecho
+[ 79%] Built target partc_ref_lomm_autogen
+[ 79%] Automatic MOC for target partc_ref_reverbsc
+[ 79%] Built target partc_ref_multitapecho_autogen
+[ 79%] Built target zynaddsubfx
+[ 79%] Automatic MOC for target partc_ref_stereoenhancer
+[ 79%] Built target partc_ref_reverbsc_autogen
+[ 79%] Automatic MOC for target partc_ref_stereomatrix
+[ 79%] Automatic MOC for target partc_ref_dispersion
+[ 79%] Built target partc_ref_stereoenhancer_autogen
+[ 79%] Built target partc_ref_stereomatrix_autogen
+[ 79%] Automatic MOC for target partc_ref_vectorscope
+[ 79%] Built target partc_ref_dispersion_autogen
+[ 79%] Automatic MOC for target partc_ref_analyzer
+[ 79%] Automatic MOC for target partc_ref_granularpitchshifter
+[ 79%] Built target partc_ref_vectorscope_autogen
+[ 79%] Automatic MOC for target partc_ref_eq
+[ 79%] Built target partc_ref_analyzer_autogen
+[ 79%] Automatic MOC for target partc_ref_freeboy
+[ 79%] Built target partc_ref_granularpitchshifter_autogen
+[ 79%] Built target partc_ref_freeboy_autogen
+[ 79%] Automatic MOC for target partc_ref_nes
+[ 79%] Automatic MOC for target partc_ref_sid
+[ 79%] Built target partc_ref_nes_autogen
+[ 79%] Built target partc_ref_sid_autogen
+[ 79%] Automatic MOC for target partc_ref_opulenz
+[ 79%] Automatic MOC for target partc_ref_sfxr
+[ 79%] Built target partc_ref_opulenz_autogen
+[ 79%] Built target partc_ref_sfxr_autogen
+[ 79%] Built target partc_ref_eq_autogen
+[ 79%] Automatic MOC for target partc_ref_bitinvader
+[ 79%] Automatic MOC for target partc_ref_xpressive
+[ 79%] Built target partc_ref_bitinvader_autogen
+[ 79%] Automatic MOC for target partc_ref_watsyn
+[ 79%] Built target partc_ref_xpressive_autogen
+[ 79%] Built target partc_ref_watsyn_autogen
+[ 79%] Automatic MOC for target partc_ref_vibedstrings
+[ 79%] Automatic MOC for target partc_ref_kicker
+[ 79%] Built target partc_ref_vibedstrings_autogen
+[ 79%] Built target partc_ref_kicker_autogen
+[ 79%] Automatic MOC for target partc_ref_tripleoscillator
+[ 79%] Automatic MOC for target partc_ref_organic
+[ 79%] Automatic MOC for target partc_ref_monstro
+[ 79%] Built target partc_ref_organic_autogen
+[ 79%] Automatic MOC for target partc_ref_audiofileprocessor
+[ 79%] Built target partc_ref_tripleoscillator_autogen
+[ 79%] Built target partc_ref_monstro_autogen
+[ 79%] Automatic MOC for target partc_ref_lb302
+[ 79%] Built target partc_ref_audiofileprocessor_autogen
+[ 79%] Automatic MOC for target partc_ref_ladspaeffect
+[ 79%] Automatic MOC for target partc_ref_frequencyshifter
+[ 79%] Built target partc_ref_lb302_autogen
+[ 79%] Built target partc_ref_ladspaeffect_autogen
+[ 79%] Built target partc_ref_frequencyshifter_autogen
+[ 79%] Automatic MOC for target partc_ref_oscilloscope
+[ 79%] Automatic MOC for target partc_ref_slewdistortion
+[ 80%] Automatic MOC for target partc_ref_lv2effect
+[ 80%] Built target partc_ref_oscilloscope_autogen
+[ 80%] Built target partc_ref_slewdistortion_autogen
+[ 80%] Built target partc_ref_lv2effect_autogen
+[ 80%] Automatic MOC for target partc_ref_lv2instrument
+[ 80%] Automatic MOC and UIC for target partc_ref_sf2player
+[ 80%] Built target partc_ref_lv2instrument_autogen
+[ 80%] Automatic MOC and UIC for target partc_ref_gigplayer
+[ 80%] Built target ClapEffectIntegrationTest_autogen_timestamp_deps
+[ 80%] Built target ZynSeparateProcessTest_autogen_timestamp_deps
+[ 80%] Automatic MOC for target synthetic_audio_plugin
+[ 80%] Built target synthetic_audio_plugin_autogen
+[ 80%] Building CXX object plugins/CarlaPatchbay/CMakeFiles/carlapatchbay.dir/CarlaPatchbay.cpp.o
+[ 80%] Built target partc_ref_sf2player_autogen
+[ 80%] Building CXX object plugins/CarlaRack/CMakeFiles/carlarack.dir/CarlaRack.cpp.o
+[ 80%] Built target partc_ref_gigplayer_autogen
+[ 80%] Built target gigplayer_autogen
+[ 80%] Built target sf2player_autogen
+[ 80%] Building CXX object plugins/Vestige/CMakeFiles/vestige.dir/Vestige.cpp.o
+[ 80%] Linking CXX shared module ../libcarlapatchbay.so
+[ 80%] Built target carlapatchbay
+[ 80%] Linking CXX shared module ../libcarlarack.so
+[ 80%] Building CXX object plugins/VstEffect/CMakeFiles/vsteffect.dir/VstEffect.cpp.o
+[ 80%] Built target carlarack
+[ 80%] Building CXX object plugins/Vestige/CMakeFiles/vestige.dir/moc_Vestige.cpp.o
+[ 80%] Building CXX object plugins/VstEffect/CMakeFiles/vsteffect.dir/VstEffectControls.cpp.o
+[ 80%] Linking CXX shared module ../libvestige.so
+[ 80%] Built target vestige
+[ 80%] Automatic MOC for target PhaseDSidechainTest
+[ 80%] Building CXX object plugins/VstEffect/CMakeFiles/vsteffect.dir/VstEffectControlDialog.cpp.o
+[ 80%] Built target PhaseDSidechainTest_autogen
+[ 80%] Automatic MOC for target PluginScanCacheTest
+[ 80%] Built target PluginScanCacheTest_autogen
+[ 80%] Building CXX object plugins/VstEffect/CMakeFiles/vsteffect.dir/VstSubPluginFeatures.cpp.o
+[ 80%] Building CXX object plugins/VstEffect/CMakeFiles/vsteffect.dir/moc_VstEffectControls.cpp.o
+[ 80%] Building CXX object tests/CMakeFiles/partc_ref_amplifier.dir/partc_ref_amplifier_autogen/mocs_compilation.cpp.o
+[ 80%] Building CXX object tests/CMakeFiles/partc_ref_amplifier.dir/reference/Amplifier/Amplifier.cpp.o
+[ 80%] Linking CXX shared module ../libvsteffect.so
+[ 81%] Built target vsteffect
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bassbooster.dir/partc_ref_bassbooster_autogen/mocs_compilation.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_amplifier.dir/reference/Amplifier/AmplifierControls.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_amplifier.dir/reference/Amplifier/AmplifierControlDialog.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bassbooster.dir/reference/BassBooster/BassBooster.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bassbooster.dir/reference/BassBooster/BassBoosterControls.cpp.o
+[ 81%] Linking CXX shared module partc_ref_amplifier.so
+[ 81%] Built target partc_ref_amplifier
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bassbooster.dir/reference/BassBooster/BassBoosterControlDialog.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bitcrush.dir/partc_ref_bitcrush_autogen/mocs_compilation.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_dualfilter.dir/partc_ref_dualfilter_autogen/mocs_compilation.cpp.o
+[ 81%] Linking CXX shared module partc_ref_bassbooster.so
+[ 81%] Built target partc_ref_bassbooster
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_dualfilter.dir/reference/DualFilter/DualFilter.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bitcrush.dir/reference/Bitcrush/Bitcrush.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_dualfilter.dir/reference/DualFilter/DualFilterControls.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_dualfilter.dir/reference/DualFilter/DualFilterControlDialog.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bitcrush.dir/reference/Bitcrush/BitcrushControls.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_bitcrush.dir/reference/Bitcrush/BitcrushControlDialog.cpp.o
+[ 81%] Linking CXX shared module partc_ref_dualfilter.so
+[ 81%] Built target partc_ref_dualfilter
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_waveshaper.dir/partc_ref_waveshaper_autogen/mocs_compilation.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_flanger.dir/partc_ref_flanger_autogen/mocs_compilation.cpp.o
+[ 81%] Linking CXX shared module partc_ref_bitcrush.so
+[ 81%] Built target partc_ref_bitcrush
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_delay.dir/partc_ref_delay_autogen/mocs_compilation.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_waveshaper.dir/reference/WaveShaper/WaveShaper.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_flanger.dir/reference/Flanger/FlangerEffect.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_delay.dir/reference/Delay/DelayEffect.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_waveshaper.dir/reference/WaveShaper/WaveShaperControls.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_flanger.dir/reference/Flanger/FlangerControls.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_delay.dir/reference/Delay/DelayControls.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_waveshaper.dir/reference/WaveShaper/WaveShaperControlDialog.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_flanger.dir/reference/Flanger/FlangerControlsDialog.cpp.o
+[ 81%] Building CXX object tests/CMakeFiles/partc_ref_delay.dir/reference/Delay/DelayControlsDialog.cpp.o
+[ 81%] Linking CXX shared module partc_ref_waveshaper.so
+[ 81%] Linking CXX shared module partc_ref_flanger.so
+[ 81%] Built target partc_ref_waveshaper
+[ 81%] Built target partc_ref_flanger
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_compressor.dir/partc_ref_compressor_autogen/mocs_compilation.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_crossovereq.dir/partc_ref_crossovereq_autogen/mocs_compilation.cpp.o
+[ 82%] Linking CXX shared module partc_ref_delay.so
+[ 82%] Built target partc_ref_delay
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_dynamicsprocessor.dir/partc_ref_dynamicsprocessor_autogen/mocs_compilation.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_crossovereq.dir/reference/CrossoverEQ/CrossoverEQ.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_compressor.dir/reference/Compressor/Compressor.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_dynamicsprocessor.dir/reference/DynamicsProcessor/DynamicsProcessor.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_crossovereq.dir/reference/CrossoverEQ/CrossoverEQControls.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_compressor.dir/reference/Compressor/CompressorControls.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_dynamicsprocessor.dir/reference/DynamicsProcessor/DynamicsProcessorControls.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_crossovereq.dir/reference/CrossoverEQ/CrossoverEQControlDialog.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_compressor.dir/reference/Compressor/CompressorControlDialog.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_dynamicsprocessor.dir/reference/DynamicsProcessor/DynamicsProcessorControlDialog.cpp.o
+[ 82%] Linking CXX shared module partc_ref_crossovereq.so
+[ 82%] Built target partc_ref_crossovereq
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_lomm.dir/partc_ref_lomm_autogen/mocs_compilation.cpp.o
+[ 82%] Linking CXX shared module partc_ref_dynamicsprocessor.so
+[ 82%] Built target partc_ref_dynamicsprocessor
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_multitapecho.dir/partc_ref_multitapecho_autogen/mocs_compilation.cpp.o
+[ 82%] Linking CXX shared module partc_ref_compressor.so
+[ 82%] Built target partc_ref_compressor
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_lomm.dir/reference/LOMM/LOMM.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_lomm.dir/reference/LOMM/LOMMControls.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_multitapecho.dir/reference/MultitapEcho/MultitapEcho.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_lomm.dir/reference/LOMM/LOMMControlDialog.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_multitapecho.dir/reference/MultitapEcho/MultitapEchoControls.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_multitapecho.dir/reference/MultitapEcho/MultitapEchoControlDialog.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_reverbsc.dir/partc_ref_reverbsc_autogen/mocs_compilation.cpp.o
+[ 82%] Linking CXX shared module partc_ref_lomm.so
+[ 82%] Built target partc_ref_lomm
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_reverbsc.dir/reference/ReverbSC/ReverbSC.cpp.o
+[ 82%] Linking CXX shared module partc_ref_multitapecho.so
+[ 82%] Built target partc_ref_multitapecho
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_reverbsc.dir/reference/ReverbSC/ReverbSCControls.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_reverbsc.dir/reference/ReverbSC/ReverbSCControlDialog.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_stereoenhancer.dir/partc_ref_stereoenhancer_autogen/mocs_compilation.cpp.o
+[ 82%] Building CXX object tests/CMakeFiles/partc_ref_stereoenhancer.dir/reference/StereoEnhancer/StereoEnhancer.cpp.o
+[ 83%] Linking CXX shared module ../libxpressive.so
+[ 83%] Linking CXX shared module partc_ref_reverbsc.so
+[ 83%] Built target xpressive
+[ 83%] Building CXX object tests/CMakeFiles/partc_ref_stereomatrix.dir/partc_ref_stereomatrix_autogen/mocs_compilation.cpp.o
+[ 84%] Built target partc_ref_reverbsc
+[ 84%] Building CXX object tests/CMakeFiles/partc_ref_dispersion.dir/partc_ref_dispersion_autogen/mocs_compilation.cpp.o
+[ 84%] Building CXX object tests/CMakeFiles/partc_ref_stereoenhancer.dir/reference/StereoEnhancer/StereoEnhancerControls.cpp.o
+[ 84%] Building CXX object tests/CMakeFiles/partc_ref_stereoenhancer.dir/reference/StereoEnhancer/StereoEnhancerControlDialog.cpp.o
+[ 84%] Building CXX object tests/CMakeFiles/partc_ref_stereomatrix.dir/reference/StereoMatrix/StereoMatrix.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_dispersion.dir/reference/Dispersion/Dispersion.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_dispersion.dir/reference/Dispersion/DispersionControls.cpp.o
+[ 85%] Linking CXX shared module partc_ref_stereoenhancer.so
+[ 85%] Built target partc_ref_stereoenhancer
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_vectorscope.dir/partc_ref_vectorscope_autogen/mocs_compilation.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_stereomatrix.dir/reference/StereoMatrix/StereoMatrixControls.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_stereomatrix.dir/reference/StereoMatrix/StereoMatrixControlDialog.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_dispersion.dir/reference/Dispersion/DispersionControlDialog.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_vectorscope.dir/reference/Vectorscope/Vectorscope.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_analyzer.dir/partc_ref_analyzer_autogen/mocs_compilation.cpp.o
+[ 85%] Linking CXX shared module partc_ref_stereomatrix.so
+[ 85%] Linking CXX shared module partc_ref_dispersion.so
+[ 85%] Built target partc_ref_stereomatrix
+[ 85%] Built target partc_ref_dispersion
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_granularpitchshifter.dir/partc_ref_granularpitchshifter_autogen/mocs_compilation.cpp.o
+[ 85%] Building CXX object tests/CMakeFiles/partc_ref_eq.dir/partc_ref_eq_autogen/mocs_compilation.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_vectorscope.dir/reference/Vectorscope/VecControls.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_analyzer.dir/reference/SpectrumAnalyzer/Analyzer.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_granularpitchshifter.dir/reference/GranularPitchShifter/GranularPitchShifterEffect.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_vectorscope.dir/reference/Vectorscope/VecControlsDialog.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_eq.dir/reference/Eq/EqEffect.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_analyzer.dir/reference/SpectrumAnalyzer/SaControls.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_vectorscope.dir/reference/Vectorscope/VectorView.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_granularpitchshifter.dir/reference/GranularPitchShifter/GranularPitchShifterControls.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_eq.dir/reference/Eq/EqControls.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_analyzer.dir/reference/SpectrumAnalyzer/SaControlsDialog.cpp.o
+[ 86%] Linking CXX shared module partc_ref_vectorscope.so
+[ 86%] Built target partc_ref_vectorscope
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_analyzer.dir/reference/SpectrumAnalyzer/SaProcessor.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_granularpitchshifter.dir/reference/GranularPitchShifter/GranularPitchShifterControlDialog.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_eq.dir/reference/Eq/EqControlsDialog.cpp.o
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_analyzer.dir/reference/SpectrumAnalyzer/SaSpectrumView.cpp.o
+[ 86%] Linking CXX shared module partc_ref_granularpitchshifter.so
+[ 86%] Building CXX object tests/CMakeFiles/partc_ref_analyzer.dir/reference/SpectrumAnalyzer/SaWaterfallView.cpp.o
+[ 86%] Built target partc_ref_granularpitchshifter
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_eq.dir/reference/Eq/EqCurve.cpp.o
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_freeboy.dir/reference/FreeBoy/FreeBoy.cpp.o
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_nes.dir/reference/Nes/Nes.cpp.o
+[ 87%] Linking CXX shared module partc_ref_analyzer.so
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_eq.dir/reference/Eq/EqSpectrumView.cpp.o
+[ 87%] Built target partc_ref_analyzer
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_sid.dir/reference/Sid/SidInstrument.cpp.o
+[ 87%] Linking CXX shared module partc_ref_freeboy.so
+[ 87%] Built target partc_ref_freeboy
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_opulenz.dir/reference/OpulenZ/OpulenZ.cpp.o
+[ 87%] Linking CXX shared module partc_ref_eq.so
+[ 87%] Built target partc_ref_eq
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_sfxr.dir/reference/Sfxr/Sfxr.cpp.o
+[ 87%] Linking CXX shared module partc_ref_nes.so
+[ 87%] Built target partc_ref_nes
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_bitinvader.dir/reference/BitInvader/BitInvader.cpp.o
+[ 87%] Linking CXX shared module partc_ref_sid.so
+[ 87%] Built target partc_ref_sid
+[ 87%] Building CXX object tests/CMakeFiles/partc_ref_watsyn.dir/reference/Watsyn/Watsyn.cpp.o
+[ 87%] Linking CXX shared module partc_ref_opulenz.so
+[ 88%] Built target partc_ref_opulenz
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_xpressive.dir/reference/Xpressive/Xpressive.cpp.o
+[ 88%] Linking CXX shared module partc_ref_sfxr.so
+[ 88%] Built target partc_ref_sfxr
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_xpressive.dir/reference/Xpressive/ExprSynth.cpp.o
+[ 88%] Linking CXX shared module partc_ref_bitinvader.so
+[ 88%] Built target partc_ref_bitinvader
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_vibedstrings.dir/reference/Vibed/Vibed.cpp.o
+[ 88%] Linking CXX shared module partc_ref_watsyn.so
+[ 88%] Built target partc_ref_watsyn
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_kicker.dir/reference/Kicker/Kicker.cpp.o
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_tripleoscillator.dir/partc_ref_tripleoscillator_autogen/mocs_compilation.cpp.o
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_vibedstrings.dir/reference/Vibed/VibratingString.cpp.o
+[ 88%] Linking CXX shared module partc_ref_kicker.so
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_tripleoscillator.dir/reference/TripleOscillator/TripleOscillator.cpp.o
+[ 88%] Built target partc_ref_kicker
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_monstro.dir/partc_ref_monstro_autogen/mocs_compilation.cpp.o
+[ 88%] Linking CXX shared module partc_ref_vibedstrings.so
+[ 88%] Built target partc_ref_vibedstrings
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_organic.dir/reference/Organic/Organic.cpp.o
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_monstro.dir/reference/Monstro/Monstro.cpp.o
+[ 88%] Linking CXX shared module partc_ref_tripleoscillator.so
+[ 88%] Built target partc_ref_tripleoscillator
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_audiofileprocessor.dir/partc_ref_audiofileprocessor_autogen/mocs_compilation.cpp.o
+[ 88%] Linking CXX shared module partc_ref_organic.so
+[ 88%] Built target partc_ref_organic
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_lb302.dir/partc_ref_lb302_autogen/mocs_compilation.cpp.o
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_audiofileprocessor.dir/reference/AudioFileProcessor/AudioFileProcessor.cpp.o
+[ 88%] Linking CXX shared module partc_ref_monstro.so
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_lb302.dir/reference/Lb302/Lb302.cpp.o
+[ 88%] Built target partc_ref_monstro
+[ 88%] Building CXX object tests/CMakeFiles/partc_ref_ladspaeffect.dir/partc_ref_ladspaeffect_autogen/mocs_compilation.cpp.o
+[ 89%] Building CXX object tests/CMakeFiles/partc_ref_audiofileprocessor.dir/reference/AudioFileProcessor/AudioFileProcessorView.cpp.o
+[ 89%] Building CXX object tests/CMakeFiles/partc_ref_ladspaeffect.dir/reference/LadspaEffect/LadspaEffect.cpp.o
+[ 89%] Linking CXX shared module partc_ref_lb302.so
+[ 89%] Built target partc_ref_lb302
+[ 89%] Building CXX object tests/CMakeFiles/partc_ref_ladspaeffect.dir/reference/LadspaEffect/LadspaControls.cpp.o
+[ 89%] Building CXX object tests/CMakeFiles/partc_ref_audiofileprocessor.dir/reference/AudioFileProcessor/AudioFileProcessorWaveView.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_ladspaeffect.dir/reference/LadspaEffect/LadspaControlDialog.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_ladspaeffect.dir/reference/LadspaEffect/LadspaMatrixControlDialog.cpp.o
+[ 90%] Linking CXX shared module partc_ref_audiofileprocessor.so
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_frequencyshifter.dir/partc_ref_frequencyshifter_autogen/mocs_compilation.cpp.o
+[ 90%] Built target partc_ref_audiofileprocessor
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_oscilloscope.dir/partc_ref_oscilloscope_autogen/mocs_compilation.cpp.o
+[ 90%] Linking CXX shared module partc_ref_ladspaeffect.so
+[ 90%] Built target partc_ref_ladspaeffect
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_slewdistortion.dir/partc_ref_slewdistortion_autogen/mocs_compilation.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_frequencyshifter.dir/reference/FrequencyShifter/FrequencyShifterEffect.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_oscilloscope.dir/reference/Oscilloscope/Oscilloscope.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_slewdistortion.dir/reference/SlewDistortion/SlewDistortion.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_oscilloscope.dir/reference/Oscilloscope/OscilloscopeControls.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_frequencyshifter.dir/reference/FrequencyShifter/FrequencyShifterControls.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_slewdistortion.dir/reference/SlewDistortion/SlewDistortionControls.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_oscilloscope.dir/reference/Oscilloscope/OscilloscopeControlDialog.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_frequencyshifter.dir/reference/FrequencyShifter/FrequencyShifterControlDialog.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_oscilloscope.dir/reference/Oscilloscope/OscilloscopeGraph.cpp.o
+[ 90%] Building CXX object tests/CMakeFiles/partc_ref_slewdistortion.dir/reference/SlewDistortion/SlewDistortionControlDialog.cpp.o
+[ 91%] Linking CXX shared module partc_ref_frequencyshifter.so
+[ 91%] Built target partc_ref_frequencyshifter
+[ 91%] Building CXX object tests/CMakeFiles/partc_ref_lv2effect.dir/partc_ref_lv2effect_autogen/mocs_compilation.cpp.o
+[ 91%] Linking CXX shared module partc_ref_oscilloscope.so
+[ 91%] Built target partc_ref_oscilloscope
+[ 91%] Building CXX object tests/CMakeFiles/partc_ref_lv2instrument.dir/reference/Lv2Instrument/Lv2Instrument.cpp.o
+[ 92%] Linking CXX shared module partc_ref_slewdistortion.so
+[ 92%] Built target partc_ref_slewdistortion
+[ 92%] Building CXX object tests/CMakeFiles/partc_ref_sf2player.dir/partc_ref_sf2player_autogen/mocs_compilation.cpp.o
+[ 92%] Building CXX object tests/CMakeFiles/partc_ref_lv2effect.dir/reference/Lv2Effect/Lv2Effect.cpp.o
+[ 92%] Linking CXX shared module partc_ref_lv2instrument.so
+[ 92%] Built target partc_ref_lv2instrument
+[ 92%] Building CXX object tests/CMakeFiles/partc_ref_gigplayer.dir/partc_ref_gigplayer_autogen/mocs_compilation.cpp.o
+[ 92%] Building CXX object tests/CMakeFiles/partc_ref_lv2effect.dir/reference/Lv2Effect/Lv2FxControls.cpp.o
+[ 92%] Building CXX object tests/CMakeFiles/partc_ref_sf2player.dir/reference/Sf2Player/Sf2Player.cpp.o
+[ 92%] Building CXX object tests/CMakeFiles/partc_ref_lv2effect.dir/reference/Lv2Effect/Lv2FxControlDialog.cpp.o
+[ 92%] Building CXX object tests/CMakeFiles/partc_ref_gigplayer.dir/reference/GigPlayer/GigPlayer.cpp.o
+[ 92%] Linking CXX shared module partc_ref_lv2effect.so
+[ 92%] Linking CXX shared module partc_ref_sf2player.so
+[ 92%] Built target partc_ref_lv2effect
+[ 93%] Automatic MOC for target ClapEffectIntegrationTest
+[ 93%] Built target partc_ref_sf2player
+[ 93%] Automatic MOC for target ZynSeparateProcessTest
+[ 93%] Built target ClapEffectIntegrationTest_autogen
+[ 93%] Building CXX object tests/CMakeFiles/synthetic_audio_plugin.dir/src/plugins/SyntheticAudioPlugin.cpp.o
+[ 93%] Built target ZynSeparateProcessTest_autogen
+[ 93%] Building CXX object tests/CMakeFiles/partc_ref_gigplayer.dir/reference/GigPlayer/PatchesDialog.cpp.o
+[ 93%] Building CXX object plugins/GigPlayer/CMakeFiles/gigplayer.dir/GigPlayer.cpp.o
+[ 94%] Linking CXX shared module synthetic_audio_plugin.so
+[ 94%] Built target synthetic_audio_plugin
+[ 94%] Linking CXX shared module partc_ref_gigplayer.so
+[ 94%] Building CXX object plugins/Sf2Player/CMakeFiles/sf2player.dir/Sf2Player.cpp.o
+[ 94%] Built target partc_ref_gigplayer
+[ 94%] Building CXX object tests/CMakeFiles/PhaseDSidechainTest.dir/src/core/PhaseDSidechainTest.cpp.o
+[ 94%] Building CXX object plugins/GigPlayer/CMakeFiles/gigplayer.dir/PatchesDialog.cpp.o
+[ 94%] Building CXX object plugins/Sf2Player/CMakeFiles/sf2player.dir/moc_Sf2Player.cpp.o
+[ 94%] Linking CXX executable PhaseDSidechainTest
+[ 94%] Building CXX object plugins/GigPlayer/CMakeFiles/gigplayer.dir/moc_GigPlayer.cpp.o
+[ 94%] Linking CXX shared module ../libsf2player.so
+[ 94%] Built target PhaseDSidechainTest
+[ 94%] Linking CXX executable PluginScanCacheTest
+[ 95%] Built target sf2player
+[ 95%] Building CXX object tests/CMakeFiles/ClapEffectIntegrationTest.dir/ClapEffectIntegrationTest_autogen/mocs_compilation.cpp.o
+[ 96%] Building CXX object plugins/GigPlayer/CMakeFiles/gigplayer.dir/moc_PatchesDialog.cpp.o
+[ 97%] Built target PluginScanCacheTest
+[ 97%] Building CXX object tests/CMakeFiles/ClapEffectIntegrationTest.dir/src/plugins/ClapEffectIntegrationTest.cpp.o
+[ 97%] Building CXX object tests/CMakeFiles/ClapEffectIntegrationTest.dir/__/plugins/ClapEffect/ClapEffect.cpp.o
+[ 97%] Linking CXX shared module ../libgigplayer.so
+[ 97%] Built target gigplayer
+[ 98%] Building CXX object tests/CMakeFiles/ZynSeparateProcessTest.dir/src/plugins/ZynSeparateProcessTest.cpp.o
+[ 98%] Building CXX object tests/CMakeFiles/ClapEffectIntegrationTest.dir/__/plugins/ClapEffect/ClapEffectControlDialog.cpp.o
+[ 98%] Building CXX object tests/CMakeFiles/ClapEffectIntegrationTest.dir/__/plugins/ClapEffect/ClapEffectControls.cpp.o
+[ 98%] Built target AudioPluginTest_autogen_timestamp_deps
+[ 98%] Automatic MOC for target AudioPluginTest
+[ 98%] Built target AudioPluginTest_autogen
+[ 98%] Building CXX object tests/CMakeFiles/AudioPluginTest.dir/src/plugins/AudioPluginTest.cpp.o
+[ 98%] Linking CXX executable ZynSeparateProcessTest
+[ 98%] Linking CXX executable ClapEffectIntegrationTest
+[ 98%] Linking CXX shared module partc_ref_xpressive.so
+[100%] Built target partc_ref_xpressive
+[100%] Built target PluginPortsMigrationReference_autogen_timestamp_deps
+[100%] Automatic MOC for target PluginPortsMigrationReference
+[100%] Built target PluginPortsMigrationReference_autogen
+[100%] Building CXX object tests/CMakeFiles/PluginPortsMigrationReference.dir/src/plugins/PluginPortsMigrationReference.cpp.o
+[100%] Built target ZynSeparateProcessTest
+[100%] Built target ClapEffectIntegrationTest
+[100%] Linking CXX executable AudioPluginTest
+[100%] Linking CXX executable PluginPortsMigrationReference
+[100%] Built target AudioPluginTest
+[100%] Built target PluginPortsMigrationReference
+[100%] Built target PluginPortsMigrationTest_autogen_timestamp_deps
+[100%] Automatic MOC for target PluginPortsMigrationTest
+[100%] Built target PluginPortsMigrationTest_autogen
+[100%] Building CXX object tests/CMakeFiles/PluginPortsMigrationTest.dir/src/plugins/PluginPortsMigrationTest.cpp.o
+[100%] Linking CXX executable PluginPortsMigrationTest
+[100%] Built target PluginPortsMigrationTest

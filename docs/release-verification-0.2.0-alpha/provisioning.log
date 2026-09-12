@@ -1,0 +1,5 @@
+VST3 SDK: already at v3.8.1_build_84 (3cdf9ca5d) in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/vst3sdk — nothing to fetch
+CLAP: already at 1.2.10 (195b42a00) in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/clap — nothing to fetch
+plugin-hosting dependencies provisioned into /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build:
+  VST3 SDK v3.8.1_build_84 (3cdf9ca5d, MIT)  -> /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/vst3sdk
+  CLAP     1.2.10 (195b42a00, MIT)  -> /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/clap

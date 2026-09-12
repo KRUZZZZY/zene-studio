@@ -1,0 +1,15 @@
+Lv2 plugin SUMMARY: 73 of 87  loaded in 112 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+plugin-scan: 64 file(s), 0 quarantined, 52 served from cache, 7 known-bad skipped, 5 scanned, 57 plugin(s)
+The following errors occurred while loading: 
+
+Sample not found: samples/empty.wav (repeated 3 times)
+
+|--------                                          |     14%   |  |-----------                                       |     21%   /  |--------------                                    |     27%   -  |------------------                                |     34%   \  |--------------------                              |     39%   |  |-----------------------                           |     44%   /  |-------------------------                         |     48%   -  |---------------------------                       |     53%   \  |------------------------------                    |     58%   |  |--------------------------------                  |     62%   /  |----------------------------------                |     66%   -  |------------------------------------              |     70%   \  |--------------------------------------            |     74%   |  |----------------------------------------          |     78%   /  |------------------------------------------        |     82%   -  |--------------------------------------------      |     86%   \  |---------------------------------------------     |     89%   |  |-----------------------------------------------   |     93%   /  |------------------------------------------------- |     97%   -  PERFLOG |       Project Render | 3.92user, 0.06system 3.91elapsed
+Loading project...
+Done
+

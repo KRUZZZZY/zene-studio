@@ -1,0 +1,32 @@
+=== local-ci: reproducing .github/workflows/build.yml :: linux-x86_64 ===
+machine     : Linux x86_64, Ubuntu 24.04.4 LTS
+compiler    : g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cmake       : cmake version 3.28.3
+ccache      : /home/kruzzzzy/.local/bin/ccache
+build dir   : build-ci (jobs=4, ctest -j2)
+CI CMAKE_OPTS: -DUSE_WERROR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON -DWANT_VST3=ON -DWANT_CLAP=ON
+qt flags    : -DWANT_QT6=ON
+
+--- [0/3] provision the pinned VST3 SDK and CLAP headers (the CI step) ---
+  both checkouts already present in build-ci; verifying they are the pins
+provision EXIT=0   (log: build-ci/provision.log)
+  VST3 SDK: already at v3.8.1_build_84 (3cdf9ca5d) in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build-ci/vst3sdk — nothing to fetch
+  CLAP: already at 1.2.10 (195b42a00) in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build-ci/clap — nothing to fetch
+    VST3 SDK v3.8.1_build_84 (3cdf9ca5d, MIT)  -> /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build-ci/vst3sdk
+    CLAP     1.2.10 (195b42a00, MIT)  -> /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build-ci/clap
+--- [1/3] configure (cmake -S . -B build-ci ...) ---
+configure EXIT=0   (log: build-ci/configure.log)
+--- [2/3] build skipped (--configure-only) ---
+
+=== job coverage on this machine ===
+linux-x86_64: REPRODUCED
+  run: configure=0 (--configure-only; build/ctest not run)
+  deviation: Qt5 development files not found: added -DWANT_QT6=ON (CI's runner installs qtbase5-dev; this box has Qt6 only)
+linux-arm64: NOT-REPRODUCIBLE-HERE (x86_64 host; needs ubuntu-24.04-arm runner or an aarch64 toolchain)
+mingw64: NOT-REPRODUCIBLE-HERE (no x86_64-w64-mingw32 cross toolchain; job uses vcpkg + cmake/toolchains/x64-mingw-vcpkg.cmake)
+macos-x86_64: NOT-REPRODUCIBLE-HERE (Darwin toolchain + Xcode SDK required; Darwin-only libc++/std::filesystem floors cannot be emulated)
+macos-arm64: NOT-REPRODUCIBLE-HERE (Darwin toolchain + Xcode SDK required; also brew ld search-path defaults)
+msvc-x64: NOT-REPRODUCIBLE-HERE (MSVC toolchain required: /WX, no libm, import-library semantics)
+windows-arm64: NOT-REPRODUCIBLE-HERE (Windows 11 ARM64 + msys2 CLANGARM64 required; CPack/NSIS path handling is Windows-specific)
+
+local-ci: configure-only mode; overall configure exit=0
