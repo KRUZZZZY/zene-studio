@@ -1,0 +1,77 @@
+improved    include/AudioPlugin.h: 71.43% -> 88.78%
+improved    include/AudioPorts.h: 56.65% -> 80.69%
+improved    src/core/PluginScanCache.cpp: 88.55% -> 90.36%
+new         include/MasteringJob.h: 100.00%
+new         include/MpeExpression.h: 100.00%
+new         include/Rack.h: 100.00%
+new         include/RackNodes.h: 66.67%
+new         include/RoutingChainNodes.h: 71.43%
+new         include/SampleFrameRingBuffer.h: 100.00%
+new         include/SampleRecordAccumulator.h: 100.00%
+new         include/Telemetry.h: 100.00%
+new         include/VcaGroup.h: 100.00%
+new         include/WarpMarkers.h: 100.00%
+new         plugins/ClapEffect/ClapBusMap.cpp: 94.44%
+new         plugins/ClapEffect/ClapBusMap.h: 100.00%
+new         plugins/ClapEffect/ClapEffect.cpp: 75.56%
+new         plugins/ClapEffect/ClapEffectControls.cpp: 61.40%
+new         plugins/ClapEffect/ClapEffectControls.h: 66.67%
+new         plugins/ClapEffect/ClapHost.cpp: 77.26%
+new         plugins/ClapEffect/ClapParameter.cpp: 69.23%
+new         plugins/ClapEffect/ClapParameter.h: 66.67%
+new         plugins/Vst3Effect/Vst3BusMap.cpp: 56.25%
+new         plugins/Vst3Effect/Vst3Host.cpp: 75.78%
+new         plugins/Vst3Effect/Vst3MidiEvent.cpp: 86.59%
+new         plugins/Vst3Effect/Vst3MidiQueue.h: 90.00%
+new         plugins/Vst3Effect/Vst3Parameter.cpp: 50.00%
+new         plugins/Vst3Effect/Vst3Parameter.h: 66.67%
+new         plugins/Vst3Instrument/Vst3Instrument.cpp: 75.35%
+new         plugins/Vst3Instrument/Vst3Instrument.h: 60.00%
+new         src/core/MasteringChain.cpp: 96.04%
+new         src/core/MasteringJob.cpp: 83.92%
+new         src/core/Rack.cpp: 88.55%
+new         src/core/RackNodes.cpp: 95.92%
+new         src/core/RoutingChainNodes.cpp: 100.00%
+new         src/core/Telemetry.cpp: 77.25%
+new         src/core/VcaGroup.cpp: 76.56%
+new         src/core/midi/MpeExpression.cpp: 88.10%
+new         tests/src/core/DataFileSaveIntegrityTest.cpp: 97.41%
+new         tests/src/core/MixerConcurrencyTest.cpp: 97.97%
+new         tests/src/core/ProjectOpenIntegrityTest.cpp: 96.75%
+denominator-moved  include/RoutingGraph.h: instrumented lines 9 -> 10 with the file BYTE-IDENTICAL (fingerprint unchanged)
+                   coverage 100.00% -> 100.00% is therefore not comparable: covered lines 9 -> 10 (none lost)
+                   the added instrumented lines are compiler instantiations this configuration sees and this run does not execute; judged on covered lines
+unmeasured-by-config  include/StemSeparation/StemSeparator.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  include/StemSeparation/StemTypes.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  include/StemSplitController.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/ExternalProcessStemSeparator.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemJobManager.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemModelStore.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemTrackBuilder.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/gui/StemSplitController.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+
+tracefile line coverage: 81.60%  (7113/8717 lines over 119 files)
+entry floor: 50.00% for files not yet in the baseline (COVERAGE_ENTRY_FLOOR; 0 declared exemption(s))
+scope: 175 entries in tests/fork-sources.txt; 119 produced a record in this capture; 56 did not
+       the line-coverage number above is a claim about those 119 files, NOT about the 175-entry scope
+       (per-entry reason for the gap: python3 tests/coverage-green/classify-scope.py build-coverage/coverage/coverage-fork.info <build-dir>)
+baseline-scope line coverage: 85.77%  (4604/5368 lines over 67 files in the baseline)
+
+FAIL: 15 new file(s) entered below the 50.00% coverage entry floor:
+  plugins/ClapEffect/ClapEffect.h: 33.33%
+  plugins/ClapEffect/ClapEffectControlDialog.cpp: 0.00%
+  plugins/ClapEffect/ClapEffectControlDialog.h: 0.00%
+  plugins/ClapEffect/ClapSubPluginFeatures.cpp: 5.77%
+  plugins/Vst3Effect/Vst3Effect.cpp: 0.00%
+  plugins/Vst3Effect/Vst3Effect.h: 0.00%
+  plugins/Vst3Effect/Vst3EffectControlDialog.cpp: 0.00%
+  plugins/Vst3Effect/Vst3EffectControlDialog.h: 0.00%
+  plugins/Vst3Effect/Vst3EffectControls.cpp: 0.00%
+  plugins/Vst3Effect/Vst3EffectControls.h: 0.00%
+  plugins/Vst3Effect/Vst3SubPluginFeatures.cpp: 29.09%
+  plugins/Vst3Instrument/Vst3InstrumentView.cpp: 0.00%
+  plugins/Vst3Instrument/Vst3InstrumentView.h: 0.00%
+  src/core/TelemetryNetworkTransport.cpp: 0.00%
+  src/gui/TelemetryConsentDialog.cpp: 0.00%
+New code must arrive with tests (or declare a reason in coverage-entry-floor-exempt.txt):
+  /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/tests/coverage-entry-floor-exempt.txt
