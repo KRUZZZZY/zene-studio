@@ -1,0 +1,26 @@
+Auto-merging .github/workflows/quality-gates.yml
+CONFLICT (content): Merge conflict in .github/workflows/quality-gates.yml
+Auto-merging include/Note.h
+CONFLICT (content): Merge conflict in include/Note.h
+Auto-merging src/core/CMakeLists.txt
+Auto-merging src/core/Note.cpp
+CONFLICT (content): Merge conflict in src/core/Note.cpp
+Auto-merging src/tracks/InstrumentTrack.cpp
+Auto-merging tests/CMakeLists.txt
+CONFLICT (content): Merge conflict in tests/CMakeLists.txt
+Auto-merging tests/QA-GATES.md
+CONFLICT (content): Merge conflict in tests/QA-GATES.md
+Auto-merging tests/all-sources.txt
+CONFLICT (content): Merge conflict in tests/all-sources.txt
+Auto-merging tests/coverage-gate.sh
+CONFLICT (content): Merge conflict in tests/coverage-gate.sh
+Auto-merging tests/fork-sources-gate.sh
+CONFLICT (add/add): Merge conflict in tests/fork-sources-gate.sh
+Auto-merging tests/fork-sources.txt
+CONFLICT (content): Merge conflict in tests/fork-sources.txt
+Auto-merging tests/run-all-gates.sh
+CONFLICT (content): Merge conflict in tests/run-all-gates.sh
+Auto-merging tests/upstream-modifications.txt
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+Automatic merge failed; fix conflicts and then commit the result.
+MERGE_EXIT=1

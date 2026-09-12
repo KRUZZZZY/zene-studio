@@ -1,0 +1,142 @@
+---
+name: quality-gates
+# Ported from the LMMS standards fork (2026-09-09).
+#
+# Trigger policy (2026-09-11): the static gates run on every push and pull request;
+# the two build-backed jobs stay workflow_dispatch-only.
+#
+# "Dispatch only - Actions minutes are metered" did not survive the cost check:
+# build.yml already runs a 7-job matrix on every push (~29-47 min per job,
+# ~206 job-minutes total - run 34600092687), while this workflow's static-gates job
+# needs no build and cost 0.2-0.4 min of runner time when it ran (runs 34420873063,
+# 34413527781). Enforcing it adds ~0.1-0.2% to the minutes the repo already spends
+# per push.
+#
+# Kept dispatch-only, with `if: github.event_name == 'workflow_dispatch'`:
+#   - unit-tests (gates 1+5): full Debug+Qt6 build, ctest, ~3 min mutation sweep
+#     (14-24.5 min measured in CI); build.yml already builds and ctest-runs this
+#     tree on every push.
+#   - coverage (gate 2): instrumented build + lcov (15-22.4 min measured in CI),
+#     and capture_baseline=true WRITES tests/coverage-baseline.tsv - a baseline
+#     refresh must stay a deliberate act, never a side effect of a push.
+'on':
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      capture_baseline:
+        description: "Gate 2 write mode: recapture coverage-baseline.tsv on the runner and upload it"
+        type: boolean
+        default: false
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  # Gates 3, 4, 6, 7, 8 and 9 need no build: they read the sources and git history.
+  # This is the job enforced on push and pull_request (see the trigger policy above).
+  static-gates:
+    name: static gates (3, 4, 6, 7, 8, 9)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out (full history - Gate 6 needs it)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install lizard
+        run: pip install lizard
+      - name: Gate 3 - no tautological tests
+        run: bash tests/no-tautology-gate.sh
+      - name: Gate 4 - per-method complexity (CC <= 10 ratchet)
+        run: bash tests/complexity-gate.sh --check
+      - name: Gate 6 - no upstream behavioural regressions
+        run: bash tests/no-upstream-regression-gate.sh
+      - name: Gate 7 - per-file length ratchet
+        run: bash tests/file-length-gate.sh --check
+      - name: Gate 8 - token duplication
+        run: bash tests/duplication-gate.sh
+      - name: Gate 9 - every tracked source is registered in a scope manifest
+        run: bash tests/fork-sources-gate.sh
+
+  # Gate 1 needs a real build: "it compiles" never substitutes for a passing ctest.
+  unit-tests:
+    name: gate 1 - unit tests
+    # Dispatch-only: full Debug+Qt6 build + ctest + the ~3 min mutation sweep.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies (Qt6, mirrors the locally verified build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
+            libsamplerate0-dev libxml2-dev \
+            liblist-moreutils-perl libxml-parser-perl
+      - name: Configure (Debug, Qt6)
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+      - name: Build
+        run: cmake --build build -j4
+      - name: Gate 1 - ctest (must run from build/tests)
+        run: cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
+      # Gate 5 reuses the build above; the sweep is ~3 min (30 mutants, one TU).
+      - name: Gate 5 - mutation testing (scoped harness, src/core/RoutingGraph.cpp)
+        run: bash tests/mutation-gate.sh
+
+  # Gate 2 is the ratchet: the number must not fall, and the gate must PASS.
+  coverage:
+    name: gate 2 - coverage ratchet
+    # Dispatch-only: instrumented build + lcov, and capture_baseline WRITES the baseline.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build and coverage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ lcov \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
+            libsamplerate0-dev libxml2-dev \
+            liblist-moreutils-perl libxml-parser-perl
+      # Default mode is the ratchet: the number must not fall. The baseline is
+      # committed, so it must have been captured in the SAME environment the gate
+      # runs in; run this workflow with capture_baseline=true to refresh it here.
+      - name: Gate 2 - coverage ratchet, CI mode (baseline never written)
+        if: ${{ !inputs.capture_baseline }}
+        run: |
+          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+          bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info --check
+      - name: Gate 2 - capture the baseline on the runner (write mode)
+        if: ${{ inputs.capture_baseline }}
+        run: |
+          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+          # Drop the committed baseline first: with no baseline every file counts
+          # as an addition, so write mode records this run's numbers instead of
+          # refusing to write because the old baseline looks "regressed".
+          rm -f tests/coverage-baseline.tsv
+          bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info
+          echo "--- captured baseline ---"
+          cat tests/coverage-baseline.tsv
+      - name: Upload the CI-captured baseline
+        if: ${{ always() && inputs.capture_baseline }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-baseline-ci
+          path: tests/coverage-baseline.tsv
+          if-no-files-found: warn
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: build-coverage/coverage/html
+          if-no-files-found: warn

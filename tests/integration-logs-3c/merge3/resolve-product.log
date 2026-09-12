@@ -1,0 +1,22 @@
+  resolved Note.h public API
+  resolved Note.h private members
+  resolved Note.cpp copy ctor init list
+  resolved Note.cpp saveSettings
+  resolved Note.cpp loadSettings
+PASS  Note.h keeps the MpeExpression.h include
+PASS  Note.h: both MIDI-depth accessors, once each
+PASS  Note.h: MPE readback + clear, once each
+PASS  Note.h: both MIDI-depth members
+PASS  Note.h: all four MPE members
+PASS  Note.cpp: copy ctor carries both sides' fields
+PASS  Note.cpp: operator= carries the MPE fields (auto-merged)
+PASS  Note.cpp: saveSettings writes both sides' optional attributes
+FAIL  Note.cpp: loadSettings reads both sides
+PASS  include/Note.h: no conflict marker
+PASS  src/core/Note.cpp: no conflict marker
+PASS  brace counts balanced in both files
+Traceback (most recent call last):
+  File "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/tests/integration-logs-3c/tools/resolve_merge3_product.py", line 305, in <module>
+    assert not bad, f"FAILED: {bad}"
+           ^^^^^^^
+AssertionError: FAILED: ['Note.cpp: loadSettings reads both sides']
