@@ -1,0 +1,46 @@
+
+FAIL: coverage regressed; add or fix tests before merging.
+
+FAIL: 2 new file(s) entered below the 50.00% coverage entry floor:
+  include/MidiLearnGui.h: 0.00%
+  src/gui/MidiLearnGui.cpp: 0.00%
+New code must arrive with tests (or declare a reason in coverage-entry-floor-exempt.txt):
+  /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-coverage/tests/coverage-entry-floor-exempt.txt
+REGRESSION  include/AudioPlugin.h: 85.48% -> 71.43%  (14 of 98 covered lines lost)
+REGRESSION  include/AudioPorts.h: 91.43% -> 56.65%  (81 of 233 covered lines lost)
+REGRESSION  include/RemotePluginAudioPorts.h: 100.00% -> 79.52%  (17 of 83 covered lines lost)
+improved    src/core/ScriptBindings.cpp: 97.52% -> 97.80%
+improved    src/core/ScriptEngine.cpp: 90.40% -> 90.98%
+new         include/LatencyCompensation.h: 100.00%
+new         include/LoudnessReport.h: 100.00%
+new         include/LufsMeter.h: 100.00%
+new         include/PluginScanCache.h: 100.00%
+new         include/ScriptLuaQtTypes.h: 86.67%
+new         include/ScriptPackage.h: 100.00%
+new         src/core/CrashReporter.cpp: 80.93%
+new         src/core/LatencyCompensation.cpp: 86.59%
+new         src/core/LoudnessReport.cpp: 85.56%
+new         src/core/LufsMeter.cpp: 100.00%
+new         src/core/MidiLearn.cpp: 95.45%
+new         src/core/PluginScanCache.cpp: 88.55%
+new         src/core/ScriptApiVersion.cpp: 100.00%
+new         src/core/ScriptCommandQueue.cpp: 100.00%
+new         src/core/ScriptConsole.cpp: 100.00%
+new         src/core/ScriptPackage.cpp: 98.08%
+new         tests/src/core/LufsMeterTest.cpp: 99.47%
+new         tests/src/core/MidiLearnTest.cpp: 98.31%
+new         tests/src/core/StemExportTest.cpp: 100.00%
+new         tests/src/core/StemExportTestSupport.h: 94.71%
+removed     include/StemSeparation/StemSeparator.h
+removed     include/StemSeparation/StemTypes.h
+removed     include/StemSplitController.h
+removed     src/core/ExternalProcessStemSeparator.cpp
+removed     src/core/StemJobManager.cpp
+removed     src/core/StemModelStore.cpp
+removed     src/core/StemTrackBuilder.cpp
+removed     src/gui/StemSplitController.cpp
+
+tracefile line coverage: 81.46%  (3747/4600 lines over 61 files)
+entry floor: 50.00% for files not yet in the baseline (COVERAGE_ENTRY_FLOOR; 0 declared exemption(s))
+baseline-scope line coverage: 76.19%  (2298/3016 lines over 39 files in the baseline)
+GATE_EXIT=1

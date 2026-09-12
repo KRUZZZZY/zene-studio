@@ -1,0 +1,81 @@
+
+=== not-compiled: 29 ===
+  plugins/ClapEffect/ClapBusMap.cpp
+  plugins/ClapEffect/ClapEffect.cpp
+  plugins/ClapEffect/ClapEffectControlDialog.cpp
+  plugins/ClapEffect/ClapEffectControls.cpp
+  plugins/ClapEffect/ClapHost.cpp
+  plugins/ClapEffect/ClapParameter.cpp
+  plugins/ClapEffect/ClapSubPluginFeatures.cpp
+  plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+  plugins/Vst3Effect/Vst3BusMap.cpp
+  plugins/Vst3Effect/Vst3Effect.cpp
+  plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+  plugins/Vst3Effect/Vst3EffectControls.cpp
+  plugins/Vst3Effect/Vst3Host.cpp
+  plugins/Vst3Effect/Vst3Parameter.cpp
+  plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+  plugins/WasmEffect/WasmEffect.cpp
+  plugins/WasmEffect/WasmEffectControlDialog.cpp
+  plugins/WasmEffect/WasmEffectControls.cpp
+  src/core/ExternalProcessStemSeparator.cpp
+  src/core/OnnxRuntimeStemSeparator.cpp
+  src/core/SessionClip.cpp
+  src/core/SessionModel.cpp
+  src/core/StemJobManager.cpp
+  src/core/StemModelStore.cpp
+  src/core/StemTrackBuilder.cpp
+  src/gui/StemSplitController.cpp
+  src/wasm/WasmSandbox.cpp
+  src/wasm/WasmWorker.cpp
+  tests/src/core/SessionModelTest.cpp
+
+=== compiled-norun: 0 ===
+
+=== gcda-but-no-record: 0 ===
+
+=== header-no-code: 38 ===
+  include/AudioPortsSettings.h
+  include/CrashReporter.h
+  include/MidiLearn.h
+  include/ScriptApiVersion.h
+  include/ScriptConsole.h
+  include/SessionModel.h
+  include/StemSeparation/ExternalProcessStemSeparator.h
+  include/StemSeparation/OnnxRuntimeStemSeparator.h
+  include/StemSeparation/StemJobManager.h
+  include/StemSeparation/StemModelStore.h
+  include/StemSeparation/StemSeparator.h
+  include/StemSeparation/StemTrackBuilder.h
+  include/StemSeparation/StemTypes.h
+  include/StemSplitController.h
+  plugins/ClapEffect/ClapBusMap.h
+  plugins/ClapEffect/ClapEffect.h
+  plugins/ClapEffect/ClapEffectControlDialog.h
+  plugins/ClapEffect/ClapEffectControls.h
+  plugins/ClapEffect/ClapHost.h
+  plugins/ClapEffect/ClapParamDescriptor.h
+  plugins/ClapEffect/ClapParameter.h
+  plugins/ClapEffect/ClapSubPluginFeatures.h
+  plugins/Vst3Effect/Vst3BusMap.h
+  plugins/Vst3Effect/Vst3Effect.h
+  plugins/Vst3Effect/Vst3EffectControlDialog.h
+  plugins/Vst3Effect/Vst3EffectControls.h
+  plugins/Vst3Effect/Vst3Host.h
+  plugins/Vst3Effect/Vst3ParamDescriptor.h
+  plugins/Vst3Effect/Vst3Parameter.h
+  plugins/Vst3Effect/Vst3SubPluginFeatures.h
+  plugins/WasmEffect/WasmEffect.h
+  plugins/WasmEffect/WasmEffectControlDialog.h
+  plugins/WasmEffect/WasmEffectControls.h
+  src/core/SessionModelPrivate.h
+  src/wasm/WasmAbi.h
+  src/wasm/WasmSandbox.h
+  src/wasm/WasmSpscRingBuffer.h
+  src/wasm/WasmWorker.h
+
+=== non-source-entry: 2 ===
+  tools/local-ci.sh
+  tools/stem-export-demo.py
+
+=== totals: 130 in scope, 61 seen by the instrumentation, 69 unseen ===

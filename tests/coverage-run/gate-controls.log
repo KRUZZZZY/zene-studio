@@ -1,0 +1,24 @@
+=== control 1: real tracefile vs the repo baseline (--check) ===
+  OK   recorded verdict (exit 1)
+=== building the re-anchored baseline used by controls 2 and 3 ===
+=== control 2: real tracefile vs the re-anchored baseline (--check) ===
+  OK   gate passes a tracefile its baseline was built from (exit 0)
+     tracefile line coverage: 81.46%  (3747/4600 lines over 61 files)
+     PASS (check mode: baseline not updated)
+=== control 3: the same baseline with one file raised 20 points ===
+  OK   gate still fails a tracefile whose baseline was raised (exit 1)
+     REGRESSION  include/AudioPorts.h: 76.65% -> 56.65%  (47 of 233 covered lines lost)
+=== control 4: a scope file rewritten to zero instrumented lines ===
+  OK   gate reacts to a now-zero-instrumented baseline file (exit 1)
+     documented line present: 1
+     unmeasurable  src/gui/PinConnector.cpp: 0 instrumented lines - no coverage measurable (recorded as n/a, never as 100%)
+     unmeasured  src/gui/PinConnector.cpp: baseline 0.00% but this run reports 0 instrumented lines
+=== control 5: a scope file absent from the baseline, zero instrumented lines ===
+  OK   gate reacts to a zero-instrumented new scope file (exit 1)
+     documented line present: 1
+     admitted below the floor: 0  (0 = not refused)
+     unmeasurable  include/CrashReporter.h: 0 instrumented lines - no coverage measurable (recorded as n/a, never as 100%)
+     new         include/CrashReporter.h: unmeasurable (0 instrumented lines, recorded as n/a)
+
+=== gate-controls summary: 5 passed, 0 failed ===
+CONTROLS_EXIT=0

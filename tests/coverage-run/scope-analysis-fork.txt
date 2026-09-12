@@ -1,0 +1,119 @@
+=== tracefiles ===
+  tests/coverage-run/coverage-fork.info
+=== headline (line-weighted, sum hit / sum instrumented) ===
+  81.46%  (3747/4600 lines over 61 files with a record)
+
+=== files at 0.00% with instrumented lines: 18 ===
+  0.00%       7 lines  include/DpiHelper.h
+  0.00%       2 lines  include/LmmsPolyfill.h
+  0.00%       1 lines  include/MidiLearnGui.h
+  0.00%       5 lines  include/PinConnector.h
+  0.00%      43 lines  plugins/NeuralAmp/NeuralAmpControlDialog.cpp
+  0.00%       2 lines  plugins/NeuralAmp/NeuralAmpControlDialog.h
+  0.00%      17 lines  plugins/NeuralAmp/NeuralAmpControls.cpp
+  0.00%       6 lines  plugins/NeuralAmp/NeuralAmpControls.h
+  0.00%      88 lines  plugins/NeuralAmp/NeuralAmpEffect.cpp
+  0.00%       2 lines  plugins/NeuralAmp/NeuralAmpEffect.h
+  0.00%       4 lines  plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp
+  0.00%       1 lines  plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h
+  0.00%       7 lines  plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp
+  0.00%       6 lines  plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
+  0.00%      37 lines  plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
+  0.00%       2 lines  plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
+  0.00%      30 lines  src/gui/MidiLearnGui.cpp
+  0.00%     269 lines  src/gui/PinConnector.cpp
+  total uninstrumented-hit lines in these files: 529
+
+=== files with ZERO instrumented lines (unmeasurable, never 100%): 0 ===
+
+=== fork-sources.txt entries with NO tracefile record: 69 of 130 ===
+  unseen  include/AudioPortsSettings.h
+  unseen  include/CrashReporter.h
+  unseen  include/MidiLearn.h
+  unseen  include/ScriptApiVersion.h
+  unseen  include/ScriptConsole.h
+  unseen  include/SessionModel.h
+  unseen  include/StemSeparation/ExternalProcessStemSeparator.h
+  unseen  include/StemSeparation/OnnxRuntimeStemSeparator.h
+  unseen  include/StemSeparation/StemJobManager.h
+  unseen  include/StemSeparation/StemModelStore.h
+  unseen  include/StemSeparation/StemSeparator.h
+  unseen  include/StemSeparation/StemTrackBuilder.h
+  unseen  include/StemSeparation/StemTypes.h
+  unseen  include/StemSplitController.h
+  unseen  plugins/ClapEffect/ClapBusMap.cpp
+  unseen  plugins/ClapEffect/ClapBusMap.h
+  unseen  plugins/ClapEffect/ClapEffect.cpp
+  unseen  plugins/ClapEffect/ClapEffect.h
+  unseen  plugins/ClapEffect/ClapEffectControlDialog.cpp
+  unseen  plugins/ClapEffect/ClapEffectControlDialog.h
+  unseen  plugins/ClapEffect/ClapEffectControls.cpp
+  unseen  plugins/ClapEffect/ClapEffectControls.h
+  unseen  plugins/ClapEffect/ClapHost.cpp
+  unseen  plugins/ClapEffect/ClapHost.h
+  unseen  plugins/ClapEffect/ClapParamDescriptor.h
+  unseen  plugins/ClapEffect/ClapParameter.cpp
+  unseen  plugins/ClapEffect/ClapParameter.h
+  unseen  plugins/ClapEffect/ClapSubPluginFeatures.cpp
+  unseen  plugins/ClapEffect/ClapSubPluginFeatures.h
+  unseen  plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+  unseen  plugins/Vst3Effect/Vst3BusMap.cpp
+  unseen  plugins/Vst3Effect/Vst3BusMap.h
+  unseen  plugins/Vst3Effect/Vst3Effect.cpp
+  unseen  plugins/Vst3Effect/Vst3Effect.h
+  unseen  plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+  unseen  plugins/Vst3Effect/Vst3EffectControlDialog.h
+  unseen  plugins/Vst3Effect/Vst3EffectControls.cpp
+  unseen  plugins/Vst3Effect/Vst3EffectControls.h
+  unseen  plugins/Vst3Effect/Vst3Host.cpp
+  unseen  plugins/Vst3Effect/Vst3Host.h
+  unseen  plugins/Vst3Effect/Vst3ParamDescriptor.h
+  unseen  plugins/Vst3Effect/Vst3Parameter.cpp
+  unseen  plugins/Vst3Effect/Vst3Parameter.h
+  unseen  plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+  unseen  plugins/Vst3Effect/Vst3SubPluginFeatures.h
+  unseen  plugins/WasmEffect/WasmEffect.cpp
+  unseen  plugins/WasmEffect/WasmEffect.h
+  unseen  plugins/WasmEffect/WasmEffectControlDialog.cpp
+  unseen  plugins/WasmEffect/WasmEffectControlDialog.h
+  unseen  plugins/WasmEffect/WasmEffectControls.cpp
+  unseen  plugins/WasmEffect/WasmEffectControls.h
+  unseen  src/core/ExternalProcessStemSeparator.cpp
+  unseen  src/core/OnnxRuntimeStemSeparator.cpp
+  unseen  src/core/SessionClip.cpp
+  unseen  src/core/SessionModel.cpp
+  unseen  src/core/SessionModelPrivate.h
+  unseen  src/core/StemJobManager.cpp
+  unseen  src/core/StemModelStore.cpp
+  unseen  src/core/StemTrackBuilder.cpp
+  unseen  src/gui/StemSplitController.cpp
+  unseen  src/wasm/WasmAbi.h
+  unseen  src/wasm/WasmSandbox.cpp
+  unseen  src/wasm/WasmSandbox.h
+  unseen  src/wasm/WasmSpscRingBuffer.h
+  unseen  src/wasm/WasmWorker.cpp
+  unseen  src/wasm/WasmWorker.h
+  unseen  tests/src/core/SessionModelTest.cpp
+  unseen  tools/local-ci.sh
+  unseen  tools/stem-export-demo.py
+
+=== all-sources.txt entries with NO record in the FORK tracefile: omitted ===
+    (a fork-scoped tracefile cannot contain them; see the whole-tree section of
+     docs/COVERAGE-RUN.md, which is computed from coverage-whole-tree.info.gz)
+=== per-file delta vs tests/coverage-baseline.tsv (47 entries) ===
+  DROP  include/AudioPlugin.h: 85.48% -> 71.43%  (70/98 now)
+  DROP  include/AudioPorts.h: 91.43% -> 56.65%  (132/233 now)
+  DROP  include/RemotePluginAudioPorts.h: 100.00% -> 79.52%  (66/83 now)
+  files that dropped: 3
+
+  baseline entries with no record in this run: 8
+    absent  include/StemSeparation/StemSeparator.h  (baseline 100.0)
+    absent  include/StemSeparation/StemTypes.h  (baseline 85.71)
+    absent  include/StemSplitController.h  (baseline 0.0)
+    absent  src/core/ExternalProcessStemSeparator.cpp  (baseline 71.3)
+    absent  src/core/StemJobManager.cpp  (baseline 89.24)
+    absent  src/core/StemModelStore.cpp  (baseline 62.02)
+    absent  src/core/StemTrackBuilder.cpp  (baseline 90.0)
+    absent  src/gui/StemSplitController.cpp  (baseline 0.0)
+
+=== in-scope but not in baseline (would be 'new' to the gate): 22 ===

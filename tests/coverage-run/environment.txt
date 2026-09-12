@@ -1,0 +1,35 @@
+Configuration of the 2026-09-12 Gate 2 coverage run
+==================================================
+host            Linux 7.0.0-31-generic x86_64
+distro          Ubuntu 24.04.4 LTS
+gcc / g++       gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+gcov            gcov (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+lcov            lcov: LCOV version 2.0-1
+genhtml         genhtml: LCOV version 2.0-1
+cmake           cmake version 3.28.3
+make            GNU Make 4.3
+Qt6             6.4.2
+Qt5             ABSENT on this host - WANT_QT6=ON is required
+nproc           20   (build capped at JOBS=4)
+
+Invocation (documented path, tests/run-coverage.sh):
+  COVERAGE_JOBS=4 bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+which expands to:
+  cmake -B build-coverage -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON -DWANT_COVERAGE=ON
+  cmake --build build-coverage -j4
+  ctest --output-on-failure --test-dir build-coverage/tests
+  lcov --capture --directory build-coverage --gcov-tool /usr/bin/gcov ...
+  (per-manifest-entry lcov --extract, accumulated with lcov --add-tracefile)
+
+DEVIATION: -DWANT_QT6=ON is passed explicitly. tests/run-coverage.sh does not set it and
+the documented command in tests/QA-GATES.md does not either; the repository default is
+WANT_QT6=OFF (Qt5). No Qt5 development packages exist on this host, so the documented
+command cannot configure here at all. Qt6 is what the CI matrix builds (ci.yml), so this
+run matches CI's toolkit rather than the literal documented command line.
+
+Other flags resolved in this configure (CMakeCache.txt):
+WANT_COVERAGE:BOOL=ON
+WANT_QT6:BOOL=ON
+WANT_SESSION_VIEW:BOOL=OFF
+WANT_STEM_SPLIT:BOOL=OFF
+WANT_WASM:BOOL=ON
