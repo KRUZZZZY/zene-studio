@@ -572,3 +572,25 @@ src/core/ProjectJournal.cpp	#623 SPEC A16: implements the two flavours; undo()/r
 src/core/SampleBuffer.cpp	#625 headless load: the 'Failed to load sample' boxes are not opened in an unattended run (they fire while a project loads)
 src/core/Track.cpp	#628 SPEC-stable-ids slice 1: the Track constructor allocates the id, saveTrack writes it as an `id` ATTRIBUTE on the track's own element, loadTrack takes the file's value (or keeps the constructor's for a legacy element), all guarded so presetMode never writes one (SPEC-stable-ids.md 3.1/3.3); #623: initialise m_mutedBeforeSolo in the constructor. It was read uninitialised by saveTrack, which writes it to the project file as an int, so the SAME fresh track saved as mutedBeforeSolo=1 in one run and 48 in the next - measured by the intermittently failing StableTrackIdsTest and by the byte-determinism promise the serializer makes (post-alpha/reversibility); merge train 3F: the incoming unit's initialiser list placed m_mutedBeforeSolo before m_mutedModel while include/Track.h declares it after, which the release configuration's -Werror=reorder rejects (the merge's first build failure, and the file is byte-identical to the unit's own, so it is the unit's defect, not a merge artefact); the entry is moved to declaration order - C++ initialises in declaration order either way, so this is a no-op
 src/core/TrackContainer.cpp	#625 headless load: the application-modal 'Loading project...' progress window is not created in an unattended run (its Cancel button is the only way to stop a load)
+
+# --- fix(control-undo): the four paths of the undo SIGSEGV (2026-09-12) ---------
+# docs/CONTROL-UNDO-CONNECTION-DROP.md. `control.undo` unwinds the engine's own
+# ProjectJournal - the same stack the GUI's Ctrl+Z unwinds - and restoring a Song
+# checkpoint tears the track container down and rebuilds it. Four reads of
+# PatternTrack's static registry used QMap::operator[], which INSERTS a zero for an
+# absent key: the destructor of the old track erases its entry and then the GUI's
+# PatternTrackView::close() (reached through the destroyedTrack() signal) reads it.
+# The ghost entry - keyed by the dead track's address, which the allocator then
+# hands to its replacement - makes the replacement derive its pattern number from
+# s_infoMap.size() and get the wrong one, leaving an index with no track; the
+# pattern combobox then dereferenced the nullptr: SIGSEGV on the UI thread, the
+# process gone, and every client connection with it. Every change below is a read
+# (QMap::value()) where a lookup-with-insert was. value() returns the same int as
+# operator[] for a registered track, so no registered-track behaviour changes; the
+# only behaviour that goes away is the fabricated entry. The invariant the four
+# changes restore: only PatternTrack's constructor creates a registry entry, and
+# only its destructor erases one.
+include/PatternTrack.h	fix(control-undo): PatternTrack::patternIndex() reads the registry with s_infoMap.value(this) instead of s_infoMap[this] - a read must not register the caller, because the constructor derives the next pattern number from s_infoMap.size() (docs/CONTROL-UNDO-CONNECTION-DROP.md)
+src/tracks/PatternTrack.cpp	fix(control-undo): the five registry reads that are not the constructor's insert (play() x2, saveTrackSpecificSettings' two reads, the destructor's own read) use s_infoMap.value(this); swapPatternTracks keeps operator[] because it assigns - it swaps two live tracks' numbers (docs/CONTROL-UNDO-CONNECTION-DROP.md)
+src/core/PatternStore.cpp	fix(control-undo): updateComboBox() skips a pattern index whose PatternTrack::findPatternTrack() is nullptr. numOfPatterns() counts the Song's pattern tracks while findPatternTrack() searches PatternTrack's own registry, so the two can disagree; the disagreement is fixed at its source, and this guard is why the next one degrades to a missing combobox row instead of killing the process the clients are connected to (docs/CONTROL-UNDO-CONNECTION-DROP.md)
+src/gui/tracks/PatternTrackView.cpp	fix(control-undo): ~PatternTrackView() and close() read PatternTrack::s_infoMap with value() - they run from the destroyedTrack() signal after the track's own destructor erased its entry, so operator[] there manufactured the ghost entry that made the next track's number collide (docs/CONTROL-UNDO-CONNECTION-DROP.md)

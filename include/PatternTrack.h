@@ -62,9 +62,21 @@ public:
 	static PatternTrack* findPatternTrack(int pattern_num);
 	static void swapPatternTracks(Track* track1, Track* track2);
 
+	/*! This track's pattern number, or 0 if it has none.
+	 *
+	 * A READ, and only a read: QMap::operator[] would INSERT a zero for a key
+	 * that is absent, and an entry fabricated here is not cosmetic. The
+	 * constructor derives the next pattern number from s_infoMap.size(), so a
+	 * ghost entry for a track that was never registered (or for one that is
+	 * already being destroyed) makes the NEXT track take the wrong number,
+	 * overwrite the ghost's slot, and leave an index with no track. The
+	 * pattern combobox then looks that index up, gets nullptr, and dereferences
+	 * it (SIGSEGV, measured in docs/CONTROL-UNDO-CONNECTION-DROP.md). Only the
+	 * constructor may create an entry, and only the destructor may erase one.
+	 */
 	int patternIndex()
 	{
-		return s_infoMap[this];
+		return s_infoMap.value(this);
 	}
 
 	bool automationDisabled( Track * _track )

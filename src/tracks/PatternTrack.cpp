@@ -65,7 +65,7 @@ PatternTrack::~PatternTrack()
 					| PlayHandle::Type::InstrumentPlayHandle
 					| PlayHandle::Type::SamplePlayHandle );
 
-	const int pattern = s_infoMap[this];
+	const int pattern = s_infoMap.value(this);
 	Engine::patternStore()->removePattern(pattern);
 	for( infoMap::iterator it = s_infoMap.begin(); it != s_infoMap.end();
 									++it )
@@ -96,7 +96,7 @@ bool PatternTrack::play( const TimePos & _start, const f_cnt_t _frames,
 
 	if( _clip_num >= 0 )
 	{
-		return Engine::patternStore()->play(_start, _frames, _offset, s_infoMap[this]);
+		return Engine::patternStore()->play(_start, _frames, _offset, s_infoMap.value(this));
 	}
 
 	clipVector clips;
@@ -128,7 +128,7 @@ bool PatternTrack::play( const TimePos & _start, const f_cnt_t _frames,
 
 	if( _start - lastPosition < lastLength )
 	{
-		return Engine::patternStore()->play(_start - lastPosition + lastOffset, _frames, _offset, s_infoMap[this]);
+		return Engine::patternStore()->play(_start - lastPosition + lastOffset, _frames, _offset, s_infoMap.value(this));
 	}
 	return false;
 }
@@ -159,7 +159,7 @@ void PatternTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& _th
 //	_this.setAttribute( "icon", m_trackLabel->pixmapFile() );
 /*	_this.setAttribute( "current", s_infoMap[this] ==
 					engine::getPatternEditor()->currentPattern() );*/
-	if( s_infoMap[this] == 0 &&
+	if( s_infoMap.value(this) == 0 &&
 			_this.parentNode().parentNode().nodeName() != "clonedtrack" &&
 			_this.parentNode().parentNode().nodeName() != "journaldata" )
 	{
@@ -168,7 +168,7 @@ void PatternTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& _th
 	// If we are creating drag-n-drop data for Track::clone() only save pattern ID, not pattern content
 	if (_this.parentNode().parentNode().nodeName() == "clonedtrack")
 	{
-		_this.setAttribute("sourcepattern", s_infoMap[this]);
+		_this.setAttribute("sourcepattern", s_infoMap.value(this));
 	}
 }
 
@@ -187,7 +187,7 @@ void PatternTrack::loadTrackSpecificSettings(const QDomElement& _this)
 	if (_this.hasAttribute("sourcepattern"))
 	{
 		const int src = _this.attribute("sourcepattern").toInt();
-		const int dst = s_infoMap[this];
+		const int dst = s_infoMap.value(this);
 		// copy clips of all tracks from source pattern (at bar "src") to destination
 		// clips (which are created if they do not exist yet)
 		for (const auto& track : Engine::patternStore()->tracks())

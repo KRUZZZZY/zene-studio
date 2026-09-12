@@ -200,6 +200,19 @@ void PatternStore::updateComboBox()
 	for (int i = 0; i < numOfPatterns(); ++i)
 	{
 		PatternTrack* pt = PatternTrack::findPatternTrack(i);
+		if (pt == nullptr)
+		{
+			/*! numOfPatterns() counts the Song's pattern tracks while
+			 * findPatternTrack() searches PatternTrack's own registry, so the two
+			 * can disagree. The disagreement that used to be fatal is fixed at
+			 * its source (only a constructor may create a registry entry - see
+			 * PatternTrack::patternIndex()), but a disagreement must never be a
+			 * dereference of nullptr: that killed the whole process, and with it
+			 * every client connection, instead of answering. A missing row in the
+			 * pattern combobox is recoverable; a dead DAW is not.
+			 * docs/CONTROL-UNDO-CONNECTION-DROP.md */
+			continue;
+		}
 		m_patternComboBoxModel.addItem(pt->name());
 	}
 	setCurrentPattern(curPattern);

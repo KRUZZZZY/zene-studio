@@ -57,7 +57,11 @@ PatternTrackView::PatternTrackView(PatternTrack* pt, TrackContainerView* tcv) :
 
 PatternTrackView::~PatternTrackView()
 {
-	getGUI()->patternEditor()->m_editor->removeViewsForPattern(PatternTrack::s_infoMap[m_patternTrack]);
+	// The map is a READ here too: `PatternTrack::s_infoMap[m_patternTrack]`
+	// would insert a zero for this track once its own destructor has erased its
+	// entry, and the entry outlives the track -- see
+	// docs/CONTROL-UNDO-CONNECTION-DROP.md.
+	getGUI()->patternEditor()->m_editor->removeViewsForPattern(PatternTrack::s_infoMap.value(m_patternTrack));
 }
 
 
@@ -65,7 +69,8 @@ PatternTrackView::~PatternTrackView()
 
 bool PatternTrackView::close()
 {
-	getGUI()->patternEditor()->m_editor->removeViewsForPattern(PatternTrack::s_infoMap[m_patternTrack]);
+	// see ~PatternTrackView: a read, never a lookup that can create an entry
+	getGUI()->patternEditor()->m_editor->removeViewsForPattern(PatternTrack::s_infoMap.value(m_patternTrack));
 	return TrackView::close();
 }
 
