@@ -1,0 +1,18 @@
+=== Gate 9 is NOT on this branch: exit 127 ===
+$ bash tests/fork-sources-gate.sh
+bash: tests/fork-sources-gate.sh: No such file or directory
+EXIT=127
+
+=== post-alpha/gate-debt is NOT an ancestor of HEAD ===
+$ git merge-base --is-ancestor post-alpha/gate-debt HEAD; echo $?
+EXIT=1
+
+=== sibling read-only copy, run per the rename lane's precedent ===
+$ cp ../zene-pa-gatedebt/tests/fork-sources-gate.sh tests/.g9tmp.sh && bash tests/.g9tmp.sh
+
+scanned 1094 tracked source file(s) under src/, include/, plugins/, tests/;
+  102 fork-sources entry(ies), 995 inherited upstream, 0 stale entry(ies).
+
+PASS: every tracked source in scope is registered (102 fork-NEW, 995 inherited).
+EXIT=0
+(tests/.g9tmp.sh removed; tree clean)

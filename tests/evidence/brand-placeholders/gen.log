@@ -1,0 +1,43 @@
+Detected locale "C" with character encoding "ANSI_X3.4-1968", which is not UTF-8.
+Qt depends on a UTF-8 locale, and has switched to "C.UTF-8" instead.
+If this causes problems, reconfigure your locale. See the locale(1) manual
+for more information.
+wrote 38 placeholder raster files
+  cmake/linux/icons/16x16/apps/zene.png
+  cmake/linux/icons/16x16/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/16x16@2/apps/zene.png
+  cmake/linux/icons/16x16@2/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/24x24/apps/zene.png
+  cmake/linux/icons/24x24/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/24x24@2/apps/zene.png
+  cmake/linux/icons/24x24@2/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/32x32/apps/zene.png
+  cmake/linux/icons/32x32/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/32x32@2/apps/zene.png
+  cmake/linux/icons/32x32@2/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/48x48/apps/zene.png
+  cmake/linux/icons/48x48/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/48x48@2/apps/zene.png
+  cmake/linux/icons/48x48@2/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/64x64/apps/zene.png
+  cmake/linux/icons/64x64/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/64x64@2/apps/zene.png
+  cmake/linux/icons/64x64@2/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/128x128/apps/zene.png
+  cmake/linux/icons/128x128/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/128x128@2/apps/zene.png
+  cmake/linux/icons/128x128@2/mimetypes/application-x-lmms-project.png
+  cmake/linux/icons/256x256/apps/zene.png
+  cmake/linux/icons/256x256/mimetypes/application-x-lmms-project.png
+  cmake/nsis/assets/Logo.png
+  cmake/nsis/assets/SmallLogo.png
+  cmake/nsis/icon.ico
+  cmake/nsis/project.ico
+  cmake/apple/icon.icns
+  cmake/apple/project.icns
+  cmake/apple/background.png
+  cmake/apple/background@2x.png
+  data/themes/default/splash.png
+  data/backgrounds/vinnie.png
+  data/backgrounds/newbg.png
+  data/backgrounds/zene_tile.png

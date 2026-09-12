@@ -84,6 +84,7 @@
 # Registered here: render-determinism-compare.py (402 lines) and render-determinism-probe.sh (142),
 # both under the 500-line target and over no complexity target. The reason each exists is in
 # docs/RENDER-DETERMINISM.md.
+tools/brand/rasterise-placeholders.py
 tools/make_stub_model.py
 tools/mmpz-git/demo_check.py
 tools/mmpz-git/demo_edits.py

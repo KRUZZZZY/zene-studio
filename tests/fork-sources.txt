@@ -99,6 +99,26 @@
 # follows the caller's locale, so an unpinned command does not reproduce this file on a
 # machine with a different one, and the tail entries appended by merge lanes ended up out of
 # order for the same reason.
+#
+# Merged 2026-09-12 (integration wave 3B, merge #2 = post-alpha/brand-placeholders). That lane
+# added four entries to this file by hand; NONE of them can be produced by this file's own
+# command, so keeping them would make the file stop reproducing. Each is resolved by where its
+# home actually is, and none is a silently dropped entry:
+#   * tools/brand/rasterise-placeholders.py - MOVED to tests/tools-sources.txt, which is this
+#     repo's documented home for the fork's own tooling under tools/ and whose own command DOES
+#     produce it (the regeneration run reports it as the one added tools entry). Gate 9
+#     classifies a tools/ path by tests/tools-sources.txt, so this is a recorded move of home.
+#   * tests/brand-resource-sweep.py,
+#     tests/evidence/brand-placeholders/verify-placeholders.py,
+#     tests/evidence/brand-placeholders/provenance-audit.py - not registered in ANY scope, and
+#     deliberately so: Gate 9's scope is C/C++ outside tools/ (is_source) and C/C++/Python/shell
+#     under tools/ (is_tools_source), so a .py under tests/ is outside every list this gate
+#     reads and needs no home. This file is the fork's PRODUCT scope - admitting test-side
+#     scripts here would widen the fork-scoped file-length / complexity / duplication ratchets
+#     onto them, which is exactly the scope widening 3A refused for
+#     plugins/RnnoiseDenoiser/testdata/*.sh. Their commands are recorded in
+#     docs/BRAND-PLACEHOLDERS.md and beside the scripts in tests/evidence/.
+
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h

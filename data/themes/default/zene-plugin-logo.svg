@@ -1,17 +1,31 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" version="1.1" width="48" height="48">
+<!--
+  Zene Studio plugin logo - HAND-AUTHORED PLACEHOLDER (2026-09-12).
+
+  This is NOT the Zene Studio product mark.  It is a plain music note punched out
+  of a white plate, drawn from scratch for this file, and it exists only so the
+  48px plugin-browser and plugin-dialog logo slot stops rendering upstream LMMS
+  artwork.  The real mark is the owner's decision and will replace this.
+
+  Hand-authored on purpose: it contains no traced, sampled or vendored artwork,
+  so there is no third-party licence to honour and no attribution to carry.
+  Geometry is cubic Bezier only (an even-odd punch), which is the subset every
+  SVG renderer in this project - QSvgRenderer, via src/gui/embed.cpp - draws.
+
+  Shipped size: 48x48.  Keep the shapes bold if you edit this: the glyph has to
+  stay legible at the small end the plugin browser uses.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" version="1.1" width="48" height="48" viewBox="0 0 48 48">
 	<metadata>
 		<rdf:RDF>
 			<cc:Work>
-				<dc:title>Zene Studio plugin logo</dc:title>
-				<dc:creator><cc:Agent><dc:title>Rebecca Noel Ati</dc:title></cc:Agent></dc:creator>
+				<dc:title>Zene Studio plugin logo (placeholder)</dc:title>
+				<dc:creator><cc:Agent><dc:title>Zene Studio contributors</dc:title></cc:Agent></dc:creator>
+				<dc:description>placeholder - pending the product mark</dc:description>
+				<dc:date>2026-09-12</dc:date>
+				<dc:rights>Hand-authored placeholder. Contains no third-party artwork and no upstream LMMS artwork; the upstream lmms-plugin-logo.svg it replaced remains in git history.</dc:rights>
 			</cc:Work>
-			<cc:License rdf:about="http://creativecommons.org/publicdomain/zero/1.0/">
-				<cc:permits rdf:resource="http://creativecommons.org/ns#Reproduction" />
-				<cc:permits rdf:resource="http://creativecommons.org/ns#Distribution" />
-				<cc:permits rdf:resource="http://creativecommons.org/ns#DerivativeWorks" />
-			</cc:License>
 		</rdf:RDF>
 	</metadata>
-	<path fill="#fff" d="M7.86719 2C3.95608 2 2 3.95608 2 7.86719V40.1328C2 44.04392 3.95608 46 7.86719 46H40.1328C44.04392 46 46 44.04392 46 40.13281V7.8672C46 3.95608 44.04392 2 40.13281 2H7.8672zM24 9l15 8.4375V35.25l-5.625 2.8125L27.75 35.25v-6.5625l5.625-2.8125V20.25L24 15.5625 14.625 20.25v5.625l5.625 2.8125V35.25l-5.625 2.8125L9 35.25V17.4375L24 9z"/>
+	<path fill="#ffffff" fill-rule="evenodd" d="M9,2 H39 C42.866,2 46,5.134 46,9 V39 C46,42.866 42.866,46 39,46 H9 C5.134,46 2,42.866 2,39 V9 C2,5.134 5.134,2 9,2 Z M25.205,31.195 C26.377,34.413 23.876,38.277 19.621,39.826 C15.365,41.375 10.966,40.022 9.795,36.805 C8.623,33.587 11.124,29.723 15.379,28.174 C19.635,26.625 24.034,27.978 25.205,31.195 Z M24.4,10 H29.6 V34 H24.4 Z M29.6,10 C38.0,12.5 43.0,19.0 43.0,27.0 C38.5,19.5 34.0,15.5 29.6,14.2 Z" transform="translate(-0.938,0.032) scale(0.95)"/>
 </svg>
