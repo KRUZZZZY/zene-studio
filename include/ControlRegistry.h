@@ -170,6 +170,21 @@ LMMS_EXPORT void registerTransportCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerMixerCommands(ControlRegistry& registry);
 //! project.* and render.render
 LMMS_EXPORT void registerProjectCommands(ControlRegistry& registry);
+//! plugin.* and dsp.get_state - the device catalogue, load/unload/bypass,
+//! parameters, plugin state files and presets.
+LMMS_EXPORT void registerPluginCommands(ControlRegistry& registry);
+//! plugin.list / load / unload / bypass.
+LMMS_EXPORT void registerPluginDeviceCommands(ControlRegistry& registry);
+//! plugin.param_get / plugin.param_set for a device instance or an instrument.
+LMMS_EXPORT void registerPluginParameterCommands(ControlRegistry& registry);
+//! plugin.state_save / state_load and plugin.preset_list / preset_load / preset_save.
+LMMS_EXPORT void registerPluginStateCommands(ControlRegistry& registry);
+//! plugin.preset_list / plugin.preset_load / plugin.preset_save.
+LMMS_EXPORT void registerPluginPresetCommands(ControlRegistry& registry);
+//! dsp.get_state - the device-chain read-back (SPEC A14).
+LMMS_EXPORT void registerDspCommands(ControlRegistry& registry);
+//! settings.*, audio.*, midi.* and app.version.
+LMMS_EXPORT void registerSettingsCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control
@@ -178,6 +193,10 @@ namespace control
 QString trackId(int index);
 //! "ch-<n>" for a mixer channel index.
 QString channelId(int index);
+//! "dev-<n>" for an index in the build's device catalogue (plugin.list).
+QString deviceId(int index);
+//! "fx-<n>" for a device instance's index in its target's chain.
+QString effectId(int index);
 //! Parses "trk-<n>" / "ch-<n>"; returns -1 when malformed.
 int idToIndex(const QString& id, const QString& prefix);
 //! A fresh "mutating command is not undone by itself" transaction record.

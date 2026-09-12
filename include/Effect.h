@@ -106,6 +106,15 @@ public:
 		return m_enabledModel.value();
 	}
 
+	//! Drive the same On/Off control the rack's LED checkbox drives (SPEC A11:
+	//! one action, one implementation). Added for the agent control surface
+	//! (plugin.bypass / dsp.get_state read-back); the model is journalled, so
+	//! the change is reversible through the ProjectJournal.
+	void setEnabled( bool enabled )
+	{
+		m_enabledModel.setValue( enabled );
+	}
+
 	inline f_cnt_t timeout() const
 	{
 		const float samples = Engine::audioEngine()->outputSampleRate() * m_autoQuitModel.value() / 1000.0f;

@@ -119,6 +119,391 @@ def ok_result(reply, expected_id):
     return reply.get("result") or {}
 
 
+class Flow:
+    """Sequential request ids for one leg of the flow (the reply must carry the
+    id that was sent, so the ids cannot be reused across legs)."""
+
+    def __init__(self, client, last_id):
+        self.client = client
+        self.id = last_id
+
+    def call(self, cmd, args=None):
+        self.id += 1
+        return self.id, self.client.call(self.id, cmd, args)
+
+    def ok(self, cmd, args=None):
+        request_id, reply = self.call(cmd, args)
+        return ok_result(reply, request_id)
+
+    def err(self, cmd, kind, args=None):
+        request_id, reply = self.call(cmd, args)
+        typed_error(reply, request_id, kind)
+        return reply.get("error") or {}
+
+
+def find_device(devices, name=None, format=None, kind=None, loadable=None):
+    for device in devices:
+        if name is not None and device.get("name") != name:
+            continue
+        if format is not None and device.get("format") != format:
+            continue
+        if kind is not None and device.get("kind") != kind:
+            continue
+        if loadable is not None and bool(device.get("loadable")) != loadable:
+            continue
+        return device
+    return None
+
+
+def pick_parameter(parameters):
+    """A numeric parameter with a real range, preferring the well-known Volume."""
+    usable = [p for p in parameters
+              if p.get("type") == "number" and float(p.get("max", 0)) > float(p.get("min", 0))]
+    if not usable:
+        return None
+    for parameter in usable:
+        if parameter.get("name") == "Volume":
+            return parameter
+    return max(usable, key=lambda p: float(p["max"]) - float(p["min"]))
+
+
+def tolerance(parameter):
+    """Float round-trip tolerance: the model's own step, at least 1e-4."""
+    return max(1e-4, abs(float(parameter.get("step") or 0.0)))
+
+
+def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
+    """The plugin.* / dsp.* / settings.* leg: catalogue, load, parameters,
+    state, presets, unload and the settings/device read-back (SPEC A11-A16).
+
+    Every `is None` guard below calls fail(), which prints the transcript and
+    exits the process, so the subscripts that follow a guard are safe."""
+    flow = Flow(client, last_id)
+
+    # --- plugin.list: the build's device catalogue ------------------------
+    listing = flow.ok("plugin.list")
+    devices = listing.get("devices", [])
+    by_format = listing.get("counts_by_format", {})
+    by_kind = listing.get("counts_by_kind", {})
+    if not devices:
+        fail("plugin.list returned no devices", process, log_path)
+    if int(listing.get("count", -1)) != len(devices):
+        fail("plugin.list count %r != %d returned devices" % (listing.get("count"), len(devices)),
+             process, log_path)
+    if not by_format.get("builtin") or not by_format.get("ladspa"):
+        fail("plugin.list is not broken down by format: %r" % by_format, process, log_path)
+    if int(listing.get("loadable_count", 0)) <= 0:
+        fail("plugin.list reports no loadable device", process, log_path)
+    print("plugin.list: count=%d by_format=%r by_kind=%r loadable_count=%d"
+          % (len(devices), by_format, by_kind, int(listing.get("loadable_count", 0))))
+
+    ladspa = flow.ok("plugin.list", {"format": "ladspa", "loadable_only": True})
+    if int(ladspa.get("count", 0)) <= 0:
+        fail("no loadable LADSPA device: this build does not host the format", process, log_path)
+    print("plugin.list format=ladspa loadable_only=true: count=%d" % int(ladspa.get("count", 0)))
+
+    effect_device = (find_device(devices, name="amplifier", format="builtin")
+                     or find_device(devices, format="builtin", kind="effect"))
+    instrument_device = find_device(devices, format="builtin", kind="instrument")
+    ladspa_device = find_device(ladspa.get("devices", []), loadable=True)
+    if effect_device is None or instrument_device is None:
+        fail("the catalogue has no builtin effect or instrument: %r" % by_kind, process, log_path)
+    print("plugin.list: effect=%s(%s) instrument=%s(%s) ladspa=%s(%s)"
+          % (effect_device["id"], effect_device["name"], instrument_device["id"],
+             instrument_device["name"], ladspa_device["id"], ladspa_device["name"]))
+
+    # --- typed errors on the way in --------------------------------------
+    flow.err("plugin.load", "not_found", {"target": "trk-1", "device": "dev-999999"})
+    flow.err("plugin.load", "invalid_args", {"target": "trk-1", "device": "amplifier"})
+    # trk-0 is the fixture's Beat/Bassline track: it has no device chain at all.
+    flow.err("plugin.load", "refused", {"target": "trk-0", "device": effect_device["id"]})
+    # an instrument loads onto a track, never onto a mixer channel.
+    flow.err("plugin.load", "refused", {"target": "ch-1", "device": instrument_device["id"]})
+
+    # --- load an effect onto the instrument track ------------------------
+    loaded = flow.ok("plugin.load", {"target": "trk-1", "device": effect_device["id"]})
+    if loaded.get("kind") != "effect" or not str(loaded.get("id", "")).startswith("fx-"):
+        fail("plugin.load returned %r" % loaded, process, log_path)
+    fx = loaded["id"]
+    print("plugin.load %s -> %s (%s)" % (effect_device["id"], fx, loaded.get("plugin")))
+
+    # --- dsp.get_state: the read-back the ids come from ------------------
+    state = flow.ok("dsp.get_state", {"target": "trk-1"})
+    chains = state.get("chains", [])
+    if not chains or chains[0].get("id") != "trk-1":
+        fail("dsp.get_state did not read trk-1: %r" % chains, process, log_path)
+    entry = None
+    for device in chains[0].get("devices", []):
+        if device.get("id") == fx:
+            entry = device
+    if entry is None:
+        fail("dsp.get_state does not list %s: %r" % (fx, chains[0]), process, log_path)
+    if entry.get("enabled") is not True:
+        fail("a freshly loaded device is not enabled: %r" % entry, process, log_path)
+    parameters = entry.get("parameters", [])
+    target_param = pick_parameter(parameters)
+    if target_param is None:
+        fail("%s exposes no ranged numeric parameter: %r" % (fx, parameters), process, log_path)
+    instrument = chains[0].get("instrument") or {}
+    if instrument.get("id") != "inst" or not instrument.get("parameters"):
+        fail("dsp.get_state did not report the track instrument: %r" % instrument, process,
+             log_path)
+    print("dsp.get_state trk-1: %d device(s); %s has %d parameters, instrument has %d"
+          % (chains[0].get("count"), fx, len(parameters), len(instrument.get("parameters"))))
+
+    # --- plugin.param_get / plugin.param_set -----------------------------
+    name = target_param["name"]
+    low, high = float(target_param["min"]), float(target_param["max"])
+    tol = tolerance(target_param)
+    middle = low + (high - low) / 2.0
+    current = float(target_param["value"])
+    if abs(current - middle) <= tol:
+        # Keep the first write a real change, so the read-back proves something.
+        middle = low + (high - low) * 0.75
+
+    got = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    if got.get("parameter", {}).get("name") != name:
+        fail("plugin.param_get returned %r for %r" % (got, name), process, log_path)
+
+    set_reply = flow.ok("plugin.param_set",
+                        {"target": "trk-1", "plugin": fx, "name": name, "value": middle})
+    if abs(float(set_reply.get("parameter", {}).get("value", -1e30)) - middle) > tol:
+        fail("plugin.param_set did not report the new value: %r" % set_reply, process, log_path)
+    read_back = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    if abs(float(read_back.get("parameter", {}).get("value", -1e30)) - middle) > tol:
+        fail("plugin.param_get did not read back %r" % read_back, process, log_path)
+    print("plugin.param_get/param_set %s: %r -> %r (range %r..%r, tolerance %g)"
+          % (name, got.get("parameter", {}).get("value"),
+             read_back.get("parameter", {}).get("value"), low, high, tol))
+
+    # --- typed errors: bad parameter name, bad instance id, out-of-range --
+    flow.err("plugin.param_get", "not_found",
+             {"target": "trk-1", "plugin": fx, "name": "No Such Parameter"})
+    flow.err("plugin.param_get", "not_found",
+             {"target": "trk-1", "plugin": "fx-99", "name": name})
+    flow.err("plugin.param_set", "invalid_args",
+             {"target": "trk-1", "plugin": fx, "name": name, "value": high + 1000.0})
+    flow.err("plugin.param_set", "invalid_args",
+             {"target": "trk-1", "plugin": fx, "name": name, "value": low - 1000.0})
+
+    # --- SPEC A16: a parameter change is a journal checkpoint ------------
+    away = low + (high - low) * 0.25
+    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": fx, "name": name, "value": away})
+    undone = flow.ok("control.undo")
+    after_undo = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    if not undone.get("undone"):
+        fail("control.undo reported nothing undone after plugin.param_set", process, log_path)
+    if abs(float(after_undo.get("parameter", {}).get("value", -1e30)) - middle) > tol:
+        fail("control.undo did not restore the parameter: %r" % after_undo, process, log_path)
+    print("control.undo reversed plugin.param_set: %s back to %r"
+          % (name, after_undo.get("parameter", {}).get("value")))
+
+    # --- plugin.state_save / plugin.state_load ---------------------------
+    state_path = os.path.join(tmp, "plugin-state.xml")
+    saved = flow.ok("plugin.state_save", {"target": "trk-1", "plugin": fx, "path": state_path})
+    if not saved.get("sha256") or int(saved.get("bytes", 0)) <= 0:
+        fail("plugin.state_save reported %r" % saved, process, log_path)
+    if not os.path.exists(state_path) or os.path.getsize(state_path) == 0:
+        fail("plugin.state_save left no state at %s" % state_path, process, log_path)
+    print("plugin.state_save: %s (%d bytes, sha256 %s)"
+          % (saved.get("path"), int(saved.get("bytes", 0)), str(saved.get("sha256"))[:16]))
+    # a second save to the same path must refuse rather than silently clobber.
+    flow.err("plugin.state_save", "refused",
+             {"target": "trk-1", "plugin": fx, "path": state_path})
+
+    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": fx, "name": name, "value": away})
+    flow.ok("plugin.state_load", {"target": "trk-1", "plugin": fx, "path": state_path})
+    restored = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    if abs(float(restored.get("parameter", {}).get("value", -1e30)) - middle) > tol:
+        fail("plugin.state_load did not restore the saved parameter: %r" % restored, process,
+             log_path)
+    print("plugin.state_load round trip: %s restored to %r"
+          % (name, restored.get("parameter", {}).get("value")))
+
+    # --- plugin.preset_list / preset_save / preset_load ------------------
+    preset = flow.ok("plugin.preset_save",
+                     {"target": "trk-1", "plugin": fx, "name": "agent-flow"})
+    if not str(preset.get("path", "")).endswith(".xpf") or not os.path.exists(preset["path"]):
+        fail("plugin.preset_save wrote nothing: %r" % preset, process, log_path)
+    listed = flow.ok("plugin.preset_list", {"target": "trk-1", "plugin": fx})
+    if not any(p.get("name") == "agent-flow" for p in listed.get("presets", [])):
+        fail("plugin.preset_list does not show the saved preset: %r" % listed, process, log_path)
+    flow.ok("plugin.preset_load", {"target": "trk-1", "plugin": fx, "name": "agent-flow"})
+    print("plugin.preset_save/list/load: %s in %s"
+          % (preset.get("name"), listed.get("dir")))
+    flow.err("plugin.preset_load", "not_found",
+             {"target": "trk-1", "plugin": fx, "name": "no-such-preset"})
+    flow.err("plugin.preset_save", "invalid_args",
+             {"target": "trk-1", "plugin": fx, "name": "../escape"})
+
+    # --- instrument: load, parameters, state, preset ---------------------
+    loaded_inst = flow.ok("plugin.load", {"target": "trk-1", "device": instrument_device["id"]})
+    if loaded_inst.get("id") != "inst" or loaded_inst.get("kind") != "instrument":
+        fail("plugin.load of an instrument returned %r" % loaded_inst, process, log_path)
+    inst_state = flow.ok("dsp.get_state", {"target": "trk-1"})
+    inst_entry = (inst_state.get("chains") or [{}])[0].get("instrument") or {}
+    inst_param = pick_parameter(inst_entry.get("parameters", []))
+    if inst_param is None:
+        fail("the instrument exposes no ranged numeric parameter: %r" % inst_entry, process,
+             log_path)
+    inst_low, inst_high = float(inst_param["min"]), float(inst_param["max"])
+    inst_mid = inst_low + (inst_high - inst_low) / 2.0
+    inst_away = inst_low + (inst_high - inst_low) * 0.25
+    inst_tol = tolerance(inst_param)
+
+    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": "inst",
+                                 "index": inst_param["index"], "value": inst_mid})
+    inst_read = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": "inst",
+                                             "index": inst_param["index"]})
+    if abs(float(inst_read.get("parameter", {}).get("value", -1e30)) - inst_mid) > inst_tol:
+        fail("plugin.param_get on 'inst' did not read back %r" % inst_read, process, log_path)
+    inst_state_path = os.path.join(tmp, "instrument-state.xpf")
+    flow.ok("plugin.state_save", {"target": "trk-1", "plugin": "inst",
+                                  "path": inst_state_path})
+    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": "inst",
+                                 "index": inst_param["index"], "value": inst_away})
+    flow.ok("plugin.state_load", {"target": "trk-1", "plugin": "inst",
+                                  "path": inst_state_path})
+    inst_restored = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": "inst",
+                                                 "index": inst_param["index"]})
+    if abs(float(inst_restored.get("parameter", {}).get("value", -1e30)) - inst_mid) > inst_tol:
+        fail("the instrument state round trip did not restore %r" % inst_restored, process,
+             log_path)
+    flow.ok("plugin.preset_save", {"target": "trk-1", "plugin": "inst", "name": "agent-inst"})
+    # an instrument has no unload: the refusal must name the supported surface.
+    flow.err("plugin.unload", "invalid_args", {"target": "trk-1", "plugin": "inst"})
+    print("instrument %s: %s round-tripped through plugin.state_save/state_load"
+          % (instrument_device["name"], inst_param["name"]))
+
+    # --- plugin.bypass ---------------------------------------------------
+    bypassed = flow.ok("plugin.bypass", {"target": "trk-1", "plugin": fx, "bypass": True})
+    if bypassed.get("enabled") is not False or bypassed.get("processing") is not False:
+        fail("plugin.bypass did not switch the device off: %r" % bypassed, process, log_path)
+    bypass_state = flow.ok("dsp.get_state", {"target": "trk-1"})
+    bypass_entry = None
+    for device in (bypass_state.get("chains") or [{}])[0].get("devices", []):
+        if device.get("id") == fx:
+            bypass_entry = device
+    if bypass_entry is None or bypass_entry.get("enabled") is not False:
+        fail("dsp.get_state does not show the bypassed device: %r" % bypass_state, process,
+             log_path)
+    flow.ok("plugin.bypass", {"target": "trk-1", "plugin": fx, "bypass": False})
+    print("plugin.bypass: %s enabled=%r processing=%r -> off, read back off, back on"
+          % (fx, bypassed.get("enabled"), bypassed.get("processing")))
+
+    # --- plugin.unload ---------------------------------------------------
+    unloaded = flow.ok("plugin.unload", {"target": "trk-1", "plugin": fx})
+    if unloaded.get("removed") != fx or int(unloaded.get("count", -1)) != 0:
+        fail("plugin.unload returned %r" % unloaded, process, log_path)
+    flow.err("plugin.unload", "not_found", {"target": "trk-1", "plugin": fx})
+    print("plugin.unload %s: %d device(s) left on trk-1" % (fx, int(unloaded.get("count", -1))))
+
+    # --- the hosted format really loads: a LADSPA device on a channel ----
+    ladspa_loaded = flow.ok("plugin.load", {"target": "ch-1", "device": ladspa_device["id"]})
+    ladspa_fx = ladspa_loaded["id"]
+    ladspa_state = flow.ok("dsp.get_state", {"target": "ch-1"})
+    ladspa_params = []
+    for device in (ladspa_state.get("chains") or [{}])[0].get("devices", []):
+        if device.get("id") == ladspa_fx:
+            ladspa_params = device.get("parameters", [])
+    if not ladspa_params:
+        fail("the LADSPA device exposes no parameters: %r" % ladspa_state, process, log_path)
+    # LADSPA ports carry more than one model per name, so address by index.
+    flow.ok("plugin.param_get", {"target": "ch-1", "plugin": ladspa_fx, "index": 0})
+    flow.ok("plugin.unload", {"target": "ch-1", "plugin": ladspa_fx})
+    print("plugin.load LADSPA %s (%s) -> %s on ch-1, %d parameters, unloaded"
+          % (ladspa_device["id"], ladspa_device["name"], ladspa_fx, len(ladspa_params)))
+
+    # --- settings.get / settings.set -------------------------------------
+    device_setting = flow.ok("settings.get", {"key": "audioengine/audiodev"})
+    if not device_setting.get("present") or not device_setting.get("value"):
+        fail("settings.get audioengine/audiodev returned %r" % device_setting, process, log_path)
+    key = "ui/saveinterval"
+    before = flow.ok("settings.get", {"key": key})
+    written = flow.ok("settings.set", {"key": key, "value": "7"})
+    if written.get("value") != "7" or written.get("persisted") is not True:
+        fail("settings.set returned %r" % written, process, log_path)
+    if written.get("previous") != before.get("value"):
+        fail("settings.set reported previous %r, read %r"
+             % (written.get("previous"), before.get("value")), process, log_path)
+    after = flow.ok("settings.get", {"key": key})
+    if after.get("value") != "7":
+        fail("settings.get did not read back the new value: %r" % after, process, log_path)
+    print("settings.get/set %s: %r -> %r (previous %r), persisted to the config file"
+          % (key, before.get("value"), after.get("value"), written.get("previous")))
+    flow.ok("settings.set", {"key": key, "value": before.get("value", "5")})
+    flow.err("settings.get", "invalid_args", {"key": "not-a-key"})
+    flow.err("settings.set", "invalid_args", {"key": "not-a-key", "value": "1"})
+
+    # --- audio.device_list / audio.device_set ----------------------------
+    audio = flow.ok("audio.device_list")
+    audio_devices = audio.get("devices", [])
+    if not audio_devices or not audio.get("current"):
+        fail("audio.device_list returned %r" % audio, process, log_path)
+    if not any(device.get("current") for device in audio_devices):
+        fail("audio.device_list names no running device: %r" % audio_devices, process, log_path)
+    print("audio.device_list: current=%r count=%d devices=%r"
+          % (audio.get("current"), int(audio.get("count", 0)),
+             [d.get("name") for d in audio_devices]))
+    flow.err("audio.device_set", "not_found", {"device": "Not A Backend"})
+    other = next((d["name"] for d in audio_devices if not d.get("current")), audio["current"])
+    chosen = flow.ok("audio.device_set", {"device": other})
+    if chosen.get("applied") != "next_start" or chosen.get("restart_required") is not True:
+        fail("audio.device_set did not report an honest next-start result: %r" % chosen, process,
+             log_path)
+    stored = flow.ok("settings.get", {"key": "audioengine/audiodev"})
+    if stored.get("value") != other:
+        fail("audio.device_set did not write the config key: %r" % stored, process, log_path)
+    flow.ok("audio.device_set", {"device": audio["current"]})
+    print("audio.device_set %r: applied=%r restart_required=%r (config now %r)"
+          % (other, chosen.get("applied"), chosen.get("restart_required"), stored.get("value")))
+
+    # --- midi.device_list / app.version ----------------------------------
+    midi = flow.ok("midi.device_list")
+    if not midi.get("client"):
+        fail("midi.device_list named no client: %r" % midi, process, log_path)
+    print("midi.device_list: client=%r readable=%d writable=%d configured=%r"
+          % (midi.get("client"), len(midi.get("readable") or []),
+             len(midi.get("writable") or []), midi.get("configured")))
+    version = flow.ok("app.version")
+    if not version.get("version") or int(version.get("proto", 0)) != 1:
+        fail("app.version returned %r" % version, process, log_path)
+    print("app.version: %s (%s) proto=%r" % (version.get("version"), version.get("product"),
+                                             version.get("proto")))
+
+    # --- every mutating command left a transaction (SPEC A16) ------------
+    transactions = flow.ok("control.transactions").get("transactions", [])
+    recorded = {}
+    for transaction in transactions:
+        recorded.setdefault(transaction.get("command"), []).append(transaction)
+    expected = ["plugin.load", "plugin.unload", "plugin.bypass", "plugin.param_set",
+                "plugin.state_save", "plugin.state_load", "plugin.preset_save",
+                "plugin.preset_load", "settings.set", "audio.device_set"]
+    for command in expected:
+        if command not in recorded:
+            fail("no transaction recorded for %s" % command, process, log_path)
+    for command in ("plugin.param_set", "plugin.bypass"):
+        if not recorded[command][-1].get("reversible"):
+            fail("%s must record reversible=true" % command, process, log_path)
+    for command in ("plugin.load", "plugin.unload", "plugin.state_save", "plugin.state_load",
+                    "plugin.preset_save", "plugin.preset_load", "settings.set",
+                    "audio.device_set"):
+        if recorded[command][-1].get("reversible"):
+            fail("%s must honestly record reversible=false" % command, process, log_path)
+    if recorded["plugin.load"][0].get("inverse", {}).get("op") != "plugin.unload":
+        fail("plugin.load did not record plugin.unload as its inverse", process, log_path)
+    unload_tx = recorded["plugin.unload"][-1]
+    if not unload_tx.get("before", {}).get("state_xml"):
+        fail("plugin.unload recorded no state snapshot: %r" % unload_tx, process, log_path)
+    if not recorded["plugin.state_load"][-1].get("before", {}).get("state_xml"):
+        fail("plugin.state_load recorded no pre-load snapshot", process, log_path)
+    print("transactions recorded (command -> reversible):")
+    for command in expected:
+        print("  %-22s %s" % (command, recorded[command][-1].get("reversible")))
+
+    return flow.id
+
+
 def wait_for_socket(path, process, log_path):
     deadline = time.time() + CONNECT_TIMEOUT
     while time.time() < deadline:
@@ -212,8 +597,19 @@ def main():
             fail("control.version returned no version string", process, log_path)
 
         schema = ok_result(client.call(3, "control.commands_list"), 3)
-        if schema.get("count", 0) < 19:
+        if schema.get("count", 0) < 41:
             fail("control.commands_list reports only %s commands" % schema.get("count"), process, log_path)
+        described = set()
+        for entry in schema.get("commands", []):
+            described.add(entry.get("id"))
+        for required in ("plugin.list", "plugin.load", "plugin.unload", "plugin.bypass",
+                         "plugin.param_get", "plugin.param_set", "plugin.state_save",
+                         "plugin.state_load", "plugin.preset_list", "plugin.preset_load",
+                         "plugin.preset_save", "dsp.get_state", "settings.get", "settings.set",
+                         "audio.device_list", "audio.device_set", "midi.device_list",
+                         "app.version"):
+            if required not in described:
+                fail("control.commands_list has no %s" % required, process, log_path)
 
         # --- typed error paths --------------------------------------------
         typed_error(client.call(4, "control.no_such_command"), 4, "not_found")
@@ -298,8 +694,11 @@ def main():
         if commands_recorded["mixer.add_channel"].get("reversible"):
             fail("mixer.add_channel must honestly report itself as not reversible", process, log_path)
 
+        # --- plugin.* / dsp.* / settings.* / audio.* / midi.* / app.* ------
+        last_id = plugin_and_settings_flow(client, process, log_path, tmp, 22)
+
         # --- shutdown unlinks the socket ----------------------------------
-        client.call(23, "control.quit")
+        client.call(last_id + 1, "control.quit")
         client.close()
         deadline = time.time() + 30.0
         while time.time() < deadline and process.poll() is None:

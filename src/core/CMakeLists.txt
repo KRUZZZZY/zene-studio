@@ -37,9 +37,18 @@ set(LMMS_SRCS
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
 	core/ControlCommandsControl.cpp
+	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp
+	core/ControlCommandsPlugin.cpp
+	core/ControlCommandsPluginParams.cpp
+	core/ControlCommandsPluginPreset.cpp
+	core/ControlCommandsPluginState.cpp
 	core/ControlCommandsProject.cpp
+	core/ControlCommandsSettings.cpp
 	core/ControlCommandsTransport.cpp
+	core/ControlDeviceCatalogue.cpp
+	core/ControlDeviceState.cpp
+	core/ControlDeviceSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlServer.cpp
 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).

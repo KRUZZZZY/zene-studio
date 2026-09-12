@@ -452,6 +452,16 @@ QString channelId(int index)
 	return QStringLiteral("ch-%1").arg(index);
 }
 
+QString deviceId(int index)
+{
+	return QStringLiteral("dev-%1").arg(index);
+}
+
+QString effectId(int index)
+{
+	return QStringLiteral("fx-%1").arg(index);
+}
+
 int idToIndex(const QString& id, const QString& prefix)
 {
 	if (!id.startsWith(prefix)) { return -1; }
@@ -480,6 +490,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerTransportCommands(registry);
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
+	registerPluginCommands(registry);
+	registerDspCommands(registry);
+	registerSettingsCommands(registry);
 }
 
 } // namespace lmms

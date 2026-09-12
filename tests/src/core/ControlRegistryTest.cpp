@@ -72,6 +72,26 @@ private slots:
 			QStringLiteral("project.save"),
 			QStringLiteral("project.get_state"),
 			QStringLiteral("render.render"),
+			// plugin.* / dsp.* (post-alpha/cmd-plugins).
+			QStringLiteral("plugin.list"),
+			QStringLiteral("plugin.load"),
+			QStringLiteral("plugin.unload"),
+			QStringLiteral("plugin.bypass"),
+			QStringLiteral("plugin.param_get"),
+			QStringLiteral("plugin.param_set"),
+			QStringLiteral("plugin.state_save"),
+			QStringLiteral("plugin.state_load"),
+			QStringLiteral("plugin.preset_list"),
+			QStringLiteral("plugin.preset_load"),
+			QStringLiteral("plugin.preset_save"),
+			QStringLiteral("dsp.get_state"),
+			// settings.* / audio.* / midi.* / app.* (post-alpha/cmd-plugins).
+			QStringLiteral("settings.get"),
+			QStringLiteral("settings.set"),
+			QStringLiteral("audio.device_list"),
+			QStringLiteral("audio.device_set"),
+			QStringLiteral("midi.device_list"),
+			QStringLiteral("app.version"),
 		};
 		for (const QString& id : required)
 		{

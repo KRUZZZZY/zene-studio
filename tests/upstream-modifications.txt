@@ -22,8 +22,8 @@ Brewfile	#609 CI: brew "mda-lv2" so the macOS runners have the LV2 bundle Plugin
 include/AudioBuffer.h	#608 memory correctness: the channel access buffer (pointer table) is process-local, never allocated from a shared memory resource (746f6bd0e)
 include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's compensation graph
 include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
-include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
-include/Effect.h	#605 PDC: latency accessor on the effect interface
+include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph; post-alpha/cmd-plugins: public const effects() view so plugin.unload / plugin.bypass resolve fx-<n> in processing order (QObject child order diverges after moveUp/moveDown)
+include/Effect.h	#605 PDC: latency accessor on the effect interface; post-alpha/cmd-plugins: public setEnabled() so plugin.bypass drives the same enabled model the rack's On/Off LED drives (SPEC A11)
 include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 src/core/AudioBuffer.cpp	#608 memory correctness: access buffer always from the default resource; allocationSize() no longer reserves it in the shared region (746f6bd0e)
