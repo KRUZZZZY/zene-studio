@@ -8,6 +8,7 @@ set(LMMS_TESTS
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
+	src/core/AudioEngineTeardownTest.cpp
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
@@ -137,6 +138,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.

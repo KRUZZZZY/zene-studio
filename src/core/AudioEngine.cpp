@@ -128,9 +128,24 @@ AudioEngine::~AudioEngine()
 
 	AudioEngineWorkerThread::startAndWaitForJobs();
 
+	// Join every worker without a deadline. A deadline is what crashes here: with
+	// wait(500) a worker that has not finished winding down when the budget expires
+	// is left running, and the QThread objects are children of this QObject
+	// (AudioEngineWorkerThread::AudioEngineWorkerThread passes the engine as the
+	// QThread parent), so ~QObject deletes them while their threads run and Qt
+	// answers with
+	//   qFatal("QThread: Destroyed while thread is still running")
+	// i.e. SIGABRT inside Engine::destroy(). Measured on this tree: 13 of 64
+	// PdcMixerTest runs aborted in cleanupTestCase() at load average ~27, with
+	// exactly one worker of QThread::idealThreadCount()-1 still parked in
+	// QWaitCondition::wait(). wait() terminates because each worker re-checks
+	// m_quit within AudioEngineWorkerThread's quit-recheck interval, so a lost
+	// wake-up delays the join by that interval instead of stranding the thread.
+	// The trade this makes explicit: if a job itself never returns, shutdown now
+	// blocks until it does, where before it aborted the process.
 	for( int w = 0; w < m_numWorkers; ++w )
 	{
-		m_workers[w]->wait( 500 );
+		m_workers[w]->wait();
 	}
 
 	delete m_midiClient;
