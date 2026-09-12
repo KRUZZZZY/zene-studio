@@ -1,0 +1,15 @@
+file-length-gate: 143 fork-scope sources measured; 10 exceed 500 lines
+
+  lines  file
+  1174   src/core/ScriptBindings.cpp
+  992    include/AudioPorts.h
+  880    src/core/ScriptEngine.cpp
+  875    plugins/ClapEffect/ClapHost.cpp
+  714    plugins/Vst3Effect/Vst3Host.cpp
+  597    src/wasm/WasmSandbox.cpp
+  549    src/core/AudioPortsModel.cpp
+  529    src/gui/PinConnector.cpp
+  526    src/core/CrashReporter.cpp
+  511    tests/src/tracks/SampleClipWindowTest.cpp
+
+PASS (check mode: no regressions; baseline not written)

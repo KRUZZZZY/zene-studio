@@ -1,0 +1,115 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/tests
+      Start  1: ArrayVectorTest
+ 1/55 Test  #1: ArrayVectorTest ..................   Passed    0.02 sec
+      Start  2: AudioBufferTest
+ 2/55 Test  #2: AudioBufferTest ..................   Passed    0.02 sec
+      Start  3: AudioBusHandleTest
+ 3/55 Test  #3: AudioBusHandleTest ...............   Passed    1.33 sec
+      Start  4: AudioBusTest
+ 4/55 Test  #4: AudioBusTest .....................   Passed    1.34 sec
+      Start  5: AudioPortsModelTest
+ 5/55 Test  #5: AudioPortsModelTest ..............   Passed    1.30 sec
+      Start  6: AudioPortsTest
+ 6/55 Test  #6: AudioPortsTest ...................   Passed    1.38 sec
+      Start  7: AutomatableModelTest
+ 7/55 Test  #7: AutomatableModelTest .............   Passed    1.37 sec
+      Start  8: AutomationModesTest
+ 8/55 Test  #8: AutomationModesTest ..............   Passed    1.38 sec
+      Start  9: ClipSerialisationTest
+ 9/55 Test  #9: ClipSerialisationTest ............   Passed    1.38 sec
+      Start 10: ConfigMigrationTest
+10/55 Test #10: ConfigMigrationTest ..............   Passed    0.02 sec
+      Start 11: CrashReporterTest
+11/55 Test #11: CrashReporterTest ................   Passed    0.67 sec
+      Start 12: DataFileFormatTest
+12/55 Test #12: DataFileFormatTest ...............   Passed    0.03 sec
+      Start 13: DataFileSaveIntegrityTest
+13/55 Test #13: DataFileSaveIntegrityTest ........   Passed    0.03 sec
+      Start 14: LoudnessReportTest
+14/55 Test #14: LoudnessReportTest ...............   Passed    1.31 sec
+      Start 15: LufsMeterTest
+15/55 Test #15: LufsMeterTest ....................   Passed    1.99 sec
+      Start 16: MathTest
+16/55 Test #16: MathTest .........................   Passed    0.02 sec
+      Start 17: MidiLearnTest
+17/55 Test #17: MidiLearnTest ....................   Passed    1.63 sec
+      Start 18: MidiLearnThreadTest
+18/55 Test #18: MidiLearnThreadTest ..............   Passed    1.41 sec
+      Start 19: MidiProbabilityPersistenceTest
+19/55 Test #19: MidiProbabilityPersistenceTest ...   Passed    0.02 sec
+      Start 20: MixerConcurrencyTest
+20/55 Test #20: MixerConcurrencyTest .............   Passed    2.36 sec
+      Start 21: MixerRoutingBackwardCompatTest
+21/55 Test #21: MixerRoutingBackwardCompatTest ...   Passed    1.41 sec
+      Start 22: MultiTrackRecorderTest
+22/55 Test #22: MultiTrackRecorderTest ...........   Passed    0.02 sec
+      Start 23: NoteRandomTest
+23/55 Test #23: NoteRandomTest ...................   Passed    0.02 sec
+      Start 24: NoteTransformTest
+24/55 Test #24: NoteTransformTest ................   Passed    0.02 sec
+      Start 25: PluginLogoResourceTest
+25/55 Test #25: PluginLogoResourceTest ...........   Passed    0.04 sec
+      Start 26: PluginAudioPortsTest
+26/55 Test #26: PluginAudioPortsTest .............   Passed    1.38 sec
+      Start 27: PluginScanCacheTest
+27/55 Test #27: PluginScanCacheTest ..............   Passed    0.07 sec
+      Start 28: ProjectOpenIntegrityTest
+28/55 Test #28: ProjectOpenIntegrityTest .........   Passed    1.37 sec
+      Start 29: ProjectRecoveryTest
+29/55 Test #29: ProjectRecoveryTest ..............   Passed    0.03 sec
+      Start 30: ProjectVersionTest
+30/55 Test #30: ProjectVersionTest ...............   Passed    0.02 sec
+      Start 31: RecordClipTest
+31/55 Test #31: RecordClipTest ...................   Passed    0.03 sec
+      Start 32: RecordRingBufferTest
+32/55 Test #32: RecordRingBufferTest .............   Passed    0.03 sec
+      Start 33: RecordingRealtimeTest
+33/55 Test #33: RecordingRealtimeTest ............   Passed    2.06 sec
+      Start 34: RelativePathsTest
+34/55 Test #34: RelativePathsTest ................   Passed    0.02 sec
+      Start 35: RemotePluginAudioPortsTest
+35/55 Test #35: RemotePluginAudioPortsTest .......   Passed    2.06 sec
+      Start 36: RemotePluginClientE2ETest
+36/55 Test #36: RemotePluginClientE2ETest ........   Passed    1.57 sec
+      Start 37: RenderJobQueueTest
+37/55 Test #37: RenderJobQueueTest ...............   Passed    0.14 sec
+      Start 38: RoutingGraphTest
+38/55 Test #38: RoutingGraphTest .................   Passed    0.04 sec
+      Start 39: PdcMixerTest
+39/55 Test #39: PdcMixerTest .....................   Passed    1.44 sec
+      Start 40: ScriptBindingsTest
+40/55 Test #40: ScriptBindingsTest ...............   Passed    1.33 sec
+      Start 41: ScriptEngineTest
+41/55 Test #41: ScriptEngineTest .................   Passed    1.47 sec
+      Start 42: ScriptStabilisationTest
+42/55 Test #42: ScriptStabilisationTest ..........   Passed    1.35 sec
+      Start 43: SlideNotesTest
+43/55 Test #43: SlideNotesTest ...................   Passed    0.02 sec
+      Start 44: StemExportTest
+44/55 Test #44: StemExportTest ...................   Passed    2.18 sec
+      Start 45: TimelineTest
+45/55 Test #45: TimelineTest .....................   Passed    1.41 sec
+      Start 46: TwoTrackRecordingHarness
+46/55 Test #46: TwoTrackRecordingHarness .........   Passed    2.03 sec
+      Start 47: MidiLearnGuiTest
+47/55 Test #47: MidiLearnGuiTest .................   Passed    1.47 sec
+      Start 48: AutomationTrackTest
+48/55 Test #48: AutomationTrackTest ..............   Passed    1.38 sec
+      Start 49: SampleClipWindowTest
+49/55 Test #49: SampleClipWindowTest .............   Passed    1.81 sec
+      Start 50: PluginPortsMigrationTest
+50/55 Test #50: PluginPortsMigrationTest .........   Passed    4.23 sec
+      Start 51: ClapBusMapTest
+51/55 Test #51: ClapBusMapTest ...................   Passed    0.01 sec
+      Start 52: ClapHostTest
+52/55 Test #52: ClapHostTest .....................   Passed    0.01 sec
+      Start 53: ClapEffectIntegrationTest
+53/55 Test #53: ClapEffectIntegrationTest ........   Passed    1.35 sec
+      Start 54: ZynSeparateProcessTest
+54/55 Test #54: ZynSeparateProcessTest ...........   Passed    2.01 sec
+      Start 55: AudioPluginTest
+55/55 Test #55: AudioPluginTest ..................   Passed    1.37 sec
+
+100% tests passed, 0 tests failed out of 55
+
+Total Test time (real) =  54.23 sec

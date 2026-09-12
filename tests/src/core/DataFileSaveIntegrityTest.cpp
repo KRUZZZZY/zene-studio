@@ -120,7 +120,11 @@ private slots:
 			"the refused save modified the destination" );
 		QVERIFY2( QFile::exists( temp ),
 			"the refused save did not keep the written project for recovery" );
-		QVERIFY( readText( temp ).contains( QStringLiteral( "<lmms-project" ) ) );
+		// The root element is `zene-project` since the rename's layer 3 made the
+		// format read-both/write-new (post-alpha/rename-complete, merged in train 3B).
+		// This assertion is not vacuous: it failed against `lmms-project` on exactly
+		// the tree where it was changed.
+		QVERIFY( readText( temp ).contains( QStringLiteral( "<zene-project" ) ) );
 	}
 
 	//! Inverted control. The pre-fix tail of DataFile::writeFile discarded
@@ -231,14 +235,14 @@ private slots:
 		DataFile first( DataFile::Type::SongProject );
 		QVERIFY2( first.writeFile( target ), "an ordinary save was refused" );
 		const QString firstText = readText( target );
-		QVERIFY( firstText.contains( QStringLiteral( "<lmms-project" ) ) );
+		QVERIFY( firstText.contains( QStringLiteral( "<zene-project" ) ) );
 		// nothing existed to back up yet
 		QVERIFY( !QFile::exists( target + QStringLiteral( ".bak" ) ) );
 
 		DataFile second( DataFile::Type::SongProject );
 		QVERIFY( second.writeFile( target ) );
 		QCOMPARE( readText( target + QStringLiteral( ".bak" ) ), firstText );
-		QVERIFY( readText( target ).contains( QStringLiteral( "<lmms-project" ) ) );
+		QVERIFY( readText( target ).contains( QStringLiteral( "<zene-project" ) ) );
 	}
 
 	//! A stale <name>.bak that cannot be removed must not block saving a
@@ -256,7 +260,7 @@ private slots:
 		DataFile dataFile( DataFile::Type::SongProject );
 		QVERIFY2( dataFile.writeFile( target ),
 			"a stale .bak that could not be removed blocked saving a new project" );
-		QVERIFY( readText( target ).contains( QStringLiteral( "<lmms-project" ) ) );
+		QVERIFY( readText( target ).contains( QStringLiteral( "<zene-project" ) ) );
 	}
 };
 
