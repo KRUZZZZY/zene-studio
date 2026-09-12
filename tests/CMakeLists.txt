@@ -15,6 +15,7 @@ set(LMMS_TESTS
 	src/core/ClipSerialisationTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/CrashReporterTest.cpp
+	src/core/AutomationModesTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp

@@ -173,6 +173,11 @@ void Fader::contextMenuEvent(QContextMenuEvent* ev)
 
 void Fader::mouseMoveEvent(QMouseEvent* mouseEvent)
 {
+	// Automation modes (post-alpha/automation-modes): a move refreshes the touch
+	// gesture, so a control being ridden keeps its write authority for as long as
+	// the engineer keeps moving it.
+	if (auto* thisModel = model()) { thisModel->noteAutomationTouchStart(); }
+
 	const int localY = position(mouseEvent).y();
 
 	setVolumeByLocalPixelValue(localY);
@@ -198,6 +203,10 @@ void Fader::mousePressEvent(QMouseEvent* mouseEvent)
 		{
 			thisModel->addJournalCheckPoint();
 			thisModel->saveJournallingState(false);
+			// Automation modes: grabbing the fader opens a touch gesture. In
+			// Touch mode that is what makes the manual move write; in Read it
+			// changes nothing at all.
+			thisModel->noteAutomationTouchStart();
 		}
 
 		const int localY = pos.y();
@@ -257,6 +266,10 @@ void Fader::mouseReleaseEvent(QMouseEvent* mouseEvent)
 		if (thisModel)
 		{
 			thisModel->restoreJournallingState();
+			// Automation modes: releasing the fader ends a Touch gesture
+			// immediately (a Latch engagement survives the release - that is the
+			// difference between the two modes).
+			thisModel->noteAutomationTouchEnd();
 		}
 	}
 
