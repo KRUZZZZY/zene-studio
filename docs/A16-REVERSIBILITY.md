@@ -31,8 +31,8 @@ nothing - a read-only inspector, a refused handler, or `control.undo` itself - a
 | `true_inverse` | 30 |
 | `snapshot` | 5 |
 | `irreversible` | 3 |
-| `not_mutating` | 33 (of which 3 are declared-mutating refusals and 2 are selection commands) |
-| **total** | **71** |
+| `not_mutating` | 34 (of which 3 are declared-mutating refusals and 2 are selection commands) |
+| **total** | **72** |
 
 ### 1.1 `true_inverse` - a live checkpoint on the engine's own undo stack
 
@@ -128,6 +128,7 @@ transport run state, and `render.render` (an output artefact).
 | `control.version` | no | reads the version strings | no write | - |
 | `dsp.get_state` | no | reads the device chains | no write | - |
 | `midi.device_list` | no | reads the MIDI client | no write | - |
+| `midi.learn_toggle` | no | the armed flag is GUI/engine mode state (MidiLearn's own enabled flag), not project state: no model, no serialized field and no journal checkpoint is written, so the registry records no transaction | nothing to reverse: calling midi.learn_toggle again is the operation a client calls, and setArmed() keeps the Edit menu tick in step | - |
 | `mixer.get_state` | no | reads the mixer | no write | - |
 | `mixer.set_pan` | no | declared mutating, but the handler REFUSES every call: this tree has no pan on a MixerChannel, and inventing one would change the mixer's serialization format | no write happens, so no transaction is recorded and control.undo is not blocked by it | none needed: the command is a typed refusal, use track panning (InstrumentTrack/SampleTrack panningModel) or per-note panning |
 | `note.select` | no | same view state, per note | same: no transaction, the previous selection is reported in the result | - |

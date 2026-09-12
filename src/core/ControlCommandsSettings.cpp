@@ -33,7 +33,9 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "GuiApplication.h"
 #include "MidiClient.h"
+#include "MidiLearnGui.h"
 #include "lmmsversion.h"
 
 namespace lmms
@@ -384,6 +386,52 @@ void registerMidiDeviceList(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerMidiLearnToggle(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("midi.learn_toggle");
+	cmd.group = QStringLiteral("midi");
+	cmd.verb = QStringLiteral("learn_toggle");
+	cmd.description = QStringLiteral("Arm or disarm global MIDI learn - the mode the "
+		"Edit > MIDI Learn menu item drives (SPEC A11: the menu action declares this "
+		"command id and its slot invokes this command, so both the user and an agent "
+		"arm the mode through one implementation). While the mode is armed, the next "
+		"hardware control movement binds itself to the control the user last touched, "
+		"and the mode then disarms itself. The armed flag is GUI/engine mode state, "
+		"not project state, so no transaction is recorded and control.undo has nothing "
+		"to reverse.");
+	// A13: no display, device or human is required - an offscreen instance arms the
+	// mode exactly like a visible one, which is why this command is swept headlessly
+	// instead of being allowlisted. A run with no GUI at all (--no-gui / render-only)
+	// refuses, typed, because there is no Edit > MIDI Learn action to arm; the same
+	// shape control.surface_report uses when it is asked for a reflection it has no
+	// window to take.
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("armed"), booleanProperty()},
+		{QStringLiteral("changed"), booleanProperty()},
+	});
+	cmd.handler = [](const QJsonObject&) {
+		gui::GuiApplication* application = gui::getGUI();
+		if (application == nullptr || application->mainWindow() == nullptr)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("MIDI learn is a GUI mode and this instance was started "
+					"without a GUI: there is no Edit > MIDI Learn action to arm. Start "
+					"an instance with the offscreen Qt platform (QT_QPA_PLATFORM=offscreen) "
+					"to drive it headlessly."));
+		}
+		gui::MidiLearnGui* learn = gui::MidiLearnGui::instance();
+		const bool wasArmed = learn->isArmed();
+		learn->setArmed(!wasArmed);
+		QJsonObject result;
+		result.insert(QStringLiteral("armed"), learn->isArmed());
+		result.insert(QStringLiteral("changed"), learn->isArmed() != wasArmed);
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerAppVersion(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -419,6 +467,7 @@ void registerSettingsCommands(ControlRegistry& registry)
 	registerAudioDeviceList(registry);
 	registerAudioDeviceSet(registry);
 	registerMidiDeviceList(registry);
+	registerMidiLearnToggle(registry);
 	registerAppVersion(registry);
 }
 

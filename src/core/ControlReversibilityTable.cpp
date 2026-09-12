@@ -379,6 +379,13 @@ const ReversibilityRow kRows[] = {
 		"same engine run state",
 		"nothing to reverse: transport.play is the operation",
 		""),
+	R("midi.learn_toggle", RC::NotMutating, false,
+		"the armed flag is GUI/engine mode state (MidiLearn's own enabled flag), "
+		"not project state: no model, no serialized field and no journal checkpoint "
+		"is written, so the registry records no transaction",
+		"nothing to reverse: calling midi.learn_toggle again is the operation a "
+		"client calls, and setArmed() keeps the Edit menu tick in step",
+		""),
 	R("render.render", RC::NotMutating, false,
 		"it writes an OUTPUT ARTEFACT; the session it renders is not modified "
 		"(it serialises to a temp file and removes it)",

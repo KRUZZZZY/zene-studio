@@ -366,6 +366,10 @@ void MainWindow::finalize()
 		this, SLOT(toggleMidiLearn()));
 	m_midiLearnAction->setCheckable(true);
 	m_midiLearnAction->setToolTip(tr("Arm MIDI learn, then touch a control and move a hardware knob"));
+	// A11/A15: the action declares the registry command it implements, and
+	// toggleMidiLearn() below invokes that same command - one implementation for
+	// the menu item, the shortcut and the agent surface (SPEC-zene-studio.md A11).
+	m_midiLearnAction->setData(QStringLiteral("midi.learn_toggle"));
 	MidiLearnGui::instance()->setAction(m_midiLearnAction);
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateMidiLearnAction()));
 
@@ -1358,8 +1362,18 @@ void MainWindow::updateUndoRedoButtons()
 
 void MainWindow::toggleMidiLearn()
 {
-	// Armed state lives in MidiLearn; the action is the GUI handle for it.
-	MidiLearnGui::instance()->setArmed(m_midiLearnAction->isChecked());
+	// A11: the menu item drives the SAME registry command an agent calls, so the
+	// mode has one implementation rather than two that can drift. The handler
+	// arms MidiLearnGui and syncs this action's tick (MidiLearnGui holds it).
+	const ControlResult result = ControlRegistry::instance()->invoke(
+		QStringLiteral("midi.learn_toggle"));
+	if( !result.ok )
+	{
+		// Nothing armed - there is no GUI yet, or the engine is still starting.
+		// Qt has already flipped the tick, so put it back where the real state
+		// is: the menu must never claim a mode that was not armed.
+		updateMidiLearnAction();
+	}
 }
 
 
