@@ -408,7 +408,7 @@ bash tests/integration-logs-teardown2/repro/loop-case.sh "$PWD/build/tests/Rende
 
 # the identity of the vanished thread, without a core file
 gcc -shared -fPIC -O1 -g -o /tmp/abort-trace.so \
-    tools/diagnostics/abort-trace.c -ldl    # or: gdb -x repro/gdb-cmds2.txt
+    a throwaway LD_PRELOAD abort shim (removed from the tree after CI's check-namespace -- a C file cannot declare a C++ namespace and the checker has no allowance for tools/*.c) -ldl    # or: gdb -x repro/gdb-cmds2.txt
 ```
 
 Restore the release configuration afterwards by recompiling those two objects normally

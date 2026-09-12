@@ -139,4 +139,3 @@ tools/render-determinism-compare.py
 tools/render-determinism-probe.sh
 tools/stem-export-demo.py
 tools/stem_split_cli.py
-tools/diagnostics/abort-trace.c
