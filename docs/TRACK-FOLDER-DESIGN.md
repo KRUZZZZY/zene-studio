@@ -216,10 +216,19 @@ $ git grep -lE '\btracks\(\)|\bm_tracks\b|\btrackViews\(\)|\bm_trackViews\b' -- 
 
 | pattern | occurrences | files |
 |---|---|---|
-| `tracks()` — `TrackContainer::tracks()`, the container's flat list | **98** | 38 |
-| `m_tracks` — the private vector, reached by friends | **51** | 8 |
-| `trackViews()` / `m_trackViews` — the view-side flat list | **12** / (22 total) | 7 |
+| `tracks()` — `TrackContainer::tracks()`, the container's flat list | **97** | 38 |
+| `m_tracks` — the private vector, reached by friends | **24** | 4 |
+| `trackViews()` / `m_trackViews` — the view-side flat list | **33** (`trackViews()` 11 + `m_trackViews` 22) | 7 |
 | **total (the command above)** | **154** | **45** |
+
+Each row is its own pattern with the same pathspec and the word boundaries kept — run on its own with
+`-- $R` and `| wc -l`, the three give **97** in 38 files (`\btracks\(\)`), **24** in 4 files
+(`\bm_tracks\b`: `include/MultiTrackRecorder.h`, `include/TrackContainer.h`,
+`src/core/TrackContainer.cpp`, `src/core/audio/MultiTrackRecorder.cpp`) and **33** in 7 files
+(`\btrackViews\(\)|\bm_trackViews\b`). **97 + 24 + 33 = 154**, the headline. A method note, since the
+same surface can be counted two ways: dropping the word boundary from the middle row gives **51 lines
+in 8 files**, of which `m_tracksMutex` (17 lines), `m_tracksToRender` (8) and `song_num_tracks` (2) are
+27 lines that are not the private vector.
 
 Per file, the top of the list:
 
@@ -473,7 +482,7 @@ multi-channel ports. The tree agrees, with one naming trap:
 
 | piece | where | what it is |
 |---|---|---|
-| the channel | `include/Mixer.h:65` `class MixerChannel : public ThreadableJob` | one per mixer channel; index 0 is master; the channel list is an unbounded `std::vector<MixerChannel*>` (`Mixer.cpp:608-613`) |
+| the channel | `include/Mixer.h:65` `class MixerChannel : public ThreadableJob` | one per mixer channel; index 0 is master; the channel list is an unbounded `std::vector<MixerChannel*>` — declared at `include/Mixer.h:531`, cleared one by one in `~Mixer` (`Mixer.cpp:608-613`) |
 | a fresh channel | `Mixer::createChannel()` (`Mixer.cpp:618-648`) → `clearChannel()` (`:1772-1818`) | unity volume, mute/solo off, **no FX, and one send to master** (`:1800-1811`) |
 | **a bus channel is not this** | `Mixer::createBusChannel()` (`:1131-1153`), `m_isBus` (`include/Mixer.h:127-137`) | "parallel bus channels: they never receive instrument output and their incoming sends default to pre-fader" |
 | how a track reaches a channel | `AudioBusHandle::setNextMixerChannel()` (`include/AudioBusHandle.h:71-72`) driven by `IntModel m_mixerChannelModel` (`InstrumentTrack.h:239-241`) | `InstrumentTrack::updateMixerChannel()` (`InstrumentTrack.cpp:765-767`), `SampleTrack::updateMixerChannel()` (`SampleTrack.cpp:259-261`) |
@@ -894,3 +903,17 @@ run: no `cmake`, no build, no `ctest`, no `lmms render`.
     channel. Both are "already HAVE" in the sense the register means, but a reader who takes
     "submix" to mean `createBusChannel()` will build the wrong thing. The register is not edited here
     (this document is the deliverable); the correction is recorded in §5.1.
+
+---
+
+## Corrections applied after the independent audit (2026-09-12)
+
+The independent audit (`NEXT-WAVE1-DOC-AUDIT.md`, commit `c22fa23` in the workspace repo) read this
+document at `f27a1dcc9` and reported two false claims. Both were re-derived with the document's own
+pathspec `R` before the text changed; the band, the design and every decision are untouched.
+
+1. **§3.1's flat-list breakdown rows.** Was: `tracks()` **98**/38, `m_tracks` **51**/8, `trackViews()` / `m_trackViews` **12 / (22 total)**/7 — which did not re-derive and summed to 161 against the table's own 154. Now: **97**/38, **24**/4, **33** (11 + 22)/7, which sum to 154. Settled by `git grep -nE '\btracks\(\)' -- $R | wc -l` → 97; `git grep -nE '\bm_tracks\b' -- $R | wc -l` → 24; `git grep -nE '\btrackViews\(\)|\bm_trackViews\b' -- $R | wc -l` → 33. The 51/8 row reproduces only **without** a word boundary (`git grep -nE 'm_tracks' -- $R | wc -l` → 51 in 8 files), which also counts `m_tracksMutex` (17 lines), `m_tracksToRender` (8) and `song_num_tracks` (2); both readings are now stated with their method. The headline 154/45 and the per-file table are unchanged and reproduce.
+2. **§5.1's channel-list citation.** Was: the unbounded `std::vector<MixerChannel*>` cited at `Mixer.cpp:608-613`. Now: declared at `include/Mixer.h:531` (`grep -n 'std::vector<MixerChannel\*> m_mixerChannels;' include/Mixer.h` → `531:`) and cleared one by one in the `~Mixer` loop at `Mixer.cpp:608-613` (`while( m_mixerChannels.size() ) { … delete f; }`) — the old citation pointed at the destructor, not at the type.
+
+**Audit claims that did not reproduce:** none in §B. Both findings re-derived exactly, including the
+161-vs-154 sum and the word-boundary count.
