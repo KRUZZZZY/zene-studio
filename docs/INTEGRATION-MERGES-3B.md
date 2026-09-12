@@ -502,8 +502,11 @@ The other file-level changes I made to the test tree were:
 * I verified the conflicts I resolved, the manifests I re-derived and the gate results. I did **not**
   audit the product code any lane brought in; the audio path is covered only by the render comparison
   above (0 LSB, identical `data` chunk hash) and by each lane's own tests.
-* The `PdcMixerTest` teardown abort that 3A and 2A saw did not reproduce in any of my runs (six full
-  `local-ci` ctest runs plus six `run-all-gates.sh` ctest runs, all green). That is absence of
+* The `PdcMixerTest` teardown abort that 3A and 2A saw did not reproduce in any of my runs. For the
+  record, precisely: merges 2–6 each got a green `local-ci` ctest run (5 runs), merge 1 got one green
+  run via direct `ctest` from `build/tests` after its fix-up (its first `local-ci` ctest had exited 8
+  on `DataFileSaveIntegrityTest`, which is finding 3, not a flake), and all six merges got a green
+  ctest inside `run-all-gates.sh` (6 more). 11 green suite runs, 0 aborts. That is absence of
   evidence, not a fix.
 
 ## Concurrent activity — noted, not touched
