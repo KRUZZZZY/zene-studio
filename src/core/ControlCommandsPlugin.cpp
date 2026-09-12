@@ -22,6 +22,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <memory>
+
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -29,6 +31,7 @@
 
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Instrument.h"
@@ -140,6 +143,26 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 	if (effect == nullptr) { return error; }
 	const int index = static_cast<int>(target.chain->effects().size()) - 1;
 
+	// SPEC A16: an APPENDED effect carries only defaults, so the inverse is the
+	// OPERATION and it is exact - ONE action step unloads the instance it
+	// created, and its redo instantiates the same catalogue entry again. (An
+	// instrument REPLACEMENT has no such inverse: see loadInstrument.)
+	auto holder = std::make_shared<Effect*>(effect);
+	EffectChain* chain = target.chain;
+	control::addUndoStep(
+		[holder, chain]() {
+			if (*holder != nullptr)
+			{
+				chain->removeEffect(*holder);
+				(*holder)->deleteLater();
+				*holder = nullptr;
+			}
+		},
+		[holder, chain, entry]() {
+			ControlResult ignored;
+			*holder = controlInstantiateDevice(entry, chain, &ignored);
+		});
+
 	QJsonObject result;
 	result.insert(QStringLiteral("target"), target.id);
 	result.insert(QStringLiteral("kind"), QStringLiteral("effect"));
@@ -159,12 +182,12 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 			{QStringLiteral("args"),
 				QJsonObject{{QStringLiteral("target"), target.id},
 					{QStringLiteral("plugin"), control::effectId(index)}}}});
-	// EffectChain::appendEffect() has no ProjectJournal checkpoint, so the
-	// journal cannot undo this; the recorded inverse is the command that can.
-	transaction.insert(QStringLiteral("reversible"), false);
+	transaction.insert(QStringLiteral("reversible"), true);
 	transaction.insert(QStringLiteral("mechanism"),
-		QStringLiteral("snapshot only: ProjectJournal has no checkpoint for appending to an "
-			"effect chain; the recorded inverse is plugin.unload of the new fx-<n>"));
+		QStringLiteral("action checkpoint: the recorded undo step unloads the device this command "
+			"appended, through the same EffectChain::removeEffect + deleteLater path "
+			"plugin.unload uses; an appended effect carries only defaults, so unloading it "
+			"restores the chain exactly"));
 	result.insert(QStringLiteral("__transaction"), transaction);
 	return ControlResult::success(result);
 }

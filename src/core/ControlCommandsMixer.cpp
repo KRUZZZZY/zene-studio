@@ -26,6 +26,7 @@
 
 #include "ControlRegistry.h"
 
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -208,6 +209,21 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.handler = [](const QJsonObject&) {
 			Mixer* mixer = Engine::mixer();
 			const int before = static_cast<int>(mixer->numChannels());
+			// SPEC A16 deliverable 5: a created MixerChannel has no before-state.
+			// The mixer IS a JournallingObject, but restoring its checkpoint would
+			// destroy and recreate every channel, and a MixerView holds those
+			// pointers - the same GUI-safety reason the TrackContainer checkpoints
+			// are commented out upstream. So the inverse is the OPERATION: ONE
+			// action step deletes the channel it is about to create. A fresh
+			// channel carries only defaults, so removal restores the mixer.
+			control::addUndoStep(
+				[mixer, before]() {
+					if (static_cast<int>(mixer->numChannels()) > before)
+					{
+						mixer->deleteChannel(static_cast<int>(mixer->numChannels()) - 1);
+					}
+				},
+				[mixer]() { mixer->createChannel(); });
 			const int index = mixer->createChannel();
 
 			QJsonObject result;
@@ -218,11 +234,12 @@ void registerMixerCommands(ControlRegistry& registry)
 			transaction.insert(QStringLiteral("inverse"),
 				QJsonObject{{QStringLiteral("op"), QStringLiteral("mixer.remove_channel")},
 					{QStringLiteral("args"), QJsonObject{{QStringLiteral("channel"), control::channelId(index)}}}});
-			// No journal checkpoint exists for a structural mixer change; the
-			// inverse is described but cannot be replayed through ProjectJournal.
-			transaction.insert(QStringLiteral("reversible"), false);
+			transaction.insert(QStringLiteral("reversible"), true);
 			transaction.insert(QStringLiteral("mechanism"),
-				QStringLiteral("snapshot only: ProjectJournal has no checkpoint for mixer channel creation"));
+				QStringLiteral("action checkpoint: the recorded undo step deletes the channel this "
+					"command created, through the same Mixer::deleteChannel path "
+					"mixer.remove_channel uses; a fresh channel carries only defaults, so removing "
+					"it restores the mixer exactly. The before-state records the channel count"));
 			result.insert(QStringLiteral("__transaction"), transaction);
 			return ControlResult::success(result);
 		};

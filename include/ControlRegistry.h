@@ -44,7 +44,9 @@ namespace lmms
 {
 
 //! Error kinds of the control protocol. Closed set, on the wire as
-//! "not_found | requires | invalid_args | busy | refused" (AGENT-TOOLING.md #4).
+//! "not_found | requires | invalid_args | busy | refused | irreversible"
+//! (AGENT-TOOLING.md #4; `irreversible` added by SPEC A16 so an undo attempt on
+//! a command with no inverse FAILS, typed, instead of pretending).
 enum class ControlErrorKind
 {
 	None,
@@ -53,6 +55,10 @@ enum class ControlErrorKind
 	InvalidArgs,
 	Busy,
 	Refused,
+	//! control.undo refuses: the last recorded command has no inverse (or its
+	//! inverse is a documented manual fallback only). The message names the
+	//! command, its class and the fallback.
+	Irreversible,
 };
 
 //! Wire name of \p kind; empty for None.
@@ -106,6 +112,14 @@ public:
 		QJsonObject inverse;  //!< the inverse operation, serialised
 		bool reversible = false;
 		QString mechanism;    //!< how it is reversed, or why it cannot be
+		//! The contract table's class for \c command: "true_inverse",
+		//! "snapshot", "irreversible" or "not_mutating". Stamped by the registry
+		//! from ReversibilityTable, so the class has ONE definition and a
+		//! command cannot declare itself out of it.
+		QString cls;
+		//! Serialised size of this record (before + inverse + mechanism), the
+		//! quantity MaxTransactionBytes bounds.
+		int bytes = 0;
 	};
 
 	static ControlRegistry* instance();
@@ -199,6 +213,20 @@ public:
 
 	void recordTransaction(const Transaction& tx);
 	QJsonArray transactions() const;
+	//! control.transactions' payload: the records plus the bounds they live
+	//! within (count/bytes caps, retained bytes, evicted count, `capped`).
+	QJsonObject transactionsReport() const;
+	/*! The most recent transaction, or nullptr when there is none.
+	 *
+	 * control.undo reads this: it is the record of the LAST agent command, and
+	 * the contract is "undo the last agent command, or refuse, typed" - never
+	 * "silently undo an older one because this one could not be reversed".
+	 */
+	const Transaction* lastTransaction() const;
+	//! Retained records evicted by the two-sided cap since the last clear.
+	int evictedCount() const { return m_evicted; }
+	//! Serialised bytes the retained records currently occupy.
+	int retainedTransactionBytes() const { return m_recordedBytes; }
 	void clearTransactions();
 
 	//! Run by the shutdown path (and by the last-resort guard) so the control
@@ -210,6 +238,13 @@ public:
 private:
 	explicit ControlRegistry(QObject* parent = nullptr);
 	QString checkRequires(const ControlCommand& command) const;
+	//! Stamps \a tx with the contract table's class for its command and refuses
+	//! to let a handler claim an inverse the contract says does not exist.
+	void stampContract(const QString& commandId, Transaction* tx) const;
+	//! Records the transaction a successful mutating handler described, under
+	//! the contract table's class. Split out of invoke() so one function does
+	//! not carry the dispatch, the merge and the record (complexity ratchet).
+	void recordTransactionOf(const QString& commandId, ControlResult* result);
 
 	//! Ask the application to quit through its normal path and arm the
 	//! last-resort guard. Called by requestQuit() (immediately) and by
@@ -225,6 +260,8 @@ private:
 	QHash<QString, ControlCommand> m_commands;
 	QVector<Transaction> m_transactions;
 	QVector<std::function<void()>> m_shutdownHooks;
+	int m_recordedBytes = 0;
+	int m_evicted = 0;
 	bool m_headless;
 };
 
@@ -236,8 +273,13 @@ LMMS_EXPORT void registerControlGroupCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerTransportCommands(ControlRegistry& registry);
 //! mixer.*
 LMMS_EXPORT void registerMixerCommands(ControlRegistry& registry);
-//! project.* and render.render
+//! project.open and render.render
 LMMS_EXPORT void registerProjectCommands(ControlRegistry& registry);
+//! project.save / project.restore_revision / project.get_state - the file-level
+//! commands, whose inverse is a retained file revision rather than an object.
+LMMS_EXPORT void registerProjectFilesCommands(ControlRegistry& registry);
+//! track.set_arm and arrangement.get_state.
+LMMS_EXPORT void registerArrangementStateCommands(ControlRegistry& registry);
 //! control.surface_report - the live menu/toolbar reflection (SPEC A15).
 LMMS_EXPORT void registerSurfaceCommands(ControlRegistry& registry);
 

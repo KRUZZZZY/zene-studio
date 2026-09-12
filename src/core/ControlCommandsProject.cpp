@@ -35,10 +35,12 @@
 
 #include "ControlRegistry.h"
 
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "OutputSettings.h"
 #include "ProjectIds.h"
+#include "ProjectRevisions.h"
 #include "ProjectRenderer.h"
 #include "Song.h"
 
@@ -204,6 +206,10 @@ void registerProjectOpen(ControlRegistry& registry)
 				QStringLiteral("no such project file: %1").arg(path));
 		}
 		Song* song = Engine::getSong();
+		// SPEC A16: the displaced session is NOT snapshotted, so the record says
+		// what was replaced instead of pretending an inverse exists.
+		const QString previousFile = song->projectFileName();
+		const QString previousSha = previousFile.isEmpty() ? QString() : sha256OfFile(previousFile);
 		song->loadProject(path);
 
 		// A refused file (unparseable, or carrying local plugin paths) leaves
@@ -240,14 +246,20 @@ void registerProjectOpen(ControlRegistry& registry)
 		result.insert(QStringLiteral("ids_assigned"), idsAssigned);
 		result.insert(QStringLiteral("format_upgraded"), idsAssigned > 0);
 		QJsonObject transaction;
-		transaction.insert(QStringLiteral("before"), QJsonObject());
+		transaction.insert(QStringLiteral("before"),
+			QJsonObject{{QStringLiteral("previous_file"), previousFile},
+				{QStringLiteral("previous_sha256"), previousSha}});
 		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("UNIMPLEMENTED: reopen the previous project")}});
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("project.open")},
+				{QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), previousFile}}}});
 		// Loading a project replaces the whole session; the engine keeps no
-		// pre-load snapshot, so this transaction is documented, not reversible.
+		// pre-load snapshot, so this transaction is documented, not reversible -
+		// and control.undo says exactly that instead of undoing an older step.
 		transaction.insert(QStringLiteral("reversible"), false);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot only: no pre-load project snapshot is kept in this slice"));
+			QStringLiteral("none: the displaced session is not snapshotted; only the file path "
+				"and its hash are recorded, so the caller can see what it replaced. UNSAVED "
+				"changes to the previous session are lost"));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};
@@ -257,91 +269,9 @@ void registerProjectOpen(ControlRegistry& registry)
 // ---------------------------------------------------------------------------
 // project.save
 // ---------------------------------------------------------------------------
-
-void registerProjectSave(ControlRegistry& registry)
-{
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("project.save");
-	cmd.group = QStringLiteral("project");
-	cmd.verb = QStringLiteral("save");
-	cmd.description = QStringLiteral("Save the session. With no path, saves over the project's own file.");
-	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}});
-	cmd.resultSchema = objectSchema({
-		{QStringLiteral("file"), stringProperty()},
-		{QStringLiteral("saved"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-	});
-	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject& args) {
-		Song* song = Engine::getSong();
-		QString target = args.value(QStringLiteral("path")).toString();
-		if (target.isEmpty()) { target = song->projectFileName(); }
-		if (target.isEmpty())
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("no 'path' given and the session has no project file yet"));
-		}
-		if (!song->saveProjectFile(target))
-		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("the engine refused to write %1").arg(target));
-		}
-
-		QJsonObject result;
-		result.insert(QStringLiteral("file"), target);
-		result.insert(QStringLiteral("saved"), true);
-		QJsonObject transaction;
-		transaction.insert(QStringLiteral("before"),
-			QJsonObject{{QStringLiteral("file"), song->projectFileName()}});
-		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("UNIMPLEMENTED: restore the previous file revision")}});
-		// Song::saveProjectFile() writes in place; the engine keeps no previous
-		// revision, so SPEC A16's file-level fallback is not available here.
-		transaction.insert(QStringLiteral("reversible"), false);
-		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot only: the engine keeps no previous file revision"));
-		result.insert(QStringLiteral("__transaction"), transaction);
-		return ControlResult::success(result);
-	};
-	registry.registerCommand(cmd);
-}
-
 // ---------------------------------------------------------------------------
 // project.get_state
 // ---------------------------------------------------------------------------
-
-void registerProjectGetState(ControlRegistry& registry)
-{
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("project.get_state");
-	cmd.group = QStringLiteral("project");
-	cmd.verb = QStringLiteral("get_state");
-	cmd.description = QStringLiteral("Project file, modified flag, tempo and track count.");
-	cmd.argsSchema = objectSchema({});
-	cmd.resultSchema = objectSchema({
-		{QStringLiteral("file"), stringProperty()},
-		{QStringLiteral("modified"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-		{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		{QStringLiteral("track_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-	});
-	cmd.handler = [](const QJsonObject&) {
-		Song* song = Engine::getSong();
-		QJsonObject result;
-		result.insert(QStringLiteral("file"), song->projectFileName());
-		result.insert(QStringLiteral("modified"), song->isModified());
-		result.insert(QStringLiteral("tempo"), song->getTempo());
-		result.insert(QStringLiteral("track_count"), static_cast<int>(song->tracks().size()));
-		result.insert(QStringLiteral("playing"), song->isPlaying());
-		QJsonArray trackIds;
-		for (int i = 0; i < static_cast<int>(song->tracks().size()); ++i)
-		{
-			trackIds.append(control::trackIdOf(song->tracks()[i]));
-		}
-		result.insert(QStringLiteral("tracks"), trackIds);
-		return ControlResult::success(result);
-	};
-	registry.registerCommand(cmd);
-}
-
 // ---------------------------------------------------------------------------
 // render.render
 // ---------------------------------------------------------------------------
@@ -459,9 +389,8 @@ void registerRenderRender(ControlRegistry& registry)
 void registerProjectCommands(ControlRegistry& registry)
 {
 	registerProjectOpen(registry);
-	registerProjectSave(registry);
-	registerProjectGetState(registry);
 	registerRenderRender(registry);
+	registerProjectFilesCommands(registry);
 }
 
 } // namespace lmms

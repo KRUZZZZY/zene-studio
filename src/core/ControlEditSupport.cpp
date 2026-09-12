@@ -28,13 +28,20 @@
 
 #include <algorithm>
 
+#include <QDomDocument>
+#include <QDomElement>
+
 #include "Clip.h"
 #include "ControlRegistry.h"
+#include "DataFile.h"
 #include "Engine.h"
+#include "GuiApplication.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
+#include "SongEditor.h"
 #include "TrackContainer.h"
+#include "TrackView.h"
 
 namespace lmms
 {
@@ -318,6 +325,76 @@ QJsonObject rollState(const ClipRef& ref)
 	}
 	out.insert(QStringLiteral("selected_notes"), selected);
 	return out;
+}
+
+QJsonObject trackEditState(Track* track, int index)
+{
+	QJsonObject entry;
+	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
+	entry.insert(QStringLiteral("index"), index);
+	entry.insert(QStringLiteral("name"), track->name());
+	entry.insert(QStringLiteral("type"), control::trackTypeNameOf(track->type()));
+	entry.insert(QStringLiteral("muted"), track->isMuted());
+	entry.insert(QStringLiteral("soloed"), track->isSolo());
+	entry.insert(QStringLiteral("clip_count"), track->numOfClips());
+	return entry;
+}
+
+// ---------------------------------------------------------------------------
+// SPEC A16 structural helpers
+// ---------------------------------------------------------------------------
+
+void removeTrack(Track* track)
+{
+	gui::SongEditor* editor = gui::getGUI() == nullptr || gui::getGUI()->songEditor() == nullptr
+		? nullptr : gui::getGUI()->songEditor()->m_editor;
+	if (editor == nullptr) { delete track; return; }
+	for (gui::TrackView* view : editor->trackViews())
+	{
+		if (view->getTrack() == track) { editor->deleteTrackView(view); return; }
+	}
+	delete track;
+}
+
+namespace
+{
+//! The wrapper element of a captured track snapshot. Explicit, because
+//! DataFile's own root is the project element: serializing into it and then
+//! taking its first child yielded <head>, and the "restored" track was a
+//! phantom built from the head element (measured).
+const QString TrackSnapshotRoot = QStringLiteral("zene-track-snapshot");
+} // namespace
+
+bool captureTrackXml(const Track* track, QString* xml, int maxChars)
+{
+	QDomDocument document;
+	QDomElement root = document.createElement(TrackSnapshotRoot);
+	document.appendChild(root);
+
+	// saveState is non-const on SerializingObject and the control surface only
+	// ever calls this on a live track it is about to remove.
+	Track* mutableTrack = const_cast<Track*>(track);
+	mutableTrack->saveState(document, root);
+	if (root.firstChildElement().isNull()) { return false; }
+
+	QString captured;
+	QTextStream stream(&captured);
+	document.save(stream, 1);
+	if (captured.isEmpty() || captured.size() > maxChars) { return false; }
+	*xml = captured;
+	return true;
+}
+
+Track* restoreTrackFromXml(const QString& xml, TrackContainer* container)
+{
+	if (container == nullptr || xml.isEmpty()) { return nullptr; }
+	QDomDocument document;
+	if (!document.setContent(xml)) { return nullptr; }
+	const QDomElement root = document.documentElement();
+	if (root.tagName() != TrackSnapshotRoot) { return nullptr; }
+	const QDomElement element = root.firstChildElement();
+	if (element.isNull()) { return nullptr; }
+	return Track::create(element, container);
 }
 
 // ---------------------------------------------------------------------------

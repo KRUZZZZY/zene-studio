@@ -24,9 +24,13 @@
 #include "ControlRegistry.h"
 #include "UnattendedRun.h"
 
+#include "ControlReversibility.h"
+#include "ProjectJournal.h"
+
 
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QJsonDocument>
 #include <QJsonValue>
 #include <QMetaObject>
 #include <QThread>
@@ -54,6 +58,7 @@ QString controlErrorKindName(ControlErrorKind kind)
 		case ControlErrorKind::InvalidArgs: return QStringLiteral("invalid_args");
 		case ControlErrorKind::Busy: return QStringLiteral("busy");
 		case ControlErrorKind::Refused: return QStringLiteral("refused");
+		case ControlErrorKind::Irreversible: return QStringLiteral("irreversible");
 	}
 	return QString();
 }
@@ -229,33 +234,78 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 	const bool mutating = cmd->mutating;
 	const QString commandId = cmd->id;
 	return runOnUiThread([this, handler, mutating, commandId, args]() {
+		// ONE agent command = ONE undo step (SPEC A16 deliverable 3). The mark is
+		// taken before the handler runs and everything it pushed is merged after,
+		// because AutomatableModel::setValue() pushes checkpoints of its own on
+		// every non-automated write - so a command that writes N models would
+		// otherwise cost N undos.
+		ProjectJournal* journal = Engine::projectJournal();
+		const int mark = journal != nullptr ? journal->undoDepth() : -1;
 		ControlResult result = handler(args);
-		if (mutating && result.ok)
-		{
-			// Every mutating command leaves a transaction behind (SPEC A16): the
-			// handler describes before-state + inverse under the private
-			// "__transaction" key and the registry records it. A handler that
-			// supplies nothing still gets an honest record saying so.
-			const QJsonObject recorded = result.result.value(QStringLiteral("__transaction")).toObject();
-			if (recorded.isEmpty())
-			{
-				recordTransaction(control::makeTransaction(commandId, {}, {}, false,
-					QStringLiteral("this command recorded no inverse or snapshot")));
-			}
-			else
-			{
-				Transaction tx;
-				tx.command = commandId;
-				tx.before = recorded.value(QStringLiteral("before")).toObject();
-				tx.inverse = recorded.value(QStringLiteral("inverse")).toObject();
-				tx.reversible = recorded.value(QStringLiteral("reversible")).toBool(false);
-				tx.mechanism = recorded.value(QStringLiteral("mechanism")).toString();
-				recordTransaction(tx);
-			}
-		}
+		if( journal != nullptr ) { journal->mergeCheckpointsFrom( mark ); }
+		if (mutating && result.ok) { recordTransactionOf(commandId, &result); }
 		result.result.remove(QStringLiteral("__transaction"));
 		return result;
 	});
+}
+
+//! Records what a successful mutating handler described (SPEC A16).
+void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResult* result)
+{
+	// The handler describes before-state + inverse under the private
+	// "__transaction" key; the registry records it. A handler that supplies
+	// nothing still gets an honest record saying so, and the CLASS always comes
+	// from the contract table rather than from the handler.
+	const QJsonObject recorded = result->result.value(QStringLiteral("__transaction")).toObject();
+	if (recorded.isEmpty())
+	{
+		Transaction honest;
+		honest.command = commandId;
+		stampContract(commandId, &honest);
+		honest.mechanism = QStringLiteral("this command recorded no inverse or "
+			"snapshot; ") + honest.mechanism;
+		recordTransaction(honest);
+		return;
+	}
+
+	Transaction tx;
+	tx.command = commandId;
+	tx.before = recorded.value(QStringLiteral("before")).toObject();
+	tx.inverse = recorded.value(QStringLiteral("inverse")).toObject();
+	tx.reversible = recorded.value(QStringLiteral("reversible")).toBool(false);
+	tx.mechanism = recorded.value(QStringLiteral("mechanism")).toString();
+	stampContract(commandId, &tx);
+	recordTransaction(tx);
+}
+
+void ControlRegistry::stampContract(const QString& commandId, Transaction* tx) const
+{
+	// The CLASS comes from the one table (ReversibilityTable), never from the
+	// handler: a command cannot declare itself reversible where the contract
+	// says it is not. A handler may still record LESS than its class allows (an
+	// instrument replacement inside plugin.load), never more.
+	const control::ReversibilityEntry* entry = control::ReversibilityTable::instance().lookup(commandId);
+	if (entry == nullptr)
+	{
+		// No row: the table does not describe this command, so it cannot
+		// contradict the handler either. The claim is kept and the record says
+		// the row is missing, because the anti-drift test is what must fail
+		// here - silently downgrading a handler's honest inverse would hide the
+		// real problem (a command the contract forgot).
+		tx->cls = QString();
+		tx->mechanism.prepend(QStringLiteral("NO CONTRACT ROW for this command (the "
+			"classification table is incomplete); "));
+		return;
+	}
+	tx->cls = control::reversibilityClassName(entry->cls);
+	if (entry->cls == control::ReversibilityClass::Irreversible && tx->reversible)
+	{
+		// Refusing to launder it: the contract says there is no inverse, so the
+		// record must not claim one.
+		tx->reversible = false;
+		tx->mechanism = QStringLiteral("handler claimed an inverse but the contract class is "
+			"'irreversible'; the claim is dropped. ") + tx->mechanism;
+	}
 }
 
 QJsonObject ControlRegistry::describeAll() const
@@ -283,12 +333,38 @@ QJsonObject ControlRegistry::describeAll() const
 
 void ControlRegistry::recordTransaction(const Transaction& tx)
 {
-	constexpr int MaxTransactions = 100;
-	m_transactions.append(tx);
-	if (m_transactions.size() > MaxTransactions)
+	// The record is bounded TWO ways (SPEC A16 deliverable 2):
+	//   - a hard count cap of MaxTransactionRecords records;
+	//   - a hard total cap of MaxTransactionBytes of serialised before-state
+	//     plus inverse descriptor.
+	// Eviction policy: FIFO - the OLDEST record is dropped first, so the most
+	// recent history is never the part that is lost, and the newest record
+	// (the one control.undo reads) is always present. What happens at the cap
+	// is reported, not hidden: `control.transactions` returns `evicted`,
+	// `capped` and the retained/limit byte counts. The engine's own undo stack
+	// evicts at the same depth (ProjectJournal::MAX_UNDO_STATES = 100), so an
+	// agent never sees a record for a step it can no longer undo.
+	Transaction stamped = tx;
+	stamped.bytes = QJsonDocument(stamped.before).toJson(QJsonDocument::Compact).size()
+		+ QJsonDocument(stamped.inverse).toJson(QJsonDocument::Compact).size()
+		+ stamped.mechanism.toUtf8().size()
+		+ static_cast<int>(stamped.command.toUtf8().size());
+
+	m_transactions.append(stamped);
+	m_recordedBytes += stamped.bytes;
+
+	while (m_transactions.size() > control::MaxTransactionRecords
+		|| (m_recordedBytes > control::MaxTransactionBytes && m_transactions.size() > 1))
 	{
-		m_transactions.remove(0, m_transactions.size() - MaxTransactions);
+		m_recordedBytes -= m_transactions.first().bytes;
+		m_transactions.remove(0);
+		++m_evicted;
 	}
+}
+
+const ControlRegistry::Transaction* ControlRegistry::lastTransaction() const
+{
+	return m_transactions.isEmpty() ? nullptr : &m_transactions.last();
 }
 
 QJsonArray ControlRegistry::transactions() const
@@ -298,18 +374,37 @@ QJsonArray ControlRegistry::transactions() const
 	{
 		QJsonObject entry;
 		entry.insert(QStringLiteral("command"), tx.command);
+		entry.insert(QStringLiteral("class"), tx.cls);
 		entry.insert(QStringLiteral("before"), tx.before);
 		entry.insert(QStringLiteral("inverse"), tx.inverse);
 		entry.insert(QStringLiteral("reversible"), tx.reversible);
 		entry.insert(QStringLiteral("mechanism"), tx.mechanism);
+		entry.insert(QStringLiteral("bytes"), tx.bytes);
 		out.append(entry);
 	}
+	return out;
+}
+
+QJsonObject ControlRegistry::transactionsReport() const
+{
+	QJsonObject out;
+	out.insert(QStringLiteral("transactions"), transactions());
+	out.insert(QStringLiteral("count"), m_transactions.size());
+	out.insert(QStringLiteral("retained_bytes"), m_recordedBytes);
+	out.insert(QStringLiteral("cap_records"), control::MaxTransactionRecords);
+	out.insert(QStringLiteral("cap_bytes"), control::MaxTransactionBytes);
+	out.insert(QStringLiteral("evicted"), m_evicted);
+	// `capped` says out loud that older records were dropped, so a client can
+	// tell "this is the whole history" from "this is what the bound retains".
+	out.insert(QStringLiteral("capped"), m_evicted > 0);
 	return out;
 }
 
 void ControlRegistry::clearTransactions()
 {
 	m_transactions.clear();
+	m_recordedBytes = 0;
+	m_evicted = 0;
 }
 
 void ControlRegistry::addShutdownHook(std::function<void()> hook)

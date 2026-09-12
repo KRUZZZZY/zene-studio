@@ -30,6 +30,7 @@
 
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 
 namespace lmms
 {
@@ -118,9 +119,10 @@ void registerStateSave(ControlRegistry& registry)
 							"revision")}}}});
 		transaction.insert(QStringLiteral("reversible"), false);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("file-level: the previous revision of the path is recorded in "
-				"'before.previous_content' (bounded); as with project.save in this slice there "
-				"is no automatic file-level inverse"));
+			QStringLiteral("file-level snapshot, no automatic inverse: the command writes a file "
+				"OUTSIDE the project (the project is untouched), and the replaced revision is "
+				"recorded in 'before.previous_content' (bounded). The fallback is to write that "
+				"back with plugin.state_save, or delete the file when before.replaced was false"));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};
@@ -167,6 +169,23 @@ void registerStateLoad(ControlRegistry& registry)
 		// Keep the pre-load settings before they are overwritten: this is what
 		// makes the recorded snapshot an honest record (SPEC A16).
 		const QByteArray previous = controlDeviceStateBytes(handle);
+		// ... and the SAME bytes are the inverse: ONE action step restores them
+		// by re-resolving the device at undo time (a handle holds raw device
+		// pointers, so the step carries ids, not pointers).
+		const QString targetId = args.value(QStringLiteral("target")).toString();
+		const QString pluginId = args.value(QStringLiteral("plugin")).toString();
+		control::addUndoStep(
+			[targetId, pluginId, previous]() {
+				controlRestoreCapturedState(targetId, pluginId, previous);
+			},
+			[targetId, pluginId, path]() {
+				QByteArray bytes;
+				ControlResult ignored;
+				if (controlReadFileBytes(path, &bytes, &ignored))
+				{
+					controlRestoreCapturedState(targetId, pluginId, bytes);
+				}
+			});
 		ControlResult restored = controlRestoreDeviceState(handle, bytes);
 		if (!restored.ok) { return restored; }
 
@@ -189,10 +208,11 @@ void registerStateLoad(ControlRegistry& registry)
 					QJsonObject{{QStringLiteral("note"), QStringLiteral("write before.state_xml "
 						"to a path, then plugin.load (if the device was replaced) and "
 						"plugin.state_load it back")}}}});
-		transaction.insert(QStringLiteral("reversible"), false);
+		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot only: loading a state file replaces the device's settings; "
-				"the previous settings XML is recorded in 'before.state_xml'"));
+			QStringLiteral("action checkpoint: the recorded undo step restores the captured "
+				"settings XML by re-resolving the device from the transaction's target and plugin "
+				"ids (a handle's raw device pointers must not outlive the command)"));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};

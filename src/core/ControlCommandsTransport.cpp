@@ -27,6 +27,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
@@ -134,6 +135,13 @@ void registerTransportCommands(ControlRegistry& registry)
 			Song* song = Engine::getSong();
 			const qint64 previous = static_cast<qint64>(song->getPlayPos().getTicks());
 			const tick_t ticks = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
+			// SPEC A16: the play head is engine state and not a JournallingObject,
+			// so there is no object checkpoint to restore - but the inverse is a
+			// bounded scalar, so it becomes ONE action step on the engine's own
+			// undo stack (the same stack Ctrl+Z unwinds).
+			control::addUndoStep(
+				[song, previous]() { song->setPlayPos(static_cast<tick_t>(previous)); },
+				[song, ticks]() { song->setPlayPos(ticks); });
 			song->setPlayPos(ticks);
 
 			QJsonObject result;
@@ -146,11 +154,10 @@ void registerTransportCommands(ControlRegistry& registry)
 			QJsonObject transaction;
 			transaction.insert(QStringLiteral("before"), before);
 			transaction.insert(QStringLiteral("inverse"), inverse);
-			// The play head is engine state, not a JournallingObject: there is no
-			// journal checkpoint to reverse it, so only the snapshot is recorded.
-			transaction.insert(QStringLiteral("reversible"), false);
+			transaction.insert(QStringLiteral("reversible"), true);
 			transaction.insert(QStringLiteral("mechanism"),
-				QStringLiteral("snapshot only: the play position is not a JournallingObject"));
+				QStringLiteral("action checkpoint: the play head is not a JournallingObject, so the "
+					"recorded undo step calls Song::setPlayPos with the previous tick"));
 			result.insert(QStringLiteral("__transaction"), transaction);
 			return ControlResult::success(result);
 		};

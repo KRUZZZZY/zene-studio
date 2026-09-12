@@ -31,6 +31,7 @@
 
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 
 namespace lmms
 {
@@ -213,8 +214,10 @@ void registerPresetSave(ControlRegistry& registry)
 						"replaced revision")}}}});
 		transaction.insert(QStringLiteral("reversible"), false);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("file-level: a preset file is created or replaced; the previous "
-				"revision is recorded in 'before.previous_content' (bounded)"));
+			QStringLiteral("file-level snapshot, no automatic inverse: the command writes a preset "
+				"file OUTSIDE the project (the project is untouched), and the replaced revision is "
+				"recorded in 'before.previous_content' (bounded). The fallback is to write that "
+				"back with plugin.preset_save, or delete the file when before.replaced was false"));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};
@@ -261,6 +264,21 @@ void registerPresetLoad(ControlRegistry& registry)
 		if (!controlReadFileBytes(path, &bytes, &error)) { return error; }
 
 		const QByteArray previous = controlDeviceStateBytes(handle);
+		// SPEC A16: the same action-step inverse plugin.state_load uses.
+		control::addUndoStep(
+			[targetId = target.id, pluginId = args.value(QStringLiteral("plugin")).toString(),
+				previous]() {
+				controlRestoreCapturedState(targetId, pluginId, previous);
+			},
+			[targetId = target.id, pluginId = args.value(QStringLiteral("plugin")).toString(),
+				path]() {
+				QByteArray bytes;
+				ControlResult ignored;
+				if (controlReadFileBytes(path, &bytes, &ignored))
+				{
+					controlRestoreCapturedState(targetId, pluginId, bytes);
+				}
+			});
 		ControlResult restored = controlRestoreDeviceState(handle, bytes);
 		if (!restored.ok) { return restored; }
 
@@ -274,10 +292,11 @@ void registerPresetLoad(ControlRegistry& registry)
 				{QStringLiteral("args"),
 					QJsonObject{{QStringLiteral("note"), QStringLiteral("write "
 						"before.state_xml to a path and plugin.state_load it back")}}}});
-		transaction.insert(QStringLiteral("reversible"), false);
+		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot only: loading a preset replaces the device's settings; the "
-				"previous settings XML is recorded in 'before.state_xml'"));
+			QStringLiteral("action checkpoint: the recorded undo step restores the captured "
+				"settings XML by re-resolving the device from the transaction's target and plugin "
+				"ids, so one control.undo or one Ctrl+Z reverses the preset load"));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};

@@ -40,6 +40,7 @@ namespace lmms
 class Clip;
 class MidiClip;
 class Note;
+class TrackContainer;
 struct ControlResult;
 
 namespace control
@@ -119,6 +120,36 @@ QString selectedClipId();
 void selectNotes(const QString& clip, int noteCount, const QVector<int>& indices);
 bool noteSelected(const QString& clip, int index);
 QVector<int> selectedNoteIndices(const QString& clip);
+
+//! One track as the get_states report it (shared by arrangement.get_state and
+//! the track commands' transaction snapshots).
+LMMS_EXPORT QJsonObject trackEditState(Track* track, int index);
+
+// ---------------------------------------------------------------------------
+// Structural helpers (SPEC A16 deliverable 5)
+//
+// A created or deleted Track has no live object a journal checkpoint could
+// restore, so its inverse is the OPERATION. These two helpers are that
+// operation, and they are the product's own: removeTrack takes the view down
+// first (TrackContainerView::deleteTrackView's order) and restoreTrackFromXml
+// is the call TrackContainer::loadSettings makes.
+// ---------------------------------------------------------------------------
+//! Removes \a track the way the product does: the view first (deleting the
+//! track directly leaves its TrackView pointing at freed memory, measured as a
+//! SIGSEGV right after track.remove answered), then the track. A guiless
+//! instance has no view and deletes the track.
+LMMS_EXPORT void removeTrack(Track* track);
+
+//! Captures \a track's own serialized state as XML, for the inverse of
+//! track.remove. False when the XML would exceed \a maxChars: a TRUNCATED
+//! track is a corrupt track, so the caller must refuse rather than record a
+//! snapshot it cannot restore.
+LMMS_EXPORT bool captureTrackXml(const Track* track, QString* xml, int maxChars);
+
+//! Recreates a track from XML captured by captureTrackXml, through the same
+//! Track::create(element, container) the project loader uses. nullptr when the
+//! XML does not parse or names no track element.
+LMMS_EXPORT Track* restoreTrackFromXml(const QString& xml, TrackContainer* container);
 
 // ---------------------------------------------------------------------------
 // SPEC A16 transactions

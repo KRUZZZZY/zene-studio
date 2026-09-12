@@ -306,7 +306,7 @@ QJsonObject automationTransaction(const AutomationParameter& parameter, const QJ
 {
 	QJsonObject inverse;
 	inverse.insert(QStringLiteral("op"), created
-		? QStringLiteral("UNIMPLEMENTED: remove the automation track this command created")
+		? QStringLiteral("remove the automation track this command created")
 		: QStringLiteral("reapply the recorded points"));
 	inverse.insert(QStringLiteral("points_before"), before);
 
@@ -318,10 +318,15 @@ QJsonObject automationTransaction(const AutomationParameter& parameter, const QJ
 	QJsonObject transaction;
 	transaction.insert(QStringLiteral("before"), beforeState);
 	transaction.insert(QStringLiteral("inverse"), inverse);
-	transaction.insert(QStringLiteral("reversible"), !created);
+	// SPEC A16 deliverable 5: even the creating call is one undoable step, so
+	// both halves are reversible:true and the difference is the MECHANISM, not
+	// the verdict.
+	transaction.insert(QStringLiteral("reversible"), true);
 	transaction.insert(QStringLiteral("mechanism"), created
-		? QStringLiteral("snapshot only: the AutomationTrack this command created has no "
-			"ProjectJournal checkpoint, so control.undo cannot remove it")
+		? QStringLiteral("action checkpoint: the AutomationTrack this call created is removed by "
+			"the recorded undo step, so the first point is one undoable step like every later "
+			"one. LIMIT: redo is not offered for the creating call - re-issue "
+			"automation.add_point")
 		: QStringLiteral("ProjectJournal (AutomationClip checkpoint)"));
 	return transaction;
 }

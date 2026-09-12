@@ -381,8 +381,11 @@ void registerNoteSelect(ControlRegistry& registry)
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("selected_notes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
+		{QStringLiteral("previous_notes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 	});
-	cmd.mutating = true;
+	// SPEC A16: piano-roll selection is VIEW state (Note::setSelected), not
+	// project state, so this command records no transaction (see clip.select).
+	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {
 		ControlResult error;
 		control::ClipRef ref;
@@ -412,18 +415,12 @@ void registerNoteSelect(ControlRegistry& registry)
 
 		QJsonArray selected;
 		for (int index : control::selectedNoteIndices(clipText)) { selected.append(control::noteId(index)); }
+		QJsonArray previousIds;
+		for (int index : previous) { previousIds.append(control::noteId(index)); }
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), clipText);
 		result.insert(QStringLiteral("selected_notes"), selected);
-		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(
-				QJsonObject{{QStringLiteral("clip"), clipText},
-					{QStringLiteral("selected_notes"), selected.size()},
-					{QStringLiteral("previous_count"), previous.size()}},
-				QStringLiteral("note.select"), QJsonObject(), false,
-				QStringLiteral("selection is control-surface state, not project state: Note::setSelected is "
-					"piano-roll view state and the project file has no field for it, so the ProjectJournal "
-					"has no checkpoint to reverse")));
+		result.insert(QStringLiteral("previous_notes"), previousIds);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

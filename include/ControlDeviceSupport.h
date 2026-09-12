@@ -182,6 +182,18 @@ LMMS_EXPORT QByteArray controlDeviceStateBytes(const ControlDeviceHandle& handle
 LMMS_EXPORT ControlResult controlRestoreDeviceState(const ControlDeviceHandle& handle,
 	const QByteArray& bytes);
 
+/*! Restores a device to a state captured earlier, RE-RESOLVING the device by id
+ * (SPEC A16).
+ *
+ * An undo step may run long after the command that recorded it, and a
+ * ControlDeviceHandle holds raw device pointers, so an inverse step must not
+ * carry one: it carries the target id, the plugin id and the captured bytes,
+ * and this helper resolves the device again at undo time. A device that is no
+ * longer there is a typed not_found, not a dangling dereference.
+ */
+LMMS_EXPORT ControlResult controlRestoreCapturedState(const QString& targetId,
+	const QString& pluginId, const QByteArray& bytes);
+
 //! The product's preset directories for this device (trailing slash included).
 LMMS_EXPORT QString controlUserPresetDir(const ControlDeviceHandle& handle);
 LMMS_EXPORT QString controlFactoryPresetDir(const ControlDeviceHandle& handle);

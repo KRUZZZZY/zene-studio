@@ -376,6 +376,14 @@ private slots:
 	void undoRedoUseTheProjectJournal()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
+		// The transaction record is cleared first because control.undo is
+		// contract-aware since SPEC A16: it refuses, typed, when the LAST
+		// recorded command has no inverse (the test above deliberately leaves
+		// test.silent_mutator, reversible:false, on top). With no record it
+		// falls through to the engine's own journal, which is what this test is
+		// about.
+		registry->clearTransactions();
+
 		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"));
 		QVERIFY(undo.ok);
 		QCOMPARE(undo.result.value(QStringLiteral("mechanism")).toString(), QStringLiteral("lmms::ProjectJournal"));
