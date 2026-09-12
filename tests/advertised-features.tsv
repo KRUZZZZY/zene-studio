@@ -4,15 +4,44 @@
 # carries no feature list of its own, so there is no second copy to drift from
 # the release notes.
 #
-# The defect this file exists to prevent: the published v0.1.0-alpha advertised
-# "VST3 and CLAP hosting, effects only" while all seven jobs of its release run
-# printed
-#   -- VST3 hosting skipped: no SDK at '<runner>/build/vst3sdk'
-#   -- CLAP hosting skipped: no headers at '<runner>/build/clap/include/clap'
-# and shipped neither. Both options default to AUTO, and AUTO with the
-# dependency absent is a skip with a STATUS line — a silent compile-out that no
-# test and no log reader noticed.
+# WHAT THIS FILE EXISTS TO PREVENT (kept from the v0.1.0-alpha defect, because it
+# is the reason the gate exists): the published v0.1.0-alpha advertised "VST3 and
+# CLAP hosting, effects only" while all seven jobs of its release run printed
+# "VST3 hosting skipped: no SDK" / "CLAP hosting skipped: no headers" and shipped
+# neither. Both options default to AUTO, and AUTO with the dependency absent is a
+# skip with a STATUS line — a silent compile-out that no test noticed.
 #
+# CHANGED FOR 0.2.0-alpha — the rows below are the 0.2.0 contract:
+#   * vst3-instrument-hosting is NEW. The host module is plugins/Vst3Instrument,
+#     whose target is BUILD_PLUGIN(vst3instrument ...) and which is gated by
+#     WANT_VST3 — the SAME option the effect host uses, which the release jobs
+#     already pass as -DWANT_VST3=ON. It is deliberately NOT gated by
+#     WANT_VST3_TEST_INSTRUMENT: that option (default OFF) builds the MIT
+#     test-instrument FIXTURE, a test asset, and is a row of its own below so the
+#     two cannot be confused in either direction.
+#   * the 0.2.0 release notes must therefore describe instrument hosting with the
+#     limits we actually measured: one instrument per track, MIDI in to audio out;
+#     no third-party instrument has been run (the witness is the in-tree MIT
+#     fixture); the plugin's own editor does not open, so its parameters surface
+#     as a generated grid; no multi-out, no presets, no instrument latency in PDC,
+#     no out-of-process hosting.
+#
+# A NOTE ON WHY `session-view` IS A ROW WITH required=OFF, WHICH IS NOT A SNUB.
+# `OPTION(WANT_SESSION_VIEW "..." OFF)` (CMakeLists.txt:121) defaults OFF and the
+# release jobs do not pass it, so the Session View data layer and the launch
+# scheduler that builds on it are IN THE TREE BUT NOT IN THIS BUILD. Recording it
+# as a row means the release CANNOT drift into claiming a clip launcher it does not
+# contain: the day a build turns the option on, this gate fails and the notes have
+# to be updated first. Even with the flag ON the audit found no consumer (no scene
+# launcher, no clip grid), so the honest description of 0.2.0-alpha is that the
+# session data layer exists in the source and ships disabled.
+#
+# WHY THERE IS NO ROW FOR THE VST3 TEST-INSTRUMENT FIXTURE, though the temptation is obvious:
+# `WANT_VST3_TEST_INSTRUMENT` is declared inside tests/CMakeLists.txt under a condition, so it never
+# reaches the generated header. This gate FAILS any option the build does not report at all ("not
+# reported by this build at all, so the feature cannot be in it"), and that rule is right: a row for an
+# option the release build never mentions would be a permanent false failure. The fixture's status is
+# documentation, not a contract term — the job of this file is to bind the artefacts.
 # Columns (TAB separated):
 #   1 feature   stable id, printed by the gate
 #   2 option    the WANT_* option the binary reports in its "Build options:" dump
@@ -20,12 +49,12 @@
 #   4 module    plugin module basename to find in the build tree ('-' for none)
 #   5 claim     the sentence this row keeps true, quoted when the gate fails
 #
-# A feature documented as ABSENT is a row too (required OFF). If a build turns
-# one on, the documents understate that build and the release is dishonest in the
-# other direction, so the gate fails on it as well.
-# Column legend (a real row, unlike this line, is tab separated and has no '#'):
-#feature	option	required	module	claim
+# A feature documented as ABSENT is a row too (required OFF). If a build turns one
+# on, the documents understate that build and the release is dishonest in the other
+# direction, so the gate fails on it as well.
 vst3-hosting	WANT_VST3	ON	vst3effect	VST3 hosting (effects) is in the release
+vst3-instrument-hosting	WANT_VST3	ON	vst3instrument	VST3 instrument hosting (one instrument per track, MIDI in to audio out) is in the release
 clap-hosting	WANT_CLAP	ON	clapeffect	CLAP hosting (effects) is in the release
+session-view	WANT_SESSION_VIEW	OFF	-	The Session View (clip launcher and launch scheduler) is documented as absent from these builds
 wasm-sandbox	WANT_WASM	OFF	-	The WASM DSP sandbox is documented as absent from these builds
 stem-separation	WANT_STEM_SPLIT	OFF	-	Offline stem separation is documented as absent from these builds
