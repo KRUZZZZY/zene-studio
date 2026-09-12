@@ -50,12 +50,16 @@ that is this page's fault — report it and it gets added.
   creates the root) and read back on load, where it drives both the "Version difference" notice and the choice
   of upgrade routine to run (`DataFile::legacyFileVersion()`).
   The behaviour half is checked at source level, which is the strongest check available here: the elements an
-  older reader has no code path for, it cannot keep. `git show origin/master:src/core/Song.cpp` matches the
-  child element names `controllers`, `keymaps`, `scales`, `track` and `trackcontainer` and **nothing else**;
-  `git grep -c prefader origin/master -- src/` and `git grep -l sidechain-send origin/master -- src/` both
-  return **no matches**; `git show origin/master:src/core/Note.cpp | grep -c slide` returns **0**. What that
-  does not establish — and this page should not claim — is a *run* of the LMMS 1.3.0-alpha binary, which is not
-  present on this machine. This tree's own half is proved by a test rather than by argument:
+  older reader has no code path for, it cannot keep. `git show origin/master:src/core/Song.cpp` dispatches the
+  song container's child element names `controllers`, `keymaps`, `scales`, `track` and `trackcontainer` — the
+  same file also compares node names against the GUI editors' panels (`controllerRackView`, `pianoRoll`,
+  `automationEditor`, `projectNotes`, the timeline), so "**and nothing else**" is *not* true of the file and
+  is not claimed here; `git grep -c prefader origin/master -- src/` and
+  `git grep -l sidechain-send origin/master -- src/` both return **no matches**;
+  `git show origin/master:src/core/Note.cpp | grep -c slide` returns **0**. What none of that establishes —
+  and this page does not claim it — is a *run* of the LMMS 1.3.0-alpha binary, which is not present on this
+  machine. The claim is therefore about what the older reader's source can keep, not about behaviour anyone
+  observed. This tree's own half is proved by a test rather than by argument:
   `ProjectOpenIntegrityTest::currentBuildRoundTripsBusSidechainAndPrefaderSends()` writes a bus, a pre-fader
   send and a sidechain send, asserts the written XML contains them, loads it back and asserts they survived;
   `slide` is pinned by `SlideNotesTest::slideNoteRoundTrip()` (`docs/SAVELOAD-INTEGRITY.md` §1 D6, §5).
@@ -95,10 +99,12 @@ that is this page's fault — report it and it gets added.
   against our own test instrument, whose `Level` knob appears as expected). A third-party instrument's grid may
   be larger or less tidy than that one — that is untested, not claimed.
   Verified against this tree, for the "no editor" half: `grep -rn IPlugView src/ include/ plugins/Vst3Effect/
-  plugins/ClapEffect/` returns **0** hits — the only `IPlugView` occurrences in the repository are inside the
-  vendored Carla copy of the VST3 SDK headers (`plugins/CarlaBase/carla/source/includes/vst3sdk/...`) — so the
-  plug-in's own editor is not implemented in the host and the parameters can only surface as the generated grid
-  (`docs/INSTRUMENT-HOSTING-SPEC.md` §0).
+  plugins/ClapEffect/` returns **0** hits, so the plug-in's own editor is not implemented in the host and the
+  parameters can only surface as the generated grid (`docs/INSTRUMENT-HOSTING-SPEC.md` §0). **The 0 is over
+  those four paths, which is why they are named**: the string also occurs in one product file,
+  `plugins/Vst3Instrument/Vst3InstrumentView.h` (a comment recording that the interface is not implemented),
+  and in the vendored Carla copy of the VST3 SDK headers
+  (`plugins/CarlaBase/carla/source/includes/vst3sdk/...`).
   The "window opens and lists the controls" half is verified too, and out of band rather than by CI:
   `docs/INSTRUMENT-VIEW-SAFETY.md` §3 drove the shipped binary under Xvfb against a project carrying a VST3
   instrument track on the "Bass" track — pre-fix and post-fix the window opens, the process stays alive, and
@@ -255,11 +261,12 @@ contradicted by the tree, and at the release-prep base it was:** at `34c1f4f86` 
 `docs/WAVE-R-RENAME.md` §6 ("User state") recorded that `~/.lmmsrc.xml`, `~/Documents/lmms/` and the
 `lmms-workspace` marker were deliberately left alone, and the honest phrasing was that 0.2.0 read the same files
 0.1.0 did. The migration commit has since merged, so the sentence is true as written and the marker is deleted
-rather than satisfied by keeping the stale half. Two residues of the old state remain and are **stale**: the
+rather than satisfied by keeping the stale half. One residue of the old state remains and is **stale**: the
 same bullet in `docs/WAVE-R-RENAME.md` §6 still gives "renaming would orphan an existing install" as the reason
-the paths were left alone, and the release notes' first headline still lists user state among the deliberate
-residuals. On this tree that reason no longer holds; **reported rather than silently harmonised**, because those
-are the rename lane's record of its own finding and they need a decision, not an over-write.
+the paths were left alone. On this tree that reason no longer holds; **reported rather than silently harmonised**,
+because that is the rename lane's record of its own finding and it needs a decision, not an over-write. (An
+earlier version of this paragraph named the release notes' first headline for the same error; the notes' residue
+list says user state is *migrated* rather than kept, so that half of the charge was stale and is removed.)
 
 Two things deliberately keep the old name, and neither is an oversight:
 

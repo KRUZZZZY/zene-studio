@@ -100,9 +100,12 @@ the `WANT_VST3_TEST_INSTRUMENT` option (`tests/CMakeLists.txt`, default `OFF`), 
 assuming: load a VST3 instrument, and a window opens listing that plugin's controls in the host's generated
 grid. That is the honest state and it is why this is an alpha. Verified against this tree: the plug-in's own
 editor does not exist in the host — `grep -rn IPlugView src/ include/ plugins/Vst3Effect/ plugins/ClapEffect/`
-returns **0** hits (the only `IPlugView` occurrences in the repository are inside the vendored Carla copy of
-the VST3 SDK headers, `plugins/CarlaBase/carla/source/includes/vst3sdk/...`), so what a user gets is the
-generated `Knob` grid, exactly as `docs/INSTRUMENT-HOSTING-SPEC.md` §0 records.
+returns **0** hits — so what a user gets is the generated `Knob` grid, exactly as
+`docs/INSTRUMENT-HOSTING-SPEC.md` §0 records. **That 0 is over the four paths in the command, not over the
+repository**, and the difference is stated here rather than implied: the string also appears in one product
+file, `plugins/Vst3Instrument/Vst3InstrumentView.h`, in a comment recording that the interface is not
+implemented, and in the vendored Carla copy of the VST3 SDK headers
+(`plugins/CarlaBase/carla/source/includes/vst3sdk/...`).
 Verified against this tree: the shipped-binary run is in the tree —
 `docs/INSTRUMENT-VIEW-SAFETY.md` §3 records the product run under Xvfb against a project carrying a VST3
 instrument track on the "Bass" track, on the pre-fix and the post-fix binary alike: the window opens, the
@@ -125,9 +128,15 @@ that local socket — a file, mode `0600`, in the working directory, with nothin
 plugin, move a fader, save the project, render it. It is opt-in and off by default, and the opt-in is
 invisible: an instance that was not started that way has no socket at all, and nothing in the interface
 reports one that is open (owner decision, `ableton-gap/AGENT-TOOLING.md` §9.1 — the only reader of
-`isAgentInstance()` is `UnattendedRun` itself). Every command is a normal edit that the application
-already knows how to do — the registry and the menus call the same implementation — and it lands on the
-same undo history as the GUI's Ctrl+Z, which is what makes the rest of this section possible.
+`isAgentInstance()` is `UnattendedRun` itself). **Where a registered command also has a menu or toolbar
+entry, that entry and the registry handler are one implementation** — `telemetry.consent` is the case on
+record, declared on the Help-menu action and handled by the registry. The gate measures that direction only
+one way: it proves every *registered* command is reachable and swept, and it reflects **46** menu/toolbar
+actions of which **4** resolve to a registered command and **42** are baselined as unregistered
+(`tests/integration-logs-3f-fix/08-gate-committed.log`). Those 42 are not commands, and this text does not
+claim they are. Every command the surface exposes is a normal edit the application already knows how to do,
+and it lands on the same undo history as the GUI's Ctrl+Z, which is what makes the rest of this section
+possible.
 
 **Technically**, it is three things. A **registry of named commands** (`include/ControlRegistry.h`,
 `src/core/ControlRegistry.cpp`): each command is a `group.verb` id with a JSON schema for its arguments,
@@ -228,11 +237,15 @@ not carry). **Quote a count with the thing it was counted over.**
 
 Every successful mutating command records one transaction naming the command, the class (stamped from
 the table, never from the handler), the before-state, the inverse descriptor, the call's own `reversible`
-verdict, the mechanism and a byte count. The bounds are stated and enforced: 100 records — deliberately
-the same depth as the undo stack, so a record never outlives the step it describes — 256 KiB in total, a
-64 KiB ceiling on a captured device state or track XML, and FIFO eviction whose evictions are **counted
-and reported** rather than hidden (`include/ControlReversibility.h:143,149`;
-`src/core/ControlCommandsArrangement.cpp:53`). The record does not survive a restart, and neither does
+verdict, the mechanism and a byte count. The bounds are stated and enforced: `MaxTransactionRecords`
+(100) — deliberately the same depth as the undo stack (`ProjectJournal::MAX_UNDO_STATES`), so a record never
+outlives the step it describes — `MaxTransactionBytes` (256 KiB) in total, a 64 KiB per-record ceiling on a
+captured device state or track XML (`ControlSnapshotLimit`, `MaxTrackSnapshotChars`), and FIFO eviction whose
+evictions are **counted and reported** rather than hidden: `ControlRegistry`'s retained-record cap counts them
+and `control.transactions` returns the `evicted` count. (An earlier version of this sentence cited
+`include/ControlReversibility.h:143,149` for the bounds and `ControlCommandsArrangement.cpp:53` for the
+eviction — that line is `MaxTrackSnapshotChars`, a per-record cap, and the eviction accounting lives in
+`ControlRegistry`.) The record does not survive a restart, and neither does
 the undo history.
 
 **One agent command is one undoable step**, and the mechanism for that was found by measurement, not
@@ -280,11 +293,13 @@ recipe is an offscreen Qt platform plus a config whose audio device string match
 `AudioDummy::name()` exactly, with `HOME` and the `XDG_*` variables pointed at a temp directory, and
 then polling `control.ping` until `engine_ready` is true. The socket exists before the engine does, and
 until it is ready every engine command answers the typed `busy` error with the reason
-(`AGENT-TOOLING.md` §4). `automation.mode_set`'s refusal cites `docs/KNOWN-LIMITATIONS.md:84` for
-"this build has no automation modes" — **but that file, in this tree, says at line 185 that the
-Read/Touch/Latch/Write modes work, and its line 84 is a save/open-integrity paragraph.** The behaviour
-is honest (register the command, refuse, do not fake a write); the reason it cites is stale, and it is
-not repeated here as a fact.
+(`AGENT-TOOLING.md` §4). `automation.mode_set`'s refusal cites `docs/KNOWN-LIMITATIONS.md` for
+"this build has no automation modes" — **but that page, in this tree, says the opposite: its automation
+bullet states that the Read/Touch/Latch/Write modes work**, landing on tick boundaries rather than samples,
+and the line the refusal names is a save/open-integrity paragraph. The behaviour is honest (register the
+command, refuse, do not fake a write); the reason it cites is stale, and it is not repeated here as a fact.
+**The line number the refusal quotes is not repeated here either** — a line number is only true of the commit
+it was taken at, and the page's automation bullet is what a reader can find.
 
 **The contract's own limits, listed rather than implied** (`docs/A16-REVERSIBILITY.md` §8): undo depth
 is 100 steps for both the model stack and the record, and neither survives a restart. `track.remove`'s
@@ -596,15 +611,16 @@ ancestor of this tip.
 
 > Corrected here rather than carried: the applied copy of this paragraph said the old configuration location
 > was **left alone**, and its marker said the sentence was not true of the release-prep base. Both were right
-> at that base and are wrong at this one — the migration commit has since merged, so the paragraph is now the
-> draft's corrected version, ported verbatim. **One disagreement this exposes, reported and not silently
-> harmonised:** the first headline's residue list higher up this file still lists user state
-> (`~/.lmmsrc.xml`, `~/Documents/lmms/`, the `lmms-workspace` marker) as a deliberate residual "because
-> renaming it would orphan an existing install's settings and projects", and `docs/WAVE-R-RENAME.md` §6's
-> "User state" bullet says the same. On this tree that reason no longer holds — the adoption in
-> `src/core/ConfigManager.cpp` is exactly what stops the orphaning — so the bullet and §6 are stale, and the
-> limitations page's own "The name, honestly" section (which says the paths are migrated) is the correct half
-> of the pair.
+> at that base and are wrong at this one — the migration commit has since merged, so the paragraph above is the
+> draft's corrected version, ported verbatim. **One stale record is left standing, and it is named rather than
+> silently harmonised:** `docs/WAVE-R-RENAME.md` §6's "User state" bullet still gives "renaming it would
+> orphan an existing install's settings and projects" as the reason `~/.lmmsrc.xml`, `~/Documents/lmms/` and
+> the `lmms-workspace` marker were left alone. On this tree that reason no longer holds — the adoption in
+> `src/core/ConfigManager.cpp` is exactly what stops the orphaning — so §6 is stale, and the limitations
+> page's own "The name, honestly" section (which says the paths are migrated) is the correct half of the
+> pair. An earlier version of this note also named the first headline higher up this file for that error; the
+> notes' residue list says user state is **migrated**, not kept, so that half of the charge was stale and is
+> removed here.
 
 ---
 
