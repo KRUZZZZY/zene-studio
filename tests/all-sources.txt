@@ -1081,6 +1081,7 @@ tests/src/core/PhaseDSidechainTest.cpp
 tests/src/core/PhaseFChannelScaleTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/ProjectVersionTest.cpp
+tests/src/core/RackTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
