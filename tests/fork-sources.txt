@@ -7,7 +7,7 @@
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
-#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -16,7 +16,7 @@
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -62,7 +62,8 @@
 #     (511) taken by a recorded re-anchor - and moving them would narrow the fork scope. The awk
 #     allow-list above was extended by exactly those two names, and the file now reproduces from
 #     the command under "Regenerate with".
-#   * tools/local-ci.sh and tools/ncpu-shim.c - the second, explicit pathspec line above. Both are
+#   * tools/local-ci.sh, tools/ncpu-shim.c and plugins/Vst3Instrument/logo.png - the second,
+#     explicit pathspec line above. All three are
 #     admitted by name rather than by widening the extension filter, because widening it also
 #     admits five fork-authored .sh harness scripts under plugins/RnnoiseDenoiser/testdata/,
 #     which would put shell tooling in the product scope.
@@ -77,6 +78,23 @@
 #       would be the same allowance by a different route, and the file is 93 lines with no
 #       function over the complexity target, so the fork ratchets it widens are clean.
 #       tests/tools-sources.txt's subtraction regex names it and does not repeat it.
+#     - plugins/Vst3Instrument/logo.png was added by the post-alpha/instrument-hosting-impl
+#       lane (2026-09-12, integration wave 3D) as the embedded resource of the new VST3
+#       instrument host (`BUILD_PLUGIN(vst3instrument ... EMBEDDED_RESOURCES
+#       "${CMAKE_CURRENT_SOURCE_DIR}/logo.png")` in plugins/Vst3Instrument/CMakeLists.txt).
+#       It is NOT a source and the extension filter above cannot produce it, so it is named
+#       in the second pathspec line. It has to be registered SOMEWHERE: Gate 6 examines
+#       every path changed since its base, and for a plugins/ path that is neither a test, a
+#       build file, CI config, documentation, nor in this list, the only remaining home is
+#       tests/upstream-modifications.txt - which would be a false statement there, because
+#       this file is fork-NEW and upstream has no plugins/Vst3Instrument at all (the
+#       ledger's own SCOPE paragraph refuses fork-authored paths for exactly that reason,
+#       and wave 3C deleted seven tools/ entries for making that false statement). This
+#       list is the fork's PRODUCT scope, so the binary asset is in the fork-scoped
+#       file-length / complexity / duplication ratchets; all three were measured with the
+#       entry present and pass (file-length and complexity report it with its own line
+#       count, duplication reports 0.60% against a 5% budget), so the scope widened by one
+#       file that those gates measure without a violation.
 #   * tools/stem-export-demo.py used to be a second hand-added tools/ entry in this file. It was
 #     moved to tests/tools-sources.txt on 2026-09-12 (gate hygiene): tooling has one home, and
 #     that list is the home tests/tools-sources.txt itself declares for tools/. It is not in the
@@ -136,6 +154,16 @@
 # fork's own tooling under tools/ and the list whose own command DOES produce them - a
 # recorded move of home, not a lost entry, and the same treatment merge #2 gave
 # tools/brand/rasterise-placeholders.py.
+#
+# Merged 2026-09-12 (integration wave 3D, merge #1 = post-alpha/instrument-hosting-impl).
+# That lane added eight entries here (the Vst3Instrument module's four sources, the two
+# Vst3Midi* files and Vst3MidiQueue.h extracted from the effect host, and
+# plugins/Vst3Instrument/logo.png). Seven are produced by the command under "Regenerate
+# with" unchanged; logo.png is admitted by name in the second pathspec line, with its
+# reason above. Its copy of this file also carried an older header (no collation note, no
+# wave-3C paragraph) and was missing 67 entries ours has - ours is kept, and the entry set
+# is the union of both sides, 175 entries, which the regeneration run reports as
+# REPRODUCES with 0 duplicates.
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
@@ -230,11 +258,19 @@ plugins/Vst3Effect/Vst3EffectControls.cpp
 plugins/Vst3Effect/Vst3EffectControls.h
 plugins/Vst3Effect/Vst3Host.cpp
 plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3MidiEvent.cpp
+plugins/Vst3Effect/Vst3MidiEvent.h
+plugins/Vst3Effect/Vst3MidiQueue.h
 plugins/Vst3Effect/Vst3ParamDescriptor.h
 plugins/Vst3Effect/Vst3Parameter.cpp
 plugins/Vst3Effect/Vst3Parameter.h
 plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
 plugins/Vst3Effect/Vst3SubPluginFeatures.h
+plugins/Vst3Instrument/Vst3Instrument.cpp
+plugins/Vst3Instrument/Vst3Instrument.h
+plugins/Vst3Instrument/Vst3InstrumentView.cpp
+plugins/Vst3Instrument/Vst3InstrumentView.h
+plugins/Vst3Instrument/logo.png
 plugins/WasmEffect/WasmEffect.cpp
 plugins/WasmEffect/WasmEffect.h
 plugins/WasmEffect/WasmEffectControlDialog.cpp

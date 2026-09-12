@@ -67,6 +67,14 @@ ELSE()
 ENDIF()
 
 # --- static host library -------------------------------------------------
+#
+# Two plug-in targets host VST3 (plugins/Vst3Effect and plugins/Vst3Instrument),
+# each including this module from its own CMakeLists.txt, because one shared
+# library exposes exactly one descriptor (src/core/PluginFactory.cpp:177-185).
+# The target is therefore created once, by whichever directory configures
+# first, and this module is a no-op for the second.
+IF(NOT TARGET lmms_vst3_sdk)
+
 SET(LMMS_VST3_SDK_SOURCES
 	pluginterfaces/base/conststringtable.cpp
 	pluginterfaces/base/coreiids.cpp
@@ -169,3 +177,5 @@ ELSEIF(APPLE)
 		"-framework Foundation"
 		"-framework Cocoa")
 ENDIF()
+
+ENDIF() # NOT TARGET lmms_vst3_sdk

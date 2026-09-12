@@ -27,12 +27,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <cstddef>
 #include <vector>
 
 #include <QByteArray>
 #include <QString>
 
 #include "Vst3BusMap.h"
+#include "Vst3MidiQueue.h"
 #include "Vst3ParamDescriptor.h"
 
 namespace lmms::vst3
@@ -51,6 +53,9 @@ struct Vst3ClassInfo
 //! Enumerates the audio classes of a VST3 module. GUI thread, allocates.
 auto listClasses(const QString& modulePath, QString* error) -> std::vector<Vst3ClassInfo>;
 
+//! The MIDI queue every instrument's events travel through, and the plain data
+//! they are made of (Vst3MidiQueue.h). The queue itself is an implementation
+//! detail: callers only need pushMidiEvent().
 /**
  * Hosts one VST3 audio class in-process.
  *
@@ -58,8 +63,10 @@ auto listClasses(const QString& modulePath, QString* error) -> std::vector<Vst3C
  *  - load()/prepare()/release()/saveState()/loadState()/paramDisplayValue()
  *    are GUI thread operations and may allocate.
  *  - setParamNormalized() is lock free and may be called from any thread.
+ *  - pushMidiEvent() is lock free and may be called from any thread.
  *  - process() is the audio thread path: it allocates nothing and takes no
- *    locks. All buffers and parameter queues are allocated in prepare().
+ *    locks. All buffers, parameter queues, the VST3 event list and the MIDI
+ *    queue are allocated in prepare().
  */
 class HostedPlugin
 {
@@ -81,6 +88,24 @@ public:
 	auto isInstrument() const -> bool;
 	//! True once load() succeeded
 	auto isLoaded() const -> bool;
+
+	//! True when MIDI pushed with pushMidiEvent() reaches the loaded plug-in:
+	//! it is an instrument AND it declares an input event bus. Always false
+	//! for an effect, whose ProcessData::inputEvents stays nullptr exactly as
+	//! it was before the MIDI path existed.
+	auto receivesMidi() const -> bool;
+	//! The input event bus index the host drives, or -1 when there is none.
+	//! A plug-in may declare several event inputs; this slice drives the first
+	//! bus that is active by default (and deactivates the others), which is
+	//! the policy written down in docs/VST3-INSTRUMENT-HOSTING.md.
+	auto eventInputBusIndex() const -> int;
+	//! Lock free and allocation free. Callable from the audio thread (a note
+	//! handle built during the current period) and from the MIDI/GUI thread.
+	//! `event.frameOffset` is in frames from the start of the block the
+	//! plug-in processes next.
+	void pushMidiEvent(const MidiEventIn& event);
+	//! MIDI events dropped because the queue was full. Diagnostics only.
+	auto droppedMidiEvents() const -> std::uint64_t;
 
 	//! Lock free, any thread
 	void setParamNormalized(std::uint32_t id, float normalized);

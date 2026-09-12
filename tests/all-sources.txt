@@ -788,11 +788,18 @@ plugins/Vst3Effect/Vst3EffectControls.cpp
 plugins/Vst3Effect/Vst3EffectControls.h
 plugins/Vst3Effect/Vst3Host.cpp
 plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3MidiEvent.cpp
+plugins/Vst3Effect/Vst3MidiEvent.h
+plugins/Vst3Effect/Vst3MidiQueue.h
 plugins/Vst3Effect/Vst3ParamDescriptor.h
 plugins/Vst3Effect/Vst3Parameter.cpp
 plugins/Vst3Effect/Vst3Parameter.h
 plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
 plugins/Vst3Effect/Vst3SubPluginFeatures.h
+plugins/Vst3Instrument/Vst3Instrument.cpp
+plugins/Vst3Instrument/Vst3Instrument.h
+plugins/Vst3Instrument/Vst3InstrumentView.cpp
+plugins/Vst3Instrument/Vst3InstrumentView.h
 plugins/VstBase/RemoteVstPlugin.cpp
 plugins/VstBase/VstPlugin.cpp
 plugins/VstBase/VstPlugin.h
@@ -1229,6 +1236,8 @@ tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
 tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
+tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
+tests/src/plugins/Vst3InstrumentTest.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
