@@ -452,7 +452,12 @@ void registerControlCommands(ControlRegistry& registry)
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
 	registerSurfaceCommands(registry);
+#ifdef ZENE_TELEMETRY_ENABLED
+	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
+	// removes the client, so the registry must not carry ids that would
+	// describe commands no handler in this binary could answer.
 	registerTelemetryCommands(registry);
+#endif
 
 	registerArrangementCommands(registry);
 	registerClipCommands(registry);

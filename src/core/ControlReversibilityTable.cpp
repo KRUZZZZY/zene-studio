@@ -36,6 +36,13 @@
 
 #include "ControlReversibility.h"
 
+// lmmsconfig.h carries the ZENE_TELEMETRY_ENABLED packager-kill-switch define.
+// ControlReversibility.h does not pull it in, and this file's rows are guarded
+// by that switch, so it has to be included explicitly - without it the #ifdef
+// below reads "off" even in a telemetry-enabled build and silently drops the
+// two telemetry.* rows the registry does declare.
+#include "lmmsconfig.h"
+
 namespace lmms
 {
 namespace control
@@ -386,6 +393,11 @@ const ReversibilityRow kRows[] = {
 		"nothing to reverse: calling midi.learn_toggle again is the operation a "
 		"client calls, and setArmed() keeps the Edit menu tick in step",
 		""),
+#ifdef ZENE_TELEMETRY_ENABLED
+	// The two telemetry.* rows travel with the client: with the packager kill
+	// switch off the commands are absent from the registry, and this table must
+	// hold a row for every registered command and no row for a command that is
+	// not registered (ReversibilityContractTest asserts both directions).
 	R("telemetry.consent", RC::NotMutating, false,
 		"it OPENS A SCREEN, it does not edit the project: the Help menu's "
 		"\"Telemetry - what we send...\" action declares it and the menu slot and "
@@ -398,6 +410,7 @@ const ReversibilityRow kRows[] = {
 		"the handler runs and no automated caller can reach it or change the "
 		"consent record at all",
 		""),
+#endif // ZENE_TELEMETRY_ENABLED
 	R("render.render", RC::NotMutating, false,
 		"it writes an OUTPUT ARTEFACT; the session it renders is not modified "
 		"(it serialises to a temp file and removes it)",
@@ -425,8 +438,10 @@ const ReversibilityRow kRows[] = {
 	R("roll.get_state", RC::NotMutating, false, "reads the note list", "no write", ""),
 	R("script.list", RC::NotMutating, false, "reads the scripts directory", "no write", ""),
 	R("settings.get", RC::NotMutating, false, "reads one config value", "no write", ""),
+#ifdef ZENE_TELEMETRY_ENABLED
 	R("telemetry.status", RC::NotMutating, false,
 		"reads the consent record and the payload builder", "no write", ""),
+#endif // ZENE_TELEMETRY_ENABLED
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),

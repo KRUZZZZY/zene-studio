@@ -100,12 +100,18 @@ private slots:
 			QStringLiteral("audio.device_set"),
 			QStringLiteral("midi.device_list"),
 			QStringLiteral("app.version"),
+#ifdef ZENE_TELEMETRY_ENABLED
 			// telemetry.* (SPEC A15). The Help menu's "Telemetry - what we
 			// send..." action declares telemetry.consent through the dynamic
 			// property "controlCommand", so this command existing is what makes
 			// the agent-surface gate see that menu item as reachable at all.
+			// With -DZENE_TELEMETRY=OFF the client is not compiled, the group
+			// is not registered, and the two ids are required to be ABSENT -
+			// that half is asserted by
+			// telemetryCommandsAreAbsentWhenTheClientIsCompiledOut below.
 			QStringLiteral("telemetry.consent"),
 			QStringLiteral("telemetry.status"),
+#endif
 		};
 		for (const QString& id : required)
 		{
@@ -423,6 +429,7 @@ private slots:
 		QCOMPARE(controlErrorKindName(result.errorKind), QStringLiteral("refused"));
 	}
 
+#ifdef ZENE_TELEMETRY_ENABLED
 	//! The telemetry command group (SPEC A15, the Help menu's "Telemetry - what
 	//! we send..." action). Two properties the agent-surface gate relies on and
 	//! cannot check by itself: that telemetry.consent declares `requires:
@@ -466,6 +473,25 @@ private slots:
 		QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
 		QCOMPARE(controlErrorKindName(refused.errorKind), QStringLiteral("requires"));
 	}
+#else
+	//! The same contract from the other side: with the packager kill switch off
+	//! the client is not compiled, so the group must not be in the registry at
+	//! all - 72 commands, not 74, and no telemetry.* id. An id that could only
+	//! answer "not in this build" advertises a feature the binary does not
+	//! contain (docs/TELEMETRY-KILL-SWITCH.md).
+	void telemetryCommandsAreAbsentWhenTheClientIsCompiledOut()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		for (const QString& id : registry->commandIds())
+		{
+			QVERIFY2(!id.startsWith(QStringLiteral("telemetry.")), qPrintable(id));
+		}
+		// 72 is the product surface a running instance reports in this
+		// configuration (74 with the telemetry.* pair); this binary adds the
+		// five synthetic commands its slots above declare.
+		QCOMPARE(registry->commandCount(), 72 + 5);
+	}
+#endif
 };
 
 QTEST_GUILESS_MAIN(ControlRegistryTest)

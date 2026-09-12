@@ -138,9 +138,9 @@ struct LMMS_EXPORT TelemetryHardware
 //!   * submit() refuses unless the consent gate allows the send, and the only
 //!     bytes it can ever hand to a transport are previewJson()'s bytes - the
 //!     same object the UI shows;
-//!   * when the package is built with -DZENE_TELEMETRY=OFF the whole client
-//!     collapses to isCompiledIn() == false and submit() == CompiledOut, and
-//!     no networking code is compiled at all.
+//!   * when the packager builds with -DZENE_TELEMETRY=OFF the client is not
+//!     compiled at all: no symbol, no payload builder, no send path - none of
+//!     the members this class declares exist in that binary.
 class LMMS_EXPORT Telemetry
 {
 public:

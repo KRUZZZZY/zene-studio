@@ -27,4 +27,14 @@
 #   human act, and an unattended run must never block on a dialog nobody can
 #   answer (include/UnattendedRun.h, task #625). The read-only half of the
 #   feature, telemetry.status, declares no `requires` and IS swept.
-telemetry.consent	requires: display, human - it opens the modal consent screen, so it cannot be exercised headlessly (the sweep would only measure the typed `requires` refusal). Reverse completeness is still accounted for: telemetry.status covers the readable half of the feature and is swept like any other headless-safe command.
+#
+# CONFIGURATION NOTE (2026-09-12, docs/TELEMETRY-KILL-SWITCH.md). This entry
+# names a command that only exists in a telemetry-enabled build. With
+# -DZENE_TELEMETRY=OFF the client - and this group with it - is compiled out, so
+# the registry declares no telemetry.consent at all. tests/CMakeLists.txt passes
+# the gate `--compiled-out telemetry.consent` for that configuration: the entry
+# is then accounted for by the compile-time switch rather than reported as
+# stale, and the flag is refused if the registry DOES declare the id. There is
+# one allowlist, not one per configuration, so the reason above stays reviewable
+# in both.
+telemetry.consent	requires: display, human - it opens the modal consent screen, so it cannot be exercised headlessly (the sweep would only measure the typed `requires` refusal). Reverse completeness is still accounted for: telemetry.status covers the readable half of the feature and is swept like any other headless-safe command. In a -DZENE_TELEMETRY=OFF build the whole group is absent and tests/CMakeLists.txt declares this id compiled out.

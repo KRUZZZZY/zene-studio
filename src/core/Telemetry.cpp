@@ -308,14 +308,12 @@ TelemetryHardware TelemetryHardware::collect()
 
 #else // !ZENE_TELEMETRY_ENABLED
 
-// The packager kill switch. With -DZENE_TELEMETRY=OFF this translation unit
-// defines exactly one symbol: the query callers use to ask whether the feature
-// is present. There is no payload builder, no consent store, no submit() and
-// no send path in the object file (checked with nm in docs/TELEMETRY-V1.md).
-bool Telemetry::isCompiledIn()
-{
-	return false;
-}
+// The packager kill switch. With -DZENE_TELEMETRY=OFF nothing of the client is
+// compiled: this translation unit defines NO symbol at all - not the payload
+// builder, not the consent store, not submit(), and not the isCompiledIn()
+// query an earlier revision kept alive here. The build now contains no
+// telemetry symbol and no send path to reach; the differential (nm/strings)
+// and the registry count are recorded in docs/TELEMETRY-KILL-SWITCH.md.
 
 #endif // ZENE_TELEMETRY_ENABLED
 
