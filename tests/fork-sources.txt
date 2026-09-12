@@ -22,6 +22,8 @@ include/LmmsPolyfill.h
 include/MultiTrackRecorder.h
 include/PinConnector.h
 include/PluginAudioPorts.h
+include/Rack.h
+include/RackNodes.h
 include/RecordRingBuffer.h
 include/RemotePluginAudioPorts.h
 include/RoutingChainNodes.h
@@ -95,6 +97,8 @@ src/core/audio/TrackRecorder.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/Rack.cpp
+src/core/RackNodes.cpp
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp

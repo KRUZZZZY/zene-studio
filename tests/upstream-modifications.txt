@@ -24,13 +24,13 @@ include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's
 include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
 include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph; #599 routing: the chain owns the RoutingGraph that renders its block (rebuildRoutingGraph/routingGraph)
 include/Effect.h	#605 PDC: latency accessor on the effect interface
-include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+include/Mixer.h	#605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644); #599 racks: the channel owns its Rack (m_rack), whose chain 0 is the channel's own chain
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 src/core/AudioBuffer.cpp	#608 memory correctness: access buffer always from the default resource; allocationSize() no longer reserves it in the shared region (746f6bd0e)
 src/core/AudioBusHandle.cpp	#605 PDC: delay each track output to its alignment point (9e12a68f5)
 src/core/EffectChain.cpp	#605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644); #599 routing: build the chain's RoutingGraph on every topology edit and render the block through it in processAudioBuffer(AudioBus&)
 src/core/Effect.cpp	#605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
-src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/core/Mixer.cpp	#605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644); #599 racks: the channel renders its period through the rack's RoutingGraph when one is configured, saves/loads the channel's <rack> element, and drops the rack when the channel is cleared
 src/gui/MainWindow.cpp	compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4)
 src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 include/RemotePlugin.h	#589 planar-ports migration: sole ports-taking ctor, no-arg process(), planar updateAudioBuffer() layout contract
