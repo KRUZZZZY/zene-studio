@@ -1,0 +1,113 @@
+src/core/AudioEngineWorkerThread.cpp                       rc=0   SAFE under Qt5 emulation
+src/core/AudioPortsModel.cpp                               rc=0   SAFE under Qt5 emulation
+src/core/AutomatableModel.cpp                              rc=0   SAFE under Qt5 emulation
+src/core/ConfigManager.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/Controller.cpp                                    rc=0   SAFE under Qt5 emulation
+src/core/ControllerConnection.cpp                          rc=0   SAFE under Qt5 emulation
+src/core/DataFile.cpp                                      rc=0   SAFE under Qt5 emulation
+src/core/EffectChain.cpp                                   rc=0   SAFE under Qt5 emulation
+src/core/Mixer.cpp                                         rc=0   SAFE under Qt5 emulation
+src/core/ImportFilter.cpp                                  rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/core/ImportFilter.cpp:97:33: error: invalid use of incomplete type ‘class QDebug’
+src/core/LadspaControl.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/LadspaManager.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/PeakController.cpp                                rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/core/PeakController.cpp:217:41: error: invalid use of incomplete type ‘class QDebug’
+src/core/PerfLog.cpp                                       rc=0   SAFE under Qt5 emulation
+src/core/Plugin.cpp                                        rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/core/Plugin.cpp:230:33: error: invalid use of incomplete type ‘class QDebug’
+src/core/PluginIssue.cpp                                   rc=0   SAFE under Qt5 emulation
+src/core/PluginFactory.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/PluginScanCache.cpp                               rc=0   SAFE under Qt5 emulation
+src/core/RemotePlugin.cpp                                  rc=0   SAFE under Qt5 emulation
+src/core/RenderManager.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/SampleBuffer.cpp                                  rc=0   SAFE under Qt5 emulation
+src/core/ScriptConsole.cpp                                 rc=0   SAFE under Qt5 emulation
+src/core/Song.cpp                                          rc=0   SAFE under Qt5 emulation
+src/core/Track.cpp                                         rc=0   SAFE under Qt5 emulation
+src/core/VstSyncController.cpp                             rc=0   SAFE under Qt5 emulation
+src/core/audio/AudioFileWave.cpp                           rc=0   SAFE under Qt5 emulation
+src/core/audio/AudioPulseAudio.cpp                         rc=0   SAFE under Qt5 emulation
+src/core/audio/AudioSdl.cpp                                rc=0   SAFE under Qt5 emulation
+src/core/lv2/Lv2ControlBase.cpp                            rc=0   SAFE under Qt5 emulation
+src/core/lv2/Lv2Proc.cpp                                   rc=0   SAFE under Qt5 emulation
+src/core/lv2/Lv2Manager.cpp                                rc=0   SAFE under Qt5 emulation
+src/core/midi/MidiAlsaSeq.cpp                              rc=0   SAFE under Qt5 emulation
+src/core/midi/MidiClient.cpp                               rc=0   SAFE under Qt5 emulation
+src/core/midi/MidiApple.cpp                                rc=0   SAFE under Qt5 emulation
+src/core/midi/MidiWinMM.cpp                                rc=0   SAFE under Qt5 emulation
+src/gui/embed.cpp                                          rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/gui/embed.cpp:50:25: error: invalid use of incomplete type ‘class QDebug’
+src/gui/FileRevealer.cpp                                   rc=0   SAFE under Qt5 emulation
+src/gui/GuiApplication.cpp                                 rc=0   SAFE under Qt5 emulation
+src/gui/MainApplication.cpp                                rc=0   SAFE under Qt5 emulation
+src/gui/MainWindow.cpp                                     rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/include/AboutDialog.h:30:10: fatal error: ui_about_dialog.h: No such file or directory
+src/gui/clips/MidiClipView.cpp                             rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/src/gui/clips/MidiClipView.cpp:166:22: error: aggregate ‘QSet<lmms::Track*> m_changedTracks’ has incomplete type and cannot be defined
+src/gui/editors/TrackContainerView.cpp                     rc=0   SAFE under Qt5 emulation
+src/gui/tracks/FadeButton.cpp                              rc=0   SAFE under Qt5 emulation
+src/gui/widgets/TempoSyncBarModelEditor.cpp                rc=0   SAFE under Qt5 emulation
+src/gui/widgets/TempoSyncKnob.cpp                          rc=0   SAFE under Qt5 emulation
+src/tracks/InstrumentTrack.cpp                             rc=0   SAFE under Qt5 emulation
+src/core/main.cpp                                          rc=0   SAFE under Qt5 emulation
+plugins/ClapEffect/ClapEffect.cpp                          rc=0   SAFE under Qt5 emulation
+plugins/ClapEffect/ClapHost.cpp                            rc=0   SAFE under Qt5 emulation
+plugins/LadspaEffect/LadspaEffect.cpp                      rc=1   FAILS under Qt5 emulation: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/plugins/LadspaEffect/LadspaEffect.cpp:462:33: error: invalid use of incomplete type ‘class QDebug’
+plugins/Lv2Effect/Lv2Effect.cpp                            rc=0   SAFE under Qt5 emulation
+plugins/Lv2Instrument/Lv2Instrument.cpp                    rc=0   SAFE under Qt5 emulation
+plugins/Lb302/Lb302.cpp                                    rc=0   SAFE under Qt5 emulation
+plugins/MidiImport/MidiImport.cpp                          rc=0   SAFE under Qt5 emulation
+plugins/GigPlayer/GigPlayer.cpp                            rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/plugins/GigPlayer/PatchesDialog.h:29:10: fatal error: ui_PatchesDialog.h: No such file or directory
+plugins/Sf2Player/Sf2Player.cpp                            rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/plugins/Sf2Player/PatchesDialog.h:34:10: fatal error: ui_PatchesDialog.h: No such file or directory
+plugins/VstBase/VstPlugin.cpp                              rc=0   SAFE under Qt5 emulation
+plugins/Vst3Effect/Vst3Effect.cpp                          rc=0   SAFE under Qt5 emulation
+plugins/Vst3Effect/Vst3Host.cpp                            rc=0   SAFE under Qt5 emulation
+plugins/Vst3Instrument/Vst3Instrument.cpp                  rc=0   SAFE under Qt5 emulation
+plugins/Xpressive/ExprSynth.cpp                            rc=0   SAFE under Qt5 emulation
+plugins/ZynAddSubFx/zynaddsubfx/src/Misc/QtXmlWrapper.cpp  rc=0   SAFE under Qt5 emulation
+tests/src/core/AudioBufferTest.cpp                         rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/AudioBufferTest.cpp:934:10: fatal error: AudioBufferTest.moc: No such file or directory
+tests/src/core/ControlDeviceCatalogueTest.cpp              rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/ControlDeviceCatalogueTest.cpp:250:10: fatal error: ControlDeviceCatalogueTest.moc: No such file or directory
+tests/src/core/LoudnessReportTest.cpp                      rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/LoudnessReportTest.cpp:326:10: fatal error: LoudnessReportTest.moc: No such file or directory
+tests/src/core/MixerRoutingBackwardCompatTest.cpp          rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/MixerRoutingBackwardCompatTest.cpp:375:10: fatal error: MixerRoutingBackwardCompatTest.moc: No such file or directory
+tests/src/core/PluginLogoResourceTest.cpp                  rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/PluginLogoResourceTest.cpp:91:10: fatal error: PluginLogoResourceTest.moc: No such file or directory
+tests/src/core/PluginScanCacheTest.cpp                     rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/PluginScanCacheTest.cpp:670:10: fatal error: PluginScanCacheTest.moc: No such file or directory
+tests/src/core/RecordClipTest.cpp                          rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/RecordClipTest.cpp:357:10: fatal error: RecordClipTest.moc: No such file or directory
+tests/src/core/RecordingRealtimeTest.cpp                   rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/RecordingRealtimeTest.cpp:320:10: fatal error: RecordingRealtimeTest.moc: No such file or directory
+tests/src/core/RemotePluginClientE2ETest.cpp               rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/RemotePluginClientE2ETest.cpp:451:10: fatal error: RemotePluginClientE2ETest.moc: No such file or directory
+tests/src/core/VcaGroupTest.cpp                            rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/VcaGroupTest.cpp:1022:10: fatal error: VcaGroupTest.moc: No such file or directory
+tests/src/core/ScriptEngineTest.cpp                        rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/ScriptEngineTest.cpp:627:10: fatal error: ScriptEngineTest.moc: No such file or directory
+tests/src/core/StableTrackIdsTest.cpp                      rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/core/StableTrackIdsTest.cpp:482:10: fatal error: StableTrackIdsTest.moc: No such file or directory
+tests/reference/Xpressive/ExprSynth.cpp                    rc=0   SAFE under Qt5 emulation
+tests/reference/Lb302/Lb302.cpp                            rc=0   SAFE under Qt5 emulation
+tests/reference/Lv2Effect/Lv2Effect.cpp                    rc=0   SAFE under Qt5 emulation
+tests/reference/Lv2Instrument/Lv2Instrument.cpp            rc=0   SAFE under Qt5 emulation
+tests/reference/Sf2Player/Sf2Player.cpp                    rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/reference/Sf2Player/PatchesDialog.h:34:10: fatal error: ui_PatchesDialog.h: No such file or directory
+tests/reference/GigPlayer/GigPlayer.cpp                    rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/reference/GigPlayer/PatchesDialog.h:29:10: fatal error: ui_PatchesDialog.h: No such file or directory
+tests/src/plugins/PluginPortsMigrationTest.cpp             rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/plugins/PluginPortsMigrationTest.cpp:731:10: fatal error: PluginPortsMigrationTest.moc: No such file or directory
+tests/src/plugins/ClapHostTest.cpp                         rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/plugins/ClapHostTest.cpp:315:10: fatal error: ClapHostTest.moc: No such file or directory
+tests/src/plugins/ClapEffectIntegrationTest.cpp            rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/plugins/ClapEffectIntegrationTest.cpp:410:10: fatal error: ClapEffectIntegrationTest.moc: No such file or directory
+tests/src/plugins/ZynSeparateProcessTest.cpp               rc=1   NOT A QDEBUG VERDICT (build-tree artefact or unrelated error): /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-qdebug/tests/src/plugins/ZynSeparateProcessTest.cpp:361:10: fatal error: ZynSeparateProcessTest.moc: No such file or directory
+
+summary: 84 TU(s) swept, 5 fail under the Qt5 emulation, 22 inconclusive
+  NEEDS <QDebug>: src/core/ImportFilter.cpp
+  NEEDS <QDebug>: src/core/PeakController.cpp
+  NEEDS <QDebug>: src/core/Plugin.cpp
+  NEEDS <QDebug>: src/gui/embed.cpp
+  NEEDS <QDebug>: plugins/LadspaEffect/LadspaEffect.cpp
+  INCONCLUSIVE (not a QDebug verdict): src/gui/MainWindow.cpp
+  INCONCLUSIVE (not a QDebug verdict): src/gui/clips/MidiClipView.cpp
+  INCONCLUSIVE (not a QDebug verdict): plugins/GigPlayer/GigPlayer.cpp
+  INCONCLUSIVE (not a QDebug verdict): plugins/Sf2Player/Sf2Player.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/AudioBufferTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/ControlDeviceCatalogueTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/LoudnessReportTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/MixerRoutingBackwardCompatTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/PluginLogoResourceTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/PluginScanCacheTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/RecordClipTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/RecordingRealtimeTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/RemotePluginClientE2ETest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/VcaGroupTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/ScriptEngineTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/core/StableTrackIdsTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/reference/Sf2Player/Sf2Player.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/reference/GigPlayer/GigPlayer.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/plugins/PluginPortsMigrationTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/plugins/ClapHostTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/plugins/ClapEffectIntegrationTest.cpp
+  INCONCLUSIVE (not a QDebug verdict): tests/src/plugins/ZynSeparateProcessTest.cpp

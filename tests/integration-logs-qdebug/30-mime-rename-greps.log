@@ -1,0 +1,138 @@
+### A. every tracked path whose name still carries the retired product name (live tree, tests/ evidence excluded by request)
+$ git ls-files | grep -i lmms | grep -v "^tests/"
+  include/Ladspa2LMMS.h
+  include/LmmsCommonMacros.h
+  include/LmmsPalette.h
+  include/LmmsPolyfill.h
+  include/LmmsSemaphore.h
+  include/LmmsStyle.h
+  include/LmmsTypes.h
+  include/lmms_constants.h
+  include/lmms_math.h
+  src/3rdparty/lua/README.lmms
+  src/3rdparty/luabridge/README.lmms
+  src/core/Ladspa2LMMS.cpp
+  src/core/LmmsSemaphore.cpp
+  src/gui/LmmsPalette.cpp
+  src/gui/LmmsStyle.cpp
+  src/lmmsconfig.h.in
+  src/lmmsversion.h.in
+
+### B. old MIME raster icon name, whole tree
+$ git grep -n "application-x-lmms" -- . | wc -l
+1363
+$ git grep -ln "application-x-lmms" -- . | sed "s/^/  /"
+  cmake/linux/icons/scalable/mimetypes/application-x-zene-project.svg
+  docs/BRAND-PLACEHOLDERS.md
+  docs/RENAME-COMPLETE.md
+  tests/evidence/brand-placeholders/gate-no-upstream-regression.log
+  tests/evidence/brand-placeholders/gen.log
+  tests/evidence/brand-placeholders/pre-change-dims.txt
+  tests/evidence/brand-placeholders/provenance-audit.py
+  tests/evidence/brand-placeholders/provenance-audit.txt
+  tests/evidence/brand-placeholders/run-all-gates.txt
+  tests/integration-logs-3b/merge2/gate6-no-upstream-regression.log
+  tests/integration-logs-3b/merge2/run-all-gates.log
+  tests/integration-logs-3b/merge3/gate6-no-upstream-regression.log
+  tests/integration-logs-3b/merge3/run-all-gates.log
+  tests/integration-logs-3b/merge4/gate6-index-replay-BEFORE-relocation.log
+  tests/integration-logs-3b/merge4/gate6-no-upstream-regression.log
+  tests/integration-logs-3b/merge4/run-all-gates.log
+  tests/integration-logs-3b/merge5/gate6-no-upstream-regression.log
+  tests/integration-logs-3b/merge5/run-all-gates.log
+  tests/integration-logs-3b/merge6/gate6-no-upstream-regression.log
+  tests/integration-logs-3b/merge6/run-all-gates.log
+  tests/integration-logs-3c/baseline/gate6.log
+  tests/integration-logs-3c/final/gate6-tip.log
+  tests/integration-logs-3c/merge1/gate6.log
+  tests/integration-logs-3c/merge1/run-all-gates.log
+  tests/integration-logs-3c/merge2/gate6.log
+  tests/integration-logs-3c/merge2/precommit-index.log
+  tests/integration-logs-3c/merge2/run-all-gates.log
+  tests/integration-logs-3c/merge3/gate6.log
+  tests/integration-logs-3c/merge3/run-all-gates.log
+  tests/integration-logs-3c/merge4/gate6.log
+  tests/integration-logs-3c/merge4/run-all-gates.log
+  tests/integration-logs-3c/merge5/gate6.log
+  tests/integration-logs-3c/merge5/run-all-gates.log
+  tests/integration-logs-3c/merge6/gate6.log
+  tests/integration-logs-3c/merge6/run-all-gates.log
+  tests/integration-logs-3c/sides/merge2/tests_upstream-modifications.txt.ours
+  tests/integration-logs-3c/sides/merge3/tests_upstream-modifications.txt.s2
+  tests/integration-logs-3c/sides/merge4/tests_upstream-modifications.txt.s2
+  tests/integration-logs-3c/sides/merge5/tests_upstream-modifications.txt.s2
+  tests/integration-logs-3c/sides/merge6/tests_upstream-modifications.txt.s2
+  tests/integration-logs-3d/baseline/gate6.log
+  tests/integration-logs-3d/final/gate6.log
+  tests/integration-logs-3d/final/run-all-gates.log
+  tests/integration-logs-3d/merge1/gate6.log
+  tests/integration-logs-3d/merge1/run-all-gates.log
+  tests/integration-logs-3d/merge2/gate6.log
+  tests/integration-logs-3d/merge2/run-all-gates.log
+  tests/integration-logs-3d/merge3/gate6.log
+  tests/integration-logs-3d/merge3/run-all-gates.log
+  tests/integration-logs-3d/sides/merge2/upstream-modifications.txt.2
+  tests/integration-logs-3d/sides/merge3/upstream-modifications.txt.2
+  tests/integration-logs-3d/tip/gate6.log
+  tests/integration-logs-3d/tip/run-all-gates.log
+  tests/integration-logs-3e/baseline/gate6.log
+  tests/integration-logs-3e/baseline/run-all-gates.log
+  tests/integration-logs-3e/final/gate6.log
+  tests/integration-logs-3e/final/run-all-gates.log
+  tests/integration-logs-3e/merge1/gate6.log
+  tests/integration-logs-3e/merge1/run-all-gates.log
+  tests/integration-logs-3e/merge2/gate6.log
+  tests/integration-logs-3e/merge2/run-all-gates.log
+  tests/integration-logs-3e/merge3/gate6.log
+  tests/integration-logs-3e/merge3/run-all-gates.log
+  tests/integration-logs-3e/merge4/gate6.log
+  tests/integration-logs-3e/merge4/run-all-gates.log
+  tests/integration-logs-3e/merge5/gate6.log
+  tests/integration-logs-3e/merge5/run-all-gates.log
+  tests/integration-logs-3e/merge5/sides/tests_upstream-modifications.txt.ours
+  tests/integration-logs-3e/tip/gate6.log
+  tests/integration-logs-3e/tip/run-all-gates.log
+  tests/integration-logs-3f-bridge/after-gate6.log
+  tests/integration-logs-3f-bridge/before-gate6.log
+  tests/integration-logs-3f-bridge/committed-tree-gate6.log
+  tests/integration-logs-3f-bridge/gate6-negative-control-fails.log
+  tests/integration-logs-3f-bridge/gate6-real-tree-passes.log
+  tests/integration-logs-3f-bridge/run-all-gates.log
+  tests/integration-logs-3f-fix/gates/no-upstream-regression.log
+  tests/integration-logs-3f-undo/gate6-after.log
+  tests/integration-logs-3f/baseline/gate6.log
+  tests/integration-logs-3f/baseline/run-all-gates.log
+  tests/integration-logs-3f/merge1-fixup/gate6.log
+  tests/integration-logs-3f/merge1-fixup/run-all-gates.log
+  tests/integration-logs-3f/merge1/gate6.log
+  tests/integration-logs-3f/merge1/run-all-gates.log
+  tests/integration-logs-3f/merge1/sides/tests_upstream-modifications.txt.base
+  tests/integration-logs-3f/merge1/sides/tests_upstream-modifications.txt.ours
+  tests/integration-logs-3f/merge1/sides/tests_upstream-modifications.txt.theirs
+  tests/integration-logs-3f/merge2/gate6.log
+  tests/integration-logs-3f/merge2/run-all-gates.log
+  tests/integration-logs-3f/merge2/sides/tests_upstream-modifications.txt.ours
+  tests/integration-logs-3f/tip/gate6.log
+  tests/integration-logs-3f/tip/run-all-gates.log
+  tests/integration-logs-ci-fix/no-upstream-regression-gate.log
+  tests/integration-logs-release-verify/gate-all.log
+  tests/integration-logs-release-verify/gate-upstream-regression.log
+  tests/integration-logs-teardown2/gate-no-upstream-regression.log
+  tests/integration-logs-telemetry-off/gate-run-all-gates.log
+  tests/integration-logs-telemetry-off/gate6-no-upstream-regression.log
+  tests/integration-logs-undo-rel/gate6-after.log
+  tests/integration-logs-ver021/06-no-upstream-regression-gate.log
+  tests/upstream-modifications.txt
+
+### C. outside tests/ (the shipped tree)
+$ git grep -n "x-lmms" -- . ":!tests/*" | wc -l
+7
+
+### D. the renamed files exist, count 13 each
+$ git ls-files cmake/linux/icons | grep -c "application-x-zene-project.png"
+13
+$ git ls-files cmake/linux/icons | grep -c "application-x-lmms-project.png"
+0
+
+### E. no hand-written reference to the raster names in install rules / packaging / data
+$ git grep -n "mimetypes" -- cmake/ data/ CMakeLists.txt plugins/ | grep -v "^cmake/linux/icons/"
