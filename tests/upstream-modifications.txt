@@ -84,7 +84,7 @@ doc/lmms.1	wave R rename (018d2041f): doc/lmms.1 -> doc/zene.1 -- the man page i
 doc/zene.1	wave R rename (018d2041f): doc/lmms.1 -> doc/zene.1 -- the man page is renamed so 'man zene' documents this product. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
 include/AudioBuffer.h	#608 memory correctness: the channel access buffer (pointer table) is process-local, never allocated from a shared memory resource (746f6bd0e)
 include/AudioBusHandle.h	#605 PDC: latency-reporting surface read by the mixer's compensation graph
-include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph
+include/AudioEngine.h	#605 PDC: latency accessor surface used by the compensation graph; post-alpha/recording-realtime: capture staging ring (fixed capacity, pre-allocated) replacing the locking, doubling input buffer, and pushInputFrames() taking const frames as noexcept
 include/Effect.h	#605 PDC: latency accessor on the effect interface
 include/ExportProjectDialog.h	#618 loudness wiring: the export dialog's "Loudness report (EBU R128)" checkbox and the result label that shows the report before the dialog closes
 include/EffectChain.h	#605 PDC: cached chain latency read by the mixer's PDC graph
@@ -164,3 +164,8 @@ vcpkg.json	wave R rename (018d2041f): the vcpkg manifest's "name" field lmms -> 
 # (2026-09-12) render-determinism lane: the offline render's job scheduling.
 include/AudioEngineWorkerThread.h	render determinism (render-determinism lane): public switch ProjectRenderer sets so an export's jobs run on one thread (docs/RENDER-DETERMINISM.md)
 src/core/AudioEngineWorkerThread.cpp	render determinism (render-determinism lane): storage for that switch plus the inline branch in startAndWaitForJobs()
+
+# (2026-09-12) post-alpha/recording-realtime: the capture path off the lock and off growth.
+include/SampleRecordHandle.h	post-alpha/recording-realtime D9c: the clip record path stages frames into a pre-allocated ring and assembles the take on the accumulator's own thread, replacing the per-period new SampleFrame[] and the QList of blocks
+src/core/AudioEngine.cpp	post-alpha/recording-realtime D9b/D9a: pushInputFrames() no longer takes m_changeMutex on the JACK/SDL capture thread and no longer doubles the input buffer; swapBuffers() drains the fixed-capacity staging ring instead
+src/core/SampleRecordHandle.cpp	post-alpha/recording-realtime D9c: writeBuffer() appends to the pre-allocated ring instead of allocating per period, and the destructor installs the take the drain thread already built instead of assembling it on the audio thread

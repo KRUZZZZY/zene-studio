@@ -95,6 +95,24 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 		return false;
 	}
 
+	// DEFECT 6 (feedback/grade-B-recording.md) is fixed in writerLoop(), by
+	// clamping the samples in C++ before the write. It is deliberately NOT
+	// fixed by sf_command(m_sf, SFC_SET_CLIPPING, ...) here, even though that is
+	// the flag both export writers use (AudioFileWave.cpp, AudioFileFlac.cpp):
+	// measured against libsndfile 1.2.2, enabling its clipping changes the
+	// conversion of IN-RANGE negative samples too: with the flag, -0.75 comes
+	// back 1 LSB lower than the same sample written without it (-1610612736 vs
+	// -1610612480 in the int32 read-back scale), and -1.0 gives -2147483648 vs
+	// -2147483392. This recorder has no reason to rewrite audio that was never
+	// out of range.
+	// Clamping in C++ keeps every in-range sample bit-identical - see
+	// tests/src/core/RecordClipTest.cpp::inRangeTakeIsUnchanged - and matches
+	// the mechanism this tree already uses on its other integer write path
+	// (AudioDevice::convertToS16 applies AudioEngine::clip() in C++).
+	//
+	// sf_command(m_sf, SFC_SET_CLIPPING, nullptr, SF_TRUE) would also work; it
+	// just is not free of an in-range delta, which the test measures.
+
 	m_stopRequested.store(false, std::memory_order_release);
 	m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
 	return true;
@@ -157,6 +175,19 @@ void TrackRecorder::writerLoop()
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 			continue;
+		}
+
+		// DEFECT 6: clip before the write. libsndfile does NOT clip by default
+		// (SFC_GET_CLIPPING answers "off" for a fresh PCM file), so an
+		// out-of-range float is converted by wrapping: +1.5 is stored as
+		// -1073742336 and +2.0 as -512, i.e. a hot JACK take (AudioJack.cpp
+		// hands over unbounded floats) is written as full-scale sign flips and
+		// near-silence dropouts instead of clipped peaks. Clamping here, on the
+		// disk-writer thread, costs the audio thread nothing and leaves every
+		// in-range sample bit-identical (see RecordClipTest).
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			m_writeScratch[i] = std::clamp(m_writeScratch[i], sample_t{-1}, sample_t{1});
 		}
 
 		const auto written = sf_writef_float(m_sf, m_writeScratch.data(),

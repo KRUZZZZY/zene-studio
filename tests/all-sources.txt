@@ -309,7 +309,9 @@ include/SampleClip.h
 include/SampleClipView.h
 include/SampleDecoder.h
 include/SampleFrame.h
+include/SampleFrameRingBuffer.h
 include/SamplePlayHandle.h
+include/SampleRecordAccumulator.h
 include/SampleRecordHandle.h
 include/SampleThumbnail.h
 include/SampleTrack.h
@@ -1149,7 +1151,9 @@ tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectVersionTest.cpp
+tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
+tests/src/core/RecordingRealtimeTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp

@@ -28,7 +28,9 @@ set(LMMS_TESTS
 	src/core/PluginScanCacheTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp
+	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
+	src/core/RecordingRealtimeTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
@@ -158,6 +160,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# RecordingRealtimeTest constructs a real Engine to measure the capture path
+# (D9b/D9a), which needs a Qt platform plugin even though the test is guiless.
+set_tests_properties(RecordingRealtimeTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.

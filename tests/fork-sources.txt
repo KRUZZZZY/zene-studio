@@ -116,6 +116,8 @@ include/RemotePluginAudioPorts.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
+include/SampleFrameRingBuffer.h
+include/SampleRecordAccumulator.h
 include/SampleWindow.h
 include/ScriptApiVersion.h
 include/ScriptBindings.h

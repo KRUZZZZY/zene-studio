@@ -29,6 +29,7 @@
 #include "PatternTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
+#include "SampleRecordAccumulator.h"
 
 
 namespace lmms
@@ -37,6 +38,8 @@ namespace lmms
 
 SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	PlayHandle( Type::SamplePlayHandle ),
+	m_accum( std::make_unique<SampleRecordAccumulator>(
+		Engine::audioEngine() != nullptr ? Engine::audioEngine()->inputSampleRate() : 44100 ) ),
 	m_framesRecorded( 0 ),
 	m_minLength( clip->length() ),
 	m_track( clip->getTrack() ),
@@ -50,12 +53,12 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 
 SampleRecordHandle::~SampleRecordHandle()
 {
-	if (!m_buffers.empty()) { m_clip->setSampleBuffer(createSampleBuffer()); }
-
-	while( !m_buffers.empty() )
+	// D9c: the drain thread inside the accumulator has already assembled the
+	// take and its SampleBuffer, so the audio thread only installs the finished
+	// buffer here instead of building it. See SampleRecordAccumulator.h.
+	if (m_accum != nullptr)
 	{
-		delete[] m_buffers.front().first;
-		m_buffers.erase( m_buffers.begin() );
+		if (auto buffer = m_accum->finish()) { m_clip->setSampleBuffer(std::move(buffer)); }
 	}
 	m_clip->setRecord( false );
 }
@@ -105,38 +108,13 @@ f_cnt_t SampleRecordHandle::framesRecorded() const
 
 
 
-std::shared_ptr<const SampleBuffer> SampleRecordHandle::createSampleBuffer()
-{
-	const f_cnt_t frames = framesRecorded();
-	// create buffer to store all recorded buffers in
-	auto bigBuffer = std::vector<SampleFrame>(frames);
-
-	// now copy all buffers into big buffer
-	auto framesCopied = 0;
-	for (const auto& [buf, numFrames] : m_buffers)
-	{
-		std::copy_n(buf, numFrames, bigBuffer.begin() + framesCopied);
-		framesCopied += numFrames;
-	}
-
-	// create according sample-buffer out of big buffer
-	return std::make_shared<const SampleBuffer>(std::move(bigBuffer), Engine::audioEngine()->inputSampleRate());
-}
-
-
-
-
 void SampleRecordHandle::writeBuffer( const SampleFrame* _ab, const f_cnt_t _frames )
 {
-	auto buf = new SampleFrame[_frames];
-	for( f_cnt_t frame = 0; frame < _frames; ++frame )
-	{
-		for( ch_cnt_t chnl = 0; chnl < DEFAULT_CHANNELS; ++chnl )
-		{
-			buf[frame][chnl] = _ab[frame][chnl];
-		}
-	}
-	m_buffers.push_back( qMakePair( buf, _frames ) );
+	// D9c (audit grade-B-recording.md): this used to be a per-period
+	// `new SampleFrame[_frames]` appended to a QList that grew for the whole
+	// take. The accumulator stages the frames into one pre-allocated ring
+	// instead, so the audio thread performs no allocation here.
+	if (m_accum != nullptr) { m_accum->append( _ab, _frames ); }
 }
 
 

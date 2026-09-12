@@ -25,8 +25,6 @@
 #ifndef LMMS_SAMPLE_RECORD_HANDLE_H
 #define LMMS_SAMPLE_RECORD_HANDLE_H
 
-#include <QList>
-#include <QPair>
 #include <memory>
 
 #include "PlayHandle.h"
@@ -39,6 +37,7 @@ namespace lmms
 class PatternTrack;
 class SampleBuffer;
 class SampleClip;
+class SampleRecordAccumulator;
 class Track;
 
 
@@ -54,15 +53,17 @@ public:
 	bool isFromTrack( const Track * _track ) const override;
 
 	f_cnt_t framesRecorded() const;
-	std::shared_ptr<const SampleBuffer> createSampleBuffer();
 
 
 private:
 	virtual void writeBuffer( const SampleFrame* _ab,
 						const f_cnt_t _frames );
 
-	using bufferList = QList<QPair<SampleFrame*, f_cnt_t>>;
-	bufferList m_buffers;
+	// D9c (audit grade-B-recording.md): the take is staged into a fixed
+	// pre-allocated ring and assembled on the accumulator's own thread, so the
+	// audio thread neither allocates per period nor builds the take at stop.
+	// See SampleRecordAccumulator.h.
+	std::unique_ptr<SampleRecordAccumulator> m_accum;
 	f_cnt_t m_framesRecorded;
 	TimePos m_minLength;
 

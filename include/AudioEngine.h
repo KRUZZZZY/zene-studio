@@ -41,6 +41,7 @@
 #include "AudioEngineProfiler.h"
 #include "PlayHandle.h"
 #include "MultiTrackRecorder.h"
+#include "SampleFrameRingBuffer.h"
 
 
 namespace lmms
@@ -234,7 +235,7 @@ public:
 
 	bool criticalXRuns() const;
 
-	void pushInputFrames( SampleFrame* _ab, const f_cnt_t _frames );
+	void pushInputFrames( const SampleFrame* _ab, const f_cnt_t _frames ) noexcept;
 
 	inline const SampleFrame* inputBuffer()
 	{
@@ -245,6 +246,21 @@ public:
 	{
 		return m_inputBufferFrames[ m_inputBufferRead ];
 	}
+
+	//! Frames the capture backends have staged for the next rendered period
+	//! (prototype input path). Bounded by InputStageCapacityFrames: the staging
+	//! ring is fixed-capacity and pre-allocated, so the input path can neither
+	//! lock nor grow without bound.
+	std::size_t inputFramesStaged() const noexcept;
+
+	//! Frames the capture path had to drop because the staging ring was full.
+	std::uint64_t inputFramesDropped() const noexcept;
+
+	//! Capacity of the capture staging ring. pushInputFrames() can never make
+	//! the input path hold more than this, which is what bounds the memory the
+	//! capture path can use (D9a: a stopped JACK device used to grow the input
+	//! buffer without bound).
+	static constexpr f_cnt_t InputStageCapacityFrames = 16384;
 
 	//! Prototype two-track recorder (task #556). The engine feeds it once per
 	//! period from the audio thread; see renderNextPeriod().
@@ -391,6 +407,15 @@ private:
 	f_cnt_t m_inputBufferSize[2];
 	int m_inputBufferRead;
 	int m_inputBufferWrite;
+
+	//! Capture input staging: a fixed-capacity, pre-allocated, lock-free SPSC
+	//! ring between the backends' capture thread and the render thread.
+	//! pushInputFrames() only ever writes into it (no lock, no allocation, no
+	//! growth); swapBuffers() drains it once per rendered period into
+	//! m_inputBuffer[m_inputBufferRead]. Both m_inputBuffer entries are sized
+	//! to InputStageCapacityFrames, so a drain can never overrun them.
+	std::unique_ptr<SampleFrameRingBuffer> m_inputStage;
+	void drainInputStage() noexcept;
 
 	// prototype: hardcoded two-track capture (task #556)
 	MultiTrackRecorder m_recorder;
