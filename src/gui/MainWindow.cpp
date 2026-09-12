@@ -419,7 +419,7 @@ void MainWindow::finalize()
 	// on, sees the exact payload, and turns it off again. See
 	// docs/TELEMETRY-V1.md.
 	help_menu->addSeparator();
-	QAction * telemetryAction = help_menu->addAction( embed::getIconPixmap( "setup" ),
+	QAction * telemetryAction = help_menu->addAction( embed::getIconPixmap( "setup_general" ),
 				  tr( "Telemetry - what we send..." ) );
 	// A11/A15: the action declares the registry command it implements, and the
 	// slot below opens the SAME consent screen that command implements
