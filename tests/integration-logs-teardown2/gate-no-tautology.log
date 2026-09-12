@@ -1,0 +1,78 @@
+test file                                      slots    asserts taut    verdict
+src/core/ArrayVectorTest.cpp                   173      148     0       ok
+src/core/AudioBufferTest.cpp                   229      217     0       ok
+src/core/AudioBusHandleTest.cpp                22       15      0       ok
+src/core/AudioBusTest.cpp                      133      119     0       ok
+src/core/AudioEngineTeardownTest.cpp           13       4       0       ok
+src/core/AudioPortsModelTest.cpp               124      123     0       ok
+src/core/AudioPortsTest.cpp                    59       40      0       ok
+src/core/AutomatableModelTest.cpp              27       22      0       ok
+src/core/AutomationModesTest.cpp               80       55      0       ok
+src/core/ClipSerialisationTest.cpp             35       35      0       ok
+src/core/ClipWarpPersistenceTest.cpp           31       29      0       ok
+src/core/ConfigMigrationTest.cpp               42       41      0       ok
+src/core/ControlAutomationScriptTest.cpp       77       63      0       ok
+src/core/ControlDeviceCatalogueTest.cpp        58       32      0       ok
+src/core/ControlEditCommandsTest.cpp           76       61      0       ok
+src/core/ControlRegistryTest.cpp               126      83      0       ok
+src/core/CrashReporterTest.cpp                 109      86      0       ok
+src/core/DataFileFormatTest.cpp                32       30      0       ok
+src/core/DataFileSaveIntegrityTest.cpp         49       37      0       ok
+src/core/LoudnessReportTest.cpp                54       42      0       ok
+src/core/LufsMeterTest.cpp                     66       46      0       ok
+src/core/MasteringTest.cpp                     53       46      0       ok
+src/core/MathTest.cpp                          13       12      0       ok
+src/core/MidiLearnTest.cpp                     49       46      0       ok
+src/core/MidiLearnThreadTest.cpp               33       30      0       ok
+src/core/MidiProbabilityPersistenceTest.cpp    62       55      0       ok
+src/core/MixerAbRegressionTest.cpp             15       9       0       ok
+src/core/MixerConcurrencyTest.cpp              77       34      0       ok
+src/core/MixerRoutingBackwardCompatTest.cpp    58       40      0       ok
+src/core/MpeExpressionTest.cpp                 65       62      0       ok
+src/core/MpeInputPathTest.cpp                  30       28      0       ok
+src/core/MpeNoteStorageTest.cpp                74       70      0       ok
+src/core/MultiTrackRecorderTest.cpp            17       16      0       ok
+src/core/NoteRandomTest.cpp                    51       41      0       ok
+src/core/NoteTransformTest.cpp                 91       90      0       ok
+src/core/PdcMixerTest.cpp                      129      57      0       ok
+src/core/PhaseDSidechainTest.cpp               96       46      0       ok
+src/core/PhaseFChannelScaleTest.cpp            75       30      0       ok
+src/core/PluginAudioPortsTest.cpp              82       72      0       ok
+src/core/PluginLogoResourceTest.cpp            11       5       0       ok
+src/core/PluginScanCacheTest.cpp               186      135     0       ok
+src/core/ProjectOpenIntegrityTest.cpp          39       36      0       ok
+src/core/ProjectRecoveryTest.cpp               83       71      0       ok
+src/core/ProjectVersionTest.cpp                114      112     0       ok
+src/core/RackTest.cpp                          103      75      0       ok
+src/core/RecordClipTest.cpp                    63       34      0       ok
+src/core/RecordingRealtimeTest.cpp             48       26      0       ok
+src/core/RecordRingBufferTest.cpp              57       41      0       ok
+src/core/RelativePathsTest.cpp                 12       11      0       ok
+src/core/RemotePluginAudioPortsTest.cpp        113      92      0       ok
+src/core/RemotePluginClientE2ETest.cpp         57       38      0       ok
+src/core/RenderJobQueueTest.cpp                28       22      0       ok
+src/core/ReversibilityContractTest.cpp         39       25      0       ok
+src/core/ReversibilityUndoTest.cpp             125      99      0       ok
+src/core/RoutingGraphLiveTest.cpp              48       39      0       ok
+src/core/RoutingGraphTest.cpp                  172      150     0       ok
+src/core/ScriptBindingsTest.cpp                270      249     0       ok
+src/core/ScriptEngineTest.cpp                  144      90      0       ok
+src/core/ScriptStabilisationTest.cpp           121      86      0       ok
+src/core/SlideNotesTest.cpp                    49       45      0       ok
+src/core/StableTrackIdsTest.cpp                93       78      0       ok
+src/core/StemExportTest.cpp                    59       40      0       ok
+src/core/TelemetryTest.cpp                     40       35      0       ok
+src/core/TimelineTest.cpp                      17       10      0       ok
+src/core/VcaGroupTest.cpp                      195      119     0       ok
+src/core/WarpMarkersTest.cpp                   55       47      0       ok
+src/gui/MidiLearnGuiTest.cpp                   12       10      0       ok
+src/tracks/AutomationTrackTest.cpp             39       38      0       ok
+src/tracks/SampleClipWarpTest.cpp              78       60      0       ok
+src/tracks/SampleClipWindowTest.cpp            65       49      0       ok
+
+Out of scope (helper executables, not QTest classes):
+  tests/src/core/TwoTrackAlsaCaptureProbe.cpp
+  tests/src/core/TwoTrackRecordingHarness.cpp
+  tests/src/plugins/PluginPortsMigrationReference.cpp
+
+PASS: every registered test file has test slots and real assertions, no literal tautologies

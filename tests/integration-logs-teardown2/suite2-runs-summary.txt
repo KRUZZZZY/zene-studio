@@ -1,0 +1,13 @@
+=== ctest run 1-alone (unpiped) ===
+EXIT=0   wall=64s   100% tests passed, 0 tests failed out of 86
+aborts (QFATAL/QThread: Destroyed/SIGABRT): 0
+test lines: 86
+=== ctest run 2-four-parallel-case-loops (unpiped) ===
+EXIT=0   wall=62s   100% tests passed, 0 tests failed out of 86
+aborts (QFATAL/QThread: Destroyed/SIGABRT): 0
+test lines: 86
+=== ctest run 3-forty-busy-loops (unpiped) ===
+EXIT=0   wall=138s   100% tests passed, 0 tests failed out of 86
+aborts (QFATAL/QThread: Destroyed/SIGABRT): 0
+test lines: 86
+=== suite-runs: DONE ===

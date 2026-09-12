@@ -127,7 +127,19 @@ MidiAlsaSeq::~MidiAlsaSeq()
 	if( isRunning() )
 	{
 		m_quit = true;
-		wait( EventPollTimeOut*2 );
+		// Join without a deadline. The budget here was EventPollTimeOut*2 (500 ms)
+		// and it is the same defect the engine's own workers had: when the budget
+		// expired the thread was still running, and this object IS a QThread - so
+		// ~QThread destroyed it while its thread ran and Qt answered with
+		//   qFatal("QThread: Destroyed while thread is still running")
+		// i.e. an unconditional SIGABRT during shutdown, blamed on whatever was
+		// closing. Measured: 1 abort in a 3-run suite sweep from
+		// tests/control-shutdown.py under load, with the QFATAL stack naming
+		// Engine::destroy -> ~AudioEngine -> delete m_midiClient -> ~MidiAlsaSeq.
+		// run() leaves its loop within one poll interval of m_quit being set, so
+		// wait() terminates; the trade is the engine workers' trade - a thread
+		// that never returns now blocks the shutdown instead of aborting it.
+		wait();
 
 		m_seqMutex.lock();
 		snd_seq_stop_queue( m_seqHandle, m_queueID, nullptr );

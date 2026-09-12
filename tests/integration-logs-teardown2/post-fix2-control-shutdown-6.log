@@ -1,0 +1,7 @@
+run1 EXIT=0
+run2 EXIT=0
+run3 EXIT=0
+run4 EXIT=0
+run5 EXIT=0
+run6 EXIT=0
+ControlShutdown under 40 busy loops: passed=6 failed=0 out of 6

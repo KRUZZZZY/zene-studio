@@ -1,0 +1,70 @@
+[shutdown: undo/redo (dirty project)] exit=-6 after 7.88s, socket exists=True
+---- shutdown: undo/redo (dirty project) stderr ----
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+Lv2 plugin SUMMARY: 73 of 87  loaded in 617 msecs.
+For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+Error loading icon pixmap "setup": "File not found"
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+This plugin does not support setParent!
+This plugin does not support setParent!
+This plugin does not support setParent!
+QThread: Destroyed while thread is still running
+
+=== ABORT TRACE (tid 2870731, 20 frames) ===
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/tests/integration-logs-teardown2/repro/abort-trace.so(+0x128a)[0x7cbd2249e28a]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/tests/integration-logs-teardown2/repro/abort-trace.so(abort+0xf)[0x7cbd2249e38f]
+/lib/x86_64-linux-gnu/libQt6Core.so.6(+0xa8e5f)[0x7cbd20ca8e5f]
+/lib/x86_64-linux-gnu/libQt6Core.so.6(_Z9qt_assertPKcS0_i+0x0)[0x7cbd20ca9232]
+/lib/x86_64-linux-gnu/libQt6Core.so.6(+0xc2c57)[0x7cbd20cc2c57]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(+0x399181)[0x5616a886e181]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(_ZN4lmms11AudioEngineD2Ev+0xa4)[0x5616a8664104]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(_ZN4lmms11AudioEngineD0Ev+0xd)[0x5616a866438d]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(_ZN4lmms6Engine7destroyEv+0x1ee)[0x5616a87680be]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(+0x3d780c)[0x5616a88ac80c]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(+0x3d78ad)[0x5616a88ac8ad]
+/lib/x86_64-linux-gnu/libQt6Core.so.6(_ZN7QObject5eventEP6QEvent+0x5b)[0x7cbd20d7640b]
+/lib/x86_64-linux-gnu/libQt6Widgets.so.6(_ZN19QApplicationPrivate13notify_helperEP7QObjectP6QEvent+0x90)[0x7cbd21d8b3b0]
+/lib/x86_64-linux-gnu/libQt6Core.so.6(_ZN16QCoreApplication15notifyInternal2EP7QObjectP6QEvent+0x128)[0x7cbd20d38448]
+/lib/x86_64-linux-gnu/libQt6Core.so.6(_ZN23QCoreApplicationPrivate16sendPostedEventsEP7QObjectiP11QThreadData+0x1a5)[0x7cbd20d38635]
+/lib/x86_64-linux-gnu/libQt6Core.so.6(_ZN16QCoreApplication4execEv+0xba)[0x7cbd20d3b37a]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(+0x1419ff)[0x5616a86169ff]
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)[0x7cbd1fe2a1ca]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)[0x7cbd1fe2a28b]
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/build/zene(_start+0x25)[0x5616a86252f5]
+  [00] 0x7cbd2249e28a
+  [01] 0x7cbd2249e38f
+  [02] 0x7cbd20ca8e5f
+  [03] 0x7cbd20ca9232
+  [04] 0x7cbd20cc2c57
+  [05] 0x5616a886e181
+  [06] 0x5616a8664104
+  [07] 0x5616a866438d
+  [08] 0x5616a87680be
+  [09] 0x5616a88ac80c
+  [10] 0x5616a88ac8ad
+  [11] 0x7cbd20d7640b
+  [12] 0x7cbd21d8b3b0
+  [13] 0x7cbd20d38448
+  [14] 0x7cbd20d38635
+  [15] 0x7cbd20d3b37a
+  [16] 0x5616a86169ff
+  [17] 0x7cbd1fe2a1ca
+  [18] 0x7cbd1fe2a28b
+  [19] 0x5616a86252f5
+=== END ABORT TRACE ===
+
+---- end shutdown: undo/redo (dirty project) stderr ----
+[shutdown: no usable audio device] exit=0 after 0.35s, socket exists=False
+
+=== FAIL ===
+  shutdown: undo/redo (dirty project)            FAILED (2)
+      the process exited with -6, expected 0
+      the control socket file was not unlinked on exit
+  shutdown: no usable audio device               ok

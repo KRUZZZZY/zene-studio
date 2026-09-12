@@ -1,0 +1,20 @@
+set pagination off
+set confirm off
+set width 0
+handle SIGABRT stop nopass
+handle SIGPIPE nostop nopass
+run poolModeStillRunsEveryJobExactlyOnce
+echo \n==== BACKTRACE (all threads) ====\n
+bt
+echo \n==== THREADS ====\n
+info threads
+echo \n==== FRAME 0/1/2 ====\n
+frame 0
+frame 1
+frame 2
+echo \n==== the test's own frame ====\n
+frame 6
+info frame
+echo \n==== kill ====\n
+kill
+quit

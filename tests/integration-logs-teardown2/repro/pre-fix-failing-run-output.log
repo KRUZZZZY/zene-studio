@@ -1,0 +1,21 @@
+********* Start testing of RenderJobQueueTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : RenderJobQueueTest::initTestCase()
+FAIL!  : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() Compared values are not the same
+   Actual   (total): 63
+   Expected (64)   : 64
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-teardown2/tests/src/core/RenderJobQueueTest.cpp(264)]
+QFATAL : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() QThread: Destroyed while thread is still running
+FAIL!  : RenderJobQueueTest::poolModeStillRunsEveryJobExactlyOnce() Received a fatal error.
+Totals: 1 passed, 1 failed, 0 skipped, 0 blacklisted, 34ms
+********* Finished testing of RenderJobQueueTest *********
+Received signal 6 (SIGABRT)
+         poolModeStillRunsEveryJobExactlyOnce function time: 34ms, total time: 34ms
+
+=== Stack trace ===
+Could not attach to process.  If your uid matches the uid of the target
+process, check the setting of /proc/sys/kernel/yama/ptrace_scope, or try
+again as the root user.  For more details, see /etc/sysctl.d/10-ptrace.conf
+ptrace: Inappropriate ioctl for device.
+=== End of stack trace ===
+CAUGHT on attempt 30, EXIT=134
