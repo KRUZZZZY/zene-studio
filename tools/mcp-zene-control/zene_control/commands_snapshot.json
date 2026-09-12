@@ -1,0 +1,2775 @@
+{
+  "captured_at": "2026-09-12T01:43:20Z",
+  "commands": [
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The product name, the version string, the control protocol version and the build options the binary was compiled with.",
+      "group": "app",
+      "id": "app.version",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "build_options": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proto": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every track with its clips, addressed by the stable trk-<n> and clip-<n> ids.",
+      "group": "arrangement",
+      "id": "arrangement.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "clips": {
+            "type": "array"
+          },
+          "track_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The audio backends this build knows, with the one that is running and the one the config file selects. Requires no audio device: the running name is whatever the engine opened, the dummy device when nothing else would open.",
+      "group": "audio",
+      "id": "audio.device_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "current": {
+            "type": "string"
+          },
+          "devices": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device"
+        ],
+        "type": "object"
+      },
+      "description": "Choose the audio backend for the next start: the device name is written to the config file's audioengine/audiodev, the same key the settings dialog writes. The running device is NOT switched - the engine constructs its device in AudioEngine::initDevices() during startup and the product's own settings dialog also only stores the preference and warns that a restart is needed. The result says so explicitly with applied=\"next_start\".",
+      "group": "audio",
+      "id": "audio.device_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "restart_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "parameter": {
+            "type": "string"
+          },
+          "ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "track",
+          "parameter",
+          "ticks",
+          "value"
+        ],
+        "type": "object"
+      },
+      "description": "Add or replace one automation point (ticks, value) on a track's device parameter. The value is the model's own unit and is range-checked against the model's own min..max. Creates the automation clip when the parameter has none yet, and says so: that first call is the one control.undo cannot fully reverse (the new AutomationTrack has no journal checkpoint). Later calls are reversible.",
+      "group": "automation",
+      "id": "automation.add_point",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "automation": {
+            "type": "object"
+          },
+          "created_automation_track": {
+            "type": "boolean"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "parameter"
+        ],
+        "type": "object"
+      },
+      "description": "Remove every automation point from a parameter's clip, leaving the clip bound to the model (an empty clip no longer drives the parameter). Reversible through the ProjectJournal.",
+      "group": "automation",
+      "id": "automation.clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "automation": {
+            "type": "object"
+          },
+          "cleared_points": {
+            "type": "integer"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "automated_only": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Per track, every automatable device parameter with its stable '<plugin>/<index>' id and, for each automated one, its clip's points. A point's 'value' is the model's own unit (what plugin.param_get reports); 'raw_value' is what the clip stores. 'automated_only' trims the inventory.",
+      "group": "automation",
+      "id": "automation.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "automated_parameter_count": {
+            "type": "integer"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "off",
+              "read",
+              "touch",
+              "latch",
+              "write"
+            ],
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "parameter",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Set a parameter's automation mode. Refused: this build has no automation modes (docs/KNOWN-LIMITATIONS.md:84), so no write is faked.",
+      "group": "automation",
+      "id": "automation.mode_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "parameter": {
+            "type": "string"
+          },
+          "ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "parameter",
+          "ticks"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the automation point at an exact tick. The node list is a map keyed by tick, so the tick must match one. Reversible through the ProjectJournal.",
+      "group": "automation",
+      "id": "automation.remove_point",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "automation": {
+            "type": "object"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Create a clip on a track at a tick position and return its stable clip-<n> id. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "clip",
+      "id": "clip.add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a clip from its track. dry_run previews it. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "clip",
+      "id": "clip.delete",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Copy a clip on its own track (notes included) and return the copy's id. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "clip",
+      "id": "clip.duplicate",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Move a clip to an absolute tick position. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "length"
+        ],
+        "type": "object"
+      },
+      "description": "Set a clip's length in ticks (the clip becomes manually resized). Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.resize",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Select (or clear with an empty id) a clip for roll.get_state and the get_states' selection flags. Control-surface state, not project state.",
+      "group": "clip",
+      "id": "clip.select",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "selected_clip": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Split a clip at an absolute tick position, leaving the left part in place and returning both ids. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "clip",
+      "id": "clip.split",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "left": {
+            "type": "string"
+          },
+          "right": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every registered command with its schemas and requires declaration.",
+      "group": "control",
+      "id": "control.commands_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "commands": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Liveness probe; also reports whether the engine is addressable yet, and why not when it is not.",
+      "group": "control",
+      "id": "control.ping",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "object"
+          },
+          "engine_ready": {
+            "type": "boolean"
+          },
+          "pong": {
+            "type": "boolean"
+          },
+          "proto": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "object"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "save": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Ask the instance to run its normal shutdown (the reply is sent first). Unsaved changes are discarded unless save is true.",
+      "group": "control",
+      "id": "control.quit",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_modified": {
+            "type": "boolean"
+          },
+          "quitting": {
+            "type": "boolean"
+          },
+          "save_requested": {
+            "type": "boolean"
+          },
+          "unsaved_changes": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Redo the last undone journal checkpoint.",
+      "group": "control",
+      "id": "control.redo",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "can_redo": {
+            "type": "boolean"
+          },
+          "can_undo": {
+            "type": "boolean"
+          },
+          "redone": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Reflect the live menu/toolbar surface: every user-visible action and the command id it declares (SPEC A15).",
+      "group": "control",
+      "id": "control.surface_report",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action_count": {
+            "type": "integer"
+          },
+          "actions": {
+            "type": "array"
+          },
+          "reflection": {
+            "type": "string"
+          },
+          "unregistered_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The transactions recorded for mutating commands (SPEC A16 hook).",
+      "group": "control",
+      "id": "control.transactions",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "transactions": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Undo the last journal checkpoint through the engine's ProjectJournal.",
+      "group": "control",
+      "id": "control.undo",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "can_redo": {
+            "type": "boolean"
+          },
+          "can_undo": {
+            "type": "boolean"
+          },
+          "mechanism": {
+            "type": "string"
+          },
+          "undone": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The product version string and the control protocol version.",
+      "group": "control",
+      "id": "control.version",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "proto": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device.",
+      "group": "dsp",
+      "id": "dsp.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chains": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "device_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The MIDI client that is running, the client the config file selects, and every readable/writable port it exposes. With no MIDI backend open the client is the dummy one and both port lists are empty, which is reported as such rather than as an error.",
+      "group": "midi",
+      "id": "midi.device_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "readable": {
+            "type": "array"
+          },
+          "writable": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Append a mixer channel and return its new ch-<n> id.",
+      "group": "mixer",
+      "id": "mixer.add_channel",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every mixer channel with its stable ch-<n> id, gain and routing.",
+      "group": "mixer",
+      "id": "mixer.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a channel (master ch-0 is refused).",
+      "group": "mixer",
+      "id": "mixer.remove_channel",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "pan": {
+            "maximum": 1,
+            "minimum": -1,
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel",
+          "pan"
+        ],
+        "type": "object"
+      },
+      "description": "Set a channel pan. Refused: this tree has no pan on a mixer channel.",
+      "group": "mixer",
+      "id": "mixer.set_pan",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "volume": {
+            "maximum": 2,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel",
+          "volume"
+        ],
+        "type": "object"
+      },
+      "description": "Set a channel fader (0..2). Reversible through the ProjectJournal.",
+      "group": "mixer",
+      "id": "mixer.set_volume",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "key",
+          "position",
+          "length"
+        ],
+        "type": "object"
+      },
+      "description": "Add a note to a clip (key 0..127, ticks, velocity 0..200) and return its stable note-<n> id. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "note",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Move a note to an absolute tick position inside its clip. The move re-sorts the clip's note list, so the result reports the note's new id.",
+      "group": "note",
+      "id": "note.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "previous_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "note"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a note from a clip. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "note_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "removed_note": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "note",
+          "length"
+        ],
+        "type": "object"
+      },
+      "description": "Set a note's length in ticks. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.resize",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "description": "Select notes in a clip (an empty list clears the selection). Control-surface state, not project state.",
+      "group": "note",
+      "id": "note.select",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "selected_notes": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "note",
+          "velocity"
+        ],
+        "type": "object"
+      },
+      "description": "Set a note's velocity (0..200, the engine's note volume scale; the piano roll's own velocity dialog uses the same range).",
+      "group": "note",
+      "id": "note.velocity_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "midi_velocity": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "velocity": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bypass": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "bypass"
+        ],
+        "type": "object"
+      },
+      "description": "Switch a device instance off or on. This drives the same enabled control the rack's On/Off LED drives, so a bypassed device reports processing=false in dsp.get_state. Reversible through the ProjectJournal.",
+      "group": "plugin",
+      "id": "plugin.bypass",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "processing": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "builtin",
+              "ladspa",
+              "lv2"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "effect",
+              "instrument",
+              "tool",
+              "other"
+            ],
+            "type": "string"
+          },
+          "loadable_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA and LV2), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, so adding a host does not renumber the ids of the formats that were already there.",
+      "group": "plugin",
+      "id": "plugin.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "counts_by_format": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "counts_by_kind": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "devices": {
+            "type": "array"
+          },
+          "loadable_count": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "device"
+        ],
+        "type": "object"
+      },
+      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance.",
+      "group": "plugin",
+      "id": "plugin.load",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin"
+        ],
+        "type": "object"
+      },
+      "description": "Read one device parameter by 'name' or by 'index'. 'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range reported is the engine's own model range.",
+      "group": "plugin",
+      "id": "plugin.param_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "parameter": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "number"
+              },
+              "min": {
+                "type": "number"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "value"
+        ],
+        "type": "object"
+      },
+      "description": "Set one device parameter by 'name' or by 'index' with the engine's own range enforcement: a value outside the model's min..max is refused with invalid_args rather than silently clamped. Reversible through the ProjectJournal.",
+      "group": "plugin",
+      "id": "plugin.param_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "parameter": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "number"
+              },
+              "min": {
+                "type": "number"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "number"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin"
+        ],
+        "type": "object"
+      },
+      "description": "The preset files (*.xpf) available to a device: the user preset directory and the factory preset directory, the same two the product's browser reads. An effect's directory is the device's own name (its LADSPA label when hosted); an instrument's is its product preset folder.",
+      "group": "plugin",
+      "id": "plugin.preset_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "presets": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Load a preset (*.xpf) into a device: the user preset directory is searched first, then the factory one. A document written for a different device is refused.",
+      "group": "plugin",
+      "id": "plugin.preset_load",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "restored": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Save the current device state as a preset (*.xpf) in the product's user preset directory. An instrument writes the instrument-track preset document the browser loads; an effect writes the device's own state document, because this build has no separate effect-preset format. An existing preset of the same name is refused unless \"overwrite\":true.",
+      "group": "plugin",
+      "id": "plugin.preset_save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Restore a device's state from a file written by plugin.state_save. A document written for a different device is refused, so a state file cannot be pushed into the wrong plugin.",
+      "group": "plugin",
+      "id": "plugin.state_load",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "restored": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "overwrite": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Write a device's state to a file path. An effect writes this fork's zenepluginstate document; an instrument ('inst') writes the product's own instrument-track preset document, the one the browser loads. An existing file is refused unless \"overwrite\":true, so a save cannot silently destroy a state file.",
+      "group": "plugin",
+      "id": "plugin.state_save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin"
+        ],
+        "type": "object"
+      },
+      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. The removed device's full state XML is recorded in the transaction's 'before' snapshot so it can be rebuilt: write that XML to a file, load the same dev-<n> again and issue plugin.state_load.",
+      "group": "plugin",
+      "id": "plugin.unload",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Project file, modified flag, tempo and track count.",
+      "group": "project",
+      "id": "project.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "modified": {
+            "type": "boolean"
+          },
+          "tempo": {
+            "type": "integer"
+          },
+          "track_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Load a project file into this running instance.",
+      "group": "project",
+      "id": "project.open",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "error_count": {
+            "type": "integer"
+          },
+          "errors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "type": "integer"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "file": {
+            "type": "string"
+          },
+          "loaded_with_errors": {
+            "type": "boolean"
+          },
+          "tempo": {
+            "type": "integer"
+          },
+          "track_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Save the session. With no path, saves over the project's own file.",
+      "group": "project",
+      "id": "project.save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "wav",
+              "flac",
+              "ogg",
+              "mp3"
+            ],
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Render the current session to a file and return its hash (headless).",
+      "group": "render",
+      "id": "render.render",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The piano-roll view of a clip: the clip and every note with its position, length, key and velocity. Without 'clip', the selected clip is used.",
+      "group": "roll",
+      "id": "roll.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The Lua scripts this build ships (data/scripts, resolved through the app's own 'data:' search path) with their sizes and hashes. Reads the filesystem, so it answers before the engine is up.",
+      "group": "script",
+      "id": "script.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "scripts": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Run a Lua script (specs/SPEC-lua-api-v0.md) in this running instance - the same ScriptEngine the run-and-exit `--run-script` CLI flag drives, on its own worker thread with the engine apply side pumped on the UI thread. Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the per-invocation instruction budget (default from the engine) for this call only.",
+      "group": "script",
+      "id": "script.run",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "budget_overridden": {
+            "type": "boolean"
+          },
+          "instruction_budget": {
+            "type": "integer"
+          },
+          "log": {
+            "type": "array"
+          },
+          "log_lines": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "ran": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "description": "Read one UI/engine setting by the key the config file uses, '<class>/<attribute>' (for example audioengine/audiodev, ui/saveinterval, app/configured). 'value' is the config file's own string form and 'present' says whether the key is set at all rather than defaulted.",
+      "group": "settings",
+      "id": "settings.get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "present": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
+      "description": "Write one UI/engine setting by its config-file key and persist the config file, exactly as the settings dialog does on OK. 'value' is the config file's own string form (booleans are \"1\"/\"0\"). Settings the engine reads at startup (audioengine/audiodev, samplerate, ...) take effect on the next start. The write is recorded with the previous value as its inverse, but ConfigManager is not journalled, so control.undo cannot reverse it.",
+      "group": "settings",
+      "id": "settings.set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "persisted": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "instrument",
+              "pattern",
+              "sample",
+              "automation"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Append a track of the given type (default instrument) and return its stable trk-<n> id. Not reversible: see the transaction's mechanism.",
+      "group": "track",
+      "id": "track.add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "One track addressed by its trk-<n> id.",
+      "group": "track",
+      "id": "track.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every track in the song container, with its stable trk-<n> id.",
+      "group": "track",
+      "id": "track.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a track together with its clips. dry_run previews it.",
+      "group": "track",
+      "id": "track.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "track_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Rename a track. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "track",
+      "id": "track.rename",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "armed"
+        ],
+        "type": "object"
+      },
+      "description": "Arm or disarm a track for recording. Refused: this tree has no record-arm on a song track.",
+      "group": "track",
+      "id": "track.set_arm",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "muted": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "muted"
+        ],
+        "type": "object"
+      },
+      "description": "Mute or unmute a track. Reversible through the ProjectJournal (the track's mute BoolModel checkpoint).",
+      "group": "track",
+      "id": "track.set_mute",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "muted": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "solo": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "solo"
+        ],
+        "type": "object"
+      },
+      "description": "Solo or unsolo a track. This is the product's whole solo action: the soloed track is unmuted and the others muted (TrackView drives that from the solo model), and the result carries the mute/solo state of every track.",
+      "group": "track",
+      "id": "track.set_solo",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "soloed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Playback position and transport flags.",
+      "group": "transport",
+      "id": "transport.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "paused": {
+            "type": "boolean"
+          },
+          "playing": {
+            "type": "boolean"
+          },
+          "position_ticks": {
+            "type": "integer"
+          },
+          "tempo": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start playback of the current song.",
+      "group": "transport",
+      "id": "transport.play",
+      "mutating": false,
+      "requires": [
+        "device"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "playing": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticks"
+        ],
+        "type": "object"
+      },
+      "description": "Move the play head to an absolute position in ticks.",
+      "group": "transport",
+      "id": "transport.seek",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "position_ticks": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bpm": {
+            "maximum": 999,
+            "minimum": 10,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bpm"
+        ],
+        "type": "object"
+      },
+      "description": "Set the song tempo in BPM.",
+      "group": "transport",
+      "id": "transport.set_tempo",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "tempo": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop playback.",
+      "group": "transport",
+      "id": "transport.stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "playing": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    }
+  ],
+  "count": 70,
+  "instance": {
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integrate/build/lmms",
+    "binary_bytes": 112492528,
+    "binary_sha256": "0a13ee769ee265a3614c2356f80412602b78b4e54af5a4105cb9f7a66ecc0d1c",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integrate",
+    "lane_head": "059bf6badbcce1f4e2fb96caca10dbbf18fdcd70",
+    "proto": 1,
+    "source_socket": "/tmp/hv-snap2/z.sock",
+    "version": "0.1.0-alpha.15+a244564"
+  },
+  "kind": "zene-control-command-list",
+  "proto": 1,
+  "schema": 1
+}
