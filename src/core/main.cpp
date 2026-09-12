@@ -71,6 +71,7 @@
 #include "MixHelpers.h"
 #include "OutputSettings.h"
 #include "ProjectRenderer.h"
+#include "MasteringJob.h"
 #include "RenderManager.h"
 #include "Song.h"
 #include "ScriptConsole.h"
@@ -170,6 +171,8 @@ void printHelp()
 		"  compress <in>                         Compress file <in>\n"
 		"  render <project> [options...]         Render given project file\n"
 		"  rendertracks <project> [options...]   Render each track to a different file\n"
+		"  master <project> [options...]         Render the mix once, then write a\n"
+		"                                        set of mastered candidates\n"
 		"  upgrade <in> [out]                    Upgrade file <in> and save as <out>\n"
 		"                                        Standard out is used if no output file\n"
 		"                                        is specified\n"
@@ -212,7 +215,15 @@ void printHelp()
 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
 		"          Range: 44100 (default) to 192000\n"
 		"          Possible values: 1, 2, 4, 8\n"
-		"          Default: 2\n\n",
+		"          Default: 2\n"
+		"\nOptions for \"master\":\n"
+		"  -o, --output <dir>             Directory the candidates are written into\n"
+		"          Required: a candidate set is several files, never one\n"
+		"  -f, --format <format>          Format of the candidates; wave-1 mastering\n"
+		"          writes wav only\n"
+		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
+		"  -a, --float                    Use 32bit float bit depth\n"
+		"  -b, --bitrate <bitrate>        Accepted and ignored by \"master\" (wav)\n\n",
 		LMMS_VERSION, LMMS_PROJECT_COPYRIGHT );
 }
 
@@ -250,6 +261,49 @@ int noInputFileError()
 }
 
 
+// Print one line per candidate: the three BS.1770-4 readings the task asks for,
+// the verdict against that candidate's named target, and the file it was written
+// to. Nothing here ranks the candidates or picks one - that is not measured.
+void printMasteringReport( const lmms::MasteringJob& job )
+{
+	const auto& source = job.sourceMetrics();
+	printf( "\nAuto-mastering: %d candidates from %d project render\n",
+		static_cast<int>( job.reports().size() ), job.renderCount() );
+	printf( "one render: %s\n", job.sourceRenderFile().toUtf8().constData() );
+	printf( "%-26s %-10s %8s %8s %8s  %s\n",
+		"candidate", "target", "LUFS-I", "ST-max", "dBTP", "verdict" );
+	printf( "%-26s %-10s %8.2f %8.2f %8.2f  %s\n", "source (no mastering)", "-",
+		source.integratedLufs, source.shortTermMaxLufs, source.truePeakDbtp, "-" );
+
+	for( const auto& report : job.reports() )
+	{
+		QStringList issues;
+		if( !report.lufsPass )
+		{
+			issues << QStringLiteral( "loudness %1 off target" )
+				.arg( report.lufsResidual, 0, 'f', 2 );
+		}
+		if( !report.truePeakPass )
+		{
+			issues << QStringLiteral( "over ceiling" );
+		}
+		if( report.shortTermWarn )
+		{
+			issues << QStringLiteral( "short-term flag" );
+		}
+		const QString verdict = issues.isEmpty() ? QStringLiteral( "pass" )
+			: QStringLiteral( "warn: " ) + issues.join( QStringLiteral( ", " ) );
+		printf( "%-26s %-10s %8.2f %8.2f %8.2f  %s\n",
+			report.name.toUtf8().constData(), report.targetName.toUtf8().constData(),
+			report.metrics.integratedLufs, report.metrics.shortTermMaxLufs,
+			report.metrics.truePeakDbtp, verdict.toUtf8().constData() );
+		printf( "%-26s %s\n", "", report.outputFile.toUtf8().constData() );
+	}
+	printf( "\nNo candidate is preferred: the readings above are the measurements, "
+		"the choice is the user's.\n" );
+}
+
+
 int main( int argc, char * * argv )
 {
 	using namespace lmms;
@@ -260,7 +314,11 @@ int main( int argc, char * * argv )
 	bool allowRoot = false;
 	bool renderLoop = false;
 	bool renderTracks = false;
-	int scriptExitCode = EXIT_SUCCESS;
+	bool mastering = false;
+	bool outputGiven = false;
+	// Carries the exit code of whichever headless action ran - the Lua script or
+	// the mastering job. The process returns it in place of the event loop's.
+	int headlessExitCode = EXIT_SUCCESS;
 	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile,
 			scriptFile;
 
@@ -287,6 +345,13 @@ int main( int argc, char * * argv )
 		{
 			coreOnly = true;
 			renderTracks = true;
+		}
+		else if (arg == "master" || arg == "--master")
+		{
+			// Offline auto-mastering: the mix is rendered once and every
+			// candidate branches off that render (task #610, wave 1).
+			coreOnly = true;
+			mastering = true;
 		}
 		else if (arg == "--run-script")
 		{
@@ -484,7 +549,8 @@ int main( int argc, char * * argv )
 			return EXIT_SUCCESS;
 		}
 		else if( arg == "render" || arg == "--render" || arg == "-r" ||
-			arg == "rendertracks" || arg == "--rendertracks" )
+			arg == "rendertracks" || arg == "--rendertracks" ||
+			arg == "master" || arg == "--master" )
 		{
 			++i;
 
@@ -510,7 +576,7 @@ int main( int argc, char * * argv )
 				return usageError( "No output file specified" );
 			}
 
-
+			outputGiven = true;
 			renderOut = QString::fromLocal8Bit( argv[i] );
 		}
 		else if( arg == "--format" || arg == "-f" )
@@ -695,6 +761,13 @@ int main( int argc, char * * argv )
 		fileCheck( fileToImport );
 	}
 
+	// A candidate set is several files; scattering them beside the project by
+	// default is never what the user meant, so "master" requires -o.
+	if( mastering && !outputGiven )
+	{
+		return usageError( "No output directory specified for master (use -o)" );
+	}
+
 	ConfigManager::inst()->loadConfigFile(configFile);
 
 	// Install the local crash reporter as soon as the user's working directory
@@ -770,38 +843,59 @@ int main( int argc, char * * argv )
 
 		Engine::getSong()->setExportLoop( renderLoop );
 
-		// when rendering multiple tracks, renderOut is a directory
-		// otherwise, it is a file, so we need to append the file extension
-		if ( !renderTracks )
+		if( mastering )
 		{
-			renderOut = baseName( renderOut ) +
-				ProjectRenderer::getFileExtensionFromFormat(eff);
-		}
-
-		// create renderer
-		auto r = new RenderManager(os, eff, renderOut);
-		QCoreApplication::instance()->connect( r,
-				SIGNAL(finished()), SLOT(quit()));
-
-		// timer for progress-updates
-		auto t = new QTimer(r);
-		r->connect( t, SIGNAL(timeout()),
-				SLOT(updateConsoleProgress()));
-		t->start( 200 );
-
-		if( profilerOutputFile.isEmpty() == false )
-		{
-			Engine::audioEngine()->profiler().setOutputFile( profilerOutputFile );
-		}
-
-		// start now!
-		if ( renderTracks )
-		{
-			r->renderTracks();
+			// Offline: ONE project render, then every candidate branches off it.
+			// The job runs on this thread; the render runs on ProjectRenderer's.
+			// Nothing here is reachable from the audio callback.
+			MasteringJob job( os, eff, renderOut, MasteringJob::defaultCandidates() );
+			QString error;
+			if( job.run( &error ) )
+			{
+				printMasteringReport( job );
+			}
+			else
+			{
+				fprintf( stderr, "master: %s\n", error.toUtf8().constData() );
+				headlessExitCode = EXIT_FAILURE;
+			}
+			QTimer::singleShot( 0, qApp, &QCoreApplication::quit );
 		}
 		else
 		{
-			r->renderProject();
+			// when rendering multiple tracks, renderOut is a directory
+			// otherwise, it is a file, so we need to append the file extension
+			if ( !renderTracks )
+			{
+				renderOut = baseName( renderOut ) +
+					ProjectRenderer::getFileExtensionFromFormat(eff);
+			}
+
+			// create renderer
+			auto r = new RenderManager(os, eff, renderOut);
+			QCoreApplication::instance()->connect( r,
+					SIGNAL(finished()), SLOT(quit()));
+
+			// timer for progress-updates
+			auto t = new QTimer(r);
+			r->connect( t, SIGNAL(timeout()),
+					SLOT(updateConsoleProgress()));
+			t->start( 200 );
+
+			if( profilerOutputFile.isEmpty() == false )
+			{
+				Engine::audioEngine()->profiler().setOutputFile( profilerOutputFile );
+			}
+
+			// start now!
+			if ( renderTracks )
+			{
+				r->renderTracks();
+			}
+			else
+			{
+				r->renderProject();
+			}
 		}
 	}
 	else if( !scriptFile.isEmpty() )
@@ -831,7 +925,7 @@ int main( int argc, char * * argv )
 		if( result != ScriptEngine::RunResult::Ok )
 		{
 			fprintf( stderr, "lua: %s\n", error.toUtf8().constData() );
-			scriptExitCode = EXIT_FAILURE;
+			headlessExitCode = EXIT_FAILURE;
 		}
 
 		QTimer::singleShot( 0, qApp, &QCoreApplication::quit );
@@ -1087,5 +1181,5 @@ int main( int argc, char * * argv )
 
 	NotePlayHandleManager::free();
 
-	return scriptExitCode != EXIT_SUCCESS ? scriptExitCode : ret;
+	return headlessExitCode != EXIT_SUCCESS ? headlessExitCode : ret;
 }

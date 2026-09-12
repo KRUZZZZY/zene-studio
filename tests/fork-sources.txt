@@ -22,6 +22,8 @@ include/DpiHelper.h
 include/LatencyCompensation.h
 include/LmmsPolyfill.h
 include/LufsMeter.h
+include/MasteringChain.h
+include/MasteringJob.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MultiTrackRecorder.h
@@ -104,6 +106,8 @@ src/core/CrashReporter.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
 src/core/LufsMeter.cpp
+src/core/MasteringChain.cpp
+src/core/MasteringJob.cpp
 src/core/MidiLearn.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/PluginScanCache.cpp
@@ -134,6 +138,9 @@ src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tests/src/core/LufsMeterTest.cpp
+tests/src/core/MasteringTest.cpp
+tests/src/core/MasteringTestSupport.h
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/SessionModelTest.cpp
+tools/auto-mastering-demo.py
 tools/local-ci.sh

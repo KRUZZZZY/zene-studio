@@ -25,6 +25,8 @@
 
 #include <QFile>
 
+#include <atomic>
+
 #include "ProjectRenderer.h"
 #include "Song.h"
 #include "PerfLog.h"
@@ -37,6 +39,27 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+//! Renders started in this process. Atomic because a render runs on its own
+//! QThread while the caller may already be setting up the next one.
+std::atomic<int> s_renderCount{0};
+
+} // namespace
+
+
+int ProjectRenderer::renderCount()
+{
+	return s_renderCount.load();
+}
+
+
+void ProjectRenderer::resetRenderCount()
+{
+	s_renderCount.store(0);
+}
 
 
 const std::array<ProjectRenderer::FileEncodeDevice, 5> ProjectRenderer::fileEncodeDevices
@@ -154,6 +177,8 @@ void ProjectRenderer::startProcessing()
 void ProjectRenderer::run()
 {
 	PerfLogTimer perfLog("Project Render");
+
+	s_renderCount.fetch_add(1);
 
 	Engine::getSong()->startExport();
 	// Skip first empty buffer.

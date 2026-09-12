@@ -12,6 +12,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/LufsMeterTest.cpp
+	src/core/MasteringTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
@@ -130,6 +131,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# MasteringTest drives a real Engine and the project render path, so it needs a
+# Qt platform plugin even though the test itself is guiless (same reason as
+# PluginScanCacheTest above).
+set_tests_properties(MasteringTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # Remote plugin host<->client contract, driven end to end.
