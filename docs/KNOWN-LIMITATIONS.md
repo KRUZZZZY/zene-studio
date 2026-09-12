@@ -250,13 +250,23 @@ that is this page's fault — report it and it gets added.
   bytes produced. It cannot be turned on by a default, and a distribution can build it out entirely.
   Verified in the tree: `docs/TELEMETRY-V1.md` is the implementing lane's report — the allowlist is
   **24 keys and closed** (§3), the mutator refuses anything outside it, the consent state defaults to all-false,
-  and the preview renders the exact bytes produced; the packager kill switch is `option(ZENE_TELEMETRY … ON)`
+  and the preview renders the exact bytes produced. That report's §5 records the first defect the kill switch
+  caught and is true of the moment it records; the configuration was broken again later by a merge and has
+  since been repaired, and **the OFF configuration is now built and measured for this release**. The packager
+  kill switch is `option(ZENE_TELEMETRY … ON)`
   (`CMakeLists.txt:140`), whose `OFF` compiles the client, its consent screen and its networking code out —
-  **the whole client, so the binary carries no `telemetry` symbol and no `telemetry` string, and the
-  `telemetry.*` commands are absent from the registry (72 commands instead of 74)**. Verified in the tree:
+  **the whole client, so a debug-stripped binary carries no `telemetry` symbol and no `telemetry` string, and
+  the `telemetry.*` commands are absent from the registry**. Measured both ways on this release:
+  `-DZENE_TELEMETRY=OFF -DUSE_WERROR=ON` compiles and the suite passes 86/86, and against the ON build the
+  `nm` telemetry symbols read **99 → 0**, the debug-stripped `strings` count **156 → 0**, and the registry
+  **74 → 72 commands**, the diff being exactly `telemetry.consent` and `telemetry.status`. (An unstripped
+  binary's only `telemetry` string hits are this build directory's own absolute path in the DWARF strings,
+  which stripping removes — the raw count is not zero and is not claimed to be.) Verified in the tree:
   `docs/TELEMETRY-KILL-SWITCH.md` is the repair's report — both configurations measured, the ON object
-  byte-identical, ctest 86/86, the render sha256 unchanged — and `tests/telemetry-off-build.sh` re-runs the
-  OFF build and the two counts, so the switch cannot rot again in silence. The lane
+  byte-identical and every binary section identical except 3 `.rodata` bytes (a Qt resource timestamp), ctest
+  86/86, the render sha256 unchanged — and `tests/telemetry-off-build.sh` re-runs the
+  OFF build and the two counts, so the switch cannot rot again in silence. Evidence:
+  `tests/integration-logs-telemetry-off/`. The lane
   `post-alpha/telemetry` is an ancestor of this tip.
 - **Telemetry v1 is inert: there is no server to send to yet.** The client is complete and refuses to open a
   connection; even switched on, **nothing leaves your machine**. That is stated plainly because a privacy

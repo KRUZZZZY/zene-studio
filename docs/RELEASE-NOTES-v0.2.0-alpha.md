@@ -412,7 +412,14 @@ prove the fallback; no test drives the surface against a real audio backend.
   closed **24-key** allowlist that refuses anything else (§3), the consent state defaults to all-false, the
   "what we send" dialog renders the exact bytes produced, and the kill switch is the configure option
   `ZENE_TELEMETRY` (`CMakeLists.txt:140`, default `ON`), whose `OFF` compiles the client and its networking
-  code out — proved in that document's §5. `src/core/Telemetry.cpp`,
+  code out. That document's §5 records the first defect the switch caught — a real link failure, from a dialog
+  header still being moc'd after its `.cpp` was compiled out — and stays true of the moment it records.
+  **The OFF configuration is now built and measured for this release**, after a later merge broke it again and
+  a fix lane repaired it (`docs/TELEMETRY-KILL-SWITCH.md`): it compiles under `-DUSE_WERROR=ON`, the suite
+  passes 86/86, and against the ON build the `nm` telemetry symbols read **99 → 0**, the debug-stripped
+  `strings` count **156 → 0**, and the live control registry **74 → 72** commands, the diff between them being
+  exactly `telemetry.consent` and `telemetry.status` (evidence in
+  `tests/integration-logs-telemetry-off/`). `src/core/Telemetry.cpp`,
   `src/core/TelemetryNetworkTransport.cpp` and `src/gui/TelemetryConsentDialog.cpp` are in the tree. Lane
   `post-alpha/telemetry` is an ancestor of this tip. **The build's own `--version` line does not report the
   telemetry option** — `ZENE_TELEMETRY` matches neither `^WANT` nor `LMMS_(HAVE|DEBUG)`, so it never reaches
