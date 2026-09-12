@@ -3,8 +3,10 @@
 Worktree: `projects/lmms-fl-research/zene-pa-integration` (branch `post-alpha/integration`).
 Entry tip: **`91d490557`** — train 3C's exit tip (its report commit), which is what the worktree
 actually held when the tree settled (`git status --porcelain` empty, no fresh writes).
-Exit tip: **`962c78200`** — three merge commits (`221686487`, `d7de12677`, `ea0426199`), no fix-ups,
-then the evidence commit `3f9c7d214` and this report commit.
+Exit: the three merge commits (`221686487`, `d7de12677`, `ea0426199`) — no fix-ups — then the
+evidence commit `3f9c7d214`, this report, and a one-line correction commit on top of it.
+`git log --oneline --merges 91d490557..HEAD` and `git log --oneline -6` are the authoritative
+record of which commits exist; a report cannot name its own tip without going stale, so it does not.
 
 Nothing was pushed; no remote, PR, issue or **tag** was touched; `origin` (LMMS/lmms) and `messmerd`
 were never contacted; no branch was rebased, amended, reset or rewritten; nothing was staged with
@@ -524,4 +526,5 @@ tools/                     3C's resolve_pair.py / regen.py / precommit_check.py 
 ```
 
 The git-history commits of the train are `221686487`, `d7de12677`, `ea0426199` — **three merges, no
-fix-ups** — plus the evidence commit `3f9c7d214` and this report (tip `962c78200`).
+fix-ups** — plus the evidence commit `3f9c7d214` and the report commits. `git log --merges
+91d490557..HEAD` returns exactly the three merges and nothing else, at any later tip.
