@@ -59,11 +59,11 @@ namespace lmms::Clipboard
 		switch( type )
 		{
 			case MimeType::StringPair:
-				return "application/x-lmms-stringpair";
+				return "application/x-zene-stringpair";
 			break;
 			case MimeType::Default:
 			default:
-				return "application/x-lmms-clipboard";
+				return "application/x-zene-clipboard";
 				break;
 		}
 	}

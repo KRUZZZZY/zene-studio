@@ -67,7 +67,7 @@ Plugin::Descriptor Q_DECL_EXPORT  vestige_plugin_descriptor =
 	LMMS_STRINGIFY( PLUGIN_NAME ),
 	"VeSTige",
 	QT_TRANSLATE_NOOP( "PluginBrowser",
-			"VST-host for using VST(i)-plugins within LMMS" ),
+			"VST-host for using VST(i)-plugins within Zene Studio" ),
 	"Tobias Doerffel <tobydox/at/users.sf.net>",
 	0x0100,
 	Plugin::Type::Instrument,
@@ -529,7 +529,7 @@ VestigeInstrumentView::VestigeInstrumentView( VestigeInstrument * _instrument,
 							"controls" ) );
 	connect( m_managePluginButton, SIGNAL( clicked() ), this,
 						SLOT( managePlugin() ) );
-	m_managePluginButton->setToolTip(tr("Control VST plugin from LMMS host"));
+	m_managePluginButton->setToolTip(tr("Control VST plugin from Zene Studio host"));
 
 
 	m_openPresetButton = new PixmapButton( this, "" );

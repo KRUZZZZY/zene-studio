@@ -40,7 +40,7 @@ Plugin::Descriptor PLUGIN_EXPORT slewdistortion_plugin_descriptor =
 	"Lost Robot <r94231/at/gmail/dot/com>",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr,
 };

@@ -1195,7 +1195,7 @@ void Song::loadProject( const QString & fileName )
 	{
 		if ( getGUI() != nullptr )
 		{
-			QMessageBox::warning( nullptr, tr("LMMS Error report"), errorSummary(),
+			QMessageBox::warning( nullptr, tr("Zene Studio Error report"), errorSummary(),
 							QMessageBox::Ok );
 		}
 		else

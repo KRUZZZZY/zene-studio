@@ -49,7 +49,7 @@ Plugin::Descriptor PLUGIN_EXPORT neuralamp_plugin_descriptor =
 	"AI-KOS Team <https://github.com/ai-kos>",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr,
 } ;

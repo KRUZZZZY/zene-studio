@@ -1,11 +1,11 @@
---! lmms-api 0.1
+--! zene-api 0.1
 --
--- generative-bass.lua - LMMS Lua API v0 example 2 (spec section 7).
+-- generative-bass.lua - Zene Studio Lua API v0 example 2 (spec section 7).
 --
 -- Seeded-RNG arpeggio in a natural minor scale over 8 bars, one 16th note per
 -- step. The seed is fixed so every run produces the same pattern.
 
-local patterns = lmms.song():patternStore()
+local patterns = zene.song():patternStore()
 
 local track = patterns:addInstrumentTrack()
 track:setName("Generative Bass")
@@ -19,7 +19,7 @@ math.randomseed(20260908)
 
 local root = 36                       -- C2
 local minor = { 0, 2, 3, 5, 7, 8, 10 }
-local step = lmms.ticksPerBar() / 16
+local step = zene.ticksPerBar() / 16
 local bars = 8
 local stepsPerBar = 16
 local velocity = 96
@@ -34,5 +34,5 @@ for bar = 0, bars - 1 do
 	end
 end
 
-lmms.log():info(string.format("generative-bass: %d notes over %d bars",
+zene.log():info(string.format("generative-bass: %d notes over %d bars",
 	clip:noteCount(), bars))

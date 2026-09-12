@@ -44,7 +44,7 @@ Plugin::Descriptor PLUGIN_EXPORT dualfilter_plugin_descriptor =
 	"Vesa Kivimäki <contact/dot/diizy/at/nbl/dot/fi>",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr,
 } ;

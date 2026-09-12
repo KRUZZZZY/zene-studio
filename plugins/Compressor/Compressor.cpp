@@ -47,7 +47,7 @@ Plugin::Descriptor PLUGIN_EXPORT compressor_plugin_descriptor =
 	"Lost Robot <r94231@gmail.com>",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr,
 } ;

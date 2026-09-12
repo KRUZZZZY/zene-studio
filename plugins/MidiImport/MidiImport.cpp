@@ -65,7 +65,7 @@ Plugin::Descriptor PLUGIN_EXPORT midiimport_plugin_descriptor =
 {
 	LMMS_STRINGIFY(PLUGIN_NAME),
 	"MIDI Import",
-	QT_TRANSLATE_NOOP("PluginBrowser", "Filter for importing MIDI-files into LMMS"),
+	QT_TRANSLATE_NOOP("PluginBrowser", "Filter for importing MIDI-files into Zene Studio"),
 	"Tobias Doerffel <tobydox/at/users/dot/sf/dot/net>",
 	0x0100,
 	Plugin::Type::ImportFilter,
@@ -108,7 +108,7 @@ bool MidiImport::tryImport(TrackContainer* tc)
 	{
 		QMessageBox::information(gui::getGUI()->mainWindow(),
 			tr("Setup incomplete"),
-			tr("You did not compile LMMS with support for "
+			tr("You did not compile Zene Studio with support for "
 				"SoundFont2 player, which is used to add default "
 				"sound to imported MIDI files. "
 				"Therefore no sound will be played back after "

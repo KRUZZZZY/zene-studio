@@ -84,7 +84,7 @@ MidiAlsaSeq::MidiAlsaSeq() :
 							snd_strerror( err ) );
 		return;
 	}
-	snd_seq_set_client_name( m_seqHandle, "LMMS" );
+	snd_seq_set_client_name( m_seqHandle, "Zene Studio" );
 
 
 	m_queueID = snd_seq_alloc_queue( m_seqHandle );

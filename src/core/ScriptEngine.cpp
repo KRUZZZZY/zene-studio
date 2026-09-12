@@ -316,7 +316,7 @@ ScriptEngine::ScriptEngine(QObject* parent) :
 	m_midiIn(1024),
 	m_midiInReader(m_midiIn)
 {
-	m_workerThread->setObjectName(QStringLiteral("lmms-lua-script-worker"));
+	m_workerThread->setObjectName(QStringLiteral("zene-lua-script-worker"));
 	m_worker = new ScriptWorker(this);
 	m_worker->moveToThread(m_workerThread);
 	m_workerThread->start();
@@ -355,7 +355,7 @@ ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* erro
 	{
 		if (error != nullptr)
 		{
-			*error = QStringLiteral("script '%1' has no '--! lmms-api <major>.<minor>' header")
+			*error = QStringLiteral("script '%1' has no '--! zene-api <major>.<minor>' header")
 					.arg(path);
 		}
 		return RunResult::VersionError;
@@ -365,7 +365,7 @@ ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* erro
 	{
 		if (error != nullptr)
 		{
-			*error = QStringLiteral("script '%1' requires lmms-api %2: %3")
+			*error = QStringLiteral("script '%1' requires zene-api %2: %3")
 					.arg(path, version, reason);
 		}
 		return RunResult::VersionError;
@@ -856,7 +856,7 @@ MidiClip* ScriptEngine::patternClipAt(int patternIndex, int trackIndex) const
 QString ScriptEngine::parseVersionHeader(const QString& source)
 {
 	static const QRegularExpression header(
-		QStringLiteral("^--!\\s*lmms-api\\s+(\\d+\\.\\d+)\\s*$"),
+		QStringLiteral("^--!\\s*(?:zene|lmms)-api\\s+(\\d+\\.\\d+)\\s*$"),
 		QRegularExpression::MultilineOption);
 	const QRegularExpressionMatch match = header.match(source.left(4096));
 	return match.hasMatch() ? match.captured(1) : QString();

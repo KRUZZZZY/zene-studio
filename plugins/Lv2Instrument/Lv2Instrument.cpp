@@ -52,7 +52,7 @@ Plugin::Descriptor PLUGIN_EXPORT lv2instrument_plugin_descriptor =
 	LMMS_STRINGIFY(PLUGIN_NAME),
 	"LV2",
 	QT_TRANSLATE_NOOP("PluginBrowser",
-		"plugin for using arbitrary LV2 instruments inside LMMS."),
+		"plugin for using arbitrary LV2 instruments inside Zene Studio."),
 	"Johannes Lorenz <jlsf2013$$$users.sourceforge.net, $$$=@>",
 	0x0100,
 	Plugin::Type::Instrument,
@@ -208,7 +208,7 @@ gui::PluginView* Lv2Instrument::instantiateView(QWidget *parent)
 
 void Lv2Instrument::updatePitchRange()
 {
-	qDebug() << "Lmms: Cannot update pitch range for lv2 plugin:"
+	qDebug() << "Zene Studio: Cannot update pitch range for lv2 plugin:"
 				"not implemented yet";
 }
 

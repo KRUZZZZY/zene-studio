@@ -586,7 +586,7 @@ gui::PluginView* CarlaInstrument::instantiateView(QWidget* parent)
 
     // TODO - get plugin instance name
     //fHost.uiName = strdup(parent->windowTitle().toUtf8().constData());
-    fHost.uiName = strdup(kIsPatchbay ? "CarlaPatchbay-LMMS" : "CarlaRack-LMMS");
+    fHost.uiName = strdup(kIsPatchbay ? "CarlaPatchbay-Zene" : "CarlaRack-Zene");
 
     return new gui::CarlaInstrumentView(this, parent);
 }

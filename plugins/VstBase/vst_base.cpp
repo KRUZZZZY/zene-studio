@@ -39,7 +39,7 @@ Plugin::Descriptor VSTBASE_EXPORT vstbase_plugin_descriptor =
 {
 	LMMS_STRINGIFY( PLUGIN_NAME ),
 	"VST Base",
-	"library for all LMMS plugins dealing with VST-plugins",
+	"library for all Zene Studio plugins dealing with VST-plugins",
 	"Tobias Doerffel <tobydox/at/users/dot/sf/dot/net>",
 	0x0100,
 	Plugin::Type::Library,

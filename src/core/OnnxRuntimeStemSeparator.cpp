@@ -113,7 +113,7 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 	}
 	const int segment = segmentFrames > 0 ? segmentFrames : HTDemucsSegmentFrames;
 
-	static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "lmms-stem-split");
+	static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "zene-stem-split");
 	Ort::SessionOptions options;
 	options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 	options.SetIntraOpNumThreads(std::max(1, QThread::idealThreadCount() - 1));

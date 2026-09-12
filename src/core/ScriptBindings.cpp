@@ -330,7 +330,7 @@ void registerAll(lua_State* L, ScriptEngine* engine)
 	Q_UNUSED(engine)
 
 	luabridge::getGlobalNamespace(L)
-		.beginNamespace("lmms")
+		.beginNamespace("zene")
 			.addFunction("version", +[]() -> std::string { return std::string("0.1"); })
 			.addFunction("ticksPerBar", +[]() -> int { return TimePos::ticksPerBar(); })
 			.addFunction("stepsPerBar", +[]() -> int { return TimePos::stepsPerBar(); })
@@ -511,6 +511,11 @@ void registerAll(lua_State* L, ScriptEngine* engine)
 			.addFunction("noteOn", &LuaMidiOut::noteOn)
 			.addFunction("noteOff", &LuaMidiOut::noteOff)
 		.endClass();
+
+	// `zene` is the scripting namespace; `lmms` stays a working alias so scripts
+	// written against the published alpha keep running.
+	lua_getglobal(L, "zene");
+	if (lua_isnil(L, -1)) { lua_pop(L, 1); } else { lua_setglobal(L, "lmms"); }
 }
 
 } // namespace ScriptBindings

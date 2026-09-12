@@ -2144,7 +2144,7 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			SHOW_CALLBACK( "amc: audioMasterGetProductString\n" );
 			// fills <ptr> with a string with product name
 			// (max 64 char)
-			std::strcpy(p, "LMMS VST Support Layer (LVSL)");
+			std::strcpy(p, "Zene Studio VST Support Layer (ZSVL)");
 			return 1;
 
 		case audioMasterGetVendorVersion:

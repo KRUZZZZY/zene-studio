@@ -238,7 +238,7 @@ bool StemModelStore::download(const StemModelSpec& spec,
 	QNetworkRequest request(QUrl(spec.url));
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
 		QNetworkRequest::NoLessSafeRedirectPolicy);
-	request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("LMMS-stem-split/1.0"));
+	request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Zene-Studio-stem-split/1.0"));
 
 	QNetworkReply* reply = manager.get(request);
 	QObject::connect(reply, &QNetworkReply::downloadProgress,

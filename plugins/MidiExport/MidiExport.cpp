@@ -47,7 +47,7 @@ Plugin::Descriptor PLUGIN_EXPORT midiexport_plugin_descriptor =
 	LMMS_STRINGIFY( PLUGIN_NAME ),
 	"MIDI Export",
 	QT_TRANSLATE_NOOP( "PluginBrowser",
-				"Filter for exporting MIDI-files from LMMS" ),
+				"Filter for exporting MIDI-files from Zene Studio" ),
 	"Mohamed Abdel Maksoud <mohamed at amaksoud.com> and "
 	"Hyunjin Song <tteu.ingog/at/gmail.com>",
 	0x0100,

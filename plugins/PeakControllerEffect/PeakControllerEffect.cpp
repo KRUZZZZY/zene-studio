@@ -49,7 +49,7 @@ Plugin::Descriptor PLUGIN_EXPORT peakcontrollereffect_plugin_descriptor =
 	"Paul Giblock <drfaygo/at/gmail.com>",
 	0x0100,
 	Plugin::Type::Effect,
-	new PixmapLoader("lmms-plugin-logo"),
+	new PixmapLoader("zene-plugin-logo"),
 	nullptr,
 	nullptr,
 } ;

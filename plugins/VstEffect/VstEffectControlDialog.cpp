@@ -100,7 +100,7 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 							"controls" ) );
 		connect( m_managePluginButton, SIGNAL( clicked() ),  _ctl,
 						SLOT( managePlugin() ) );
-		m_managePluginButton->setToolTip(tr("Control VST plugin from LMMS host"));
+		m_managePluginButton->setToolTip(tr("Control VST plugin from Zene Studio host"));
 
 		m_managePluginButton->setMinimumWidth( 26 );
 		m_managePluginButton->setMaximumWidth( 26 );

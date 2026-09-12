@@ -50,6 +50,68 @@ plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
 
+# --- rename layer 1: user-visible strings and client identity ---
+cmake/linux/icons/scalable/mimetypes/application-x-zene-project.svg	rename layer 1: file-association metadata and shipped content renamed with the product
+cmake/linux/zene.desktop	rename layer 1: file-association metadata and shipped content renamed with the product
+cmake/linux/zene.xml	rename layer 1: file-association metadata and shipped content renamed with the product
+data/backgrounds/zene_tile.png	rename layer 1: shipped background tile renamed zene_tile.png (pixels carry no branding; verified)
+data/scripts/create-pattern.lua	rename layer 1: shipped Lua example uses the zene API header and namespace
+data/scripts/generative-bass.lua	rename layer 1: shipped Lua example uses the zene API header and namespace
+data/scripts/hello.lua	rename layer 1: shipped Lua example uses the zene API header and namespace
+data/scripts/midi-router.lua	rename layer 1: shipped Lua example uses the zene API header and namespace
+data/themes/default/zene-plugin-logo.svg	rename layer 1: theme artwork renamed zene-plugin-logo.svg; dc:creator (CC0) retained
+include/Clipboard.h	rename layer 1: clipboard MIME types are application/x-zene-*
+plugins/Amplifier/Amplifier.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/BassBooster/BassBooster.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Bitcrush/Bitcrush.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Compressor/Compressor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/CrossoverEQ/CrossoverEQ.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Delay/DelayEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Dispersion/Dispersion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/DualFilter/DualFilter.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/DynamicsProcessor/DynamicsProcessor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Flanger/FlangerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/FrequencyShifter/FrequencyShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/HydrogenImport/HydrogenImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/LOMM/LOMM.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/LadspaEffect/LadspaEffect.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/Lv2Effect/Lv2Effect.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/Lv2Instrument/Lv2Instrument.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/MidiExport/MidiExport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/MidiImport/MidiImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/MultitapEcho/MultitapEcho.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/PeakControllerEffect/PeakControllerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/ReverbSC/ReverbSC.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Sfxr/Sfxr.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/SlewDistortion/SlewDistortion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/SlewDistortion/SlewDistortionControlDialog.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/SpectrumAnalyzer/Analyzer.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/StereoEnhancer/StereoEnhancer.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/StereoMatrix/StereoMatrix.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Vectorscope/Vectorscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Vestige/Vestige.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/VstBase/vst_base.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/VstEffect/VstEffect.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/VstEffect/VstEffectControlDialog.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/WaveShaper/WaveShaper.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+src/core/DataFile.cpp	rename layer 1: the version-difference notice reports the name the file itself records
+src/core/Song.cpp	rename layer 1: user-visible label/dialog string says Zene Studio
+src/core/audio/AudioFileFlac.cpp	rename layer 1: the software tag written into rendered audio files names Zene Studio
+src/core/audio/AudioFileMP3.cpp	rename layer 1: the software tag written into rendered audio files names Zene Studio
+src/core/audio/AudioFileOgg.cpp	rename layer 1: the software tag written into rendered audio files names Zene Studio
+src/core/audio/AudioFileWave.cpp	rename layer 1: the software tag written into rendered audio files names Zene Studio
+src/core/audio/AudioJack.cpp	rename layer 1: the host-visible audio/MIDI client name is Zene Studio (was the old product name)
+src/core/audio/AudioPulseAudio.cpp	rename layer 1: the host-visible audio/MIDI client name is Zene Studio (was the old product name)
+src/core/audio/AudioSoundIo.cpp	rename layer 1: the host-visible audio/MIDI client name is Zene Studio (was the old product name)
+src/core/midi/MidiAlsaSeq.cpp	rename layer 1: the host-visible audio/MIDI client name is Zene Studio (was the old product name)
+src/core/midi/MidiJack.cpp	rename layer 1: the host-visible audio/MIDI client name is Zene Studio (was the old product name); reads the legacy config attribute as a fallback
+src/gui/PluginBrowser.cpp	rename layer 1: the built-in plugin tree root is labelled Zene Studio
+src/gui/modals/ControllerConnectionDialog.cpp	rename layer 1: user-visible label/dialog string says Zene Studio
+src/gui/modals/EffectSelectDialog.cpp	rename layer 1: the built-in plugin type column/button is labelled Zene Studio (label and filter string changed together)
+
 # --- wave R rename divergence (declared retroactively; Gate 6 was red on this branch) ---
 .yamllint	wave R rename: yamllint ignore path follows the renamed desktop file (no runtime effect)
 INSTALL.txt	wave R rename: install instructions name the renamed executable and packages
@@ -89,3 +151,238 @@ src/gui/modals/SetupDialog.cpp	wave R rename: settings path labels follow the re
 src/gui/modals/about_dialog.ui	wave R rename: About dialog title/body/link name the renamed product
 tools/mmpz-git/run-demo.sh	wave R rename: demo script invokes the renamed binary
 vcpkg.json	wave R rename: vcpkg manifest name follows the CMake project rename
+
+# --- rename layer 2 (user-state migration) and layer 3 (format) ---
+include/ConfigManager.h	rename layer 2: ConfigMigration::adoptConfigFile/adoptWorkingDir declared; the config-file member is m_configFile (was named after the old product)
+include/MainWindow.h	rename layer 2: code comment names the new config file (~/.zenestudio.xml)
+data/presets/AudioFileProcessor/Bass-Mania.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/AudioFileProcessor/Erazor.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/AudioFileProcessor/Fat-Reversed-Kick.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/AudioFileProcessor/Kick-4-your-Subwoofer.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/AudioFileProcessor/SString.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/AudioFileProcessor/orion.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/alien_strings.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/beehive.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/bell.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/cello.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/drama.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/epiano.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/invaders_must_die.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/pluck.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/soft_pad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/spacefx.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/subbass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/sweep_pad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/toy_piano.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/BitInvader/wah_synth.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/Clap dry.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/Clap.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/HihatClosed.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/HihatOpen.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/KickPower.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/Shaker.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/SnareLong.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/SnareMarch.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/TR909-RimShot.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Kicker/TrapKick.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/LB302/AcidLead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/LB302/AngryLead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/LB302/DroneArp.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/LB302/GoodOldTimes.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/LB302/Oh Synth.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/LB302/STrash.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Monstro/Growl.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Monstro/HorrorLead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Monstro/Phat.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Monstro/ScaryBell.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Nescaline/Chomp.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Nescaline/Detune_lead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Nescaline/Engine_overheats.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Nescaline/Fireball_flick.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Nescaline/Mega_weapon.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Bagpipe.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Bells.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Brass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Bubbly_days.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Cheesy_synth.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Clarinet.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Combo_organ.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Epiano.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Funky.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Halo_pad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Harp.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Organ_leslie.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Pad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Square.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/OpulenZ/Vibraphone.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/Pwnage.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/Rubberband.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/organ_blues.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/organ_risingsun.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/organ_swish.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/pad_ethereal.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/pad_rich.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/pad_sweep.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/puresine.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Organic/sequencer_64.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/SID/Bass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/SID/CheesyGuitar.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/SID/Lead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/SID/MadMind.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/SID/Overdrive.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/SID/Pad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/AmazingBubbles.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/AnalogBell.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/AnalogDreamz.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/AnalogTimes.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Analogous.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Arpeggio.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/ArpeggioPing.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Bell.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/BellArp.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/BlandModBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/BrokenToy.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/ChurchOrgan.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/CryingPads.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/DetunedGhost.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/DirtyReece.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/DistortedPMBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Drums_HardKick.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Drums_HihatC.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Drums_HihatO.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Drums_Kick.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Drums_Snare.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/DullBell.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/E-Organ.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/E-Organ2.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/ElectricOboe.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Erazzor.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/FatCheese.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/FatPMArp.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/FatTB303Arp.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Freaky-Bass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/FutureBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/FuzzyAnalogBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Garfunkel.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/GhostBoy.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Harmonium.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Harp-of-a-Fairy.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/HiPad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/HugeGrittyBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Jupiter.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/LFO-party.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/LovelyDream.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/MoogArpeggio.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/MoveYourBody.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/OldComputerGames.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/PM-FMstring.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/PMFMFTWbass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/PMbass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/PercussiveBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Play-some-rock.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/PluckArpeggio.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/PluckBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/PowerStrings.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/RaveBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Ravemania.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/ResoBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/ResonantPad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Rough!.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/SEGuitar.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/SawReso.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/SpaceBass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Square.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/SquarePing.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/SuperSawLead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Supernova.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/TB303.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/TINTNpad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/TheFirstOne.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/TheMaster.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/TranceLead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/WarmStack.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Whistle.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/TripleOscillator/Xylophon.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Vibed/Harpsichord.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Vibed/SadPad.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Watsyn/Epic_lead.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Watsyn/Phase_bass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Watsyn/Pulse.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Accordion.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Ambition.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Baby Violin.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Bad Singer.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Cloud Bass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Creature.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Dream.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Electric Shock.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Faded Colors - notes test.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Faded Colors.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Fat Flute.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Frog.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Horn.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Low Battery.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Piano-Gong.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Rubber Bass.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Space Echoes.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Speaker Swapper.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Toss.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Untuned Bell.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/Vibrato.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/presets/Xpressive/X-Distorted.xpf	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Alf42red-Mauiwowi.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/AngryLlama-NewFangled.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Ashore.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/CapDan/CapDan-ReggaeTry.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/CapDan/CapDan-ReggaetonTry.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/CapDan/CapDan-TwilightArea-OriginalByAlf42red.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/CapDan/CapDan-ZeroSumGame-OriginalByZakarra.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/DnB.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/EsoXLB-CPU.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Farbro-Tectonic.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Greippi - Krem Kaakkuja (Second Flight Remix).mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Impulslogik-Zen.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Jousboxx-BuzzerBeater.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Momo64-esp.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Namitryus-K-Project.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Oglsdl-Dr8v2.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Oglsdl-PpTrip.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Popsip-Electric Dancer.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Root84-Initialize.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Saber-FinalStep.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Settel-InnerRecreation.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Shovon-ProgressiveHousePluckDemo.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Skiessi/Skiessi-C64.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Skiessi/Skiessi-Onion.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Skiessi/Skiessi-RandomProjectNumber14253.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Skiessi/Skiessi-TurningPoint.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Socceroos-Progress.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/StrictProduction-DearJonDoe.mmp	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/TameAnderson-MakeMe.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Thaledric-Armageddon.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/Thomasso-AxeFromThe80s.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/TobyDox-Psycho.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/demos/unfa-Spoken.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/shorties/Crunk(Demo).mmp	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/shorties/DirtyLove.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/shorties/Root84-TrancyLoop.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/shorties/Skiessi-222.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/shorties/Surrender-Main.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/shorties/sv-DnB-Startup.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/shorties/sv-Trance-Startup.mmpz	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/templates/AcousticDrumset.mpt	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/templates/CR8000.mpt	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/templates/ClubMix.mpt	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/templates/Empty.mpt	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/templates/TR808.mpt	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/templates/default.mpt	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+data/projects/tutorials/editing_note_volumes.mmp	rename layer 3: shipped preset/project written in the new format (zene-project root, creator="Zene Studio"); the legacy multimedia-project root is untouched
+
+# --- rename: the other half of every path rename, and one missed file ---
+# A renamed file is a change to upstream-inherited code on BOTH sides: the old
+# path disappears upstream and the new one is not upstream's.  Gate 6 lists both
+# when git does not pair them, so both are declared.
+cmake/linux/icons/scalable/mimetypes/application-x-lmms-project.svg	rename layer 1: this file was renamed to application-x-zene-project.svg (see its entry); the old path is declared because a rename deletes it from upstream's namespace
+data/backgrounds/lmms_tile.png	rename layer 1: this file was renamed to zene_tile.png (see its entry); the old path is declared because a rename deletes it from upstream's namespace
+data/themes/default/lmms-plugin-logo.svg	rename layer 1: this file was renamed to zene-plugin-logo.svg (see its entry); the old path is declared because a rename deletes it from upstream's namespace
+plugins/CarlaBase/Carla.cpp	rename layer 1: the Carla host UI name is "CarlaRack-Zene"/"CarlaPatchbay-Zene" (was the old product name), which a user sees in Carla's own window
