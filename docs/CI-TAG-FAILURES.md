@@ -303,3 +303,23 @@ this change touches, so per the brief they are reported rather than fixed:
   registered, and no test count changes.
 - `ctest` is **86 tests**, unchanged (see the local run recorded in
   `tests/integration-logs-ci-fix/ctest.log`).
+
+## The final tree's own measurements
+
+All of these are on the committed tree, at the tip of `fix/ci-tag-failures`:
+
+| command | result | log |
+|---|---|---|
+| `.github/workflows/provision-plugin-hosting-deps.sh build` | exit 0 | `provision.log` |
+| `cmake -S . -B build … -DWANT_QT6=ON -DUSE_WERROR=ON -DUSE_COMPILE_CACHE=ON -DWANT_VST3=ON -DWANT_CLAP=ON` | exit 0 | `configure.log` |
+| `cmake --build build -j2` | exit 0 (`BUILD_EXIT=0`), i.e. the whole tree including the new arm64/x86_64 fenv branch compiles under `-Werror` | `build.log` |
+| `ctest` in `build/tests` | **86/86 passed**, exit 0 | `ctest.log` |
+| `bash tests/fork-sources-gate.sh` | exit 0 (242 fork-NEW, 1036 inherited, 34 tooling, 0 stale) | `fork-sources-gate.log` |
+| `bash tests/no-upstream-regression-gate.sh` | exit 0 | `no-upstream-regression-gate.log` |
+| `python3 tests/scripted/check-namespace` | exit 1, the same four pre-existing errors as before this change | `check-namespace.log` |
+
+The local configure is the CI Linux job's options plus `-DWANT_QT6=ON`, because
+this box has Qt6 6.4.2 and no Qt5 (the CI Linux jobs have the reverse); the
+VST3/CLAP options are on so the CMake modules this change touches are actually
+configured.
+
