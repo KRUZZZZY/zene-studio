@@ -24,7 +24,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
+
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
 #include "Track.h"
@@ -32,31 +35,10 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject intProperty(int minimum, int maximum)
-{
-	QJsonObject property{{QStringLiteral("type"), QStringLiteral("integer")}};
-	property.insert(QStringLiteral("minimum"), minimum);
-	property.insert(QStringLiteral("maximum"), maximum);
-	return property;
-}
 
 QString trackTypeName(Track::Type type)
 {
@@ -77,7 +59,7 @@ QString trackTypeName(Track::Type type)
 QJsonObject trackState(Track* track, int index)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), control::trackId(index));
+	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
 	entry.insert(QStringLiteral("index"), index);
 	entry.insert(QStringLiteral("name"), track->name());
 	entry.insert(QStringLiteral("type"), trackTypeName(track->type()));
@@ -102,8 +84,8 @@ void registerTransportCommands(ControlRegistry& registry)
 		// Everything else stays usable headless: the model, render and save
 		// (task #626).
 		cmd.requiresDecl = {QStringLiteral("device")};
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		});
 		cmd.handler = [](const QJsonObject&) {
@@ -122,8 +104,8 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("stop");
 		cmd.description = QStringLiteral("Stop playback.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		});
 		cmd.handler = [](const QJsonObject&) {
@@ -142,9 +124,9 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("seek");
 		cmd.description = QStringLiteral("Move the play head to an absolute position in ticks.");
-		cmd.argsSchema = schemaObject(
-			{{QStringLiteral("ticks"), intProperty(0, 0x7fffffff)}}, {QStringLiteral("ticks")});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("ticks"), integerProperty(0, 0x7fffffff)}}, {QStringLiteral("ticks")});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("position_ticks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.mutating = true;
@@ -181,9 +163,9 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("set_tempo");
 		cmd.description = QStringLiteral("Set the song tempo in BPM.");
-		cmd.argsSchema = schemaObject(
-			{{QStringLiteral("bpm"), intProperty(MinTempo, MaxTempo)}}, {QStringLiteral("bpm")});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("bpm"), integerProperty(MinTempo, MaxTempo)}}, {QStringLiteral("bpm")});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.mutating = true;
@@ -217,8 +199,8 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("get_state");
 		cmd.description = QStringLiteral("Playback position and transport flags.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 			{QStringLiteral("paused"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 			{QStringLiteral("position_ticks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
@@ -242,9 +224,12 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("track.list");
 		cmd.group = QStringLiteral("track");
 		cmd.verb = QStringLiteral("list");
-		cmd.description = QStringLiteral("Every track in the song container, with its stable trk-<n> id.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.description = QStringLiteral("Every track in the song container, with its stable trk-<n> id. "
+			"The id is assigned at creation and persists in the project file. Addressing is scoped to "
+			"the SONG container: a track inside a nested container (the <trackcontainer> a pattern "
+			"track carries) is not reachable by id, exactly as it is not addressable by index.");
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
@@ -268,29 +253,31 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("track.get_state");
 		cmd.group = QStringLiteral("track");
 		cmd.verb = QStringLiteral("get_state");
-		cmd.description = QStringLiteral("One track addressed by its trk-<n> id.");
-		cmd.argsSchema = schemaObject(
+		cmd.description = QStringLiteral("One track addressed by its trk-<n> id: the number the track "
+			"was given at creation, which it keeps until it is deleted. A malformed id is "
+			"invalid_args; a well-formed id naming no live track is not_found. Addressing is scoped "
+			"to the SONG container, so a track inside a nested container is not reachable by id.");
+		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")});
-		cmd.resultSchema = schemaObject({
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("id"), stringProperty()},
 			{QStringLiteral("name"), stringProperty()},
 			{QStringLiteral("type"), stringProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) {
 			const QString id = args.value(QStringLiteral("track")).toString();
-			const int index = control::idToIndex(id, QStringLiteral("trk-"));
+			// One resolver for every trk-<n> consumer: a malformed id is typed
+			// invalid_args and a well-formed id that names no live track is
+			// typed not_found, never a positional guess (SPEC-stable-ids.md).
+			ControlResult error;
+			Track* track = control::resolveTrack(id, &error);
+			if (track == nullptr) { return error; }
 			const TrackContainer::TrackList& list = Engine::getSong()->tracks();
-			if (index < 0)
+			for (int i = 0; i < static_cast<int>(list.size()); ++i)
 			{
-				return ControlResult::failure(ControlErrorKind::InvalidArgs,
-					QStringLiteral("'%1' is not a track id of the form trk-<n>").arg(id));
+				if (list[i] == track) { return ControlResult::success(trackState(track, i)); }
 			}
-			if (index >= static_cast<int>(list.size()))
-			{
-				return ControlResult::failure(ControlErrorKind::NotFound,
-					QStringLiteral("no track %1 (the song has %2)").arg(id).arg(list.size()));
-			}
-			return ControlResult::success(trackState(list[index], index));
+			return ControlResult::success(trackState(track, -1));
 		};
 		registry.registerCommand(cmd);
 	}

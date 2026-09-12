@@ -312,11 +312,34 @@ def lv2_bundle_declared_uris():
     return declared
 
 
+
+def fixture_track_ids(flow, process, log_path):
+    """The fixture's track ids AS THE SURFACE REPORTS THEM, by type.
+
+    The number in trk-<n> is CREATION-ASSIGNED and persisted in the project file
+    (SPEC-stable-ids.md), not a position in Song::tracks(), so a test must READ it
+    from the surface instead of spelling a literal. The fixture's song container
+    is one pattern track and one instrument track, and the instrument track is
+    NOT trk-1: the pattern track carries a nested <trackcontainer> whose own track
+    also takes a number from the one project-scoped counter, so the song
+    container's ids are trk-0 and trk-2. Hardcoding the position is exactly the
+    fragility the stable-id change removes.
+    """
+    tracks = flow.ok("track.list").get("tracks", [])
+    instrument = next((t["id"] for t in tracks if t.get("type") == "instrument"), None)
+    pattern = next((t["id"] for t in tracks if t.get("type") == "pattern"), None)
+    if instrument is None or pattern is None:
+        fail("the fixture does not have one pattern and one instrument track: %r" % tracks,
+             process, log_path)
+    return instrument, pattern
+
+
 def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
     """The LV2 leg: catalogue visibility, then load -> param_get -> param_set ->
     state_save -> state_load -> unload on a real installed LV2 plugin, plus the
     typed refusals the LV2 port/state model produces (SPEC A11-A14)."""
     flow = Flow(client, last_id)
+    instrument_track, pattern_track = fixture_track_ids(flow, process, log_path)
 
     # --- the LV2 half of the catalogue ------------------------------------
     devices = listing.get("devices", [])
@@ -379,12 +402,12 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
 
     # --- typed errors on the way in ---------------------------------------
     # a dev id beyond the catalogue is not_found, typed.
-    flow.err("plugin.load", "not_found", {"target": "trk-1", "device": "dev-999999"})
+    flow.err("plugin.load", "not_found", {"target": instrument_track, "device": "dev-999999"})
     # trk-0 is the fixture's Beat/Bassline track: no device chain at all.
-    flow.err("plugin.load", "refused", {"target": "trk-0", "device": worked["id"]})
+    flow.err("plugin.load", "refused", {"target": pattern_track, "device": worked["id"]})
 
     # --- load an LV2 effect -----------------------------------------------
-    loaded = flow.ok("plugin.load", {"target": "trk-1", "device": worked["id"]})
+    loaded = flow.ok("plugin.load", {"target": instrument_track, "device": worked["id"]})
     if loaded.get("kind") != "effect" or not str(loaded.get("id", "")).startswith("fx-"):
         fail("plugin.load of the LV2 device returned %r" % loaded, process, log_path)
     if loaded.get("plugin") != "lv2effect" or loaded.get("device") != worked["id"]:
@@ -394,7 +417,7 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
     print("plugin.load %s -> %s via %s" % (worked["id"], fx, loaded.get("plugin")))
 
     # --- the parameters really exist (the port models) --------------------
-    state = flow.ok("dsp.get_state", {"target": "trk-1"})
+    state = flow.ok("dsp.get_state", {"target": instrument_track})
     entry = None
     for device in (state.get("chains") or [{}])[0].get("devices", []):
         if device.get("id") == fx:
@@ -432,14 +455,14 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
         middle = low + (high - low) * 0.75
     away = low + (high - low) * 0.25
 
-    got = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    got = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": fx, "name": name})
     if got.get("parameter", {}).get("name") != name:
         fail("plugin.param_get returned %r for %r" % (got, name), process, log_path)
     set_reply = flow.ok("plugin.param_set",
-                        {"target": "trk-1", "plugin": fx, "name": name, "value": middle})
+                        {"target": instrument_track, "plugin": fx, "name": name, "value": middle})
     if abs(float(set_reply.get("parameter", {}).get("value", -1e30)) - middle) > tol:
         fail("plugin.param_set did not report the new value: %r" % set_reply, process, log_path)
-    read_back = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    read_back = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": fx, "name": name})
     if abs(float(read_back.get("parameter", {}).get("value", -1e30)) - middle) > tol:
         fail("plugin.param_get did not read back %r" % read_back, process, log_path)
     print("plugin.param_get/param_set %s.%s: %r -> %r (range %r..%r)"
@@ -448,13 +471,13 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
 
     # --- typed errors on the parameters -----------------------------------
     flow.err("plugin.param_get", "not_found",
-             {"target": "trk-1", "plugin": fx, "name": "No Such LV2 Port"})
+             {"target": instrument_track, "plugin": fx, "name": "No Such LV2 Port"})
     flow.err("plugin.param_set", "invalid_args",
-             {"target": "trk-1", "plugin": fx, "name": name, "value": high + 1000.0})
+             {"target": instrument_track, "plugin": fx, "name": name, "value": high + 1000.0})
 
     # --- plugin.state_save / plugin.state_load ----------------------------
     state_path = os.path.join(tmp, "lv2-state.xml")
-    saved = flow.ok("plugin.state_save", {"target": "trk-1", "plugin": fx, "path": state_path})
+    saved = flow.ok("plugin.state_save", {"target": instrument_track, "plugin": fx, "path": state_path})
     if not saved.get("sha256") or int(saved.get("bytes", 0)) <= 0:
         fail("plugin.state_save reported %r" % saved, process, log_path)
     if not os.path.exists(state_path) or os.path.getsize(state_path) == 0:
@@ -468,9 +491,9 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
           % (saved.get("path"), int(saved.get("bytes", 0)), str(saved.get("sha256"))[:16],
              worked["uri"]))
 
-    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": fx, "name": name, "value": away})
-    flow.ok("plugin.state_load", {"target": "trk-1", "plugin": fx, "path": state_path})
-    restored = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    flow.ok("plugin.param_set", {"target": instrument_track, "plugin": fx, "name": name, "value": away})
+    flow.ok("plugin.state_load", {"target": instrument_track, "plugin": fx, "path": state_path})
+    restored = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": fx, "name": name})
     if abs(float(restored.get("parameter", {}).get("value", -1e30)) - middle) > tol:
         fail("plugin.state_load did not restore the saved parameter: %r" % restored,
              process, log_path)
@@ -499,10 +522,10 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
         flow.ok("plugin.unload", {"target": "ch-1", "plugin": other_fx})
 
     # --- plugin.unload ----------------------------------------------------
-    unloaded = flow.ok("plugin.unload", {"target": "trk-1", "plugin": fx})
+    unloaded = flow.ok("plugin.unload", {"target": instrument_track, "plugin": fx})
     if unloaded.get("removed") != fx or int(unloaded.get("count", -1)) != 0:
         fail("plugin.unload returned %r" % unloaded, process, log_path)
-    flow.err("plugin.unload", "not_found", {"target": "trk-1", "plugin": fx})
+    flow.err("plugin.unload", "not_found", {"target": instrument_track, "plugin": fx})
     print("plugin.unload %s: %d device(s) left on trk-1"
           % (fx, int(unloaded.get("count", -1))))
 
@@ -521,9 +544,9 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
                           for root in LV2_BUNDLE_DIRS
                           if os.path.exists(os.path.join(root, "calf.lv2", "calflv2gui.so"))),
                          None)
-        loaded_calf = flow.ok("plugin.load", {"target": "trk-1", "device": calf["id"]})
+        loaded_calf = flow.ok("plugin.load", {"target": instrument_track, "device": calf["id"]})
         calf_fx = loaded_calf["id"]
-        calf_state = flow.ok("dsp.get_state", {"target": "trk-1"})
+        calf_state = flow.ok("dsp.get_state", {"target": instrument_track})
         calf_params = []
         for device in (calf_state.get("chains") or [{}])[0].get("devices", []):
             if device.get("id") == calf_fx:
@@ -531,8 +554,8 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
         if not calf_params:
             fail("the calf LV2 device exposes no parameter headlessly: %r" % calf_state,
                  process, log_path)
-        flow.ok("plugin.param_get", {"target": "trk-1", "plugin": calf_fx, "index": 0})
-        flow.ok("plugin.unload", {"target": "trk-1", "plugin": calf_fx})
+        flow.ok("plugin.param_get", {"target": instrument_track, "plugin": calf_fx, "index": 0})
+        flow.ok("plugin.unload", {"target": instrument_track, "plugin": calf_fx})
         print("lv2 UI-free load: %s (%d parameters, UI binary %s) loaded, read and "
               "unloaded with QT_QPA_PLATFORM=offscreen and no DISPLAY"
               % (calf["uri"], len(calf_params), ui_binary or "not found on disc"))
@@ -547,19 +570,19 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
               "catalogue-only here")
     else:
         loaded_inst = flow.ok("plugin.load",
-                              {"target": "trk-1", "device": lv2_instrument["id"]})
+                              {"target": instrument_track, "device": lv2_instrument["id"]})
         if loaded_inst.get("id") != "inst" or loaded_inst.get("kind") != "instrument":
             fail("plugin.load of an LV2 instrument returned %r" % loaded_inst, process, log_path)
         if loaded_inst.get("plugin") != "lv2instrument":
             fail("plugin.load did not report the LV2 instrument host: %r" % loaded_inst,
                  process, log_path)
-        inst_state = flow.ok("dsp.get_state", {"target": "trk-1"})
+        inst_state = flow.ok("dsp.get_state", {"target": instrument_track})
         inst_entry = (inst_state.get("chains") or [{}])[0].get("instrument") or {}
         inst_params = inst_entry.get("parameters", [])
         if not inst_params:
             fail("the LV2 instrument exposes no parameters: %r" % inst_entry, process, log_path)
         read_inst = flow.ok("plugin.param_get",
-                            {"target": "trk-1", "plugin": "inst", "index": 0})
+                            {"target": instrument_track, "plugin": "inst", "index": 0})
         print("lv2 instrument: %s loaded as 'inst' via %s with %d parameter(s), index 0 = %r"
               % (lv2_instrument["uri"], loaded_inst.get("plugin"), len(inst_params),
                  read_inst.get("parameter", {}).get("name")))
@@ -574,6 +597,7 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
     Every `is None` guard below calls fail(), which prints the transcript and
     exits the process, so the subscripts that follow a guard are safe."""
     flow = Flow(client, last_id)
+    instrument_track, pattern_track = fixture_track_ids(flow, process, log_path)
 
     # --- plugin.list: the build's device catalogue ------------------------
     listing = flow.ok("plugin.list")
@@ -608,24 +632,24 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
              instrument_device["name"], ladspa_device["id"], ladspa_device["name"]))
 
     # --- typed errors on the way in --------------------------------------
-    flow.err("plugin.load", "not_found", {"target": "trk-1", "device": "dev-999999"})
-    flow.err("plugin.load", "invalid_args", {"target": "trk-1", "device": "amplifier"})
+    flow.err("plugin.load", "not_found", {"target": instrument_track, "device": "dev-999999"})
+    flow.err("plugin.load", "invalid_args", {"target": instrument_track, "device": "amplifier"})
     # trk-0 is the fixture's Beat/Bassline track: it has no device chain at all.
-    flow.err("plugin.load", "refused", {"target": "trk-0", "device": effect_device["id"]})
+    flow.err("plugin.load", "refused", {"target": pattern_track, "device": effect_device["id"]})
     # an instrument loads onto a track, never onto a mixer channel.
     flow.err("plugin.load", "refused", {"target": "ch-1", "device": instrument_device["id"]})
 
     # --- load an effect onto the instrument track ------------------------
-    loaded = flow.ok("plugin.load", {"target": "trk-1", "device": effect_device["id"]})
+    loaded = flow.ok("plugin.load", {"target": instrument_track, "device": effect_device["id"]})
     if loaded.get("kind") != "effect" or not str(loaded.get("id", "")).startswith("fx-"):
         fail("plugin.load returned %r" % loaded, process, log_path)
     fx = loaded["id"]
     print("plugin.load %s -> %s (%s)" % (effect_device["id"], fx, loaded.get("plugin")))
 
     # --- dsp.get_state: the read-back the ids come from ------------------
-    state = flow.ok("dsp.get_state", {"target": "trk-1"})
+    state = flow.ok("dsp.get_state", {"target": instrument_track})
     chains = state.get("chains", [])
-    if not chains or chains[0].get("id") != "trk-1":
+    if not chains or chains[0].get("id") != instrument_track:
         fail("dsp.get_state did not read trk-1: %r" % chains, process, log_path)
     entry = None
     for device in chains[0].get("devices", []):
@@ -656,15 +680,15 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
         # Keep the first write a real change, so the read-back proves something.
         middle = low + (high - low) * 0.75
 
-    got = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    got = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": fx, "name": name})
     if got.get("parameter", {}).get("name") != name:
         fail("plugin.param_get returned %r for %r" % (got, name), process, log_path)
 
     set_reply = flow.ok("plugin.param_set",
-                        {"target": "trk-1", "plugin": fx, "name": name, "value": middle})
+                        {"target": instrument_track, "plugin": fx, "name": name, "value": middle})
     if abs(float(set_reply.get("parameter", {}).get("value", -1e30)) - middle) > tol:
         fail("plugin.param_set did not report the new value: %r" % set_reply, process, log_path)
-    read_back = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    read_back = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": fx, "name": name})
     if abs(float(read_back.get("parameter", {}).get("value", -1e30)) - middle) > tol:
         fail("plugin.param_get did not read back %r" % read_back, process, log_path)
     print("plugin.param_get/param_set %s: %r -> %r (range %r..%r, tolerance %g)"
@@ -673,19 +697,19 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
 
     # --- typed errors: bad parameter name, bad instance id, out-of-range --
     flow.err("plugin.param_get", "not_found",
-             {"target": "trk-1", "plugin": fx, "name": "No Such Parameter"})
+             {"target": instrument_track, "plugin": fx, "name": "No Such Parameter"})
     flow.err("plugin.param_get", "not_found",
-             {"target": "trk-1", "plugin": "fx-99", "name": name})
+             {"target": instrument_track, "plugin": "fx-99", "name": name})
     flow.err("plugin.param_set", "invalid_args",
-             {"target": "trk-1", "plugin": fx, "name": name, "value": high + 1000.0})
+             {"target": instrument_track, "plugin": fx, "name": name, "value": high + 1000.0})
     flow.err("plugin.param_set", "invalid_args",
-             {"target": "trk-1", "plugin": fx, "name": name, "value": low - 1000.0})
+             {"target": instrument_track, "plugin": fx, "name": name, "value": low - 1000.0})
 
     # --- SPEC A16: a parameter change is a journal checkpoint ------------
     away = low + (high - low) * 0.25
-    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": fx, "name": name, "value": away})
+    flow.ok("plugin.param_set", {"target": instrument_track, "plugin": fx, "name": name, "value": away})
     undone = flow.ok("control.undo")
-    after_undo = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    after_undo = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": fx, "name": name})
     if not undone.get("undone"):
         fail("control.undo reported nothing undone after plugin.param_set", process, log_path)
     if abs(float(after_undo.get("parameter", {}).get("value", -1e30)) - middle) > tol:
@@ -695,7 +719,7 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
 
     # --- plugin.state_save / plugin.state_load ---------------------------
     state_path = os.path.join(tmp, "plugin-state.xml")
-    saved = flow.ok("plugin.state_save", {"target": "trk-1", "plugin": fx, "path": state_path})
+    saved = flow.ok("plugin.state_save", {"target": instrument_track, "plugin": fx, "path": state_path})
     if not saved.get("sha256") or int(saved.get("bytes", 0)) <= 0:
         fail("plugin.state_save reported %r" % saved, process, log_path)
     if not os.path.exists(state_path) or os.path.getsize(state_path) == 0:
@@ -704,11 +728,11 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
           % (saved.get("path"), int(saved.get("bytes", 0)), str(saved.get("sha256"))[:16]))
     # a second save to the same path must refuse rather than silently clobber.
     flow.err("plugin.state_save", "refused",
-             {"target": "trk-1", "plugin": fx, "path": state_path})
+             {"target": instrument_track, "plugin": fx, "path": state_path})
 
-    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": fx, "name": name, "value": away})
-    flow.ok("plugin.state_load", {"target": "trk-1", "plugin": fx, "path": state_path})
-    restored = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": fx, "name": name})
+    flow.ok("plugin.param_set", {"target": instrument_track, "plugin": fx, "name": name, "value": away})
+    flow.ok("plugin.state_load", {"target": instrument_track, "plugin": fx, "path": state_path})
+    restored = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": fx, "name": name})
     if abs(float(restored.get("parameter", {}).get("value", -1e30)) - middle) > tol:
         fail("plugin.state_load did not restore the saved parameter: %r" % restored, process,
              log_path)
@@ -717,25 +741,25 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
 
     # --- plugin.preset_list / preset_save / preset_load ------------------
     preset = flow.ok("plugin.preset_save",
-                     {"target": "trk-1", "plugin": fx, "name": "agent-flow"})
+                     {"target": instrument_track, "plugin": fx, "name": "agent-flow"})
     if not str(preset.get("path", "")).endswith(".xpf") or not os.path.exists(preset["path"]):
         fail("plugin.preset_save wrote nothing: %r" % preset, process, log_path)
-    listed = flow.ok("plugin.preset_list", {"target": "trk-1", "plugin": fx})
+    listed = flow.ok("plugin.preset_list", {"target": instrument_track, "plugin": fx})
     if not any(p.get("name") == "agent-flow" for p in listed.get("presets", [])):
         fail("plugin.preset_list does not show the saved preset: %r" % listed, process, log_path)
-    flow.ok("plugin.preset_load", {"target": "trk-1", "plugin": fx, "name": "agent-flow"})
+    flow.ok("plugin.preset_load", {"target": instrument_track, "plugin": fx, "name": "agent-flow"})
     print("plugin.preset_save/list/load: %s in %s"
           % (preset.get("name"), listed.get("dir")))
     flow.err("plugin.preset_load", "not_found",
-             {"target": "trk-1", "plugin": fx, "name": "no-such-preset"})
+             {"target": instrument_track, "plugin": fx, "name": "no-such-preset"})
     flow.err("plugin.preset_save", "invalid_args",
-             {"target": "trk-1", "plugin": fx, "name": "../escape"})
+             {"target": instrument_track, "plugin": fx, "name": "../escape"})
 
     # --- instrument: load, parameters, state, preset ---------------------
-    loaded_inst = flow.ok("plugin.load", {"target": "trk-1", "device": instrument_device["id"]})
+    loaded_inst = flow.ok("plugin.load", {"target": instrument_track, "device": instrument_device["id"]})
     if loaded_inst.get("id") != "inst" or loaded_inst.get("kind") != "instrument":
         fail("plugin.load of an instrument returned %r" % loaded_inst, process, log_path)
-    inst_state = flow.ok("dsp.get_state", {"target": "trk-1"})
+    inst_state = flow.ok("dsp.get_state", {"target": instrument_track})
     inst_entry = (inst_state.get("chains") or [{}])[0].get("instrument") or {}
     inst_param = pick_parameter(inst_entry.get("parameters", []))
     if inst_param is None:
@@ -746,35 +770,35 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
     inst_away = inst_low + (inst_high - inst_low) * 0.25
     inst_tol = tolerance(inst_param)
 
-    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": "inst",
+    flow.ok("plugin.param_set", {"target": instrument_track, "plugin": "inst",
                                  "index": inst_param["index"], "value": inst_mid})
-    inst_read = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": "inst",
+    inst_read = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": "inst",
                                              "index": inst_param["index"]})
     if abs(float(inst_read.get("parameter", {}).get("value", -1e30)) - inst_mid) > inst_tol:
         fail("plugin.param_get on 'inst' did not read back %r" % inst_read, process, log_path)
     inst_state_path = os.path.join(tmp, "instrument-state.xpf")
-    flow.ok("plugin.state_save", {"target": "trk-1", "plugin": "inst",
+    flow.ok("plugin.state_save", {"target": instrument_track, "plugin": "inst",
                                   "path": inst_state_path})
-    flow.ok("plugin.param_set", {"target": "trk-1", "plugin": "inst",
+    flow.ok("plugin.param_set", {"target": instrument_track, "plugin": "inst",
                                  "index": inst_param["index"], "value": inst_away})
-    flow.ok("plugin.state_load", {"target": "trk-1", "plugin": "inst",
+    flow.ok("plugin.state_load", {"target": instrument_track, "plugin": "inst",
                                   "path": inst_state_path})
-    inst_restored = flow.ok("plugin.param_get", {"target": "trk-1", "plugin": "inst",
+    inst_restored = flow.ok("plugin.param_get", {"target": instrument_track, "plugin": "inst",
                                                  "index": inst_param["index"]})
     if abs(float(inst_restored.get("parameter", {}).get("value", -1e30)) - inst_mid) > inst_tol:
         fail("the instrument state round trip did not restore %r" % inst_restored, process,
              log_path)
-    flow.ok("plugin.preset_save", {"target": "trk-1", "plugin": "inst", "name": "agent-inst"})
+    flow.ok("plugin.preset_save", {"target": instrument_track, "plugin": "inst", "name": "agent-inst"})
     # an instrument has no unload: the refusal must name the supported surface.
-    flow.err("plugin.unload", "invalid_args", {"target": "trk-1", "plugin": "inst"})
+    flow.err("plugin.unload", "invalid_args", {"target": instrument_track, "plugin": "inst"})
     print("instrument %s: %s round-tripped through plugin.state_save/state_load"
           % (instrument_device["name"], inst_param["name"]))
 
     # --- plugin.bypass ---------------------------------------------------
-    bypassed = flow.ok("plugin.bypass", {"target": "trk-1", "plugin": fx, "bypass": True})
+    bypassed = flow.ok("plugin.bypass", {"target": instrument_track, "plugin": fx, "bypass": True})
     if bypassed.get("enabled") is not False or bypassed.get("processing") is not False:
         fail("plugin.bypass did not switch the device off: %r" % bypassed, process, log_path)
-    bypass_state = flow.ok("dsp.get_state", {"target": "trk-1"})
+    bypass_state = flow.ok("dsp.get_state", {"target": instrument_track})
     bypass_entry = None
     for device in (bypass_state.get("chains") or [{}])[0].get("devices", []):
         if device.get("id") == fx:
@@ -782,15 +806,15 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
     if bypass_entry is None or bypass_entry.get("enabled") is not False:
         fail("dsp.get_state does not show the bypassed device: %r" % bypass_state, process,
              log_path)
-    flow.ok("plugin.bypass", {"target": "trk-1", "plugin": fx, "bypass": False})
+    flow.ok("plugin.bypass", {"target": instrument_track, "plugin": fx, "bypass": False})
     print("plugin.bypass: %s enabled=%r processing=%r -> off, read back off, back on"
           % (fx, bypassed.get("enabled"), bypassed.get("processing")))
 
     # --- plugin.unload ---------------------------------------------------
-    unloaded = flow.ok("plugin.unload", {"target": "trk-1", "plugin": fx})
+    unloaded = flow.ok("plugin.unload", {"target": instrument_track, "plugin": fx})
     if unloaded.get("removed") != fx or int(unloaded.get("count", -1)) != 0:
         fail("plugin.unload returned %r" % unloaded, process, log_path)
-    flow.err("plugin.unload", "not_found", {"target": "trk-1", "plugin": fx})
+    flow.err("plugin.unload", "not_found", {"target": instrument_track, "plugin": fx})
     print("plugin.unload %s: %d device(s) left on trk-1" % (fx, int(unloaded.get("count", -1))))
 
     # --- the hosted format really loads: a LADSPA device on a channel ----
@@ -1601,7 +1625,7 @@ def main():
                              if c.get("track") == fixture_track.get("id")), None)
         if fixture_clip is None:
             fail("the pattern track carries no clip: %r" % arrangement, process, log_path)
-        if fixture_track.get("id") != "trk-0" or fixture_clip.get("id") != "clip-0":
+        if not str(fixture_track.get("id", "")).startswith("trk-") or fixture_clip.get("id") != "clip-0":
             fail("stable ids are not trk-<n>/clip-<n>: %r %r" % (fixture_track, fixture_clip), process, log_path)
         if fixture_clip.get("note_count") is not None:
             fail("a PatternClip must report note_count null, got %r" % fixture_clip, process, log_path)
@@ -1636,7 +1660,8 @@ def main():
         after_solo = ok_result(client.call(265, "track.get_state", {"track": track}), 265)
         if not after_solo.get("soloed") or after_solo.get("muted"):
             fail("the solo action did not un-mute the soloed track: %r" % after_solo, process, log_path)
-        other = ok_result(client.call(266, "track.get_state", {"track": "trk-0"}), 266)
+        other = ok_result(client.call(266, "track.get_state",
+                                     {"track": fixture_track.get("id")}), 266)
         if not other.get("muted"):
             fail("the solo action did not mute the other track: %r" % other, process, log_path)
 

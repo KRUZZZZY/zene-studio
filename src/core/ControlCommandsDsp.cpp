@@ -26,6 +26,8 @@
 #include <QJsonObject>
 
 #include "ControlDeviceSupport.h"
+
+#include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 #include "Effect.h"
 #include "Engine.h"
@@ -37,28 +39,10 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject stringProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
-
-QJsonObject intProperty()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}};
-}
 
 //! One chain as dsp.get_state reports it. The device ids are the same fx-<n>
 //! ids plugin.unload / bypass / param_* accept, so a caller can chain the two.
@@ -102,7 +86,7 @@ void appendTrackChains(QJsonArray* chains, bool withDevicesOnly)
 	{
 		ControlTarget target;
 		ControlResult ignored;
-		if (!resolveControlTarget(control::trackId(i), &target, &ignored)) { continue; }
+		if (!resolveControlTarget(control::trackIdOf(tracks[i]), &target, &ignored)) { continue; }
 		if (withDevicesOnly && target.chain->effects().empty() &&
 			target.instrumentTrack == nullptr)
 		{
@@ -172,11 +156,11 @@ void registerDspCommands(ControlRegistry& registry)
 		"parameter values and, on an instrument track, its 'inst' entry with the instrument's "
 		"parameters. With 'target' it reads exactly that target, an empty chain included; "
 		"without it, every track and mixer channel that carries at least one device.");
-	cmd.argsSchema = schemaObject({{QStringLiteral("target"), stringProperty()}});
-	cmd.resultSchema = schemaObject({
+	cmd.argsSchema = objectSchema({{QStringLiteral("target"), stringProperty()}});
+	cmd.resultSchema = objectSchema({
 		{QStringLiteral("chains"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-		{QStringLiteral("count"), intProperty()},
-		{QStringLiteral("device_count"), intProperty()},
+		{QStringLiteral("count"), integerProperty()},
+		{QStringLiteral("device_count"), integerProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) {
 		const QString id = args.value(QStringLiteral("target")).toString();

@@ -53,7 +53,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from headless_load_harness import (  # noqa: E402
+from control_socket_harness import (  # noqa: E402
     DUMMY_DEVICE, PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, diagnose_block, fail,
     healthy_control, ok, parse_args, report_pre_fix, start_instance, wait_ready,
 )
@@ -129,7 +129,7 @@ def expect_blocked(binary):
                            "while the 'Audio device setup failed' modal was up; %s"
                            % (backend, label, PREFIX_BOUND, sentence))
         finally:
-            instance.kill()
+            instance.close()
     return 0
 
 
@@ -160,7 +160,7 @@ def expect_fixed(binary):
             transcript.dump()
             ok("this test passed for %s: no dialog, the instance proceeded and reported it" % label)
         finally:
-            instance.kill()
+            instance.close()
     return 0
 
 

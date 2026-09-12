@@ -131,18 +131,34 @@ tests/src/core/ControlRegistryTest.cpp
 # modified, save it?" prompt during quit (a) and the audio-device-failure box
 # before app->exec() (b). MainWindow and the control registry ask the same
 # question, so they ask it in one place.
-include/HeadlessMode.h
-src/core/HeadlessMode.cpp
 # Split out of ControlRegistry.cpp by task #626 so no one file carries the whole
 # surface: the JSON-schema subset the registry validates with, and the session
 # state a client reads before it may use the command table (readiness report +
 # shutdown intent). Both were already fork-NEW inside ControlRegistry.cpp.
 src/core/ControlSchema.cpp
 src/core/ControlSession.cpp
+# ---- Shared command-surface vocabulary (lane post-alpha/stable-ids, step 0) ----
+# Four merge repairs each re-derived the same small helpers; the last was four
+# schema helpers defined identically in two translation units (a duplicate-symbol
+# link failure). objectSchema + the property helpers + the trk-/clip-/note-/ch-/
+# fx-/dev- id grammar now have one header and one definition, and the twelve
+# per-file anonymous-namespace copies are gone.
+include/ControlVocabulary.h
+src/core/ControlVocabulary.cpp
+# ---- Stable track ids (SPEC-stable-ids.md slice 1, lane post-alpha/stable-ids) ----
+# The project-scoped monotonic id counter behind every stable id (one counter, one
+# root attribute, one repair rule) and its acceptance test.
+include/ProjectIds.h
+src/core/ProjectIds.cpp
+tests/src/core/StableTrackIdsTest.cpp
+tests/control-stable-ids.py
+# One socket harness for every control-surface test (2026-09-12): the #626 harness and
+# the #625 headless-load harness had drifted into two Instance/Client classes and two
+# names for "the bounded wait expired", so they were collapsed into this module.
+tests/control_socket_harness.py
 # The #626 tests: both shutdown reproductions, the documented readiness order, the
 # no-audio-device report, and the negative controls that prove each of those can
 # fail (a check that cannot fail is not evidence).
-tests/control_harness.py
 tests/control-shutdown.py
 tests/control-readiness.py
 tests/control-no-audio-device.py
@@ -203,7 +219,6 @@ tests/src/core/ControlDeviceCatalogueTest.cpp
 # tests/data/README-error-fixtures.md): it carries two load errors on purpose.
 include/UnattendedRun.h
 src/core/UnattendedRun.cpp
-tests/headless_load_harness.py
 tests/control-headless-project-open.py
 tests/control-headless-working-directory.py
 tests/control-headless-no-audio-device.py

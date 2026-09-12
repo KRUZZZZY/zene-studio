@@ -61,6 +61,7 @@ set(LMMS_SRCS
 	core/ControlEditSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlSchema.cpp
+	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
 	core/ControlSession.cpp
 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).
@@ -76,7 +77,6 @@ set(LMMS_SRCS
 	core/Engine.cpp
 	core/EnvelopeAndLfoParameters.cpp
 	core/fft_helpers.cpp
-	core/HeadlessMode.cpp
 	core/Mixer.cpp
 	core/ImportFilter.cpp
 	core/InlineAutomation.cpp
@@ -115,6 +115,7 @@ set(LMMS_SRCS
 	core/PluginFactory.cpp
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
+	core/ProjectIds.cpp
 	core/ProjectRenderer.cpp
 	core/ProjectVersion.cpp
 	core/RemotePlugin.cpp

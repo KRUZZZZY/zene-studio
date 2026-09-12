@@ -30,6 +30,7 @@
 #include <QString>
 #include <QVector>
 
+#include "ControlVocabulary.h" // the shared schema + id vocabulary
 #include "Track.h" // Track::Type, for trackTypeNameOf() and the ClipRef ids
 #include "lmms_export.h"
 
@@ -44,30 +45,30 @@ struct ControlResult;
 namespace control
 {
 
-// ---------------------------------------------------------------------------
-// JSON-schema helpers. The registry validates a deliberately small subset
-// (type, properties, required, additionalProperties, minimum, maximum, enum).
-// ---------------------------------------------------------------------------
-QJsonObject objectSchema(QJsonObject properties, QJsonArray required = {});
-QJsonObject stringProperty();
-QJsonObject integerProperty(int minimum, int maximum);
-QJsonObject numberProperty();
-QJsonObject booleanProperty();
+// The JSON-schema helpers and the id formatters (objectSchema,
+// stringProperty, clipId, noteId, ...) live in ControlVocabulary.h - one
+// definition for the whole surface. See that header's comment for why.
 
 // ---------------------------------------------------------------------------
-// Stable ids (AGENT-TOOLING.md #4): trk-<n> / clip-<n> / note-<n>.
+// Stable ids (AGENT-TOOLING.md #4, SPEC-stable-ids.md): trk-<n> / clip-<n> /
+// note-<n>. The grammar is fixed; the id formatters live in ControlVocabulary.h.
 //
-// trk-<n>   index of the track in the song container.
-// clip-<n>  ordinal of the clip in ARRANGEMENT order: tracks in song order, and
-//           inside a track the clips sorted by start position (ties keep the
-//           track's own order). One ordinal space for the whole song, so a clip
-//           id is unambiguous without naming its track.
-// note-<n>  index of the note in its clip's note list (the list addNote() keeps
-//           sorted by position, and rearrangeAllNotes() re-sorts after an edit).
-//
-// All three are index-derived, like the mixer lane's ch-<n>: they are stable for
-// the state a get_state returned them for, and are not persisted in the project
-// file (the project's own serialization has no id attribute for clips/notes).
+// trk-<n>   THE STABLE TRACK ID. The number is assigned when the Track object is
+//           created and it keeps it until the track is deleted, is written to the
+//           project file as an `id` attribute on the track's own element, and is
+//           resolved by matching Track::id() - never by position. So a cached
+//           trk-7 still names the same track after a sibling is added or removed,
+//           and a trk-<n> that names no live track is a typed not_found. The
+//           project-scoped counter behind it is `next-id` on the project root
+//           (see ProjectIds.h).
+// clip-<n>  STILL INDEX-DERIVED: ordinal of the clip in ARRANGEMENT order -
+//           tracks in song order, and inside a track the clips sorted by start
+//           position (ties keep the track's own order). One ordinal space for the
+//           whole song. Persisting clip ids is slice 2, not this change.
+// note-<n>  STILL INDEX-DERIVED: index of the note in its clip's note list (the
+//           list addNote() keeps sorted by position, and rearrangeAllNotes()
+//           re-sorts after an edit). Persisting note ids is slice 2, and it is
+//           deliberately last: <note> is where a mistake costs a user their music.
 // ---------------------------------------------------------------------------
 QString clipId(int ordinal);
 QString noteId(int index);

@@ -24,6 +24,8 @@
 
 #include "ControlAutomationSupport.h"
 
+#include "ControlVocabulary.h"
+
 #include <utility>
 
 #include "AutomatableModel.h"
@@ -43,23 +45,10 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace control
 {
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required)
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject tickProperty()
-{
-	return integerProperty(0, 0x7fffffff);
-}
 
 QString AutomationParameter::id() const
 {
@@ -283,7 +272,8 @@ QJsonObject automationJson(AutomationClip* clip, const AutomatableModel* model)
 	QJsonArray points = automationPointsJson(clip, model);
 
 	QJsonObject out;
-	out.insert(QStringLiteral("track"), index >= 0 ? trackId(index) : QString());
+	out.insert(QStringLiteral("track"),
+		index >= 0 ? trackIdOf(clip->getTrack()) : QString());
 	out.insert(QStringLiteral("clip_index"), clipIndexInTrack(clip));
 	out.insert(QStringLiteral("clip_type"), clip->nodeName());
 	out.insert(QStringLiteral("progression"), progressionName(clip->progressionType()));

@@ -46,6 +46,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
@@ -67,22 +69,28 @@ QString trackTypeName(Track::Type type)
 
 bool resolveTrackTarget(const QString& id, ControlTarget* target, ControlResult* error)
 {
-	const int index = control::idToIndex(id, QStringLiteral("trk-"));
-	if (index < 0)
+	const int wanted = control::idToIndex(id, QStringLiteral("trk-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a target id of the form trk-<n>").arg(id));
 		return false;
 	}
+	// By id, not by position (SPEC-stable-ids.md): the number names the track
+	// object, so a device chain is still addressable after a sibling moves.
 	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
-	if (index >= static_cast<int>(tracks.size()))
+	Track* track = nullptr;
+	for (Track* candidate : tracks)
+	{
+		if (candidate->id() == wanted) { track = candidate; break; }
+	}
+	if (track == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no track %1 (the song has %2)").arg(id).arg(tracks.size()));
 		return false;
 	}
 
-	Track* track = tracks[index];
 	target->id = id;
 	target->kind = QStringLiteral("track");
 	target->typeName = trackTypeName(track->type());

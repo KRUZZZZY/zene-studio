@@ -39,6 +39,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
@@ -61,12 +63,12 @@ QString trackTypeName(Track::Type type)
 }
 
 //! The parameters of one song track, honouring the automated_only filter.
-QJsonArray parameterListJson(int trackIndex, bool automatedOnly, int* automatedCount)
+QJsonArray parameterListJson(Track* track, bool automatedOnly, int* automatedCount)
 {
 	QJsonArray parameters;
 	ControlTarget target;
 	ControlResult error;
-	const QString id = control::trackId(trackIndex);
+	const QString id = control::trackIdOf(track);
 	if (!resolveControlTarget(id, &target, &error)) { return parameters; }
 
 	for (const AutomationParameter& parameter : control::automationParameters(target))
@@ -88,14 +90,14 @@ QJsonArray parameterListJson(int trackIndex, bool automatedOnly, int* automatedC
 QJsonObject trackState(Track* track, int index, bool automatedOnly, int* automatedCount)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), control::trackId(index));
+	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
 	entry.insert(QStringLiteral("index"), index);
 	entry.insert(QStringLiteral("name"), track->name());
 	entry.insert(QStringLiteral("type"), trackTypeName(track->type()));
 	entry.insert(QStringLiteral("device_chain"), dynamic_cast<InstrumentTrack*>(track) != nullptr ||
 		track->type() == Track::Type::Sample);
 	entry.insert(QStringLiteral("parameters"),
-		parameterListJson(index, automatedOnly, automatedCount));
+		parameterListJson(track, automatedOnly, automatedCount));
 	return entry;
 }
 
@@ -112,7 +114,7 @@ ControlResult automationGetState(const QJsonObject& args)
 	bool matched = filter.isEmpty();
 	for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
 	{
-		if (!filter.isEmpty() && filter != control::trackId(i)) { continue; }
+		if (!filter.isEmpty() && filter != control::trackIdOf(tracks[i])) { continue; }
 		matched = true;
 		QJsonObject entry = trackState(tracks[i], i, automatedOnly, &automatedCount);
 		if (automatedOnly && entry.value(QStringLiteral("parameters")).toArray().isEmpty())
@@ -179,11 +181,11 @@ void registerAutomationCommands(ControlRegistry& registry)
 			"stable '<plugin>/<index>' id and, for each automated one, its clip's points. A "
 			"point's 'value' is the model's own unit (what plugin.param_get reports); "
 			"'raw_value' is what the clip stores. 'automated_only' trims the inventory.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("automated_only"), control::booleanProperty()},
 		});
-		cmd.resultSchema = control::schemaObject({
+		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 			{QStringLiteral("track_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
@@ -201,14 +203,14 @@ void registerAutomationCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("mode_set");
 		cmd.description = QStringLiteral("Set a parameter's automation mode. Refused: this build "
 			"has no automation modes (docs/KNOWN-LIMITATIONS.md:84), so no write is faked.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("mode"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 				{QStringLiteral("enum"), QJsonArray{QStringLiteral("off"), QStringLiteral("read"),
 					QStringLiteral("touch"), QStringLiteral("latch"), QStringLiteral("write")}}}},
 		}, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("mode")});
-		cmd.resultSchema = control::schemaObject({});
+		cmd.resultSchema = control::objectSchema({});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return automationModeSet(args); };
 		registry.registerCommand(cmd);

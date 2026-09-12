@@ -42,6 +42,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
@@ -261,13 +263,13 @@ void registerScriptCommands(ControlRegistry& registry)
 			"drives, on its own worker thread with the engine apply side pumped on the UI thread. "
 			"Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the "
 			"per-invocation instruction budget (default from the engine) for this call only.");
-		cmd.argsSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("path"), control::stringProperty()},
 			{QStringLiteral("source"), control::stringProperty()},
 			{QStringLiteral("name"), control::stringProperty()},
 			{QStringLiteral("budget"), control::integerProperty(1, 0x7fffffff)},
 		});
-		cmd.resultSchema = control::schemaObject({
+		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("ran"), control::booleanProperty()},
 			{QStringLiteral("path"), control::stringProperty()},
 			{QStringLiteral("log"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
@@ -290,8 +292,8 @@ void registerScriptCommands(ControlRegistry& registry)
 			"through the app's own 'data:' search path) with their sizes and hashes. Reads the "
 			"filesystem, so it answers before the engine is up.");
 		cmd.requiresEngine = false;
-		cmd.argsSchema = control::schemaObject({});
-		cmd.resultSchema = control::schemaObject({
+		cmd.argsSchema = control::objectSchema({});
+		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("dir"), control::stringProperty()},
 			{QStringLiteral("candidates"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 			{QStringLiteral("scripts"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},

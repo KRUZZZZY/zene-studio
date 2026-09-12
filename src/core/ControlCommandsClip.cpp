@@ -34,6 +34,8 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
@@ -336,7 +338,7 @@ void registerClipDelete(ControlRegistry& registry)
 		}
 
 		Track* track = ref.track;
-		const QString trackIdText = control::trackId(ref.trackIndex);
+		const QString trackIdText = control::trackIdOf(ref.track);
 		// ClipView::remove: checkpoint the track, detach, delete.
 		track->addJournalCheckPoint();
 		track->removeClip(ref.clip);

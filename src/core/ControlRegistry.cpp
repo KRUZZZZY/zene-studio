@@ -33,7 +33,6 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
-#include "HeadlessMode.h"
 #include "Mixer.h"
 #include "Song.h"
 
@@ -93,7 +92,7 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	m_headless(false)
 {
 	// Headless = no display a human could answer a dialog on. One place decides
-	// (HeadlessMode.h), because MainWindow asks the same question before the
+	// (UnattendedRun.h), because MainWindow asks the same question before the
 	// registry exists.
 	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
 }
@@ -329,38 +328,13 @@ void ControlRegistry::runShutdownHooks()
 
 // ---------------------------------------------------------------------------
 // shared helpers
+//
+// The id formatters and idToIndex() moved to ControlVocabulary.cpp
+// (2026-09-12): one definition for the whole surface.
 // ---------------------------------------------------------------------------
 
 namespace control
 {
-
-QString trackId(int index)
-{
-	return QStringLiteral("trk-%1").arg(index);
-}
-
-QString channelId(int index)
-{
-	return QStringLiteral("ch-%1").arg(index);
-}
-
-QString deviceId(int index)
-{
-	return QStringLiteral("dev-%1").arg(index);
-}
-
-QString effectId(int index)
-{
-	return QStringLiteral("fx-%1").arg(index);
-}
-
-int idToIndex(const QString& id, const QString& prefix)
-{
-	if (!id.startsWith(prefix)) { return -1; }
-	bool ok = false;
-	const int index = id.mid(prefix.size()).toInt(&ok);
-	return ok && index >= 0 ? index : -1;
-}
 
 ControlRegistry::Transaction makeTransaction(const QString& command, QJsonObject before,
 	QJsonObject inverse, bool reversible, const QString& mechanism)

@@ -28,6 +28,7 @@ set(LMMS_TESTS
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/SlideNotesTest.cpp
+	src/core/StableTrackIdsTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/tracks/AutomationTrackTest.cpp
@@ -731,6 +732,11 @@ endif()
 # (tracks, MidiClips, notes) rather than only reading them, so it needs a Qt
 # platform plugin even though the assertions never open a window.
 set_tests_properties(ControlEditCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The stable-id tests construct a full Engine and drive project.open/save through
+# the control registry, so they need a Qt platform plugin even though nothing
+# opens a window.
+set_tests_properties(StableTrackIdsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
 # instance started with --control-socket.

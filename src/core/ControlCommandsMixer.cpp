@@ -25,29 +25,18 @@
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
 
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
-
-QJsonObject schemaObject(QJsonObject properties, QJsonArray required = {})
-{
-	QJsonObject schema;
-	schema.insert(QStringLiteral("type"), QStringLiteral("object"));
-	schema.insert(QStringLiteral("properties"), std::move(properties));
-	schema.insert(QStringLiteral("required"), std::move(required));
-	schema.insert(QStringLiteral("additionalProperties"), false);
-	return schema;
-}
-
-QJsonObject channelSchema()
-{
-	return QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}};
-}
 
 //! Resolve a "ch-<n>" id against the live mixer.
 MixerChannel* resolveChannel(const QString& id, ControlResult* error)
@@ -107,8 +96,8 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("mixer");
 		cmd.verb = QStringLiteral("get_state");
 		cmd.description = QStringLiteral("Every mixer channel with its stable ch-<n> id, gain and routing.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
 			{QStringLiteral("channels"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
@@ -133,13 +122,13 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("mixer");
 		cmd.verb = QStringLiteral("set_volume");
 		cmd.description = QStringLiteral("Set a channel fader (0..2). Reversible through the ProjectJournal.");
-		cmd.argsSchema = schemaObject(
-			{{QStringLiteral("channel"), channelSchema()},
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("channel"), stringProperty()},
 				{QStringLiteral("volume"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")},
 					{QStringLiteral("minimum"), 0.0}, {QStringLiteral("maximum"), 2.0}}}},
 			{QStringLiteral("channel"), QStringLiteral("volume")});
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("channel"), channelSchema()},
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("channel"), stringProperty()},
 			{QStringLiteral("volume"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}}},
 		});
 		cmd.mutating = true;
@@ -182,12 +171,12 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("mixer");
 		cmd.verb = QStringLiteral("set_pan");
 		cmd.description = QStringLiteral("Set a channel pan. Refused: this tree has no pan on a mixer channel.");
-		cmd.argsSchema = schemaObject(
-			{{QStringLiteral("channel"), channelSchema()},
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("channel"), stringProperty()},
 				{QStringLiteral("pan"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")},
 					{QStringLiteral("minimum"), -1.0}, {QStringLiteral("maximum"), 1.0}}}},
 			{QStringLiteral("channel"), QStringLiteral("pan")});
-		cmd.resultSchema = schemaObject({});
+		cmd.resultSchema = objectSchema({});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) {
 			// Honest refusal, not a fake success: lmms::MixerChannel carries no pan
@@ -210,9 +199,9 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("mixer");
 		cmd.verb = QStringLiteral("add_channel");
 		cmd.description = QStringLiteral("Append a mixer channel and return its new ch-<n> id.");
-		cmd.argsSchema = schemaObject({});
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("channel"), channelSchema()},
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("channel"), stringProperty()},
 			{QStringLiteral("index"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.mutating = true;
@@ -246,10 +235,10 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("mixer");
 		cmd.verb = QStringLiteral("remove_channel");
 		cmd.description = QStringLiteral("Delete a channel (master ch-0 is refused).");
-		cmd.argsSchema = schemaObject(
-			{{QStringLiteral("channel"), channelSchema()}}, {QStringLiteral("channel")});
-		cmd.resultSchema = schemaObject({
-			{QStringLiteral("removed"), channelSchema()},
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("channel"), stringProperty()}}, {QStringLiteral("channel")});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("removed"), stringProperty()},
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.mutating = true;

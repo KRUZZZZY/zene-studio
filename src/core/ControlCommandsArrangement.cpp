@@ -38,13 +38,15 @@
 namespace lmms
 {
 
+using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+
 namespace
 {
 
 QJsonObject trackEditState(Track* track, int index)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), control::trackId(index));
+	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
 	entry.insert(QStringLiteral("index"), index);
 	entry.insert(QStringLiteral("name"), track->name());
 	entry.insert(QStringLiteral("type"), control::trackTypeNameOf(track->type()));
@@ -81,7 +83,10 @@ QJsonObject trackAddResult(Track* track, Song* song)
 {
 	const int index = static_cast<int>(song->tracks().size()) - 1;
 	QJsonObject result = trackEditState(track, index);
-	result.insert(QStringLiteral("track"), control::trackId(index));
+	// The id the track was GIVEN AT CREATION, which is what track.add promises
+	// the caller (SPEC-stable-ids.md 5.1 item 5): not a position, so it stays
+	// valid when other tracks are added or removed.
+	result.insert(QStringLiteral("track"), control::trackIdOf(track));
 	result.insert(QStringLiteral("track_count"), static_cast<int>(song->tracks().size()));
 	return result;
 }
@@ -112,7 +117,7 @@ void registerTrackAdd(ControlRegistry& registry)
 		Song* song = Engine::getSong();
 		const int before = static_cast<int>(song->tracks().size());
 		QJsonArray beforeIds;
-		for (int i = 0; i < before; ++i) { beforeIds.append(control::trackId(i)); }
+		for (int i = 0; i < before; ++i) { beforeIds.append(control::trackIdOf(song->tracks()[i])); }
 		QJsonObject beforeState;
 		beforeState.insert(QStringLiteral("track_count"), before);
 		beforeState.insert(QStringLiteral("tracks"), beforeIds);
@@ -268,7 +273,7 @@ QJsonArray muteSoloSnapshot()
 	for (int i = 0; i < static_cast<int>(list.size()); ++i)
 	{
 		QJsonObject entry;
-		entry.insert(QStringLiteral("id"), control::trackId(i));
+		entry.insert(QStringLiteral("id"), control::trackIdOf(list[i]));
 		entry.insert(QStringLiteral("muted"), list[i]->isMuted());
 		entry.insert(QStringLiteral("soloed"), list[i]->isSolo());
 		tracks.append(entry);
@@ -424,7 +429,11 @@ void registerArrangementGetState(ControlRegistry& registry)
 	cmd.id = QStringLiteral("arrangement.get_state");
 	cmd.group = QStringLiteral("arrangement");
 	cmd.verb = QStringLiteral("get_state");
-	cmd.description = QStringLiteral("Every track with its clips, addressed by the stable trk-<n> and clip-<n> ids.");
+	cmd.description = QStringLiteral("Every track with its clips, addressed by the stable trk-<n> and "
+		"clip-<n> ids. The trk-<n> number is assigned at creation and persists in the project file. "
+		"Addressing is scoped to the SONG container: a track inside a nested container (the "
+		"<trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not "
+		"addressable by index.");
 	cmd.argsSchema = control::objectSchema({});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
