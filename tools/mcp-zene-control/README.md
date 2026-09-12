@@ -5,7 +5,19 @@ instance. The bridge answers `initialize` + `tools/list` + `tools/call` +
 `resources/*` over stdio MCP; its tool list is **generated** from the instance's
 `control.commands_list` and set-equals it (23 generated tools + 2 bridge tools);
 the whole client/server contract is driven by a real MCP client in
-`tests/test_mcp_e2e.py` (11/11 OK) on top of `tests/test_units.py` (53/53 OK).
+`tests/test_mcp_e2e.py` (the live instance's contract) and
+`tests/test_mcp_errors.py` (the bounded typed failures) on top of
+`tests/test_units.py` (naming, generation, configuration, taxonomy, offline
+surfaces) and `tests/test_wire_client.py` (real sockets, no DAW). The one real
+instance, the shared state directory and the verbatim transcript live in
+`tests/mcp_fixture.py`, imported by both end-to-end suites.
+
+**Split 2026-09-12:** the two e2e/unit files were 610 and 513 lines with four
+functions over CCN 10, so the freshly imported bridge missed the tools-scope bar
+(`--scope tools`: 500 lines, CCN 10) that the rest of the fork's tooling meets.
+They are split by concern, the four functions decomposed, and no assertion was
+changed or dropped. Before/after counts, the split rationale and the measured
+results of the re-run: `docs/TOOLS-SCOPE-AND-GATE6-FIX.md` (repo root).
 
 | | |
 |---|---|
@@ -15,7 +27,7 @@ the whole client/server contract is driven by a real MCP client in
 | Runtime | `/home/kruzzzzy/.hermes/hermes-agent/venv/bin/python3` (mcp 2.0 — constructor handlers `on_list_tools` / `on_call_tool` / `on_list_resources` / `on_read_resource`) |
 | Socket resolution | `--socket` > `ZENE_CONTROL_SOCKET` > `<workdir>/zene-control.sock`, `workdir` = `--workdir` > `ZENE_CONTROL_WORKDIR` > cwd (absolute-ised) |
 | Command list | live `control.commands_list` > `<state-dir>/commands.json` cache > committed `zene_control/commands_snapshot.json` |
-| Tests | `python3 -m unittest tests.test_units` — 53/53 OK · `python3 -m unittest tests.test_mcp_e2e` — 11/11 OK |
+| Tests | `python3 -m unittest tests.test_units` (39) · `tests.test_wire_client` (14) · `tests.test_mcp_e2e` (6) · `tests.test_mcp_errors` (5) — split by concern 2026-09-12, see `docs/TOOLS-SCOPE-AND-GATE6-FIX.md` |
 | Tools | 25 = 23 generated from the DAW + `zene_commands` + `zene_status` |
 | Resources | `zene://project/state`, `zene://instance/status` |
 
@@ -288,11 +300,14 @@ Notes that matter:
 ## 7. Reproduce
 
 ```bash
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/mcp-zene-control
+cd <repo>/tools/mcp-zene-control         # in-tree since the bridge shipped in the product
 PY=/home/kruzzzzy/.hermes/hermes-agent/venv/bin/python3
 
-$PY -m unittest tests.test_units          # 53/53, no DAW binary needed
-$PY -m unittest tests.test_mcp_e2e -v     # 11/11, starts a real headless instance
+$PY -m unittest tests.test_units          # 39, no DAW binary needed
+$PY -m unittest tests.test_wire_client    # 14, real sockets; no DAW binary
+$PY -m unittest tests.test_mcp_e2e -v     # 6, the live instance's contract
+$PY -m unittest tests.test_mcp_errors -v  # 5, the bounded typed failures
+# both e2e modules start (or reuse) one real headless instance through tests/mcp_fixture.py
 $PY snapshot_commands.py --socket /tmp/<an-instance>/zene.sock   # regenerate the snapshot
 $PY call_tool.py zene_status --socket /tmp/<an-instance>/zene.sock
 $PY call_tool.py zene_render_render '{"out":"/tmp/a.wav"}' --socket /tmp/<an-instance>/zene.sock
@@ -334,6 +349,18 @@ OK
 `python3 -m unittest tests.test_units` → `EXIT=0`; `python3 -m unittest tests.test_mcp_e2e -v`
 → `EXIT=0`. The per-query transcript for the run above is also kept in-tree at
 `mcp-zene-control/.state/mcp-transcript.json`.
+
+That block is the 2026-09-11 verification run against the agent-control lane's build, kept
+verbatim — which is why it says "Ran 11 tests" and "Ran 53 tests": the suites were split by
+concern on 2026-09-12 (`docs/TOOLS-SCOPE-AND-GATE6-FIX.md`), and the split re-run against a
+build of the merged tree gives 39 (`test_units`) + 14 (`test_wire_client`) with no DAW binary
+needed, and 6 (`test_mcp_e2e`) + 5 (`test_mcp_errors`) with one real headless instance. Every
+assertion from the 11/53 run is still executed; none was changed, moved out of a suite or
+dropped. In that merged-tree build one e2e test fails: `test_11` calls `control.undo`, and the
+DAW SEGFAULTs inside `ProjectJournal::undo` → `PatternStore::updateComboBox` (null pattern
+track), which the bridge honestly reports as the typed `disconnected`. It is reproduced with a
+raw socket client and no bridge process at all, so it is a DAW-side defect, not a bridge one;
+the probe, stack and exit codes are in `docs/TOOLS-SCOPE-AND-GATE6-FIX.md`.
 
 ### 8.2 `tools/list` — the generated set equals the DAW's commands
 

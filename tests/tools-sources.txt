@@ -100,6 +100,30 @@ tools/mcp-zene-control/zene_control/protocol.py
 tools/mcp-zene-control/zene_control/registry.py
 tools/mcp-zene-control/zene_control/server.py
 tools/mcp-zene-control/zene_control/tools.py
+# SPLIT 2026-09-12 (tools-scope bar). The bridge's two test files arrived over the
+# 500-line limit (tools/mcp-zene-control/tests/test_mcp_e2e.py 610 lines,
+# tests/test_units.py 513) with four functions over CCN 10, so the freshly imported
+# bridge did not meet the bar every other fork tool meets. Both files were split by
+# concern and the over-target functions decomposed; the three files below are the new
+# homes, and they are registered here (one file, one home) so gates 4, 7 and 8 measure
+# them:
+#   - tools/mcp-zene-control/tests/mcp_fixture.py       shared module fixture: the one
+#     real headless instance, the shared state dir (the live command-list cache the
+#     offline assertions read back) and the verbatim transcript. Not named test_*, so
+#     discovery does not collect it.
+#   - tools/mcp-zene-control/tests/test_mcp_errors.py   the BOUNDED TYPED FAILURE half of
+#     the e2e contract (no instance, stale socket, killed mid-call, wedged stub, the
+#     readiness gate) - the tests that drive a stub DAW instead of the live flow.
+#   - tools/mcp-zene-control/tests/test_wire_client.py  the wire client's own concern:
+#     real AF_UNIX sockets, the lifecycle cases, no DAW binary.
+# test_mcp_e2e.py keeps the live instance's contract (generated tool list, full flow,
+# resources, the DAW's typed errors, protocol check, undo); test_units.py keeps naming,
+# generation, configuration, the taxonomy and the offline surfaces. No assertion was
+# changed, moved out of a suite or weakened by the split; line and CCN counts are in
+# docs/TOOLS-SCOPE-AND-GATE6-FIX.md.
+tools/mcp-zene-control/tests/mcp_fixture.py
+tools/mcp-zene-control/tests/test_mcp_errors.py
+tools/mcp-zene-control/tests/test_wire_client.py
 tools/mmpz-git/demo_check.py
 tools/mmpz-git/demo_edits.py
 tools/mmpz-git/depth-demo.sh

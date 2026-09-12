@@ -165,34 +165,63 @@ class Bridge:
 
     # -- bridge-owned tools ----------------------------------------------
 
-    def commands_payload(self, arguments: dict | None = None) -> dict:
+    @staticmethod
+    def _commands_arguments(arguments: dict | None) -> tuple[Any, str, bool]:
+        """(timeout override, source preference, include schemas) from the tool arguments."""
         args = dict(arguments or {})
         override = args.pop("timeout_s", None)
         source_pref = str(args.pop("source", "auto") or "auto")
         include_schemas = bool(args.pop("include_schemas", True))
+        return override, source_pref, include_schemas
+
+    def _commands_source_or_error(self, source_pref: str, override: float | None):
+        """The CommandSource for one preference, or the error payload to return.
+
+        Exactly one member of the returned pair is None: either the resolved
+        source, or the payload describing why that preference cannot be served.
+        """
+        if source_pref == "cache":
+            # resolve() falls through cache -> snapshot; keep the honest label.
+            return self.resolve(prefer_live=False, timeout=override), None
+        if source_pref == "snapshot":
+            bundle = R.load_bundle(self.snapshot_path())
+            if bundle is None:
+                return None, ZeneControlError(
+                    ErrorKind.NOT_FOUND,
+                    f"no command snapshot at {self.snapshot_path()}",
+                ).to_payload(command="zene_commands")
+            return R.CommandSource(specs=R.specs_from_commands(bundle["commands"]),
+                                   bundle=bundle, source="snapshot",
+                                   path=self.snapshot_path()), None
+        if source_pref == "live":
+            budget = self.config.timeout_for("control.commands_list", override)
+            return self.fetch_live(timeout=budget), None
+        return self.resolve(timeout=override), None
+
+    @staticmethod
+    def _compact_commands(payload: dict) -> None:
+        """Replace each command with the fields an agent scans, no schemas."""
+        payload["commands"] = [
+            {k: c.get(k) for k in ("id", "group", "description", "requires", "mutating")}
+            | {"tool_name": R.tool_name(str(c.get("id")))}
+            for c in payload["commands"]
+        ]
+
+    def commands_payload(self, arguments: dict | None = None) -> dict:
+        """`zene_commands`: the DAW's command list, from wherever it can be got."""
+        override, source_pref, include_schemas = self._commands_arguments(arguments)
         if source_pref not in ("auto", "live", "cache", "snapshot"):
             return ZeneControlError(
                 ErrorKind.INVALID_ARGS,
                 f"source must be one of auto|live|cache|snapshot, got {source_pref!r}",
             ).to_payload(command="zene_commands")
-        if source_pref == "cache":
-            resolved = self.resolve(prefer_live=False, timeout=override)
-            # resolve() falls through cache -> snapshot; keep the honest label.
-        elif source_pref == "snapshot":
-            bundle = R.load_bundle(self.snapshot_path())
-            if bundle is None:
-                return ZeneControlError(
-                    ErrorKind.NOT_FOUND,
-                    f"no command snapshot at {self.snapshot_path()}",
-                ).to_payload(command="zene_commands")
-            resolved = R.CommandSource(specs=R.specs_from_commands(bundle["commands"]),
-                                       bundle=bundle, source="snapshot",
-                                       path=self.snapshot_path())
-        elif source_pref == "live":
-            budget = self.config.timeout_for("control.commands_list", override)
-            resolved = self.fetch_live(timeout=budget)
-        else:
-            resolved = self.resolve(timeout=override)
+        resolved, error = self._commands_source_or_error(source_pref, override)
+        if error is not None:
+            return error
+        # _commands_source_or_error returns exactly one of the two, so a source
+        # is in hand here; the assert states that invariant for reader and type
+        # checker alike.
+        assert resolved is not None
 
         payload = resolved.payload(
             bridge={"name": SERVER_NAME, "version": SERVER_VERSION},
@@ -209,11 +238,7 @@ class Bridge:
             engine_free_groups=sorted(ENGINE_FREE_GROUPS),
         )
         if not include_schemas:
-            payload["commands"] = [
-                {k: c.get(k) for k in ("id", "group", "description", "requires", "mutating")}
-                | {"tool_name": R.tool_name(str(c.get("id")))}
-                for c in payload["commands"]
-            ]
+            self._compact_commands(payload)
         if resolved.error is not None:
             payload["summary"] = resolved.summary()
         return payload

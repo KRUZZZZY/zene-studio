@@ -156,28 +156,19 @@ class ControlClient:
 
     # -- request ----------------------------------------------------------
 
-    def request(self, cmd: str, args: dict | None = None, timeout: float | None = None,
-                include_proto: bool = True) -> dict:
-        """Send one command and return its `result` object, or raise typed.
-
-        `include_proto=False` omits the `proto` member. The DAW's ControlServer
-        accepts a request without it (``protoMatches`` returns true when the
-        member is absent) and still reports the version it speaks in the reply,
-        which is the only way to learn the version of an instance that would
-        otherwise refuse a request declaring a foreign one.
-        """
-        if self._sock is None:
+    def _send(self, cmd: str, args: dict | None, budget: float, request_id: int,
+              include_proto: bool) -> None:
+        """Frame one request and send it. Every send failure is typed here."""
+        sock = self._sock
+        if sock is None:  # request() checks first; this keeps the send path typed on its own
             raise ZeneControlError(ErrorKind.BRIDGE_ERROR, "request before connect")
-        budget = self.timeout if timeout is None else float(timeout)
-        self._next_id += 1
-        request_id = self._next_id
         envelope: dict = {"id": request_id, "cmd": cmd, "args": args or {}}
         if include_proto:
             envelope["proto"] = self.proto
         payload = json.dumps(envelope, separators=(",", ":"))
         try:
-            self._sock.settimeout(budget)
-            self._sock.sendall(payload.encode("utf-8") + b"\n")
+            sock.settimeout(budget)
+            sock.sendall(payload.encode("utf-8") + b"\n")
         except socket.timeout as exc:
             raise self._timeout_error(budget) from exc
         except (BrokenPipeError, ConnectionResetError) as exc:
@@ -191,6 +182,8 @@ class ControlClient:
                 f"the control connection failed while sending: {exc.strerror or exc}",
             ) from exc
 
+    def _read_reply(self, cmd: str, request_id: int, budget: float) -> dict:
+        """The reply addressed to `request_id`, parsed; anything else is typed."""
         line = self._read_line(budget)
         try:
             reply = json.loads(line.decode("utf-8", "replace"))
@@ -208,6 +201,16 @@ class ControlClient:
                 f"reply id {reply.get('id')!r} does not match request id {request_id}",
                 detail={"cmd": cmd, "reply": str(reply)[:400]},
             )
+        return reply
+
+    @staticmethod
+    def _reply_result(cmd: str, reply: dict) -> dict:
+        """The `result` of an ok reply, or the typed error the reply carries.
+
+        An error kind the bridge does not recognise is downgraded to
+        `bridge_error` rather than trusted; the DAW's own kinds pass through
+        verbatim.
+        """
         if reply.get("ok") is True:
             result = reply.get("result")
             return result if isinstance(result, dict) else {}
@@ -220,6 +223,30 @@ class ControlClient:
             str(error.get("message") or f"{cmd} failed"),
             detail={"command": cmd, "daw_error": str(reply.get("error"))[:400]},
         )
+
+    def request(self, cmd: str, args: dict | None = None, timeout: float | None = None,
+                include_proto: bool = True) -> dict:
+        """Send one command and return its `result` object, or raise typed.
+
+        `include_proto=False` omits the `proto` member. The DAW's ControlServer
+        accepts a request without it (``protoMatches`` returns true when the
+        member is absent) and still reports the version it speaks in the reply,
+        which is the only way to learn the version of an instance that would
+        otherwise refuse a request declaring a foreign one.
+
+        The three steps — frame/send, read/verify, interpret — are separate
+        methods on purpose: each carries its own typed failures, and the caller
+        here is a straight line so the order is visible (send errors are raised
+        before anything is read, as they always were).
+        """
+        if self._sock is None:
+            raise ZeneControlError(ErrorKind.BRIDGE_ERROR, "request before connect")
+        budget = self.timeout if timeout is None else float(timeout)
+        self._next_id += 1
+        request_id = self._next_id
+        self._send(cmd, args, budget, request_id, include_proto)
+        reply = self._read_reply(cmd, request_id, budget)
+        return self._reply_result(cmd, reply)
 
     # -- readiness --------------------------------------------------------
 

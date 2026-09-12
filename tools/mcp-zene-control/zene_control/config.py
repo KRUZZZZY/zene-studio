@@ -190,15 +190,8 @@ def _env_int(name: str, default: int) -> int:
                                f"{name}={raw!r} is not an integer") from exc
 
 
-def parse_args(argv: list[str] | None = None) -> Config:
-    """Resolve the configuration from CLI arguments and the environment.
-
-    Precedence for every field: CLI argument > ``ZENE_CONTROL_*`` environment
-    variable > documented default. The socket default is
-    ``<workdir>/zene-control.sock`` and the workdir defaults to the current
-    working directory, so an instance launched from this directory is found
-    without any configuration at all.
-    """
+def _build_parser() -> argparse.ArgumentParser:
+    """The CLI surface, one flag per Config field."""
     parser = argparse.ArgumentParser(
         prog="zene-control",
         description="MCP bridge to a running Zene Studio control socket. "
@@ -220,40 +213,87 @@ def parse_args(argv: list[str] | None = None) -> Config:
                         help=f"per-call budget for long commands (default: {DEFAULT_LONG_CALL_TIMEOUT})")
     parser.add_argument("--offline", action="store_true",
                         help="never open the socket; serve the cached/snapshot command list only")
-    args = parser.parse_args(argv)
+    return parser
 
-    workdir = os.path.abspath(
-        args.workdir or os.environ.get("ZENE_CONTROL_WORKDIR") or os.getcwd()
-    )
+
+def _cli_or_env_int(value: int | None, env_name: str, default: int) -> int:
+    """Precedence for an int field: CLI argument > ZENE_CONTROL_* env > default."""
+    if value is not None:
+        return int(value)
+    return _env_int(env_name, default)
+
+
+def _cli_or_env_float(value: float | None, env_name: str, default: float) -> float:
+    """Precedence for a float field: CLI argument > ZENE_CONTROL_* env > default."""
+    if value is not None:
+        return float(value)
+    return _env_float(env_name, default)
+
+
+def _resolve_workdir(args: argparse.Namespace) -> str:
+    """`--workdir` > `ZENE_CONTROL_WORKDIR` > cwd, always absolute."""
+    return os.path.abspath(args.workdir or os.environ.get("ZENE_CONTROL_WORKDIR") or os.getcwd())
+
+
+def _resolve_socket_path(args: argparse.Namespace, workdir: str) -> str:
+    """`--socket` > `ZENE_CONTROL_SOCKET` > `<workdir>/zene-control.sock`, absolute.
+
+    The DAW refuses a relative socket path, so fail here with a clear message
+    rather than on the far side of a connect().
+    """
     socket_path = (
         args.socket_path
         or os.environ.get("ZENE_CONTROL_SOCKET")
         or os.path.join(workdir, DEFAULT_SOCKET_NAME)
     )
-    # The DAW refuses a relative socket path, so fail here with a clear message
-    # rather than on the far side of a connect().
-    socket_path = os.path.abspath(socket_path)
+    return os.path.abspath(socket_path)
 
+
+def _resolve_state_dir(args: argparse.Namespace) -> str:
+    """`--state-dir` > `ZENE_CONTROL_STATE` > `<bridge>/.state`, always absolute."""
     server_dir = str(Path(__file__).resolve().parent)
-    state_dir = os.path.abspath(
+    return os.path.abspath(
         args.state_dir or os.environ.get("ZENE_CONTROL_STATE")
         or os.path.join(os.path.dirname(server_dir), ".state")
     )
 
+
+def _config_from_args(args: argparse.Namespace) -> Config:
+    """Resolve one parsed CLI object into a Config, field by field."""
+    workdir = _resolve_workdir(args)
+    offline = bool(args.offline) or os.environ.get("ZENE_CONTROL_OFFLINE", "").strip() not in ("", "0")
     return Config(
-        socket_path=socket_path,
+        socket_path=_resolve_socket_path(args, workdir),
         workdir=workdir,
-        state_dir=state_dir,
-        proto=args.proto if args.proto is not None else _env_int("ZENE_CONTROL_PROTO", DEFAULT_PROTO),
-        ready_timeout=max(MIN_READY_TIMEOUT, args.ready_timeout if args.ready_timeout is not None
-                          else _env_float("ZENE_CONTROL_READY_TIMEOUT", DEFAULT_READY_TIMEOUT)),
-        call_timeout=clamp_timeout(args.call_timeout if args.call_timeout is not None
-                                   else _env_float("ZENE_CONTROL_CALL_TIMEOUT", DEFAULT_CALL_TIMEOUT)),
-        long_call_timeout=clamp_timeout(args.long_call_timeout if args.long_call_timeout is not None
-                                        else _env_float("ZENE_CONTROL_LONG_CALL_TIMEOUT", DEFAULT_LONG_CALL_TIMEOUT)),
+        state_dir=_resolve_state_dir(args),
+        proto=_cli_or_env_int(args.proto, "ZENE_CONTROL_PROTO", DEFAULT_PROTO),
+        ready_timeout=max(MIN_READY_TIMEOUT,
+                          _cli_or_env_float(args.ready_timeout, "ZENE_CONTROL_READY_TIMEOUT",
+                                            DEFAULT_READY_TIMEOUT)),
+        call_timeout=clamp_timeout(_cli_or_env_float(args.call_timeout, "ZENE_CONTROL_CALL_TIMEOUT",
+                                                     DEFAULT_CALL_TIMEOUT)),
+        long_call_timeout=clamp_timeout(
+            _cli_or_env_float(args.long_call_timeout, "ZENE_CONTROL_LONG_CALL_TIMEOUT",
+                              DEFAULT_LONG_CALL_TIMEOUT)),
         snapshot_path=os.environ.get("ZENE_CONTROL_SNAPSHOT", ""),
-        offline=bool(args.offline) or os.environ.get("ZENE_CONTROL_OFFLINE", "").strip() not in ("", "0"),
+        offline=offline,
     )
+
+
+def parse_args(argv: list[str] | None = None) -> Config:
+    """Resolve the configuration from CLI arguments and the environment.
+
+    Precedence for every field: CLI argument > ``ZENE_CONTROL_*`` environment
+    variable > documented default. The socket default is
+    ``<workdir>/zene-control.sock`` and the workdir defaults to the current
+    working directory, so an instance launched from this directory is found
+    without any configuration at all.
+
+    The parsing (`_build_parser`), the path resolution (`_resolve_*`) and the
+    field-by-field precedence (`_config_from_args`) are separate so each is
+    readable and testable on its own; this function only names the order.
+    """
+    return _config_from_args(_build_parser().parse_args(argv))
 
 
 def engine_free(group: str) -> bool:
