@@ -1,0 +1,202 @@
+# Sources added by this fork on top of upstream master 4e677cb6c6ab.
+#
+# The entry list below is the byte-exact output of the command under "Regenerate with".
+#
+# Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
+#   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core \
+#       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ { next } { print }' ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh ; \
+#   } | LC_ALL=C sort
+#
+# Verify it - this must print REPRODUCES and nothing else:
+#   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
+#        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core \
+#            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
+#            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(LufsMeterTest|MidiLearnTest|SessionModelTest|StemExportTest)\.(cpp|h)$/ && !/^tests\/src\/core\/StemExportTestSupport\.h$/ { next } { print }' ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh ; \
+#        } | LC_ALL=C sort) && echo REPRODUCES
+#
+# The pathspec is `src include plugins` (this fork's product code) plus three extras the
+# product command cannot derive on its own. Each is named here with its reason, so no entry in
+# this file is a hand-edit nobody can account for:
+#   * tests/src/core - this file holds exactly five fork-authored TEST sources
+#     (LufsMeterTest, MidiLearnTest, SessionModelTest, StemExportTest,
+#     StemExportTestSupport.h): three registered by a42c68f24 (the integration fix that made
+#     Gate 9 green), two by 117068e76 (stem export). They are the suites of fork-NEW features,
+#     so the fork ratchets look at them. The other ~100 tests/src sources added since the fork
+#     point are whole-tree material and live in tests/all-sources.txt only - the awk filter
+#     admits exactly these five. A new fork test source belongs in tests/all-sources.txt by
+#     default; add it to the awk pattern above only if it must carry the fork ratchets too, and
+#     then re-run this command.
+#   * tools/local-ci.sh - a shell script, so outside the C/C++ extension set of the product
+#     command; it is admitted by the second, explicit pathspec line above. Its extension is
+#     deliberately NOT added to the first line's grep: doing so also admits five fork-authored
+#     .sh harness scripts under plugins/RnnoiseDenoiser/testdata/, which would widen the fork
+#     scope onto shell tooling that belongs in tests/tools-sources.txt if anywhere. It is
+#     registered HERE rather than in tests/tools-sources.txt because the fork-scoped ratchets
+#     already measured it when that list was added, and moving it would narrow the fork scope.
+#     That reason is recorded in tests/tools-sources.txt's header too.
+#   * tools/stem-export-demo.py used to be a second hand-added tools/ entry in this file. It was
+#     moved to tests/tools-sources.txt on 2026-09-12 (gate hygiene): tooling has one home, and
+#     that list is the home tests/tools-sources.txt itself declares for tools/. It is not in the
+#     command above any more, and this file no longer carries it.
+#
+# Why the base is a fixed commit and not `origin/master`. `origin` in this clone is
+# upstream LMMS/lmms; this repo never pushes to it, and its `master` ref tracks whatever
+# upstream publishes - on 2026-09-11 it was 518a7e8ef, which is NOT an ancestor of the
+# fork point (verified: `git merge-base --is-ancestor origin/master 4e677cb6c6ab` -> 1).
+# The old command as written (`... --diff-filter=A origin/master HEAD ...`) therefore
+# listed 116 files instead of 109: it reclassified seven upstream files this fork
+# never authored as fork-new - include/AudioOss.h, include/AudioSoundIo.h,
+# include/MidiOss.h, plugins/Sf2Player/fluidsynthshims.h, src/core/audio/AudioOss.cpp,
+# src/core/audio/AudioSoundIo.cpp, src/core/midi/MidiOss.cpp - all of which exist at
+# 4e677cb6c6ab (`git cat-file -e 4e677cb6c6ab:<path>`). The fork point is a fixed commit,
+# so the corrected command needs no remote state at all. Verify it is in the clone first:
+#   git cat-file -e 4e677cb6c6ab^{commit} && echo ok
+# (`git merge-base origin/master HEAD` returns the same commit - 4e677cb6c6ab - but only
+# while origin has been fetched; the literal commit is the base that cannot drift.)
+#
+# Vendored third-party trees are excluded on purpose (524 files): src/3rdparty
+# (lua, luabridge), plugins/NeuralAmp/rtneural (RTNeural), plugins/NeuralAmp/nam
+# (Neural Amp Modeler), plugins/NeuralAmp/tests, plugins/RnnoiseDenoiser/rnnoise
+# (RNNoise). They are not this fork's code and these gates never refactor them.
+#
+# lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
+# resolves this file's directory to the repo root).
+#
+# The collation is pinned to C for the same reason tests/all-sources.txt's is: plain `sort`
+# follows the caller's locale, so an unpinned command does not reproduce this file on a
+# machine with a different one, and the tail entries appended by merge lanes ended up out of
+# order for the same reason.
+include/AudioBus.h
+include/AudioPlugin.h
+include/AudioPorts.h
+include/AudioPortsModel.h
+include/AudioPortsSettings.h
+include/CrashReporter.h
+include/DpiHelper.h
+include/LatencyCompensation.h
+include/LmmsPolyfill.h
+include/LoudnessReport.h
+include/LufsMeter.h
+include/MidiLearn.h
+include/MidiLearnGui.h
+include/MultiTrackRecorder.h
+include/PinConnector.h
+include/PluginAudioPorts.h
+include/PluginScanCache.h
+include/RecordRingBuffer.h
+include/RemotePluginAudioPorts.h
+include/RoutingGraph.h
+include/RoutingNode.h
+include/RoutingNodes.h
+include/ScriptApiVersion.h
+include/ScriptBindings.h
+include/ScriptConsole.h
+include/ScriptEngine.h
+include/ScriptLuaQtTypes.h
+include/ScriptPackage.h
+include/SessionModel.h
+include/StemSeparation/ExternalProcessStemSeparator.h
+include/StemSeparation/OnnxRuntimeStemSeparator.h
+include/StemSeparation/StemJobManager.h
+include/StemSeparation/StemModelStore.h
+include/StemSeparation/StemSeparator.h
+include/StemSeparation/StemTrackBuilder.h
+include/StemSeparation/StemTypes.h
+include/StemSplitController.h
+include/TrackRecorder.h
+plugins/ClapEffect/ClapBusMap.cpp
+plugins/ClapEffect/ClapBusMap.h
+plugins/ClapEffect/ClapEffect.cpp
+plugins/ClapEffect/ClapEffect.h
+plugins/ClapEffect/ClapEffectControlDialog.cpp
+plugins/ClapEffect/ClapEffectControlDialog.h
+plugins/ClapEffect/ClapEffectControls.cpp
+plugins/ClapEffect/ClapEffectControls.h
+plugins/ClapEffect/ClapHost.cpp
+plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapParamDescriptor.h
+plugins/ClapEffect/ClapParameter.cpp
+plugins/ClapEffect/ClapParameter.h
+plugins/ClapEffect/ClapSubPluginFeatures.cpp
+plugins/ClapEffect/ClapSubPluginFeatures.h
+plugins/NeuralAmp/NeuralAmpControlDialog.cpp
+plugins/NeuralAmp/NeuralAmpControlDialog.h
+plugins/NeuralAmp/NeuralAmpControls.cpp
+plugins/NeuralAmp/NeuralAmpControls.h
+plugins/NeuralAmp/NeuralAmpEffect.cpp
+plugins/NeuralAmp/NeuralAmpEffect.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
+plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+plugins/Vst3Effect/Vst3BusMap.cpp
+plugins/Vst3Effect/Vst3BusMap.h
+plugins/Vst3Effect/Vst3Effect.cpp
+plugins/Vst3Effect/Vst3Effect.h
+plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+plugins/Vst3Effect/Vst3EffectControlDialog.h
+plugins/Vst3Effect/Vst3EffectControls.cpp
+plugins/Vst3Effect/Vst3EffectControls.h
+plugins/Vst3Effect/Vst3Host.cpp
+plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3ParamDescriptor.h
+plugins/Vst3Effect/Vst3Parameter.cpp
+plugins/Vst3Effect/Vst3Parameter.h
+plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+plugins/Vst3Effect/Vst3SubPluginFeatures.h
+plugins/WasmEffect/WasmEffect.cpp
+plugins/WasmEffect/WasmEffect.h
+plugins/WasmEffect/WasmEffectControlDialog.cpp
+plugins/WasmEffect/WasmEffectControlDialog.h
+plugins/WasmEffect/WasmEffectControls.cpp
+plugins/WasmEffect/WasmEffectControls.h
+src/core/AudioBus.cpp
+src/core/AudioPortsModel.cpp
+src/core/CrashReporter.cpp
+src/core/ExternalProcessStemSeparator.cpp
+src/core/LatencyCompensation.cpp
+src/core/LoudnessReport.cpp
+src/core/LufsMeter.cpp
+src/core/MidiLearn.cpp
+src/core/OnnxRuntimeStemSeparator.cpp
+src/core/PluginScanCache.cpp
+src/core/RoutingGraph.cpp
+src/core/RoutingNode.cpp
+src/core/RoutingNodes.cpp
+src/core/ScriptApiVersion.cpp
+src/core/ScriptBindings.cpp
+src/core/ScriptCommandQueue.cpp
+src/core/ScriptConsole.cpp
+src/core/ScriptEngine.cpp
+src/core/ScriptPackage.cpp
+src/core/SessionClip.cpp
+src/core/SessionModel.cpp
+src/core/SessionModelPrivate.h
+src/core/StemJobManager.cpp
+src/core/StemModelStore.cpp
+src/core/StemTrackBuilder.cpp
+src/core/audio/MultiTrackRecorder.cpp
+src/core/audio/TrackRecorder.cpp
+src/gui/MidiLearnGui.cpp
+src/gui/PinConnector.cpp
+src/gui/StemSplitController.cpp
+src/wasm/WasmAbi.h
+src/wasm/WasmSandbox.cpp
+src/wasm/WasmSandbox.h
+src/wasm/WasmSpscRingBuffer.h
+src/wasm/WasmWorker.cpp
+src/wasm/WasmWorker.h
+tests/src/core/LufsMeterTest.cpp
+tests/src/core/MidiLearnTest.cpp
+tests/src/core/SessionModelTest.cpp
+tests/src/core/StemExportTest.cpp
+tests/src/core/StemExportTestSupport.h
+tools/local-ci.sh

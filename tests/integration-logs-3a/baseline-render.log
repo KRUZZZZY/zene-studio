@@ -1,0 +1,15 @@
+render-recipe: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/zene
+  project    : data/projects/shorties/sv-DnB-Startup.mmpz
+  mode       : render
+  output     : docs/integration-logs/render-baseline.wav
+  qt platform: offscreen
+
+$ QT_QPA_PLATFORM=offscreen /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/zene render data/projects/shorties/sv-DnB-Startup.mmpz -o docs/integration-logs/render-baseline.wav -f wav
+  (log: docs/integration-logs/render-recipe.log)
+[exit 0] render
+
+rendered: docs/integration-logs/render-baseline.wav (2177112 bytes)
+sha256  : 6b51f70fc32e993d7aaad3592e356954622ce842a0cbf1d6043962f185f24cb1
+
+compare two versions:
+  /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/tools/mmpz-git/mmpz_git.py audible-diff A.mmpz B.mmpz

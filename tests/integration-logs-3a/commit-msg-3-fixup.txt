@@ -1,0 +1,34 @@
+Fix-up to merge #3: tools/ncpu-shim.c belongs in tests/fork-sources.txt, not in no list
+
+Gate 6 was RED after the previous commit and this fixes it in the only way that
+touches no gate.
+
+Measured: `bash tests/no-upstream-regression-gate.sh` -> EXIT=1 with exactly one
+violation, `tools/ncpu-shim.c       VIOLATION: undeclared change to upstream-inherited
+code`. The cause: the previous commit re-homed the render-determinism lane's three
+tools/ files and put ncpu-shim.c on tests/all-sources.txt's list only. Gate 6 classifies
+a tools/ path by tests/tools-sources.txt and by no other list (its tools/ category reads
+that file alone), so all-sources membership - which is automatic for any C/C++ file under
+tools/, since that list is `git ls-files` over the C/C++ extension set - is not something
+Gate 6 can see. The lane's original placement in tests/fork-sources.txt was load-bearing
+for that reason, and it is restored here:
+
+* tests/fork-sources.txt - entry list back to 139 entries, tools/ncpu-shim.c included.
+  Its documented regeneration command gains the path by name on the same explicit second
+  pathspec line that already names tools/local-ci.sh, for the same documented reason
+  (widening the extension filter would drag five plugins/RnnoiseDenoiser/testdata/*.sh
+  harness scripts into the product scope). The header's bullet for that pathspec now
+  names both files and gives each its own reason. Verified: the command prints
+  REPRODUCES (139 entries, 0 duplicates).
+* tests/tools-sources.txt - the subtraction regex keeps tools/ncpu-shim.c and the
+  members paragraph and the ADDED AT INTEGRATION note now say where its home is, in
+  both directions. 14 entries, REPRODUCES.
+* tests/all-sources.txt unchanged at 1,151 entries (it lists ncpu-shim.c as a C source;
+  that is not a second registration but what `git ls-files` produces, and the fork
+  manifest is what Gate 6 needs).
+
+Checked after the fix, all unpiped: file-length-gate.sh --check 0, complexity-gate.sh
+--check 0, duplication-gate.sh --check 0, fork-sources-gate.sh 0 (139 fork-NEW, 1015
+inherited, 14 tooling, 0 stale), no-upstream-regression-gate.sh 0 (126 ledger entries).
+
+Nothing was pushed; no remote, PR or branch was touched.

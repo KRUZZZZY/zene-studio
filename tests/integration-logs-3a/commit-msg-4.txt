@@ -1,0 +1,42 @@
+Merge post-alpha/recording-realtime into post-alpha/integration (merge train 3A, #4 of 6)
+
+The grade-B recording audit's realtime-triad fix: the capture path off the lock and
+off growth. Out-of-range float clipping, a pre-allocated fixed-capacity staging ring
+(SampleFrameRingBuffer) replacing the locking, doubling input buffer,
+pushInputFrames() taking const frames and noexcept, the take assembled on the
+accumulator's own thread (SampleRecordAccumulator) instead of on the audio thread,
+plus its two new test suites.
+
+Nothing was pushed; no remote, PR or branch was touched.
+
+Conflicts (2, neither in product code):
+
+* tests/fork-sources.txt - entry union, then re-derived from the file's own documented
+  command: 141 entries (+2: include/SampleFrameRingBuffer.h,
+  include/SampleRecordAccumulator.h, both fork-NEW product headers the command
+  produces on its own). Both sides' entries are present.
+* tests/upstream-modifications.txt - two hunks, both entry unions. The branch's three
+  new declarations are present (include/SampleRecordHandle.h, src/core/AudioEngine.cpp,
+  src/core/SampleRecordHandle.cpp, appended under a banner in the file's own style,
+  ledger 126 -> 129 entries), and include/AudioEngine.h's reason was rewritten by the
+  branch into a strict superset of ours (verified: our text is contained in theirs), so
+  theirs is kept - the one case in this merge where "keep the superset" and "keep the
+  branch's newer reason" are the same decision. Verified after resolution: every entry
+  from both sides present, 0 duplicates, 0 blank reasons, no ';;', no markers.
+* tests/CMakeLists.txt auto-merged; the merged file was read back and both lanes'
+  registrations are present (src/core/RecordClipTest.cpp, src/core/RecordingRealtimeTest.cpp)
+  plus the branch's set_tests_properties block for RecordingRealtimeTest.
+
+Registration checklist. The branch registered its two new product headers in
+tests/fork-sources.txt itself. Its two new TEST sources were in no manifest;
+tests/all-sources.txt was re-derived from its documented command and picked them up,
+along with the two headers: 1,155 entries (+4). No declaration was owed that the branch
+had not already made: its three touched upstream files are all in the ledger.
+Gate 6's rules were replicated against the index before committing: 0 violations over
+403 changed paths, no cross-manifest entry.
+
+Manifest reproducibility, each file's own documented command, run against the index
+before committing and re-run after: fork-sources.txt 141 REPRODUCES; all-sources.txt
+1,155 REPRODUCES; tools-sources.txt 14 REPRODUCES. 0 duplicates, 0 blank entries.
+
+Gate exit codes after this merge: 0 / 0 / 3.

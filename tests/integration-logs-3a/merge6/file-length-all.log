@@ -1,0 +1,40 @@
+file-length-gate: whole-tree scope (every source in tests/all-sources.txt; upstream files are grandfathered, see docs/CONVENTIONS.md)
+file-length-gate: 1157 all-scope sources measured; 114 exceed 500 lines
+
+  lines  file
+  15664  plugins/LadspaEffect/caps/dsp/tonestack/vs_tab.h
+  5939   src/gui/editors/PianoRoll.cpp
+  2715   plugins/LadspaEffect/caps/waves/money.h
+  2645   plugins/VstBase/RemoteVstPlugin.cpp
+  2328   src/gui/editors/AutomationEditor.cpp
+  2289   src/core/DataFile.cpp
+  1856   plugins/Monstro/Monstro.cpp
+  1812   src/gui/MainWindow.cpp
+  1793   src/core/Mixer.cpp
+  1664   src/core/Song.cpp
+  1513   src/gui/modals/SetupDialog.cpp
+  1474   src/gui/clips/ClipView.cpp
+  1350   src/gui/FileBrowser.cpp
+  1288   plugins/GigPlayer/GigPlayer.cpp
+  1286   plugins/Watsyn/Watsyn.cpp
+  1245   plugins/Sf2Player/Sf2Player.cpp
+  1230   src/core/AutomationClip.cpp
+  1213   plugins/Vestige/Vestige.cpp
+  1196   tests/src/plugins/PluginPortsHarness.h
+  1183   src/core/main.cpp
+
+REGRESSION: include/AutomatableModel.h grew 514 -> 623 lines
+REGRESSION: include/Mixer.h grew 502 -> 509 lines
+REGRESSION: include/Song.h grew 539 -> 565 lines
+REGRESSION: src/core/AudioEngine.cpp grew 974 -> 1010 lines
+REGRESSION: src/core/AutomatableModel.cpp grew 761 -> 946 lines
+REGRESSION: src/core/DataFile.cpp grew 2239 -> 2289 lines
+REGRESSION: src/core/Mixer.cpp grew 1725 -> 1793 lines
+REGRESSION: src/core/Song.cpp grew 1572 -> 1664 lines
+REGRESSION: src/core/main.cpp grew 1155 -> 1183 lines
+REGRESSION: src/gui/MainWindow.cpp grew 1800 -> 1812 lines
+REGRESSION: src/gui/widgets/Fader.cpp grew 753 -> 766 lines
+REGRESSION: src/tracks/InstrumentTrack.cpp grew 1116 -> 1149 lines
+REGRESSION: new file over 500 lines: tests/src/core/AutomationModesTest.cpp (652)
+REGRESSION: new file over 500 lines: tests/src/tracks/SampleClipWindowTest.cpp (511)
+FAIL: file-length ratchet regressed (check mode: baseline not written)

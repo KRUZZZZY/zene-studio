@@ -1,0 +1,55 @@
+Merge post-alpha/render-determinism into post-alpha/integration (merge train 3A, #3 of 6)
+
+The export-render determinism fix: ProjectRenderer holds a switch (stored on the
+worker thread and branched on inside startAndWaitForJobs()) so an export's jobs run
+on one thread, plus the reproduction recipe, the probe scripts, the comparison tool
+and the measured table.
+
+Nothing was pushed; no remote, PR or branch was touched.
+
+Conflicts (1, in the divergence ledger only):
+
+* tests/upstream-modifications.txt - entry union. The branch's three declarations are
+  all present in the result: include/AudioEngineWorkerThread.h and
+  src/core/AudioEngineWorkerThread.cpp are added (126-entry ledger), and
+  src/core/ProjectRenderer.cpp - already declared for the loudness wiring - has its
+  reason extended by a clause union, ours first, in the ledger's own style. The three
+  paths the branch's older copy of the ledger rewrote more briefly (ZynAddSubFx.cpp/.h,
+  src/gui/MainWindow.cpp) were verified to be strict supersets of the branch's text
+  before keeping ours: `ours extends theirs: True` for all three. Verified after
+  resolution: every entry from both sides present, 0 duplicates, 0 blank reasons,
+  no ';;', no conflict markers.
+
+Re-homed in this commit, and this is the registration checklist doing its job:
+
+* The branch registered three new tools/ files in tests/fork-sources.txt. A tools/
+  path cannot come out of that file's own regeneration command (its only tools/
+  pathspec is tools/local-ci.sh), so the file stopped reproducing the moment they
+  landed. Two of them - tools/render-determinism-compare.py (402 lines) and
+  tools/render-determinism-probe.sh (142) - are moved to tests/tools-sources.txt,
+  tooling's one home, with the branch's reasons kept in substance. The third,
+  tools/ncpu-shim.c, is a C source: its home is tests/all-sources.txt, whose list is
+  `git ls-files` over the C/C++ extension set and therefore already contains it. It is
+  named in tests/tools-sources.txt's subtraction regex and in its members paragraph
+  and is NOT repeated in that list. This is the same re-homing the gate-hygiene merge
+  made for tools/stem-export-demo.py, and it is recorded in both headers.
+* tests/all-sources.txt re-derived: 1,151 entries (+2: the new test source
+  tests/src/core/RenderJobQueueTest.cpp, which no manifest would otherwise have
+  owned, and tools/ncpu-shim.c).
+* tests/fork-sources.txt: unchanged after the re-homing (the union of entries is the
+  same set the branch inherited), 138 entries.
+* tests/upstream-modifications.txt also carries a correctness fix for a comment left
+  behind by merge #1: the "# --- fork-new developer tooling under tools/" block still
+  said "A future gate-config change should give tools/ its own category; until then
+  this is the honest place to record them", which is false as of merge #1 (Gate 6 has
+  the category and the seven entries are gone). It is replaced by a SUPERSEDED note.
+
+Manifest reproducibility, proved with each file's own documented command, run against
+the index before committing: fork-sources.txt 138 entries REPRODUCES;
+all-sources.txt 1,151 REPRODUCES; tools-sources.txt 14 REPRODUCES. No duplicates, no
+blank entries.
+
+Gate 6's rules replicated against the index before committing: 0 violations over 394
+changed paths; no cross-manifest entry.
+
+Gate exit codes after this merge: 0 / 0 / 3.

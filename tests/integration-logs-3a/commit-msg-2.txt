@@ -1,0 +1,40 @@
+Merge post-alpha/coverage-run into post-alpha/integration (merge train 3A, #2 of 6)
+
+Gate 2's first real measurement on the post-alpha scope: an instrumented build, the
+fork tracefile, the whole-tree tracefile, the unseen-code classification, the
+gate-controls negative controls and the report that states the verdict and the gaps.
+
+Nothing was pushed; no remote, PR or branch was touched. Zero conflicts.
+
+Gate 6 was RED on this branch's own tip (14 violations, reproduced here with
+`bash tests/no-upstream-regression-gate.sh` → EXIT=1 in its worktree before merging:
+every non-`.md` file under docs/coverage-run/ was classified as an undeclared change
+to upstream-inherited code). Gate 6 has no exemption mechanism, and a ledger entry
+would be a false statement (docs/ does not exist at the fork point, so nothing under
+it can be a divergence of inherited code - the rule the gate-hygiene merge, #1 in
+this train, established when it deleted the seven tools/ entries for exactly that
+reason).
+
+Fix applied in this commit, with no gate weakened and no gate script edited: the
+evidence directory is relocated from docs/coverage-run/ to tests/coverage-run/,
+which is the category Gate 6 allows and the home this repo already uses for durable
+evidence (tests/reference/, tests/scripted/, tests/gate-hygiene-logs/ - a relocation
+the gate-hygiene lane had to make for its own logs on the same night, for the same
+reason). The nine path references in the lane's own report and two scripts were
+updated for the path alone, and docs/COVERAGE-RUN.md carries a one-paragraph note
+recording the relocation. No measurement, log or number was altered. The alternative
+(teach Gate 6 a `docs/` category, generalising its `tools/` category, which rests on
+the same "this top-level directory does not exist at the fork point" argument) was
+considered and deliberately refused: it relaxes a gate to make a path legal, where
+the relocation makes it legal without touching any gate's semantics. Reported to the
+owner as a decision.
+
+Registration checklist: 15 staged paths, checked with `git diff --cached --name-only`;
+no source file is added, so no scope manifest needed an entry; no inherited file is
+touched, so no ledger entry was owed. Gate 6's rules were replicated against the
+index before committing: 0 violations.
+
+This merge changes no product code, so no rebuild was owed; the ctest run inside
+run-all-gates.sh exercises the binary built and verified for merge #1.
+
+Gate exit codes after this merge: 0 / 0 / 3.

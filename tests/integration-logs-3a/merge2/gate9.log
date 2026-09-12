@@ -1,0 +1,6 @@
+
+scanned 1162 tracked source file(s) under src/, include/, plugins/, tests/, tools/, modules/;
+  138 fork-sources entry(ies), 1012 all-sources (whole-tree),
+  12 tools-sources (fork tooling), 0 stale entry(ies).
+
+PASS: every tracked source in scope is registered (138 fork-NEW, 1012 inherited, 12 tooling).

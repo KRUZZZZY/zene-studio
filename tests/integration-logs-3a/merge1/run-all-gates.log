@@ -1,0 +1,765 @@
+
+================ Gate 1: unit tests (ctest) ================
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/tests
+      Start  1: ArrayVectorTest
+ 1/46 Test  #1: ArrayVectorTest ..................   Passed    0.02 sec
+      Start  2: AudioBufferTest
+ 2/46 Test  #2: AudioBufferTest ..................   Passed    0.02 sec
+      Start  3: AudioBusHandleTest
+ 3/46 Test  #3: AudioBusHandleTest ...............   Passed    1.30 sec
+      Start  4: AudioBusTest
+ 4/46 Test  #4: AudioBusTest .....................   Passed    1.33 sec
+      Start  5: AudioPortsModelTest
+ 5/46 Test  #5: AudioPortsModelTest ..............   Passed    1.36 sec
+      Start  6: AudioPortsTest
+ 6/46 Test  #6: AudioPortsTest ...................   Passed    1.40 sec
+      Start  7: AutomatableModelTest
+ 7/46 Test  #7: AutomatableModelTest .............   Passed    1.33 sec
+      Start  8: LoudnessReportTest
+ 8/46 Test  #8: LoudnessReportTest ...............   Passed    1.30 sec
+      Start  9: ClipSerialisationTest
+ 9/46 Test  #9: ClipSerialisationTest ............   Passed    1.39 sec
+      Start 10: LufsMeterTest
+10/46 Test #10: LufsMeterTest ....................   Passed    1.96 sec
+      Start 11: CrashReporterTest
+11/46 Test #11: CrashReporterTest ................   Passed    0.67 sec
+      Start 12: AutomationModesTest
+12/46 Test #12: AutomationModesTest ..............   Passed    1.31 sec
+      Start 13: MathTest
+13/46 Test #13: MathTest .........................   Passed    0.02 sec
+      Start 14: MidiLearnTest
+14/46 Test #14: MidiLearnTest ....................   Passed    1.59 sec
+      Start 15: MidiLearnThreadTest
+15/46 Test #15: MidiLearnThreadTest ..............   Passed    1.38 sec
+      Start 16: MidiProbabilityPersistenceTest
+16/46 Test #16: MidiProbabilityPersistenceTest ...   Passed    0.03 sec
+      Start 17: MixerRoutingBackwardCompatTest
+17/46 Test #17: MixerRoutingBackwardCompatTest ...   Passed    1.37 sec
+      Start 18: MultiTrackRecorderTest
+18/46 Test #18: MultiTrackRecorderTest ...........   Passed    0.02 sec
+      Start 19: NoteRandomTest
+19/46 Test #19: NoteRandomTest ...................   Passed    0.02 sec
+      Start 20: NoteTransformTest
+20/46 Test #20: NoteTransformTest ................   Passed    0.02 sec
+      Start 21: PluginAudioPortsTest
+21/46 Test #21: PluginAudioPortsTest .............   Passed    1.37 sec
+      Start 22: PluginScanCacheTest
+22/46 Test #22: PluginScanCacheTest ..............   Passed    0.09 sec
+      Start 23: ProjectRecoveryTest
+23/46 Test #23: ProjectRecoveryTest ..............   Passed    0.03 sec
+      Start 24: ProjectVersionTest
+24/46 Test #24: ProjectVersionTest ...............   Passed    0.02 sec
+      Start 25: RecordRingBufferTest
+25/46 Test #25: RecordRingBufferTest .............   Passed    0.02 sec
+      Start 26: RelativePathsTest
+26/46 Test #26: RelativePathsTest ................   Passed    0.03 sec
+      Start 27: RemotePluginAudioPortsTest
+27/46 Test #27: RemotePluginAudioPortsTest .......   Passed    2.03 sec
+      Start 28: RemotePluginClientE2ETest
+28/46 Test #28: RemotePluginClientE2ETest ........   Passed    1.49 sec
+      Start 29: RoutingGraphTest
+29/46 Test #29: RoutingGraphTest .................   Passed    0.03 sec
+      Start 30: PdcMixerTest
+30/46 Test #30: PdcMixerTest .....................   Passed    1.42 sec
+      Start 31: ScriptBindingsTest
+31/46 Test #31: ScriptBindingsTest ...............   Passed    1.39 sec
+      Start 32: ScriptEngineTest
+32/46 Test #32: ScriptEngineTest .................   Passed    1.45 sec
+      Start 33: ScriptStabilisationTest
+33/46 Test #33: ScriptStabilisationTest ..........   Passed    1.40 sec
+      Start 34: SlideNotesTest
+34/46 Test #34: SlideNotesTest ...................   Passed    0.02 sec
+      Start 35: StemExportTest
+35/46 Test #35: StemExportTest ...................   Passed    4.29 sec
+      Start 36: TimelineTest
+36/46 Test #36: TimelineTest .....................   Passed    1.39 sec
+      Start 37: TwoTrackRecordingHarness
+37/46 Test #37: TwoTrackRecordingHarness .........   Passed    2.03 sec
+      Start 38: MidiLearnGuiTest
+38/46 Test #38: MidiLearnGuiTest .................   Passed    1.39 sec
+      Start 39: AutomationTrackTest
+39/46 Test #39: AutomationTrackTest ..............   Passed    1.34 sec
+      Start 40: SampleClipWindowTest
+40/46 Test #40: SampleClipWindowTest .............   Passed    1.87 sec
+      Start 41: PluginPortsMigrationTest
+41/46 Test #41: PluginPortsMigrationTest .........   Passed    4.25 sec
+      Start 42: ClapBusMapTest
+42/46 Test #42: ClapBusMapTest ...................   Passed    0.01 sec
+      Start 43: ClapHostTest
+43/46 Test #43: ClapHostTest .....................   Passed    0.01 sec
+      Start 44: ClapEffectIntegrationTest
+44/46 Test #44: ClapEffectIntegrationTest ........   Passed    1.31 sec
+      Start 45: ZynSeparateProcessTest
+45/46 Test #45: ZynSeparateProcessTest ...........   Passed    1.99 sec
+      Start 46: AudioPluginTest
+46/46 Test #46: AudioPluginTest ..................   Passed    1.37 sec
+
+100% tests passed, 0 tests failed out of 46
+
+Total Test time (real) =  49.87 sec
+
+================ Gate 2: coverage ratchet ================
+skipped (pass --with-coverage)
+
+================ Gate 3: no tautological tests ================
+test file                                      slots    asserts taut    verdict
+src/core/ArrayVectorTest.cpp                   173      148     0       ok
+src/core/AudioBufferTest.cpp                   229      217     0       ok
+src/core/AudioBusHandleTest.cpp                22       15      0       ok
+src/core/AudioBusTest.cpp                      133      119     0       ok
+src/core/AudioPortsModelTest.cpp               124      123     0       ok
+src/core/AudioPortsTest.cpp                    59       40      0       ok
+src/core/AutomatableModelTest.cpp              27       22      0       ok
+src/core/AutomationModesTest.cpp               80       55      0       ok
+src/core/ClipSerialisationTest.cpp             35       35      0       ok
+src/core/CrashReporterTest.cpp                 109      86      0       ok
+src/core/LoudnessReportTest.cpp                54       42      0       ok
+src/core/LufsMeterTest.cpp                     66       46      0       ok
+src/core/MathTest.cpp                          13       12      0       ok
+src/core/MidiLearnTest.cpp                     49       46      0       ok
+src/core/MidiLearnThreadTest.cpp               33       30      0       ok
+src/core/MidiProbabilityPersistenceTest.cpp    62       55      0       ok
+src/core/MixerRoutingBackwardCompatTest.cpp    58       40      0       ok
+src/core/MultiTrackRecorderTest.cpp            17       16      0       ok
+src/core/NoteRandomTest.cpp                    51       41      0       ok
+src/core/NoteTransformTest.cpp                 91       90      0       ok
+src/core/PdcMixerTest.cpp                      129      57      0       ok
+src/core/PhaseDSidechainTest.cpp               96       46      0       ok
+src/core/PluginAudioPortsTest.cpp              82       72      0       ok
+src/core/PluginScanCacheTest.cpp               186      135     0       ok
+src/core/ProjectRecoveryTest.cpp               83       71      0       ok
+src/core/ProjectVersionTest.cpp                114      112     0       ok
+src/core/RecordRingBufferTest.cpp              57       41      0       ok
+src/core/RelativePathsTest.cpp                 12       11      0       ok
+src/core/RemotePluginAudioPortsTest.cpp        113      92      0       ok
+src/core/RemotePluginClientE2ETest.cpp         57       38      0       ok
+src/core/RoutingGraphTest.cpp                  172      150     0       ok
+
+Out of scope (helper executables, not QTest classes):
+  tests/src/core/TwoTrackAlsaCaptureProbe.cpp
+  tests/src/core/TwoTrackRecordingHarness.cpp
+  tests/src/plugins/PluginPortsMigrationReference.cpp
+
+PASS: every registered test file has test slots and real assertions, no literal tautologies
+
+================ Gate 4: per-method complexity ================
+#TOTAL	1179	23
+complexity-gate: 1179 functions in the fork scope; 23 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  41       198    214    lmms::ExternalProcessStemSeparator::separate@238-451@src/core/ExternalProcessStemSeparator.cpp
+  31       158    168    lmms::clap::HostedPlugin::load@469-636@plugins/ClapEffect/ClapHost.cpp
+  29       100    119    lmms::ScriptEngine::applyCommand@438-556@src/core/ScriptEngine.cpp
+  27       135    151    lmms::OnnxRuntimeStemSeparator::separate@91-241@src/core/OnnxRuntimeStemSeparator.cpp
+  25       122    132    lmms::vst3::HostedPlugin::load@250-381@plugins/Vst3Effect/Vst3Host.cpp
+  23       64     91     lmms::AudioPortsModel::updateDirectRouting@247-337@src/core/AudioPortsModel.cpp
+  18       36     36     lmms::vst3::HostedPlugin::loadState@471-506@plugins/Vst3Effect/Vst3Host.cpp
+  17       80     85     lmms::AudioBus::update@195-279@src/core/AudioBus.cpp
+  15       58     64     main@20-83@plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+  15       64     80     lmms::AudioBus::sanitize@96-175@src/core/AudioBus.cpp
+  15       35     38     lmms::RoutingGraph::connect@90-127@src/core/RoutingGraph.cpp
+  15       42     53     lmms::RoutingGraph::rebuildPlan@310-362@src/core/RoutingGraph.cpp
+  15       75     85     lmms::wasm::WasmSandbox::loadModuleBytes@336-420@src/wasm/WasmSandbox.cpp
+  14       44     48     lmms::ScriptEngine::resolveProjectPath@714-761@src/core/ScriptEngine.cpp
+  14       96     130    lmms::gui::PinConnector::paintEvent@184-313@src/gui/PinConnector.cpp
+  13       84     94     lmms::clap::HostedPlugin::process@741-834@plugins/ClapEffect/ClapHost.cpp
+  13       75     87     lmms::vst3::HostedPlugin::prepare@508-594@plugins/Vst3Effect/Vst3Host.cpp
+  12       53     61     lmms::vst3::HostedPlugin::process@639-699@plugins/Vst3Effect/Vst3Host.cpp
+  12       68     80     lmms::wasm::WasmWorker::processSlot@155-234@src/wasm/WasmWorker.cpp
+  11       22     22     lmms::clap::describe@65-86@plugins/ClapEffect/ClapHost.cpp
+  11       35     41     lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp
+  11       71     80     lmms::StemModelStore::download@203-282@src/core/StemModelStore.cpp
+  11       58     65     lmms::wasm::WasmWorker::run@89-153@src/wasm/WasmWorker.cpp
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::load has 158 NLOC, 31 CCN, 1385 token, 3 PARAM, 168 length, 0 ND
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::process has 84 NLOC, 13 CCN, 840 token, 5 PARAM, 94 length, 0 ND
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c: main has 58 NLOC, 15 CCN, 575 token, 2 PARAM, 64 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::load has 122 NLOC, 25 CCN, 1176 token, 3 PARAM, 132 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::loadState has 36 NLOC, 18 CCN, 288 token, 2 PARAM, 36 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::prepare has 75 NLOC, 13 CCN, 727 token, 3 PARAM, 87 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::process has 53 NLOC, 12 CCN, 489 token, 5 PARAM, 61 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::sanitize has 64 NLOC, 15 CCN, 401 token, 1 PARAM, 80 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::update has 80 NLOC, 17 CCN, 468 token, 2 PARAM, 85 length, 0 ND
+src/core/AudioPortsModel.cpp: lmms::AudioPortsModel::updateDirectRouting has 64 NLOC, 23 CCN, 369 token, 0 PARAM, 91 length, 0 ND
+src/core/ExternalProcessStemSeparator.cpp: lmms::ExternalProcessStemSeparator::separate has 198 NLOC, 41 CCN, 1183 token, 6 PARAM, 214 length, 0 ND
+src/core/OnnxRuntimeStemSeparator.cpp: lmms::OnnxRuntimeStemSeparator::separate has 135 NLOC, 27 CCN, 1284 token, 6 PARAM, 151 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::connect has 35 NLOC, 15 CCN, 257 token, 5 PARAM, 38 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::rebuildPlan has 42 NLOC, 15 CCN, 380 token, 0 PARAM, 53 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::applyCommand has 100 NLOC, 29 CCN, 666 token, 1 PARAM, 119 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::resolveProjectPath has 44 NLOC, 14 CCN, 269 token, 3 PARAM, 48 length, 0 ND
+src/gui/PinConnector.cpp: lmms::gui::PinConnector::paintEvent has 96 NLOC, 14 CCN, 1026 token, 0 PARAM, 130 length, 0 ND
+src/wasm/WasmSandbox.cpp: lmms::wasm::WasmSandbox::loadModuleBytes has 75 NLOC, 15 CCN, 418 token, 3 PARAM, 85 length, 0 ND
+src/wasm/WasmWorker.cpp: lmms::wasm::WasmWorker::processSlot has 68 NLOC, 12 CCN, 530 token, 2 PARAM, 80 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)
+complexity-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)
+#TOTAL	201	13
+complexity-gate: 201 functions in the tools scope; 13 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  47       136    140    cmd_audible_diff@1502-1641@tools/mmpz-git/mmpz_git.py
+  34       54     64     diff_dom@352-415@tools/mmpz-git/mmpz_git.py
+  30       105    110    main@54-163@tools/mmpz-git/demo_edits.py
+  28       56     64     serialize@133-196@tools/mmpz-git/mmpz_git.py
+  20       43     44     main@25-68@tools/mmpz-git/demo_check.py
+  20       37     40     canonicalize_dom.walk@238-277@tools/mmpz-git/mmpz_git.py
+  19       41     42     read_wav@69-110@tools/stem_split_cli.py
+  16       37     37     save_node@9-45@tools/mmpz-git/scratch/proto.py
+  13       24     25     marker_records@1210-1234@tools/mmpz-git/mmpz_git.py
+  13       70     80     main@226-305@tools/stem_split_cli.py
+  12       26     26     cmd_diff@418-443@tools/mmpz-git/mmpz_git.py
+  11       40     55     _conflict_comment@780-834@tools/mmpz-git/mmpz_git.py
+  11       28     29     wav_mono@1331-1359@tools/mmpz-git/mmpz_git.py
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+tools/mmpz-git/demo_check.py: main has 43 NLOC, 20 CCN, 325 token, 1 PARAM, 44 length, 0 ND
+tools/mmpz-git/demo_edits.py: main has 105 NLOC, 30 CCN, 1121 token, 0 PARAM, 110 length, 0 ND
+tools/mmpz-git/mmpz_git.py: serialize has 56 NLOC, 28 CCN, 498 token, 4 PARAM, 64 length, 0 ND
+tools/mmpz-git/mmpz_git.py: canonicalize_dom.walk has 37 NLOC, 20 CCN, 218 token, 1 PARAM, 40 length, 0 ND
+tools/mmpz-git/mmpz_git.py: diff_dom has 54 NLOC, 34 CCN, 611 token, 5 PARAM, 64 length, 0 ND
+tools/mmpz-git/mmpz_git.py: cmd_diff has 26 NLOC, 12 CCN, 237 token, 1 PARAM, 26 length, 0 ND
+tools/mmpz-git/mmpz_git.py: marker_records has 24 NLOC, 13 CCN, 223 token, 1 PARAM, 25 length, 0 ND
+tools/mmpz-git/mmpz_git.py: cmd_audible_diff has 136 NLOC, 47 CCN, 1194 token, 1 PARAM, 140 length, 0 ND
+tools/mmpz-git/scratch/proto.py: save_node has 37 NLOC, 16 CCN, 329 token, 3 PARAM, 37 length, 0 ND
+tools/stem_split_cli.py: read_wav has 41 NLOC, 19 CCN, 440 token, 1 PARAM, 42 length, 0 ND
+tools/stem_split_cli.py: main has 70 NLOC, 13 CCN, 567 token, 0 PARAM, 80 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)
+
+================ Gate 5: mutation testing (src/core/RoutingGraph.cpp) ================
+
+==== control: unmutated source must build and pass ====
+pristine sha256: 1fc2d8fb3fe015e94468cd77e8fb285805198f6074258e0c7ced217c8632f163
+control: pristine TU recompiled, test binary passed 3/3 runs
+
+==== mutants: 30 selected of 170 candidates (seed 0) ====
+  #   site                           rule           mutation                                   build    result
+  --------------------------------------------------------------------------------------------------------------------
+  1   src/core/RoutingGraph.cpp:134  cmp-eq         == -> !=                                   ok       KILLED
+  2   src/core/RoutingGraph.cpp:101  cmp-ge         >= -> <=                                   ok       KILLED
+  3   src/core/RoutingGraph.cpp:159  cmp-lt         < -> >                                     ok       KILLED
+  4   src/core/RoutingGraph.cpp:358  cmp-ne         != -> ==                                   ok       KILLED
+  5   src/core/RoutingGraph.cpp:148  const-neg-one  -1 -> 0                                    ok       KILLED
+  6   src/core/RoutingGraph.cpp:44   const-one      1 -> 0                                     ok       SURVIVED
+  7   src/core/RoutingGraph.cpp:230  const-zero     0 -> 1                                     ok       KILLED
+  8   src/core/RoutingGraph.cpp:354  dec-inc        -- -> ++                                   ok       KILLED
+  9   src/core/RoutingGraph.cpp:339  greater-less   std::greater<int> -> std::less<int>        ok       KILLED
+  10  src/core/RoutingGraph.cpp:330  inc-dec        ++ -> --                                   ok       KILLED
+  11  src/core/RoutingGraph.cpp:133  logic-and      && -> ||                                   no-build INVALID
+  12  src/core/RoutingGraph.cpp:81   logic-or       || -> &&                                   ok       KILLED
+  13  src/core/RoutingGraph.cpp:205  min-max        std::min -> std::max                       ok       KILLED
+  14  src/core/RoutingGraph.cpp:280  neg-drop       if (! -> if (                              ok       KILLED
+  15  src/core/RoutingGraph.cpp:171  ret-false      return false -> return true                ok       KILLED
+  16  src/core/RoutingGraph.cpp:126  ret-true       return true -> return false                ok       KILLED
+  17  src/core/RoutingGraph.cpp:226  stmt-delete    delete: graphElement.setAttribute(QStringLiteral("frames"), static_cast<qulonglong>(m_frames)); ok       SURVIVED
+  18  src/core/RoutingGraph.cpp:233  cmp-eq         == -> !=                                   no-build INVALID
+  19  src/core/RoutingGraph.cpp:165  cmp-ge         >= -> <=                                   ok       KILLED
+  20  src/core/RoutingGraph.cpp:101  cmp-lt         < -> >                                     ok       KILLED
+  21  src/core/RoutingGraph.cpp:197  cmp-ne         != -> ==                                   no-build INVALID
+  22  src/core/RoutingGraph.cpp:50   const-neg-one  -1 -> 0                                    ok       KILLED
+  23  src/core/RoutingGraph.cpp:210  const-zero     0 -> 1                                     ok       KILLED
+  24  src/core/RoutingGraph.cpp:53   inc-dec        ++ -> --                                   ok       SURVIVED
+  25  src/core/RoutingGraph.cpp:112  logic-and      && -> ||                                   no-build INVALID
+  26  src/core/RoutingGraph.cpp:101  logic-or       || -> &&                                   ok       KILLED
+  27  src/core/RoutingGraph.cpp:204  min-max        std::min -> std::max                       ok       KILLED
+  28  src/core/RoutingGraph.cpp:192  neg-drop       if (! -> if (                              ok       KILLED
+  29  src/core/RoutingGraph.cpp:280  ret-false      return false -> return true                ok       KILLED
+  30  src/core/RoutingGraph.cpp:173  ret-true       return true -> return false                ok       KILLED
+
+==== final control: tree restored, pristine source still builds and passes ====
+final control: pristine source recompiled, test binary passed
+note: uncommitted paths unrelated to the sweep (not caused by this run):
+?? tests/integration-logs-3a/
+
+==== result ====
+mutation-gate: src/core/RoutingGraph.cpp
+candidates generated : 170
+mutants run          : 30 (seed 0; deterministic stratified sample)
+valid mutants        : 26
+  killed             : 23
+  survived           : 3
+invalid (no build)   : 4
+kill score           : 23/26 = 88.5%  (threshold 80%)
+
+mutant table (build ok => the mutated TU really was recompiled and relinked):
+  #   site                           rule           mutation                                   build    result
+  1   src/core/RoutingGraph.cpp:134  cmp-eq         == -> !=                                   ok       KILLED
+  2   src/core/RoutingGraph.cpp:101  cmp-ge         >= -> <=                                   ok       KILLED
+  3   src/core/RoutingGraph.cpp:159  cmp-lt         < -> >                                     ok       KILLED
+  4   src/core/RoutingGraph.cpp:358  cmp-ne         != -> ==                                   ok       KILLED
+  5   src/core/RoutingGraph.cpp:148  const-neg-one  -1 -> 0                                    ok       KILLED
+  6   src/core/RoutingGraph.cpp:44   const-one      1 -> 0                                     ok       SURVIVED
+  7   src/core/RoutingGraph.cpp:230  const-zero     0 -> 1                                     ok       KILLED
+  8   src/core/RoutingGraph.cpp:354  dec-inc        -- -> ++                                   ok       KILLED
+  9   src/core/RoutingGraph.cpp:339  greater-less   std::greater<int> -> std::less<int>        ok       KILLED
+  10  src/core/RoutingGraph.cpp:330  inc-dec        ++ -> --                                   ok       KILLED
+  11  src/core/RoutingGraph.cpp:133  logic-and      && -> ||                                   no-build INVALID
+  12  src/core/RoutingGraph.cpp:81   logic-or       || -> &&                                   ok       KILLED
+  13  src/core/RoutingGraph.cpp:205  min-max        std::min -> std::max                       ok       KILLED
+  14  src/core/RoutingGraph.cpp:280  neg-drop       if (! -> if (                              ok       KILLED
+  15  src/core/RoutingGraph.cpp:171  ret-false      return false -> return true                ok       KILLED
+  16  src/core/RoutingGraph.cpp:126  ret-true       return true -> return false                ok       KILLED
+  17  src/core/RoutingGraph.cpp:226  stmt-delete    delete: graphElement.setAttribute(QStringLiteral("frames"), static_cast<qulonglong>(m_frames)); ok       SURVIVED
+  18  src/core/RoutingGraph.cpp:233  cmp-eq         == -> !=                                   no-build INVALID
+  19  src/core/RoutingGraph.cpp:165  cmp-ge         >= -> <=                                   ok       KILLED
+  20  src/core/RoutingGraph.cpp:101  cmp-lt         < -> >                                     ok       KILLED
+  21  src/core/RoutingGraph.cpp:197  cmp-ne         != -> ==                                   no-build INVALID
+  22  src/core/RoutingGraph.cpp:50   const-neg-one  -1 -> 0                                    ok       KILLED
+  23  src/core/RoutingGraph.cpp:210  const-zero     0 -> 1                                     ok       KILLED
+  24  src/core/RoutingGraph.cpp:53   inc-dec        ++ -> --                                   ok       SURVIVED
+  25  src/core/RoutingGraph.cpp:112  logic-and      && -> ||                                   no-build INVALID
+  26  src/core/RoutingGraph.cpp:101  logic-or       || -> &&                                   ok       KILLED
+  27  src/core/RoutingGraph.cpp:204  min-max        std::min -> std::max                       ok       KILLED
+  28  src/core/RoutingGraph.cpp:192  neg-drop       if (! -> if (                              ok       KILLED
+  29  src/core/RoutingGraph.cpp:280  ret-false      return false -> return true                ok       KILLED
+  30  src/core/RoutingGraph.cpp:173  ret-true       return true -> return false                ok       KILLED
+
+invalid mutants are excluded from the score; survivors are listed above and
+named in tests/QA-GATES.md Gate 5. Logs: build/mutation-gate/logs/
+PASS: kill score 88.5% >= 80%
+
+================ Gate 6: no upstream behavioural regressions ================
+changed file                                             verdict
+Brewfile                                                 declared divergence -> #609 CI: brew "mda-lv2" so the macOS runners have the LV2 bundle PluginPortsMigrationTest renders by URI (3d87d33ca)
+cmake/apple/CMakeLists.txt                               build/config (allowed)
+cmake/apple/MacDeployQt.cmake                            build/config (allowed)
+cmake/apple/zene.plist.in                                declared divergence -> wave R rename (018d2041f): cmake/apple/lmms.plist.in -> cmake/apple/zene.plist.in -- the macOS bundle plist is renamed to match the renamed bundle and executable. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/CMakeLists.txt                                     build/config (allowed)
+cmake/linux/apprun-hooks/carla-hook.sh                   declared divergence -> wave R rename (018d2041f): the comment describing the LD_PRELOAD target named lmms -> zene, the name the renamed target installs. Comment only.
+cmake/linux/apprun-hooks/jack-hook.sh                    declared divergence -> wave R rename (018d2041f): the AppImage JACK probe ldd'd $APPDIR/usr/bin/lmms; it now probes usr/bin/zene, the file the renamed target installs. Without this the hook would probe a path that no longer exists.
+cmake/linux/apprun-hooks/README.md                       docs (allowed)
+cmake/linux/CMakeLists.txt                               build/config (allowed)
+cmake/linux/icons/128x128@2/apps/zene.png                declared divergence -> wave R rename (018d2041f): cmake/linux/icons/128x128@2/apps/lmms.png -> cmake/linux/icons/128x128@2/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/128x128/apps/zene.png                  declared divergence -> wave R rename (018d2041f): cmake/linux/icons/128x128/apps/lmms.png -> cmake/linux/icons/128x128/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/16x16@2/apps/zene.png                  declared divergence -> wave R rename (018d2041f): cmake/linux/icons/16x16@2/apps/lmms.png -> cmake/linux/icons/16x16@2/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/16x16/apps/zene.png                    declared divergence -> wave R rename (018d2041f): cmake/linux/icons/16x16/apps/lmms.png -> cmake/linux/icons/16x16/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/24x24@2/apps/zene.png                  declared divergence -> wave R rename (018d2041f): cmake/linux/icons/24x24@2/apps/lmms.png -> cmake/linux/icons/24x24@2/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/24x24/apps/zene.png                    declared divergence -> wave R rename (018d2041f): cmake/linux/icons/24x24/apps/lmms.png -> cmake/linux/icons/24x24/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/256x256/apps/zene.png                  declared divergence -> wave R rename (018d2041f): cmake/linux/icons/256x256/apps/lmms.png -> cmake/linux/icons/256x256/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/32x32@2/apps/zene.png                  declared divergence -> wave R rename (018d2041f): cmake/linux/icons/32x32@2/apps/lmms.png -> cmake/linux/icons/32x32@2/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/32x32/apps/zene.png                    declared divergence -> wave R rename (018d2041f): cmake/linux/icons/32x32/apps/lmms.png -> cmake/linux/icons/32x32/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/48x48@2/apps/zene.png                  declared divergence -> wave R rename (018d2041f): cmake/linux/icons/48x48@2/apps/lmms.png -> cmake/linux/icons/48x48@2/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/48x48/apps/zene.png                    declared divergence -> wave R rename (018d2041f): cmake/linux/icons/48x48/apps/lmms.png -> cmake/linux/icons/48x48/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/64x64@2/apps/zene.png                  declared divergence -> wave R rename (018d2041f): cmake/linux/icons/64x64@2/apps/lmms.png -> cmake/linux/icons/64x64@2/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/64x64/apps/zene.png                    declared divergence -> wave R rename (018d2041f): cmake/linux/icons/64x64/apps/lmms.png -> cmake/linux/icons/64x64/apps/zene.png -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/icons/scalable/apps/zene.svg                 declared divergence -> wave R rename (018d2041f): cmake/linux/icons/scalable/apps/lmms.svg -> cmake/linux/icons/scalable/apps/zene.svg -- the application icon is installed under the product's own name, so the LMMS-named icon file is replaced by its Zene Studio copy. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/LinuxDeploy.cmake                            build/config (allowed)
+cmake/linux/lmms                                         declared divergence -> wave R rename (018d2041f): the lmms launcher script is deleted; cmake/linux/zene is its renamed replacement (it execs the renamed binary). The LMMS-named copy must go or the AppImage would install a second launcher pointing at a binary that no longer exists.
+cmake/linux/zene                                         declared divergence -> wave R rename (018d2041f): the launcher script renamed from cmake/linux/lmms -- it execs the renamed binary (zene), so the AppImage ships one correctly-named launcher.
+cmake/linux/zene.desktop                                 declared divergence -> wave R rename (018d2041f): cmake/linux/lmms.desktop -> cmake/linux/zene.desktop -- the desktop entry is renamed so the installed launcher presents itself as Zene Studio. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/zene.spec.in                                 declared divergence -> wave R rename (018d2041f): cmake/linux/lmms.spec.in -> cmake/linux/zene.spec.in -- the RPM spec is renamed so the source and binary package names carry the product name. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/linux/zene.xml                                     declared divergence -> wave R rename (018d2041f): cmake/linux/lmms.xml -> cmake/linux/zene.xml -- the AppStream/AppData metadata file is renamed so software centres list Zene Studio. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+CMakeLists.txt                                           build/config (allowed)
+cmake/modules/BashCompletion.cmake                       build/config (allowed)
+cmake/modules/BuildPlugin.cmake                          build/config (allowed)
+cmake/modules/DetectMachine.cmake                        build/config (allowed)
+cmake/modules/InstallHelpers.cmake                       build/config (allowed)
+cmake/modules/VersionInfo.cmake                          build/config (allowed)
+cmake/modules/Vst3Sdk.cmake                              build/config (allowed)
+cmake/nsis/CMakeLists.txt                                build/config (allowed)
+cmake/nsis/zene.exe.manifest                             declared divergence -> wave R rename (018d2041f): cmake/nsis/lmms.exe.manifest -> cmake/nsis/zene.exe.manifest -- the Windows installer resource/manifest is renamed so the installed program and its shortcuts carry the product name. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/nsis/zene.rc.in                                    declared divergence -> wave R rename (018d2041f): cmake/nsis/lmms.rc.in -> cmake/nsis/zene.rc.in -- the Windows installer resource/manifest is renamed so the installed program and its shortcuts carry the product name. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+cmake/nsis/zene.VisualElementsManifest.xml               declared divergence -> wave R rename (018d2041f): cmake/nsis/lmms.VisualElementsManifest.xml -> cmake/nsis/zene.VisualElementsManifest.xml -- the Windows installer resource/manifest is renamed so the installed program and its shortcuts carry the product name. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+CONTRIBUTING.md                                          docs (allowed)
+doc/bash-completion/CMakeLists.txt                       build/config (allowed)
+doc/bash-completion/zene                                 declared divergence -> wave R rename (018d2041f): doc/bash-completion/lmms -> doc/bash-completion/zene -- the bash completion file is renamed so it completes the renamed binary. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+doc/CMakeLists.txt                                       build/config (allowed)
+doc/Doxyfile.in                                          declared divergence -> wave R rename (018d2041f): Doxygen PROJECT_NAME = LMMS -> Zene Studio, so generated API docs carry the product name.
+docs/AUTOMATION-MODES.md                                 docs (allowed)
+docs/AUTOSAVE-RECOVERY.md                                docs (allowed)
+docs/CLIP-CAPTURE-DESIGN.md                              docs (allowed)
+docs/CLIP-SLICE0.md                                      docs (allowed)
+docs/CONVENTIONS.md                                      docs (allowed)
+docs/CRASH-REPORTER.md                                   docs (allowed)
+docs/DISARMED-AUDIT.md                                   docs (allowed)
+docs/GATE-HYGIENE.md                                     docs (allowed)
+docs/INSTRUMENT-HOSTING-SPEC.md                          docs (allowed)
+docs/INTEGRATION-MERGES-2.md                             docs (allowed)
+docs/INTEGRATION-MERGES.md                               docs (allowed)
+docs/INTEGRATION-VERIFY.md                               docs (allowed)
+docs/KNOWN-LIMITATIONS.md                                docs (allowed)
+docs/LOCAL-CI.md                                         docs (allowed)
+docs/LUA-API-STABILISATION.md                            docs (allowed)
+docs/LUA-COMPATIBILITY-POLICY.md                         docs (allowed)
+docs/LUA-PACKAGE-FORMAT.md                               docs (allowed)
+docs/LUA-SCRIPT-DEVICES-DESIGN.md                        docs (allowed)
+docs/LUFS-METER.md                                       docs (allowed)
+docs/LUFS-WIRING.md                                      docs (allowed)
+docs/MIDI-DEPTH.md                                       docs (allowed)
+docs/MIDI-LEARN.md                                       docs (allowed)
+docs/MIDI-LEARN-RACE.md                                  docs (allowed)
+docs/MMPZ-GIT-DEPTH.md                                   docs (allowed)
+DOCS-NAMING.md                                           docs (allowed)
+docs/OOP-HOSTING.md                                      docs (allowed)
+docs/phase-f/CRITERIA-TO-EVIDENCE.md                     docs (allowed)
+docs/phase-f/PER-BRANCH-REVIEWABILITY.md                 docs (allowed)
+docs/phase-f/RELEASE-NOTES-mixer-v2.md                   docs (allowed)
+docs/PIPELINE-HARDENING.md                               docs (allowed)
+docs/PLUGIN-HOSTING-IN-RELEASE.md                        docs (allowed)
+docs/PLUGIN-SCAN-CACHE.md                                docs (allowed)
+docs/PLUGIN-SCAN-CACHE-RUNS.md                           docs (allowed)
+docs/PR594-REBASE.md                                     docs (allowed)
+docs/RELEASE-NOTES-v0.1.0-alpha.md                       docs (allowed)
+docs/RELEASING.md                                        docs (allowed)
+docs/STATUS.md                                           docs (allowed)
+docs/STEM-EXPORT.md                                      docs (allowed)
+doc/STEM-SPLIT.md                                        docs (allowed)
+docs/VERIFICATION-DEBT-FIXES.md                          docs (allowed)
+docs/VST3-INSTRUMENT-FIXTURE.md                          docs (allowed)
+docs/WAVE-R-RENAME.md                                    docs (allowed)
+doc/zene.1                                               declared divergence -> wave R rename (018d2041f): doc/lmms.1 -> doc/zene.1 -- the man page is renamed so 'man zene' documents this product. Upstream's LMMS-named path is retired deliberately (a rebase onto upstream must not silently restore it).
+.github/ISSUE_TEMPLATE/alpha-feedback.yml                CI config (allowed, non-runtime)
+.github/ISSUE_TEMPLATE/bug_report.yml                    CI config (allowed, non-runtime)
+.github/ISSUE_TEMPLATE/feature_request.yml               CI config (allowed, non-runtime)
+.github/workflows/build.yml                              CI config (allowed, non-runtime)
+.github/workflows/checks.yml                             CI config (allowed, non-runtime)
+.github/workflows/deps-ubuntu-24.04-gcc.txt              CI config (allowed, non-runtime)
+.github/workflows/provision-plugin-hosting-deps.sh       CI config (allowed, non-runtime)
+.github/workflows/quality-gates.yml                      CI config (allowed, non-runtime)
+.gitignore                                               build/config (allowed)
+include/AudioBuffer.h                                    declared divergence -> #608 memory correctness: the channel access buffer (pointer table) is process-local, never allocated from a shared memory resource (746f6bd0e)
+include/AudioBusHandle.h                                 declared divergence -> #605 PDC: latency-reporting surface read by the mixer's compensation graph
+include/AudioEngine.h                                    declared divergence -> #605 PDC: latency accessor surface used by the compensation graph
+include/AudioPlugin.h                                    fork-NEW (allowed)
+include/AutomatableModel.h                               declared divergence -> post-alpha/automation-modes: additive Read/Touch/Latch/Write state, touch-gesture timeout and trim offset on the model; all state is relaxed atomics so the render thread never locks on a mode change (new API in its own banner-marked block, no existing member or method touched)
+include/Clip.h                                           declared divergence -> #611 Slice 0: freezes the clip->source mapping seam (sourceFrameAt/timelinePosAt) for #597; the base implementation is the tick identity, so every inherited clip behaves as before
+include/CrashReporter.h                                  fork-NEW (allowed)
+include/EffectChain.h                                    declared divergence -> #605 PDC: cached chain latency read by the mixer's PDC graph
+include/Effect.h                                         declared divergence -> #605 PDC: latency accessor on the effect interface
+include/embed.h                                          declared divergence -> plugin-scan: PixmapLoader::xpm() accessor, so a cached descriptor's logo is only rebuilt when it is a pixmap name and not a compiled-in XPM (023770f7b)
+include/ExportProjectDialog.h                            declared divergence -> #618 loudness wiring: the export dialog's "Loudness report (EBU R128)" checkbox and the result label that shows the report before the dialog closes
+include/LatencyCompensation.h                            fork-NEW (allowed)
+include/LoudnessReport.h                                 fork-NEW (allowed)
+include/LufsMeter.h                                      fork-NEW (allowed)
+include/MainWindow.h                                     declared divergence -> midi-learn feature (5d6ccdf1f): the Edit > MIDI Learn action's two slots and its QAction member; the slots only mirror MidiLearnGui's armed state; plugin-scan: updateToolsMenu() slot + populated flag, for building the Tools menu on first open instead of at start-up (023770f7b)
+include/MidiController.h                                 declared divergence -> midi-learn feature (5d6ccdf1f): public MidiPort accessor so a learn can configure a fresh binding and read it back (channel, controller number, subscribed ports)
+include/MidiLearnGui.h                                   fork-NEW (allowed)
+include/MidiLearn.h                                      fork-NEW (allowed)
+include/Mixer.h                                          declared divergence -> #605 PDC: alignment points, per-edge compensation delays, channel latency API (9e12a68f5, 48fed8644)
+include/Note.h                                           declared divergence -> post-alpha/midi-depth: note probability and velocity jitter (prob/veljit) on the note model, per the roadmap-gap register's shortest honest version of General MIDI depth
+include/NoteRandom.h                                     fork-NEW (allowed)
+include/NoteTransform.h                                  fork-NEW (allowed)
+include/OutputSettings.h                                 declared divergence -> #618 loudness wiring: the "produce an EBU R128 loudness report" request carried by the render's output settings; defaults to false, so every pre-existing caller renders exactly as before
+include/PluginBrowser.h                                  declared divergence -> plugin-scan: showEvent() declaration, for populating the plugin tree on first show instead of at construction (023770f7b)
+include/PluginFactory.h                                  declared divergence -> plugin-scan: scan-cache/quarantine surface (ScanStats, scanCache(), scanReport()), a declared destructor for the host-owned cached-descriptor store, and the LMMS_TESTING instanceExists() hook (023770f7b)
+include/PluginScanCache.h                                fork-NEW (allowed)
+include/ProjectRecovery.h                                fork-NEW (allowed)
+include/ProjectRenderer.h                                declared divergence -> #618 loudness wiring: optional LoudnessReport on the render path (unique_ptr member + report accessors + loudnessReportReady signal); null and inert unless OutputSettings::loudnessReport()
+include/RecordRingBuffer.h                               fork-NEW (allowed)
+include/RemotePluginAudioPorts.h                         fork-NEW (allowed)
+include/RemotePluginBase.h                               declared divergence -> #589 planar-ports migration: single-channel count ids retired in place (kept numeric to refuse a stale pre-#589 client loudly)
+include/RemotePluginClient.h                             declared divergence -> #589 planar-ports migration: client process() over the host's planar shared block (const float* / float*)
+include/RemotePlugin.h                                   declared divergence -> #589 planar-ports migration: sole ports-taking ctor, no-arg process(), planar updateAudioBuffer() layout contract
+include/RenderManager.h                                  declared divergence -> stem export (post-alpha/stem-export): StemExportOptions + exportStems()/stemFileName() added beside renderProject()/renderTracks(), whose behaviour is unchanged; #618 loudness wiring: forwards the finished report out of the renderer so the export dialog can show it; empty QString when no report was requested
+include/SampleClip.h                                     declared divergence -> #611 Slice 0: the authored SampleWindow member and its accessors; SampleClip's own header, no other clip type affected
+include/SamplePlayHandle.h                               declared divergence -> #611 Slice 0: the window snapshot member and the clip constructors that carry it; the preview/metronome constructors are unchanged
+include/SampleWindow.h                                   fork-NEW (allowed)
+include/ScriptApiVersion.h                               fork-NEW (allowed)
+include/ScriptConsole.h                                  fork-NEW (allowed)
+include/ScriptEngine.h                                   fork-NEW (allowed)
+include/ScriptLuaQtTypes.h                               fork-NEW (allowed)
+include/ScriptPackage.h                                  fork-NEW (allowed)
+include/SessionModel.h                                   fork-NEW (allowed)
+include/Song.h                                           declared divergence -> #594 Session View: gated WANT_SESSION_VIEW hook (SessionModel member + accessor behind #ifdef LMMS_HAVE_SESSION_VIEW); no API or behaviour change when the flag is off. Stem export (post-alpha/stem-export): setExportLengthOverrideBars()/setExportTailBars() accessors whose defaults (0/1) reproduce the historical export length exactly; post-alpha/midi-depth: midiSeed()/setMidiSeed() and m_midiSeed - the project seed the note probability and velocity jitter rolls use
+include/StemSeparation/ExternalProcessStemSeparator.h    fork-NEW (allowed)
+INSTALL.txt                                              declared divergence -> wave R rename (018d2041f): the build instructions said the sources are built into 'LMMS' -> 'Zene Studio'. Documentation text only.
+plugins/GigPlayer/CMakeLists.txt                         build/config (allowed)
+plugins/MidiImport/CMakeLists.txt                        build/config (allowed)
+plugins/NeuralAmp/CMakeLists.txt                         build/config (allowed)
+plugins/NeuralAmp/tests/CMakeLists.txt                   build/config (allowed)
+plugins/Oscilloscope/OscilloscopeGraph.cpp               declared divergence -> compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+plugins/RnnoiseDenoiser/CMakeLists.txt                   build/config (allowed)
+plugins/Vestige/Vestige.cpp                              declared divergence -> #589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin
+plugins/Vestige/Vestige.h                                declared divergence -> #589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports
+plugins/VstBase/RemoteVstPlugin.cpp                      declared divergence -> #589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize()
+plugins/VstBase/VstPlugin.cpp                            declared divergence -> #589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings
+plugins/VstBase/VstPlugin.h                              declared divergence -> #589 planar-ports migration: VstPlugin takes the ports controller instead of configuring split channels
+plugins/VstEffect/VstEffect.cpp                          declared divergence -> #589 planar-ports migration: no-arg process(), planar wet/dry mixing, lock moved to processLock/processUnlock
+plugins/VstEffect/VstEffect.h                            declared divergence -> #589 planar-ports migration: VstEffect is an AudioPlugin with dynamic planar ports
+plugins/WasmEffect/WasmEffect.cpp                        fork-NEW (allowed)
+plugins/WasmEffect/WasmEffect.h                          fork-NEW (allowed)
+plugins/Xpressive/CMakeLists.txt                         build/config (allowed)
+plugins/ZynAddSubFx/LocalZynAddSubFx.cpp                 declared divergence -> #589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
+plugins/ZynAddSubFx/LocalZynAddSubFx.h                   declared divergence -> #589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
+plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp                declared divergence -> #589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
+plugins/ZynAddSubFx/ZynAddSubFx.cpp                      declared divergence -> #589 planar-ports migration: play() -> processImpl(); setBufferType()/activate() on the local path; ports controller passed to the remote plugin; post-alpha/oop-hosting: the persisted toggle selects the client process or the in-process synth, and the Zyn window is only requested when the user asked for it
+plugins/ZynAddSubFx/ZynAddSubFx.h                        declared divergence -> #589 planar-ports migration: instrument is a ConfigurableAudioPorts AudioPlugin (remote/local buffer switch); post-alpha/oop-hosting: per-instance `separateprocess` BoolModel + hostingState() for the run-in-a-separate-process toggle
+README.md                                                docs (allowed)
+SECURITY.md                                              docs (allowed)
+src/CMakeLists.txt                                       build/config (allowed)
+src/core/AudioBuffer.cpp                                 declared divergence -> #608 memory correctness: access buffer always from the default resource; allocationSize() no longer reserves it in the shared region (746f6bd0e)
+src/core/AudioBusHandle.cpp                              declared divergence -> #605 PDC: delay each track output to its alignment point (9e12a68f5)
+src/core/AudioPortsModel.cpp                             fork-NEW (allowed)
+src/core/AutomatableModel.cpp                            declared divergence -> post-alpha/automation-modes: the mode state machine, the transport run token, the monotone clock and the trim offset; appended in its own banner-marked block at the end of the file
+src/core/CMakeLists.txt                                  build/config (allowed)
+src/core/ConfigManager.cpp                               declared divergence -> wave R rename (018d2041f): the bundled data search path moved from share/lmms/ to share/zene/, and the build-tree discovery moved from the lmms_SOURCE_DIR/lmms_BINARY_DIR CMake cache entries to the zene_ spelling the renamed CMake project writes (the old lmms_ entry is still accepted, so an existing build tree keeps working).
+src/core/CrashReporter.cpp                               fork-NEW (allowed)
+src/core/EffectChain.cpp                                 declared divergence -> #605 PDC: refresh cached chain latency when the chain changes (9e12a68f5, 48fed8644)
+src/core/Effect.cpp                                      declared divergence -> #605 PDC: propagate latency changes into the owning chain's accounting (9e12a68f5)
+src/core/ExternalProcessStemSeparator.cpp                fork-NEW (allowed)
+src/core/ImportFilter.cpp                                declared divergence -> wave R rename (018d2041f): the 'open this with' hint shown when no import filter matches named LMMS -> Zene Studio. User-visible string only.
+src/core/LatencyCompensation.cpp                         fork-NEW (allowed)
+src/core/LoudnessReport.cpp                              fork-NEW (allowed)
+src/core/LufsMeter.cpp                                   fork-NEW (allowed)
+src/core/main.cpp                                        declared divergence -> crash reporter: install()/beginSession()/endSession() around the process lifetime and setProjectPath() on every project load (start-up, render, --run-script, clean exit), plus the one-off pending-report offer (QMessageBox in GUI mode, stderr when core-only) and the Song::projectFileNameChanged follow (98a706dbe); Lua console: the --run-script action turns ScriptConsole off because stdout is that path's contract, otherwise every captured line would be printed twice by the new console stream (task #613); wave R rename (018d2041f): every user-visible name in main() moves to the product -- the version banner, the --help usage block ('Usage: zene', 'Start Zene Studio'), the root warning and the single-instance messages.; stem export (post-alpha/stem-export): headless `exportstems <project> -o <dir> [--tail-bars N]` action beside `render`/`rendertracks`; #618 loudness wiring: the CLI's --loudness-report option for `lmms render`, so a headless render can ask for the report (and its sidecar) as well; autosave recovery: the startup recovery prompt is gated by ProjectRecovery::decideRecovery() so a stale or other-project recover.mmp is not offered, and the dialog names the project it belongs to; regression test tests/src/core/ProjectRecoveryTest.cpp (post-alpha/autosave)
+src/core/MidiLearn.cpp                                   fork-NEW (allowed)
+src/core/midi/MidiAlsaSeq.cpp                            declared divergence -> midi-learn feature (5d6ccdf1f): SND_SEQ_EVENT_CONTROLLER feeds MidiLearn::handleMidiEvent() before the port mask, so a control can be bound while nothing listens on the channel; post-alpha/midi-race moved the bind itself to the GUI thread, leaving this site a lock-free record
+src/core/midi/MidiClient.cpp                             declared divergence -> midi-learn feature (5d6ccdf1f): MidiClientRaw::processParsedEvent() feeds MidiLearn::handleMidiEvent() before the ports; the GUI-thread deferral (post-alpha/midi-race) lives inside MidiLearn, so this call site is unchanged by the fix
+src/core/Mixer.cpp                                       declared divergence -> #605 PDC: per-period latency recompute and summing-point alignment (9e12a68f5, 48fed8644)
+src/core/Note.cpp                                        declared divergence -> post-alpha/midi-depth: serialise/parse prob and veljit as optional attributes written only when set, and carry both through the copy constructor and operator=
+src/core/NoteRandom.cpp                                  fork-NEW (allowed)
+src/core/NoteTransform.cpp                               fork-NEW (allowed)
+src/core/PluginFactory.cpp                               declared divergence -> plugin-scan: fingerprint-keyed scan cache, quarantine filtering, and cache-served (lazily loaded) plugin entries in discoverPlugins() (023770f7b); wave R rename (018d2041f): the installed plugin search path ../lib/lmms -> ../lib/zene (it follows the renamed install location), the path comments in the same function, and the 'LMMS plugin %1 ...' warning string -> 'Zene Studio plugin %1 ...'.
+src/core/PluginScanCache.cpp                             fork-NEW (allowed)
+src/core/ProjectRecovery.cpp                             fork-NEW (allowed)
+src/core/ProjectRenderer.cpp                             declared divergence -> #618 loudness wiring: the passive tap (measure each rendered block immediately before writeBuffer()), the sidecar write and the console line; the audio path is untouched and the tap does not exist unless the render asked for a report
+src/core/RemotePlugin.cpp                                declared divergence -> #589 planar-ports migration: ports allocate the shared block; counts owned by the ports model; removed count ids refused loudly
+src/core/RenderManager.cpp                               declared divergence -> stem export (post-alpha/stem-export): exportStems() renders every stem to the whole-project length with a configurable tail and numbers the files in track order; renderProject()/renderTracks() unchanged (held by StemExportTest); #618 loudness wiring: keep the report alive past the renderer (which is destroyed on finish()) so the export dialog can show it
+src/core/SampleClip.cpp                                  declared divergence -> #611 Slices 0+1: the authored window (setter, mapping, window-based sampleLength) and its serialisation (srcin/srcout, written only for a trimmed clip); the legacy frame setters author the window instead of writing Sample directly, which is identical for an untrimmed clip
+src/core/SamplePlayHandle.cpp                            declared divergence -> #611 Slice 0: the handle snapshots its window at construction and totalFrames() reads the snapshot, not the sample's live frame fields (SampleTrack.cpp:126-127 used to move those under it)
+src/core/ScriptApiVersion.cpp                            fork-NEW (allowed)
+src/core/ScriptBindings.cpp                              fork-NEW (allowed)
+src/core/ScriptCommandQueue.cpp                          fork-NEW (allowed)
+src/core/ScriptConsole.cpp                               fork-NEW (allowed)
+src/core/ScriptEngine.cpp                                fork-NEW (allowed)
+src/core/ScriptPackage.cpp                               fork-NEW (allowed)
+src/core/SessionClip.cpp                                 fork-NEW (allowed)
+src/core/SessionModel.cpp                                fork-NEW (allowed)
+src/core/SessionModelPrivate.h                           fork-NEW (allowed)
+src/core/Song.cpp                                        declared divergence -> #594 Session View: gated <session> save/load branches behind #ifdef LMMS_HAVE_SESSION_VIEW; project IO is byte-identical when the flag is off (held by SessionModelTest::preSessionProjectLoadsAndSavesUnchanged). Stem export (post-alpha/stem-export): startExport() honours the render-length override and the configurable tail, both of which default to the historical length (held by StemExportTest::wholeProjectRenderIsUnchangedByAStemExport); post-alpha/automation-modes: publish the transport run once per rendered period (processNextBuffer), let a Touch/Latch/Write control record its moves (processAutomations), and apply the trim offset where the automation is read out; post-alpha/midi-depth: read and write the midiseed header attribute (only when non-zero) and reset it for a new project
+src/gui/CMakeLists.txt                                   build/config (allowed)
+src/gui/editors/PianoRoll.cpp                            declared divergence -> compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
+src/gui/GuiApplication.cpp                               declared divergence -> wave R rename (018d2041f): the first-run working-directory prompt, its title and the surrounding comments named LMMS -> Zene Studio. Strings and comments only; the directory itself is unchanged.
+src/gui/LmmsStyle.cpp                                    declared divergence -> wave R rename (018d2041f): the theme-reload status message named LMMS -> Zene Studio. User-visible string only.
+src/gui/MainWindow.cpp                                   declared divergence -> compile-only CI fixes for Qt6/-Werror: missing <QDebug> (7cd9da2b1), QMenu::addAction deprecation (7f08809e4); plugin-scan: build the Tools menu on first open, so start-up never scans plugins (023770f7b); Lua console: runScript stops printing the captured log a second time, ScriptConsole streams it onto Qt's logging path (task #613); wave R rename (018d2041f): the window title and the audio-device failure message name Zene Studio, and the stale wiki link (lmms.sf.net/wiki) is replaced by the product's documentation URL.; plus the Edit > MIDI Learn menu action and its two slots, which handle only the action's tick and read the armed state from MidiLearnGui (5d6ccdf1f, post-alpha/midi-race); autosave identity sidecar written beside recover.mmp and its removal in sessionCleanup (post-alpha/autosave)
+src/gui/MidiLearnGui.cpp                                 fork-NEW (allowed)
+src/gui/modals/about_dialog.ui                           declared divergence -> wave R rename (018d2041f): the About box title, product line, tagline and wiki link move to Zene Studio (the link points at the product repo). UI strings only.
+src/gui/modals/ExportProjectDialog.cpp                   declared divergence -> #618 loudness wiring: the checkbox that asks for the report and the result label that shows the measured values when the render finishes (the dialog stays open instead of closing on a report)
+src/gui/modals/SetupDialog.cpp                           declared divergence -> wave R rename (018d2041f): the Setup dialog's working-directory row and its file-picker caption named LMMS -> Zene Studio. User-visible strings only.
+src/gui/PinConnector.cpp                                 fork-NEW (allowed)
+src/gui/PluginBrowser.cpp                                declared divergence -> plugin-scan: populate the plugin tree on first show, so start-up never scans plugins (023770f7b)
+src/gui/widgets/Fader.cpp                                declared divergence -> post-alpha/automation-modes: the mixer fader opens, refreshes and closes a touch gesture so Touch/Latch are reachable from the control a mixing engineer actually rides
+src/lmmsconfig.h.in                                      declared divergence -> #594 Session View: #cmakedefine LMMS_HAVE_SESSION_VIEW plumbing for the WANT_SESSION_VIEW option; build configuration only, no runtime behaviour when the option is off (default)
+src/tracks/InstrumentTrack.cpp                           declared divergence -> post-alpha/midi-depth: skip a note that loses the seeded probability roll, and apply the seeded velocity jitter to the NotePlayHandle, at scheduling time in play()
+src/tracks/SampleTrack.cpp                               declared divergence -> #611 Slice 0: play() no longer writes the clip's window; the pass derives the window from the transport position and hands it to the play handle as a snapshot (I1)
+tests/advertised-features.tsv                            tests (allowed)
+tests/all-sources.txt                                    tests (allowed)
+tests/automation-modes-render-check.sh                   tests (allowed)
+tests/CMakeLists.txt                                     tests (allowed)
+tests/complexity-baseline-all.tsv                        tests (allowed)
+tests/complexity-baseline-tools.tsv                      tests (allowed)
+tests/complexity-baseline.tsv                            tests (allowed)
+tests/complexity-gate.sh                                 tests (allowed)
+tests/coverage-baseline-all.tsv                          tests (allowed)
+tests/coverage-baseline.tsv                              tests (allowed)
+tests/coverage-entry-floor-exempt.txt                    tests (allowed)
+tests/coverage-gate.sh                                   tests (allowed)
+tests/data/clip-window/render-proof.sh                   tests (allowed)
+tests/data/loudness/bs1770_reference.py                  tests (allowed)
+tests/data/loudness/make-fixtures.py                     tests (allowed)
+tests/data/loudness/passivity-check.py                   tests (allowed)
+tests/data/loudness/render-evidence.sh                   tests (allowed)
+tests/data/midi-depth/baseline.mmp                       tests (allowed)
+tests/data/midi-depth/gen-fixtures.py                    tests (allowed)
+tests/data/midi-depth/prob-all-one.mmp                   tests (allowed)
+tests/data/midi-depth/prob-seed1.mmp                     tests (allowed)
+tests/data/midi-depth/prob-seed1-vol.mmp                 tests (allowed)
+tests/data/midi-depth/prob-seed2.mmp                     tests (allowed)
+tests/data/midi-depth/render-proof.py                    tests (allowed)
+tests/data/midi-depth/veljit-seed1.mmp                   tests (allowed)
+tests/data/midi-depth/veljit-seed2.mmp                   tests (allowed)
+tests/data/oop-hosting/compare-renders.py                tests (allowed)
+tests/data/oop-hosting/kill-loop-experiment.sh           tests (allowed)
+tests/data/oop-hosting/observe-render.sh                 tests (allowed)
+tests/data/oop-hosting/README.md                         tests (allowed)
+tests/data/oop-hosting/zyn-separate-process-off.mmp      tests (allowed)
+tests/data/oop-hosting/zyn-separate-process-on.mmp       tests (allowed)
+tests/data/vst3-test-instrument/CMakeLists.txt           tests (allowed)
+tests/data/vst3-test-instrument/vst3-test-instrument.cpp tests (allowed)
+tests/duplication-gate.sh                                tests (allowed)
+tests/file-length-baseline-all.tsv                       tests (allowed)
+tests/file-length-baseline-tools.tsv                     tests (allowed)
+tests/file-length-baseline.tsv                           tests (allowed)
+tests/file-length-exempt.txt                             tests (allowed)
+tests/file-length-gate.sh                                tests (allowed)
+tests/fork-sources-gate.sh                               tests (allowed)
+tests/fork-sources.txt                                   tests (allowed)
+tests/gate-base.txt                                      tests (allowed)
+tests/gate-hygiene-logs/after-build.log                  tests (allowed)
+tests/gate-hygiene-logs/after-build-two-tests.log        tests (allowed)
+tests/gate-hygiene-logs/after/complexity-all.log         tests (allowed)
+tests/gate-hygiene-logs/after/complexity-fork.log        tests (allowed)
+tests/gate-hygiene-logs/after/complexity-tools.log       tests (allowed)
+tests/gate-hygiene-logs/after-configure.log              tests (allowed)
+tests/gate-hygiene-logs/after-ctest.log                  tests (allowed)
+tests/gate-hygiene-logs/after/duplication-all.log        tests (allowed)
+tests/gate-hygiene-logs/after/duplication-fork.log       tests (allowed)
+tests/gate-hygiene-logs/after/duplication-tools.log      tests (allowed)
+tests/gate-hygiene-logs/after/EXIT-CODES.txt             tests (allowed)
+tests/gate-hygiene-logs/after/file-length-all.log        tests (allowed)
+tests/gate-hygiene-logs/after/file-length-fork.log       tests (allowed)
+tests/gate-hygiene-logs/after/file-length-tools.log      tests (allowed)
+tests/gate-hygiene-logs/after/fork-sources.log           tests (allowed)
+tests/gate-hygiene-logs/after-mmpz-pytest-renderer-present.log tests (allowed)
+tests/gate-hygiene-logs/after-mmpz-unittest-renderer-present.log tests (allowed)
+tests/gate-hygiene-logs/after/no-tautology.log           tests (allowed)
+tests/gate-hygiene-logs/after-orphan-MixerRoutingBackwardCompatTest.log tests (allowed)
+tests/gate-hygiene-logs/after-pdcmixertest-flake.log     tests (allowed)
+tests/gate-hygiene-logs/after-reconfigure.log            tests (allowed)
+tests/gate-hygiene-logs/after/run-all-gates.log          tests (allowed)
+tests/gate-hygiene-logs/after/run-all-gates-whole-tree.log tests (allowed)
+tests/gate-hygiene-logs/after/upstream-divergence.log    tests (allowed)
+tests/gate-hygiene-logs/before/complexity-all.log        tests (allowed)
+tests/gate-hygiene-logs/before/complexity-fork.log       tests (allowed)
+tests/gate-hygiene-logs/before/duplication-all.log       tests (allowed)
+tests/gate-hygiene-logs/before/duplication-fork.log      tests (allowed)
+tests/gate-hygiene-logs/before/file-length-all.log       tests (allowed)
+tests/gate-hygiene-logs/before/file-length-fork.log      tests (allowed)
+tests/gate-hygiene-logs/before/fork-sources.log          tests (allowed)
+tests/gate-hygiene-logs/before/local-ci.log              tests (allowed)
+tests/gate-hygiene-logs/before/no-tautology.log          tests (allowed)
+tests/gate-hygiene-logs/before/upstream-divergence.log   tests (allowed)
+tests/gate-hygiene-logs/pre-reanchor/complexity-all.log  tests (allowed)
+tests/gate-hygiene-logs/pre-reanchor/file-length-all.log tests (allowed)
+tests/gate-hygiene-logs/pre-reanchor/file-length-tools.log tests (allowed)
+tests/gate-hygiene-logs/reanchor/complexity-all-reanchor.log tests (allowed)
+tests/gate-hygiene-logs/reanchor/file-length-all-reanchor.log tests (allowed)
+tests/gate-hygiene-logs/reanchor/file-length-tools-reanchor.log tests (allowed)
+tests/gate-hygiene-logs/reanchor/per-file-all.log        tests (allowed)
+tests/mutation-gate.sh                                   tests (allowed)
+tests/no-tautology-gate.sh                               tests (allowed)
+tests/no-upstream-regression-gate.sh                     tests (allowed)
+tests/QA-GATES.md                                        tests (allowed)
+tests/reference/plugin_export.h                          tests (allowed)
+tests/release-honesty-gate.sh                            tests (allowed)
+tests/run-all-gates.sh                                   tests (allowed)
+tests/run-coverage.sh                                    tests (allowed)
+tests/scripted/check-namespace                           tests (allowed)
+tests/src/core/AudioBufferTest.cpp                       tests (allowed)
+tests/src/core/AudioBusTest.cpp                          tests (allowed)
+tests/src/core/AudioPortsModelTest.cpp                   tests (allowed)
+tests/src/core/AutomationModesTest.cpp                   tests (allowed)
+tests/src/core/ClipSerialisationTest.cpp                 tests (allowed)
+tests/src/core/CrashReporterTest.cpp                     tests (allowed)
+tests/src/core/LoudnessReportTest.cpp                    tests (allowed)
+tests/src/core/LufsMeterTest.cpp                         tests (allowed)
+tests/src/core/MidiLearnTest.cpp                         tests (allowed)
+tests/src/core/MidiLearnThreadTest.cpp                   tests (allowed)
+tests/src/core/MidiProbabilityPersistenceTest.cpp        tests (allowed)
+tests/src/core/MultiTrackRecorderTest.cpp                tests (allowed)
+tests/src/core/NoteRandomTest.cpp                        tests (allowed)
+tests/src/core/NoteTransformTest.cpp                     tests (allowed)
+tests/src/core/PdcMixerTest.cpp                          tests (allowed)
+tests/src/core/PhaseDMixerTestSupport.h                  tests (allowed)
+tests/src/core/PluginAudioPortsTest.cpp                  tests (allowed)
+tests/src/core/PluginScanCacheTest.cpp                   tests (allowed)
+tests/src/core/ProjectRecoveryTest.cpp                   tests (allowed)
+tests/src/core/ProjectVersionTest.cpp                    tests (allowed)
+tests/src/core/RemotePluginAudioPortsTest.cpp            tests (allowed)
+tests/src/core/RemotePluginClientE2ETest.cpp             tests (allowed)
+tests/src/core/RoutingGraphTest.cpp                      tests (allowed)
+tests/src/core/ScriptBindingsTest.cpp                    tests (allowed)
+tests/src/core/ScriptEngineTest.cpp                      tests (allowed)
+tests/src/core/ScriptStabilisationTest.cpp               tests (allowed)
+tests/src/core/SessionModelTest.cpp                      tests (allowed)
+tests/src/core/StemExportTest.cpp                        tests (allowed)
+tests/src/core/StemExportTestSupport.h                   tests (allowed)
+tests/src/core/TwoTrackRecordingHarness.cpp              tests (allowed)
+tests/src/gui/MidiLearnGuiTest.cpp                       tests (allowed)
+tests/src/plugins/AudioPluginTest.cpp                    tests (allowed)
+tests/src/plugins/ClapEffectIntegrationTest.cpp          tests (allowed)
+tests/src/plugins/FakeRemotePluginClient.cpp             tests (allowed)
+tests/src/plugins/PluginPortsHarness.h                   tests (allowed)
+tests/src/plugins/PluginPortsMigrationReference.cpp      tests (allowed)
+tests/src/plugins/PluginPortsMigrationTest.cpp           tests (allowed)
+tests/src/plugins/SyntheticAudioPlugin.cpp               tests (allowed)
+tests/src/plugins/Vst3InstrumentFixtureProbe.cpp         tests (allowed)
+tests/src/plugins/ZynSeparateProcessTest.cpp             tests (allowed)
+tests/src/tracks/SampleClipWindowTest.cpp                tests (allowed)
+tests/src/wasm/WasmSandboxTest.cpp                       tests (allowed)
+tests/test-package-upload-guard.sh                       tests (allowed)
+tests/test-verification-debt.sh                          tests (allowed)
+tests/tools-sources.txt                                  tests (allowed)
+tests/upstream-modifications.txt                         tests (allowed)
+tools/local-ci.sh                                        fork-NEW (allowed)
+tools/mmpz-git/demo_check.py                             fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+tools/mmpz-git/demo_edits.py                             fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+tools/mmpz-git/depth-demo.sh                             fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+tools/mmpz-git/mmpz_git.py                               fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+tools/mmpz-git/render-recipe.sh                          fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+tools/mmpz-git/run-demo.sh                               fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+tools/mmpz-git/tests/test_mmpz_git.py                    fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+tools/stem-export-demo.py                                fork tooling (allowed: tools/ is fork-authored, see tests/tools-sources.txt)
+vcpkg.json                                               declared divergence -> wave R rename (018d2041f): the vcpkg manifest's "name" field lmms -> zene (the manifest's product identity, not a dependency).
+.yamllint                                                declared divergence -> wave R rename (018d2041f): the inline comment on the line-length rule still read 'be conforming to LMMS coding rules' -> 'Zene Studio coding rules'. Comment only; no rule, value or threshold changed.
+
+PASS: every change to upstream-inherited code since 01148947ea4d8bdb05c237942758d61acc867223 is declared
+      (100 changed path(s) declared; the ledger holds 124 entries)
+
+================ Gate 7: per-file length (<=500 ratchet) ================
+file-length-gate: 138 fork-scope sources measured; 10 exceed 500 lines
+
+  lines  file
+  1169   src/core/ScriptBindings.cpp
+  992    include/AudioPorts.h
+  880    src/core/ScriptEngine.cpp
+  875    plugins/ClapEffect/ClapHost.cpp
+  714    plugins/Vst3Effect/Vst3Host.cpp
+  597    src/wasm/WasmSandbox.cpp
+  549    src/core/AudioPortsModel.cpp
+  529    src/gui/PinConnector.cpp
+  526    src/core/CrashReporter.cpp
+  511    tests/src/tracks/SampleClipWindowTest.cpp
+
+PASS (check mode: no regressions; baseline not written)
+file-length-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)
+file-length-gate: 12 tools-scope sources measured; 2 exceed 500 lines
+
+  lines  file
+  1896   tools/mmpz-git/mmpz_git.py
+  877    tools/mmpz-git/tests/test_mmpz_git.py
+
+PASS (check mode: no regressions; baseline not written)
+
+================ Gate 8: token duplication (<5%) ================
+duplication-gate: scanning 138 fork sources (min-lines 25, min-tokens 120, threshold 5%)
+
+PASS: duplicated lines 0.38% (budget 5%)
+duplication-gate: tools scope (fork-owned tooling; jscpd has no shell format, so the .sh entries are counted by Gates 4 and 7 only)
+duplication-gate: scanning 12 tools sources (min-lines 25, min-tokens 120, threshold 5%)
+
+PASS: duplicated lines 0.00% (budget 5%)
+
+================ Gate 9: fork-sources registration ================
+
+scanned 1162 tracked source file(s) under src/, include/, plugins/, tests/, tools/, modules/;
+  138 fork-sources entry(ies), 1012 all-sources (whole-tree),
+  12 tools-sources (fork tooling), 0 stale entry(ies).
+
+PASS: every tracked source in scope is registered (138 fork-NEW, 1012 inherited, 12 tooling).
+
+================ SUMMARY ================
+gate   name                     result
+1      ctest                    PASS
+2      coverage                 SKIP
+3      no-tautology             PASS
+4      complexity               PASS
+5      mutation                 PASS
+6      upstream-regression      PASS
+7      file-length              PASS
+8      duplication              PASS
+9      fork-sources             PASS
+
+scope: fork (tests/fork-sources.txt) + tools — the enforced scope, the same one CI's
+       static-gates job runs. The WHOLE-TREE scope (gates 4/7/8 --scope all) was NOT
+       measured by this run; use --whole-tree for it (tests/QA-GATES.md, 'Scope policy').
+
+skipped: 1 of 9 gates did not run
+  gate 2 (coverage): --with-coverage was not passed — to run it: pass --with-coverage
+
+RESULT: PASS-WITH-SKIPS (exit 3) — 1 of 9 gates did not run;
+        this run is INCOMPLETE, not green. Run the gates listed above, then re-run.
+RUNALL_EXIT=3

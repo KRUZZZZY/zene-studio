@@ -1,0 +1,14 @@
+docs: the merge-train 3A record, and the evidence for it
+
+The report for the six merges on top of 0581346e4 (docs/INTEGRATION-MERGES-3A.md),
+plus the evidence it cites: every gate and build log unpiped, the :2:/:3: copies of
+every conflicted file as they were read, the patch-id proof inputs and outputs, the
+manifest-regeneration and pre-commit-check tools this train was driven with, and one
+byte-identical reference render.
+
+Evidence lives under tests/ and not docs/ deliberately: a non-.md path under docs/ is
+an undeclared-upstream-divergence violation to Gate 6, which is exactly why the
+coverage-run lane's evidence moved to tests/coverage-run/ in merge #2 of this train
+(see the report, finding 1).
+
+Nothing is pushed; no remote, PR or branch was touched.

@@ -1,0 +1,63 @@
+Merge post-alpha/saveload-integrity into post-alpha/integration (merge train 3A, #5 of 6)
+
+Three persistence integrity defects from the grade-C audit: D3 (src/core/DataFile.cpp's
+four writeFile() statements no longer discard QFile::rename/QFile::remove results - a
+refused rename is reported and returns false, a failed backup is reported on its own,
+the previous project is moved back out of .bak when the final rename fails), D2 (the
+failed-open branch restores m_loadingProject and journal journalling), D6/an
+unsupported <session> block is preserved verbatim instead of dropped (Song.h's
+m_preservedSessionXml), plus the two test suites and the report.
+
+Nothing was pushed; no remote, PR or branch was touched.
+
+Conflicts (3, none in product code). Two of the three needed a decision the plain
+entry union would have got wrong, and both are recorded here:
+
+* tests/upstream-modifications.txt - entry union, 129 -> 130 entries. Verified: every
+  entry from both sides present, 0 duplicates, 0 blank reasons, no ';;', no markers.
+  Two decisions the union needed:
+  (a) The branch's three-tools/mmpz-git/* entries were NOT resurrected. The branch's
+      copy of the ledger predates merge #1, which deleted exactly those seven entries
+      because they assert a divergence of inherited code about files upstream has never
+      had, and because one file has one home now (they are registered in
+      tests/tools-sources.txt, which Gate 6 classifies). Re-adding them would contradict
+      a decision this train already merged. Asserted in the resolver: the branch's only
+      other new entry is src/core/DataFile.cpp, which is added.
+  (b) Two reasons needed a real clause union rather than a pick-a-side: the branch's
+      include/Song.h and src/core/Song.cpp reasons extend the shared Session View
+      sentence with a "save integrity:" clause describing this very work, and the
+      integration side's text lacks it. Both clauses are appended to integration's
+      (longer, newer) reason, so the ledger now describes the Session View hook, the
+      stem-export accessors, the automation modes, the midi-depth seed AND the save
+      integrity of the same two files. The seven other shared paths with differing
+      reasons are the branch's older wording of changes integration already describes
+      (the midi-race quartet, MainWindow.h, MainWindow.cpp, main.cpp, AudioEngine.h):
+      checked one by one, integration's is the newer superset or the newer rewrite, and
+      theirs is kept only where it is a strict superset (none here).
+* tests/fork-sources.txt - entry union, then re-derived from the file's own documented
+  command: 143 entries (+2). The branch registered its two test sources here itself;
+  they are kept in this scope rather than moved to tests/all-sources.txt, because the
+  awk allow-list in the header already carries the four test sources this wave's earlier
+  merges put there and moving only these two would leave two different rules for the
+  same class. The allow-list gained exactly the two names (DataFileSaveIntegrityTest,
+  ProjectOpenIntegrityTest) and the header prose was updated to name all nine.
+  Verified: the command prints REPRODUCES, 143 entries, 0 duplicates.
+* tests/CMakeLists.txt - two entry unions in two hunks: AutomationModesTest.cpp plus
+  DataFileSaveIntegrityTest.cpp, and ProjectOpenIntegrityTest.cpp plus
+  ProjectRecoveryTest.cpp. No structural line lost.
+
+Registration checklist. tests/all-sources.txt re-derived: 1,157 entries (+2, the branch's
+two new test sources). No new product source needed registering (the branch adds none).
+The three upstream files it touched were all declared by the branch itself (DataFile.cpp
+is the new one). Gate 6's rules replicated against the index before committing:
+0 violations over 407 changed paths, no cross-manifest entry.
+
+Manifest reproducibility, each file's own documented command, before and after the
+commit: fork-sources.txt 143 REPRODUCES; all-sources.txt 1,157 REPRODUCES;
+tools-sources.txt 14 REPRODUCES.
+
+The merge does not touch docs/KNOWN-LIMITATIONS.md or the release notes (verified:
+`git diff --cached --name-only | grep -i known-limitations` is empty); the branch's
+report proposes wording for it instead, which is the parent's call.
+
+Gate exit codes after this merge: 0 / 0 / 3.

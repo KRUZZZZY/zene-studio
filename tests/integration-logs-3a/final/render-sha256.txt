@@ -1,0 +1,15 @@
+# Render byte-identity proof - merge train 3A
+#
+# Command (unpiped; exit codes in the sibling render-*.log):
+#   bash tools/mmpz-git/render-recipe.sh data/projects/shorties/sv-DnB-Startup.mmpz -o <out>.wav
+#   baseline  : tree at 0581346e4, build/zene built for that tip (before any merge)
+#   final-1/2 : tree at bf8f53413, rebuilt with tools/local-ci.sh --build-dir build --jobs 3
+#
+# All three files are byte-identical, so the same-build run-to-run floor on this project is
+# 0 LSB / 0.000000 dB and the behaviour-preservation spread against the pre-train tip is 0.
+# render-final-1.wav is kept as the reference artifact; the baseline and the second final run
+# were removed after hashing, to keep ~4 MB of reproducible binary out of the history.
+#
+6b51f70fc32e993d7aaad3592e356954622ce842a0cbf1d6043962f185f24cb1  tests/integration-logs-3a/render-baseline.wav
+6b51f70fc32e993d7aaad3592e356954622ce842a0cbf1d6043962f185f24cb1  tests/integration-logs-3a/final/render-final-1.wav
+6b51f70fc32e993d7aaad3592e356954622ce842a0cbf1d6043962f185f24cb1  tests/integration-logs-3a/final/render-final-2.wav

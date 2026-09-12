@@ -1,0 +1,66 @@
+Merge post-alpha/mixer-concurrency into post-alpha/integration (merge train 3A, #6 of 6)
+
+The mixer concurrency/ordering audit: D1 (the mute latch decided before the
+dependency count, MixerChannel::m_muted made std::atomic), D2(ii)/(iii) (muted
+senders clear their outgoing sidechain taps), D3/D4 (createChannel, createBusChannel
+and moveChannelLeft under the change mutex), D5 (EffectChain::moveUp/moveDown take the
+change mutex), D6 (AudioBusHandle iterates m_playHandles under the lock its writers
+already hold), plus the 8-slot regression suite, the TSan runner and suppression file,
+the exemption for the 677-line test file and the report.
+
+Nothing was pushed; no remote, PR or branch was touched.
+
+Conflicts (4, none in product code):
+
+* tests/upstream-modifications.txt - entry union, 130 entries, 0 added. Four shared
+  paths carry the branch's reason as a strict extension of integration's (Mixer.h,
+  AudioBusHandle.cpp, EffectChain.cpp, Mixer.cpp); each is verified to be a superset of
+  ours and is kept as the branch wrote it, so the ledger describes both the PDC change
+  and the concurrency fix on each line. 0 duplicates, 0 blank reasons, no ';;', no
+  markers. The branch's copy of the ledger is newer than ours and contains no entry
+  that merge #1 deleted (asserted: `grep -c '^tools/'` on its side is 0), so nothing
+  needed excluding this time.
+* tests/fork-sources.txt - entry union, then re-derived: 144 entries (+1,
+  tests/src/core/MixerConcurrencyTest.cpp). Because the file's own command admits tests/
+  sources only through the header's allow-list, the allow-list gained exactly that name
+  (now ten) and the header prose was updated. The hand-written comment block the lane
+  placed beside its entry is NOT carried over: it claims "the regeneration command in
+  the header only walks src/include/plugins", which stopped being true when the
+  allow-list was introduced, so keeping it would have preserved a false statement about
+  the file it sits in. Verified: the command prints REPRODUCES, 144 entries, 0 duplicates.
+* tests/CMakeLists.txt - entry union in one hunk: integration's four
+  (MidiLearnTest, MidiLearnThreadTest, MidiProbabilityPersistenceTest,
+  MixerRoutingBackwardCompatTest) plus the branch's MixerConcurrencyTest, in
+  alphabetical position. No structural line lost.
+* tests/file-length-exempt.txt (add/add) - resolved exactly as the gate-hygiene report
+  predicted: this file's header from integration plus the mixer lane's single entry line,
+  verbatim. The entry's reason text is the lane's, unchanged; the only edit is its
+  position. The header's two now-stale paragraphs ("Current exemptions: NONE on this
+  branch" and "a sibling lane adds the first entry ... where the two versions meet") were
+  rewritten to record that the reconciliation has happened and that there is exactly one
+  exemption now. Measured: file-length-gate.sh --check is 0 with the file in place (the
+  677-line test is exempt and is not a regression), and both negative controls were run:
+  a scratch exemption for src/core/Mixer.cpp (a file the all scope does report) took the
+  all-scope regression count 14 -> 13 and removed its "grew" line entirely, and a blank
+  reason exited 2 with "entry 'src/core/Mixer.cpp' has no reason". Both were reverted
+  immediately; the file as committed is the resolved union and nothing else.
+
+Registration checklist. tests/all-sources.txt re-derived: 1,158 entries (+1, the branch's
+new test source). No new product source needed registering (the branch adds none); its
+seven touched upstream files were all declared by the branch itself. New non-source files
+under tests/ (tests/mixer-concurrency-tsan.supp, tests/run-mixer-concurrency-tsan.sh) are
+outside every scope list by extension, like the other lanes' harness scripts. Gate 6's
+rules replicated against the index before committing: 0 violations over 411 changed paths.
+
+Manifest reproducibility, each file's own documented command, before and after the
+commit: fork-sources.txt 144 REPRODUCES; all-sources.txt 1,158 REPRODUCES;
+tools-sources.txt 14 REPRODUCES.
+
+Gate exit codes after this merge: 0 / 0 / 3. The WHOLE-TREE scope (which no run of the
+three gates measures by default) is red, and is reported to the owner rather than
+re-anchored: `bash tests/file-length-gate.sh --scope all --check` -> EXIT=1 with 14
+regressions, of which 10 predate this train (the previous wave left them, documented in
+docs/INTEGRATION-MERGES-2.md) and 4 are files grown by merges #4-#6 of this train
+(src/core/AudioEngine.cpp 974->1010, src/core/DataFile.cpp 2239->2289,
+include/Mixer.h 502->509, src/core/Mixer.cpp 1725->1793). See the train report,
+"Decisions needed".

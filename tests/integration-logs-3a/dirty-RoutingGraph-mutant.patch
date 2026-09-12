@@ -1,0 +1,13 @@
+diff --git a/src/core/RoutingGraph.cpp b/src/core/RoutingGraph.cpp
+index aee2294cc..16466258a 100644
+--- a/src/core/RoutingGraph.cpp
++++ b/src/core/RoutingGraph.cpp
+@@ -170,7 +170,7 @@ auto RoutingGraph::setOutputNode(int id) -> bool
+ {
+ 	if (node(id) == nullptr) { return false; }
+ 	m_outputNodeId = id;
+-	return true;
++	return false;
+ }
+ 
+ void RoutingGraph::prepare(f_cnt_t frames, ch_cnt_t channels)

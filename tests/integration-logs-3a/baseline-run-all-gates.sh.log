@@ -1,0 +1,268 @@
+
+================ Gate 1: unit tests (ctest) ================
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integration/build/tests
+      Start  1: ArrayVectorTest
+ 1/42 Test  #1: ArrayVectorTest ..................   Passed    0.02 sec
+      Start  2: AudioBufferTest
+ 2/42 Test  #2: AudioBufferTest ..................   Passed    0.02 sec
+      Start  3: AudioBusHandleTest
+ 3/42 Test  #3: AudioBusHandleTest ...............   Passed    1.38 sec
+      Start  4: AudioBusTest
+ 4/42 Test  #4: AudioBusTest .....................   Passed    1.40 sec
+      Start  5: AudioPortsModelTest
+ 5/42 Test  #5: AudioPortsModelTest ..............   Passed    1.38 sec
+      Start  6: AudioPortsTest
+ 6/42 Test  #6: AudioPortsTest ...................   Passed    1.39 sec
+      Start  7: AutomatableModelTest
+ 7/42 Test  #7: AutomatableModelTest .............   Passed    1.42 sec
+      Start  8: LoudnessReportTest
+ 8/42 Test  #8: LoudnessReportTest ...............   Passed    1.30 sec
+      Start  9: ClipSerialisationTest
+ 9/42 Test  #9: ClipSerialisationTest ............   Passed    1.56 sec
+      Start 10: LufsMeterTest
+10/42 Test #10: LufsMeterTest ....................   Passed    1.96 sec
+      Start 11: CrashReporterTest
+11/42 Test #11: CrashReporterTest ................   Passed    0.76 sec
+      Start 12: AutomationModesTest
+12/42 Test #12: AutomationModesTest ..............   Passed    1.78 sec
+      Start 13: MathTest
+13/42 Test #13: MathTest .........................   Passed    0.02 sec
+      Start 14: MidiLearnTest
+14/42 Test #14: MidiLearnTest ....................   Passed    1.79 sec
+      Start 15: MidiLearnThreadTest
+15/42 Test #15: MidiLearnThreadTest ..............   Passed    1.52 sec
+      Start 16: MidiProbabilityPersistenceTest
+16/42 Test #16: MidiProbabilityPersistenceTest ...   Passed    0.03 sec
+      Start 17: MultiTrackRecorderTest
+17/42 Test #17: MultiTrackRecorderTest ...........   Passed    0.03 sec
+      Start 18: NoteRandomTest
+18/42 Test #18: NoteRandomTest ...................   Passed    0.02 sec
+      Start 19: NoteTransformTest
+19/42 Test #19: NoteTransformTest ................   Passed    0.02 sec
+      Start 20: PluginAudioPortsTest
+20/42 Test #20: PluginAudioPortsTest .............   Passed    1.47 sec
+      Start 21: PluginScanCacheTest
+21/42 Test #21: PluginScanCacheTest ..............   Passed    0.09 sec
+      Start 22: ProjectRecoveryTest
+22/42 Test #22: ProjectRecoveryTest ..............   Passed    0.03 sec
+      Start 23: ProjectVersionTest
+23/42 Test #23: ProjectVersionTest ...............   Passed    0.02 sec
+      Start 24: RecordRingBufferTest
+24/42 Test #24: RecordRingBufferTest .............   Passed    0.03 sec
+      Start 25: RelativePathsTest
+25/42 Test #25: RelativePathsTest ................   Passed    0.02 sec
+      Start 26: RemotePluginAudioPortsTest
+26/42 Test #26: RemotePluginAudioPortsTest .......   Passed    2.16 sec
+      Start 27: RemotePluginClientE2ETest
+27/42 Test #27: RemotePluginClientE2ETest ........   Passed    1.69 sec
+      Start 28: RoutingGraphTest
+28/42 Test #28: RoutingGraphTest .................   Passed    0.03 sec
+      Start 29: PdcMixerTest
+29/42 Test #29: PdcMixerTest .....................   Passed    1.43 sec
+      Start 30: ScriptBindingsTest
+30/42 Test #30: ScriptBindingsTest ...............   Passed    1.51 sec
+      Start 31: ScriptEngineTest
+31/42 Test #31: ScriptEngineTest .................   Passed    1.51 sec
+      Start 32: ScriptStabilisationTest
+32/42 Test #32: ScriptStabilisationTest ..........   Passed    1.47 sec
+      Start 33: SlideNotesTest
+33/42 Test #33: SlideNotesTest ...................   Passed    0.02 sec
+      Start 34: StemExportTest
+34/42 Test #34: StemExportTest ...................   Passed    3.63 sec
+      Start 35: TimelineTest
+35/42 Test #35: TimelineTest .....................   Passed    1.44 sec
+      Start 36: TwoTrackRecordingHarness
+36/42 Test #36: TwoTrackRecordingHarness .........   Passed    2.04 sec
+      Start 37: MidiLearnGuiTest
+37/42 Test #37: MidiLearnGuiTest .................   Passed    1.64 sec
+      Start 38: AutomationTrackTest
+38/42 Test #38: AutomationTrackTest ..............   Passed    1.57 sec
+      Start 39: SampleClipWindowTest
+39/42 Test #39: SampleClipWindowTest .............   Passed    1.99 sec
+      Start 40: PluginPortsMigrationTest
+40/42 Test #40: PluginPortsMigrationTest .........   Passed    4.68 sec
+      Start 41: ZynSeparateProcessTest
+41/42 Test #41: ZynSeparateProcessTest ...........   Passed    2.19 sec
+      Start 42: AudioPluginTest
+42/42 Test #42: AudioPluginTest ..................   Passed    1.55 sec
+
+100% tests passed, 0 tests failed out of 42
+
+Total Test time (real) =  50.04 sec
+
+================ Gate 2: coverage ratchet ================
+skipped (pass --with-coverage)
+
+================ Gate 3: no tautological tests ================
+test file                                      slots    asserts taut    verdict
+src/core/ArrayVectorTest.cpp                   173      148     0       ok
+src/core/AudioBufferTest.cpp                   229      217     0       ok
+src/core/AudioBusHandleTest.cpp                22       15      0       ok
+src/core/AudioBusTest.cpp                      133      119     0       ok
+src/core/AudioPortsModelTest.cpp               124      123     0       ok
+src/core/AudioPortsTest.cpp                    59       40      0       ok
+src/core/AutomatableModelTest.cpp              27       22      0       ok
+src/core/AutomationModesTest.cpp               80       55      0       ok
+src/core/ClipSerialisationTest.cpp             35       35      0       ok
+src/core/CrashReporterTest.cpp                 109      86      0       ok
+src/core/LoudnessReportTest.cpp                54       42      0       ok
+src/core/LufsMeterTest.cpp                     66       46      0       ok
+src/core/MathTest.cpp                          13       12      0       ok
+src/core/MidiLearnTest.cpp                     49       46      0       ok
+src/core/MidiLearnThreadTest.cpp               33       30      0       ok
+src/core/MidiProbabilityPersistenceTest.cpp    62       55      0       ok
+src/core/MultiTrackRecorderTest.cpp            17       16      0       ok
+src/core/NoteRandomTest.cpp                    51       41      0       ok
+src/core/NoteTransformTest.cpp                 91       90      0       ok
+src/core/PdcMixerTest.cpp                      129      57      0       ok
+src/core/PluginAudioPortsTest.cpp              82       72      0       ok
+src/core/PluginScanCacheTest.cpp               186      135     0       ok
+src/core/ProjectRecoveryTest.cpp               83       71      0       ok
+src/core/ProjectVersionTest.cpp                114      112     0       ok
+src/core/RecordRingBufferTest.cpp              57       41      0       ok
+src/core/RelativePathsTest.cpp                 12       11      0       ok
+src/core/RemotePluginAudioPortsTest.cpp        113      92      0       ok
+src/core/RemotePluginClientE2ETest.cpp         57       38      0       ok
+src/core/RoutingGraphTest.cpp                  172      150     0       ok
+src/core/ScriptBindingsTest.cpp                270      249     0       ok
+src/core/ScriptEngineTest.cpp                  137      85      0       ok
+src/core/ScriptStabilisationTest.cpp           121      86      0       ok
+src/core/SlideNotesTest.cpp                    49       45      0       ok
+src/core/StemExportTest.cpp                    59       40      0       ok
+src/core/TimelineTest.cpp                      17       10      0       ok
+src/gui/MidiLearnGuiTest.cpp                   12       10      0       ok
+src/tracks/AutomationTrackTest.cpp             39       38      0       ok
+src/tracks/SampleClipWindowTest.cpp            65       49      0       ok
+
+Out of scope (helper executables, not QTest classes):
+  tests/src/core/TwoTrackAlsaCaptureProbe.cpp
+  tests/src/core/TwoTrackRecordingHarness.cpp
+  tests/src/plugins/PluginPortsMigrationReference.cpp
+
+PASS: every registered test file has test slots and real assertions, no literal tautologies
+
+================ Gate 4: per-method complexity ================
+#TOTAL	1190	23
+complexity-gate: 1190 functions in the fork scope; 23 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  41       198    214    lmms::ExternalProcessStemSeparator::separate@238-451@src/core/ExternalProcessStemSeparator.cpp
+  31       158    168    lmms::clap::HostedPlugin::load@469-636@plugins/ClapEffect/ClapHost.cpp
+  29       100    119    lmms::ScriptEngine::applyCommand@438-556@src/core/ScriptEngine.cpp
+  27       135    151    lmms::OnnxRuntimeStemSeparator::separate@91-241@src/core/OnnxRuntimeStemSeparator.cpp
+  25       122    132    lmms::vst3::HostedPlugin::load@250-381@plugins/Vst3Effect/Vst3Host.cpp
+  23       64     91     lmms::AudioPortsModel::updateDirectRouting@247-337@src/core/AudioPortsModel.cpp
+  18       36     36     lmms::vst3::HostedPlugin::loadState@471-506@plugins/Vst3Effect/Vst3Host.cpp
+  17       80     85     lmms::AudioBus::update@195-279@src/core/AudioBus.cpp
+  15       58     64     main@20-83@plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+  15       64     80     lmms::AudioBus::sanitize@96-175@src/core/AudioBus.cpp
+  15       35     38     lmms::RoutingGraph::connect@90-127@src/core/RoutingGraph.cpp
+  15       42     53     lmms::RoutingGraph::rebuildPlan@310-362@src/core/RoutingGraph.cpp
+  15       75     85     lmms::wasm::WasmSandbox::loadModuleBytes@336-420@src/wasm/WasmSandbox.cpp
+  14       44     48     lmms::ScriptEngine::resolveProjectPath@714-761@src/core/ScriptEngine.cpp
+  14       96     130    lmms::gui::PinConnector::paintEvent@184-313@src/gui/PinConnector.cpp
+  13       84     94     lmms::clap::HostedPlugin::process@741-834@plugins/ClapEffect/ClapHost.cpp
+  13       75     87     lmms::vst3::HostedPlugin::prepare@508-594@plugins/Vst3Effect/Vst3Host.cpp
+  12       53     61     lmms::vst3::HostedPlugin::process@639-699@plugins/Vst3Effect/Vst3Host.cpp
+  12       68     80     lmms::wasm::WasmWorker::processSlot@155-234@src/wasm/WasmWorker.cpp
+  11       22     22     lmms::clap::describe@65-86@plugins/ClapEffect/ClapHost.cpp
+  11       35     41     lmms::AudioPortsModel::setAllChannelCounts@65-105@src/core/AudioPortsModel.cpp
+  11       71     80     lmms::StemModelStore::download@203-282@src/core/StemModelStore.cpp
+  11       58     65     lmms::wasm::WasmWorker::run@89-153@src/wasm/WasmWorker.cpp
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::load has 158 NLOC, 31 CCN, 1385 token, 3 PARAM, 168 length, 0 ND
+plugins/ClapEffect/ClapHost.cpp: lmms::clap::HostedPlugin::process has 84 NLOC, 13 CCN, 840 token, 5 PARAM, 94 length, 0 ND
+plugins/RnnoiseDenoiser/testdata/rnn_harness.c: main has 58 NLOC, 15 CCN, 575 token, 2 PARAM, 64 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::load has 122 NLOC, 25 CCN, 1176 token, 3 PARAM, 132 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::loadState has 36 NLOC, 18 CCN, 288 token, 2 PARAM, 36 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::prepare has 75 NLOC, 13 CCN, 727 token, 3 PARAM, 87 length, 0 ND
+plugins/Vst3Effect/Vst3Host.cpp: lmms::vst3::HostedPlugin::process has 53 NLOC, 12 CCN, 489 token, 5 PARAM, 61 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::sanitize has 64 NLOC, 15 CCN, 401 token, 1 PARAM, 80 length, 0 ND
+src/core/AudioBus.cpp: lmms::AudioBus::update has 80 NLOC, 17 CCN, 468 token, 2 PARAM, 85 length, 0 ND
+src/core/AudioPortsModel.cpp: lmms::AudioPortsModel::updateDirectRouting has 64 NLOC, 23 CCN, 369 token, 0 PARAM, 91 length, 0 ND
+src/core/ExternalProcessStemSeparator.cpp: lmms::ExternalProcessStemSeparator::separate has 198 NLOC, 41 CCN, 1183 token, 6 PARAM, 214 length, 0 ND
+src/core/OnnxRuntimeStemSeparator.cpp: lmms::OnnxRuntimeStemSeparator::separate has 135 NLOC, 27 CCN, 1284 token, 6 PARAM, 151 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::connect has 35 NLOC, 15 CCN, 257 token, 5 PARAM, 38 length, 0 ND
+src/core/RoutingGraph.cpp: lmms::RoutingGraph::rebuildPlan has 42 NLOC, 15 CCN, 380 token, 0 PARAM, 53 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::applyCommand has 100 NLOC, 29 CCN, 666 token, 1 PARAM, 119 length, 0 ND
+src/core/ScriptEngine.cpp: lmms::ScriptEngine::resolveProjectPath has 44 NLOC, 14 CCN, 269 token, 3 PARAM, 48 length, 0 ND
+src/gui/PinConnector.cpp: lmms::gui::PinConnector::paintEvent has 96 NLOC, 14 CCN, 1026 token, 0 PARAM, 130 length, 0 ND
+src/wasm/WasmSandbox.cpp: lmms::wasm::WasmSandbox::loadModuleBytes has 75 NLOC, 15 CCN, 418 token, 3 PARAM, 85 length, 0 ND
+src/wasm/WasmWorker.cpp: lmms::wasm::WasmWorker::processSlot has 68 NLOC, 12 CCN, 530 token, 2 PARAM, 80 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)
+complexity-gate: tools scope (fork-owned developer tooling; its own baseline, separate from the product ratchets)
+#TOTAL	190	13
+complexity-gate: 190 functions in the tools scope; 13 exceed CCN 10
+
+Functions over the CCN target (grandfathered if in the baseline):
+  CCN      NLOC   LEN    function
+  47       136    140    cmd_audible_diff@1502-1641@tools/mmpz-git/mmpz_git.py
+  34       54     64     diff_dom@352-415@tools/mmpz-git/mmpz_git.py
+  30       105    110    main@54-163@tools/mmpz-git/demo_edits.py
+  28       56     64     serialize@133-196@tools/mmpz-git/mmpz_git.py
+  20       43     44     main@25-68@tools/mmpz-git/demo_check.py
+  20       37     40     canonicalize_dom.walk@238-277@tools/mmpz-git/mmpz_git.py
+  19       41     42     read_wav@69-110@tools/stem_split_cli.py
+  16       37     37     save_node@9-45@tools/mmpz-git/scratch/proto.py
+  13       24     25     marker_records@1210-1234@tools/mmpz-git/mmpz_git.py
+  13       70     80     main@226-305@tools/stem_split_cli.py
+  12       26     26     cmd_diff@418-443@tools/mmpz-git/mmpz_git.py
+  11       40     55     _conflict_comment@780-834@tools/mmpz-git/mmpz_git.py
+  11       28     29     wav_mono@1331-1359@tools/mmpz-git/mmpz_git.py
+
+Nesting depth (lizard cannot threshold it — reported for manual review):
+tools/mmpz-git/demo_check.py: main has 43 NLOC, 20 CCN, 325 token, 1 PARAM, 44 length, 0 ND
+tools/mmpz-git/demo_edits.py: main has 105 NLOC, 30 CCN, 1121 token, 0 PARAM, 110 length, 0 ND
+tools/mmpz-git/mmpz_git.py: serialize has 56 NLOC, 28 CCN, 498 token, 4 PARAM, 64 length, 0 ND
+tools/mmpz-git/mmpz_git.py: canonicalize_dom.walk has 37 NLOC, 20 CCN, 218 token, 1 PARAM, 40 length, 0 ND
+tools/mmpz-git/mmpz_git.py: diff_dom has 54 NLOC, 34 CCN, 611 token, 5 PARAM, 64 length, 0 ND
+tools/mmpz-git/mmpz_git.py: cmd_diff has 26 NLOC, 12 CCN, 237 token, 1 PARAM, 26 length, 0 ND
+tools/mmpz-git/mmpz_git.py: marker_records has 24 NLOC, 13 CCN, 223 token, 1 PARAM, 25 length, 0 ND
+tools/mmpz-git/mmpz_git.py: cmd_audible_diff has 136 NLOC, 47 CCN, 1194 token, 1 PARAM, 140 length, 0 ND
+tools/mmpz-git/scratch/proto.py: save_node has 37 NLOC, 16 CCN, 329 token, 3 PARAM, 37 length, 0 ND
+tools/stem_split_cli.py: read_wav has 41 NLOC, 19 CCN, 440 token, 1 PARAM, 42 length, 0 ND
+tools/stem_split_cli.py: main has 70 NLOC, 13 CCN, 567 token, 0 PARAM, 80 length, 0 ND
+
+PASS (check mode: no regressions; baseline not written)
+
+================ Gate 5: mutation testing (src/core/RoutingGraph.cpp) ================
+
+==== control: unmutated source must build and pass ====
+pristine sha256: 1fc2d8fb3fe015e94468cd77e8fb285805198f6074258e0c7ced217c8632f163
+control: pristine TU recompiled, test binary passed 3/3 runs
+
+==== mutants: 30 selected of 170 candidates (seed 0) ====
+  #   site                           rule           mutation                                   build    result
+  --------------------------------------------------------------------------------------------------------------------
+  1   src/core/RoutingGraph.cpp:134  cmp-eq         == -> !=                                   ok       KILLED
+  2   src/core/RoutingGraph.cpp:101  cmp-ge         >= -> <=                                   ok       KILLED
+  3   src/core/RoutingGraph.cpp:159  cmp-lt         < -> >                                     ok       KILLED
+  4   src/core/RoutingGraph.cpp:358  cmp-ne         != -> ==                                   ok       KILLED
+  5   src/core/RoutingGraph.cpp:148  const-neg-one  -1 -> 0                                    ok       KILLED
+  6   src/core/RoutingGraph.cpp:44   const-one      1 -> 0                                     ok       SURVIVED
+  7   src/core/RoutingGraph.cpp:230  const-zero     0 -> 1                                     ok       KILLED
+  8   src/core/RoutingGraph.cpp:354  dec-inc        -- -> ++                                   ok       KILLED
+  9   src/core/RoutingGraph.cpp:339  greater-less   std::greater<int> -> std::less<int>        ok       KILLED
+  10  src/core/RoutingGraph.cpp:330  inc-dec        ++ -> --                                   ok       KILLED
+  11  src/core/RoutingGraph.cpp:133  logic-and      && -> ||                                   no-build INVALID
+  12  src/core/RoutingGraph.cpp:81   logic-or       || -> &&                                   ok       KILLED
+  13  src/core/RoutingGraph.cpp:205  min-max        std::min -> std::max                       ok       KILLED
+  14  src/core/RoutingGraph.cpp:280  neg-drop       if (! -> if (                              ok       KILLED
+  15  src/core/RoutingGraph.cpp:171  ret-false      return false -> return true                ok       KILLED
+  16  src/core/RoutingGraph.cpp:126  ret-true       return true -> return false                ok       KILLED
+  17  src/core/RoutingGraph.cpp:226  stmt-delete    delete: graphElement.setAttribute(QStringLiteral("frames"), static_cast<qulonglong>(m_frames)); ok       SURVIVED
+  18  src/core/RoutingGraph.cpp:233  cmp-eq         == -> !=                                   no-build INVALID
+  19  src/core/RoutingGraph.cpp:165  cmp-ge         >= -> <=                                   ok       KILLED
+  20  src/core/RoutingGraph.cpp:101  cmp-lt         < -> >                                     ok       KILLED
+  21  src/core/RoutingGraph.cpp:197  cmp-ne         != -> ==                                   no-build INVALID
+  22  src/core/RoutingGraph.cpp:50   const-neg-one  -1 -> 0                                    ok       KILLED
+  23  src/core/RoutingGraph.cpp:210  const-zero     0 -> 1                                     ok       KILLED
+  24  src/core/RoutingGraph.cpp:53   inc-dec        ++ -> --                                   ok       SURVIVED
+  25  src/core/RoutingGraph.cpp:112  logic-and      && -> ||                                   no-build INVALID
+  26  src/core/RoutingGraph.cpp:101  logic-or       || -> &&                                   ok       KILLED
+  27  src/core/RoutingGraph.cpp:204  min-max        std::min -> std::max                       ok       KILLED
+  28  src/core/RoutingGraph.cpp:192  neg-drop       if (! -> if (                              ok       KILLED
+  29  src/core/RoutingGraph.cpp:280  ret-false      return false -> return true                ok       KILLED

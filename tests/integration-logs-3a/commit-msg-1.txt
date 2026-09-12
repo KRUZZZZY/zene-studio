@@ -1,0 +1,40 @@
+Merge post-alpha/gate-hygiene into post-alpha/integration (merge train 3A, #1 of 6)
+
+The gate and manifest repairs: the whole-tree ratchets reconciled one decision at
+a time, tests/file-length-exempt.txt made a REQUIRED input, the three scope
+manifests made to reproduce from their own documented commands, `--reanchor-file
+<path> "reason"` added to the file-length and complexity gates, Gate 6 given a
+`tools/` category and a correct count label, Gate 9 extended to modules/ and to
+the file->registered direction, PluginFactory::discoverPlugins split by extraction
+(CCN 32 -> 7), and two never-run tests dealt with (one registered, one reported).
+
+Nothing was pushed; no remote, PR or branch was touched.
+
+Conflicts (3, none in product code), all resolved as a verified union of entries:
+
+* tests/all-sources.txt - the entry list is the byte-exact output of the file's
+  own documented regeneration command, re-derived on the merged tree (1,149
+  entries). Both sides' entries are present: integration's 1,120 and the branch's
+  1,133, whose union is 1,140; the regeneration is a strict superset and adds the
+  nine fork-NEW sources the integration side's file had never carried (D-4 class:
+  the seven product sources landed by the clip-slice0/autosave/midi-depth merges
+  were registered in tests/fork-sources.txt only). Header kept from the branch.
+* tests/fork-sources.txt - entry union, then re-derived: 138 entries, which is the
+  139-entry union minus tools/stem-export-demo.py, which the branch deliberately
+  moved to tests/tools-sources.txt (one file, one home) and which this merge keeps
+  there. The branch's own regeneration command could not produce the two clip-lane
+  test sources it inherited (tests/src/core/ClipSerialisationTest.cpp,
+  tests/src/tracks/SampleClipWindowTest.cpp), so its pathspec gained
+  tests/src/tracks and its awk allow-list gained exactly those two names, with the
+  reason recorded in the header. Verified: the command prints REPRODUCES.
+* tests/CMakeLists.txt - entry union in the one conflicted hunk: integration's
+  MidiLearnThreadTest.cpp and MidiProbabilityPersistenceTest.cpp plus the branch's
+  MixerRoutingBackwardCompatTest.cpp. No structural line lost.
+
+Registration checklist applied in this commit: 61 staged paths, checked with
+`git diff --cached --name-only`; no new source needed registering (the branch adds
+none); include/PluginFactory.h and src/core/PluginFactory.cpp were already declared
+in tests/upstream-modifications.txt. Gate 6's rules were replicated against the
+index before committing: 0 violations, 0 blank reasons, no ';;'.
+
+Gate exit codes after this merge: 0 / 0 / 3.
