@@ -26,6 +26,7 @@
 #define LMMS_GUI_MIDI_LEARN_GUI_H
 
 #include <QObject>
+#include <QPointer>
 #include <QTimer>
 
 #include "lmms_export.h"
@@ -59,6 +60,14 @@ public:
 	bool isArmed() const;
 
 	//! The checkable menu action to keep in sync (may be null).
+	//!
+	//! Held through QPointer, not a raw pointer: `instance()` is a function-local
+	//! static that outlives the window that owns the action, so a raw pointer
+	//! here is a use-after-free waiting for the next `setArmed()` call - which is
+	//! exactly what the offscreen GUI test hit (a stack-local QAction outlived by
+	//! this singleton crashed `setArmed(false)` at the dereference below). A
+	//! QPointer clears itself when the action dies, so the "may be null" contract
+	//! this class documents is what it actually enforces.
 	void setAction(QAction* action);
 
 protected:
@@ -78,7 +87,8 @@ private:
 	//! stays set until the menu is reopened.
 	void syncArmedState();
 
-	QAction* m_action = nullptr;
+	//! Guarded: clears itself when the action is destroyed (see setAction).
+	QPointer<QAction> m_action = nullptr;
 
 	//! How often the GUI thread checks for a learn the MIDI input thread left
 	//! behind. Only runs while learn mode is armed, and each tick is one atomic
