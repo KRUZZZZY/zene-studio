@@ -1,0 +1,23 @@
+********* Start testing of MixerRoutingBackwardCompatTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : MixerRoutingBackwardCompatTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 201 msecs.
+QDEBUG : MixerRoutingBackwardCompatTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : MixerRoutingBackwardCompatTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+PASS   : MixerRoutingBackwardCompatTest::initTestCase()
+LEGACY_LOADED channels=4 routes=4 sidechain=0
+LEGACY_RENDER expected=0.560000 measured=0.560000002
+LEGACY_EQUIVALENCE routes_identical=1 audio_identical=1 frames=256
+LEGACY_SAVE no_bus=1 no_sidechain=1 bytes=679
+PASS   : MixerRoutingBackwardCompatTest::legacyProjectLoadsWithIdenticalRouting()
+PHASED_ROUNDTRIP routes_identical=1 audio_identical=1 xml_bytes=973
+PASS   : MixerRoutingBackwardCompatTest::phaseDProjectRoundTripsThroughSaveLoad()
+QINFO  : MixerRoutingBackwardCompatTest::unknownLegacyEffectIsPreservedAsDummy() plugin-scan: 0 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 0 scanned, 0 plugin(s)
+LEGACY_UNKNOWN_EFFECT preserved=1 resaved=1
+PASS   : MixerRoutingBackwardCompatTest::unknownLegacyEffectIsPreservedAsDummy()
+PASS   : MixerRoutingBackwardCompatTest::cleanupTestCase()
+Totals: 5 passed, 0 failed, 0 skipped, 0 blacklisted, 2079ms
+********* Finished testing of MixerRoutingBackwardCompatTest *********
+EXIT=0

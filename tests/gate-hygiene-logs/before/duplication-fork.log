@@ -1,0 +1,3 @@
+duplication-gate: scanning 130 fork sources (min-lines 25, min-tokens 120, threshold 5%)
+
+PASS: duplicated lines 0.41% (budget 5%)

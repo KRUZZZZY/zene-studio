@@ -1,0 +1,71 @@
+test_a_real_edit_is_localised_to_track_and_bar (__main__.AudibleDiffBinary.test_a_real_edit_is_localised_to_track_and_bar) ... ok
+test_identical_project_renders_identically (__main__.AudibleDiffBinary.test_identical_project_renders_identically) ... ok
+test_render_recipe_script_runs (__main__.AudibleDiffBinary.test_render_recipe_script_runs) ... ok
+test_a_clean_merge_output_loads (__main__.BinarySafety.test_a_clean_merge_output_loads) ... ok
+test_a_conflicted_merge_output_loads (__main__.BinarySafety.test_a_conflicted_merge_output_loads)
+The worst outcome available here is handing the DAW a project it ... ok
+test_content_preserving (__main__.Canonical.test_content_preserving)
+canonicalize may reorder, but must not add/drop/alter content. ... ok
+test_idempotent (__main__.Canonical.test_idempotent) ... ok
+test_qt6_save_is_not_deterministic_but_canonical_is (__main__.Canonical.test_qt6_save_is_not_deterministic_but_canonical_is)
+Two Qt6 saves of one project differ; their canonical forms match. ... skipped 'scratch/qtsave2 not built'
+test_real_projects_are_not_yet_canonical (__main__.Canonical.test_real_projects_are_not_yet_canonical)
+Documents the one-time normalisation cost, honestly. ... ok
+test_sibling_keys_never_collapse (__main__.Canonical.test_sibling_keys_never_collapse)
+keyed_children must keep every sibling distinct. ... 
+  sibling elements checked: 277512, base-identity collisions: 72932
+ok
+test_help_works (__main__.Cli.test_help_works)
+--help used to crash on argparse's '%O' expansion (pre-existing). ... ok
+test_all_fixtures_present (__main__.Container.test_all_fixtures_present) ... ok
+test_container_signature (__main__.Container.test_container_signature) ... ok
+test_plain_xml_not_container (__main__.Container.test_plain_xml_not_container) ... ok
+test_recompress_byte_identical (__main__.Container.test_recompress_byte_identical) ... ok
+test_identical_files_have_no_ops (__main__.Diff.test_identical_files_have_no_ops) ... ok
+test_operation_list (__main__.Diff.test_operation_list) ... ok
+test_diff_summarises_a_large_value (__main__.LargeAssets.test_diff_summarises_a_large_value) ... ok
+test_embedded_sample_survives_a_clean_merge (__main__.LargeAssets.test_embedded_sample_survives_a_clean_merge) ... ok
+test_large_asset_conflict_is_summarised_not_inlined (__main__.LargeAssets.test_large_asset_conflict_is_summarised_not_inlined) ... /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-gatehygiene/tools/mmpz-git/tests/test_mmpz_git.py:683: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/mmpz_asset_ours.mmpz.mmpz-git-conflicts.json' mode='r' encoding='UTF-8'>
+  data = _json.load(open(sidecar))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_conflicting_bpm_is_a_resolvable_conflict (__main__.Merge.test_conflicting_bpm_is_a_resolvable_conflict) ... ok
+test_disjoint_track_edits_merge_clean (__main__.Merge.test_disjoint_track_edits_merge_clean) ... ok
+test_merged_file_is_canonical (__main__.Merge.test_merged_file_is_canonical) ... ok
+test_audit_catches_a_dropped_addition (__main__.MergeDepth.test_audit_catches_a_dropped_addition) ... ok
+test_audit_is_clean_for_a_real_disjoint_merge (__main__.MergeDepth.test_audit_is_clean_for_a_real_disjoint_merge) ... ok
+test_clean_delete_of_an_untouched_subtree_still_merges (__main__.MergeDepth.test_clean_delete_of_an_untouched_subtree_still_merges)
+Regression guard: the deeper test must not turn every delete into a ... ok
+test_deep_change_is_invisible_to_a_shallow_test (__main__.MergeDepth.test_deep_change_is_invisible_to_a_shallow_test)
+Why the fix was needed: the note is two levels below the track, so ... ok
+test_delete_of_a_track_vs_a_nested_edit_is_a_conflict (__main__.MergeDepth.test_delete_of_a_track_vs_a_nested_edit_is_a_conflict)
+Ours deletes track Kick; theirs adds a note inside it.  The old code ... ok
+test_every_marker_host_is_safe_and_the_file_still_parses (__main__.MergeDepth.test_every_marker_host_is_safe_and_the_file_still_parses)
+Both a note-level and a track-level conflict, one file each. ... ok
+test_no_conflict_marker_lands_where_the_loader_hangs (__main__.MergeDepth.test_no_conflict_marker_lands_where_the_loader_hangs)
+A comment as a direct child of a <trackcontainer> makes the DAW's ... ok
+test_rename_of_a_track_vs_a_nested_edit_is_a_conflict (__main__.MergeDepth.test_rename_of_a_track_vs_a_nested_edit_is_a_conflict) ... ok
+test_bpm_conflict_is_named_as_tempo (__main__.MusicalPresentation.test_bpm_conflict_is_named_as_tempo) ... ok
+test_clean_project_reports_no_conflicts (__main__.MusicalPresentation.test_clean_project_reports_no_conflicts) ... ok
+test_conflict_comment_embeds_machine_data (__main__.MusicalPresentation.test_conflict_comment_embeds_machine_data) ... ok
+test_conflicts_subcommand_reprints_and_exits_nonzero (__main__.MusicalPresentation.test_conflicts_subcommand_reprints_and_exits_nonzero) ... /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-gatehygiene/tools/mmpz-git/tests/test_mmpz_git.py:582: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/mmpz_conflicts.json' mode='r' encoding='UTF-8'>
+  data = _json.load(open(json_out))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_note_conflict_is_reported_in_musical_terms (__main__.MusicalPresentation.test_note_conflict_is_reported_in_musical_terms) ... ok
+test_abbrev_value (__main__.PureAudioMaths.test_abbrev_value) ... ok
+test_bar_windows_and_curves (__main__.PureAudioMaths.test_bar_windows_and_curves) ... ok
+test_missing_renderer_is_an_error_not_a_crash (__main__.PureAudioMaths.test_missing_renderer_is_an_error_not_a_crash)
+Two files that do not exist must be rejected by name, exit 2. ... ok
+test_note_name_and_meter_follow_the_tree (__main__.PureAudioMaths.test_note_name_and_meter_follow_the_tree) ... ok
+test_peak_delta_localises_a_change (__main__.PureAudioMaths.test_peak_delta_localises_a_change) ... ok
+test_silent_on_both_sides_is_not_a_difference (__main__.PureAudioMaths.test_silent_on_both_sides_is_not_a_difference) ... ok
+test_wav_mono_roundtrip (__main__.PureAudioMaths.test_wav_mono_roundtrip) ... ok
+test_verbatim_roundtrip (__main__.Verbatim.test_verbatim_roundtrip)
+parse -> serialise(canonical=False) reproduces the input bytes. ... ok
+
+----------------------------------------------------------------------
+Ran 44 tests in 125.029s
+
+OK (skipped=1)
+EXIT=0

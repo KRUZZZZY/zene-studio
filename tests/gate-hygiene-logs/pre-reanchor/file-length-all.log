@@ -1,0 +1,49 @@
+file-length-gate: whole-tree scope (1,095 first-party files; upstream files are grandfathered, see docs/CONVENTIONS.md)
+file-length-gate: 1133 all-scope sources measured; 112 exceed 500 lines
+
+  lines  file
+  15664  plugins/LadspaEffect/caps/dsp/tonestack/vs_tab.h
+  5939   src/gui/editors/PianoRoll.cpp
+  2715   plugins/LadspaEffect/caps/waves/money.h
+  2645   plugins/VstBase/RemoteVstPlugin.cpp
+  2328   src/gui/editors/AutomationEditor.cpp
+  2239   src/core/DataFile.cpp
+  1856   plugins/Monstro/Monstro.cpp
+  1800   src/gui/MainWindow.cpp
+  1725   src/core/Mixer.cpp
+  1572   src/core/Song.cpp
+  1513   src/gui/modals/SetupDialog.cpp
+  1474   src/gui/clips/ClipView.cpp
+  1350   src/gui/FileBrowser.cpp
+  1288   plugins/GigPlayer/GigPlayer.cpp
+  1286   plugins/Watsyn/Watsyn.cpp
+  1245   plugins/Sf2Player/Sf2Player.cpp
+  1230   src/core/AutomationClip.cpp
+  1213   plugins/Vestige/Vestige.cpp
+  1196   tests/src/plugins/PluginPortsHarness.h
+  1169   src/core/ScriptBindings.cpp
+
+REGRESSION: include/RemotePluginBase.h grew 642 -> 649 lines
+REGRESSION: new file over 500 lines: include/Song.h (539)
+REGRESSION: plugins/Vestige/Vestige.cpp grew 1194 -> 1213 lines
+REGRESSION: plugins/VstBase/RemoteVstPlugin.cpp grew 2629 -> 2645 lines
+REGRESSION: plugins/VstBase/VstPlugin.cpp grew 932 -> 940 lines
+REGRESSION: plugins/ZynAddSubFx/ZynAddSubFx.cpp grew 662 -> 757 lines
+REGRESSION: src/core/ConfigManager.cpp grew 781 -> 783 lines
+REGRESSION: new file over 500 lines: src/core/CrashReporter.cpp (526)
+REGRESSION: src/core/main.cpp grew 991 -> 1155 lines
+REGRESSION: src/core/midi/MidiAlsaSeq.cpp grew 699 -> 706 lines
+REGRESSION: src/core/Mixer.cpp grew 1720 -> 1725 lines
+REGRESSION: new file over 500 lines: src/core/PluginFactory.cpp (688)
+REGRESSION: src/core/Song.cpp grew 1544 -> 1572 lines
+REGRESSION: src/gui/editors/PianoRoll.cpp grew 5935 -> 5939 lines
+REGRESSION: src/gui/MainWindow.cpp grew 1762 -> 1800 lines
+REGRESSION: tests/src/core/AudioBufferTest.cpp grew 755 -> 934 lines
+REGRESSION: tests/src/core/PdcMixerTest.cpp grew 638 -> 786 lines
+REGRESSION: new file over 500 lines: tests/src/core/PluginScanCacheTest.cpp (670)
+REGRESSION: new file over 500 lines: tests/src/core/RemotePluginAudioPortsTest.cpp (665)
+REGRESSION: tests/src/core/ScriptEngineTest.cpp grew 546 -> 592 lines
+REGRESSION: tests/src/plugins/PluginPortsHarness.h grew 1156 -> 1196 lines
+REGRESSION: tests/src/plugins/PluginPortsMigrationTest.cpp grew 632 -> 731 lines
+REGRESSION: tests/src/wasm/WasmSandboxTest.cpp grew 948 -> 1022 lines
+FAIL: file-length ratchet regressed (check mode: baseline not written)

@@ -1,0 +1,12 @@
+file-length-all        EXIT=0
+complexity-all         EXIT=0
+file-length-fork       EXIT=0
+complexity-fork        EXIT=0
+file-length-tools      EXIT=0
+complexity-tools       EXIT=0
+duplication-fork       EXIT=0
+duplication-all        EXIT=0
+duplication-tools      EXIT=0
+no-tautology           EXIT=0
+fork-sources           EXIT=0
+upstream-divergence    EXIT=0

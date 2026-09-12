@@ -1,0 +1,4 @@
+duplication-gate: whole-tree scope (every source in tests/all-sources.txt)
+duplication-gate: scanning 1133 all sources (min-lines 25, min-tokens 120, threshold 5%)
+
+PASS: duplicated lines 1.21% (budget 5%)
