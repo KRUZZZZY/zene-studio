@@ -27,14 +27,26 @@ limitations before you install.
 **1. It is called Zene Studio now.** The application, the packages, the desktop entry, the manual page and
 the file paths carry the product's own name instead of the upstream project's. What deliberately does *not*
 change: the licence notices and the "derived from LMMS" attribution, which stay because this is a derivative
-work under GPL-2.0-or-later and keeping them is a condition of the licence, not a naming choice. Verified
-against the tree: the residue list is enumerated in `docs/WAVE-R-RENAME.md` §6 — the `lmms::` namespace and
-the `LMMS_*` macros; the `<lmms-project>` file format, `creator="LMMS"` and the 175 shipped presets; the
-licence headers and the attribution; the `lmms_plugin_main` entry symbol and the `lmms-plugin-logo` resource
-key (54 call sites), which is why existing native plugins still load; user state (`~/.lmmsrc.xml`,
-`~/Documents/lmms/`, the `lmms-workspace` portable marker), because renaming it would orphan an existing
-install's settings and projects; the JACK/PulseAudio client name `lmms`, for the same reason; the registered
-MIME types; upstream URLs and identities; and the historical documents.
+work under GPL-2.0-or-later and keeping them is a condition of the licence, not a naming choice.
+**The residue is narrower than earlier drafts of this text claimed, and several things once listed here are
+renamed rather than kept** — verified against this tree:
+- **Kept deliberately, because renaming it is an ABI break**: the `lmms_plugin_main` entry symbol
+  (`src/core/Plugin.cpp:228`). That symbol is *why* existing native plugins still load unchanged; renaming it
+  would be a deliberate break and would be announced as one. Alongside it, the internal identifiers no user
+  sees — the `lmms::` namespace, the `LMMS_*` macros and file names such as `lmmsconfig.h` — which were assessed
+  with their size and cost and deliberately not attempted.
+- **Backwards compatibility, not residue**: `DataFile.cpp` **writes** `<zene-project>`
+  (`src/core/DataFile.cpp:128/136/313`) and its **reader still accepts** the old `<lmms-project>` root
+  (`:1741-1742`), so old files open and new files are unambiguous.
+- **No longer true, and corrected here**: the plugin-logo resource key is **`zene-plugin-logo`**, not
+  `lmms-plugin-logo`; and the **JACK and PulseAudio client identity is `Zene Studio`**
+  (`AudioPulseAudio.cpp` names the stream `Zene Studio`), not `lmms`.
+- **Migrated rather than kept**: user state (`~/.lmmsrc.xml`, `~/Documents/lmms/`). Earlier text here said
+  renaming it "would orphan an existing install's settings and projects"; that is no longer the case — the
+  settings are **adopted**, which is why the paths in quotes above are the *old* ones being read from, not the
+  ones being written to.
+`docs/WAVE-R-RENAME.md` §6 still describes the pre-migration version of this list, and the rename lane's own
+record is left as it was written; **the limitations page's "The name, honestly" is the accurate half.**
 **Files we write identify us now, not upstream.** The WAV files this build renders carry
 `Zene Studio (libsndfile-…)` in their software tag where they used to credit LMMS. It is a metadata string, not
 audio — the rendered samples are provably identical, and we checked that specifically — but it is the kind of
