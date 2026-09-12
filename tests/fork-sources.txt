@@ -111,3 +111,4 @@ src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tools/local-ci.sh
+tools/brand/rasterise-placeholders.py
