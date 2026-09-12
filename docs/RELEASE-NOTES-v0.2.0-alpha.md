@@ -13,11 +13,19 @@ limitations before you install.
 > **Provenance of this file.** Applied from `drafts/RELEASE-NOTES-v0.2.0-alpha-DRAFT.md` (reviewed) on
 > `post-alpha/release-prep`, based on `post-alpha/integration` at `34c1f4f86`; the applying lane extended it
 > while resolving markers. Those drafts were edited after that application, so on 2026-09-12 the corrected
-> passages were **ported** into this file at the frozen tip `2239f3cb6` — an edit, never a replacement, because
-> the applied copy carries marker resolutions the drafts lack. Every `[VERIFY AT FREEZE]` marker that remained
-> was then re-checked against that frozen tree and its built binary: each one is either resolved inline to the
-> verified fact, or the claim it guarded is deleted. Which markers were resolved, which were deleted, and why —
-> `docs/RELEASE-PREP-0.2.0.md`, §3.
+> passages were **ported** into this file at the tip `2239f3cb6` — an edit, never a replacement, because
+> the applied copy carries marker resolutions the drafts lack. **That tip is not this file's state: the file
+> was edited twice more that day** — the residue-list correction, then the control-surface section — **and the
+> last of those describes code the frozen tip does not contain at all.**
+> `include/ControlVocabulary.h`, `include/ControlRegistry.h` and `src/core/ControlCommands*.cpp` arrive with
+> the control surface, after `2239f3cb6`: `git show 2239f3cb6:include/ControlVocabulary.h` answers `fatal:
+> path 'include/ControlVocabulary.h' does not exist`. `git log --oneline -- docs/RELEASE-NOTES-v0.2.0-alpha.md`
+> is the edit list. The marker resolutions are the applied copy's, taken at `post-alpha/release-prep`; which
+> markers, and why — `docs/RELEASE-PREP-0.2.0.md`, §3.
+> **This file was then re-checked claim by claim against the tree at `0834e40f1`** (the tip this pass ran on)
+> and the two build directories item 2 names, and **every line number this file still carries was re-derived at
+> that commit**; where a line number was incidental to the claim, it was replaced by a symbol — a line number is
+> only true of the commit it was taken at.
 >
 > **Digests.** The publish step appends the SHA-256 block generated from the published release
 > (`docs/RELEASING.md`, "The publish sequence", steps 4–5). Digests are never typed into this file.
@@ -599,42 +607,57 @@ ancestor of this tip.
 Resolved against the tree and the binary at `post-alpha/release-prep` base `34c1f4f86`; the full table is
 `docs/RELEASE-PREP-0.2.0.md` §3.
 
-1. **Replace every `[VERIFY AT FREEZE]` with a verified fact — or delete the claim.** *Done, at the frozen tip
-   `2239f3cb6`.* This file carried **16** markers and all 16 are settled. The dominant blocker was true when it
-   was written and is not true now: every lane a marker named as "not an ancestor of the release-prep base" has
-   since merged into this tip, so each claim was re-checked against this tree and its built binary and replaced
-   with the fact that settles it, naming the path or the command. One was a **deletion rather than a
-   resolution** — the save-failure claim appeared twice and the two bullets are now one, with the second copy
-   gone. No marker remains, and no unverified claim was left unmarked. The only group this file still owes is
-   item 3's digest/SHA-256 block, which needs the published artefacts; the publish step appends that block to
-   the release body rather than writing it here.
-2. **Fill the version string.** *Done, with one number corrected.* `git describe --tags --match
-   'v[0-9]*.[0-9]*.[0-9]*'` at this file's original base `34c1f4f86` returns `v0.1.0-alpha-123-g34c1f4f86` —
-   **not** a `v0.2.0-alpha` string — so an untagged build of that base reports
+1. **Replace every `[VERIFY AT FREEZE]` with a verified fact — or delete the claim.** *Done.* **The file
+   carries no live marker, and that is a command, not an impression:** `grep -n "VERIFY AT FREEZE"
+   docs/RELEASE-NOTES-v0.2.0-alpha.md` returns three hits and every one is this convention being described, not
+   a marker on a claim (the limitations page has one, of the same kind). **No marker count is stated here.**
+   None is derivable: no marker list survives in this file's history that a reader could count against, and the
+   per-marker table this item cites — `docs/RELEASE-PREP-0.2.0.md` §3 — is the record of a *different* pass, at
+   its own base `34c1f4f86`, where a marker the tree could not settle was left in place with its blocker named
+   and nothing was deleted (§3). A number would name neither pass. The dominant blocker was true when it was
+   written and is not true now: every lane a marker named as "not an ancestor of the release-prep base" has
+   since merged into this tip. One claim was **merged rather than resolved** — the save-failure claim appeared
+   twice and the two bullets are now one, the second copy gone (the surviving bullet records this itself). The
+   only group this file still owes is item 3's digest/SHA-256 block, which needs the published artefacts; the
+   publish step appends that block to the release body rather than writing it here.
+2. **Fill the version string.** *Done, with the artefact half removed.* `git describe --tags --match
+   'v[0-9]*.[0-9]*.[0-9]*'` at this file's original base `34c1f4f86` returns `v0.1.0-alpha-123-g34c1f4f86`
+   (checked here) — **not** a `v0.2.0-alpha` string — so the version the assembly builds from it is
    `Zene Studio 0.1.0-alpha.123+34c1f4f`: the minor version the tag supplies, not the `2` that `CMakeLists.txt`
-   declares. (The applied copy of this item printed `0.2.0-alpha.123+34c1f4f`, which contradicted item 3's own
-   asset name below *and* the release-prep record this item cites; it is corrected here against the command
-   output, not reworded.) On this tip the built header reports `Zene Studio 0.1.0-alpha.241+2239f3c`
-   (`build-coverage/lmmsversion.h`; `git describe` → `v0.1.0-alpha-241-g2239f3cb6`). The string that ships,
-   `Zene Studio 0.2.0-alpha`, needs the `v0.2.0-alpha` tag to exist at the release commit — **that tag does not
-   exist yet and nothing is tagged by this pass** — or the `-DFORCE_VERSION=internal` configure. Exact output
-   and the two configure lines: `docs/RELEASE-PREP-0.2.0.md` §1, whose §1.2 states the same mechanism and the
-   same `0.1.0-alpha.123+34c1f4f` untagged string.
+   declares. **No `lmmsversion.h` is quoted for that string, because no build of that commit exists on this
+   box to read one from** — a build directory's header reports whatever commit that directory was last
+   configured from, not the base this item is about. For the record of what is on the box: `build/lmmsversion.h`
+   reads `0.1.0-alpha.247+f68cf8e`, and `build-coverage/lmmsversion.h` read `0.1.0-alpha.315+6daed30` when this
+   pass checked it (it is rewritten by every configure). The string that ships, `Zene Studio 0.2.0-alpha`, needs
+   the `v0.2.0-alpha` tag to exist at the release commit — **that tag does not exist yet and nothing is tagged
+   by this pass** (`git tag -l 'v0.2.0-alpha'` → empty) — or the `-DFORCE_VERSION=internal` configure. Exact
+   output and the two configure lines: `docs/RELEASE-PREP-0.2.0.md` §1.
 3. **Add the artefact list and the SHA-256 digests block, generated from the published release rather than
    typed.** *Pending by design — needs the published artefacts.* The digests are appended by the publish step
-   (`docs/RELEASING.md`, steps 4–5). The asset **names** follow from the verified package-name pattern
-   `${CMAKE_PROJECT_NAME}-${VERSION}-<platform>` (`build/CPackConfig.cmake:45` produces
-   `zene-0.1.0-alpha.123+34c1f4f-linux-x86_64` on this base), so the release's assets are
+   (`docs/RELEASING.md`, steps 4–5). The asset **names** follow from the package-name pattern
+   `${CMAKE_PROJECT_NAME}-${VERSION}-<platform>`. **The concrete string is quoted from the build directory it
+   was read in, not from "this base":** `build/CPackConfig.cmake` — the release-configuration directory on this
+   box, configured at `f68cf8e` — sets `CPACK_PACKAGE_FILE_NAME` to
+   `zene-0.1.0-alpha.247+f68cf8e-linux-x86_64` (and its source pair to `zene-0.1.0-alpha.247+f68cf8e`), and
+   `build/lmmsversion.h` reports the same commit. So the release's assets are
    `zene-0.2.0-alpha-<platform>.<ext>`; the per-platform extension list is the release job's upload glob
    (`.github/workflows/build.yml`, `.AppImage` / `.dmg` / `.exe`).
-4. **Cross-check every capability line against `tests/advertised-features.tsv`.** *Done, with a correction.*
+4. **Cross-check every capability line against `tests/advertised-features.tsv`.** *Done — except the
+   enforcement half, which is **not** green on either build on this box and is not claimed to be.*
    The manifest binds **compile-time capability**, and it carries six rows: the three hosts this release
    documents as present (`vst3effect`, `vst3instrument`, `clapeffect`) and the three features it documents as
    absent (`session-view`, `wasm-sandbox`, `stem-separation`). It is not, and by its own header cannot be, a row
    per runtime feature — so "delete any claim not represented in the manifest" taken literally would delete
-   these notes. What the manifest does enforce is that no documented-**present** host is compiled out, and that
-   no documented-**absent** feature is compiled in. The runtime bullets are guarded by their tests. Checked
-   line by line in `docs/RELEASE-PREP-0.2.0.md` §4.
+   these notes. The runtime bullets are guarded by their tests. **The guard that binds the manifest to a binary
+   is `tests/release-honesty-gate.sh`**, and its mechanism is what this item can assert: it fails a feature the
+   release documents as present when the build under test does not report that option `ON` (`AUTO` is not `ON`
+   — the script's own header says so), it exits 1 on any mismatch, and the six build jobs in
+   `.github/workflows/build.yml` run it against the binary they have just built. Run against the two binaries
+   that exist here it does **not** pass: `3 of 6` rows on `build-coverage/zene` (the three hosts report `AUTO`)
+   and `1 of 6` on `build/zene` (a stale `WANT_SESSION_VIEW=ON` left in that directory's cache). **The
+   release-configuration build whose options would let the gate read six of six is being run by the release
+   engineer (`scripts/release-verify.sh`); until that run has been observed, item 4 is not Done.** Checked line
+   by line in `docs/RELEASE-PREP-0.2.0.md` §4.
 5. **Have an independent reader compare this text against the built binary, not against the plans.**
    **Not done here, and it is not this lane's to do.** This lane is the author of the resolutions above; an
    independent reader is a second party, and the parent should nominate one before the tag.
