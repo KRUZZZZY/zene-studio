@@ -1,0 +1,16 @@
+unmeasured-by-config  include/StemSeparation/StemSeparator.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  include/StemSeparation/StemTypes.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  include/StemSplitController.h: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/ExternalProcessStemSeparator.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemJobManager.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemModelStore.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/core/StemTrackBuilder.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+unmeasured-by-config  src/gui/StemSplitController.cpp: exists and is in scope but this build compiled no translation unit for it (baseline entry PRESERVED, not dropped)
+
+tracefile line coverage: 84.34%  (4523/5363 lines over 67 files)
+entry floor: 50.00% for files not yet in the baseline (COVERAGE_ENTRY_FLOOR; 0 declared exemption(s))
+scope: 139 entries in tests/fork-sources.txt; 67 produced a record in this capture; 72 did not
+       the line-coverage number above is a claim about those 67 files, NOT about the 139-entry scope
+       (per-entry reason for the gap: python3 tests/coverage-green/classify-scope.py build-coverage/coverage/coverage-fork.info <build-dir>)
+baseline-scope line coverage: 84.34%  (4523/5363 lines over 67 files in the baseline)
+PASS (check mode: baseline not updated)

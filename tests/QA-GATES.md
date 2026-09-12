@@ -269,15 +269,58 @@ plus a `genhtml` report under `build-coverage/coverage/html/`.
   so the floor applies to it too; a previously measured file that stops reporting
   instrumented lines is reported as `unmeasured` (loudly, not fatally — it is a
   measurement loss, not a coverage drop);
-- removed sources drop out of the baseline.
+- **a file that still exists but produced no tracefile record was not compiled in
+  this configuration**: it is reported as `unmeasured-by-config` and its baseline
+  entry is **preserved**. It does *not* count as a removed source (fixed
+  2026-09-12: the old rule deleted eight entries that only `WANT_STEM_SPLIT=OFF`
+  kept out of the build, and a write-mode run would have made them re-enter as
+  new files and be refused by the floor when the feature came back);
+- only a removed source — no record **and** the path is gone — drops out of the
+  baseline.
+
+**Per-entry rows carry the instrumented-line count and a content fingerprint**
+(2026-09-12), because the reconstructed comparison `round(pct * LF_now)` is only
+like-for-like while LF is stable, and LF is a *compile-time* quantity while LH is
+a run-time one. A header of templates gains instrumented lines whenever any
+including TU is added, with no edit to the header at all: `include/AudioPorts.h`
+is byte-identical to the commit the baseline was taken at, yet the old arithmetic
+reported 81 of its 233 lines lost. The row is now
+`<path><TAB><pct|n/a><TAB><lf|-><TAB><sha256-16|->` and the comparison is chosen
+by what moved: LF unchanged → the original hit-line ratchet; LF moved with the
+bytes unchanged → judged on covered lines and reported as `denominator-moved`;
+LF moved with the bytes changed for a **header** → both causes are present and
+inseparable, so the entry is `REANCHOR-REQUIRED` (exit 1) until a reason is
+recorded; LF moved with the bytes changed for a **source** → the original strict
+rule, a REGRESSION; LF unknown (a legacy row) → the original arithmetic, named as
+legacy. Covered lines are held in every branch.
+
+A single entry is reconciled with
+`coverage-gate.sh <tracefile> --reanchor-file <path> "reason"` (repeatable): it
+moves only that entry, exits 2 on a blank reason, and exits 2 when the named path
+is not failing — a re-anchor is a decision with a reason, not a silencer.
+
+The gate also prints its own scope accounting (`scope: N entries in
+tests/fork-sources.txt; M produced a record; K did not`) so the headline cannot be
+read as a claim about the whole manifest. `tests/coverage-green/classify-scope.py`
+names the reason per entry.
 
 `--check` runs in CI mode: report only, baseline never written.
 
 **Measured (2026-09-11):** the 2026-09-09 product baseline (47 measured files,
 76.07%) still passes unchanged under the new rules — this is an entry floor, not
-a retroactive one, so no re-anchor was needed or made. On the next write-mode
-run the only expected baseline change is the `n/a` marker for any zero-instrumented
-file that the old format had recorded as `100.00`.
+a retroactive one, so no re-anchor was needed or made.
+
+**Measured (2026-09-12, `post-alpha/coverage-green`):** Gate 2 is **exit 0**.
+The headline is **84.34% (4523/5363) over the 67 of the 139 fork-scope entries
+that produced a record** — 72 entries produce no record in this configuration (29
+feature-gated sources, 41 headers no compiled TU instantiates, 2 non-source).
+Three entries were reconciled with recorded reasons (`include/AudioPorts.h`,
+`include/RemotePluginAudioPorts.h`: pure denominator moves, proven by the
+byte-identical files and a covered-lines bound; `include/AudioPlugin.h`: mostly
+denominator with a named residual of ≤8 lines no test drives). The migration
+added 28 entries, changed 5 percentages, and **dropped none**. Evidence and the
+21-control harness: `docs/COVERAGE-GATE-GREEN.md`,
+`tests/coverage-green/gate-controls.sh`.
 
 **Measured numbers — standards fork** (2026-09-09, gcc 13 / lcov 2.0, after the coverage push):
 

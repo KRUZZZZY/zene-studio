@@ -1,0 +1,100 @@
+tracefile: build-coverage/coverage/coverage-fork.info
+build dir: build-coverage
+scope:     tests/fork-sources.txt  (139 entries)
+tracefile records (normalized): 67
+
+class                    count
+measured                    67
+no-executable                0
+source-not-compiled         29
+source-no-record             0
+header-uninstantiated       41
+non-source                   2
+TOTAL                      139
+
+the measured class is 67 of 139 scope entries; the line-coverage headline is a claim about those 67 files only
+
+--- 41 entries: no compiled TU instantiated code from it
+      include/AudioPortsSettings.h
+      include/CrashReporter.h
+      include/MidiLearn.h
+      include/MidiLearnGui.h
+      include/NoteRandom.h
+      include/NoteTransform.h
+      include/ScriptApiVersion.h
+      include/ScriptConsole.h
+      include/SessionModel.h
+      include/StemSeparation/ExternalProcessStemSeparator.h
+      include/StemSeparation/OnnxRuntimeStemSeparator.h
+      include/StemSeparation/StemJobManager.h
+      include/StemSeparation/StemModelStore.h
+      include/StemSeparation/StemSeparator.h
+      include/StemSeparation/StemTrackBuilder.h
+      include/StemSeparation/StemTypes.h
+      include/StemSplitController.h
+      plugins/ClapEffect/ClapBusMap.h
+      plugins/ClapEffect/ClapEffect.h
+      plugins/ClapEffect/ClapEffectControlDialog.h
+      plugins/ClapEffect/ClapEffectControls.h
+      plugins/ClapEffect/ClapHost.h
+      plugins/ClapEffect/ClapParamDescriptor.h
+      plugins/ClapEffect/ClapParameter.h
+      plugins/ClapEffect/ClapSubPluginFeatures.h
+      plugins/Vst3Effect/Vst3BusMap.h
+      plugins/Vst3Effect/Vst3Effect.h
+      plugins/Vst3Effect/Vst3EffectControlDialog.h
+      plugins/Vst3Effect/Vst3EffectControls.h
+      plugins/Vst3Effect/Vst3Host.h
+      plugins/Vst3Effect/Vst3ParamDescriptor.h
+      plugins/Vst3Effect/Vst3Parameter.h
+      plugins/Vst3Effect/Vst3SubPluginFeatures.h
+      plugins/WasmEffect/WasmEffect.h
+      plugins/WasmEffect/WasmEffectControlDialog.h
+      plugins/WasmEffect/WasmEffectControls.h
+      src/core/SessionModelPrivate.h
+      src/wasm/WasmAbi.h
+      src/wasm/WasmSandbox.h
+      src/wasm/WasmSpscRingBuffer.h
+      src/wasm/WasmWorker.h
+
+--- 7 entries: CLAP headers absent (WANT_CLAP=AUTO, no CLAP SDK on this host)
+      plugins/ClapEffect/ClapBusMap.cpp
+      plugins/ClapEffect/ClapEffect.cpp
+      plugins/ClapEffect/ClapEffectControlDialog.cpp
+      plugins/ClapEffect/ClapEffectControls.cpp
+      plugins/ClapEffect/ClapHost.cpp
+      plugins/ClapEffect/ClapParameter.cpp
+      plugins/ClapEffect/ClapSubPluginFeatures.cpp
+
+--- 7 entries: VST3 SDK absent (WANT_VST3=AUTO, no SDK on this host)
+      plugins/Vst3Effect/Vst3BusMap.cpp
+      plugins/Vst3Effect/Vst3Effect.cpp
+      plugins/Vst3Effect/Vst3EffectControlDialog.cpp
+      plugins/Vst3Effect/Vst3EffectControls.cpp
+      plugins/Vst3Effect/Vst3Host.cpp
+      plugins/Vst3Effect/Vst3Parameter.cpp
+      plugins/Vst3Effect/Vst3SubPluginFeatures.cpp
+
+--- 6 entries: WANT_STEM_SPLIT=OFF
+      src/core/ExternalProcessStemSeparator.cpp
+      src/core/OnnxRuntimeStemSeparator.cpp
+      src/core/StemJobManager.cpp
+      src/core/StemModelStore.cpp
+      src/core/StemTrackBuilder.cpp
+      src/gui/StemSplitController.cpp
+
+--- 5 entries: wasmtime absent (WANT_WASM=ON, dependency missing)
+      plugins/WasmEffect/WasmEffect.cpp
+      plugins/WasmEffect/WasmEffectControlDialog.cpp
+      plugins/WasmEffect/WasmEffectControls.cpp
+      src/wasm/WasmSandbox.cpp
+      src/wasm/WasmWorker.cpp
+
+--- 3 entries: WANT_SESSION_VIEW=OFF
+      src/core/SessionClip.cpp
+      src/core/SessionModel.cpp
+      tests/src/core/SessionModelTest.cpp
+
+--- 1 entries: plugin module: built as a loadable .so, not linked into any test binary
+      plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+

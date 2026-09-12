@@ -1,0 +1,59 @@
+pre-fix revision: 0c23587d2 (0c23587d2 test: drive the remote-plugin host<->client contract end to end)
+fixtures: /tmp/zene-verification-debt.u0TiW3
+
+=== Defect 1: coverage entry floor + unmeasurable files ===
+
+$ bash tests/coverage-gate.sh trace-bad.info base-*.tsv   # pre-fix first
+  OK   defect 1 RED    pre-fix gate on the bad fixture (must be exit 0: it does not bite) exit 0
+  OK   defect 1 RED    pre-fix run banks the zero-instrumented file at 100% 'src/braindead.cpp	100.00' present
+  OK   defect 1 RED    pre-fix run never mentions an entry floor        'entry floor' absent
+  OK   defect 1 GREEN  fixed gate on the bad fixture (must be exit 1)   exit 1
+  OK   defect 1 GREEN  fixed run reports the 5% new file below the floor 'src/newlow.cpp: 5.00%' present
+  OK   defect 1 GREEN  fixed run reports the zero-instrumented file as unmeasurable 'unmeasurable  src/braindead.cpp: 0 instrumented lines' present
+  OK   defect 1 GREEN  nothing was banked at 100% on the failed run     'src/braindead.cpp	100.00' absent
+
+$ bash tests/coverage-gate.sh trace-good.info base-new-good.tsv   # control: good new file
+  OK   defect 1 GREEN  fixed gate on the good fixture (must be exit 0)  exit 0
+  OK   defect 1 GREEN  the 95% new file entered the baseline at its measured value 'src/newgood.cpp	95.00' present
+
+$ bash tests/coverage-gate.sh trace-bad.info base-*.tsv   # old gate, good fixture
+  OK   defect 1 CONTROL pre-fix gate on the good fixture (unchanged behaviour) exit 0
+
+=== Defect 2: run-all-gates.sh treats SKIP as a pass ===
+
+$ bash <fixture>/tests/run-all-gates-old.sh   # no build/, no --with-coverage: gates 1 and 2 skip
+  OK   defect 2 RED    pre-fix runner with 2 skipped gates (must be exit 0: looks green) exit 0
+  OK   defect 2 RED    pre-fix summary claims every executed gate passed 'RESULT: PASS — every executed gate passed' present
+
+$ bash <fixture>/tests/run-all-gates.sh       # same fixture, fixed runner
+  OK   defect 2 GREEN  fixed runner with 2 skipped gates (must be exit 3) exit 3
+  OK   defect 2 GREEN  summary counts the skipped gates                 'skipped: 2 of 9 gates did not run' present
+  OK   defect 2 GREEN  summary names gate 1                             'gate 1 (ctest): no configured build/ directory' present
+  OK   defect 2 GREEN  summary names gate 2                             'gate 2 (coverage): --with-coverage was not passed' present
+  OK   defect 2 GREEN  verdict is not a pass                            'RESULT: PASS-WITH-SKIPS (exit 3)' present
+
+$ bash <fixture>/tests/run-all-gates.sh --with-coverage   # every gate runs
+  OK   defect 2 CONTROL fixed runner with every gate run (must be exit 0) exit 0
+  OK   defect 2 CONTROL verdict is a real pass                          'RESULT: PASS — every executed gate passed (9/9 ran)' present
+
+=== Defect 3: an unregistered new source file is never named ===
+pre-fix check for the omission:
+  OK   no registration check at 0c23587d2                               does not exist at 0c23587d2 — nothing ran this check
+
+$ bash <fixture>/tests/no-upstream-regression-gate.sh bc08257fca39e51e930ec7fdfc94568adc67edab   # the pre-fix reaction (Gate 6)
+  OK   defect 3 RED    pre-fix Gate 6 exits non-zero on the unregistered file exit 1
+  OK   defect 3 RED    ...but calls it an undeclared change to UPSTREAM code (the wrong diagnosis) 'undeclared change to upstream-inherited code' present
+  OK   defect 3 RED    ...and never says the file is missing from tests/fork-sources.txt 'not in tests/fork-sources.txt' absent
+
+$ bash <fixture>/tests/fork-sources-gate.sh   # the new gate, same commit
+  OK   defect 3 GREEN  new gate exits 1 on the unregistered files       exit 1
+  OK   defect 3 GREEN  it names src/core/LatencyCompensation.cpp        'src/core/LatencyCompensation.cpp' present
+  OK   defect 3 GREEN  it names include/LatencyCompensation.h           'include/LatencyCompensation.h' present
+  OK   defect 3 GREEN  it says plainly what the omission is             'are not in tests/fork-sources.txt' present
+
+$ bash <fixture>/tests/fork-sources-gate.sh   # after registering the two files
+  OK   defect 3 GREEN  new gate exits 0 once the files are registered   exit 0
+  OK   defect 3 GREEN  and reports the registered counts                'PASS: every tracked source in scope is registered' present
+
+================ SUMMARY ================
+RESULT: PASS — every red/green assertion held.
