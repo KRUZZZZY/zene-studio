@@ -180,6 +180,12 @@ void Song::setTempo()
 
 	Engine::updateFramesPerTick();
 
+	// With a tempo map in force, the global model is only the tempo of the
+	// region BEFORE the map's first event, so the scalar just recomputed is not
+	// the tempo at the play head. Invalidate the follower's memo so the next
+	// audio block re-applies the mapped tempo (docs/TEMPO-MAP.md section 4).
+	if( m_tempoMap.map().active() ) { m_tempoMapAppliedTempo = -1; }
+
 	m_vstSyncController.setTempo( tempo );
 
 	emit tempoChanged( tempo );
@@ -239,6 +245,10 @@ void Song::processNextBuffer()
 
 	// If nothing is playing, there is nothing to do
 	if (!m_playing) { return; }
+
+	// The tempo map, if one is in force, sets the frame/tick rate this block
+	// runs at - BEFORE the value is captured below (docs/TEMPO-MAP.md section 4).
+	followTempoMap();
 
 	// At the beginning of the song, we have to reset the LFOs
 	if (m_playMode == PlayMode::Song && getPlayPos() == 0)
@@ -932,6 +942,50 @@ bpm_t Song::getTempo()
 }
 
 
+
+
+int Song::tempoAtTick( tick_t tick ) const
+{
+	// The global model is the map's own out-of-range answer (before its first
+	// event, and for an empty or inactive map), so this is the one place the
+	// default is chosen - docs/TEMPO-MAP.md section 2.
+	return m_tempoMap.map().tempoAtTick( tick, static_cast<int>( m_tempoModel.value() ) );
+}
+
+
+
+
+double Song::secondsAtTick( tick_t tick ) const
+{
+	return m_tempoMap.map().secondsAtTick( tick, static_cast<int>( m_tempoModel.value() ) );
+}
+
+
+
+
+void Song::followTempoMap()
+{
+	// An empty OR inactive map is exactly today's engine, and the audio thread
+	// must pay nothing for it: no snapshot copy, no arithmetic, no write to the
+	// frame/tick scalar. This early return IS the byte-identity guarantee on the
+	// timing path, and TempoMapTest measures it.
+	if( !m_tempoMap.map().active() )
+	{
+		m_tempoMapAppliedTempo = -1;
+		return;
+	}
+
+	// The snapshot is a fixed-size value copy with a version re-check - no lock,
+	// no allocation, no growth (include/TempoMap.h, TempoMapPublisher).
+	const TempoMap map = m_tempoMap.snapshot();
+	const int bpm = map.tempoAtTick( currentTick(), static_cast<int>( m_tempoModel.value() ) );
+	if( bpm == m_tempoMapAppliedTempo ) { return; }
+
+	m_tempoMapAppliedTempo = bpm;
+	Engine::updateFramesPerTickForTempo( bpm );
+}
+
+
 AutomatedValueMap Song::automatedValuesAt(TimePos time, int clipNum) const
 {
 	auto trackList = TrackList{m_globalAutomationTrack};
@@ -1020,6 +1074,11 @@ void Song::clearProject()
 	// carried must not leak into the next one (see loadProject()).
 	m_preservedSessionXml.clear();
 #endif
+
+	// The tempo map is project state, so a new project starts with none: a map
+	// from one project must not retime the next (docs/TEMPO-MAP.md).
+	m_tempoMap.edit([](TempoMap& map) { map.clear(); return true; });
+	m_tempoMapAppliedTempo = -1;
 
 	emit dataChanged();
 
@@ -1276,6 +1335,16 @@ void Song::loadProject( const QString & fileName )
 			{
 				restoreKeymapStates(node.toElement());
 			}
+			// The tempo map (D11, docs/TEMPO-MAP.md). A project that has no
+			// block loads into an EMPTY map, which is the state the engine was
+			// in before this element existed - so the reader is a no-op for
+			// every project that predates the feature.
+			else if (node.nodeName() == "tempo-map")
+			{
+				const QDomElement mapElement = node.toElement();
+				m_tempoMap.edit([&mapElement](TempoMap& map) { return map.loadSettings(mapElement); });
+				m_tempoMapAppliedTempo = -1;
+			}
 #ifdef LMMS_HAVE_SESSION_VIEW
 			else if( node.nodeName() == "session" )
 			{
@@ -1449,6 +1518,15 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 
 	saveScaleStates(dataFile, dataFile.content());
 	saveKeymapStates(dataFile, dataFile.content());
+
+	// Written ONLY when the map is active or holds an event, so a project that
+	// never used a tempo map re-saves exactly the bytes it has always had -
+	// the property the release's reproducibility claim rests on
+	// (docs/TEMPO-MAP.md section 3).
+	if( m_tempoMap.map().shouldPersist() )
+	{
+		m_tempoMap.map().saveSettings( dataFile, dataFile.content() );
+	}
 
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// Only projects that use the session view carry a <session> block; a

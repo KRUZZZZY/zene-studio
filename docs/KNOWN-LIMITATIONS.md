@@ -371,6 +371,13 @@ that is this page's fault — report it and it gets added.
   draw a waveform — drivable through the socket, not from the interface. The tags are persisted in the
   user's config directory (`browser-tags.json`), not in the project file, so they are a property of the
   user's library rather than of a project; `docs/RELEASE-NOTES-v0.3.0-alpha.md` carries the same sentence.
+- **Tempo and time-signature changes have no editor — added 2026-09-13.** The engine is in (a persisted,
+  ordered set of tempo and time-signature events the timeline obeys, with the ticks-to-time conversion reading
+  it — `docs/TEMPO-MAP.md`) and it is drivable through `--control-socket`
+  (`transport.tempo_map_get` / `tempo_map_add` / `tempo_map_remove` / `tempo_map_clear` /
+  `tempo_map_set_active`), but **nothing in `src/gui/` draws, edits or reads a tempo map**: drivable through
+  the socket, not from the interface. With an empty or inactive map the tempo is the single project value it
+  has always been, so a project that never used one renders byte-for-byte what it did.
 
 ## Telemetry and privacy
 

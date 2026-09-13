@@ -39,6 +39,7 @@
 #include "lmms_constants.h"
 #include "lmmsconfig.h"
 #include "MeterModel.h"
+#include "TempoMap.h"
 #include "Timeline.h"
 #include "TrackContainer.h"
 #include "VstSyncController.h"
@@ -377,6 +378,21 @@ public:
 		return m_tempoModel;
 	}
 
+	/*! The tempo map: the ordered tempo and time-signature events the timeline
+	 *  obeys (docs/TEMPO-MAP.md). The control thread edits it through the
+	 *  transport.tempo_map_* commands; the audio thread reads it through the
+	 *  publisher's lock-free snapshot in followTempoMap(). An EMPTY or INACTIVE
+	 *  map is exactly today's single-tempo engine: it is not persisted, not
+	 *  consulted per block, and every tick answers the global tempo. */
+	TempoMapPublisher& tempoMap() { return m_tempoMap; }
+	const TempoMapPublisher& tempoMap() const { return m_tempoMap; }
+
+	//! The tempo in force at \a tick: the map's event at or before it, else the
+	//! global tempo model (the map's own out-of-range rule).
+	int tempoAtTick(tick_t tick) const;
+	//! Seconds from tick 0 to \a tick through the map's tempo segments.
+	double secondsAtTick(tick_t tick) const;
+
 	void exportProjectMidi(QString const & exportFileName) const;
 
 	inline void setLoadOnLaunch(bool value) { m_loadOnLaunch = value; }
@@ -480,6 +496,18 @@ private:
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
 	void processMetronome(size_t bufferOffset);
 
+	/*! The tempo-map follower (SPEC-zene-studio D11, docs/TEMPO-MAP.md). Runs
+	 *  once per audio block, and does NOTHING unless the map is active - which
+	 *  is every project that predates the feature, so the timing path of an
+	 *  unmapped project is untouched (no snapshot, no arithmetic, no write).
+	 *
+	 *  When the map IS active it reads the tempo at the play head through the
+	 *  publisher's lock-free snapshot and, when that differs from the tempo it
+	 *  last applied, hands it to the engine's frame/tick scalar. Changes take
+	 *  effect at the START of the block that contains the event; sample-accurate
+	 *  tempo automation is a separate, still-open in-list item. */
+	void followTempoMap();
+
 	void setModified(bool value);
 
 	void setProjectFileName(QString const & projectFileName);
@@ -488,6 +516,11 @@ private:
 
 	IntModel m_tempoModel;
 	MeterModel m_timeSigModel;
+	//! The tempo map and its lock-free hand-off to the audio thread.
+	TempoMapPublisher m_tempoMap;
+	//! The tempo the follower last applied, so a block costs one comparison
+	//! when nothing changed. -1 means "nothing applied yet".
+	int m_tempoMapAppliedTempo = -1;
 	int m_oldTicksPerBar;
 	IntModel m_masterVolumeModel;
 	IntModel m_masterPitchModel;

@@ -306,6 +306,7 @@ include/TakeLane.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
+include/TempoMap.h
 include/TrackRecorder.h
 include/UnattendedRun.h
 include/VcaGroup.h
@@ -408,6 +409,7 @@ src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTransport.cpp
+src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
@@ -472,6 +474,7 @@ src/core/StemTrackBuilder.cpp
 src/core/TakeLane.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
+src/core/TempoMap.cpp
 src/core/UnattendedRun.cpp
 src/core/VcaGroup.cpp
 src/core/audio/MultiTrackRecorder.cpp

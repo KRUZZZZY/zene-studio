@@ -325,6 +325,37 @@ const ReversibilityRow kRows[] = {
 		"action checkpoint: the recorded undo step restores the revision the "
 		"restore replaced",
 		""),
+
+	// ---------- read-only inspectors ----------
+	R("app.version", RC::NotMutating, false, "reads the build identity", "no write", ""),
+	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
+	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
+	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
+	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
+	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
+	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),
+	R("control.transactions", RC::NotMutating, false, "reads the transaction record", "no write", ""),
+	R("control.version", RC::NotMutating, false, "reads the version strings", "no write", ""),
+	R("dsp.get_state", RC::NotMutating, false, "reads the device chains", "no write", ""),
+	R("midi.device_list", RC::NotMutating, false, "reads the MIDI client", "no write", ""),
+	R("mixer.get_state", RC::NotMutating, false, "reads the mixer", "no write", ""),
+	R("plugin.list", RC::NotMutating, false, "reads the device catalogue", "no write", ""),
+	R("plugin.param_get", RC::NotMutating, false, "reads a parameter", "no write", ""),
+	R("plugin.preset_list", RC::NotMutating, false, "reads a preset directory", "no write", ""),
+	R("project.get_state", RC::NotMutating, false, "reads the project state", "no write", ""),
+	R("roll.get_state", RC::NotMutating, false, "reads the note list", "no write", ""),
+	R("script.list", RC::NotMutating, false, "reads the scripts directory", "no write", ""),
+	R("settings.get", RC::NotMutating, false, "reads one config value", "no write", ""),
+#ifdef ZENE_TELEMETRY_ENABLED
+	R("telemetry.status", RC::NotMutating, false,
+		"reads the consent record and the payload builder", "no write", ""),
+#endif // ZENE_TELEMETRY_ENABLED
+	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
+	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
+	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
+	R("transport.tempo_map_get", RC::NotMutating, false,
+		"reads the tempo map and what its queries answer at the play head", "no write", ""),
+	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// The session.* group: SessionModel is not a JournallingObject, so each edit
 	// captures the whole <session> block and records ONE action checkpoint that

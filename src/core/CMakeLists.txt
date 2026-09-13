@@ -122,6 +122,7 @@ set(LMMS_SRCS
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
 	# commands that expose them (SPEC A16, task #623).
 	core/ControlCommandsUndo.cpp
+	core/ControlCommandsTransportMap.cpp
 	core/ControlCommandsWarp.cpp
 	core/ControlCommandsWarpEdit.cpp
 	core/ControlDeviceCatalogue.cpp
@@ -244,6 +245,7 @@ set(LMMS_SRCS
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp
 	core/Song.cpp
+	core/TempoMap.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp
 	core/Timeline.cpp
