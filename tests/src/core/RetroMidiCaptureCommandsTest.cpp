@@ -39,6 +39,7 @@
 #include "MidiEvent.h"
 #include "Note.h"
 #include "RetroMidiCapture.h"
+#include "RetroMidiCaptureSettings.h"   // applyPersistedRetroCaptureArm()
 #include "RetroMidiClipWriter.h"
 #include "Song.h"
 #include "TimePos.h"

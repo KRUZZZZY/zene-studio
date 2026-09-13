@@ -53,6 +53,19 @@ LMMS_EXPORT bool retroCapturePersistedArmed();
 //! mode actually moved, so re-arming an armed capture never rewrites the file.
 LMMS_EXPORT void setRetroCapturePersistedArmed(bool armed);
 
+/*! Apply the persisted `midi/retrocapture` config key to the live MIDI client.
+ *
+ *  Called from the GUI's startup path (MainWindow::finalize), which is the first
+ *  place qApp exists AND a MIDI client is open. Reading the key anywhere earlier
+ *  is a null dereference: one MidiClient in this tree is a file-static global
+ *  built before main(), and ConfigManager's constructor dereferences qApp
+ *  (docs/MIDI-RETRO-CAPTURE.md 3.6, corrected by slice 1).
+ *
+ *  Idempotent and silent when there is no client: the default ("0") disarms, so
+ *  a fresh instance keeps the feature off.
+ */
+LMMS_EXPORT void applyPersistedRetroCaptureArm();
+
 
 } // namespace lmms
 

@@ -25,7 +25,6 @@
 #include "RetroMidiCaptureSettings.h"
 
 #include "ConfigManager.h"
-#include "ControlRegistry.h"   // applyPersistedRetroCaptureArm's declaration
 #include "Engine.h"
 #include "AudioEngine.h"
 #include "MidiClient.h"

@@ -45,6 +45,7 @@
 #include "AutomationEditor.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
+#include "RetroMidiCaptureSettings.h"
 #include "UnattendedRun.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"

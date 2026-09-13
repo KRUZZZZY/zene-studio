@@ -347,30 +347,15 @@ const ReversibilityRow kRows[] = {
 		"assumes",
 		""),
 
-	// The tempo map's true_inverse rows (030/w15-tempo-map): restored after a
-	// union took the other side wholesale and dropped them.
-	R("transport.tempo_map_add", RC::TrueInverse, true,
-		"the tempo map is a value type on the Song, not a JournallingObject, so "
-		"no object checkpoint covers it",
-		"action checkpoint: the recorded undo step writes the map captured before "
-		"the edit back through TempoMapPublisher::edit",
-		""),
-	R("transport.tempo_map_remove", RC::TrueInverse, true,
-		"the same value type, one event removed",
-		"action checkpoint: the recorded undo step restores the map captured "
-		"before the removal, event for event",
-		""),
-	R("transport.tempo_map_clear", RC::TrueInverse, true,
-		"it removes every event AND switches the map off in one command, so a "
-		"per-event inverse would not be one step",
-		"action checkpoint: the recorded undo step restores the whole captured "
-		"map, events and active flag together, as ONE Ctrl+Z",
-		""),
-	R("transport.tempo_map_set_active", RC::TrueInverse, true,
-		"the flag is engine-read project state with no model of its own",
-		"action checkpoint: the recorded undo step restores the map captured "
-		"before the switch, so the flag comes back with the events",
-		""),
+	// The four transport.tempo_map_* rows are NOT repeated here. Their mechanism
+	// is "action checkpoint", which is the action half's own definition, and
+	// ControlReversibilityTableAction.cpp carries all four: reversibilityRowTable()
+	// appends that file's rows to this one and insertRows() lets the LAST row for an
+	// id win, so the assembled table has always read action's copy and the copy that
+	// used to sit here was dead data. The duplicate was removed 2026-09-13 (lane
+	// 030/retro-capture) when this file crossed the 500-line cap - the ids, their
+	// class and their mechanism in the assembled table are unchanged, which is what
+	// ReversibilityContractTest's histogram (167 rows) re-checks.
 
 	// The per-note expression pair (#602's per-note half, driving #601's own
 	// fields). A Note is a SerializingObject, not a JournallingObject, so there
