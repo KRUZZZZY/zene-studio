@@ -28,6 +28,7 @@
 
 #include "lmmsconfig.h"
 #include "AudioFileDevice.h"
+#include "ExportDither.h"
 
 #include <sndfile.h>
 
@@ -64,6 +65,10 @@ private:
 private:
 	SF_INFO m_si;
 	SNDFILE * m_sf;
+	//! TPDF dither for the integer depths (include/ExportDither.h). Off unless
+	//! OutputSettings::dither() is on; seeded from a constant so a dithered
+	//! render is still reproducible.
+	ExportDither m_dither;
 } ;
 
 

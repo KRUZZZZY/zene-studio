@@ -26,7 +26,9 @@
 #ifndef LMMS_OUTPUT_SETTINGS_H
 #define LMMS_OUTPUT_SETTINGS_H
 
+#include "ExportRenderSettings.h"
 #include "LmmsTypes.h"
+#include "SrcQuality.h"
 
 namespace lmms
 {
@@ -58,6 +60,15 @@ public:
 		, m_bitDepth(bitDepth)
 		, m_stereoMode(stereoMode)
 		, m_compressionLevel(0.625) // 5/8
+		/*! The two render-scope choices start from the current selection
+		 *  (ExportRenderSettings), so a caller that does not mention them - the
+		 *  export dialog, the CLI's own construction - renders with the choice
+		 *  an agent made through export.set_dither / export.set_src_quality, or
+		 *  with the defaults (dither off, Linear) when nobody has chosen.
+		 *  ProjectRenderer publishes this value back for the render's duration.
+		 */
+		, m_dither(ExportRenderSettings::dither())
+		, m_srcQuality(ExportRenderSettings::srcQuality())
 	{
 	}
 
@@ -97,6 +108,31 @@ public:
 	bool loudnessReport() const { return m_loudnessReport; }
 	void setLoudnessReport(bool enabled) { m_loudnessReport = enabled; }
 
+	/*! TPDF dither in the integer export path (include/ExportDither.h).
+	 *
+	 *  **Off by default, and that is load-bearing.** This release's
+	 *  reproducibility claim is that 7 of the 9 bundled projects render
+	 *  byte-identically (projects/lmms-fl-research/START-HERE.md §3.0); an
+	 *  always-on dither would falsify it. A `[add dithering]` row does not
+	 *  exist, so nothing turns it on implicitly: only the `--dither` flag or
+	 *  `export.set_dither` over the control socket does, and a dithered render
+	 *  is still reproducible because the dither's generator is seeded from a
+	 *  constant.
+	 *
+	 *  It dithers 16- and 24-bit output. 32-bit float has no fixed quantisation
+	 *  step, so it is left alone.
+	 */
+	bool dither() const { return m_dither; }
+	void setDither(bool enabled) { m_dither = enabled; }
+
+	/*! Which sample-rate-conversion converter the render's resampler uses
+	 *  (include/SrcQuality.h). `Linear` is the converter the engine has always
+	 *  used, so it is the default and a render that does not ask for more is
+	 *  byte-for-byte what it was.
+	 */
+	SrcQuality srcQuality() const { return m_srcQuality; }
+	void setSrcQuality(SrcQuality quality) { m_srcQuality = quality; }
+
 private:
 	sample_rate_t m_sampleRate;
 	bitrate_t m_bitRate;
@@ -104,6 +140,8 @@ private:
 	StereoMode m_stereoMode;
 	double m_compressionLevel;
 	bool m_loudnessReport = false;
+	bool m_dither = false;
+	SrcQuality m_srcQuality = SrcQuality::Linear;
 };
 
 

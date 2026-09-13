@@ -224,6 +224,23 @@ const ReversibilityRow kRows[] = {
 		"action checkpoint: the recorded undo step writes the previous value "
 		"back and saves the config file, exactly as the command does",
 		""),
+	R("export.set_dither", RC::TrueInverse, true,
+		"ExportRenderSettings is not a JournallingObject, so there is no object "
+		"checkpoint - but the choice is a bounded scalar (on/off) and the "
+		"previous value is captured before the write",
+		"action checkpoint: the recorded undo step restores the previous dither "
+		"choice through ExportRenderSettings::setDither, exactly as the command "
+		"sets the new one. The step goes on the engine's own stack, so a user's "
+		"Ctrl+Z and control.undo are one history",
+		""),
+	R("export.set_src_quality", RC::TrueInverse, true,
+		"same shape as export.set_dither: a bounded enum owned by "
+		"ExportRenderSettings rather than by a project object, with the previous "
+		"converter selection captured before the write",
+		"action checkpoint: the recorded undo step restores the previous "
+		"SrcQuality through ExportRenderSettings::setSrcQuality, exactly as the "
+		"command sets the new one",
+		""),
 	R("audio.device_set", RC::TrueInverse, true,
 		"the preference is a scalar in the config file, not in the project",
 		"action checkpoint: the recorded undo step writes the previous device "
@@ -331,6 +348,13 @@ const ReversibilityRow kRows[] = {
 	// writes nothing (or refuses every call) - there is no transaction, and
 	// therefore nothing for control.undo to reverse or to be blocked by.
 	// =====================================================================
+	R("export.get_settings", RC::NotMutating, false,
+		"a read of the render settings (dither, SRC quality): it writes "
+		"nothing, so there is no transaction and nothing for control.undo to "
+		"reverse or to be blocked by",
+		"nothing to inverse. export.set_dither and export.set_src_quality are "
+		"the writers, and both carry an action checkpoint",
+		""),
 	R("clip.select", RC::NotMutating, false,
 		"selection is control-surface view state: it is not serialized, the "
 		"GUI keeps its own copy in QGraphicsItem state, and no engine "

@@ -324,6 +324,9 @@ LMMS_EXPORT void registerAutomationCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerAutomationEditCommands(ControlRegistry& registry);
 //! script.run and script.list.
 LMMS_EXPORT void registerScriptCommands(ControlRegistry& registry);
+//! export.get_settings / export.set_dither / export.set_src_quality - the
+//! render settings that outlive one OutputSettings (dither, SRC quality).
+LMMS_EXPORT void registerExportCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

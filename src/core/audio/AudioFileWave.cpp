@@ -27,20 +27,47 @@
 #include "endian_handling.h"
 #include "AudioEngine.h"
 
+#include <algorithm>
+#include <memory>
+
 
 namespace lmms
 {
+
+namespace
+{
+
+/*! The bit depth the TPDF dither is drawn against, or 0 for "do not dither".
+ *
+ *  Two conditions, and both have to hold: the render asked for dither
+ *  (OutputSettings::dither(), off by default), and the depth actually written
+ *  is integer. 32-bit WAV is IEEE float - it has no quantisation step, so there
+ *  is nothing to dither and adding noise to it would only degrade it.
+ */
+int ditherBitsFor(OutputSettings::BitDepth bitDepth, bool ditherEnabled)
+{
+	if (!ditherEnabled) { return 0; }
+	switch (bitDepth)
+	{
+	case OutputSettings::BitDepth::Depth16Bit: return 16;
+	case OutputSettings::BitDepth::Depth24Bit: return 24;
+	case OutputSettings::BitDepth::Depth32Bit:
+	default: return 0;
+	}
+}
+
+} // namespace
 
 AudioFileWave::AudioFileWave( OutputSettings const & outputSettings,
 				const ch_cnt_t channels, bool & successful,
 				const QString & file,
 				AudioEngine* audioEngine ) :
 	AudioFileDevice( outputSettings, channels, file, audioEngine ),
-	m_sf( nullptr )
+	m_sf( nullptr ),
+	m_dither()
 {
 	successful = outputFileOpened() && startEncoding();
 }
-
 
 
 
@@ -96,6 +123,7 @@ bool AudioFileWave::startEncoding()
 void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 {
 	OutputSettings::BitDepth bitDepth = getOutputSettings().getBitDepth();
+	const int ditherBits = ditherBitsFor(bitDepth, getOutputSettings().dither());
 
 	if( bitDepth == OutputSettings::BitDepth::Depth32Bit || bitDepth == OutputSettings::BitDepth::Depth24Bit )
 	{
@@ -107,13 +135,34 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 				buf[frame * channels() + chnl] = _ab[frame][chnl];
 			}
 		}
+		// The dither goes in BEFORE libsndfile quantises the floats to 24-bit
+		// integer, which is the only order that removes the correlation between
+		// the quantisation error and the signal. Off by default, so with no
+		// dither request this call is absent and the bytes are what they were.
+		if (ditherBits > 0)
+		{
+			m_dither.ditherInterleaved(buf, static_cast<std::size_t>(_frames) * channels(), ditherBits);
+		}
 		sf_writef_float( m_sf, buf, _frames );
 		delete[] buf;
 	}
 	else
 	{
 		auto buf = new int_sample_t[_frames * channels()];
-		convertToS16(_ab, _frames, buf, !isLittleEndian());
+		if (ditherBits > 0)
+		{
+			// The 16-bit path converts a whole SampleFrame array, so the dither
+			// is applied to a staged copy and the conversion then reads the
+			// dithered value - the same order as the 24-bit path above.
+			auto staged = std::make_unique<SampleFrame[]>(_frames);
+			std::copy_n(_ab, _frames, staged.get());
+			m_dither.ditherFrames(staged.get(), _frames, ditherBits);
+			convertToS16(staged.get(), _frames, buf, !isLittleEndian());
+		}
+		else
+		{
+			convertToS16(_ab, _frames, buf, !isLittleEndian());
+		}
 
 		sf_writef_short( m_sf, buf, _frames );
 		delete[] buf;
