@@ -457,6 +457,13 @@ void registerControlCommands(ControlRegistry& registry)
 	// composite half, each its own translation unit.
 	registerCompCommands(registry);
 	registerCompEditCommands(registry);
+	// The modulation layer (#602): the layer + LFO half, the route half, and the
+	// per-note expression group. No compile-time switch - the layer is a plain
+	// value on Song and a Note field, so its ids are honest in every
+	// configuration.
+	registerModulatorCommands(registry);
+	registerModulatorRouteCommands(registry);
+	registerNoteExpressionCommands(registry);
 }
 
 } // namespace lmms

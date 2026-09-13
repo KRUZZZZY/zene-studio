@@ -40,6 +40,7 @@
 #include "lmmsconfig.h"
 #include "MeterModel.h"
 #include "TempoMap.h"
+#include "ModulationLayer.h"
 #include "Timeline.h"
 #include "TrackContainer.h"
 #include "VstSyncController.h"
@@ -387,6 +388,16 @@ public:
 	TempoMapPublisher& tempoMap() { return m_tempoMap; }
 	const TempoMapPublisher& tempoMap() const { return m_tempoMap; }
 
+	/*! The modulation layer (#602, docs/MODULATION.md): song-level LFO
+	 *  modulators that drive a SET of parameters by a relative amount. The
+	 *  control thread edits it through the modulator.* commands; the audio
+	 *  thread reads it once per block in processModulation(), through the
+	 *  publisher's lock-free snapshot. An EMPTY layer is exactly today's
+	 *  engine: it is not persisted, not consulted per block, and writes
+	 *  nothing. */
+	ModulationLayerPublisher& modulationLayer() { return m_modulationLayer; }
+	const ModulationLayerPublisher& modulationLayer() const { return m_modulationLayer; }
+
 	//! The tempo in force at \a tick: the map's event at or before it, else the
 	//! global tempo model (the map's own out-of-range rule).
 	int tempoAtTick(tick_t tick) const;
@@ -508,6 +519,14 @@ private:
 	 *  tempo automation is a separate, still-open in-list item. */
 	void followTempoMap();
 
+	/*! The modulation layer's per-block pass (docs/MODULATION.md). Reads the
+	 *  publisher's lock-free snapshot and writes each resolved route's target
+	 *  once, from the LFO value at the block's own play position. Returns
+	 *  immediately unless the layer is non-empty AND has a resolved route, so a
+	 *  project that uses no modulator pays one empty-vector test per block and
+	 *  nothing else - the byte-identity guarantee on the audio path. */
+	void processModulation();
+
 	void setModified(bool value);
 
 	void setProjectFileName(QString const & projectFileName);
@@ -521,6 +540,9 @@ private:
 	//! The tempo the follower last applied, so a block costs one comparison
 	//! when nothing changed. -1 means "nothing applied yet".
 	int m_tempoMapAppliedTempo = -1;
+	//! The modulation layer and its lock-free hand-off to the audio thread
+	//! (#602, docs/MODULATION.md).
+	ModulationLayerPublisher m_modulationLayer;
 	int m_oldTicksPerBar;
 	IntModel m_masterVolumeModel;
 	IntModel m_masterPitchModel;

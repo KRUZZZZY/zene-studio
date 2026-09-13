@@ -55,6 +55,12 @@ set(LMMS_TESTS
 	src/core/MpeExpressionTest.cpp
 	src/core/MpeInputPathTest.cpp
 	src/core/MpeNoteStorageTest.cpp
+	# The #602 modulation layer: the ENGINE half (the LFO arithmetic, the target
+	# resolver, the per-block relative write and the persistence round trip) and
+	# the SURFACE half (the ten modulator.*/note.expression.* commands, their
+	# A16 classes and their inverses). docs/MODULATION.md is the design record.
+	src/core/ModulationLayerTest.cpp
+	src/core/ControlModulatorCommandsTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
@@ -232,6 +238,12 @@ set_tests_properties(RecordingRealtimeTest PROPERTIES
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
 set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# The #602 modulation layer's two tests build a full Engine, a real Mixer and a
+# rack chain, and drive the layer's own save/load, so they need the headless Qt
+# platform for the same reason.
+set_tests_properties(ModulationLayerTest ControlModulatorCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts

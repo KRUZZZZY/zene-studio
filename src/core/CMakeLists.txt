@@ -102,6 +102,11 @@ set(LMMS_SRCS
 	core/ControlCompSupport.cpp
 	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp
+	# The modulation layer (#602): the layer + LFO half, the route half, and the
+	# per-note expression group (docs/MODULATION.md).
+	core/ControlCommandsModulator.cpp
+	core/ControlCommandsModulatorRoutes.cpp
+	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsNotes.cpp
 	core/ControlCommandsPlugin.cpp
 	core/ControlCommandsPluginParams.cpp
@@ -130,6 +135,7 @@ set(LMMS_SRCS
 	core/ControlDeviceState.cpp
 	core/ControlDeviceSupport.cpp
 	core/ControlEditSupport.cpp
+	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlReversibility.cpp
@@ -247,6 +253,7 @@ set(LMMS_SRCS
 	core/SerializingObject.cpp
 	core/Song.cpp
 	core/TempoMap.cpp
+	core/ModulationLayer.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp
 	core/Timeline.cpp

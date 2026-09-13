@@ -252,6 +252,7 @@ include/ControlBrowserSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
+include/ControlModulationSupport.h
 include/ControlRackSupport.h
 include/ControlRegistry.h
 include/ControlReversibility.h
@@ -271,6 +272,7 @@ include/MasteringChain.h
 include/MasteringJob.h
 include/MidiLearn.h
 include/MidiLearnGui.h
+include/ModulationLayer.h
 include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NoteRandom.h
@@ -400,6 +402,9 @@ src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsModulator.cpp
+src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginParams.cpp
@@ -428,6 +433,7 @@ src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlModulationSupport.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
@@ -452,6 +458,7 @@ src/core/LufsMeter.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MidiLearn.cpp
+src/core/ModulationLayer.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp

@@ -216,6 +216,22 @@ that is this page's fault — report it and it gets added.
   `src/gui/`; there is **no audition and no flatten** (the destructive bounce a comp can end in); and **MIDI
   comping is out** — `comp.assign` refuses a MIDI clip with a typed error, because the lane tag rides the clip
   attribute helper only `SampleClip` calls in this release.*
+- **The modulation layer is in the engine and on the socket, and there is no interface for it.**
+  Modulators (`modulator.*`, ten ids with `note.expression.*`) drive device parameters in a mixer channel's rack
+  chains by a relative depth, on the audio path, once per block — `include/ModulationLayer.h`,
+  `src/core/ModulationLayer.cpp`, the decisions and the honest limits in **`docs/MODULATION.md`**, the proofs in
+  `tests/src/core/ModulationLayerTest.cpp` and `tests/src/core/ControlModulatorCommandsTest.cpp`.
+  *What this bullet still means, and what is still absent: **nothing in `src/gui/` creates, draws or edits a
+  modulator or a note's per-note expression** — the reachable path is the control surface, so a user without a
+  socket client still cannot make a modulator; modulation is applied **once per audio block**, not
+  sample-accurately; the source is an **LFO only** (there is no envelope follower); a route can name a **device
+  parameter inside a mixer channel's rack chains** and not the Song's own master gain or an instrument's own
+  parameters; and while a modulator is active the parameter's own control is taken over, so a fader shows the
+  base it is modulated around rather than the modulated value.*
+  Per-note expression was **not** a new store: `note.expression_set` / `get` / `clear` read and write the fields
+  task `#601` already put on a `Note` (`mpepitch` / `mpepressure` / `mpetimbre`), so `docs/MPE.md` §4's limit
+  stands unchanged — **only the pitch axis is applied by playback**; pressure and timbre are stored and editable
+  and reach no instrument.
 - **No plugin-scanning interface worth the name.** A scan cache and a quarantine list exist; the user-facing
   surface is thin or absent. Verified against this tree: the cache is JSON on disk and the documented way to
   quarantine a plugin is a `{"path": …, "reason": …}` entry in that file; `docs/PLUGIN-SCAN-CACHE.md` §5

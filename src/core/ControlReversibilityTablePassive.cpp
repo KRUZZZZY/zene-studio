@@ -294,6 +294,20 @@ const ReversibilityRow kPassiveRows[] = {
 		"no write: an entry is dropped when the file changes, and the whole "
 		"cache is bounded (BrowserPeakCache::Capacity entries of "
 		"BrowserPeakCache::BaseBuckets peaks each)", ""),
+
+	// The modulation layer's two read-only inspectors (#602). modulator.get_state
+	// reports the layer AND the number of routes the audio thread will actually
+	// write, so a route whose device is gone is visible rather than hidden.
+	R("modulator.get_state", RC::NotMutating, false,
+		"reads the layer and its resolved write set; nothing is changed",
+		"no write: the writers are modulator.create/remove/rate_set and the "
+		"route half, each of which carries an action checkpoint", ""),
+
+	R("note.expression_get", RC::NotMutating, false,
+		"reads a note's per-note MPE expression (task #601's fields) or lists "
+		"the notes of a clip that carry one",
+		"no write: note.expression_set and note.expression_clear are the "
+		"writers, and both carry a MidiClip checkpoint", ""),
 };
 
 constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));

@@ -138,20 +138,20 @@ private slots:
 #ifdef ZENE_TELEMETRY_ENABLED
 		// The table as shipped, WITH the two telemetry.* rows: the shape the release
 		// notes state for 0.3.0.
-		constexpr int kRows = 129;
-		constexpr int kTrueInverse = 63;
+		constexpr int kRows = 139;
+		constexpr int kTrueInverse = 71;
 		constexpr int kSnapshot = 9;
 		constexpr int kIrreversible = 3;
-		constexpr int kNotMutating = 54;
+		constexpr int kNotMutating = 56;
 #else
 		// The same table with the telemetry client compiled out of the binary
 		// (-DZENE_TELEMETRY=OFF): its two commands leave the registry, so their two
 		// not_mutating rows leave the table with them.
-		constexpr int kRows = 127;
-		constexpr int kTrueInverse = 63;
+		constexpr int kRows = 137;
+		constexpr int kTrueInverse = 71;
 		constexpr int kSnapshot = 9;
 		constexpr int kIrreversible = 3;
-		constexpr int kNotMutating = 52;
+		constexpr int kNotMutating = 54;
 #endif
 
 		const QByteArray measured = QStringLiteral("%1 true_inverse, %2 snapshot, "
