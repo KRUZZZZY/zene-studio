@@ -1280,6 +1280,7 @@ tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
+tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
@@ -1300,6 +1301,8 @@ tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/ModulationLayerTest.cpp
+tests/src/core/ModulationLayerValueTest.cpp
+tests/src/core/ModulationTestSupport.h
 tests/src/core/MpeExpressionTest.cpp
 tests/src/core/MpeInputPathTest.cpp
 tests/src/core/MpeNoteStorageTest.cpp

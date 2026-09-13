@@ -203,12 +203,17 @@ can each leave the source in a state no caller asked for.
 | `src/core/ControlCommandsModulator.cpp` | `get_state` / `create` / `remove` / `rate_set` |
 | `src/core/ControlCommandsModulatorRoutes.cpp` | `target_set` / `depth_set` / `target_remove` |
 | `src/core/ControlCommandsNoteExpression.cpp` | the three `note.expression.*` ids |
-| `tests/src/core/ModulationLayerTest.cpp` | the engine (LFO, bounds, resolver, relative write, no-op paths, allocations, persistence) |
-| `tests/src/core/ControlModulatorCommandsTest.cpp` | the surface (ids, schemas, A16 classes, refusals, inverses, the per-note group) |
+| `tests/src/core/ModulationTestSupport.h` | the helpers the four test files share (one definition, the `RackTestSupport.h` rule) |
+| `tests/src/core/ModulationLayerValueTest.cpp` | the pure half: the LFO arithmetic, the source validation, the layer's bounds - no Engine at all |
+| `tests/src/core/ModulationLayerTest.cpp` | the engine on a real Mixer: the resolver, the relative write, the clamp, the no-op paths, allocations, the base restore, persistence |
+| `tests/src/core/ControlModulatorCommandsTest.cpp` | the `modulator.*` surface: ids, schemas, A16 classes, refusals, the inverses |
+| `tests/src/core/ControlNoteExpressionCommandsTest.cpp` | the `note.expression.*` surface: set / get / clear and their checkpoint |
 
 The group is split into translation units for the same reason the automation, warp, rack and comp
 groups are: this fork's file-length ratchet measures a file as a unit, and a group's boilerplate
-alone does not fit twice under the limit.
+alone does not fit twice under the limit. The same reason splits the FOUR test files - a single
+file covering the engine, the surface and the per-note group is past the 500-line limit on its
+own, and every file here is under it.
 
 `rebuildModulationRuntimeRestoring()` is called from inside `ModulationLayerPublisher::edit()`, so a
 forgotten re-publish is impossible: the publisher's own contract is that every mutation routes
@@ -250,8 +255,10 @@ through `edit()`.
 ```sh
 cd ~/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030-w18
 bash tools/local-ci.sh --configure-only --build-dir build         # the CI linux job's own flags
-cmake --build build --target zene ModulationLayerTest ControlModulatorCommandsTest -j2
-cd build/tests && ctest -R 'ModulationLayerTest|ControlModulatorCommandsTest' --output-on-failure
+cmake --build build --target zene ModulationLayerValueTest ModulationLayerTest \
+    ControlModulatorCommandsTest ControlNoteExpressionCommandsTest -j2
+cd build/tests && ctest -R 'Modulation' --output-on-failure
+cd build/tests && ctest -R 'ControlNoteExpressionCommandsTest' --output-on-failure
 cd build/tests && ctest -R 'ReversibilityContractTest|ControlRegistryTest' --output-on-failure
 cd build/tests && ctest -R 'ReversibilityUndoTest|RackMacrosTest|ControlTempoMapCommandsTest' --output-on-failure
 cd build/tests && ctest -R agent_surface -V                        # the ten new ids, swept headless

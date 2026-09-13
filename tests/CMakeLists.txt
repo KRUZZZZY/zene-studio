@@ -59,8 +59,10 @@ set(LMMS_TESTS
 	# resolver, the per-block relative write and the persistence round trip) and
 	# the SURFACE half (the ten modulator.*/note.expression.* commands, their
 	# A16 classes and their inverses). docs/MODULATION.md is the design record.
+	src/core/ModulationLayerValueTest.cpp
 	src/core/ModulationLayerTest.cpp
 	src/core/ControlModulatorCommandsTest.cpp
+	src/core/ControlNoteExpressionCommandsTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
@@ -243,7 +245,8 @@ set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
 # rack chain, and drive the layer's own save/load, so they need the headless Qt
 # platform for the same reason.
-set_tests_properties(ModulationLayerTest ControlModulatorCommandsTest PROPERTIES
+set_tests_properties(ModulationLayerValueTest ModulationLayerTest
+	ControlModulatorCommandsTest ControlNoteExpressionCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts

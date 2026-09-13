@@ -357,13 +357,15 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
 - **UI absence — one line: modulators and per-note expression are drivable through the socket, not
   from the interface.** Nothing in `src/gui/` creates, draws or edits a modulator or a note's
   expression. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
-- **Proof:** the registered ctests `ModulationLayerTest` (the four LFO shapes, the source validation,
-  the layer's bounds, the target resolver, the relative write against two ranges, the clamp, the
-  no-op paths, **0 allocations over 64 blocks**, the base restore) and `ControlModulatorCommandsTest`
-  (the ten ids with their schemas, the A16 classes, the typed refusals, `bindDriveUndoAndRebind` —
-  create, bind, apply a real block, `control.undo`, and re-bind — and the `note.expression.*` round
-  trip with its undo). Every mutating call records its SPEC A16 class (`true_inverse`: an action
-  checkpoint for the layer, a `MidiClip` checkpoint for a note's expression).
+- **Proof:** four registered ctests. `ModulationLayerValueTest` (the four LFO shapes, the source
+  validation, the layer's bounds — values only, no engine), `ModulationLayerTest` (the target
+  resolver, the relative write against two ranges, the clamp, the no-op paths, **0 allocations over
+  64 blocks**, the base restore, the save/load round trip), `ControlModulatorCommandsTest` (the ids
+  with their schemas, the A16 classes, the typed refusals, `bindDriveUndoAndRebind` — create, bind,
+  apply a real block, `control.undo`, and re-bind) and `ControlNoteExpressionCommandsTest` (the
+  `note.expression.*` round trip with its checkpoint). Every mutating call records its SPEC A16
+  class (`true_inverse`: an action checkpoint for the layer, a `MidiClip` checkpoint for a note's
+  expression).
 - **Stated limits.** Modulation is applied **once per audio block** (about 11 ms at the default
   period), not sample-accurately; the source is an **LFO only** (no envelope follower); targets are
   device parameters inside a mixer channel's rack chains, so a route cannot name the Song's own master

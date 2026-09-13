@@ -45,52 +45,11 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ModulationLayer.h"
+#include "ModulationTestSupport.h"
 #include "ProjectJournal.h"
-#include "RackTestSupport.h"
 #include "Song.h"
 
-using namespace racktest;
-
-namespace
-{
-
-void evidence(const char* label, const QString& detail)
-{
-	std::fprintf(stdout, "MODULATION_EVIDENCE %s %s\n", label, detail.toUtf8().constData());
-	std::fflush(stdout);
-}
-
-//! A route on the fixture's driven chain (see RackTestSupport.h).
-ModulationRoute routeOf(const char* parameter, float depth)
-{
-	ModulationRoute route;
-	route.channel = kChannel;
-	route.chain = kDrivenChain;
-	route.effect = 0;
-	route.parameter = QString::fromLatin1(parameter);
-	route.depth = depth;
-	return route;
-}
-
-ModulatorSource sineAt(float rateHz, float phase, bool unipolar)
-{
-	ModulatorSource source;
-	source.shape = ModulationShape::Sine;
-	source.rateHz = rateHz;
-	source.phase = phase;
-	source.unipolar = unipolar;
-	return source;
-}
-
-//! A fixed-point reading, so the LFO assertions compare exact values.
-double rounded(double value) { return std::round(value * 1000.0) / 1000.0; }
-
-/*! A model's current value. QCOMPARE cannot take `model->value<float>()`
- * directly: the macro's expansion parses the angle brackets as relational
- * operators. One accessor keeps every assertion readable. */
-float valueOf(const AutomatableModel* model) { return model->value<float>(); }
-
-} // namespace
+using namespace modtest;
 
 
 class ModulationLayerTest : public QObject
@@ -122,87 +81,6 @@ private slots:
 			return true;
 		});
 		Engine::projectJournal()->clearJournal();
-	}
-
-	//! The four shapes, their phase offsets, and what unipolar does to them.
-	//! Stated as exact values because the whole layer is arithmetic: a route's
-	//! depth has to mean the same thing on every shape.
-	void lfoShapesAndPolarity()
-	{
-		// Sine: 0 at phase 0, +1 at a quarter cycle, -1 at three quarters.
-		QCOMPARE(rounded(ModulationLayer::outputAt(sineAt(1.0f, 0.0f, false), 0.0)), 0.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(sineAt(1.0f, 0.0f, false), 0.25)), 1.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(sineAt(1.0f, 0.0f, false), 0.75)), -1.0);
-		// A rate of 2 Hz reaches the same phase in half the time.
-		QCOMPARE(rounded(ModulationLayer::outputAt(sineAt(2.0f, 0.0f, false), 0.125)), 1.0);
-		// A phase offset is where in the cycle the modulator starts.
-		QCOMPARE(rounded(ModulationLayer::outputAt(sineAt(1.0f, 0.25f, false), 0.0)), 1.0);
-
-		// Triangle starts at 0 and rises: +1 at a quarter cycle, back to 0 at
-		// half, -1 at three quarters. It is linear where sine is not.
-		ModulatorSource triangle = sineAt(1.0f, 0.0f, false);
-		triangle.shape = ModulationShape::Triangle;
-		QCOMPARE(rounded(ModulationLayer::outputAt(triangle, 0.0)), 0.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(triangle, 0.125)), 0.5);
-		QCOMPARE(rounded(ModulationLayer::outputAt(triangle, 0.25)), 1.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(triangle, 0.5)), 0.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(triangle, 0.75)), -1.0);
-
-		// Saw starts at -1 and rises to +1; square starts at +1 and drops.
-		ModulatorSource saw = sineAt(1.0f, 0.0f, false);
-		saw.shape = ModulationShape::Saw;
-		QCOMPARE(rounded(ModulationLayer::outputAt(saw, 0.0)), -1.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(saw, 0.5)), 0.0);
-		ModulatorSource square = sineAt(1.0f, 0.0f, false);
-		square.shape = ModulationShape::Square;
-		QCOMPARE(rounded(ModulationLayer::outputAt(square, 0.0)), 1.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(square, 0.6)), -1.0);
-
-		// Unipolar maps -1..1 onto 0..1, which is what makes a modulator an
-		// offset-only source when that is what a caller wants.
-		QCOMPARE(rounded(ModulationLayer::outputAt(sineAt(1.0f, 0.0f, true), 0.75)), 0.0);
-		QCOMPARE(rounded(ModulationLayer::outputAt(sineAt(1.0f, 0.0f, true), 0.25)), 1.0);
-		evidence("lfo-shapes", QStringLiteral("4 shapes, phase offsets, unipolar"));
-	}
-
-	//! A source outside the layer's own bounds is refused rather than clamped:
-	//! a rate of 0 or a phase of 3 would run something nobody authored.
-	void sourcesAreValidated()
-	{
-		ModulationLayer layer;
-		QString why;
-		QVERIFY(layer.validSource(sineAt(1.0f, 0.0f, false), &why));
-		QVERIFY(!layer.validSource(sineAt(0.0f, 0.0f, false), &why));
-		QVERIFY(why.contains(QStringLiteral("rate")));
-		QVERIFY(!layer.validSource(sineAt(1000.0f, 0.0f, false), &why));
-		QVERIFY(!layer.validSource(sineAt(1.0f, 1.0f, false), &why));
-		QVERIFY(why.contains(QStringLiteral("phase")));
-		QVERIFY(layer.validSource(sineAt(ModulationLayer::MaxRateHz, 0.99f, true), &why));
-	}
-
-	//! The layer is bounded, so a project file can never make it unbounded.
-	void modulatorsAndRoutesAreBounded()
-	{
-		ModulationLayer layer;
-		for (int i = 0; i < ModulationLayer::MaxModulators; ++i)
-		{
-			QCOMPARE(layer.addModulator(QStringLiteral("m%1").arg(i), sineAt(1.0f, 0.0f, false)), i);
-		}
-		QCOMPARE(layer.addModulator(QStringLiteral("one-too-many"), sineAt(1.0f, 0.0f, false)), -1);
-		for (int i = 0; i < ModulationLayer::MaxRoutesPerModulator; ++i)
-		{
-			QCOMPARE(layer.addRoute(0, routeOf("Gain", 0.5f)), i);
-		}
-		QCOMPARE(layer.addRoute(0, routeOf("Gain", 0.5f)), -1);
-		// Removal is by index, and the index a caller gets is the list position.
-		QVERIFY(layer.removeRoute(0, 0));
-		QCOMPARE(layer.modulator(0)->routeCount(), ModulationLayer::MaxRoutesPerModulator - 1);
-		QVERIFY(layer.removeModulator(0));
-		QCOMPARE(layer.modulatorCount(), ModulationLayer::MaxModulators - 1);
-		// The same address twice is what findRoute is for; the LAYER does not
-		// enforce it (the command does, with a typed refusal).
-		QVERIFY(layer.findRoute(routeOf("Gain", 0.1f)) == nullptr);
-		QVERIFY(layer.findRoute(routeOf("Panning", 0.1f)) == nullptr);
 	}
 
 	//! A route is resolved through the rack lane's own addressing, so a

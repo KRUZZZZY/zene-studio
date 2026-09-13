@@ -47,36 +47,22 @@
 
 #include <cstdio>
 
+#include "AllocationProbe.h"
 #include "ControlModulationSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ModulationLayer.h"
-#include "MpeExpression.h"
+#include "ModulationTestSupport.h"
 #include "ProjectJournal.h"
-#include "RackTestSupport.h"
 #include "Song.h"
 
-using namespace racktest;
+using namespace modtest;
 
 namespace
 {
 
-void evidence(const char* label, const QString& detail)
-{
-	std::fprintf(stdout, "MODULATION_EVIDENCE %s %s\n", label, detail.toUtf8().constData());
-	std::fflush(stdout);
-}
-
-ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
-{
-	return ControlRegistry::instance()->invoke(id, args);
-}
-
 ModulationLayer& layer() { return Engine::getSong()->modulationLayer().layer(); }
 const ModulationRuntime& runtime() { return Engine::getSong()->modulationLayer().runtime(); }
-
-//! "ch-<kChannel>", spelled through the vocabulary the commands parse.
-QString channelIdOf() { return QStringLiteral("ch-") + QString::number(kChannel); }
 
 QJsonObject targetArgs(const QString& modulator, const char* parameter, double depth)
 {
@@ -88,34 +74,9 @@ QJsonObject targetArgs(const QString& modulator, const char* parameter, double d
 		{QStringLiteral("depth"), depth}};
 }
 
-/*! A model's current value. QCOMPARE cannot take `model->value<float>()`
- * directly: the macro's expansion parses the angle brackets as relational
- * operators. One accessor keeps every assertion readable. */
-float valueOf(const AutomatableModel* model) { return model->value<float>(); }
-
 const control::ReversibilityEntry* contractRow(const QString& id)
 {
 	return control::ReversibilityTable::instance().lookup(id);
-}
-
-//! A clip with one note, created through the surface. Both ids are out.
-bool buildClipWithNote(QString* clip, QString* note)
-{
-	const ControlResult track = run(QStringLiteral("track.add"),
-		{{QStringLiteral("type"), QStringLiteral("instrument")}});
-	if (!track.ok) { return false; }
-	const ControlResult clipResult = run(QStringLiteral("clip.add"),
-		{{QStringLiteral("track"), track.result.value(QStringLiteral("track")).toString()},
-			{QStringLiteral("position"), 0}, {QStringLiteral("length"), 384}});
-	if (!clipResult.ok) { return false; }
-	*clip = clipResult.result.value(QStringLiteral("clip")).toString();
-	const ControlResult noteResult = run(QStringLiteral("note.add"),
-		{{QStringLiteral("clip"), *clip}, {QStringLiteral("key"), 57},
-			{QStringLiteral("position"), 0}, {QStringLiteral("length"), 96},
-			{QStringLiteral("velocity"), 100}});
-	if (!noteResult.ok) { return false; }
-	*note = noteResult.result.value(QStringLiteral("note")).toString();
-	return true;
 }
 
 } // namespace
@@ -454,81 +415,6 @@ private slots:
 		QCOMPARE(tx->before.value(QStringLiteral("modulator_count")).toInt(), 0);
 	}
 
-	//! The per-note half: it edits task #601's own Note fields and its optional
-	//! attributes, and a MidiClip checkpoint takes it back.
-	void noteExpressionEditsAndUndoes()
-	{
-		QString clip;
-		QString note;
-		QVERIFY(buildClipWithNote(&clip, &note));
-
-		// A note that never carried expression says so.
-		QJsonObject state = run(QStringLiteral("note.expression_get"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}}).result;
-		QCOMPARE(state.value(QStringLiteral("has_expression")).toBool(), false);
-		QCOMPARE(state.value(QStringLiteral("pitch_cents")).toInt(), 0);
-		QCOMPARE(state.value(QStringLiteral("max_pitch_cents")).toInt(),
-			MpeNoteExpression::MaxPitchCents);
-
-		const ControlResult set = run(QStringLiteral("note.expression_set"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
-				{QStringLiteral("pitch"), 1200}, {QStringLiteral("pressure"), 64},
-				{QStringLiteral("timbre"), 32}});
-		QVERIFY2(set.ok, qPrintable(set.errorMessage));
-		QCOMPARE(set.result.value(QStringLiteral("has_expression")).toBool(), true);
-		QCOMPARE(set.result.value(QStringLiteral("pitch_cents")).toInt(), 1200);
-
-		// An axis the call omits keeps its value; the note stays expressive.
-		QVERIFY(run(QStringLiteral("note.expression_set"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
-				{QStringLiteral("pitch"), -2400}}).ok);
-		state = run(QStringLiteral("note.expression_get"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}}).result;
-		QCOMPARE(state.value(QStringLiteral("pitch_cents")).toInt(), -2400);
-		QCOMPARE(state.value(QStringLiteral("pressure")).toInt(), 64);
-		QCOMPARE(state.value(QStringLiteral("timbre")).toInt(), 32);
-
-		// The clip-wide form lists the note that carries expression.
-		const QJsonObject listed = run(QStringLiteral("note.expression_get"),
-			{{QStringLiteral("clip"), clip}}).result;
-		QCOMPARE(listed.value(QStringLiteral("expression_count")).toInt(), 1);
-		QCOMPARE(listed.value(QStringLiteral("notes")).toArray().at(0).toObject()
-			.value(QStringLiteral("note")).toString(), note);
-
-		// The schema bounds a bend to #601's own range.
-		ControlResult bad = run(QStringLiteral("note.expression_set"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
-				{QStringLiteral("pitch"), 99999}});
-		QCOMPARE(bad.errorKind, ControlErrorKind::InvalidArgs);
-		bad = run(QStringLiteral("note.expression_get"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), QStringLiteral("note-9")}});
-		QCOMPARE(bad.errorKind, ControlErrorKind::NotFound);
-
-		// One undo takes the last set back - axis by axis, not the whole note.
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		state = run(QStringLiteral("note.expression_get"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}}).result;
-		QCOMPARE(state.value(QStringLiteral("pitch_cents")).toInt(), 1200);
-
-		// Clearing drops the expression and its presence flag, and undo brings
-		// all three axes back.
-		const ControlResult cleared = run(QStringLiteral("note.expression_clear"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}});
-		QVERIFY2(cleared.ok, qPrintable(cleared.errorMessage));
-		QCOMPARE(cleared.result.value(QStringLiteral("has_expression")).toBool(), false);
-		// A second clear is a typed refusal, not a silent write.
-		bad = run(QStringLiteral("note.expression_clear"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}});
-		QCOMPARE(bad.errorKind, ControlErrorKind::InvalidArgs);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		state = run(QStringLiteral("note.expression_get"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}}).result;
-		QCOMPARE(state.value(QStringLiteral("has_expression")).toBool(), true);
-		QCOMPARE(state.value(QStringLiteral("pitch_cents")).toInt(), 1200);
-		QCOMPARE(state.value(QStringLiteral("pressure")).toInt(), 64);
-		evidence("note-expression",
-			QStringLiteral("set/get/clear round trip with a MidiClip checkpoint"));
-	}
 };
 
 QTEST_GUILESS_MAIN(ControlModulatorCommandsTest)
