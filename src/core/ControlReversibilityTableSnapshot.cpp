@@ -210,6 +210,47 @@ const ReversibilityRow kSnapshotRows[] = {
 		"behaviour",
 		""),
 #endif // LMMS_HAVE_WASM
+
+	// =====================================================================
+	// the take journal and its recovery offers (0.3.0, the recording
+	// crash-recovery item). The journal is a side file beside a take and the
+	// project journal holds nothing for it, so each row's inverse is the PAIRED
+	// COMMAND (`applies: command`), which control.undo dispatches through the
+	// registry. See include/RecordingJournal.h for the bound each offer states.
+	// =====================================================================
+	R("record.journal_begin", RC::Snapshot, true,
+		"the journal is a side file in the take's own directory: it is not "
+		"project state, no object in the project holds it and the ProjectJournal "
+		"cannot restore it",
+		"the recorded inverse is the paired COMMAND (`applies: command`): "
+		"record.recovery_discard when this call created the journal, or "
+		"record.journal_begin with the journal that was already there. before "
+		"records which of the two, so control.undo takes the write back either "
+		"way",
+		""),
+	R("record.journal_update", RC::Snapshot, true,
+		"the frame count is one number in the same side file; the project journal "
+		"holds nothing for it",
+		"the recorded inverse is record.journal_update with the previous "
+		"frames_on_disk (`applies: command`), and before.frames_journalled holds "
+		"it, so one control.undo puts the count back. The count is monotonic, so "
+		"the inverse is the only way it can move down",
+		""),
+	R("record.journal_finish", RC::Snapshot, true,
+		"a clean stop REMOVES the journal; the file that is gone is the state, and "
+		"nothing in the project records that it existed",
+		"the recorded inverse is record.journal_begin with the journal that was "
+		"removed (`applies: command`), carrying the take, its sample rate and its "
+		"channel count; the frame count it restores is the one before.take names",
+		""),
+	R("record.recovery_restore", RC::Snapshot, true,
+		"taking the offer rewrites the journal's state to 'restored' - the same "
+		"side file again, not project state. The captured audio is NOT touched: "
+		"the command resolves an offer, it does not move material",
+		"the recorded inverse is record.journal_begin with the journal that was "
+		"restored (`applies: command`), which puts the offer back so control.undo "
+		"reverses a mistake rather than leaving the take unreachable",
+		""),
 };
 
 constexpr int kSnapshotRowCount = static_cast<int>(sizeof(kSnapshotRows) / sizeof(kSnapshotRows[0]));

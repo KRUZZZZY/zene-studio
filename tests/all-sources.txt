@@ -113,6 +113,7 @@ include/ControlEdit.h
 include/ControlLayout.h
 include/ControlModulationSupport.h
 include/ControlRackSupport.h
+include/ControlRecordingSupport.h
 include/ControlRegistry.h
 include/ControlRegistryGroups.h
 include/ControlReversibility.h
@@ -326,6 +327,7 @@ include/RackZones.h
 include/RaiiHelpers.h
 include/RecentProjectsMenu.h
 include/RecordRingBuffer.h
+include/RecordingJournal.h
 include/RemotePlugin.h
 include/RemotePluginAudioPorts.h
 include/RemotePluginBase.h
@@ -927,9 +929,12 @@ src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginState.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
+src/core/ControlCommandsRecording.cpp
+src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
@@ -952,6 +957,7 @@ src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlRackSupport.cpp
+src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
@@ -1040,6 +1046,7 @@ src/core/Rack.cpp
 src/core/RackMacros.cpp
 src/core/RackNodes.cpp
 src/core/RackZones.cpp
+src/core/RecordingJournal.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
 src/core/RingBuffer.cpp

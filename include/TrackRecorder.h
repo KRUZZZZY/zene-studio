@@ -35,6 +35,8 @@
 #include <thread>
 #include <vector>
 
+#include <QString>
+
 #include <sndfile.h>
 
 #include "LmmsTypes.h"
@@ -104,8 +106,25 @@ public:
 
 	std::string filePath() const { return m_filePath; }
 
+	//! The take journal's path while this capture is journalled, or empty when
+	//! it is not (0.3.0). arm() writes the journal beside the take and disarm()
+	//! removes it - a CLEAN stop leaves no journal, which is what makes "there is
+	//! a journal" and "the capture died" the same fact. Empty also means the side
+	//! file could not be written (a directory that refuses it): the recording
+	//! still happened, it is simply not recoverable, and this accessor says so
+	//! rather than the caller assuming protection.
+	std::string journalPath() const { return m_journalPath; }
+	//! Frames the journal had recorded at its last update (0.3.0). The bound the
+	//! recovery offer reports as guaranteed is this number, read back from the
+	//! file - see include/RecordingJournal.h.
+	std::uint64_t journalledFrames() const noexcept { return m_journalFrames; }
+
 private:
 	void writerLoop();
+
+	//! Writes the take journal with the frames recorded so far (0.3.0). Called
+	//! from arm() and from writerLoop() - never from the audio thread.
+	void writeJournal();
 
 	std::unique_ptr<RecordRingBuffer> m_ring; // allocated in the constructor
 	std::vector<sample_t> m_writeScratch;      // allocated in the constructor
@@ -122,6 +141,16 @@ private:
 	std::atomic<std::uint64_t> m_writeErrors{0};
 
 	std::string m_filePath;
+
+	// The take journal (0.3.0). m_journalPath is set in arm() before the writer
+	// thread starts and cleared in disarm() after it is joined, so the writer
+	// thread reads a value that cannot change under it; m_journalFrames is
+	// written by arm() (before the thread exists) and by that thread only.
+	std::string m_journalPath;
+	std::uint64_t m_journalFrames = 0;
+	std::uint64_t m_journalIntervalFrames = 0;
+	int m_journalSampleRate = 0;
+	QString m_journalTake;
 } ;
 
 

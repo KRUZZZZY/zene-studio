@@ -1200,6 +1200,34 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
 	)
+	# transport.punch_* (0.3.0, punch in/out): set the region, assert the GATE
+	# flips with the transport position on both sides of both boundaries, and
+	# assert the region survives project.save / project.open - read out of the
+	# saved file, not trusted from the reply. No fixture: the region and its
+	# predicate need no audio device, which is exactly the part this release
+	# ships (the audio-side gate is deferred and named in KNOWN-LIMITATIONS).
+	add_test(NAME ControlPunchTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-punch-transcript.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPunchTranscript PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# record.* (0.3.0, recording crash recovery): journal a capture, kill the
+	# instance with SIGKILL (a REAL abnormal exit), then start a SECOND instance
+	# against the same working directory and assert the NEXT START finds the
+	# capture, reports a recoverable count that cannot exceed the file, and states
+	# the bound this run measures. The crash is the exit code -9 this test
+	# asserts, not a simulation of one.
+	add_test(NAME ControlRecordingRecovery
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-recording-recovery.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRecordingRecovery PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
 	# wasm.* (item #614): host the ABI example effect in the WASM DSP sandbox
 	# END TO END through --control-socket, and read back what the ABI does with it.
 	# Registered only when the sandbox is compiled in (WANT_WASM, which needs the

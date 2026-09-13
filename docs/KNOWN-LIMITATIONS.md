@@ -476,6 +476,29 @@ that is this page's fault — report it and it gets added.
   track's own device chain and fader (they are already baked into the render), so those controls are inert
   until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true` but
   has nothing to play, which `track.get_state` reports as `frozen_audio_ready: false`.
+- **Punch in/out is the region and its gate, and there is no interface for it — added 2026-09-13.**
+  A punch region (a tick range that capture is gated to, plus an arm flag) lives on the transport, is written
+  with the project and survives a save/load — drivable through `--control-socket` (`transport.punch_set`,
+  `transport.punch_clear`, `transport.punch_get_state`), and one `control.undo` takes a region back off through
+  the timeline's own checkpoint — but **nothing in `src/gui/` draws a punch ruler, a region handle or a punch
+  toggle, and the capture path does not consult the gate yet**: the region and
+  `Timeline::punchCapturesAt()` are real and proved, and **wiring the audio-side capture gate is deferred** —
+  this build has no capture path to gate (ALSA records nothing and the two-track prototype is fed by tests), so
+  a gate here would be a change no test could exercise. Drivable through the socket, not from the interface.
+- **Recording crash recovery is journalling and recovery, not an import — added 2026-09-13.** A capture in
+  progress is journalled to a side file beside its take (`<take>.rec-journal`), a clean stop retires it, and an
+  abnormal exit leaves it — so the next start can find the interrupted take and hand the material back, drivable
+  through `--control-socket` (`record.journal_begin` / `journal_update` / `journal_finish`,
+  `record.recovery_get_state` / `recovery_restore` / `recovery_discard`) — but **nothing in `src/gui/` offers a
+  recovery prompt, and `record.recovery_restore` does not put the recovered take into the session**: 0.3.0 has
+  no command that imports an audio file onto a track as a clip, so restore resolves the offer and hands back the
+  material untouched (`audio_untouched: true`), which its result says in `next_step`. The bound is stated rather
+  than implied: **guaranteed recoverable is `min(frames the journal recorded, frames the take's file holds)**;
+  NOT recoverable is the audio written after the journal's last update (the journal lags by at most one second
+  of audio) and up to **65536 frames** that were still in the recorder's ring buffer when the process died —
+  audio that never reached a file. `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
+  it per take, and `docs/RELEASE-NOTES-v0.3.0-alpha.md` records the test that measures it. Drivable through the
+  socket, not from the interface.
 
 ## Telemetry and privacy
 

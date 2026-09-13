@@ -415,6 +415,29 @@ const ReversibilityRow kRows[] = {
 		"brings the exact take back - re-running freeze.track would render a new "
 		"one)",
 		""),
+	// ---- punch in/out (0.3.0) ----
+	// Both verbs write ONE thing: the punch region on the timeline's own
+	// <timeline> element (punch0pos / punch1pos / punchstate). Timeline is a
+	// JournallingObject with its own jo_id, so its checkpoint is a live inverse -
+	// and the attributes are written only for a non-default region, which is why
+	// Timeline::loadSettings CLEARS them on absence: without that reset a
+	// checkpoint taken before the first punch call could not take the region
+	// back off.
+	R("transport.punch_set", RC::TrueInverse, true,
+		"the punch region and its arm flag are part of the timeline's own "
+		"serialized state, and the timeline is a JournallingObject",
+		"ProjectJournal (Timeline checkpoint: Timeline::saveState writes the "
+		"region onto the <timeline> element, and Timeline::loadSettings clears it "
+		"when the element carries no punch attribute - the reset-on-absence rule a "
+		"checkpoint restore of the pre-first-punch state depends on)",
+		""),
+	R("transport.punch_clear", RC::TrueInverse, true,
+		"clearing the region writes the same three attributes back to their "
+		"default, which is serialized as their absence",
+		"ProjectJournal (Timeline checkpoint: the same checkpoint and the same "
+		"reset-on-absence rule; the recorded inverse is transport.punch_set with "
+		"the region that was cleared)",
+		""),
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
