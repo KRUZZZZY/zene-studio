@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-12T01:43:20Z",
+  "captured_at": "2026-09-13T10:07:21Z",
   "commands": [
     {
       "args_schema": {
@@ -40,7 +40,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every track with its clips, addressed by the stable trk-<n> and clip-<n> ids.",
+      "description": "Every track with its clips, addressed by the stable trk-<n> and clip-<n> ids. The trk-<n> number is assigned at creation and persists in the project file. Addressing is scoped to the SONG container: a track inside a nested container (the <trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not addressable by index.",
       "group": "arrangement",
       "id": "arrangement.get_state",
       "mutating": false,
@@ -308,7 +308,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a parameter's automation mode. Refused: this build has no automation modes (docs/KNOWN-LIMITATIONS.md:84), so no write is faked.",
+      "description": "Set a parameter's automation mode. Refused: this build has automation modes in the engine but no way to select or persist one (docs/KNOWN-LIMITATIONS.md), so no write is faked.",
       "group": "automation",
       "id": "automation.mode_set",
       "mutating": true,
@@ -417,6 +417,63 @@
             "type": "integer"
           },
           "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "in": {
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          },
+          "shape": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "out",
+          "in"
+        ],
+        "type": "object"
+      },
+      "description": "Ramp two overlapping clips on one track into each other: the outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as their overlap, with the given shape (default equal_power, which sums the pair to unity POWER). Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "clip",
+      "id": "clip.crossfade",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "in": {
+            "type": "string"
+          },
+          "in_fade_in": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "out": {
+            "type": "string"
+          },
+          "out_fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overlap": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "shape": {
             "type": "string"
           }
         },
@@ -600,13 +657,132 @@
       "description": "Select (or clear with an empty id) a clip for roll.get_state and the get_states' selection flags. Control-surface state, not project state.",
       "group": "clip",
       "id": "clip.select",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "previous_clip": {
+            "type": "string"
+          },
+          "selected_clip": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "fade_in": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_in_shape": {
+            "type": "string"
+          },
+          "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_shape": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Set a clip's fade-in and/or fade-out in ticks, with a shape each (linear, exponential, equal_power). An omitted argument keeps its current value; fade_in + fade_out must fit inside the clip. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.set_fade",
       "mutating": true,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
         "properties": {
-          "selected_clip": {
+          "clip": {
             "type": "string"
+          },
+          "fade_in": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_in_shape": {
+            "type": "string"
+          },
+          "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_shape": {
+            "type": "string"
+          },
+          "gain_db": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "gain_db": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip",
+          "gain_db"
+        ],
+        "type": "object"
+      },
+      "description": "Set a clip's gain in dB (-60..+24, 0 is unity). The gain multiplies every frame the clip renders, on top of its fades; a clip's own gain is independent of any other clip's. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.set_gain",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "fade_in": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_in_shape": {
+            "type": "string"
+          },
+          "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_shape": {
+            "type": "string"
+          },
+          "gain_db": {
+            "type": "number"
           }
         },
         "required": [],
@@ -758,7 +934,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Redo the last undone journal checkpoint.",
+      "description": "Redo the last undone journal checkpoint. A structural step whose inverse was a one-way action has nothing to redo, and says so: the redo stack is emptied at that point rather than replaying an older step.",
       "group": "control",
       "id": "control.redo",
       "mutating": false,
@@ -819,7 +995,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The transactions recorded for mutating commands (SPEC A16 hook).",
+      "description": "The transactions recorded for mutating commands (SPEC A16 hook), each with the contract table's class and the serialised size of the record, plus the bounds they are kept within (cap_records/cap_bytes, retained_bytes, evicted, capped).",
       "group": "control",
       "id": "control.transactions",
       "mutating": false,
@@ -827,6 +1003,24 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "cap_bytes": {
+            "type": "integer"
+          },
+          "cap_records": {
+            "type": "integer"
+          },
+          "capped": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "evicted": {
+            "type": "integer"
+          },
+          "retained_bytes": {
+            "type": "integer"
+          },
           "transactions": {
             "type": "array"
           }
@@ -842,7 +1036,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Undo the last journal checkpoint through the engine's ProjectJournal.",
+      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command.",
       "group": "control",
       "id": "control.undo",
       "mutating": false,
@@ -856,11 +1050,23 @@
           "can_undo": {
             "type": "boolean"
           },
+          "class": {
+            "type": "string"
+          },
           "mechanism": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "restored_by": {
             "type": "string"
           },
           "undone": {
             "type": "boolean"
+          },
+          "undone_command": {
+            "type": "string"
           }
         },
         "required": [],
@@ -933,6 +1139,111 @@
         "required": [],
         "type": "object"
       },
+      "description": "Read the render settings that outlive one OutputSettings: whether the next export dithers, and which sample-rate-conversion quality it resamples with. Both are OFF/DEFAULT unless something asked for otherwise - dither is off by default because this release's render-reproducibility claim depends on it, and 'linear' is the converter every render the engine has produced so far used. Read-only: no transaction is recorded. There is no interface for either setting; drive them through export.set_* (docs/KNOWN-LIMITATIONS.md).",
+      "group": "export",
+      "id": "export.get_settings",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dither": {
+            "type": "boolean"
+          },
+          "src_quality": {
+            "type": "string"
+          },
+          "src_quality_choices": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dither": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dither"
+        ],
+        "type": "object"
+      },
+      "description": "Turn TPDF dither for the integer export formats on or off. The dither is applied by the WAV encoder immediately before quantisation, at the depth actually written (16- and 24-bit; 32-bit float has no quantisation step and is left alone). It is DETERMINISTIC - seeded from a constant - so a dithered render is still reproducible and two runs produce identical files. Off by default; turning it on changes the bytes of every subsequent render, which is the point.",
+      "group": "export",
+      "id": "export.set_dither",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dither": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "boolean"
+          },
+          "src_quality": {
+            "type": "string"
+          },
+          "src_quality_choices": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "src_quality": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "src_quality"
+        ],
+        "type": "object"
+      },
+      "description": "Choose the sample-rate-conversion converter the render resampler uses: 'linear' (the default, and the converter this engine has always used), 'sinc_fastest', 'sinc_medium' or 'sinc_best' (libsamplerate's sinc converters, in increasing quality and cost). The choice reaches the resampler through Sample::play, so it governs every mismatch-rate source in the render, not just the export file. It takes effect at the next render; a render already in flight keeps the converter it started with.",
+      "group": "export",
+      "id": "export.set_src_quality",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dither": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "src_quality": {
+            "type": "string"
+          },
+          "src_quality_choices": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "The MIDI client that is running, the client the config file selects, and every readable/writable port it exposes. With no MIDI backend open the client is the dummy one and both port lists are empty, which is reported as such rather than as an error.",
       "group": "midi",
       "id": "midi.device_list",
@@ -955,6 +1266,32 @@
           },
           "writable": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Arm or disarm global MIDI learn - the mode the Edit > MIDI Learn menu item drives (SPEC A11: the menu action declares this command id and its slot invokes this command, so both the user and an agent arm the mode through one implementation). While the mode is armed, the next hardware control movement binds itself to the control the user last touched, and the mode then disarms itself. The armed flag is GUI/engine mode state, not project state, so no transaction is recorded and control.undo has nothing to reverse.",
+      "group": "midi",
+      "id": "midi.learn_toggle",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -1345,13 +1682,16 @@
       "description": "Select notes in a clip (an empty list clears the selection). Control-surface state, not project state.",
       "group": "note",
       "id": "note.select",
-      "mutating": true,
+      "mutating": false,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
         "properties": {
           "clip": {
             "type": "string"
+          },
+          "previous_notes": {
+            "type": "array"
           },
           "selected_notes": {
             "type": "array"
@@ -1985,6 +2325,9 @@
           "modified": {
             "type": "boolean"
           },
+          "revisions": {
+            "type": "object"
+          },
           "tempo": {
             "type": "integer"
           },
@@ -2039,6 +2382,12 @@
           "file": {
             "type": "string"
           },
+          "format_upgraded": {
+            "type": "boolean"
+          },
+          "ids_assigned": {
+            "type": "integer"
+          },
           "loaded_with_errors": {
             "type": "boolean"
           },
@@ -2059,12 +2408,58 @@
         "properties": {
           "path": {
             "type": "string"
+          },
+          "revision": {
+            "maximum": 2,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "type": "object"
+      },
+      "description": "Restore a retained revision of a project file OVER the live file (policy 'keep-3': revision 0 is the revision the last save replaced). The live file is rotated in first, so the restore is itself recoverable. The session in memory is NOT reloaded: call project.open afterwards to work on the restored bytes.",
+      "group": "project",
+      "id": "project.restore_revision",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "restored": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "revisions": {
+            "type": "object"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "Save the session. With no path, saves over the project's own file.",
+      "description": "Save the session. With no path, saves over the project's own file. Before the write, the file being replaced is rotated into the named 'keep-3' revision set (<file>.rev0..rev2, each capped at 8 MiB), so the previous revision is recoverable through project.restore_revision - and control.undo dispatches exactly that for the save it recorded.",
       "group": "project",
       "id": "project.save",
       "mutating": true,
@@ -2075,8 +2470,599 @@
           "file": {
             "type": "string"
           },
+          "revision_kept": {
+            "type": "boolean"
+          },
+          "revisions": {
+            "type": "object"
+          },
           "saved": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Append an empty parallel chain to a channel's rack and return its index (chain-<n>). Reversible through the ProjectJournal (the recorded undo step removes the chain this command created).",
+      "group": "rack",
+      "id": "rack.add_chain",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "chain_count": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "One mixer channel's rack: every chain with its device count, the chain selector, and every macro and key/velocity zone with its targets. 'channel' is a ch-<n> id.",
+      "group": "rack",
+      "id": "rack.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain_count": {
+            "type": "integer"
+          },
+          "chains": {
+            "type": "array"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "macro_count": {
+            "type": "integer"
+          },
+          "macros": {
+            "type": "array"
+          },
+          "routed": {
+            "type": "array"
+          },
+          "selected": {
+            "type": "integer"
+          },
+          "zone_count": {
+            "type": "integer"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Add a macro to a channel's rack: a named scalar (0..1) that drives parameters bound with rack.macro_target_add. Returns its macro-<n> id. Reversible through the ProjectJournal (an action checkpoint removes the macro this command created).",
+      "group": "rack",
+      "id": "rack.macro_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "macro": {
+            "type": "string"
+          },
+          "macro_count": {
+            "type": "integer"
+          },
+          "macro_state": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "macro": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "macro"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a macro from a channel's rack, targets included. Reversible through the ProjectJournal (the recorded undo step re-inserts the captured macro at its index).",
+      "group": "rack",
+      "id": "rack.macro_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "macro_count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "macro": {
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel",
+          "macro",
+          "value"
+        ],
+        "type": "object"
+      },
+      "description": "Set a macro's value (0..1) and drive every bound parameter through its own window in one step. Parameters whose device or name no longer exists are skipped and counted ('skipped'), never guessed at. Reversible through the ProjectJournal (one action checkpoint restores the macro and every parameter it wrote).",
+      "group": "rack",
+      "id": "rack.macro_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "macro": {
+            "type": "string"
+          },
+          "macro_state": {
+            "type": "object"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "value": {
+            "type": "number"
+          },
+          "writes": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "integer"
+          },
+          "high": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "low": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "macro": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "macro",
+          "chain",
+          "effect",
+          "parameter"
+        ],
+        "type": "object"
+      },
+      "description": "Bind an existing parameter to a macro: 'chain' and 'effect' address a device in the rack's chains (fx-<n> order), 'parameter' is its display name as plugin.param_get reports it, and 'low'/'high' are the window as a fraction (0..1) of the parameter's own range. Refused when the parameter does not resolve, so a macro never carries a target that can only fail. Reversible through the ProjectJournal.",
+      "group": "rack",
+      "id": "rack.macro_target_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "macro": {
+            "type": "string"
+          },
+          "macro_state": {
+            "type": "object"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "macro": {
+            "type": "string"
+          },
+          "target": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "channel",
+          "macro",
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Unbind one parameter from a macro, by its target index as rack.get_state reports it. Reversible through the ProjectJournal (the recorded undo step re-inserts the captured target at its index).",
+      "group": "rack",
+      "id": "rack.macro_target_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "macro": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "target_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "chain"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a parallel chain from a channel's rack. Chain 0 is the channel's own effect chain and is refused. The removed chain's effects and their state are captured in the transaction's before-state.",
+      "group": "rack",
+      "id": "rack.remove_chain",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain_count": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "chain"
+        ],
+        "type": "object"
+      },
+      "description": "Choose the chain a channel's rack routes to: a chain index, or -1 for parallel (every chain runs and the outputs sum). Reversible through the ProjectJournal (an action checkpoint restores the previous selection).",
+      "group": "rack",
+      "id": "rack.set_selected",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "integer"
+          },
+          "routed": {
+            "type": "array"
+          },
+          "selected": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "high_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "high_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "chain"
+        ],
+        "type": "object"
+      },
+      "description": "Add a key/velocity zone to a channel's rack: an inclusive key range (0..127) and an inclusive velocity range (0..200) mapped to one of the rack's chains, with an optional sample reference. Returns its zone-<n> id. Reversible through the ProjectJournal (an action checkpoint removes the zone this command created).",
+      "group": "rack",
+      "id": "rack.zone_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zone_count": {
+            "type": "integer"
+          },
+          "zone_state": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "zone"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a zone from a channel's rack. Reversible through the ProjectJournal (the recorded undo step re-inserts the captured zone at its index).",
+      "group": "rack",
+      "id": "rack.zone_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "zone_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "channel",
+          "key",
+          "velocity"
+        ],
+        "type": "object"
+      },
+      "description": "Ask which of a channel's rack zones a note falls into: the first zone, in the order it was added, whose key range and velocity range both contain (key, velocity). Read-only. NOTE: nothing in this build consults a zone while a note plays - see docs/KNOWN-LIMITATIONS.md.",
+      "group": "rack",
+      "id": "rack.zone_resolve",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "key": {
+            "type": "integer"
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "velocity": {
+            "type": "integer"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zone_state": {
+            "type": "object"
           }
         },
         "required": [],
@@ -2253,6 +3239,526 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
+      "group": "session",
+      "id": "session.clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "grid": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Empty one grid cell, whatever it held. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "group": "session",
+      "id": "session.clear_slot",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "slot": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The Session View: grid dimensions, the global launch quantisation, every non-empty clip slot with its launch settings, every scene override, and the launch engine's read-back (completed launches, the grid line the newest starts fired on, how many clips started on that one line).",
+      "group": "session",
+      "id": "session.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "grid": {
+            "type": "object"
+          },
+          "launch": {
+            "type": "object"
+          },
+          "quantisation": {
+            "type": "string"
+          },
+          "scenes": {
+            "type": "array"
+          },
+          "slots": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "trigger",
+              "gate",
+              "toggle",
+              "repeat"
+            ],
+            "type": "string"
+          },
+          "quantisation": {
+            "enum": [
+              "global",
+              "none",
+              "bar",
+              "two_bars",
+              "four_bars"
+            ],
+            "type": "string"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Trigger every non-empty clip in one scene row at once and report the tick each was scheduled for. `in_sync` is true when every launched clip resolved to the SAME grid line, which is what a scene launch means; `sync_tick` names that line. Not a project edit: no transaction is recorded.",
+      "group": "session",
+      "id": "session.launch_scene",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "integer"
+          },
+          "in_sync": {
+            "type": "boolean"
+          },
+          "launched": {
+            "type": "array"
+          },
+          "scene": {
+            "type": "integer"
+          },
+          "skipped_columns": {
+            "type": "integer"
+          },
+          "sync_tick": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "trigger",
+              "gate",
+              "toggle",
+              "repeat"
+            ],
+            "type": "string"
+          },
+          "quantisation": {
+            "enum": [
+              "global",
+              "none",
+              "bar",
+              "two_bars",
+              "four_bars"
+            ],
+            "type": "string"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Trigger one clip slot: queue a launch, quantised to the slot's own (or the supplied) boundary, and report the tick it was scheduled for. The engine records the start when the clock reaches that line. Not a project edit: no transaction is recorded.",
+      "group": "session",
+      "id": "session.launch_slot",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "next_bar": {
+            "type": "integer"
+          },
+          "quantisation": {
+            "type": "string"
+          },
+          "scene": {
+            "type": "integer"
+          },
+          "scheduled_tick": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "scenes": {
+            "maximum": 512,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tracks": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tracks",
+          "scenes"
+        ],
+        "type": "object"
+      },
+      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "group": "session",
+      "id": "session.set_grid",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "grid": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "quantisation": {
+            "enum": [
+              "none",
+              "bar",
+              "two_bars",
+              "four_bars"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "quantisation"
+        ],
+        "type": "object"
+      },
+      "description": "Set the session's global launch quantisation - the grid line every slot whose own quantisation is 'global' waits for. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "group": "session",
+      "id": "session.set_quantisation",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "quantisation": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tempo": {
+            "type": "number"
+          },
+          "timesig_denominator": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "timesig_numerator": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Set one scene's name and/or its tempo and time-signature overrides; a field that is supplied is written and its override switched on, a field that is not is left alone. Reversible through the ProjectJournal (action checkpoint).",
+      "group": "session",
+      "id": "session.set_scene",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "scene": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detune": {
+            "maximum": 1200,
+            "minimum": -1200,
+            "type": "integer"
+          },
+          "gain_db": {
+            "type": "number"
+          },
+          "legato": {
+            "type": "boolean"
+          },
+          "loop_length": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "loop_start": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "trigger",
+              "gate",
+              "toggle",
+              "repeat"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pattern": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "quantisation": {
+            "enum": [
+              "global",
+              "none",
+              "bar",
+              "two_bars",
+              "four_bars"
+            ],
+            "type": "string"
+          },
+          "ram": {
+            "type": "boolean"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "transpose": {
+            "maximum": 128,
+            "minimum": -128,
+            "type": "integer"
+          },
+          "type": {
+            "enum": [
+              "empty",
+              "midi",
+              "audio"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings. Only the fields supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "group": "session",
+      "id": "session.set_slot",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "slot": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Drop every launched slot on the audio thread's next period, whichever scene or clip it came from. It is one atomic request, so it is safe while the transport runs. Not a project edit: no transaction is recorded.",
+      "group": "session",
+      "id": "session.stop_all",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "reset_requested": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Stop one clip slot at its next quantisation boundary. A slot that never started stays idle, so this is safe to call unguarded. Not a project edit: no transaction is recorded.",
+      "group": "session",
+      "id": "session.stop_slot",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "scene": {
+            "type": "integer"
+          },
+          "stop_requested": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "key": {
             "type": "string"
@@ -2330,6 +3836,106 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the telemetry consent screen - the Help menu's \"Telemetry - what we send...\" action, with the live preview of the exact payload. A13/UnattendedRun: this one is a modal screen, so it declares `requires: display, human` and every unattended caller is refused, typed, before the handler runs - an agent can never consent on the user's behalf. Read the state with telemetry.status.",
+      "group": "telemetry",
+      "id": "telemetry.consent",
+      "mutating": false,
+      "requires": [
+        "display",
+        "human"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "consent_version": {
+            "type": "integer"
+          },
+          "crash_counts": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "feature_usage": {
+            "type": "boolean"
+          },
+          "hardware": {
+            "type": "boolean"
+          },
+          "may_send": {
+            "type": "boolean"
+          },
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read-only: whether telemetry is compiled in, whether consent is on, which groups are on, and the exact payload submit() would send (the same bytes the consent screen previews). This is the agent's way to see the telemetry state without being able to change it - consent stays a human act.",
+      "group": "telemetry",
+      "id": "telemetry.status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "compiled_in": {
+            "type": "boolean"
+          },
+          "consent_version": {
+            "type": "integer"
+          },
+          "crash_counts": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "feature_usage": {
+            "type": "boolean"
+          },
+          "hardware": {
+            "type": "boolean"
+          },
+          "may_send": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "notice_version": {
+            "type": "integer"
+          },
+          "payload_fields": {
+            "type": "array"
+          },
+          "payload_json": {
+            "type": "string"
+          },
+          "payload_schema_version": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "name": {
             "type": "string"
@@ -2387,7 +3993,7 @@
         ],
         "type": "object"
       },
-      "description": "One track addressed by its trk-<n> id.",
+      "description": "One track addressed by its trk-<n> id: the number the track was given at creation, which it keeps until it is deleted. A malformed id is invalid_args; a well-formed id naming no live track is not_found. Addressing is scoped to the SONG container, so a track inside a nested container is not reachable by id.",
       "group": "track",
       "id": "track.get_state",
       "mutating": false,
@@ -2416,7 +4022,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every track in the song container, with its stable trk-<n> id.",
+      "description": "Every track in the song container, with its stable trk-<n> id. The id is assigned at creation and persists in the project file. Addressing is scoped to the SONG container: a track inside a nested container (the <trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not addressable by index.",
       "group": "track",
       "id": "track.list",
       "mutating": false,
@@ -2756,18 +4362,346 @@
         "required": [],
         "type": "object"
       }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "offset_ticks": {
+            "maximum": 2147483647,
+            "minimum": -2147483647,
+            "type": "integer"
+          },
+          "source_frame": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "source_frame",
+          "offset_ticks"
+        ],
+        "type": "object"
+      },
+      "description": "Pin one frame of a sample clip's audio to a timeline position (a warp marker). The clip keeps its markers in source-frame order and the engine refuses a marker that would reuse a source frame or put the set out of order - nothing is written in that case. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "warp",
+      "id": "warp.add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "type": "object"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "marker_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "type": "array"
+          },
+          "max_markers": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source_tempo": {
+            "type": "number"
+          },
+          "tempo_mode": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "warped": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "The warp map of a sample clip: its markers (the source frame each one pins and the clip-relative timeline offset it lands on, in the order the engine holds them), its tempo mode, its declared source tempo and the engine's marker cap. Read-only.",
+      "group": "warp",
+      "id": "warp.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "marker_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "type": "array"
+          },
+          "max_markers": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source_tempo": {
+            "type": "number"
+          },
+          "tempo_mode": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "warped": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "offset_ticks": {
+            "maximum": 2147483647,
+            "minimum": -2147483647,
+            "type": "integer"
+          },
+          "source_frame": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "source_frame",
+          "offset_ticks"
+        ],
+        "type": "object"
+      },
+      "description": "Move the warp marker that pins a given source frame to a new timeline offset, keeping it pinned to that same frame of the audio. The new offset must stay strictly between the marker's neighbours. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "warp",
+      "id": "warp.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "marker_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "type": "array"
+          },
+          "max_markers": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "moved": {
+            "type": "object"
+          },
+          "source_tempo": {
+            "type": "number"
+          },
+          "tempo_mode": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "warped": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "source_frame": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "source_frame"
+        ],
+        "type": "object"
+      },
+      "description": "Delete the warp marker that pins a given source frame, leaving the rest of the map in place. Removing the last marker leaves the clip unwarped, so its mapping is the linear one again. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "warp",
+      "id": "warp.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "marker_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "type": "array"
+          },
+          "max_markers": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "source_tempo": {
+            "type": "number"
+          },
+          "tempo_mode": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "warped": {
+            "type": "boolean"
+          },
+          "was_last_marker": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "markers": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "follow",
+              "source"
+            ],
+            "type": "string"
+          },
+          "source_tempo": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Set a sample clip's warp map: replace the whole marker list ('markers'; an empty array clears it), choose the tempo mode ('follow' the project tempo, or 'source' - the clip leads with the tempo it was recorded at) and/or declare that source tempo in BPM. One call is one undoable step. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "warp",
+      "id": "warp.set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "marker_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "type": "array"
+          },
+          "max_markers": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source_tempo": {
+            "type": "number"
+          },
+          "tempo_mode": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "warped": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
     }
   ],
-  "count": 70,
+  "count": 108,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integrate/build/lmms",
-    "binary_bytes": 112492528,
-    "binary_sha256": "0a13ee769ee265a3614c2356f80412602b78b4e54af5a4105cb9f7a66ecc0d1c",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-pa-integrate",
-    "lane_head": "059bf6badbcce1f4e2fb96caca10dbbf18fdcd70",
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/hv-snap2/z.sock",
-    "version": "0.1.0-alpha.15+a244564"
+    "source_socket": "/tmp/snap.sock",
+    "version": "0.2.0-alpha.81+dfef084"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
