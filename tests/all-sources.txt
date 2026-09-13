@@ -107,6 +107,7 @@ include/ComboBoxModel.h
 include/ConfigManager.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
+include/ControlChainPresetSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
@@ -906,12 +907,15 @@ src/core/ComboBoxModel.cpp
 src/core/ConfigManager.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBrowserSupport.cpp
+src/core/ControlChainPresetSupport.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
+src/core/ControlCommandsChain.cpp
+src/core/ControlCommandsChainEdit.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsComp.cpp
@@ -1309,6 +1313,7 @@ tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/ConfigMigrationTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
+tests/src/core/ControlChainPresetTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp
