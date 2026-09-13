@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T18:20:21Z",
+  "captured_at": "2026-09-13T19:43:09Z",
   "commands": [
     {
       "args_schema": {
@@ -5781,6 +5781,386 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "take"
+        ],
+        "type": "object"
+      },
+      "description": "Start a journalled capture: write the take journal (<take>.rec-journal) that makes a recording recoverable if this process dies before the capture stops cleanly. `take` must be absolute (a relative path names a different file in the next process). Write the journal, then arm the recorder against the same path, then keep it current with record.journal_update. Reversible: the recorded inverse is the paired command (record.recovery_discard when no journal existed, record.journal_begin with the previous contents when one did), which control.undo dispatches.",
+      "group": "record",
+      "id": "record.journal_begin",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "frames_beyond_the_journal": {
+            "type": "integer"
+          },
+          "frames_in_file": {
+            "type": "integer"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_recoverable": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "journal_lag_bound_frames": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "ring_frames_not_recoverable": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "updated_utc": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "take"
+        ],
+        "type": "object"
+      },
+      "description": "End a journalled capture CLEANLY: remove the take journal so the next start does not offer this take as a crashed recording. This is what the recorder's own disarm() does - a clean stop leaves no journal, which is why 'a journal is there' and 'the capture died' are the same fact. Reversible: the recorded inverse is record.journal_begin with the journal that was removed.",
+      "group": "record",
+      "id": "record.journal_finish",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "frames_recoverable": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "take": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "frames_on_disk": {
+            "type": "integer"
+          },
+          "take": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "take",
+          "frames_on_disk"
+        ],
+        "type": "object"
+      },
+      "description": "Record how much of the take had reached disk at the last flush ('frames_on_disk'), which is the count the recovery offer reports as guaranteed. It must not move backwards: the journal only ever records that MORE of the take reached disk. The recorder's own disk-writer does this once per second of audio (RecordingJournal::UpdateIntervalFrames), which is the whole of the lag bound. Reversible (paired command).",
+      "group": "record",
+      "id": "record.journal_update",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "frames_beyond_the_journal": {
+            "type": "integer"
+          },
+          "frames_in_file": {
+            "type": "integer"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_recoverable": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "journal_lag_bound_frames": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "ring_frames_not_recoverable": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "updated_utc": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "take"
+        ],
+        "type": "object"
+      },
+      "description": "Refuse an interrupted capture's offer: remove its take journal so the next start stops offering it. THE TAKE'S WAV IS NEVER DELETED - it stays on disk at the take path the transaction's before-state names, which is the documented fallback because this command has no inverse (control.undo fails, typed, naming that path).",
+      "group": "record",
+      "id": "record.recovery_discard",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio_kept": {
+            "type": "boolean"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean"
+          },
+          "take": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dir": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every capture an abnormal exit left behind in `dir` (default: this instance's working directory): one entry per in-progress take journal whose WAV still exists. Each entry reports frames_journalled (what the journal recorded at its last update), frames_in_file (measured from the take's RIFF header, falling back to the file's real length when a crashed header was never updated) and frames_recoverable (the SMALLER of the two - the guaranteed count). The bound travels with every entry: the journal lags by up to one second of audio, and up to 65536 frames still in the recorder's ring at the crash are gone for good. Writes nothing.",
+      "group": "record",
+      "id": "record.recovery_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bound": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "scanned_for": {
+            "type": "string"
+          },
+          "takes": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "take"
+        ],
+        "type": "object"
+      },
+      "description": "Take an interrupted capture's offer: report the material the journal recovered and mark the journal `restored`, so the next start stops offering it. The take's WAV is NOT moved, rewritten or deleted - the material stays exactly where the crash left it, and the result says so (`audio_untouched`). WHAT 0.3.0 DOES NOT DO: bring the take into the session as a clip. No command in this release imports an audio file onto a track, so that half is deferred and named in `next_step` (docs/KNOWN-LIMITATIONS.md). Reversible: the recorded inverse is record.journal_begin with the journal that was restored.",
+      "group": "record",
+      "id": "record.recovery_restore",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_untouched": {
+            "type": "boolean"
+          },
+          "frames_in_file": {
+            "type": "integer"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_recoverable": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "next_step": {
+            "type": "string"
+          },
+          "restored": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "take": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "format": {
             "enum": [
               "wav",
@@ -7007,6 +7387,133 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Disarm the punch region and forget it, leaving the timeline in the state a project that never punched has (which is also what gets written to the project file: the punch attributes are omitted). Refused, typed, when there is no region to clear. Reversible through the ProjectJournal (Timeline checkpoint: the recorded inverse is transport.punch_set with the region that was cleared).",
+      "group": "transport",
+      "id": "transport.punch_clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "position_ticks": {
+            "type": "integer"
+          },
+          "punch_active": {
+            "type": "boolean"
+          },
+          "punch_armed": {
+            "type": "boolean"
+          },
+          "punch_begin": {
+            "type": "integer"
+          },
+          "punch_enabled": {
+            "type": "boolean"
+          },
+          "punch_end": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The transport's punch region: its range, whether it is armed, and `punch_active` - Timeline::punchCapturesAt() at the current play position, i.e. whether a capture starting here would be inside the region. Seek inside and outside the range to see the gate answer both ways. Writes nothing.",
+      "group": "transport",
+      "id": "transport.punch_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "position_ticks": {
+            "type": "integer"
+          },
+          "punch_active": {
+            "type": "boolean"
+          },
+          "punch_armed": {
+            "type": "boolean"
+          },
+          "punch_begin": {
+            "type": "integer"
+          },
+          "punch_enabled": {
+            "type": "boolean"
+          },
+          "punch_end": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "end": {
+            "type": "integer"
+          },
+          "start": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "type": "object"
+      },
+      "description": "Set the transport's punch region - the tick range [start, end) that recording captures inside - and arm it (pass \"enabled\": false to set the range without arming it). An empty range is refused. The region is project state: it is written with the timeline (`punch0pos`/`punch1pos`/`punchstate` on the <timeline> element, and only when it is set, so a project that never punches saves the bytes it always has) and one control.undo takes it back off through the Timeline's own checkpoint. Reversible through the ProjectJournal. The AUDIO-SIDE GATE IS NOT WIRED in 0.3.0: the region and the predicate are real, and no capture path in this build consults them yet (docs/KNOWN-LIMITATIONS.md).",
+      "group": "transport",
+      "id": "transport.punch_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "position_ticks": {
+            "type": "integer"
+          },
+          "punch_active": {
+            "type": "boolean"
+          },
+          "punch_armed": {
+            "type": "boolean"
+          },
+          "punch_begin": {
+            "type": "integer"
+          },
+          "punch_enabled": {
+            "type": "boolean"
+          },
+          "punch_end": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "ticks": {
             "maximum": 2147483647,
@@ -7641,7 +8148,7 @@
       }
     }
   ],
-  "count": 155,
+  "count": 164,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -7649,8 +8156,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-thlce1mo/zene.sock",
-    "version": "0.2.0-alpha.136+a7cb5aa"
+    "source_socket": "/tmp/zctl-run-zdnu_ecw/zene.sock",
+    "version": "0.2.0-alpha.144+4b0cb93"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

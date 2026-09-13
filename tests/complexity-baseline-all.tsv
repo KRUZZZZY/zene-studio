@@ -25,8 +25,8 @@ lmms::LadspaEffect::pluginInstantiation@plugins/LadspaEffect/LadspaEffect.cpp	40
 lmms::RemoteVstPlugin::processMessage@plugins/VstBase/RemoteVstPlugin.cpp	39
 lmms::SaProcessor::analyze@plugins/SpectrumAnalyzer/SaProcessor.cpp	39
 lmms::SfxrSynth::update@plugins/Sfxr/Sfxr.cpp	39
-lmms::InstrumentTrack::processInEvent@src/tracks/InstrumentTrack.cpp	39
 lmms::Song::loadProject@src/core/Song.cpp	39
+lmms::InstrumentTrack::processInEvent@src/tracks/InstrumentTrack.cpp	39
 lmms::gui::SetupDialog::SetupDialog@src/gui/modals/SetupDialog.cpp	37
 lmms::GigInstrument::getDimensions@plugins/GigPlayer/GigPlayer.cpp	36
 lmms::InstrumentFunctionArpeggio::processNote@src/core/InstrumentFunctions.cpp	36
@@ -42,6 +42,7 @@ lmms::BitcrushEffect::processImpl@plugins/Bitcrush/Bitcrush.cpp	32
 lmms::gui::ClipView::mousePressEvent@src/gui/clips/ClipView.cpp	32
 lmms::clap::HostedPlugin::load@plugins/ClapEffect/ClapHost.cpp	31
 main@tests/src/plugins/PluginPortsMigrationReference.cpp	30
+lmms::InstrumentTrack::play@src/tracks/InstrumentTrack.cpp	30
 lmms::EqEffect::processImpl@plugins/Eq/EqEffect.cpp	29
 lmms::ScriptEngine::applyCommand@src/core/ScriptEngine.cpp	29
 lmms::gui::ClipView::mouseMoveEvent@src/gui/clips/ClipView.cpp	29
@@ -50,7 +51,6 @@ lmms::DualFilterEffect::processImpl@plugins/DualFilter/DualFilter.cpp	28
 lmms::MidiExport::tryExport@plugins/MidiExport/MidiExport.cpp	28
 lmms::NotePlayHandle::play@src/core/NotePlayHandle.cpp	28
 lmms::gui::AutomationEditor::mouseMoveEvent@src/gui/editors/AutomationEditor.cpp	28
-lmms::InstrumentTrack::play@src/tracks/InstrumentTrack.cpp	28
 lmms::GranularPitchShifterEffect::processImpl@plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp	27
 lmms::OnnxRuntimeStemSeparator::separate@src/core/OnnxRuntimeStemSeparator.cpp	27
 lmms::SlewDistortion::processImpl@plugins/SlewDistortion/SlewDistortion.cpp	27
@@ -107,8 +107,8 @@ lmms::OpulenzInstrument::loadFile@plugins/OpulenZ/OpulenZ.cpp	19
 lmms::PathUtil::baseLocation@src/core/PathUtil.cpp	19
 lmms::wasm::WasmSandboxTest::p3_moduleLatencyIsApplied@tests/src/wasm/WasmSandboxTest.cpp	19
 lmms::DataFile::upgrade_0_2_1_20070501@src/core/DataFile.cpp	19
-lmms::InstrumentTrack::loadTrackSpecificSettings@src/tracks/InstrumentTrack.cpp	19
 lmms::Track::loadTrack@src/core/Track.cpp	19
+lmms::InstrumentTrack::loadTrackSpecificSettings@src/tracks/InstrumentTrack.cpp	19
 lmms::AutomatableModel::valueBuffer@src/core/AutomatableModel.cpp	18
 lmms::WatsynObject::renderOutput@plugins/Watsyn/Watsyn.cpp	18
 lmms::gui::ExportProjectDialog::ExportProjectDialog@src/gui/modals/ExportProjectDialog.cpp	18
@@ -116,12 +116,12 @@ lmms::vst3::HostedPlugin::loadState@plugins/Vst3Effect/Vst3Host.cpp	18
 lmms::AudioEngine::isAudioDevNameValid@src/core/AudioEngine.cpp	18
 lmms::Mixer::masterMix@src/core/Mixer.cpp	18
 lmms::SampleClip::loadSettings@src/core/SampleClip.cpp	18
+lmms::SampleTrack::play@src/tracks/SampleTrack.cpp	18
 lmms::AudioBus::update@src/core/AudioBus.cpp	17
 lmms::ExprSynth::renderOutput@plugins/Xpressive/ExprSynth.cpp	17
 lmms::GigInstrument::loadSample@plugins/GigPlayer/GigPlayer.cpp	17
 lmms::Lv2Proc::createPorts@src/core/lv2/Lv2Proc.cpp	17
 lmms::RemoteVstPlugin::loadPresetFile@plugins/VstBase/RemoteVstPlugin.cpp	17
-lmms::SampleTrack::play@src/tracks/SampleTrack.cpp	17
 lmms::fixAutomationTracks@src/core/UpgradeExtendedNoteRange.cpp	17
 lmms::gui::FileBrowser::reloadTree@src/gui/FileBrowser.cpp	17
 lmms::gui::FileBrowserTreeWidget::keyPressEvent@src/gui/FileBrowser.cpp	17
@@ -213,8 +213,8 @@ lmms::vst3::HostedPlugin::process@plugins/Vst3Effect/Vst3Host.cpp	13
 lmms::gui::PianoRoll::fitNoteLengths@src/gui/editors/PianoRoll.cpp	13
 lmms::gui::PianoRoll::parameterEditNoteUnderMouse@src/gui/editors/PianoRoll.cpp	13
 lmms::gui::PianoRollWindow::showEvent@src/gui/editors/PianoRoll.cpp	13
-lmms::InstrumentTrack::processAudioBuffer@src/tracks/InstrumentTrack.cpp	13
 runningClientPids@tests/src/plugins/ZynSeparateProcessTest.cpp	13
+lmms::InstrumentTrack::processAudioBuffer@src/tracks/InstrumentTrack.cpp	13
 lmms::AudioAlsa::setHWParams@src/core/audio/AudioAlsa.cpp	12
 lmms::AudioFileProcessor::playNoteImpl@plugins/AudioFileProcessor/AudioFileProcessor.cpp	12
 lmms::Effect::processAudioBuffer@src/core/Effect.cpp	12
@@ -279,5 +279,5 @@ lmms::SampleClip::saveSettings@src/core/SampleClip.cpp	11
 lmms::gui::MainWindow::MainWindow@src/gui/MainWindow.cpp	11
 lmms::gui::MainWindow::saveProjectAs@src/gui/MainWindow.cpp	11
 lmms::gui::PianoRoll::finishRecordNote@src/gui/editors/PianoRoll.cpp	11
-lmms::InstrumentTrack::processOutEvent@src/tracks/InstrumentTrack.cpp	11
 stateOf@tests/src/core/VcaGroupTest.cpp	11
+lmms::InstrumentTrack::processOutEvent@src/tracks/InstrumentTrack.cpp	11

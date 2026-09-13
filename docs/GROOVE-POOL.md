@@ -167,8 +167,13 @@ Two kinds of edit, two different inverses — and the second is the one worth re
 
 The rows are in `src/core/ControlReversibilityTable.cpp` (the two live-checkpoint rows),
 `...TableAction.cpp` (the four recorded-action rows) and `...TablePassive.cpp` (the read-only row).
-The table's histogram moves from 142 rows / 75 / 9 / 3 / 55 to **149 rows / 81 / 9 / 3 / 56** in the
-telemetry-off, wasm-off configuration, and `ReversibilityContractTest` asserts the new split.
+The table's histogram moves from 155 rows / 80 / 13 / 4 / 58 to **162 rows / 86 / 13 / 4 / 59** in
+the telemetry-off, wasm-off configuration the contract test's documented base carries (164 rows /
+86 / 13 / 4 / 61 in the release configuration, which compiles the telemetry client in - the
+measurement the merged tree's own `ReversibilityContractTest` prints), and that test asserts the new
+split. The 142 -> 149 this section quoted while the lane was open was measured on the lane's own
+base, which carries neither the freeze lane's rows nor the punch/crash-recovery lane's; the delta
+(+7 rows: six `true_inverse`, one `not_mutating`) is the same in either base, the absolutes were not.
 
 **Bounds, stated rather than implied:** the pool holds at most `MaxTemplates` (32) grooves, each at
 most 64 slots of two bounded integers, so the before-state a pool edit records — the pool's own XML —

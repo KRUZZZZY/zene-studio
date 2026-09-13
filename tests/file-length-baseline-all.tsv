@@ -7,7 +7,7 @@ plugins/VstBase/RemoteVstPlugin.cpp	2645
 src/core/DataFile.cpp	2349
 src/gui/editors/AutomationEditor.cpp	2328
 src/core/Mixer.cpp	2116
-src/core/Song.cpp	1962
+src/core/Song.cpp	1990
 src/gui/MainWindow.cpp	1928
 plugins/Monstro/Monstro.cpp	1856
 src/gui/modals/SetupDialog.cpp	1513
@@ -16,8 +16,8 @@ src/core/main.cpp	1399
 src/gui/FileBrowser.cpp	1350
 plugins/GigPlayer/GigPlayer.cpp	1288
 plugins/Watsyn/Watsyn.cpp	1286
+src/tracks/InstrumentTrack.cpp	1250
 plugins/Sf2Player/Sf2Player.cpp	1245
-src/tracks/InstrumentTrack.cpp	1240
 src/core/AutomationClip.cpp	1230
 plugins/Vestige/Vestige.cpp	1213
 tests/src/plugins/PluginPortsHarness.h	1196
@@ -25,6 +25,7 @@ src/core/ScriptBindings.cpp	1174
 src/gui/editors/SongEditor.cpp	1155
 plugins/CarlaBase/Carla.cpp	1113
 plugins/Sfxr/Sfxr.cpp	1065
+src/core/Track.cpp	1043
 src/core/AudioEngine.cpp	1039
 tests/src/wasm/WasmSandboxTest.cpp	1025
 tests/src/core/VcaGroupTest.cpp	1022
@@ -57,7 +58,6 @@ tests/src/core/PdcMixerTest.cpp	786
 plugins/Lb302/Lb302.cpp	779
 plugins/Sid/SidInstrument.cpp	776
 src/gui/widgets/Fader.cpp	766
-src/core/Track.cpp	759
 plugins/ZynAddSubFx/ZynAddSubFx.cpp	757
 plugins/TripleOscillator/TripleOscillator.cpp	750
 src/gui/widgets/Graph.cpp	743
@@ -73,11 +73,11 @@ tests/src/core/RackTest.cpp	701
 plugins/SpectrumAnalyzer/SaProcessor.cpp	692
 src/core/PluginFactory.cpp	690
 src/tracks/MidiClip.cpp	683
+include/Song.h	681
 tests/src/core/PluginScanCacheTest.cpp	670
 tests/src/core/RemotePluginAudioPortsTest.cpp	665
 plugins/LadspaEffect/caps/dsp/tonestack/ks_tab.h	663
 src/gui/SubWindow.cpp	659
-include/Song.h	657
 src/core/audio/AudioJack.cpp	657
 src/gui/MicrotunerConfig.cpp	654
 tests/src/core/AutomationModesTest.cpp	652
@@ -121,3 +121,4 @@ tests/src/tracks/SampleClipWindowTest.cpp	511
 plugins/LadspaEffect/caps/Chorus.cc	506
 plugins/SlicerT/SlicerTWaveform.cpp	506
 src/core/EffectChain.cpp	505
+tests/src/core/ControlGrooveCommandsTest.cpp	505
