@@ -7,8 +7,7 @@
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
-#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
-#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -17,8 +16,7 @@
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -219,6 +217,8 @@ include/ControlVocabulary.h
 include/ControlWarpSupport.h
 include/CrashReporter.h
 include/DpiHelper.h
+include/ExportDither.h
+include/ExportRenderSettings.h
 include/LatencyCompensation.h
 include/LmmsPolyfill.h
 include/LoudnessReport.h
@@ -256,6 +256,7 @@ include/ScriptLuaQtTypes.h
 include/ScriptPackage.h
 include/SessionModel.h
 include/SessionScheduler.h
+include/SrcQuality.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
 include/StemSeparation/StemJobManager.h
@@ -338,6 +339,7 @@ src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsPlugin.cpp
@@ -370,6 +372,8 @@ src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
 src/core/ControlVocabulary.cpp
 src/core/CrashReporter.cpp
+src/core/ExportDither.cpp
+src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
 src/core/LoudnessReport.cpp
@@ -422,6 +426,7 @@ src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
+tests/control-export-settings.py
 tests/control-headless-no-audio-device.py
 tests/control-headless-project-open.py
 tests/control-headless-working-directory.py
@@ -437,6 +442,7 @@ tests/control-warp-commands-transcript.py
 tests/control_socket_diagnosis.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
+tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
@@ -444,6 +450,8 @@ tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/ExportDitherTest.cpp
+tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp

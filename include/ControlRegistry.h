@@ -341,6 +341,9 @@ LMMS_EXPORT void registerSessionCommands(ControlRegistry& registry);
 //! requests, which queue into the audio thread's scheduler and write no project
 //! state (SPEC-zene-studio A2/A3).
 LMMS_EXPORT void registerSessionLaunchCommands(ControlRegistry& registry);
+//! export.get_settings / export.set_dither / export.set_src_quality - the
+//! render settings that outlive one OutputSettings (dither, SRC quality).
+LMMS_EXPORT void registerExportCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

@@ -147,8 +147,10 @@ include/Engine.h
 include/EnvelopeAndLfoParameters.h
 include/EnvelopeAndLfoView.h
 include/EnvelopeGraph.h
+include/ExportDither.h
 include/ExportFilter.h
 include/ExportProjectDialog.h
+include/ExportRenderSettings.h
 include/FadeButton.h
 include/Fader.h
 include/FifoBuffer.h
@@ -361,6 +363,7 @@ include/SideBarWidget.h
 include/SimpleTextFloat.h
 include/Song.h
 include/SongEditor.h
+include/SrcQuality.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
 include/StemSeparation/StemJobManager.h
@@ -886,6 +889,7 @@ src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsPlugin.cpp
@@ -923,6 +927,8 @@ src/core/Effect.cpp
 src/core/EffectChain.cpp
 src/core/Engine.cpp
 src/core/EnvelopeAndLfoParameters.cpp
+src/core/ExportDither.cpp
+src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
@@ -1216,6 +1222,7 @@ tests/src/core/AudioBusTest.cpp
 tests/src/core/AudioEngineTeardownTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
+tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
@@ -1229,6 +1236,8 @@ tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/ExportDitherTest.cpp
+tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp

@@ -178,21 +178,32 @@ float SamplePlayHandle::warpRatio() const
 	const auto rate = m_warp.framesPerTickAt(frame, m_baseFramesPerTick);
 	if (rate <= 0.0f) { return 1.0f; }
 
-	/*! The reciprocal is deliberate and it is MEASURED, not assumed.
+	/*! The converter ratio, in the convention the engine and libsamplerate
+	 *  BOTH use: output frames per input frame.
 	 *
-	 *  `Sample::play`'s `ratio` is documented as "output sample rate divided by
-	 *  input sample rate", but the resampler it drives - `AudioResampler` ->
-	 *  libsamplerate `SRC_LINEAR` (`src/core/AudioResampler.cpp:40-41`, `:78`) -
-	 *  treats it as input/output, the converter's long-standing inversion. So a
-	 *  ratio of 2.0 makes the source advance at HALF a frame per output frame.
-	 *  Measured on this build by tests/src/tracks/SampleClipWarpTest.cpp
-	 *  `theResamplerRatioConventionIsPinned` and by
-	 *  tests/data/warp/render-proof.sh (a source whose bursts are at 0/1/2/3 s
-	 *  comes out at 0/2/4/6 s with ratio 2.0).
+	 *  MEASURED, not assumed - libsamplerate's `SRC_DATA::src_ratio` is
+	 *  output/input: `src_ratio = 2.0` consumes 4096 input frames and generates
+	 *  8192 output frames (tests/src/core/AudioResamplerRatioTest.cpp asserts
+	 *  exactly that, on the library actually linked). `Sample::play`'s `ratio`
+	 *  is the same quantity, documented as "output sample rate divided by input
+	 *  sample rate" (include/AudioResampler.h).
 	 *
-	 *  A warp wants `rate / natural` source frames per output frame, so the
-	 *  argument is the reciprocal of that. When the inversion is fixed, that
-	 *  test goes red and this line goes back to the direct ratio. */
+	 *  A warp at speed `rate / natural` consumes `rate / natural` source frames
+	 *  per output frame, so the ratio it needs is the RECIPROCAL of that speed:
+	 *  `natural / rate` output frames per input frame. That is what this function
+	 *  returns, and it is arithmetic, not a workaround.
+	 *
+	 *  Three prose sites (this comment, tests/src/tracks/SampleClipWarpTest.cpp
+	 *  and docs/WARP.md §3.1) used to claim libsamplerate treats the ratio as
+	 *  input/output - "the converter's long-standing inversion" - and §3.1
+	 *  concluded from that a live defect on the pre-existing mismatch-rate path.
+	 *  There is no inversion and there is no defect: a 48 kHz source in a 44.1 kHz
+	 *  project passes 44100/48000 = 0.919 output frames per input frame, i.e. it
+	 *  consumes 1.088 source frames per output frame, which is exactly the pitch-
+	 *  preserving rate. Inverting AudioResampler::process() to "fix" the phantom
+	 *  inversion is what would break it. The convention is pinned by the test
+	 *  named above so that cannot happen silently.
+	 */
 	return m_naturalFramesPerTick / rate;
 }
 

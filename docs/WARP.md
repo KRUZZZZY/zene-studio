@@ -189,30 +189,62 @@ Two further honest limits on the rendering:
   in half the output frames and stops there, instead of playing silence for the second
   half of the clip.
 
-### 3.1 A defect found while building this, and what it forced
+### 3.1 The ratio convention — stated, measured, and corrected
 
-`Sample::play`'s `ratio` is documented as *"output sample rate divided by input sample
-rate"* (`include/AudioResampler.h:96-97`), but the converter it drives —
-`AudioResampler::Mode::Linear` → libsamplerate `SRC_LINEAR`
-(`src/core/AudioResampler.cpp:40-41`) — treats it as **input/output**, that converter's
-long-standing inversion. **Measured**, not assumed: a ratio of 2.0 makes the source
-advance at half a frame per output frame. The first render proof run showed it exactly —
-the warped clip's first 0.2 s burst came out as 0.4 s of tone at half the pitch, and the
-whole window was consumed in twice the frames.
+> **Correction (2026-09-13, the W7 lane).** This section used to report an
+> "inversion" in the converter and a live defect on the pre-existing
+> mismatch-rate path. **Both claims were wrong**, and they are corrected here
+> rather than left standing, because acting on them would have broken the engine.
+> The measurement is below; the code was never inverted, and is unchanged.
 
-`warpRatio()` therefore passes the **reciprocal** of the speed it wants, with the reason
-written at the call site (`src/core/SamplePlayHandle.cpp:181-196`).
-`SampleClipWarpTest::theResamplerRatioConventionIsPinned` asserts the inversion as a
-measurement (ratio 2.0 consumes half the source frames of ratio 1.0, within ±10 %), so the
-day somebody fixes the converter that test goes red and the reciprocal gets removed
-deliberately instead of silently cancelling out.
+`Sample::play`'s `ratio` is documented as *"output sample rate divided by input
+sample rate"* (`include/AudioResampler.h`), and the converter it drives —
+`AudioResampler::Mode::Linear` → libsamplerate `SRC_LINEAR` — uses **the same
+convention**. Measured on the library this build links, not inferred from its
+documentation:
 
-**The same inversion is a live defect on the pre-existing path and is NOT fixed here**: a
-48 kHz source in a 44.1 kHz project passes `sampleRateRatio = 44100/48000`, which the
-converter reads as 0.919 input frames per output frame — the clip would play ~8.8 % fast
-and sharp. It is out of this task's scope (changing it changes the sound of every project
-with a mismatched source rate, which is exactly the behaviour change AGENTS.md rule 5
-forbids without a decision). Reported, not touched.
+```
+src_ratio = 2.00  ->  input_used=4096  output_gen=8192   (out/in = 2.0000)
+src_ratio = 1.00  ->  input_used=4096  output_gen=4096   (out/in = 1.0000)
+src_ratio = 0.50  ->  input_used=4096  output_gen=2048   (out/in = 0.5000)
+```
+
+`libsamplerate`'s `src_ratio` is output frames per input frame, so a ratio of 2.0
+consumes *half* a source frame per output frame — the correct arithmetic of
+2× upsampling, not an inversion. `tests/src/core/AudioResamplerRatioTest.cpp`
+asserts this at the converter boundary and
+`tests/src/tracks/SampleClipWarpTest.cpp::theResamplerRatioConventionIsPinned`
+asserts it end to end through `Sample::play`.
+
+`warpRatio()` returns `m_naturalFramesPerTick / rate`. `rate` is the warp's
+*rate* (source frames per tick) and `rate / natural` is therefore the clip's
+*speed*; a ratio expressed in output-per-input is `1/speed`, so `natural / rate`
+is the direct quantity, not a reciprocal workaround. The warp's own behaviour —
+a 2× segment consumes its source frames in half the output frames — is what that
+arithmetic produces, and the render proof measures it.
+
+**The pre-existing mismatch-rate path is correct, and this section used to say it
+was not.** A 48 kHz source in a 44.1 kHz project passes
+`sampleRateRatio = 44100/48000 = 0.919`. Under the measured convention that is
+0.919 *output* frames per input frame, i.e. `1/0.919 = 1.088` **source frames
+consumed per output frame** — exactly the rate that preserves pitch and duration
+for a 48 kHz source played at 44.1 kHz. There is no 8.8 % fast-and-sharp defect;
+the earlier text had read the ratio the wrong way round, which is the same error
+this correction exists to remove.
+
+**What the correction forced.** Three prose sites carried the wrong convention
+(`docs/WARP.md` here, `src/core/SamplePlayHandle.cpp`, and the comment above
+`SampleClipWarpTest::theResamplerRatioConventionIsPinned`). All three now state
+the measured convention and point at the test that pins it. **No behaviour
+changed** — which is the point: the "fix" the old text implied would have been
+
+> *(was: "The same inversion is a live defect on the pre-existing path and is NOT
+> fixed here: a 48 kHz source in a 44.1 kHz project passes
+> `sampleRateRatio = 44100/48000`, which the converter reads as 0.919 input frames
+> per output frame — the clip would play ~8.8 % fast and sharp.")*
+
+— a behaviour change to every mismatched-rate project, the one thing AGENTS.md
+rule 5 forbids without a decision. The inversion was in the note, not the code.
 
 ---
 
@@ -463,9 +495,12 @@ skip, and a skip plus a failure is a failure.
 * **`SourceTempo` is a per-clip rate, not a tempo map.** It does not write the project
   tempo, it is not persisted as part of any song-level tempo state, and it does not feed
   `Engine::framesPerTick`.
-* **The resampler's ratio inversion is reported and not fixed** (§3.1) — it is a live
-  defect on the pre-existing sample-rate-conversion path (a 48 kHz source in a 44.1 kHz
-  project plays ~8.8 % fast), and fixing it is a behaviour change to every such project.
+* **The resampler's ratio convention is MEASURED and pinned by a test** (§3.1) — the
+  earlier version of this page reported it as an "inversion" and reported a live defect on
+  the pre-existing mismatch-rate path; both were wrong, the code was never inverted, and
+  no behaviour changed. `AudioResamplerRatioTest` (converter boundary) and
+  `SampleClipWarpTest::theResamplerRatioConventionIsPinned` (end to end) fail if anyone
+  inverts `AudioResampler::process()`.
 * **Moving a clip moves its markers**, by construction (`offsetTicks` is clip-relative),
   and that is asserted; **deleting the source file and reloading clears the markers**, which
   is asserted only indirectly (through `setSampleFile`) and is the behaviour a user should

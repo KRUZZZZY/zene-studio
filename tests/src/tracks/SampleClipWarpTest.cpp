@@ -390,13 +390,24 @@ private slots:
 		drainPlayHandles(track);
 	}
 
-	//! The resampler convention this engine's rate is expressed in, pinned as a
-	//! MEASUREMENT rather than a belief. `Sample::play`'s `ratio` is documented
-	//! as output/input, but the resampler it drives (`AudioResampler` ->
-	//! libsamplerate `SRC_LINEAR`) treats it as input/output: a ratio of 2.0
-	//! consumes HALF the source frames, not twice. `SamplePlayHandle::warpRatio()`
-	//! passes the reciprocal because of this, so the day the inversion is fixed
-	//! this test goes red and sends the reader back to that function.
+	//! The resampler ratio convention, pinned as a MEASUREMENT rather than a
+	//! belief - and pinned END TO END, through `Sample::play`, not at the
+	//! library boundary (tests/src/core/AudioResamplerRatioTest.cpp does that
+	//! half).
+	//!
+	//! `Sample::play`'s `ratio` is "output frames per input frame", documented
+	//! as output sample rate / input sample rate, and libsamplerate's
+	//! `SRC_DATA::src_ratio` is the SAME convention. So ratio 2.0 consumes HALF
+	//! the source frames of ratio 1.0 for the same number of output frames -
+	//! which is what this test measures, and it is the correct arithmetic of
+	//! upsampling, not an inversion (an earlier version of this comment called
+	//! it one; docs/WARP.md §3.1 carried the same error, and it is corrected
+	//! there).
+	//!
+	//! `SamplePlayHandle::warpRatio()` therefore passes `natural / rate` - the
+	//! reciprocal of the warp's SPEED - because a ratio in output-per-input
+	//! terms is 1/speed. If someone ever inverts `AudioResampler::process()`,
+	//! this test and AudioResamplerRatioTest both go red and name the function.
 	void theResamplerRatioConventionIsPinned()
 	{
 		SampleTrack track(Engine::getSong());

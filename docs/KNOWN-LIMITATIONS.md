@@ -295,6 +295,14 @@ that is this page's fault — report it and it gets added.
   (`src/core/AudioEngineWorkerThread.cpp:204`) and `tests/src/core/AudioEngineTeardownTest.cpp` (asserting
   `stranded == 0`, `:135-148`, `:170-179`). The lane `post-alpha/test-hygiene` is an ancestor of this tip.
 
+- **Export dither and the SRC quality have no interface — added 2026-09-13.** The engine is in and both are
+  drivable through `--control-socket` (`export.get_settings`, `export.set_dither`, `export.set_src_quality`)
+  and the CLI (`--dither`, `--src-quality`), but **neither is on any dialog**: drivable through the socket,
+  not from the interface. The dither is OFF by default and the SRC quality defaults to the converter the
+  engine has always used, so a render that asks for nothing is byte-for-byte what it was. It is implemented
+  for **WAV only** — FLAC, OGG and MP3 do not take the dither yet — and 32-bit float is deliberately never
+  dithered (a float format has no quantisation step to dither against). See `docs/EXPORT-SRC-DITHER.md`.
+
 ## Telemetry and privacy
 
 - **Telemetry is off unless you turn it on**, and the consent screen shows you the exact payload before you

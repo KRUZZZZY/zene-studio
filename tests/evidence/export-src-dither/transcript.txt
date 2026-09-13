@@ -1,0 +1,92 @@
+# Control-surface transcript — the `export.*` group (0.3.0-alpha, W7 lane)
+
+Second of the two proof forms the 0.3.0 scope contract allows (the first is the
+registered ctest; see the test names below). Small by design: the owner's `CP-1`
+decision is to keep hashes and lines rather than committed blobs.
+
+## Reproduce
+
+```
+cd zene-030-w7
+QT_QPA_PLATFORM=offscreen \
+  python3 tests/control-export-settings.py ./build/zene \
+    data/projects/shorties/sv-DnB-Startup.mmpz
+echo EXIT=$?          # 0
+```
+
+## Transcript (verbatim; the `control.commands_list` dump is elided, its `count` kept)
+
+```
+control.ping                       {"id": 8, "ok": true, "result": {"audio": {"device": "PulseAudio",
+                                     "requested": "", "sound_output": true, "start_failed": false,
+                                     "state": "ok"}, "engine_ready": true, "pong": true, "proto": 1,
+                                     "version": "0.2.0-alpha.43+35df3f6"}}
+control.commands_list              {"id": 9, "ok": true, "result": {..., "count": 77, "proto": 1}}
+export.get_settings                {"id": 10, "ok": true, "result": {"dither": false,
+                                     "src_quality": "linear", "src_quality_choices": ["linear",
+                                     "sinc_fastest", "sinc_medium", "sinc_best"]}}
+export.set_dither(true)            {"id": 11, "ok": true, "result": {"dither": true, "previous": false,
+                                     "src_quality": "linear", "src_quality_choices": [...]}}
+export.get_settings                {"id": 12, "ok": true, "result": {"dither": true, ...}}
+transaction[0]                     {"class": "true_inverse", "command": "export.set_dither",
+                                     "reversible": true}
+control.undo                       {"id": 14, "ok": true, "result": {"can_redo": true, "can_undo": true,
+                                     "mechanism": "lmms::ProjectJournal", "undone": true,
+                                     "undone_command": "export.set_dither"}}
+export.get_settings                {"id": 15, "ok": true, "result": {"dither": false, ...}}
+export.set_src_quality(sinc_best)  {"id": 16, "ok": true, "result": {"dither": false,
+                                     "previous": "linear", "src_quality": "sinc_best", ...}}
+export.set_src_quality(bogus)      {"error": {"kind": "invalid_args", "message": "unknown src_quality
+                                     'bogus'; expected one of linear, sinc_fastest, sinc_medium,
+                                     sinc_best"}, "id": 17, "ok": false}
+ai.accept(unknown command)         {"error": {"kind": "not_found", "message": "no command
+                                     'export.no_such_verb'"}, "id": 18, "ok": false}
+control.quit                       {"id": 19, "ok": true, "result": {"project_modified": true,
+                                     "quitting": true, "save_requested": false,
+                                     "unsaved_changes": "discarded"}}
+
+PASS: export.* is registered, answers, reverses through control.undo, and refuses typed
+```
+
+`version` carries the lane's commit (`35df3f6`), so this transcript is pinned to the
+tree it was taken on.
+
+## What it establishes
+
+- the group is **registered** (`control.commands_list` count 77, all three ids present
+  with their arg/result schemas);
+- the **defaults** are dither off and `src_quality: "linear"`;
+- a setter **reports the previous value** and records an A16 transaction whose
+  `class` is `true_inverse` and `reversible` true — stamped by the registry from
+  `ControlReversibilityTable.cpp`, not by the handler;
+- **`control.undo` reverses it** (`undone_command: "export.set_dither"`, via
+  `lmms::ProjectJournal`, the same stack the GUI's Ctrl+Z unwinds) and the
+  previous value is restored;
+- a bad value is **refused typed** (`invalid_args`, naming the four wire names)
+  and an unknown id answers `not_found` — the closed error-kind set, not a
+  silent no-op.
+
+## The registered tests (the first proof form)
+
+```
+cd <build>/tests
+ctest -R 'ExportDitherTest|ExportWavDitherTest|AudioResamplerRatioTest' --output-on-failure
+# 100% tests passed, 0 tests failed out of 3
+```
+
+## The render hashes (byte-identity, and that the feature is live)
+
+| Render of `data/projects/shorties/sv-DnB-Startup.mmpz` | WAV sha256 |
+|---|---|
+| default (dither off, `linear`) | `943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526` |
+| default, again | `943e323864cb5c07bb8da264736978be9294513b93c1b6b81421cb6d8a890526` |
+| `--dither` | `bcb33c4599871cd9cc09e4c3d9f11fb6fdd1910ace6e6dcafed9a764a93d2fa2` |
+| `--dither`, again | `bcb33c4599871cd9cc09e4c3d9f11fb6fdd1910ace6e6dcafed9a764a93d2fa2` |
+| `--src-quality sinc_best` | `2713ad9dafcced1181d79be04db423ccae078907b64a5974d1a6f6ad2b18f319` |
+
+The default value is the release's own published reference (full file **and**
+`data`-chunk `b37cefc5a97e2d4664bbb0087a187935cdb9421030492f3b21972c3a7e3e59ca`,
+size 2177120 — START-HERE.md §3.0, HANDOFF-0.2.0-RELEASE.md, NEXT-RELEASE-VERIFICATION.md),
+so the byte-identity is asserted against the pre-change reference rather than
+against a rebuild of this lane. `--dither` changes the bytes and repeating it does
+not; `--src-quality sinc_best` changes them too.

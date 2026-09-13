@@ -27,6 +27,7 @@
 
 #include <memory>
 #include "AudioBufferView.h"
+#include "SrcQuality.h"
 #include "lmms_export.h"
 
 namespace lmms {
@@ -95,6 +96,22 @@ public:
 	/**
 	 * @brief Sets the resampling ratio to `ratio`.
 	 * @param ratio Output sample rate divided by input sample rate.
+	 *
+	 * @remark **THE RATIO CONVENTION - measured, not assumed.** `ratio` is
+	 * output/input, and libsamplerate's `SRC_DATA::src_ratio` (which this class
+	 * hands it in `process()`) is the SAME convention: `src_ratio = 2.0` consumes
+	 * 4096 input frames and generates 8192 output frames, i.e. two output frames
+	 * per input frame. That is asserted, on the library actually linked, by
+	 * `tests/src/core/AudioResamplerRatioTest.cpp`.
+	 *
+	 * This is written down because three prose sites in this tree used to claim
+	 * the opposite - that the converter is "inverted" and treats the ratio as
+	 * input/output - and `docs/WARP.md` §3.1 concluded from that a live defect
+	 * on the pre-existing mismatch-rate path that does not exist. Inverting
+	 * `process()` to "fix" the phantom inversion would have made every 48 kHz
+	 * source in a 44.1 kHz project play ~8.8 % fast and sharp. The convention is
+	 * therefore pinned by a test, in one file, at the one place the two
+	 * libraries meet.
 	 */
 	void setRatio(double ratio) { m_ratio = ratio; }
 
@@ -113,6 +130,22 @@ public:
 
 	//! @returns the interpolation mode used by this resampler.
 	auto mode() const -> Mode { return m_mode; }
+
+	/*! Switches the converter, re-creating the libsamplerate state.
+	 *
+	 *  Called on the render path (via `Sample::play`) only when the requested
+	 *  quality differs from the current one, so a render that does not change the
+	 *  quality never pays for it. Re-creating the state drops the converter's
+	 *  filter history, so a *change* mid-render is a discontinuity - which is why
+	 *  the engine sets the quality once per render rather than per buffer.
+	 *
+	 *  @throws std::runtime_error when libsamplerate cannot create the state.
+	 */
+	void setMode(Mode mode);
+
+	//! The converter \p quality selects. `Linear` is `Mode::Linear`, the
+	//! converter this engine has always used.
+	static Mode modeForSrcQuality(SrcQuality quality) noexcept;
 
 private:
 	struct LMMS_EXPORT StateDeleter { void operator()(void* state); };

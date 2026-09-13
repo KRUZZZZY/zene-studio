@@ -97,6 +97,7 @@ set(LMMS_SRCS
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
 	core/ControlCommandsScript.cpp
+	core/ControlCommandsExport.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
@@ -128,6 +129,8 @@ set(LMMS_SRCS
 	core/EffectChain.cpp
 	core/Engine.cpp
 	core/EnvelopeAndLfoParameters.cpp
+	core/ExportDither.cpp
+	core/ExportRenderSettings.cpp
 	core/fft_helpers.cpp
 	core/Mixer.cpp
 	core/VcaGroup.cpp

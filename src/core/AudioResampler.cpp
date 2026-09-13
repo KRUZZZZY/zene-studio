@@ -76,6 +76,20 @@ auto AudioResampler::process(InterleavedBufferView<const float> input, Interleav
 	data.output_frames = output.frames();
 
 	data.src_ratio = m_ratio;
+
+	/*! THE CONVENTION, at the one place it can be got wrong.
+	 *
+	 *  `m_ratio` is output/input (`setRatio()`'s documented contract) and
+	 *  libsamplerate's `src_ratio` is the SAME convention - measured, not
+	 *  assumed: `SRC_DATA` with `src_ratio = 2.0` consumes 4096 input frames and
+	 *  generates 8192 output frames (tests/src/core/AudioResamplerRatioTest.cpp).
+	 *
+	 *  DO NOT INVERT THIS LINE. Three prose sites in this tree asserted the
+	 *  opposite and `docs/WARP.md` §3.1 called the mismatch-rate path a live
+	 *  defect because of it; inverting here makes every 48 kHz source in a
+	 *  44.1 kHz project play ~8.8 % fast and sharp. The test named above fails
+	 *  if this line is inverted, which is the whole point of it.
+	 */
 	data.end_of_input = 0;
 
 	if ((m_error = src_process(static_cast<SRC_STATE*>(m_state.get()), &data)))
@@ -91,6 +105,35 @@ void AudioResampler::reset()
 	if ((m_error = src_reset(static_cast<SRC_STATE*>(m_state.get()))))
 	{
 		throw std::runtime_error{src_strerror(m_error)};
+	}
+}
+
+void AudioResampler::setMode(Mode mode)
+{
+	if (mode == m_mode) { return; }
+
+	// A fresh converter. The requested quality is what a render's SRC setting
+	// selects; the state has to be re-created because libsamplerate fixes the
+	// converter at src_new() time.
+	auto* state = src_new(converterType(mode), m_channels, &m_error);
+	if (state == nullptr) { throw std::runtime_error{src_strerror(m_error)}; }
+
+	m_state.reset(state);
+	m_mode = mode;
+}
+
+auto AudioResampler::modeForSrcQuality(SrcQuality quality) noexcept -> Mode
+{
+	// The mapping is total and the default is the historical converter: a
+	// caller that asks for nothing gets `Linear`, which is what every render
+	// used before this setting existed.
+	switch (quality)
+	{
+	case SrcQuality::SincFastest: return Mode::SincFastest;
+	case SrcQuality::SincMedium:  return Mode::SincMedium;
+	case SrcQuality::SincBest:    return Mode::SincBest;
+	case SrcQuality::Linear:
+	default:                      return Mode::Linear;
 	}
 }
 

@@ -29,6 +29,7 @@
 
 #include "AudioFileDevice.h"
 #include "AudioEngine.h"
+#include "ExportRenderSettings.h"
 #include "OutputSettings.h"
 
 #include "lmms_export.h"
@@ -129,6 +130,16 @@ private:
 
 	volatile int m_progress;
 	volatile bool m_abort;
+
+	/*! The selection that was in force before this renderer published its own
+	 *  (see ProjectRenderer.cpp): restored by ~ProjectRenderer(), so a render's
+	 *  dither/SRC choice never leaks into the next one - including when the
+	 *  render aborts or the file device could not be created. Declared after
+	 *  m_progress/m_abort so the initialiser order in the constructor matches
+	 *  the declaration order (-Werror=reorder).
+	 */
+	bool m_previousDither;
+	SrcQuality m_previousSrcQuality;
 
 } ;
 

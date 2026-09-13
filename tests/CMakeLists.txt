@@ -11,6 +11,7 @@ set(LMMS_TESTS
 	src/core/AudioEngineTeardownTest.cpp
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
+	src/core/AudioResamplerRatioTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/AutomationModesTest.cpp
 	src/core/ClipSerialisationTest.cpp
@@ -24,6 +25,11 @@ set(LMMS_TESTS
 	src/core/CrashReporterTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
+	# The export dither (TPDF) and the explicit SRC quality: the statistical
+	# proof of the dither, the byte-level off-by-default proof, the converter
+	# ratio convention, and the quality reaching the resampler.
+	src/core/ExportDitherTest.cpp
+	src/core/ExportWavDitherTest.cpp
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
@@ -238,6 +244,17 @@ set_tests_properties(VcaGroupTest PROPERTIES
 # Qt platform plugin even though the test itself is guiless (same reason as
 # PluginScanCacheTest above).
 set_tests_properties(MasteringTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# The dither and SRC-quality tests build a real Engine and drive the real
+# export path (AudioFileWave writes a WAV; Sample::play resamples), so they need
+# a Qt platform plugin even though the tests themselves are guiless - the same
+# reason as MasteringTest above.
+set_tests_properties(ExportDitherTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ExportWavDitherTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AudioResamplerRatioTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

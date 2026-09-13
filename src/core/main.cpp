@@ -210,6 +210,14 @@ void printHelp()
 		"          EBU R128 loudness report beside it\n"
 		"          (<output>.loudness.txt); measure-only, the audio is\n"
 		"          byte-identical to a render without this option\n"
+		"      --dither                   Add TPDF dither before quantisation in\n"
+		"          the integer WAV depths (16/24 bit). OFF by default: the\n"
+		"          bundled projects render byte-identically without it. The\n"
+		"          dither is deterministic, so a dithered render is still\n"
+		"          reproducible\n"
+		"      --src-quality <q>          Sample-rate-conversion converter for the\n"
+		"          render: 'linear' (default, the converter the engine has always\n"
+		"          used), 'sinc_fastest', 'sinc_medium' or 'sinc_best'\n"
 		"  -m, --mode                     Stereo mode used for MP3 export\n"
 		"          Possible values: s, j, m\n"
 		"            s: Stereo\n"
@@ -742,6 +750,35 @@ int main( int argc, char * * argv )
 			// values are printed to stdout and written beside the render as
 			// <output>.loudness.txt. Measure-only; the audio is unchanged.
 			os.setLoudnessReport(true);
+		}
+		else if( arg == "--dither" )
+		{
+			// TPDF dither in the integer WAV depths (include/ExportDither.h).
+			// OFF unless this flag - or export.set_dither over the control
+			// socket - asks for it, because this release's reproducibility
+			// claim is byte-identical renders. It is set on `os` (the settings
+			// this render was handed) AND process-wide, because the control
+			// surface reads the process-wide selection.
+			os.setDither(true);
+			ExportRenderSettings::setDither(true);
+		}
+		else if( arg == "--src-quality" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No SRC quality specified" );
+			}
+
+			SrcQuality quality = SrcQuality::Linear;
+			if( !srcQualityFromName( argv[i], &quality ) )
+			{
+				return usageError( QString( "Invalid SRC quality %1 (expected linear, "
+					"sinc_fastest, sinc_medium or sinc_best)" ).arg( argv[i] ) );
+			}
+			os.setSrcQuality( quality );
+			ExportRenderSettings::setSrcQuality( quality );
 		}
 		else if( arg == "--import" )
 		{
