@@ -1370,6 +1370,12 @@ void Song::loadProject( const QString & fileName )
 		}
 	}
 
+	// RESET ON ABSENCE for the named visibility sets (owner items 3+20+21): a
+	// project with no <visibilitysets> element holds none, whatever the object
+	// carried before the load. This is the ONE place that decides it - the
+	// container's own walk cannot, because the element is not its child.
+	clearVisibilitySets();
+
 	while( !node.isNull() && !isCancelled() )
 	{
 		if( node.isElement() )
@@ -1377,6 +1383,14 @@ void Song::loadProject( const QString & fileName )
 			if( node.nodeName() == "trackcontainer" )
 			{
 				( (JournallingObject *)( this ) )->restoreState( node.toElement() );
+			}
+			else if( node.nodeName() == TrackContainer::visibilitySetsNodeName() )
+			{
+				// The named visibility sets (owner items 3+20+21; the same
+				// project-state shape the tempo map and the modulation layer
+				// use). A build without this feature leaves the element alone
+				// and re-emits it, exactly as it does for an unknown section.
+				loadVisibilitySetState( node.toElement() );
 			}
 			else if( node.nodeName() == "controllers" )
 			{
@@ -1609,6 +1623,17 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	if( m_groovePool.shouldPersist() )
 	{
 		m_groovePool.saveSettings( dataFile, dataFile.content() );
+	}
+
+	// The named visibility sets (owner items 3+20+21): project state beside the
+	// tempo map and the modulation layer, and written only when there is at
+	// least one, so a project that never made one re-saves the bytes it always
+	// had. It is NOT an element inside <trackcontainer>: that loader builds a
+	// Track from every child it is not told to skip, and the marker that would
+	// say "skip me" is the one DataFile::write deletes.
+	if( !visibilitySets().isEmpty() )
+	{
+		saveVisibilitySetState( dataFile, dataFile.content() );
 	}
 
 #ifdef LMMS_HAVE_SESSION_VIEW

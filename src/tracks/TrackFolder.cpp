@@ -91,6 +91,27 @@ TrackFolder::TrackFolder( TrackContainer * tc ) :
 {
 }
 
+/*! Releases every child that named this folder before the object goes away.
+ *
+ *  The order here is the whole point. ~TrackContainer deletes its tracks in
+ *  vector order, and the folder's own vector position is wherever it was
+ *  created - often BEFORE the tracks it holds. Without this, the folder is freed
+ *  first, each child keeps a dangling `m_parentFolder`, and the child's own
+ *  ~Track unlink call writes through freed memory (measured: SIGSEGV on
+ *  shutdown, exit code -11). The children are put back at the container root
+ *  through Track::setParentFolder, the same call every other unlink uses - it
+ *  also puts a ROUTING folder's child back on its own recorded channel.
+ */
+TrackFolder::~TrackFolder()
+{
+	TrackContainer * container = trackContainer();
+	if( container == nullptr ) { return; }
+	for( Track * track : container->tracks() )
+	{
+		if( track != this && track->parentFolder() == this ) { track->setParentFolder( nullptr ); }
+	}
+}
+
 /*! A folder makes no sound of its own.
  *
  *  In GROUP mode the children play themselves, exactly as they would without a

@@ -109,11 +109,14 @@ def check_folder_is_a_track_type(session, recorder, fixture):
     state = track_state(session, folder)
     recorder.check("track.add type=folder creates a track whose type is folder",
                    state.get("type") == "folder", "state=%r" % state)
-    recorder.check("a folder that holds nothing reports child_count 0 and no channel",
-                   state.get("child_count") == 0 and state.get("mixer_channel") == -1,
-                   "state=%r" % state)
     recorder.check("the group mode is the default",
                    state.get("folder_mode") == "group", "folder_mode=%r" % state.get("folder_mode"))
+    # the folder's own CHANNEL is reported by the folder's own read - track.get_state
+    # reports the track, and a folder in group mode owns no channel at all
+    empty = folder_state(session, folder)
+    recorder.check("a folder that holds nothing reports child_count 0 and no channel",
+                   empty.get("child_count") == 0 and empty.get("mixer_channel") == -1,
+                   "folder_state=%s" % empty)
 
     # The flat arrangement view carries the relation as a FIELD on every entry -
     # never as a nested array, so no existing client of the flat list breaks.
@@ -144,12 +147,17 @@ def check_membership(session, recorder, fixture):
                    track_state(session, first).get("folder") == folder,
                    "state=%r" % track_state(session, first))
 
-    # SPEC A16: one undo re-parents the child back to the container root.
+    # SPEC A16: one undo re-parents the child back to the container root. The
+    # LAST track.set_folder is the one for the second child, and an undo
+    # reverses the last command - so that is the child the check reads.
     session.result("control.undo")
     recorder.check("one control.undo takes the child back out of the folder",
-                   track_state(session, first).get("folder") == "",
-                   "state=%r" % track_state(session, first))
-    session.result("track.set_folder", {"track": first, "folder": folder})
+                   track_state(session, fixture["second"]).get("folder") == "",
+                   "state=%r" % track_state(session, fixture["second"]))
+    session.result("track.set_folder", {"track": fixture["second"], "folder": folder})
+    recorder.check("and setting it again puts it back",
+                   track_state(session, fixture["second"]).get("folder") == folder,
+                   "state=%r" % track_state(session, fixture["second"]))
 
 
 def check_routing_wiring(session, recorder, fixture):
@@ -199,10 +207,11 @@ def check_visibility_sets(session, recorder, fixture):
     recorder.check("track.visibility_set_save records the members",
                    saved.get("track_count") == 2 and saved.get("replaced") is False,
                    "reply=%s" % saved)
+    total = len(session.result("track.list").get("tracks") or [])
     applied = session.result("track.visibility_set_apply", {"name": "Strings"})
-    recorder.check("applying the set shows its members and hides the rest",
-                   applied.get("shown") == 2 and applied.get("hidden") == 1
-                   and applied.get("active") == "Strings", "reply=%s" % applied)
+    recorder.check("applying the set shows its members and hides EVERY other track",
+                   applied.get("shown") == 2 and applied.get("hidden") == total - 2
+                   and applied.get("active") == "Strings", "reply=%s of %d tracks" % (applied, total))
     listed = {t.get("id"): t for t in (session.result("track.list").get("tracks") or [])}
     recorder.check("the visible flags read back per track",
                    listed.get(fixture["first"], {}).get("visible") is True
@@ -375,6 +384,10 @@ def check_quit(session, instance, recorder):
         return
     session.client.close()
     exited, code, waited = instance.wait_for_exit(H.QUIT_TIMEOUT)
+    if code != 0:
+        # A shutdown that dies is a defect in the feature under test, so the app's
+        # own log is printed where the failure is - not left in a temp file.
+        instance.dump_log()
     recorder.check("control.quit stops the instance", exited and code == 0,
                    "exited=%r code=%r after %.1fs" % (exited, code, waited))
 

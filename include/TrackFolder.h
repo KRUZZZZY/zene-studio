@@ -104,7 +104,14 @@ public:
 	};
 
 	explicit TrackFolder( TrackContainer * tc );
-	~TrackFolder() override = default;
+	/*! A dying folder takes the RELATION with it: every child that named it goes
+	 *  back to the container root, so nothing is left holding a pointer to freed
+	 *  memory. TrackContainer::~TrackContainer deletes its tracks in vector
+	 *  order, and a folder is often created BEFORE the tracks it holds, so the
+	 *  folder would otherwise be freed while its children still pointed at it -
+	 *  and the child's own ~Track unlink would then be a use-after-free
+	 *  (measured: SIGSEGV on the instance's shutdown, exit code -11). */
+	~TrackFolder() override;
 
 	// ---- Track's pure virtuals ------------------------------------------
 	//! A folder makes no sound of its own: its children play themselves, and in

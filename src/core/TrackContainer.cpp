@@ -80,14 +80,8 @@ void TrackContainer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 	m_tracksMutex.unlock();
 
-	// The named visibility sets (owner items 3+20+21), after the tracks and only
-	// when there is at least one - a project that never made one re-saves the
-	// bytes it always had (docs/TRACK-FOLDER-DESIGN.md section 4.4's
-	// forward-compatibility rule).
-	if (!m_visibilitySets.isEmpty())
-	{
-		saveVisibilitySets(_doc, _this);
-	}
+	// The named visibility sets are written by Song::saveProjectFile into the
+	// project's own content element, not here: see visibilitySetsNodeName().
 }
 
 
@@ -180,20 +174,10 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 		}
 	}
 
-	// The named visibility sets (owner items 3+20+21). RESET ON ABSENCE, like
-	// every other field a checkpoint can restore: a container element with no
-	// <visibilitysets> child holds no sets, whatever this object carried before
-	// the call. The element is read here rather than in the walk above because
-	// the walk constructs a TRACK from every element child it is not told to
-	// skip, which is why the element is written with metadata="1".
-	m_visibilitySets.clear();
-	m_activeVisibilitySet.clear();
-	const QDomElement setsElement =
-		_this.firstChildElement(QStringLiteral("visibilitysets"));
-	if (!setsElement.isNull() && setsElement.attribute(QStringLiteral("metadata")).toInt())
-	{
-		loadVisibilitySets(setsElement);
-	}
+	// The named visibility sets are read by Song::loadProject from the project's
+	// content element (visibilitySetsNodeName()), which is also where the
+	// reset-on-absence lives - this walk builds a TRACK from every child it is
+	// not told to skip, so a set element must not be a child of it at all.
 }
 
 

@@ -106,13 +106,13 @@ int TrackContainer::resolveTrackFolders()
 // exactly its members visible and hides every other track of the container.
 // Track::visible is a VIEW flag: it does not mute and does not change a render.
 // ---------------------------------------------------------------------------
-void TrackContainer::saveVisibilitySets(QDomDocument& doc, QDomElement& parent) const
+void TrackContainer::saveVisibilitySetState(QDomDocument& doc, QDomElement& parent) const
 {
-	QDomElement element = doc.createElement(QStringLiteral("visibilitysets"));
-	// metadata="1" is load-bearing: loadSettings constructs a Track from every
-	// element child that is not marked, so an unmarked element would become a
-	// track of an unrecognised type (the rule <takelanes> records inside a track).
-	element.setAttribute(QStringLiteral("metadata"), 1);
+	// NO `metadata="1"` marker: DataFile::write removes every element that carries
+	// one (cleanMetaNodes) before the file is serialised, and the element lives
+	// beside <tempo-map> under the project's content element, so nothing needs to
+	// be told to skip it (measured: a marked element is written as nothing at all).
+	QDomElement element = doc.createElement(visibilitySetsNodeName());
 	if (!m_activeVisibilitySet.isEmpty())
 	{
 		element.setAttribute(QStringLiteral("active"), m_activeVisibilitySet);
@@ -130,7 +130,7 @@ void TrackContainer::saveVisibilitySets(QDomDocument& doc, QDomElement& parent) 
 }
 
 
-void TrackContainer::loadVisibilitySets(const QDomElement& element)
+void TrackContainer::loadVisibilitySetState(const QDomElement& element)
 {
 	m_activeVisibilitySet = element.attribute(QStringLiteral("active"));
 	for (QDomElement setElement = element.firstChildElement(QStringLiteral("set"));

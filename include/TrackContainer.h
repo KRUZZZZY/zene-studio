@@ -148,6 +148,14 @@ public:
 		m_activeVisibilitySet = name;
 	}
 	void clearVisibilitySets();
+	//! Writes the sets into \a parent (the project's content element) as ONE
+	//! `<visibilitysets>` element, called by Song::saveProjectFile and only when
+	//! there is at least one set, so a project that never made one re-saves the
+	//! bytes it always had. NOT marked `metadata`, for the reason above.
+	void saveVisibilitySetState( QDomDocument & doc, QDomElement & parent ) const;
+	//! Reads that element back. Reset on absence is the CALLER's (the Song's)
+	//! walk: a project with no `<visibilitysets>` element holds no sets.
+	void loadVisibilitySetState( const QDomElement & element );
 
 	bool isEmpty() const;
 
@@ -193,24 +201,31 @@ signals:
 	void aboutToClearTracks();
 
 protected:
+	/*! The element the named visibility sets live in, beside <tempo-map> and
+	 *  <modulation-layer> in the PROJECT's own content element - NOT inside
+	 *  <trackcontainer>. Two measured reasons make that the only workable home:
+	 *  the container's loader constructs a Track from every element child it is
+	 *  not told to skip, and DataFile::write STRIPS every element that carries
+	 *  `metadata="1"` (cleanMetaNodes), so the marker that would tell the loader
+	 *  to skip it is exactly the marker the writer deletes. One definition,
+	 *  used by both the writer and the Song's load walk, so the two cannot
+	 *  disagree about the name. */
+	static const QString & visibilitySetsNodeName()
+	{
+		static const QString name = QStringLiteral("visibilitysets");
+		return name;
+	}
+
 	static AutomatedValueMap automatedValuesFromTracks(const TrackList &tracks, TimePos timeStart, int clipNum = -1);
 
 	mutable QReadWriteLock m_tracksMutex;
 
 private:
-	/*! Writes the visibility sets as ONE marked `<visibilitysets>` child of the
-	 *  container element - `metadata="1"` is load-bearing and not decoration:
-	 *  loadSettings below constructs a Track from every element child that is
-	 *  not marked, so an unmarked element would become a track of an
-	 *  unrecognised type. Written only when there is at least one set, so a
-	 *  project that never made one re-saves the bytes it always had. */
-	void saveVisibilitySets( QDomDocument & doc, QDomElement & parent ) const;
-	void loadVisibilitySets( const QDomElement & element );
-
 	TrackList m_tracks;
 
 	//! The project's named visibility sets and the active one (owner items
-	//! 3+20+21). Reset on absence by loadSettings, like every reload-able field.
+	//! 3+20+21). Reset on absence by Song::loadProject's content walk, which is
+	//! the walk that reads them (see saveVisibilitySetState).
 	QVector<VisibilitySet> m_visibilitySets;
 	QString m_activeVisibilitySet;
 
