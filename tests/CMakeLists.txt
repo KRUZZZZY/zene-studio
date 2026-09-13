@@ -396,6 +396,53 @@ set(PART_C_MIGRATED_TARGETS "")
 set(PART_C_REFERENCE_DEFINITIONS "")
 set(PART_C_MIGRATED_DEFINITIONS "")
 
+# --- MSVC: the reference modules link one at a time ---------------------------
+# CI msvc-x64 (job 103701272689, run 34748733618, edge 824/2190) failed the build
+# on one of these modules, and not on a symbol error:
+#
+#   FAILED: [code=1] tests/partc_ref_bassbooster.dll
+#   ... cmd.exe /C "cd . && ccache "cmake" -E vs_link_dll ... -- link.exe ... && cmd.exe
+#        /C "cd /D ...\build\tests && C:\vcpkg\vcpkg.exe z-applocal
+#           --target-binary=...build/tests/partc_ref_bassbooster.dll
+#           --installed-bin-dir=...build/vcpkg_installed/x64-windows/bin""
+#   The process cannot access the file because it is being used by another process.
+#
+# The job's whole log carries no LNK2005, LNK1169, LNK2019 or LNK1120 (grep count
+# 0), so this is NOT the duplicate-symbol collision the two VST3 modules hit
+# (plugins/Vst3Effect/CMakeLists.txt) and /FORCE:MULTIPLE is the wrong tool: it
+# would suppress nothing and fix nothing. The only diagnostic is a Win32 sharing
+# violation, charged to the module because that is the edge the failing command
+# belongs to - the vcpkg toolchain appends `vcpkg z-applocal` as a POST_BUILD step
+# of every MODULE/SHARED target in a Windows triplet (scripts/buildsystems/vcpkg.cmake,
+# the add_library wrapper) and CMake chains it into the link rule. z-applocal copies
+# that binary's imported vcpkg dependency DLLs into the binary's own directory
+# (vcpkg-tool commands.z-applocal.cpp: deploy_binary -> copy_file into
+# target_binary_dir), and every module above maps to build\tests. They also link in
+# one burst - all 41 of them between 09:13:40 and 09:13:47 in the passing run
+# 34748729956 - several at a time, and they link *before* the 75 test executables and
+# the test-double module that share that directory. So they are the ones whose
+# post-link steps really do copy the shared dependency DLLs; every later link into
+# build\tests finds those files present and skips them. Two of those copies racing
+# over the same destination file is the sharing violation, and the module that loses
+# that race is reported as a build failure even though its own link succeeded
+# (bassbooster's four objects compile and its link is clean in every other msvc-x64
+# run, and in the main-branch run of the identical commit).
+#
+# vcpkg's own knob for this class, X_VCPKG_APPLOCAL_DEPS_SERIALIZED, passes
+# USES_TERMINAL only from the toolchain's add_executable wrapper - the add_library
+# wrapper never sets it - so it cannot cover a MODULE target. A Ninja pool of one
+# (ninja is the Windows generator) orders these links, and with them their post-link
+# steps, against each other and nothing else, and it cannot hide a real link error.
+# HONEST LIMIT: this closes the window the race needs, the first burst of writers
+# into a fresh build\tests. If a later change makes another target in this file the
+# first writer into that directory, the same property belongs on it too, or on every
+# target here via CMAKE_JOB_POOL_LINK.
+if(MSVC)
+	# Ninja-only properties: ignored by other generators, and ninja errors if a rule
+	# names a pool that JOB_POOLS does not declare, so the two travel together.
+	set_property(GLOBAL APPEND PROPERTY JOB_POOLS zene_partc_ref_link=1)
+endif()
+
 foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	string(REPLACE "|" ";" FIELDS "${ENTRY}")
 	list(GET FIELDS 0 PLUGIN_ID)
@@ -414,6 +461,11 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	endif()
 
 	add_library(partc_ref_${PLUGIN_ID} MODULE ${PLUGIN_SOURCES})
+	if(MSVC)
+		# The link and its post-link applocal step, one reference module at a time;
+		# see the pool note above this loop.
+		set_property(TARGET partc_ref_${PLUGIN_ID} PROPERTY JOB_POOL_LINK zene_partc_ref_link)
+	endif()
 	target_include_directories(partc_ref_${PLUGIN_ID} PRIVATE
 		"${PART_C_REFERENCE_DIR}"
 		"${PART_C_REFERENCE_DIR}/${PLUGIN_DIR}"
