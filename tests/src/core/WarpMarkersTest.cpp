@@ -296,7 +296,21 @@ private slots:
 
 		test::resetAllocationCount();
 		test::tlCountAllocations = true;
-		volatile f_cnt_t sink = 0;
+		// The accumulator is what keeps the lookups alive: every value the loop
+		// computes feeds `sink`, and `sink` is consumed by the assertion below,
+		// so the optimiser cannot delete the calls this probe exists to measure.
+		// The results are the *only* thing tying the loop to observable
+		// behaviour - the lookups are pure reads - which is exactly why the
+		// "consume the value" idiom is used here instead of a compiler barrier.
+		//
+		// This replaced `volatile f_cnt_t sink` accumulated with `sink += ...`:
+		// C++20 deprecates compound assignment on a volatile-qualified operand
+		// and GCC 11 rejects it under -Werror=volatile (CI linux-x86_64, job
+		// 103647387911). A plain accumulator whose value is used is the same
+		// barrier without the deprecated construct, and it fails *loudly* if a
+		// future optimiser ever does elide the loop: an elided loop leaves sink
+		// at zero.
+		f_cnt_t sink = 0;
 		for (int i = 0; i < 10000; ++i)
 		{
 			sink += at(markers, i % 200);
@@ -304,8 +318,9 @@ private slots:
 			sink += static_cast<f_cnt_t>(markers.framesPerTickAt(static_cast<f_cnt_t>(i * 3), kBaseRate));
 		}
 		test::tlCountAllocations = false;
-		(void)sink;
 
+		// The barrier's witness: the lookups ran and returned real values.
+		QVERIFY(sink != 0);
 		QCOMPARE(asNumber(test::tlAllocationCount), asNumber(0));
 	}
 
