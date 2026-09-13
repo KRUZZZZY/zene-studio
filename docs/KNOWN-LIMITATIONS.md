@@ -129,7 +129,9 @@ that is this page's fault — report it and it gets added.
   instrument track on the "Bass" track — pre-fix and post-fix the window opens, the process stays alive, and
   the window shows *"Controls for Zene VST3 Test Instrument"*, a `Level` knob and the disclosure line. The
   suite that guards the entry point sits behind the `WANT_VST3_TEST_INSTRUMENT` option
-  (`tests/CMakeLists.txt`, default `OFF`), so the default CI configuration does not build or run it; the guard was proven by running it out of
+  (`tests/CMakeLists.txt`, default `OFF`); since 2026-09-13 the `linux-x86_64` CI job passes
+  `-DWANT_VST3_TEST_INSTRUMENT=ON`, so that job builds and runs it on every push, and the other six keep the
+  default. The guard was proven by running it out of
   band, green with it and `SIGSEGV` exit 139 at address `0x8` without it (§4).
 - **Instrument hosting is new and narrow.** One instrument per track, MIDI in to audio out. **No third-party
   VST3 instrument has been tested by us** — the only instrument this release has been proven against is a

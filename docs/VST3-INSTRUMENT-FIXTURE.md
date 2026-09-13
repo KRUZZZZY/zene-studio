@@ -630,7 +630,10 @@ your own build directory, never a shared `/tmp` path.**
 2. **The three orphaned VST3 test sources** (`tests/src/plugins/Vst3HostTest.cpp`,
    `Vst3BusMapTest.cpp`, `Vst3EffectIntegrationTest.cpp`) still compile nowhere —
    `grep -c -i vst3 tests/CMakeLists.txt` is still 0 for them. This task added its own probe; it did
-   not wire theirs.
+   not wire theirs. **Superseded 2026-09-13 (0.2.1 coverage gap 1):** all three are registered in
+   `tests/CMakeLists.txt` in a VST3 block guarded by `if(TARGET lmms_vst3_sdk)`, against an in-tree
+   effect fixture built from the pinned SDK (`tests/data/vst3-test-effect`), and run in the suite —
+   see `docs/TEST-HYGIENE.md` §7. The paragraph above records this task's state, not today's.
 3. **Any third-party VST3 instrument.** Still none installed, still not installable here without
    sudo; the `.vst3` scan directory still does not exist. Nothing here changes that.
 4. **The editor (`IPlugView`).** Not attempted and not in scope; the fixture deliberately provides

@@ -107,8 +107,13 @@ implementing lane's own verdict ("one VST3 instrument loads onto one track, rece
 and its state survives save/reload of the project"), and the lane `post-alpha/instrument-hosting-impl` that
 wrote it is an ancestor of this tip (`git merge-base --is-ancestor post-alpha/instrument-hosting-impl
 2239f3cb6` → 0). The end-to-end claim is therefore settled here rather than owed to the freeze. **The
-in-tree regression test for that load path is not run by CI** — it lives behind
-the `WANT_VST3_TEST_INSTRUMENT` option (`tests/CMakeLists.txt`, default `OFF`), as the paragraph below states.
+in-tree regression test for that load path runs on one CI job as of 2026-09-13** — it lives behind
+the `WANT_VST3_TEST_INSTRUMENT` option (`tests/CMakeLists.txt`, default `OFF`) and the `linux-x86_64` job now
+passes `-DWANT_VST3_TEST_INSTRUMENT=ON`, so the three VST3 instrument suites (`Vst3InstrumentFixtureProbe`,
+`Vst3InstrumentTest`, `Vst3InstrumentIntegrationTest`) are built and run on every push. The other six jobs keep
+the default `OFF`: the fixture is a test asset, and one job is enough to prove the suite runs. This sentence
+replaces an earlier wording that said CI did not run them at all; the measurement behind the change is in
+`docs/STATUS.md`.
 
 **The instrument's own editor does not open yet** — but the instrument window does, and we ran it rather than
 assuming: load a VST3 instrument, and a window opens listing that plugin's controls in the host's generated
@@ -124,9 +129,10 @@ Verified against this tree: the shipped-binary run is in the tree —
 `docs/INSTRUMENT-VIEW-SAFETY.md` §3 records the product run under Xvfb against a project carrying a VST3
 instrument track on the "Bass" track, on the pre-fix and the post-fix binary alike: the window opens, the
 process stays alive, and the window contains *"Controls for Zene VST3 Test Instrument"*, a `Level` knob and the
-disclosure line. Two qualifications belong with it, and both were checked. **That run is out of band, not
-CI**: the two VST3 instrument suites sit behind the `WANT_VST3_TEST_INSTRUMENT` option
-(`tests/CMakeLists.txt`, default `OFF`), so the default CI configuration neither builds nor runs them — the guard was proven by running
+disclosure line. Two qualifications belong with it, and both were checked. **That run is out of band, though the suites are
+no longer**: they sit behind the `WANT_VST3_TEST_INSTRUMENT` option (`tests/CMakeLists.txt`, default `OFF`) and
+the `linux-x86_64` job has passed it `ON` since 2026-09-13, so the three VST3 instrument suites are built and
+run on every push there (the window-open run described here remains an out-of-band Xvfb run) — the guard was proven by running
 the suite out of band, green with the guard and `SIGSEGV` exit 139 at address `0x8` without it
 (`docs/INSTRUMENT-VIEW-SAFETY.md` §4). And **no physical display was used** — offscreen and Xvfb only (§6.1
 names what a desktop session would still add).

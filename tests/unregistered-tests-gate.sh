@@ -60,11 +60,17 @@ CMAKE_FILE="$HERE/CMakeLists.txt"
 DECLARED=$(cat <<'EOF'
 tests/src/core/PhaseDPerfBench.cpp	A CPU-cost benchmark (SPEC v1.2 decision D3: "<5% single-core CPU per active sidechain send"), measured with CLOCK_PROCESS_CPUTIME_ID. Not registered because a suite that runs while sibling builds compile on the same box measures the machine's noise, not the code's cost: this file's own header documents bracketed twin windows precisely because the machine is not quiet. Run it by hand: cmake --build build --target PhaseDPerfBench && build/tests/PhaseDPerfBench. Its numbers are the evidence in PART-D-SIDECHAIN.md.
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp	Not a QTest class: a standalone probe with its own main() that opens a real ALSA capture device (default hw:1,0) and measures capture-thread allocations. It cannot run on a machine with no capture hardware and is not a unit test, so it has no home in ctest. Run by hand: build/tests/TwoTrackAlsaCaptureProbe <device> <periods> <outdir>.
-tests/src/plugins/Vst3BusMapTest.cpp	VST3 host test, never wired into CMake. The CLAP equivalents are registered under if(WANT_CLAP) (ClapBusMapTest/ClapHostTest/ClapEffectIntegrationTest); there is no VST3 counterpart block, so these three files compile nowhere. Wiring them needs the VST3 SDK target and fixture-bundle plumbing (see the WANT_VST3_TEST_INSTRUMENT block below) - an open item recorded in docs/TEST-HYGIENE.md, NOT a deliberate exclusion.
-tests/src/plugins/Vst3HostTest.cpp	See Vst3BusMapTest.cpp above: VST3 host test, no CMake registration, no VST3 equivalent of the CLAP test block. Open item, not a deliberate exclusion.
-tests/src/plugins/Vst3EffectIntegrationTest.cpp	See Vst3BusMapTest.cpp above: VST3 effect test, no CMake registration. Its CLAP twin (ClapEffectIntegrationTest) is registered and runs. Open item, not a deliberate exclusion.
 EOF
 )
+# NOTE (2026-09-13, 0.2.1 coverage gap 1): three entries left this table. The VST3
+# effect tests - tests/src/plugins/Vst3BusMapTest.cpp, Vst3HostTest.cpp and
+# Vst3EffectIntegrationTest.cpp - were declared here as "an open item, NOT a
+# deliberate exclusion" precisely so that this gate stayed red-able while they were
+# unwired. They are now REGISTERED in tests/CMakeLists.txt, in a VST3 block guarded
+# by `if(TARGET lmms_vst3_sdk)` that mirrors the CLAP block beside it, against an
+# in-tree VST3 effect fixture built from the pinned SDK
+# (tests/data/vst3-test-effect). A registered source needs no declaration here;
+# leaving the entries would have implied they still compile nowhere.
 
 # Sources that are not test classes: helpers linked into something else, or
 # standalone probes with their own main(). Declared so that the distinction is

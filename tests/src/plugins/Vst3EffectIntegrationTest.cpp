@@ -237,7 +237,17 @@ void Vst3EffectIntegrationTest::testRendersBeforeAfterWav()
 {
 	constexpr f_cnt_t fpp = 48;
 	constexpr int sampleRate = 44100;
-	constexpr int totalFrames = sampleRate; // one second
+	// One second of audio, rounded DOWN to a whole number of 48-frame blocks.
+	// `totalFrames = sampleRate` is NOT a multiple of fpp (44100 / 48 = 918.75),
+	// so the loop below - which writes storage[f] for every f in [0, fpp) and
+	// then copies dry[pos + f] out and wet[pos + f] in for the same range - used
+	// to run its last iteration 12 frames past the end of both vectors. That is
+	// a heap buffer over-run in the TEST, not in the effect: it was found the
+	// first time this test was ever built and run (0.2.1 coverage gap 1, the
+	// three VST3 effect tests were registered nowhere), where it aborted with
+	// "malloc(): corrupted top size". Rounding down keeps the block loop uniform
+	// and the assertion (wet RMS = 0.5 * dry RMS) unchanged.
+	constexpr int totalFrames = (sampleRate / fpp) * fpp;
 	constexpr double frequency = 440.0;
 	constexpr float amplitude = 0.5f;
 
