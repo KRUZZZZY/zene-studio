@@ -26,18 +26,24 @@
 #     as a generated grid; no multi-out, no presets, no instrument latency in PDC,
 #     no out-of-process hosting.
 #
-# A NOTE ON WHY `session-view` IS A ROW WITH required=OFF, WHICH IS NOT A SNUB.
-# `OPTION(WANT_SESSION_VIEW "..." OFF)` (CMakeLists.txt:121) defaults OFF and the
-# release jobs do not pass it, so the Session View data layer and the launch
-# scheduler that builds on it are IN THE TREE BUT NOT IN THIS BUILD. Recording it
-# as a row means the release CANNOT drift into claiming a clip launcher it does not
-# contain: the day a build turns the option on, this gate fails and the notes have
-# to be updated first. CORRECTED 2026-09-12: the wording here used to say "even with the flag ON the audit
-# found no consumer", which was true when that audit ran and is true no longer — the launch scheduler
-# (src/core/SessionScheduler.cpp, merged in this release) is a consumer behind this flag. What remains
-# accurate, and is the claim this row protects: there is still no CLIP LAUNCHER — no scene launcher and no
-# clip grid, both being UI the scheduler does not have. So the honest description of 0.2.0-alpha is that the
-# session data layer AND its launch scheduler exist in the source, ship disabled, and are not operable.
+# A NOTE ON WHY `session-view` MOVED FROM required=OFF TO required=ON IN 0.3.0-alpha.
+# Until 0.3.0 this row read OFF, because `OPTION(WANT_SESSION_VIEW "..." OFF)` defaulted OFF and no
+# release job passed it: the Session View data layer, its launch scheduler and the session.* control
+# group existed in the source and shipped in no build. The row was the thing that made the flip
+# non-optional (a build that turned the option on failed this gate until the documents moved), and it
+# worked - 0.3.0-alpha is an engine-and-agent release, so the option now defaults ON, the release jobs
+# get it without passing anything, and this row requires ON with the same commit flipping the default.
+#
+# WHAT THE ROW PROTECTS NOW, stated as narrowly as it can be, because it is the difference between a
+# claim and a wish. What this build CONTAINS with the option ON: the data layer (include/SessionModel.h,
+# the versioned <session> project block), the launch scheduler wired into Song::processNextBuffer
+# (src/core/SessionScheduler.cpp), and the session.* command group (src/core/ControlCommandsSession*.cpp)
+# through which an agent builds the grid, launches a clip or a whole scene, and reads the launch back.
+# What it still does NOT contain, and what the release notes must therefore not claim: there is NO CLIP
+# LAUNCHER - no grid, no scene launcher, no clip-cell UI, no Follow Action editor - and a launched
+# session slot does not render audio, because this tree has no session-clip playback path. A user cannot
+# see or hear the Session View; an agent can drive all of it through --control-socket. That sentence, not
+# the option's value, is the honest description of 0.3.0-alpha's Session View.
 #
 # WHY THERE IS NO ROW FOR TELEMETRY, THOUGH THE RELEASE DOCUMENTS IT.
 # The gate can only judge what the binary REPORTS, and the build-options string is assembled by
@@ -94,6 +100,6 @@
 vst3-hosting	WANT_VST3	ON	vst3effect	VST3 hosting (effects) is in the release	*
 vst3-instrument-hosting	WANT_VST3	ON	vst3instrument	VST3 instrument hosting (one instrument per track, MIDI in to audio out) is in the release	*
 clap-hosting	WANT_CLAP	ON	clapeffect	CLAP hosting (effects) is in the release on every platform	*
-session-view	WANT_SESSION_VIEW	OFF	-	The Session View (clip launcher and launch scheduler) is documented as absent from these builds	*
+session-view	WANT_SESSION_VIEW	ON	-	The Session View data layer, its launch scheduler and the session.* control group are in the release builds. The claim this row keeps true is the narrow one: it is drivable and observable through --control-socket, and there is still NO clip-launch grid and NO scene-launcher UI, and a launched session slot does not render audio (docs/KNOWN-LIMITATIONS.md)	*
 wasm-sandbox	WANT_WASM	OFF	-	The WASM DSP sandbox is documented as absent from these builds	*
 stem-separation	WANT_STEM_SPLIT	OFF	-	Offline stem separation is documented as absent from these builds	*

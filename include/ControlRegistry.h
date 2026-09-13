@@ -331,6 +331,16 @@ LMMS_EXPORT void registerWarpCommands(ControlRegistry& registry);
 //! warp.add / warp.move / warp.remove / warp.set - the mutating half of the
 //! group, in its own translation unit (the automation group's split).
 LMMS_EXPORT void registerWarpEditCommands(ControlRegistry& registry);
+/*! session.get_state / set_grid / set_quantisation / set_scene / set_slot /
+ *  clear_slot / clear - the Session View grid, its cells and its scenes
+ *  (SPEC-zene-studio A1). Declared and DEFINED only when the Session View is
+ *  compiled in (LMMS_HAVE_SESSION_VIEW), so a build without the data layer
+ *  cannot advertise commands whose model does not exist. */
+LMMS_EXPORT void registerSessionCommands(ControlRegistry& registry);
+//! session.launch_slot / launch_scene / stop_slot / stop_all - the launch
+//! requests, which queue into the audio thread's scheduler and write no project
+//! state (SPEC-zene-studio A2/A3).
+LMMS_EXPORT void registerSessionLaunchCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

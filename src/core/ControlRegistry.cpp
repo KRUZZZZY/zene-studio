@@ -469,6 +469,15 @@ void registerControlCommands(ControlRegistry& registry)
 	registerAutomationEditCommands(registry);
 	registerWarpCommands(registry);
 	registerScriptCommands(registry);
+#ifdef LMMS_HAVE_SESSION_VIEW
+	// The session.* group travels with the Session View data layer: without
+	// LMMS_HAVE_SESSION_VIEW there is no grid to address, and the registry
+	// must not carry ids whose handler could not exist (the same rule the
+	// telemetry.* group above follows). The A16 table guards its rows with the
+	// same #ifdef, so the two stay consistent in both directions.
+	registerSessionCommands(registry);
+	registerSessionLaunchCommands(registry);
+#endif
 }
 
 } // namespace lmms

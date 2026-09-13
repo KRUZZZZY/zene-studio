@@ -118,7 +118,14 @@ OPTION(WANT_VST_32	"Include 32-bit Windows VST support" ON)
 OPTION(WANT_VST_64	"Include 64-bit Windows VST support" ON)
 OPTION(WANT_WINMM	"Include WinMM MIDI support" OFF)
 OPTION(WANT_STEM_SPLIT	"Include offline stem separation (HTDemucs via ONNX Runtime, opt-in)" OFF)
-OPTION(WANT_SESSION_VIEW	"Include the Session View data layer (<session> project block, opt-in)" OFF)
+# Session View (SPEC-zene-studio A1/A2): the data layer (<session> project
+# block, clip slots, scenes), its launch scheduler, and the session.* control
+# group that drives both from the socket. Default ON since 0.3.0-alpha - the
+# release's own promise is that a session is drivable through --control-socket,
+# so the release configuration contains it. See tests/advertised-features.tsv,
+# whose session-view row must move in the same commit as this default (the
+# release-honesty gate is what makes that non-optional).
+OPTION(WANT_SESSION_VIEW	"Include the Session View data layer and its launch scheduler (<session> project block)" ON)
 OPTION(WANT_DEBUG_FPE	"Debug floating point exceptions" OFF)
 option(WANT_DEBUG_ASAN	"Enable AddressSanitizer" OFF)
 option(WANT_DEBUG_TSAN	"Enable ThreadSanitizer" OFF)

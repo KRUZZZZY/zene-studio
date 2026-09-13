@@ -375,6 +375,8 @@ bool SessionScheduler::consumeResetRequest() noexcept
 	// A project change starts a fresh session: the launch bookkeeping the
 	// model thread can read goes back to zero with the launch state.
 	m_launches.store( 0, std::memory_order_relaxed );
+	m_lastStartLine.store( 0, std::memory_order_relaxed );
+	m_lastStartObservedTick.store( 0, std::memory_order_relaxed );
 	return true;
 }
 
@@ -420,6 +422,10 @@ void SessionScheduler::advanceSlots( const SessionClockContext& ctx ) noexcept
 		if( event == LaunchEvent::Started || event == LaunchEvent::Retriggered )
 		{
 			m_launches.fetch_add( 1, std::memory_order_relaxed );
+			// The slot's own scheduled line, not this period's position, so two
+			// clips launched for the same bar report the SAME line whatever
+			// period noticed them; `observed` says how far past it we were.
+			publishStart( slot.state.startedTick, ctx.positionTicks );
 		}
 		if( slot.state.phase == SlotPhase::Idle )
 		{
