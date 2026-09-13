@@ -110,6 +110,7 @@ include/ControlBrowserSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
+include/ControlGrooveSupport.h
 include/ControlLayout.h
 include/ControlModulationSupport.h
 include/ControlRackSupport.h
@@ -167,6 +168,8 @@ include/Flags.h
 include/FloatModelEditorBase.h
 include/FontHelper.h
 include/Graph.h
+include/GroovePool.h
+include/GrooveTemplate.h
 include/GroupBox.h
 include/GuiApplication.h
 include/Hardware.h
@@ -915,6 +918,9 @@ src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsFreeze.cpp
+src/core/ControlCommandsGroove.cpp
+src/core/ControlCommandsGrooveEdit.cpp
+src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
@@ -950,6 +956,7 @@ src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlGrooveSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRegistry.cpp
@@ -978,6 +985,8 @@ src/core/EnvelopeAndLfoParameters.cpp
 src/core/ExportDither.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
+src/core/GroovePool.cpp
+src/core/GrooveTemplate.cpp
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
 src/core/Instrument.cpp
@@ -1295,6 +1304,7 @@ tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlGrooveCommandsTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
@@ -1306,6 +1316,8 @@ tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
+tests/src/core/GrooveTemplateTest.cpp
+tests/src/core/GrooveTestSupport.h
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp

@@ -476,6 +476,16 @@ that is this page's fault — report it and it gets added.
   track's own device chain and fader (they are already baked into the render), so those controls are inert
   until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true` but
   has nothing to play, which `track.get_state` reports as `frozen_audio_ready: false`.
+- **The groove pool and quantise have no interface — added 2026-09-13.** A note pattern's timing and
+  velocity feel can be captured into a named groove, re-applied to another clip with a strength, and notes
+  can be quantised with a strength and a humanise amount — drivable through `--control-socket`
+  (`groove.list`, `groove.extract`, `groove.set`, `groove.apply`, `groove.quantize`, `groove.remove`,
+  `groove.rename`), with a registered ctest driving the real binary over the socket — but **nothing in
+  `src/gui/` creates, shows, edits or applies a groove**: there is no groove list, no template browser, no
+  drag-to-apply and no quantise dialog. The groove pool and quantise are drivable through the socket, not
+  from the interface. `docs/GROOVE-POOL.md` also records the engine's own stated limits (a groove's
+  resolution is the slot, a sample clip is refused because there are no notes to move, and a groove is
+  applied once rather than played live).
 
 ## Telemetry and privacy
 

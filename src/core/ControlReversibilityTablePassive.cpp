@@ -360,6 +360,17 @@ const ReversibilityRow kPassiveRows[] = {
 		"the notes of a clip that carry one",
 		"no write: note.expression_set and note.expression_clear are the "
 		"writers, and both carry a MidiClip checkpoint", ""),
+
+	// The groove pool's read-only inspector (docs/GROOVE-POOL.md). Its six
+	// mutating siblings have their own rows: groove.apply and groove.quantize
+	// are live-checkpoint rows in ControlReversibilityTable.cpp, and the four
+	// pool edits are action-checkpoint rows in
+	// ControlReversibilityTableAction.cpp.
+	R("groove.list", RC::NotMutating, false,
+		"reads the project's groove pool - the templates, the engine's own "
+		"bounds, and with 'name' one groove's steps",
+		"no write: groove.extract/set/remove/rename are the pool's writers and "
+		"each carries a recorded action checkpoint", ""),
 };
 
 constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));

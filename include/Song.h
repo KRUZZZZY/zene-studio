@@ -41,6 +41,7 @@
 #include "MeterModel.h"
 #include "TempoMap.h"
 #include "ModulationLayer.h"
+#include "GroovePool.h"
 #include "Timeline.h"
 #include "TrackContainer.h"
 #include "VstSyncController.h"
@@ -398,6 +399,16 @@ public:
 	ModulationLayerPublisher& modulationLayer() { return m_modulationLayer; }
 	const ModulationLayerPublisher& modulationLayer() const { return m_modulationLayer; }
 
+	/*! The groove pool: the project's NAMED grooves - the timing and velocity
+	 *  feel of a note pattern, captured from one clip and re-applied to another
+	 *  (include/GrooveTemplate.h, include/GroovePool.h). The control thread
+	 *  edits it through the groove.* commands and the notes a groove is applied
+	 *  to through the clip's own note list, so nothing here is consulted from a
+	 *  render path. An EMPTY pool is exactly the engine as it was before the
+	 *  feature existed: it is not persisted and it changes nothing. */
+	GroovePool& groovePool() { return m_groovePool; }
+	const GroovePool& groovePool() const { return m_groovePool; }
+
 	//! The tempo in force at \a tick: the map's event at or before it, else the
 	//! global tempo model (the map's own out-of-range rule).
 	int tempoAtTick(tick_t tick) const;
@@ -504,10 +515,18 @@ private:
 	void saveKeymapStates(QDomDocument &doc, QDomElement &element);
 	void restoreKeymapStates(const QDomElement &element);
 
-	/*! The song-state elements behind a lock-free publisher: the tempo map
-	 *  (D11) and the modulation layer (#602). Restores whichever \a node is
-	 *  and answers false when it is neither, so loadProject()'s element walk
-	 *  carries one test for the pair rather than one per element (Gate 4). */
+	/*! The song-state elements behind a lock-free publisher, PLUS the groove
+	 *  pool: the tempo map (D11), the modulation layer (#602) and the groove
+	 *  pool (docs/GROOVE-POOL.md). Restores whichever \a node is and answers
+	 *  false when it is none of them, so loadProject()'s element walk carries
+	 *  one test for all of them rather than one per element (Gate 4).
+	 *
+	 *  The name is historical: the tempo map and the layer are publisher-backed
+	 *  and the groove pool is plain project state with no audio-thread reader.
+	 *  The pool joins them here because what this function dispatches on is
+	 *  "a song-state element that restores itself from its own <element>", and
+	 *  renaming a private helper that every branch in this line also edits
+	 *  would buy no behaviour. */
 	bool restorePublisherBackedSection(const QDomNode &node);
 
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
@@ -549,6 +568,11 @@ private:
 	//! The modulation layer and its lock-free hand-off to the audio thread
 	//! (#602, docs/MODULATION.md).
 	ModulationLayerPublisher m_modulationLayer;
+	/*! The project's named grooves. Plain project state with no audio-thread
+	 *  reader and no publisher: a groove is applied to a clip's notes once and
+	 *  the notes are what plays, so the pool itself is read only by the
+	 *  groove.* commands and the project writer. */
+	GroovePool m_groovePool;
 	int m_oldTicksPerBar;
 	IntModel m_masterVolumeModel;
 	IntModel m_masterPitchModel;

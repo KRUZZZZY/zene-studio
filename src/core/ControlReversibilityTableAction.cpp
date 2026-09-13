@@ -408,6 +408,39 @@ const ReversibilityRow kActionRows[] = {
 		"routes are applied in - comes back exactly, and the target's base is "
 		"re-captured from the value it was handed back to",
 		""),
+
+	// The groove pool's own edits (docs/GROOVE-POOL.md). The pool is project
+	// state on the Song but NOT in the track container, so a Song journal
+	// checkpoint - which carries the container - does not hold it: the same
+	// finding the tempo-map and modulation-layer rows above record. Each step
+	// therefore writes the captured <groove-pool> element back, and the
+	// recorded inverse names a REAL command a reader can re-issue.
+	R("groove.extract", RC::TrueInverse, true,
+		"the capture writes a NAMED template into the project's pool, which is "
+		"project state the Song checkpoint does not carry",
+		"action checkpoint: the recorded step writes the captured <groove-pool> "
+		"element back. The descriptor names the real inverse - groove.set with "
+		"the replaced groove's own steps when the name existed, groove.remove "
+		"when the capture created it",
+		""),
+	R("groove.set", RC::TrueInverse, true,
+		"writes one template (geometry and every step) into the pool, replacing "
+		"a groove of the same name",
+		"action checkpoint: the recorded step writes the captured pool back, so "
+		"the replaced groove returns with its own steps and its own position",
+		""),
+	R("groove.remove", RC::TrueInverse, true,
+		"a deleted template has no live object behind it; the pool element is "
+		"the only copy of it",
+		"action checkpoint: the recorded step writes the captured pool back, so "
+		"the removed groove returns at its own position in the pool",
+		""),
+	R("groove.rename", RC::TrueInverse, true,
+		"the name is the key, so a rename rewrites a template's identity - the "
+		"pool element is the only place that identity lives",
+		"action checkpoint: the recorded step writes the captured pool back, and "
+		"the descriptor re-issues groove.rename with the names swapped",
+		""),
 };
 
 constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kActionRows[0]));
