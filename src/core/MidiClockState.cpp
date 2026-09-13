@@ -131,4 +131,3 @@ qint64 MidiClock::lastPulseAgeMs() const
 }
 
 } // namespace lmms
-} // namespace lmms

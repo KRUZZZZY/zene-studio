@@ -94,14 +94,6 @@ const int FollowPollMs = 250;
 //! The name of the clock's own MIDI port, as a user sees it in a port menu.
 const char* const ClockPortName = "zene-clock";
 
-//! One MIDI BEAT (an SPP unit) is six pulses, so a tick position converts to
-//! SPP units by dividing by TicksPerMidiBeat. Stated once, here.
-quint32 songPositionOf(qint64 ticks)
-{
-	if (ticks <= 0) { return 0; }
-	return static_cast<quint32>(ticks / TicksPerMidiBeat) & 0x3FFF;
-}
-
 } // namespace
 
 MidiClock* MidiClock::instance()
@@ -126,6 +118,15 @@ quint64 MidiClock::nowNs() noexcept
 	using Clock = std::chrono::steady_clock;
 	return static_cast<quint64>(
 		std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count());
+}
+
+quint32 MidiClock::songPositionOf(qint64 ticks) noexcept
+{
+	// One MIDI BEAT - the unit of a Song Position Pointer - is six clock pulses,
+	// i.e. a sixteenth note, which is TicksPerMidiBeat of this engine's ticks.
+	// A position before the start is 0, and the wire form is 14-bit.
+	if (ticks <= 0) { return 0; }
+	return static_cast<quint32>(ticks / TicksPerMidiBeat) & 0x3FFF;
 }
 
 MidiClient* MidiClock::client() const
@@ -195,6 +196,18 @@ QString MidiClock::masterPort() const
 	return m_masterPort;
 }
 
+void MidiClock::restoreMaster(bool enabled, const QString& port)
+{
+	MidiPort* output = m_outputPort.load();
+	if (output != nullptr && port.isEmpty() && !m_masterPort.isEmpty())
+	{
+		output->subscribeWritablePort(m_masterPort, false);
+		m_masterPort.clear();
+	}
+	QString ignored;
+	setMasterEnabled(enabled, port, &ignored);
+}
+
 bool MidiClock::masterPortReady() const
 {
 	MidiPort* port = m_outputPort.load();
@@ -227,7 +240,14 @@ double MidiClock::periodMs() const
 void MidiClock::setSlaveEnabled(bool enabled) noexcept
 {
 	m_slaveEnabled.store(enabled);
-	if (!enabled) { m_slaveFollowTempo.store(false); }
+	if (!enabled)
+	{
+		m_slaveFollowTempo.store(false);
+		// Leaving slave mode forgets the measurement: a caller that re-enables
+		// following must not be handed a tempo measured from a clock it stopped
+		// listening to (the same reason the lock drops when pulses stop).
+		m_tracker.reset();
+	}
 }
 
 void MidiClock::setSlaveFollowTempo(bool follow) noexcept
@@ -294,7 +314,7 @@ void MidiClock::record(MidiClockMessage message, qint64 positionTicks) noexcept
 	m_monitor[slot].ticks.store(positionTicks);
 }
 
-void MidiClock::emit(MidiClockMessage message, qint64 positionTicks, quint32 payload) noexcept
+void MidiClock::emitMessage(MidiClockMessage message, qint64 positionTicks, quint32 payload) noexcept
 {
 	record(message, positionTicks);
 	MidiClient* midi = m_client.load();
@@ -340,17 +360,17 @@ void MidiClock::trackTransport(bool transportRunning, qint64 playPosTicks, qint6
 		m_tickRemainder.store(0.0);
 		if (playPosTicks != 0)
 		{
-			emit(MidiClockMessage::SongPosition, playPosTicks, songPositionOf(playPosTicks));
-			emit(MidiClockMessage::Continue, playPosTicks);
+			emitMessage(MidiClockMessage::SongPosition, playPosTicks, songPositionOf(playPosTicks));
+			emitMessage(MidiClockMessage::Continue, playPosTicks);
 			return;
 		}
-		emit(MidiClockMessage::Start, playPosTicks);
+		emitMessage(MidiClockMessage::Start, playPosTicks);
 		return;
 	}
 	if (!transportRunning && wasRunning)
 	{
 		m_tickRemainder.store(0.0);
-		emit(MidiClockMessage::Stop, playPosTicks);
+		emitMessage(MidiClockMessage::Stop, playPosTicks);
 		return;
 	}
 	// Running on both periods: a position that did not move by the amount the
@@ -362,7 +382,7 @@ void MidiClock::trackTransport(bool transportRunning, qint64 playPosTicks, qint6
 	const qint64 delta = playPosTicks - previous;
 	if (delta == 0) { return; }
 	if (delta >= expectedAdvance - 1 && delta <= expectedAdvance + 1) { return; }
-	emit(MidiClockMessage::SongPosition, playPosTicks, songPositionOf(playPosTicks));
+	emitMessage(MidiClockMessage::SongPosition, playPosTicks, songPositionOf(playPosTicks));
 }
 
 void MidiClock::emitPulses(int frames) noexcept
@@ -377,7 +397,7 @@ void MidiClock::emitPulses(int frames) noexcept
 	while (remainder >= pulseTicks)
 	{
 		remainder -= pulseTicks;
-		emit(MidiClockMessage::Clock, m_lastPlayPosTicks.load());
+		emitMessage(MidiClockMessage::Clock, m_lastPlayPosTicks.load());
 	}
 	m_tickRemainder.store(remainder);
 }

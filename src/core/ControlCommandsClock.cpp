@@ -47,6 +47,7 @@
 
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "Engine.h"
 #include "MidiClock.h"
 #include "Song.h"

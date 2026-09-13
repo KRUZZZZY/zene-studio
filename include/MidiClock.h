@@ -234,6 +234,7 @@ private:
  */
 class LMMS_EXPORT MidiClock
 {
+public:
 	//! How many emitted messages the monitor keeps.
 	static constexpr int MonitorCapacity = 32;
 	//! The tempo dead band of the follower, in BPM: a measured tempo within this
@@ -246,6 +247,13 @@ class LMMS_EXPORT MidiClock
 	//! The monotonic nanosecond clock EVERY timestamp in this class comes from.
 	static quint64 nowNs() noexcept;
 
+	/*! The MIDI-beat position (the payload of a Song Position Pointer) for a tick
+	 *  position: a MIDI beat is six clock pulses, i.e. a sixteenth note, which is
+	 *  TicksPerMidiBeat of this engine's ticks, and the wire form is 14-bit. It is
+	 *  a public conversion because it is the one place the grid can be checked
+	 *  without a MIDI device on the other end. */
+	static quint32 songPositionOf(qint64 ticks) noexcept;
+
 	// ---------------------------------------------------------------- master
 	bool masterEnabled() const noexcept { return m_masterEnabled.load(); }
 	/*! Enable or disable the master and name the writable client port it
@@ -254,6 +262,10 @@ class LMMS_EXPORT MidiClock
 	 *  is a real refusal an agent must see rather than a silent no-op. */
 	bool setMasterEnabled(bool enabled, const QString& port, QString* error);
 	QString masterPort() const;
+	/*! The exact inverse of setMasterEnabled for a recorded undo step: when the
+	 *  before-state named no port, unsubscribe the one the call subscribed, so
+	 *  control.undo restores the SUBSCRIPTION and not only the flag. */
+	void restoreMaster(bool enabled, const QString& port);
 	//! True when an output port exists AND it is subscribed to a client port.
 	bool masterPortReady() const;
 	//! 1000 * framesPerPeriod / sampleRate: the largest delay between the tick
@@ -314,14 +326,17 @@ private:
 	explicit MidiClock();
 	~MidiClock();
 
-	//! Hand \a message to the MIDI client and record it. Audio thread.
-	void emit(MidiClockMessage message, qint64 positionTicks, quint32 payload = 0) noexcept;
+	//! Hand \a message to the MIDI client and record it. Audio thread. Named
+	//! emitMessage and NOT emit, which Qt defines as a macro (grep the build's
+	//! qglobal.h: `#define emit`) - calling it emit makes the declaration read
+	//! `void (MidiClockMessage message, ...)` and the class body fail to parse.
+	void emitMessage(MidiClockMessage message, qint64 positionTicks, quint32 payload = 0) noexcept;
 	//! Create this object's own MidiPort, or return the existing one. Control
 	//! thread: the constructor registers a port on the client, the same call an
 	//! instrument track makes from the GUI thread when a track is added.
 	MidiPort* outputPort();
 	void record(MidiClockMessage message, qint64 positionTicks) noexcept;
-	void trackTransport(bool transportRunning, qint64 playPosTicks) noexcept;
+	void trackTransport(bool transportRunning, qint64 playPosTicks, qint64 expectedAdvance) noexcept;
 	void emitPulses(int frames) noexcept;
 
 	MidiClient* client() const;

@@ -123,6 +123,7 @@ LMMS_EXPORT void registerFreezeCommands(ControlRegistry& registry);
  *  is the ONLY way to reach it - there is no interface for a MIDI clock in this
  *  release. MTC is not generated: the engine has no frame rate or SMPTE offset
  *  to build one from, and clock.get_state reports that as `mtc: "absent"`. */
+LMMS_EXPORT void registerClockCommands(ControlRegistry& registry);
 
 } // namespace lmms
 

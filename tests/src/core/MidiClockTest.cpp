@@ -81,6 +81,20 @@ quint64 feedPulses(MidiClockTracker& tracker, int bpm, int pulses, quint64 times
 	return timestampNs;
 }
 
+//! Feed clock pulses through the ENGINE's own input entry point - the one the
+//! MIDI client's reader thread calls - rather than into a tracker directly, so
+//! the follower test measures the path a real incoming clock takes.
+quint64 feedClockInput(MidiClock* clock, int bpm, int pulses, quint64 timestampNs)
+{
+	const quint64 interval = pulseIntervalNs(bpm);
+	for (int i = 0; i < pulses; ++i)
+	{
+		timestampNs += interval;
+		clock->handleInputMessage(MidiClockMessage::Clock, 0, timestampNs);
+	}
+	return timestampNs;
+}
+
 //! The pulse count the generator's own arithmetic implies for \a periods audio
 //! periods of \a frames samples at the engine's current frame/tick scalar. The
 //! SAME accumulation the engine runs (add, then subtract while the remainder is
@@ -366,7 +380,7 @@ private slots:
 
 		// Enabled and FOLLOWING: 48 pulses at 140 BPM over synthetic time.
 		clock->setSlaveFollowTempo(true);
-		const quint64 last = feedPulses(clock->tracker(), 140, 48, 1000000ULL);
+		const quint64 last = feedClockInput(clock, 140, 48, 1000000ULL);
 		QVERIFY(clock->tracker().locked());
 		QCOMPARE(qRound(clock->tracker().tempoBpm()), 140);
 		QCOMPARE(clock->applyMeasuredTempo(), 140);

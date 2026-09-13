@@ -164,12 +164,12 @@ void MidiClockTracker::pulse(quint64 timestampNs) noexcept
 void MidiClockTracker::received(MidiClockMessage message, quint32 value,
 	quint64 timestampNs) noexcept
 {
+	m_messageCounts[static_cast<std::size_t>(messageIndex(message))].fetch_add(1);
 	if (message == MidiClockMessage::Clock)
 	{
 		pulse(timestampNs);
 		return;
 	}
-	m_messageCounts[static_cast<std::size_t>(messageIndex(message))].fetch_add(1);
 	switch (message)
 	{
 		// START and CONTINUE say nothing about the rate: a slave's tempo comes
