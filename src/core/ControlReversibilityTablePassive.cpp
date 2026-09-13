@@ -294,6 +294,42 @@ const ReversibilityRow kPassiveRows[] = {
 		"no write: an entry is dropped when the file changes, and the whole "
 		"cache is bounded (BrowserPeakCache::Capacity entries of "
 		"BrowserPeakCache::BaseBuckets peaks each)", ""),
+#ifdef LMMS_HAVE_WASM
+	// =====================================================================
+	// wasm.* - the sandbox's read half (item #614). It writes no project state;
+	// the rows travel with the group for the reason the three snapshot rows for
+	// wasm.load / unload / set_param give in
+	// ControlReversibilityTableSnapshot.cpp.
+	// =====================================================================
+	R("wasm.list", RC::NotMutating, false,
+		"reports the ABI the sandbox implements - its hard limits, the exports a "
+		"module must declare, the host imports it may use - and enumerates the "
+		".wat/.wasm files in one directory: a directory listing and a set of "
+		"constants, nothing written",
+		"no write. A 'root' that is not a readable directory is a typed "
+		"not_found naming the default rather than an empty module list, so a "
+		"mis-typed path cannot read as 'this build can host nothing'", ""),
+	R("wasm.get_state", RC::NotMutating, false,
+		"reads the hosted module's runtime state: whether one is hosted, its "
+		"path/format/fuel budget, and the ABI values the host has read from it "
+		"(channels and latency after the host's clamp, whether it exports "
+		"process(), its memory size) plus all 16 parameter slots",
+		"no write to the project. It DOES consume the sandbox's log buffer - the "
+		"text belongs to the most recent call and takeLog() clears it - which "
+		"the command's own description states on the wire rather than leaving "
+		"the caller to discover it", ""),
+	R("wasm.process", RC::NotMutating, false,
+		"runs one block through the hosted module and reads plane 0's output "
+		"back. The only thing it writes is the module's OWN linear memory - the "
+		"input planes the host fills, and whatever the module itself stores "
+		"there - which is not project state, is not serialized and is not "
+		"journalled",
+		"no transaction: nothing the project or the control surface holds "
+		"changes, so there is nothing for control.undo to reverse and nothing "
+		"for it to be blocked by. A call whose module traps or runs out of fuel "
+		"is REPORTED ('status': 'trap' with the wasmtime trap code) rather than "
+		"thrown, because a contained trap is the sandbox's whole purpose", ""),
+#endif // LMMS_HAVE_WASM
 };
 
 constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));

@@ -50,6 +50,55 @@
 using namespace lmms;
 using namespace revtest;
 
+namespace
+{
+
+//! The documented A16 histogram for THIS configuration.
+/*!
+ * The invariant part of the table plus the groups a build option moves. Written
+ * as a sum rather than as a full set per configuration: four exist (telemetry
+ * on/off x sandbox on/off), and a full set per configuration is how one of them
+ * gets left stale.
+ *
+ * The release notes quote the RELEASE configuration's figures - 127 rows /
+ * 63 / 9 / 3 / 52 with the telemetry client compiled out and no wasmtime,
+ * 129 / 63 / 9 / 3 / 54 with the client in - which these reduce to. The six
+ * `wasm.*` rows (item #614: three snapshot, three not_mutating) are present
+ * exactly when the wasmtime C API is: without it WANT_WASM degrades to OFF, the
+ * group's sources are not compiled, ControlRegistry.cpp's #ifdef removes its
+ * registration and the rows leave the table with the ids - which is the
+ * direction the other tests in this file assert (every row names a registered
+ * command).
+ *
+ * Split out of the test slot so the slot's own complexity does not carry the four
+ * option combinations (the complexity ratchet counts them).
+ */
+struct DocumentedHistogram
+{
+	int rows;
+	int trueInverse;
+	int snapshot;
+	int irreversible;
+	int notMutating;
+};
+
+DocumentedHistogram documentedHistogram()
+{
+	DocumentedHistogram out{127, 63, 9, 3, 52};
+#ifdef ZENE_TELEMETRY_ENABLED
+	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
+	out.notMutating += 2;
+#endif
+#ifdef LMMS_HAVE_WASM
+	out.rows += 6;          // wasm.load / unload / set_param, list / get_state / process
+	out.snapshot += 3;
+	out.notMutating += 3;
+#endif
+	return out;
+}
+
+} // namespace
+
 class ReversibilityContractTest : public QObject
 {
 	Q_OBJECT
@@ -101,8 +150,14 @@ private slots:
 	//! command" (docs/RELEASE-NOTES-v0.2.1-alpha.md, at 0.2.1: 30 `true_inverse`,
 	//! 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`) - and nothing asserted them.
 	//! At 0.3.0 the same four counts read 63 / 9 / 3 / 54 over 129 rows, and the
-	//! current figure lives in docs/RELEASE-NOTES-v0.3.0-alpha.md. The two
-	//! tests above hold the table to account for COVERAGE (every registered command
+	//! current figure lives in docs/RELEASE-NOTES-v0.3.0-alpha.md. Two compile-time
+	//! groups move with their option and are ADDED to the invariant part rather
+	//! than written out per configuration: the two `telemetry.*` not_mutating rows
+	//! (ZENE_TELEMETRY_ENABLED) and the six `wasm.*` rows - three snapshot, three
+	//! not_mutating - which are present exactly when the wasmtime C API is
+	//! (LMMS_HAVE_WASM, item #614). The release configuration has neither, so the
+	//! notes' own figures are its 127 / 63 / 9 / 3 / 52.
+	//! The two tests above hold the table to account for COVERAGE (every registered command
 	//! has a row, every row names a registered command) and for behaviour; a row
 	//! added or moved between classes could therefore ship with the notes still
 	//! quoting the old split.
@@ -135,24 +190,12 @@ private slots:
 			}
 		}
 
-#ifdef ZENE_TELEMETRY_ENABLED
-		// The table as shipped, WITH the two telemetry.* rows: the shape the release
-		// notes state for 0.3.0.
-		constexpr int kRows = 129;
-		constexpr int kTrueInverse = 63;
-		constexpr int kSnapshot = 9;
-		constexpr int kIrreversible = 3;
-		constexpr int kNotMutating = 54;
-#else
-		// The same table with the telemetry client compiled out of the binary
-		// (-DZENE_TELEMETRY=OFF): its two commands leave the registry, so their two
-		// not_mutating rows leave the table with them.
-		constexpr int kRows = 127;
-		constexpr int kTrueInverse = 63;
-		constexpr int kSnapshot = 9;
-		constexpr int kIrreversible = 3;
-		constexpr int kNotMutating = 52;
-#endif
+		const DocumentedHistogram counts = documentedHistogram();
+		const int kRows = counts.rows;
+		const int kTrueInverse = counts.trueInverse;
+		const int kSnapshot = counts.snapshot;
+		const int kIrreversible = counts.irreversible;
+		const int kNotMutating = counts.notMutating;
 
 		const QByteArray measured = QStringLiteral("%1 true_inverse, %2 snapshot, "
 			"%3 irreversible, %4 not_mutating")

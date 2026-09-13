@@ -427,6 +427,26 @@ LMMS_EXPORT void registerCompCommands(ControlRegistry& registry);
 //! translation unit (the clip, warp and rack groups' split).
 LMMS_EXPORT void registerCompEditCommands(ControlRegistry& registry);
 
+/*! wasm.list / get_state / process - what the sandbox can host, what it is
+ *  hosting and what a block through it does - plus the mutating half.
+ *
+ *  GUARDED BY #ifdef LMMS_HAVE_WASM, in both the declaration and the definition,
+ *  because the sandbox IS a compile-time feature: the wasmtime C API is an
+ *  optional dependency (cmake/modules/FindWasmtime.cmake), and WANT_WASM
+ *  degrades to OFF without it (CMakeLists.txt:957-963). A build without wasmtime
+ *  compiles src/wasm out entirely, so the registry must not carry ids whose
+ *  handler could not exist - the rule the session.* and telemetry.* groups
+ *  follow. src/core/ControlRegistry.cpp guards its call with the same #ifdef and
+ *  the A16 table guards its six rows with it too, so all three stay consistent in
+ *  both directions. */
+#ifdef LMMS_HAVE_WASM
+LMMS_EXPORT void registerWasmCommands(ControlRegistry& registry);
+//! wasm.load / unload / set_param - the mutating half, in its own translation
+//! unit (the automation, warp, rack and comp groups' read/edit split). Called by
+//! registerWasmCommands; the registry has exactly one wasm.* registration point.
+LMMS_EXPORT void registerWasmEditCommands(ControlRegistry& registry);
+#endif
+
 //! The browser.* group (W8 tag/metadata search plus the waveform peak cache):
 //! browser.roots, browser.query, browser.tags and browser.peaks. The engine half
 //! is include/BrowserCatalog.h (the roots the browser tabs read, the metadata an

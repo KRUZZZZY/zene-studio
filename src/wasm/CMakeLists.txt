@@ -2,6 +2,7 @@ set(LMMS_SRCS
 	${LMMS_SRCS}
 
 	wasm/WasmSandbox.cpp
+	wasm/WasmSandboxHost.cpp
 	wasm/WasmWorker.cpp
 
 	PARENT_SCOPE
