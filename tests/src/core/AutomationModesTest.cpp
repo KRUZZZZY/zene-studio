@@ -167,6 +167,22 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		// Engine::init() starts the render-only dummy device thread, and that thread
+		// renders Song::processNextBuffer() continuously (AudioDummy::run ->
+		// AudioEngine::renderNextPeriod -> renderStageNoteSetup). This harness drives
+		// the same function itself, so without this line two threads walk the song's
+		// automation at once: the device thread's Touch write lands in
+		// AutomationClip::recordValue() - which inserts into the clip's time map -
+		// while timeMapBits() iterates that map through the UNLOCKED getTimeMap().
+		// That is a QMap traversed while another thread restructures it: SIGSEGV with
+		// no usable stack, which is exactly what CI reported on every runner
+		// ("Received signal 11" with an empty trace) and never on a many-core dev box.
+		// The render thread is not needed here - this file's header says the harness
+		// calls processNextBuffer "exactly as AudioEngine::renderStageNoteSetup()
+		// calls it on the render thread", i.e. it IS the render thread - and every
+		// sibling harness that drives the engine synchronously (RoutingGraphLiveTest,
+		// SessionSchedulerRenderTest, the plugin-port harnesses) stops it the same way.
+		Engine::audioEngine()->audioDev()->stopProcessing();
 	}
 
 	void cleanupTestCase()
