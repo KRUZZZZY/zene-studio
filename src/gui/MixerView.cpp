@@ -1,39 +1,35 @@
 /*
  * MixerView.cpp - effect-mixer-view for LMMS
- *
  * Copyright (c) 2008-2014 Tobias Doerffel <tobydox/at/users.sourceforge.net>
- *
  * This file is part of LMMS - https://lmms.io
- *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
  * License as published by the Free Software Foundation; either
  * version 2 of the License, or (at your option) any later version.
- *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
- *
  * You should have received a copy of the GNU General Public
  * License along with this program (see COPYING); if not, write to the
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301 USA.
- *
  */
 
 #include "MixerView.h"
 /* ---------------------------------------------------------------------------
  * THE VIEW LIST AND THE MIXER'S CHANNEL LIST ARE NOT THE SAME LIST.
- *
  * One MixerView per mixer channel, and THE MIXER is indexed with a VIEW index -
  * here, in updateFaders(), in the solo/mute wiring. The ENGINE deletes channels
  * without telling the view (Mixer::deleteChannel: TrackFolder::releaseRouting(),
  * mixer.remove_channel, Mixer::clear() on a project load), and Mixer::mixerChannel()
  * does not bounds-check, so a view index past the mixer's last channel is a wild
  * pointer: measured SIGSEGV inside QObject::disconnectImpl at shutdown, exit code
- * -11. Every crossing index is bounded by the MIXER's own channel count; a SHORTER
- * list needs nothing, every view-side lookup already being `i < views.size()`.
+ * -11. So the LOOKUP is bounded by the MIXER's own channel count, and the TEARDOWN is
+ * not: a surplus view must still be DELETED, because a view left alive with a dead
+ * model is painted later and walks it (measured: SIGSEGV in
+ * Fader::calculateKnobPosYFromModel). A SHORTER list needs nothing, every view-side
+ * lookup already being `i < views.size()`.
  * --------------------------------------------------------------------------- */
 
 #include <QHBoxLayout>
@@ -209,7 +205,7 @@ int MixerView::addNewChannel()
 void MixerView::refreshDisplay()
 {
 	// delete all views and re-add them
-	for (int i = 1; i < m_mixerChannelViews.size() && i < static_cast<int>(getMixer()->numChannels()); ++i)
+	for (int i = 1; i<m_mixerChannelViews.size(); ++i)
 	{
 		// First disconnect from the solo/mute models.
 		disconnectFromSoloAndMute(i);
@@ -321,6 +317,10 @@ void MixerView::connectToSoloAndMute(int channelIndex)
 
 void MixerView::disconnectFromSoloAndMute(int channelIndex)
 {
+	// The mixer may be SHORTER than this list (see the note at the top of this
+	// file): a channel it no longer has cannot be disconnected from, but the
+	// CALLER still deletes the view - that half must always happen.
+	if (channelIndex >= static_cast<int>(getMixer()->numChannels())) { return; }
 	auto * mixerChannel = getMixer()->mixerChannel(channelIndex);
 
 	disconnect(&mixerChannel->m_muteModel, &BoolModel::dataChanged, this, &MixerView::toggledMute);

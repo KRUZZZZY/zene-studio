@@ -156,6 +156,21 @@ def main():
         binary, project, "shutdown: no usable audio device", BROKEN_DEVICE,
         [("project.open", {"path": project}),
          ("mixer.get_state", {})], extra_env=BROKEN_DEVICE_ENV))
+    # (c) A PROJECT OPEN THAT SHRINKS THE MIXER. Mixer::loadSettings() clears the
+    # mixer before it restores the file's channels (Mixer::clear() ->
+    # deleteChannel()), and MixerView is not told, so its channel list is left one
+    # entry LONGER than the mixer. Every view-side lookup then indexes the MIXER
+    # with a VIEW index and Mixer::mixerChannel() does not bounds-check, so this
+    # used to be a wild MixerChannel* - measured: SIGSEGV inside
+    # Fader::calculateKnobPosYFromModel (a surplus view repainting a deleted
+    # channel's model) and inside QObject::disconnectImpl on shutdown, exit code
+    # -11. The fixture has ONE mixer channel, so adding one and opening it is
+    # exactly that shrink, deterministically.
+    results.append(shutdown_scenario(
+        binary, project, "shutdown: a project open that shrinks the mixer", DEFAULT_DEVICE,
+        [("mixer.add_channel", {}),
+         ("project.open", {"path": project}),
+         ("mixer.get_state", {})]))
     return finish(results)
 
 
