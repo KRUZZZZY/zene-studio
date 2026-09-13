@@ -588,6 +588,12 @@ section 5 is the argument for each.
   the merged tip (freeze + groove + the MCP lane + punch/recording crash recovery together): **164 ids
   registered, 164 exposed live, 164 exposed offline** (166 tools with the two bridge-owned ones), **0 missing
   and 0 extra** in both directions in all three modes — live, empty state directory, and with the stale cache planted and passed over.
+  **The chain-preset group adds six ids to that figure:** the snapshot is regenerated
+  from a live instance of the `030-chain-presets` tip at **170 ids** (`chain.save`,
+  `chain.list`, `chain.apply`, `chain.rename`, `chain.remove`, `chain.get_state`), and
+  `ControlCommandsSnapshot` passes against it. Like every figure in this section it is a
+  measurement of ONE tip, so the parent re-measures it at the final merged tip — a
+  command-group merge that lands after this one moves the number again.
 - **UI absence — one line:** none of this is in the interface; the tool list exists only through the MCP
   bridge over a control socket. **And the limit, stated plainly:** a Hermes session reads the bridge from the
   registration in `~/.hermes/config.yaml`, which points at a scratch copy outside this repository; until that

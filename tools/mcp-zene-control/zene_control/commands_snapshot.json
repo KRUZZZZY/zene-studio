@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T20:19:22Z",
+  "captured_at": "2026-09-13T21:51:57Z",
   "commands": [
     {
       "args_schema": {
@@ -828,6 +828,271 @@
           },
           "tags": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings.",
+      "group": "chain",
+      "id": "chain.apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device_count": {
+            "type": "integer"
+          },
+          "devices": {
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "One chain preset in full: its name, its file, its device count and every device in order with the plugin's own identity (the LADSPA file and label, the LV2 URI, or the built-in name), the format, and the size and SHA-256 of the device's state document. The state documents themselves are not returned - they are what chain.apply writes back, and chain.list's hashes are what a caller compares.",
+      "group": "chain",
+      "id": "chain.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "device_count": {
+            "type": "integer"
+          },
+          "devices": {
+            "type": "array"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every chain preset in the store: its name, its file, its device count and one summary per device (the plugin, the format and the size and hash of the device's own state document). Pass \"name\" for one preset in full. The store lives OUTSIDE the project - the user preset tree, chainpresets/ - so the presets are the same ones whichever project is open, which is the point of a preset. Writes nothing.",
+      "group": "chain",
+      "id": "chain.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "presets": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a chain preset from the store. The preset's own bytes are captured first, so the removal is reversible: one control.undo writes the same file, byte for byte, back to its own path.",
+      "group": "chain",
+      "id": "chain.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device_count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Rename a stored chain preset. The name is the key, so a rename onto a name the store already holds is refused, typed, and changes nothing. Reversible through a recorded action checkpoint that renames the file back.",
+      "group": "chain",
+      "id": "chain.rename",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device_count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "renamed_to": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
+      "group": "chain",
+      "id": "chain.save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "device_count": {
+            "type": "integer"
+          },
+          "devices": {
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "sha256": {
+            "type": "string"
           }
         },
         "required": [],
@@ -8148,16 +8413,16 @@
       }
     }
   ],
-  "count": 164,
+  "count": 170,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wch/build/zene",
+    "binary_bytes": 186439448,
+    "binary_sha256": "602d9845a9125801e3efe9fbf2d600bd2151fc0a7ff8ee75b000256f0a6b670c",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wch",
+    "lane_head": "5cc491463de57eef43aaf9b87e6a008fa35705aa",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-yuvhz5zl/zene.sock",
-    "version": "0.2.0-alpha.146+01b9975"
+    "source_socket": "/tmp/zctl-run-j2tkjqjx/zene.sock",
+    "version": "0.2.1-alpha.100+5625c7b"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
