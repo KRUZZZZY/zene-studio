@@ -1,5 +1,12 @@
 # List of DLLs considered to be system libraries.
 # This is needed when cross-compiling for Windows.
+#
+# 2026-09-13 (fork): the list below is upstream's, and it was incomplete for THIS build - the
+# packaging step fails hard (InstallDependencies.cmake:180 FATAL_ERROR) on the first prerequisite
+# it cannot resolve, one per CI run: CRYPT32.dll, then DNSAPI.dll. Every entry added here is a
+# Windows system library that a Qt6 + VST3 build imports (SChannel/crypto for Qt Network, the
+# network stack, and the Win32 crypto/shape stack), so none of them is a library this product
+# ships or bundles.
 ADVAPI32.dll
 COMCTL32.dll
 comdlg32.dll
@@ -27,3 +34,19 @@ WS2_32.dll
 RPCRT4.dll
 dsound.dll
 SETUPAPI.dll
+# --- added 2026-09-13: the rest of the Windows system set this build imports ---
+DNSAPI.dll
+IPHLPAPI.dll
+WSOCK32.dll
+BCRYPT.dll
+bcryptprimitives.dll
+NCRYPT.dll
+SECUR32.dll
+CRYPTBASE.dll
+WINTRUST.dll
+CFGMGR32.dll
+DWrite.dll
+PROPSYS.dll
+OLEACC.dll
+WINSPOOL.DRV
+
