@@ -43,11 +43,16 @@ IF(WIN64)
 	else()
 		set(CPACK_PACKAGE_FILE_NAME      "${CMAKE_PROJECT_NAME}-${VERSION}-${WIN_PLATFORM}-win64")
 	endif()
-	SET(CPACK_INSTALL_FIX "$PROGRAMFILES64\\\\${CPACK_PACKAGE_INSTALL_DIRECTORY}\\\\")
-	SET(CPACK_NSIS_DEFINES "
-		${CPACK_NSIS_DEFINES} 
-		InstallDir ${CPACK_INSTALL_FIX}
-		")
+	# InstallDir is set by CPack itself: its NSIS template emits
+	#   InstallDir "@CPACK_NSIS_INSTALL_ROOT@\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
+	# which is QUOTED, and CPACK_NSIS_INSTALL_ROOT defaults to $PROGRAMFILES64 for
+	# a win64 target. An unquoted "InstallDir <path>" is a single NSIS parameter
+	# only while <path> contains no space; CPACK_PACKAGE_INSTALL_DIRECTORY became
+	# "Zene Studio" in the rename, so the override that used to be appended below
+	# had two, and makensis aborted before compressing anything ("InstallDir
+	# expects 1 parameters, got 2"). Removing it also keeps the default install
+	# directory identical to the one CPack's own install/repair checks compare
+	# $INSTDIR against.
 ENDIF()
 
 # Setup missing parent scopes
