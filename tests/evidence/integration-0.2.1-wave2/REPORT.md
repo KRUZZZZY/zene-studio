@@ -3,7 +3,9 @@
 Branch `integrate/0.2.1-wave2`, base `ec07dd3a0` (= `main` = tag `v0.2.1-alpha`), worktree
 `zene-pa-integrate2`. Unpushed, untagged.
 
-Merge tip (four merges): `d2b3f5b94`. Final tip (adds the Gate 6 adjudication below): `93b4d4961`.
+Merge tip (four merges): `d2b3f5b94`. Gate-6 adjudication: `93b4d4961`. The evidence commits
+follow those two; `git -C lmms log --oneline integrate/0.2.1-wave2` names the tip on disk, which
+is the commit that carries this report (plus the final-tip gate re-run after it).
 
 ## Merge order, one commit each
 
