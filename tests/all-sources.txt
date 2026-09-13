@@ -106,6 +106,7 @@ include/ComboBoxModel.h
 include/ConfigManager.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
+include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlLayout.h
@@ -382,6 +383,7 @@ include/SystemSemaphore.h
 include/TabBar.h
 include/TabButton.h
 include/TabWidget.h
+include/TakeLane.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
@@ -898,6 +900,8 @@ src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
+src/core/ControlCommandsComp.cpp
+src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -923,6 +927,7 @@ src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
+src/core/ControlCompSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
@@ -1042,6 +1047,7 @@ src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
 src/core/StepRecorder.cpp
+src/core/TakeLane.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
 src/core/TempoSyncKnobModel.cpp
@@ -1328,6 +1334,7 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
+tests/src/core/TakeLaneCompTest.cpp
 tests/src/core/TelemetryTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp

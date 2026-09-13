@@ -87,6 +87,10 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsClipEdits.cpp
+	# Take lanes and the non-destructive composite (task #600): the take half,
+	# the composite half, and the helpers the two share. See docs/COMPING.md.
+	core/ControlCommandsComp.cpp
+	core/ControlCommandsCompEdits.cpp
 	core/ClipEdits.cpp
 	core/ControlAutomationSupport.cpp
 	core/ControlBrowserSupport.cpp
@@ -95,6 +99,7 @@ set(LMMS_SRCS
 	core/ControlCommandsBrowser.cpp
 	core/ControlCommandsBrowserTags.cpp
 	core/ControlCommandsControl.cpp
+	core/ControlCompSupport.cpp
 	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp
 	core/ControlCommandsNotes.cpp
@@ -243,6 +248,7 @@ set(LMMS_SRCS
 	core/ThreadPool.cpp
 	core/Timeline.cpp
 	core/TimePos.cpp
+	core/TakeLane.cpp
 	core/ToolPlugin.cpp
 	core/Track.cpp
 	core/TrackContainer.cpp

@@ -256,6 +256,24 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 		return;
 	}
 
+	// Take lanes and the composite (comping; docs/COMPING.md). ONE element
+	// holds both lists, and it is written ONLY when the model is not empty, so a
+	// project that never comped serialises byte for byte as it did before this
+	// feature existed (invariant I9).
+	//
+	// `metadata="1"` is load-bearing, not decoration: Track::loadTrack turns an
+	// unrecognised child element of <track> into a REAL Clip, and so would an
+	// older build reading this file without the attribute present. The same trap
+	// SPEC-stable-ids.md §3.1 records for the track id is why the take-lane model
+	// is a marked element and not a plain one.
+	if (!m_takeLanes.isEmpty())
+	{
+		QDomElement lanesElement = doc.createElement(QStringLiteral("takelanes"));
+		lanesElement.setAttribute(QStringLiteral("metadata"), 1);
+		m_takeLanes.saveSettings(doc, lanesElement);
+		element.appendChild(lanesElement);
+	}
+
 	// now save settings of all Clip's
 	for (const auto& clip : m_clips)
 	{
@@ -337,6 +355,14 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		deleteClips();
 	}
 
+	// Reset the take-lane model before reading the element: a track element with
+	// no <takelanes> child (every file written before comping) must empty it, not
+	// inherit whatever the model held before this call - a journal checkpoint
+	// restores by re-loading, so state that survived its own absence could never
+	// be undone. The same reset-on-absence rule Clip::loadClipEdits follows for
+	// the lane tag itself.
+	m_takeLanes.clear();
+
 	QDomNode node = element.firstChild();
 	while( !node.isNull() )
 	{
@@ -345,6 +371,13 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			if( node.nodeName() == nodeName() )
 			{
 				loadTrackSpecificSettings( node.toElement() );
+			}
+			else if( node.nodeName() == "takelanes" )
+			{
+				// The take lanes and the composite (comping; docs/COMPING.md),
+				// a marked element so that neither this loader nor an older
+				// build's turns it into a phantom Clip.
+				m_takeLanes.loadSettings( node.toElement() );
 			}
 			else if( node.nodeName() != "muted"
 			&& node.nodeName() != "solo"

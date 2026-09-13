@@ -452,6 +452,10 @@ void registerControlCommands(ControlRegistry& registry)
 	// a JSON file in the config directory, both of which exist in every
 	// configuration, so its ids are always honest.
 	registerBrowserCommands(registry);
+	// Take lanes and the composite (comping, task #600): the take half and the
+	// composite half, each its own translation unit.
+	registerCompCommands(registry);
+	registerCompEditCommands(registry);
 }
 
 } // namespace lmms

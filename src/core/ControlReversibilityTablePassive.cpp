@@ -217,6 +217,13 @@ const ReversibilityRow kPassiveRows[] = {
 		"reads the engine's own undo stack - its depth, the two caps it is bounded by, the serialised bytes it retains, how many steps a bound has evicted, and the coalescing window - and writes nothing",
 		"no write",
 		""),
+	R("comp.get_state", RC::NotMutating, false,
+		"reads the take lanes and the composite of one track, plus what each "
+		"segment resolves to (the take clip and its source frame); it writes "
+		"nothing and the audio of no take is opened",
+		"no write",
+		""),
+	R("comp.lane_list", RC::NotMutating, false, "reads the take lanes and their takes", "no write", ""),
 	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
 	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
 	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),

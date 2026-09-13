@@ -240,6 +240,7 @@ include/BrowserPeakCache.h
 include/ClipEdits.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
+include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlRackSupport.h
@@ -301,6 +302,7 @@ include/StemSeparation/StemSeparator.h
 include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
+include/TakeLane.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
@@ -382,6 +384,8 @@ src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
+src/core/ControlCommandsComp.cpp
+src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -407,6 +411,7 @@ src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
+src/core/ControlCompSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
@@ -464,6 +469,7 @@ src/core/SessionScheduler.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
+src/core/TakeLane.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
 src/core/UnattendedRun.cpp

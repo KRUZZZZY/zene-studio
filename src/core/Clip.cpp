@@ -83,7 +83,8 @@ Clip::Clip(const Clip& other):
 	m_autoResize(other.m_autoResize),
 	m_selectViewOnCreate{other.m_selectViewOnCreate},
 	m_color(other.m_color),
-	m_edits(other.m_edits)
+	m_edits(other.m_edits),
+	m_laneIndex(other.m_laneIndex)
 {
 	if (getTrack())
 	{
@@ -243,9 +244,19 @@ void Clip::setStartTimeOffset( const TimePos &startTimeOffset )
  *
  *  The gain is stored in dB (the design's file format) and the fades in ticks,
  *  because ticks are the unit of the timeline they ramp over.
+ *
+ *  The take lane (comping, docs/COMPING.md) rides the same helper rather than a
+ *  second one: it is the clip's other non-default attribute, it follows the same
+ *  write-nothing-when-default rule, and every caller of this pair therefore
+ *  carries the lane tag by construction.
  */
 void Clip::saveClipEdits(QDomElement& element) const
 {
+	// The design's own attribute name for a clip's take lane (§2.6).
+	if (m_laneIndex > 0)
+	{
+		element.setAttribute("lane", m_laneIndex);
+	}
 	if (m_edits.gain != 1.0f)
 	{
 		element.setAttribute("gain", QString::number(gainLinearToDb(m_edits.gain), 'f', 6));
@@ -305,6 +316,11 @@ void Clip::loadClipEdits(const QDomElement& element)
 	edits.fadeOutShape = shapeFromIndex(element.attribute("fadeoutshape", "0").toInt());
 
 	m_edits = edits;
+	// Reset-on-absence, deliberately: a clip element with no `lane` attribute
+	// (every file written before comping, and every clip that was never assigned
+	// to a take lane) loads as lane 0. A field that survived its own absence here
+	// would make the pre-edit state unreachable from a journal checkpoint.
+	m_laneIndex = std::max(0, element.attribute("lane", "0").toInt());
 }
 
 void Clip::setColor(const std::optional<QColor>& color)

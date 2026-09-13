@@ -226,26 +226,66 @@ that marker is published as-is, and no unverified claim is published without one
   rule (`note.move`/`note.resize`, whose target is re-derived by the move itself, and `warp.move`, whose
   marker key *is* the value being edited).
 
+## Comping: take lanes and a non-destructive composite (`comp.*`) — added 2026-09-13
+
+- **New: a track has take lanes, and a composite assembles them without touching a single byte of take audio.**
+  A lane is a child relationship of the track (not a second track type): the takes stay in the track's own clip
+  list and carry a lane tag (`lane` on the clip's element, default 0). Seven registered commands drive the
+  feature — `comp.lane_add`, `comp.lane_remove`, `comp.lane_list` (the lanes and the takes on each),
+  `comp.assign` (an audio clip becomes a take of a lane), `comp.select` (choose which lane supplies the
+  composite over a tick range, slipped `srcpos` ticks into that take), `comp.rebuild` (sort, merge and — given
+  a span — clamp to it and fill every gap with the base lane) and `comp.get_state` (lanes, composite, and what
+  each segment resolves to: the take clip and the source frame its first tick reads, `bound` or `unresolved`).
+- **A composite is a VIEW, and that is the whole design.** It is an ordered, gapless list of
+  `{begin, end, lane, srcpos}` choices over `include/TakeLane.h`; resolution maps a tick back onto the take clip
+  through the clip's own `sourceFrameAt()` mapping, so the comp reads the take where it already lies. Nothing is
+  copied, merged, normalised or rewritten, and no playback path reads the composite yet. The proof is a
+  byte-identity pair: after every `comp.*` command and after a save/reload, the take **files** and the take
+  **buffers** are sha256-identical, while what a tick resolves to changes when the selection changes.
+- **Engine:** `include/TakeLane.h` + `src/core/TakeLane.cpp` (the lanes, the composite, resolve/takeAt) and
+  `Track::takeLanes()`, serialised by `Track::saveTrack` as ONE `<takelanes>` element written only when the model
+  is non-empty — so a project that never comped serialises byte for byte as before. The decisions, the element
+  shape and the `metadata="1"` trap (`Track::loadTrack` turns an unrecognised child of `<track>` into a real Clip)
+  are recorded in **`docs/COMPING.md`**.
+- **Control surface:** the new `comp.*` group, split across `src/core/ControlCommandsComp.cpp` (the take half) and
+  `src/core/ControlCommandsCompEdits.cpp` (the composite half), with argument/result schemas and A16
+  reversibility rows for all seven ids (`src/core/ControlReversibilityTableTrueInverse.cpp` and
+  `...Passive.cpp`). Every mutating call takes the object's own ProjectJournal checkpoint before it writes, and
+  every refusal is typed and happens BEFORE the checkpoint, so a refused call leaves no undo step behind.
+- **Proof:** the registered ctest `TakeLaneCompTest` (`tests/src/core/TakeLaneCompTest.cpp`) — the ten claims
+  listed in `docs/COMPING.md` §6, including the byte-identity proof, the round trip, the reset-on-absence
+  behaviour on both levels, the seven typed refusals and `control.undo` unwinding a `comp.select`.
+- **UI absence — one line: take lanes and comping are drivable through the socket, not from the interface.**
+  There is no lane row, no lane header, no comping gesture, no audition and no waveform drawing of the composite;
+  nothing in `src/gui/` creates, shows or edits a lane or a comp. `docs/KNOWN-LIMITATIONS.md` carries the same
+  sentence.
+- **Stated limits, not to be read as bugs: a comp does not sound different from the track's clips in this
+  release.** No playback path consumes the composite, so the per-segment `srcpos` slip is recorded and reported
+  but not applied; MIDI comping is out (`comp.assign` refuses a MIDI clip with a typed error); and `comp.audition`
+  / `comp.flatten` from the design's sketch are not implemented — flatten is the destructive bounce, and it is
+  deliberately absent while nothing renders a composite.
+
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table now holds **117 rows** measured from the table itself:
-**54 , 9 , 3 , 51 **. With the telemetry
-client compiled out () the two  rows leave with their
-commands, giving **115 rows / 49 **.  asserts both
-sets, so a row added or moved between classes cannot ship with this page still quoting the
-old split. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
-(docs/RELEASE-NOTES-v0.2.1-alpha.md) - that record is left as written.
+The SPEC A16 classification table holds **117 rows**, measured from the table itself:
+**54 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 51 `not_mutating`**. With the telemetry
+client compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their
+commands, giving **115 rows / 49 `not_mutating`**. `ReversibilityContractTest` asserts both
+sets, so a row added or moved between classes cannot ship with this page quoting the old
+split. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
+(`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
 
 ## Not in this draft yet
 
-Written per lane as it lands, so the list below is state as of **2026-09-13** and W12 owns turning this file
-into the user-first notes. **In and described above:** warp marker editing, export dither and SRC quality, rack
-macros and key/velocity zones, clip fades/crossfades/gain, browser tag/metadata search with its peak cache, and
-bounded coalescing undo — plus the Session View and the process items, whose sections W12 adds.
+Written per lane as it lands, so this list is state as of **2026-09-13**; W12 owns turning this
+file into the user-first notes. **In and described above:** warp marker editing, export dither and
+SRC quality, rack macros and key/velocity zones, clip fades/crossfades/gain, browser tag/metadata
+search with its peak cache, bounded coalescing undo, and comping - plus the Session View and the
+process items, whose sections W12 adds.
 
-**Still absent from 0.3.0's scope:** comping (take lanes and non-destructive composite), the `#602` modulation
-layer, Ableton Link sync, sample-accurate automation, freeze/bounce-in-place, groove pool and quantise, punch
-in/out, tempo automation and time signatures, recording crash recovery, the two verification programmes
-(real-time-safety and golden-audio), `#614` (doc-only; wasmtime is absent here) and `ARCH-2`. Their lanes are
-dispatched or open; each gets a section here and a line in `docs/KNOWN-LIMITATIONS.md` when it lands. This file
-grows as those land; it is not a summary of 0.3.0 and must not be read as one.
+**Still absent from 0.3.0's scope:** the `#602` modulation layer, Ableton Link sync,
+sample-accurate automation, freeze/bounce-in-place, groove pool and quantise, punch in/out, tempo
+automation and time signatures, recording crash recovery, the two verification programmes
+(real-time-safety and golden-audio), `#614` (doc-only; wasmtime is absent here) and `ARCH-2`. Each
+gets a section here and a line in `docs/KNOWN-LIMITATIONS.md` when it lands. This file grows as
+those land; it is not a summary of 0.3.0 and must not be read as one.

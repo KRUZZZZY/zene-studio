@@ -33,6 +33,7 @@
 #include "JournallingObject.h"
 #include "LmmsTypes.h"
 #include <optional>
+#include "TakeLane.h"
 
 
 namespace lmms
@@ -135,6 +136,17 @@ public:
 	void getClipsInRange( clipVector & clipV, const TimePos & start,
 							const TimePos & end );
 	void swapPositionOfClips( int clipNum1, int clipNum2 );
+
+	/*! This track's take lanes and the composite they are comped into
+	 *  (docs/COMPING.md, docs/CLIP-CAPTURE-DESIGN.md slices D/F).
+	 *
+	 *  The lanes are a CHILD RELATIONSHIP of the track, not a second track
+	 *  type: the takes stay in this track's own clip list, tagged by
+	 *  `Clip::laneIndex()`. The composite is a view over those tags - it holds
+	 *  indices and tick ranges only, and nothing in it can write a take's audio.
+	 *  Empty by default, and an empty one writes no element at all. */
+	TakeLaneModel& takeLanes() { return m_takeLanes; }
+	const TakeLaneModel& takeLanes() const { return m_takeLanes; }
 
 	void createClipsForPattern(int pattern);
 
@@ -244,6 +256,10 @@ private:
 	bool m_mutedBeforeSolo;
 
 	clipVector m_clips;
+
+	//! Take lanes + composite (comping; docs/COMPING.md). Serialised by
+	//! Track::saveTrack as a <takelanes> child, absent when empty.
+	TakeLaneModel m_takeLanes;
 
 	QMutex m_processingLock;
 	

@@ -77,6 +77,7 @@ set(LMMS_TESTS
 	# The bounded, coalescing undo (task #623): the declared depth caps, the
 	# drag rule, the byte budget and the refusal of an evicted step.
 	src/core/UndoBoundsTest.cpp
+	src/core/TakeLaneCompTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
@@ -231,6 +232,12 @@ set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 set_tests_properties(UndoBoundsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
+# TakeLaneCompTest (comping: take lanes + the non-destructive composite, task
+# #600) constructs real SampleTracks with real SampleClips over real WAVs and
+# drives the comp.* group through the registry, so it needs the same headless Qt
+# platform as the tests above - the developer box has no display.
+set_tests_properties(TakeLaneCompTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # PhaseDSidechainTest loads the native Compressor module.
