@@ -444,6 +444,28 @@ const ReversibilityRow kRows[] = {
 		"write before.previous_content back with plugin.preset_save, or "
 		"delete the file when before.replaced was false"),
 
+	// The browser.* group's two mutating verbs (W8 tag/metadata search). A tag
+	// lives in a JSON store in the user's config directory, not in the project
+	// (include/BrowserCatalog.h records why), so no JournallingObject carries it
+	// and no ProjectJournal checkpoint can restore it.
+	R("browser.tag.add", RC::Snapshot, true,
+		"the tag store is a user-config file, not a JournallingObject: there "
+		"is no object checkpoint that holds a path's tag set, and the project "
+		"journal is deliberately not used for state outside the project",
+		"the recorded inverse is the paired COMMAND browser.tag.remove with "
+		"this path and tag (`applies: command`), which control.undo dispatches "
+		"through the registry; the tag set the edit started from is in the "
+		"transaction's before-state, bounded by the store's own "
+		"distinct-tag cap",
+		""),
+	R("browser.tag.remove", RC::Snapshot, true,
+		"the same store and the same absence of a checkpoint; removing the "
+		"LAST tag of a file drops its entry from the store, which a "
+		"re-add recreates exactly",
+		"the recorded inverse is the paired COMMAND browser.tag.add with this "
+		"path and tag (`applies: command`), dispatched by control.undo; the "
+		"tag set the edit started from is in the transaction's before-state",
+		""),
 	R("rack.remove_chain", RC::Snapshot, false,
 		"the removed chain's effects and their settings are captured in the "
 		"transaction's before-state, but recreating a chain WITH its effects is "
@@ -603,7 +625,6 @@ const ReversibilityRow kRows[] = {
 	R("session.get_state", RC::NotMutating, false,
 		"reads the model and the launch engine's atomics", "no write", ""),
 #endif // LMMS_HAVE_SESSION_VIEW
-=======
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));

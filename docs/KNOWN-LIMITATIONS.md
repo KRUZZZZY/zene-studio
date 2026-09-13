@@ -333,6 +333,17 @@ that is this page's fault — report it and it gets added.
   for **WAV only** — FLAC, OGG and MP3 do not take the dither yet — and 32-bit float is deliberately never
   dithered (a float format has no quantisation step to dither against). See `docs/EXPORT-SRC-DITHER.md`.
 
+- **Browser tag/metadata search and the waveform peak cache have no interface — added 2026-09-13.**
+  The browser's items can be queried by name, by tag and by what the audio file itself says it is (sample
+  rate, channels, length and the embedded title/artist/album/comment/genre tags), and a file's waveform
+  peaks are read through a bounded cache — all of it drivable through `--control-socket`
+  (`browser.roots`, `browser.query`, `browser.tags`, `browser.peaks`, `browser.tag.add`,
+  `browser.tag.remove`). **Nothing in the interface can do any of it**: the browser's filter box still
+  matches file names only, there is no tag column, no tag editor and no query UI, and the browser does not
+  draw a waveform — drivable through the socket, not from the interface. The tags are persisted in the
+  user's config directory (`browser-tags.json`), not in the project file, so they are a property of the
+  user's library rather than of a project; `docs/RELEASE-NOTES-v0.3.0-alpha.md` carries the same sentence.
+
 ## Telemetry and privacy
 
 - **Telemetry is off unless you turn it on**, and the consent screen shows you the exact payload before you

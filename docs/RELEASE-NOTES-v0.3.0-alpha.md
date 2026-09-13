@@ -172,3 +172,34 @@ has no interface, that page says so rather than leaving you to find out.
 > marked, not asserted.
 =======
 >>>>>>> 030/w9-clip-fades
+
+## Browser tag/metadata search and the waveform peak cache (W8) — added 2026-09-13
+
+- **The browser can be searched by what a file IS, not only by where it sits.** `browser.query` finds files
+  in the directories the browser reads by name, by tag, and — with `probe` — by what the audio file itself
+  says it is: sample rate, channel count, length, and the embedded title/artist/album/comment/genre tags.
+  `browser.roots` lists the directories (the same ones the sidebar's tabs read), `browser.tags` lists the
+  vocabulary of the library, and `browser.tag.add` / `browser.tag.remove` edit it. Metadata is what
+  libsndfile's own header parse and tag read return — there is no index and no database of ours.
+- **The waveform peaks are cached, and the cache is observable.** `browser.peaks` answers a file's min/max
+  peaks at the resolution you ask for (up to 2048 buckets: about 16 KiB per file, whatever the file's
+  length), and says whether the answer came out of the cache or off the disk. It is bounded at 32 files,
+  least-recently-used first, and an entry is dropped when the file changes underneath it.
+- **Tags live in the user's config directory, not in the project file.** They are written to
+  `browser-tags.json` next to the config that already holds the browser's favourites, atomically (a crash
+  mid-write leaves the previous file, not a truncated one). A tag describes your library, so it survives a
+  project being closed; and the project format is left exactly as it was, so a tagged library still opens in
+  any other LMMS.
+- **The reversibility of a tag edit is a real inverse, not a description.** `browser.tag.add` and
+  `browser.tag.remove` each record a SPEC A16 transaction whose inverse is the *paired command*, which
+  `control.undo` dispatches — the tag store is not a journalled object, so the class is `snapshot` and the
+  before-state carries the file's tag set. The suite applies the edit, asks `control.undo` to take it back
+  and then reads the store file itself.
+- **Proof:** `tests/src/core/BrowserCatalogTest.cpp` (the engine: a byte-written RIFF/WAVE probe, the tag
+  store's round-trip through its file, the peak cache's hit/miss behaviour) and
+  `tests/src/core/ControlBrowserCommandsTest.cpp` (the surface: schemas, typed refusals, the A16 undo
+  proof). Both are registered ctests.
+- **UI absence — one line: browser tag/metadata search and the waveform peak cache are drivable through the
+  socket, not from the interface.** The filter box still matches file names only, there is no tag column,
+  no tag editor and no query UI, and the browser draws no waveform. `docs/KNOWN-LIMITATIONS.md` carries the
+  same sentence.

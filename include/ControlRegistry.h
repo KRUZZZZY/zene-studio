@@ -360,6 +360,18 @@ LMMS_EXPORT void registerRackMacroCommands(ControlRegistry& registry);
 //! rack.zone_add / zone_remove / zone_resolve - the key/velocity zone half.
 LMMS_EXPORT void registerRackZoneCommands(ControlRegistry& registry);
 
+//! The browser.* group (W8 tag/metadata search plus the waveform peak cache):
+//! browser.roots, browser.query, browser.tags and browser.peaks. The engine half
+//! is include/BrowserCatalog.h (the roots the browser tabs read, the metadata an
+//! audio file can be probed for, the persisted tag store) and
+//! include/BrowserPeakCache.h; this group is the ONLY way to reach any of it -
+//! there is no UI for tags, no UI for a query and no UI for the peak cache.
+LMMS_EXPORT void registerBrowserCommands(ControlRegistry& registry);
+//! browser.tag.add / browser.tag.remove - the mutating half, in its own
+//! translation unit (the automation and warp groups' read/edit split). Both
+//! record a snapshot-class transaction whose inverse is the paired command.
+LMMS_EXPORT void registerBrowserTagCommands(ControlRegistry& registry);
+
 //! Shared helpers for the command groups.
 namespace control
 {

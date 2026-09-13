@@ -14,12 +14,21 @@ set(LMMS_TESTS
 	src/core/AudioResamplerRatioTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/AutomationModesTest.cpp
+	# The browser's engine half (W8 tag/metadata search + the waveform peak
+	# cache): the metadata probe against a byte-written RIFF/WAVE, the tag
+	# store's round-trip through its file, and the peak cache's hit/miss
+	# behaviour. Headless: no Engine, no window, no audio device.
+	src/core/BrowserCatalogTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	src/core/ClipSerialisationTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp
 	src/core/ControlAutomationScriptTest.cpp
+	# The browser.* command surface (W8): the ids, the schemas, the typed
+	# refusals the agent-surface sweep needs, and the A16 undo proof - a tag's
+	# inverse is the paired COMMAND, so control.undo dispatches it.
+	src/core/ControlBrowserCommandsTest.cpp
 	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	src/core/ControlRegistryTest.cpp
@@ -1082,6 +1091,12 @@ set_tests_properties(ControlEditCommandsTest PROPERTIES
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlWarpCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The browser.* group: BrowserCatalogTest drives libsndfile and the config
+# manager's working directory, ControlBrowserCommandsTest constructs a full
+# Engine and drives project-free commands through the registry. Neither opens a
+# window, both want a real Qt platform plugin.
+set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The stable-id tests construct a full Engine and drive project.open/save through
 # the control registry, so they need a Qt platform plugin even though nothing

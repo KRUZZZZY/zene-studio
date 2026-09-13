@@ -199,6 +199,30 @@ const ReversibilityRow kPassiveRows[] = {
 	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
 	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
+	// The browser.* group's read half (W8 tag/metadata search plus the waveform
+	// peak cache). None of the four writes project state. browser.query and
+	// browser.peaks do fill an in-memory cache, which is not project state and
+	// is not serialized - the same shape render.render's row records for its
+	// output artefact, and the reason no transaction is recorded: a cached read
+	// must not shadow the undo of the real edit underneath it.
+	R("browser.roots", RC::NotMutating, false,
+		"reads the browser's root directories and whether each exists",
+		"no write", ""),
+	R("browser.query", RC::NotMutating, false,
+		"walks the browser's directories and reads the tag store; it opens an "
+		"audio file for its metadata only when the caller sets 'probe', and it "
+		"writes nothing",
+		"no write: the result is derived state, and nothing is kept between "
+		"calls", ""),
+	R("browser.tags", RC::NotMutating, false,
+		"reads the tag store and the vocabulary derived from it", "no write", ""),
+	R("browser.peaks", RC::NotMutating, false,
+		"opens the audio file and fills the peak cache: the cache is a "
+		"memory-resident derived view of the file, keyed on its path and last "
+		"modification, and it is neither project state nor written to disk",
+		"no write: an entry is dropped when the file changes, and the whole "
+		"cache is bounded (BrowserPeakCache::Capacity entries of "
+		"BrowserPeakCache::BaseBuckets peaks each)", ""),
 	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
 	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
 	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),
