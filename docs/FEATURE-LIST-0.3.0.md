@@ -37,9 +37,35 @@ numbering; where that list is meant it is written `STATUS item N`. The two colli
 `ableton-gap/PLAN-zene-studio.md`), and decisions `D11`/`D12` (`MASTER-PLAN.md` §3).
 
 **The surface these features are driven through.** At the audit tip: **28 command groups · 150 command ids**,
-each with schemas and reversibility metadata. At the release tree (`334790219`): **31 groups · 170 ids** —
-the new `freeze`, `bounce`, `groove` and `record` groups and the three `transport.punch_*` ids are the
-difference.
+each with schemas and reversibility metadata. At the release tree: **170 command ids** — `164` `.id =
+QStringLiteral` assignments in `src/core/ControlCommands*.cpp` plus the six helper-built `wasm.*` ids —
+measured by counting the registry source at `334790219` and again at `01b99753a` on 2026-09-13. The new
+`freeze`, `bounce`, `groove` and `record` groups and the three `transport.punch_*` ids are the difference.
+On **id prefixes** that is **31 groups**; the audit tip's 28 includes its helper-built `wasm` group, so the
+two group figures are counted on bases one apart — see *Reconciliation* 6.
+
+**Row numbers, and the consistency pass of 2026-09-13.** Rows **1–59** keep the numbers they were first
+given here, so that every citation of "row N" in this project still resolves. The candidates the KB sweep
+found (`V0.3-COMPLETENESS-VERDICT.md`) were added on 2026-09-13 as rows **60–89**; they are not in numerical
+order within a section for exactly that reason.
+
+## How this list relates to the other documents
+
+**This file is the single source of truth for what 0.3.0 adds.** Every other list — `MASTER-PLAN.md` §3
+**D12**, `V0.3-V0.5-RELEASE-LADDER.md`, `V0.3-SCOPE-LEDGER.md`, `V0.3-SCOPE-CORRECTIONS.md`,
+`V0.3-ALPHA-PLAN.md` §0c, `BACKLOG.md`, `PLANNED-WORK-MASTER-LIST-2026-09-13.md` and
+`ITEM-NUMBERING-CROSSWALK-2026-09-13.md` — is a **decision** about placement, a **ledger** of what is
+missing against the tree, or an **inventory** of planned work. None of them is the scope. Where one of them
+and this file disagree, this file is the list of record and the other is the record of a decision or a
+measurement — and the disagreement is written down under *Reconciliation* rather than settled by whichever
+document a reader happens to open first.
+
+**The rule that classifies every row** is D12's, in the ladder's own narrow terms: an item is in 0.3.0
+**unless it is gated by something architectural**. Gated means **`ARCH-4`** (a new document model) or
+**multicore graph scheduling**, plus the decision-shaped rows `ARCH-5`/`ARCH-7`/`ARCH-8`. **A dependency is
+not a gate** — an item whose only dependency is engine work this line is already doing is in. Taste, UI and
+UX are not placed by the ladder at all, and Bar 3 (`34` devices / `35` content / `36` design system), ARA2
+and the hardware- or ear-bound items are out.
 
 ---
 
@@ -53,6 +79,9 @@ difference.
 | 4 | Phase-locked multitrack edit groups | none yet | **partial** — the group *entity* landed (`include/VcaGroup.h`, `Mixer::createVcaGroup`, `VcaGroupTest`) but there is no `vca.*` group to drive it and the edit-group half is to build; a group can only be created by editing the project file | ladder row for OWNER-31 item 11; audit Table B #4 |
 | 5 | Folder tracks | none yet | **to build** — dependency: **none** (OWNER-31 items 3/20/21, "depends: nothing"). Lane `030/folder-tracks` is dispatched, recovering the unmerged `next/trackfolder` rather than rebuilding. The layout/workspace-presets half of the same item stays on 0.5.0 by its own record | ladder row for OWNER-31 items 3/20/21; ledger "Dispatched to close…"; audit §6.1 |
 | 6 | Linked / smart clips | none yet | **to build** — dependency: OWNER-31 items 8/22 name item 11 / #611 ("editing must exist first"). Carried here because D12's prose names linked clips among the items the ladder moves in — see *Reconciliation*, which records that no ladder table row covers items 8/22 | D12 (`MASTER-PLAN.md` §3); master list, OWNER-31 items 8/22 |
+| 60 | Clip trim | `clip.trim` | **to build** — no `clip.trim` id exists at either base (`clip.*` is 10 ids: `add`, `duplicate`, `delete`, `move`, `resize`, `select`, `split`, `set_fade`, `set_gain`, `crossfade`). Dependency: OWNER-31 item 12 / `#611` (the clip-and-capture wave) — a dependency, not a gate | verdict Group A #6; `PLANNED-WORK-MASTER-LIST` :100, :387-390 |
+| 61 | Clip slip | `clip.slip` | **to build** — the same base and the same missing id as row 60; trim and slip are the two clip-editing verbs the wave names and the registry does not carry | verdict Group A #6; `PLANNED-WORK-MASTER-LIST` :387-390 |
+| 62 | Folder tracks as a routing / mix group — the routing half of OWNER-31 item 21 | none yet | **to build** — the folder *entity* is row 5's work; this row is the mode whose children's outputs sum into the folder's own mixer channel. Dependency: row 5 — item 21 is a mode of item 3, not a second feature, and the layout/workspace-preset half stays on 0.5.0 | verdict Group A #13; `BACKLOG` OWNER-31 item 21; `zene-next-trackfolder/docs/TRACK-FOLDER-DESIGN.md` §5-§7 |
 
 ## 2. Automation and modulation
 
@@ -63,6 +92,7 @@ difference.
 | 9 | Sample-accurate automation | none yet | **to build** — dependency: engine work, not architectural (the ledger states it exactly that way). The tree's own header describes the current behaviour as non-sample-accurate (`include/AudioEngine.h:304`) | charter In §3.2 (engine gaps); ledger, absent item 1; audit §6.1 |
 | 10 | Automation modes | `automation.*`, 5 ids | **partial** — the group is behavioural (5/5 exercised by `ControlAutomationScriptTest` and by `control-socket-integration.py`), but `automation.mode_set` is a **registered command that always refuses** ("this build has no automation modes") | audit Table A and §5 (stubs) |
 | 11 | Note random, note transform and slide notes | none yet | **partial** — engine and registered tests are in the tree (`NoteRandomTest`, `NoteTransformTest`, `SlideNotesTest`, `MidiProbabilityPersistenceTest`) but there is no command group; `note.*` covers add / move / remove / resize / select / velocity_set / expression_* only | audit Table B #11 |
+| 63 | `automation.record_mode_set` — the record-mode verb the boarded-gaps list names | none yet | **to build** — `automation.*` registers 5 ids and is behavioural 5/5, but the record-mode verb is not among them, and `automation.mode_set` is a registered refusal ("this build has no automation modes"). Dependency: row 10's automation-modes work | verdict Group A #14; `PLANNED-WORK-MASTER-LIST` :387-390 |
 
 ## 3. Recording and capture
 
@@ -73,6 +103,7 @@ difference.
 | 14 | Multi-track recorder | none yet | **partial** — a real 2-track recorder is in the tree with tests (`MultiTrackRecorderTest`, `TwoTrackRecordingHarness`, `TwoTrackAlsaCaptureProbe`, registered in `src/core/CMakeLists.txt`) but no `record.*` group drives the recorder; and the id that should cover it, **`track.set_arm`, is a registered refusal stub** — the feature and the command contradict each other | audit Table B #8 and §5 |
 | 15 | Retrospective MIDI capture | none yet | **to build** — dependency: **none** ("days-weeks, no dependency", owner-lifted 2026-09-12). Lane `030/retro-capture` is dispatched, recovering `next/midi-retro` / `next/midi-retro-impl` | ladder row for OWNER-31 item 14; ledger "Dispatched" |
 | 16 | Retrospective audio capture | none yet | **to build** — dependency: #611 (input count + the ALSA capture path), which is in this line; the remainder is a hardware caveat, named rather than hidden | ladder row for OWNER-31 item 15 |
+| 64 | Arbitrary input count / multiple simultaneous inputs | none yet | **to build** — dependency: engine work, not architectural (`#611`'s input-count row); the default Linux backend is playback-only today (`AudioAlsa` has no capture path). The real-interface half stays hardware-bound and unverified (see *Out of scope*) | verdict Group A #8; `PLANNED-WORK-MASTER-LIST` :103; `SURVEY-FEATURE-PRIORITY-SPEC` §2 |
 
 ## 4. MIDI and controllers
 
@@ -84,6 +115,9 @@ other area covers.)*
 | 17 | MIDI learn | `midi.learn_toggle` (of the `midi.*` 2 ids) | **partial** — the learn path landed and the id is registered, but at the audit tip it appeared **only** in `tests/upstream-modifications.txt`, a manifest, and Table A scored the group 1/2. The `030/test-gaps` lane added a registered reference | master list ("MIDI learn landed"); audit Table A and §3.3 |
 | 18 | MIDI controller auto-reconnection | none yet | **to build** — dependency: **none** ("buildable now, backend by backend"); which backends expose hotplug notice is recorded as needing research | ladder row for OWNER-31 item 7; audit §6.1 |
 | 19 | Controller soft-takeover, LED feedback, mapping templates | none yet | **to build** — dependency: **none for the engine half** ("the engine half has no gate"). OSC does not come with it: OSC is Bar 3 and stays out (see *Out of scope*) | ladder row for OWNER-31 item 24; audit §6.1 |
+| 65 | Scale-aware root-note highlighting — the residual half of OWNER-31 item 6 | none yet | **partial** — the scale machinery and the in-scale highlighting are pre-existing (`PianoRoll`'s scale selector built from `ChordTable`'s `isScale()` entries, `markSemiTone` / `MarkCurrentScale`, and key/scale/marked-semi-tone persistence); the **root note is not drawn distinctly** from the other in-scale degrees and neither colour is a theme value. Stated plainly: D12's rule places this row, but the drawing change itself is a piano-roll/UI change, which the ladder does not place | verdict Group A #12; `BACKLOG` OWNER-31 item 6; `docs/MIDI-DEPTH.md` §1.1 |
+| 66 | `scale.*` — the scale command group the boarded-gaps list names | none yet | **to build** — no `scale.` id exists at either base; the engine (the scale + key vocabulary) is pre-existing, so the work is the group and its proofs | verdict Group A #14; `PLANNED-WORK-MASTER-LIST` :387-390 |
+| 67 | `note.probability_set` — the probability verb the boarded-gaps list names | none yet | **to build** — the engine landed (`NoteRandomTest`, `NoteTransformTest`, `MidiProbabilityPersistenceTest`; this is row 11's feature) but the id was never delivered; `note.*` is 9 ids and does not cover it | verdict Group A #14; `PLANNED-WORK-MASTER-LIST` :387-390; audit Table B #11 |
 
 ## 5. Audio engine and DSP
 
@@ -100,6 +134,12 @@ other area covers.)*
 | 28 | Routing graph | none yet | **partial** — in the tree with registered tests (`RoutingGraphTest`, `RoutingGraphLiveTest`, `RackTest`) and live in the audio path; no command group. The patcher GUI is missing and is out of scope (§ *Out of scope*) | audit Table B #6 |
 | 29 | Audio ports / `AudioBus` | none yet | **partial** — in the tree with five registered tests (`AudioPortsTest`, `AudioPortsModelTest`, `AudioBusTest`, `AudioBusHandleTest`, `PluginAudioPortsTest`); pin and bus topology are reachable only from C++ | audit Table B #7 |
 | 30 | Pitch-preserving time-stretch | none yet | **to build** — dependency: "a DSP project" — a size judgement, which the ladder states is not a gate | ladder row for OWNER-31 item 9; audit §6.1 |
+| 68 | Stem export — per-track / per-bus, post-fader, tail convention, headless CLI (distinct from stem *separation*, row 26) | `render.stems` | **partial** — the engine landed (`docs/STEM-EXPORT.md`; `StemExportTest`, `StemJobManagerTest` registered) and four stems sum to the mix at max abs delta 2 LSB; **no `render.stems` or `stem.*` id is registered** — a `grep` for both over the registry returns nothing at either base | verdict Group A #5 and #14; `docs/STEM-EXPORT.md`; `PLANNED-WORK-MASTER-LIST` :387-390 |
+| 69 | Patcher node-graph driving | `patcher.*` | **to build** — no `patcher.` id exists at either base; the routing-graph engine it would drive is in the tree (row 28) and the patcher GUI is out of scope | verdict Group A #7; `PLANNED-WORK-MASTER-LIST` :387; `lanes/W0-BRIEF.md` §7 |
+| 70 | Render / export presets | none yet | **to build** — `OutputSettings` exists (bit depth, sample rate, stereo mode) and the export path is in the tree (row 21), but there is no saved preset list; `grep` for `export preset` / `RenderPreset` / `batch export` → nothing | verdict Group A #11; `BACKLOG` OWNER-31 item 27; gap register :126 |
+| 71 | Selection-to-audio | none yet | **to build** — the render entry is whole-project; a time range the render path can take is the work | verdict Group A #11; `BACKLOG` OWNER-31 item 27 |
+| 72 | Auto-mastering wave 1 (`#610`) — candidate generation + objective scoring | none yet | **partial** — the mastering chain is in the tree (`MasteringChain.cpp`, `MasteringJob.cpp`, `MasteringTest` — row 25) and wave 1 is boarded (#610); **no `mastering.*` group** is registered. Wave 3's learned ranker is out (it needs pick-logs) | verdict Group A #16; `docs/AUTO-MASTERING.md`; master list (`#610`) |
+| 73 | `CODE-5` — WASM worker: shared pool, real wake-ups, deterministic offline render | none yet | **to build** — it touches the render-determinism contract the roadmap already ships against; check that contract before building | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-5` |
 
 ## 6. Tempo, meter and groove
 
@@ -118,6 +158,7 @@ other area covers.)*
 | 36 | Ableton-Link session sync (W6) | `link.*`, 5 ids: `link.get_state`, `link.set_enabled`, `link.set_quantum`, `link.set_start_stop_sync`, `link.set_session_tempo` | **in the tree** — proof `ControlLinkCommandsTest` and `ControlLinkSync` — **two real binaries, one session, one driving the other's tempo and beat phase through `--control-socket`**, with the phase compared against elapsed wall time; registered `RUN_SERIAL` and reports *Skipped* when the host cannot carry multicast. Stated limit: `zene-link-style` semantics without the Ableton Link library, so a Link-enabled third-party application cannot join yet | charter In §3.2 (W6); audit §6.2 |
 | 37 | DAWproject import / export | none yet | **to build** — dependency: OWNER-31 items 26 and 5 plus item 11; `grep -rniI 'dawproject'` across `src include tests tools docs` → 0 hits | ladder row for OWNER-31 item 19; audit §6.1 |
 | 38 | Project collection / archive, hashing, relink | none yet | **to build** — dependency: **none** ("detection buildable now"); the portable-bundle half is Bar 3 | ladder row for OWNER-31 item 18; audit §6.1 |
+| 74 | MIDI clock / MTC — the DAW as clock master or slave | none yet | **to build** — dependency: **none**; pure engine work with no architectural gate. **No 0.3.0 document placed this before this list**: it was the corrections document's strongest candidate gap (unplaced by the charter's In-list, the ladder and the ledger), and it stands here because D12's rule places it, not because a decision did | verdict Group A #4; `PLANNED-WORK-MASTER-LIST` :160; `AGENT-SURFACE-INVENTORY` Group 11; `V0.3-SCOPE-CORRECTIONS.md` § "Candidate gaps" |
 
 ## 8. Project and files
 
@@ -127,6 +168,9 @@ other area covers.)*
 | 40 | Autosave / project recovery | `project.restore_revision` (of the `project.*` 4 ids) | **partial** — in the tree and drivable, and the one in-tree *recovery* feature that is, but it is **referenced by no behavioural test** (Table A scores the group 3/4) | audit Table B #14 and Table A |
 | 41 | Plugin chains as reusable presets | none yet | **to build** — dependency: **none** ("buildable now — `EffectChain` already saves and loads"); `grep -rliIE` for `chain.?preset` or `EffectChainPreset` → 0 hits | ladder row for OWNER-31 item 2; audit §6.1 |
 | 42 | mmpz-git depth (#612) | none yet | **to build** — dependency: the mmpz-git tooling itself is DONE (15/15); the depth is #612 (3-way merge, conflict presentation, large assets, an audible-diff CLI, CI render recipes) | charter In §3.2 (#612); master list #612 |
+| 75 | Undo robustness — structural-op journalling, and undo of a deleted track (OWNER-31 item 4) | none yet | **to build** — the journalling *pattern* exists (`ProjectJournal`, `CheckPointStack m_undoCheckPoints`, `MAX_UNDO_STATES = 100`), but `TrackContainer::removeTrack` erases the pointer and the destruction path has already deleted the track's clips, so a deletion is unrecoverable; add / remove / move track and add / remove effect are **not journalled** and several paths bypass `addJournalCheckPoint`. It is the mechanism A16 already obliges (#623) | verdict Group A #9; `PLANNED-WORK-MASTER-LIST` :151; `BACKLOG` OWNER-31 item 4 |
+| 76 | In-app revision timeline (OWNER-31 item 30) | none yet | **to build** — the artefacts it would list already exist on disk (the `.bak` written on every save, the autosave sidecar, and `mmpz-git` when the project is in a repository); the panel over them is the work. Dependency: none — item 18's hashing only if revisions must be shareable | verdict Group A #10; `BACKLOG` OWNER-31 item 30 and §4 shortlist |
+| 77 | Safe-start mode after a crash — launch with third-party plugins disabled (OWNER-31 item 31) | none yet | **to build** — its two prerequisites are already in the tree (the crash reporter, row 54, and the plugin scan cache + quarantine, row 46); the crash marker and the load-time "skip plugin instances" predicate are the work. Dependency: none architectural | `BACKLOG` OWNER-31 item 31; `PLANNED-WORK-MASTER-LIST` (crash reporter; plugin scan cache) |
 
 ## 9. Browser and content
 
@@ -141,6 +185,12 @@ other area covers.)*
 | 44 | Rack macros and key/velocity zones (W3) | `rack.*`, 12 ids: `rack.get_state`, `rack.add_chain`, `rack.remove_chain`, `rack.set_selected`, `rack.macro_add`, `rack.macro_remove`, `rack.macro_target_add`, `rack.macro_target_remove`, `rack.macro_set`, `rack.zone_add`, `rack.zone_remove`, `rack.zone_resolve` | **in the tree** — proof `RackMacrosTest` (12/12) and `RackZonesTest` (4/12). Stated limit: **no note path consults a zone in this build** — `rack.zone_resolve` reports which zone a note *would* fall into and nothing acts on that answer | charter In §3.2 (W3); audit §6.2 |
 | 45 | CLAP hosting on Windows | none yet | **to build** — dependency: none named. The engine change is `LoadLibraryW` / `GetProcAddress` with the honesty manifest back to `*`, and the proof named is the three Windows CI jobs | charter In §3.2 (Hosting) |
 | 46 | Plugin scan cache and quarantine | none yet | **partial** — in the tree with a registered `PluginScanCacheTest`; no command group, and the documented quarantine route is hand-editing a JSON file | audit Table B #9 |
+| 78 | Third-party VST3 instrument hosting (`STATUS item 18`) | none yet | **partial** — the VST3-instrument path is PARTIAL (the descriptor audit found the three VST3 instrument tests never build and the VST3 effect tests unregistered) while the effect host is in the tree; the item is the instrument half plus its lifecycle. The three readings of the hosting evidence are disagreement 1 below | verdict Group A #3; `PLANNED-WORK-MASTER-LIST` :107; `zene-pa-instrview/docs/INSTRUMENT-HOSTING-SPEC.md` |
+| 79 | CLAP instrument hosting | none yet | **to build** — there is **no CLAP instrument hosting at all**; CLAP hosting is effects-only and, on the Windows jobs, off (`-DWANT_CLAP=OFF`). Dependency: none named — the holder is the `LoadLibraryW` / `GetProcAddress` port (row 45) and the three Windows CI jobs | verdict Group A #3; `PLANNED-WORK-MASTER-LIST` :107 |
+| 80 | Out-of-process plugin hosting / crash isolation | none yet | **partial** — landed on `post-alpha/oop-hosting`, **ZynAddSubFx only**; the ecosystem-gap analysis calls it blocking. Its three readings are disagreement 3 below | verdict Group A #2; `docs/OOP-HOSTING.md`; `STATUS-CORRECTION` §93; `ecosystem-gap/` §3.1 |
+| 81 | `device.mpe_set` — the MPE device verb the boarded-gaps list names | none yet | **to build** — `note.expression_*` (3 ids) is the MPE surface that landed (row 8); the device-side verb was never delivered | verdict Group A #14; `PLANNED-WORK-MASTER-LIST` :387-390 |
+| 82 | `CODE-4` — plugin hosts process in chunks instead of truncating or overrunning | none yet | **to build** — `ClapHost.cpp:747` clamps to `maxFrames`; `Vst3Host.cpp` sizes `silence` / `scratchOutput` to `maxBlockSize` with **no clamp**, and neither truncates correctly when the host asks for more than the prepared block | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-4` |
+| 83 | `CODE-9` — Windows named-pipe control transport | none yet | **to build** — the only one of `CODE-9`'s three halves with no precedent in the tree (the VST3 instrument polling half is folded into row 78; the process-context atomics are ungated) | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-9` |
 
 ## 11. The agent / control surface
 
@@ -151,6 +201,12 @@ other area covers.)*
 | 49 | MCP bridge coverage of the tree's surface | none yet | **to build** — dependency: none. The measured gap at the audit tip: **10 groups with no MCP tool** (`browser`, `comp`, `export`, `link`, `modulator`, `rack`, `session`, `telemetry`, `warp`, `wasm`) and **74 ids** invisible, because the registered bridge serves a stale 70-id 0.1.0-alpha cache against the tree's 144-id snapshot; lane `030/mcp-coverage` is dispatched. The mechanism needs no per-feature bridge work — a live instance at the configured socket closes the whole gap | audit §4 and §8; ladder "Wave 2 queue" |
 | 50 | Lua API stabilisation (#613) | `script.*`, 2 ids: `script.list`, `script.run` | **partial** — drivable, with `ScriptBindingsTest`, `ScriptEngineTest` and `ScriptStabilisationTest` behind it, but the binding deliberately reaches **no** mixer channel, effect chain, plugin, send, PDC, automation clip, controller or settings object — a pattern-editing API, not a DAW-control API | charter In §3.2 (#613); audit Table B #13 |
 | 51 | Stable-ID contract, slice 2 | none yet | **partial** — half-delivered: only `trk-<n>` is persistent today; five id families are still index-derived | master list (`ableton-gap/AGENT-TOOLING.md` §5); charter §3.1 |
+| 84 | Telemetry v1 (`#617`) — opt-in platform statistics and the `-DZENE_TELEMETRY=OFF` kill switch | `telemetry.*`, 2 ids: `telemetry.consent`, `telemetry.status` (behind `#ifdef ZENE_TELEMETRY_ENABLED`) | **in the tree** — proof `TelemetryTest` (2/2) and `ControlRegistryTest` (2/2), both registered; the group is absent from a build that does not define `ZENE_TELEMETRY_ENABLED`, and `telemetry.consent` is the **one** `agent-surface-allowlist.txt` entry the whole-tree sweep does not exercise (`requires: display, human`). Stated limit: nothing asserts the build-option string, and the release-build default is a release decision rather than a test | verdict Group A #1; `docs/TELEMETRY-V1.md`, `docs/TELEMETRY-KILL-SWITCH.md`; `STATUS-CORRECTION` §3 |
+| 85 | `telemetry.consent_set` — the consent verb the boarded-gaps list names | none yet | **to build** — the tree registers `telemetry.consent` and `telemetry.status`; `consent_set` is a different id and does not exist at either base | verdict Group A #14; `PLANNED-WORK-MASTER-LIST` :387-390 |
+| 86 | `CODE-6` — Lua: a memory budget beside the instruction budget | none yet | **to build** — `ScriptEngine.cpp:96` (`luaL_newstate`) has no allocator hook | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-6` |
+| 87 | `CODE-7` — telemetry transport: https only, never block the caller | none yet | **to build** — the transport only; the consent model is on the change plan's "Keep" list and is not touched | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-7` |
+| 88 | `CODE-8` — control-server shutdown hook must survive its owner | none yet | **to build** | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-8` |
+| 89 | The A16 reversibility contract, and the row-count deliverable that goes with it | n/a (a contract over every registered id) | **partial** — the contract is in the tree: every registered id carries reversibility metadata, and `ReversibilityContractTest` is registered and green (3/3 at `bcf440d61`, with `ControlRegistryTest` and `ReversibilityUndoTest`), the table having been split into three TUs on 2026-09-13 to satisfy the file-length gate. **The deliverable that is not settled is the row count** — 139 / 142 / 127 / 150 / 155 / 157 are all in circulation; see disagreement 6 | verdict Group A #17; `W13-A16-SPLIT-2026-09-13.md`; `ableton-gap/A16-STATUS-MEASURED.md` |
 
 ## 12. Engineering and process
 
@@ -214,6 +270,30 @@ crash-free rate, the project-format stability guarantee, the manual and localisa
 maps/articulation switching, and the ecosystem "noise" list. The register of record is
 `PLANNED-WORK-MASTER-LIST-2026-09-13.md` §"Roadmap-gap register — deliberate exclusions".
 
+**The KB sweep's group B — named in the sources and placed, so they are decisions rather than gaps (13).**
+Each was absent from this list before 2026-09-13; being named and excluded is the point, and none of them is
+a 0.3.0 commitment. Source: `V0.3-COMPLETENESS-VERDICT.md` Group B, which cites each.
+
+- **Link Audio peer streaming** — a `SPEC` §4.1–4.8 **v1 exclusion**. Later release.
+- **Auto-tagging** — the same v1 exclusion, `SPEC` §4.1–4.8. Later release.
+- **Slice-to-MIDI** — v1 exclusion, `SPEC` §4. Later release.
+- **Drum-rack pad** — v1 exclusion, `SPEC` §4. Later release.
+- **Macro variations** — v1 exclusion, `SPEC` §4. Later release.
+- **Clip-level modulation** — v1 exclusion, `SPEC` §4. (Distinct from the modulation layer, row 7, which is
+  in the tree.) Later release.
+- **16 macros** — v1 exclusion, `SPEC` §4. The landed `rack.*` group is 12 ids. Later release.
+- **Soak testing / performance at scale** — 200 tracks, 100 instances, 8-hour sessions. **Needs users and
+  machines**, which the ladder's own "scraps" definition sends to **0.5.0**.
+- **Accessibility + keyboard navigation** (`OWNER-31` item 29) — **UI**, and **the documents disagree**
+  (disagreement 2 below): the register calls it a Bar-2 requirement on the 0.3 shortlist; the charter §3.3
+  defers it.
+- **Browser audition / waveform / hot-swap** (`OWNER-31` item 16) — **UI**. Audition, favourites and
+  drag-and-drop have landed; the browser's own peak-cache half is row 43.
+- **CRDT collaboration** — `collab/CRDT-VERDICT.md` is a research verdict, not a 0.3.0 commitment.
+- **Microtuning** (`#5522`) — **already upstream**, so it is not work this line owes.
+- **Plugin state save/restore** — **already in the tree** (`plugin.state_*` / `plugin.preset_*`, behavioural
+  11/11), so it is not an addition. The master-list row that calls it "no code" is stale — disagreement 8.
+
 ---
 
 ## In the tree but not drivable through the socket — 16 features
@@ -257,10 +337,16 @@ would otherwise produce, and each is listed because the directive covers it.
 
 ## What this means
 
-**59 features are on this list.** Counted from the tables above: **16 are in the tree** with a named proof,
-**20 are partial** — the engine is in or partly in, and the control-surface half, the registered proof or the
-routing is what is missing — and **23 are to build**. That is the whole commitment on one page: a third of it
-is proved today, a third needs its socket surface or its test, and the last third is not written yet.
+**89 features are on this list.** Counted from the tables above: **17 are in the tree** with a named proof,
+**26 are partial** — the engine is in or partly in, and the control-surface half, the registered proof or the
+routing is what is missing — and **46 are to build**. That is the whole commitment on one page: a fifth of it
+is proved today, three tenths need their socket surface or their test, and half is not written yet.
+
+The **30 rows numbered 60–89** are the candidates the KB sweep of 2026-09-13 found absent from the compiled
+list (`V0.3-COMPLETENESS-VERDICT.md`): of the 30, **1 is in the tree** (row 84, telemetry v1), **6 are
+partial** (rows 65, 68, 72, 78, 80, 89) and **23 are to build**. Thirteen more candidates from the same sweep
+are named and excluded in *Out of scope* above. *Reconciliation* 7 states how the sweep's headline "34"
+relates to what is enumerated here.
 
 **The remainder is scheduled, not optional.** Every row marked *partial* or *to build* is a commitment of
 0.3.0 under the owner's directive, and a row leaves this list only by an owner decision that says so — the
@@ -295,23 +381,84 @@ two recorded exclusions and the out-of-scope sections above are the only places 
    nothing at the audit tip. `record` and `freeze` now have groups (rows 13, 20), so that grep no longer
    holds as written; the remaining six prefixes still return nothing. That is a change in the tree, not a
    contradiction in the audit.
+6. **The surface figures are counted on two bases.** `V0.3-SCOPE-CORRECTIONS.md` and this file quoted the
+   release tree as **31 groups / 170 ids** while the audit tip is **28 groups / 150 ids**. Re-measured by
+   counting the registry source on 2026-09-13: at `334790219` and again at `01b99753a` on `release/0.3.0`,
+   `src/core/ControlCommands*.cpp` carries **164** `.id = QStringLiteral` assignments and the helper builds
+   **6** more (`wasm.*`), so the id count is **170** — but the **group** count is **31 id prefixes plus the
+   helper-built `wasm` group, i.e. 32 group names**. The audit tip's **28 = 27 prefixes + `wasm`**, so the
+   two group figures are one apart on their bases rather than a growth of three. Both are left dated and
+   unreconciled: only a decision on whether the compile-gated `wasm` group counts as a group of the surface
+   settles 31 against 32.
+7. **The sweep's "34 candidates" is a headline, not an enumeration.** `V0.3-COMPLETENESS-VERDICT.md` says
+   "34 candidates absent … ~20 of them IN 0.3.0", but its **Group A table has 17 rows** and **Group B names
+   13 features** — 30 entries between them. This file places all of them (30 rows, numbered 60–89, plus 13
+   named in *Out of scope*), expanding the six boarded-gaps command groups and the six change-plan rows into
+   separately deliverable rows. **The arithmetic between 34 and the verdict's own tables is not reconciled
+   here**, because the verdict does not enumerate 34 and this file must not invent the missing four.
 
-## Suspected misses, and where they stand
+## The ten document disagreements — recorded, not resolved (2026-09-13)
 
-Named because a list like this is only trustworthy if it says what it decided to leave out and why.
+Carried forward from `V0.3-COMPLETENESS-VERDICT.md` § "Disagreements to record, not resolve" and
+`V0.3-CONSISTENCY-PASS-CHECKLIST.md` § "Disagreements already known". **Each is deliberately left open**:
+picking a side is how the fourteen/fifteen error happened, and every one is either a measurement only a
+build can settle or a scope call that is the owner's. Two (2 and 10) are scope questions and bear directly
+on this list; the rest are records of the tree, the counts or the documents. **Awaiting an owner decision.**
 
-- **MIDI clock / MTC.** A Bar-2 review-pass gap in the master list ("unboarded gap, no code"). It is engine
-  work with no architectural gate, so by D12's own rule it would belong in 0.3.0 — but **no 0.3.0 document
-  places it**: not the charter's In-list, not the ladder's re-scope table, not the ledger. Not carried as a
-  row. If the directive means "all engine work" literally, this is the first thing it is missing.
-- **Third-party instrument hosting (`STATUS item 18`) and out-of-process plugin hosting / crash isolation.**
-  Both are Bar-2 items in the master list; neither the charter, the ladder nor the ledger places either in
-  0.3.0. Not counted.
-- **Plugin state save/restore.** The master list calls it "unboarded gap, no code", but `plugin.state_save`,
-  `plugin.state_load` and the four `plugin.preset_*` ids are registered, schema'd and behavioural (11/11) at
-  both bases. The master-list row is stale; it is not a 0.3.0 addition, so it has no row here.
-- **Soak testing / performance at scale.** Needs users and machines, which the ladder's own scraps
-  definition sends to 0.5.0. Not a 0.3.0 commitment.
-- **The five index-derived stable-ID families.** Carried as row 51 rather than left implicit.
-- **Bar-3-convenience and UI-only items** (custom shortcuts and the command palette, OWNER-31 items 1 and
-  23; accessibility, item 29). UI, therefore out of scope by the charter — see *Out of scope*.
+1. **VST3/CLAP hosting evidence.** *Reading A:* `docs/STATUS.md` — "VST3 + CLAP DONE, effects only".
+   *Reading B:* `POST-ALPHA-PLAN` — on every one of the 7 published jobs configure printed *hosting skipped*.
+   *Reading C:* the descriptor audit — the VST3 effect tests are unregistered and the three VST3 instrument
+   tests never build. Bears on rows 44, 45, 46, 78, 79.
+2. **Accessibility (OWNER-31 item 29).** *Reading A:* `BACKLOG.md` / the roadmap-gap register — a **Bar-2
+   requirement** on the 0.3 shortlist. *Reading B:* the charter §3.3 — **UI, deferred**. Named in
+   *Out of scope* with both readings.
+3. **Out-of-process hosting.** *Reading A:* `ecosystem-gap/` §3.1 calls it **blocking**. *Reading B:*
+   `docs/OOP-HOSTING.md` — **landed, isolation proven**. *Reading C:* `V0.3-SCOPE-CORRECTIONS.md` —
+   **unplaced by every 0.3.0 document**. This file places it as row 80 under D12's rule; which reading is
+   true of the tree is not settled.
+4. **"15 absent" (ledger) vs "19 not in the tree" (audit §6.1).** Both correct against their own base
+   (19 − 3 landed − 1 dispatched = 15). Now stated in both, so a reader does not read it as a
+   contradiction.
+5. **"fourteen" vs "fifteen".** Corrected for the ladder in `1a001c8`; **D12's body was still saying
+   fourteen and is fixed to fifteen in this pass** (`MASTER-PLAN.md` §3) — that was an explicit instruction,
+   not a resolution of the disagreement by preference. What stays open is the *scope question* the mismatch
+   exposed: **linked clips (OWNER-31 items 8/22) is named by the ladder's prose as one of the fifteen and has
+   no table row of its own**, so a reader counting the ladder's table finds fourteen. The corrections
+   document decides linked clips is IN (Correction 1); the ladder's table still does not show it.
+6. **The A16 row count.** 139 / 142 / 127 / 150 / 155 / 157 are all in circulation; only a merged-tree run
+   of `ReversibilityContractTest` settles it. Row 89 carries the deliverable.
+7. **`docs/VERSIONING.md`'s own worked example** says 0.3.0 = Session View (W1) only, against this list's
+   89 rows.
+8. **Plugin state save/restore.** *Reading A:* the master-list row — "unboarded gap, no code". *Reading B:*
+   the tree — `plugin.state_*` / `plugin.preset_*` registered, schema'd and behavioural 11/11 at both bases.
+   Named in *Out of scope*; the master-list row is corrected in this pass.
+9. **The coverage-matrix copies disagree** — 28/150 vs 30/154 vs 31/170. Re-measured here as **170 ids**
+   (164 + 6) and **31 id prefixes + the helper-built `wasm` group**; see *Reconciliation* 6.
+10. **Key/chord detection (OWNER-31 items 10/25).** *Reading A:* IN per the ladder. *Reading B:*
+    OUT-until-needed per `BACKLOG.md` §5. Rows 34 and 35 carry both readings; the ladder's rule places them,
+    and nothing else does.
+
+## Suspected misses, and where they now stand
+
+Named because a list like this is only trustworthy if it says what it decided to leave out and why. This
+section is what the compiled 59-row list said **before** the KB sweep; the sweep changed the answer, and each
+line now points at the row or the section that carries it.
+
+- **MIDI clock / MTC** — was "not carried as a row". Now **row 74, to build**: engine work with no
+  architectural gate, so D12's rule places it. Its history is kept rather than tidied: no 0.3.0 document
+  placed it, and it is the one item this list now carries on the strength of the rule alone, with no separate
+  owner decision behind it.
+- **Third-party instrument hosting and out-of-process plugin hosting** — were "not counted". Now **rows 78,
+  79 and 80**, with the hosting readings left open as disagreements 1 and 3.
+- **Plugin state save/restore** — was "not a 0.3.0 addition; the master-list row is stale". Unchanged in
+  substance, now also named in *Out of scope* so it cannot be re-boarded (disagreement 8).
+- **Soak testing / performance at scale** — unchanged: needs users and machines, 0.5.0, named in
+  *Out of scope* rather than left implicit.
+- **The five index-derived stable-ID families** — unchanged, row 51.
+- **Bar-3-convenience and UI-only items** (OWNER-31 items 1 and 23; accessibility, item 29) — unchanged in
+  substance: UI. Accessibility is now also named in *Out of scope* with both readings (disagreement 2).
+- **The change-plan engine rows and the boarded-gaps command groups** — were not mentioned here at all. Now
+  rows **63** (`automation.record_mode_set`), **66** (`scale.*`), **67** (`note.probability_set`), **73**
+  (`CODE-5`), **81** (`device.mpe_set`), **82** (`CODE-4`), **83** (`CODE-9`), **85** (`telemetry.consent_set`),
+  **86** (`CODE-6`), **87** (`CODE-7`), **88** (`CODE-8`); `render.stems` is folded into row 68, the stem-export
+  feature it belongs to.

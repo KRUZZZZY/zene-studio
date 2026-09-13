@@ -63,7 +63,9 @@ grep -c '\.id = QStringLiteral' src/core/ControlCommands*.cpp | ...     # 144 id
 ```
 
 **28 groups · 150 command ids.** `cmd.group` equals the id prefix for all 150 (0 mismatches — checked with a
-regex over every `cmd.id`/`cmd.group` pair, 0 hits where `id` does not start with `group + "."`).
+regex over every `cmd.id`/`cmd.group` pair, 0 hits where `id` does not start with `group + "."`). *These are
+the audit tip's own figures at `ddf5f171d`; the release tree's counts are re-measured in §9 below and are
+**not** overwritten here.*
 
 ### 1.3 Cross-checks, and the disagreements
 
@@ -428,3 +430,34 @@ Stated plainly, because the next wave is scoped from this list.
   controller soft-takeover/LED/mapping-templates which is *half in* (the MIDI-learn path landed,
   `midi.learn_toggle` is registered). Two of the 19 — the real-time-safety and golden-audio verification
   programmes — are named in `WAVE-1-BRIEFS.md` as *already-open 0.3.0 work*.
+
+---
+
+## 9. Re-measurement, 2026-09-13 — the release tree's own counts, both figures dated
+
+The counts above are the **audit tip's own** and stay as written. A later lane re-measured the release tree by
+the same method — counting the registry source, not a document — because `docs/FEATURE-LIST-0.3.0.md`,
+`V0.3-SCOPE-CORRECTIONS.md` and the coverage-matrix copies were quoting 28/150, 30/154 and 31/170 against each
+other. Read-only (`git grep` against the ref); the `zene-030` worktree was not touched.
+
+| base | ids | groups, as defined |
+|---|---|---|
+| `ddf5f171d` (this matrix's tip, `030/audit`) | **150** = 144 `.id =` assignments + 6 helper-built `wasm.*` | **28** = 27 id prefixes **+** the helper-built `wasm` group |
+| `334790219` (`release/0.3.0`) | **170** = 164 + 6 | **31** id prefixes **+** the helper-built `wasm` group = 32 group names |
+| `01b99753a` (`release/0.3.0`, 2026-09-13) | **170** = 164 + 6 | as above |
+
+```
+git grep -h -o '\.id = QStringLiteral(' <ref> -- 'src/core/ControlCommands*.cpp' | wc -l          # 164
+git grep -h -o '\.id = QStringLiteral("[^"]*\.' <ref> -- 'src/core/ControlCommands*.cpp' \
+  | sed 's/.*QStringLiteral("//; s/\.[^.]*$//' | sort -u                                          # 31 prefixes
+```
+
+The groups added against this matrix's 28 are **`bounce` (1 id), `freeze` (3), `groove` (7), `record` (6)** and
+three more `transport` ids (`transport.punch_*`) — 27 + 4 = 31 prefixes, with the id total up by 20 (17 new
+ids in those four groups plus the 3 punch ids).
+
+**One base difference is left unreconciled rather than smoothed:** this matrix's **28 includes** the
+helper-built `wasm` group, while the release-tree figure of **31 excludes** it — so the two are one apart as
+*group* counts, not three. Whether the compile-gated `wasm` group counts as a group of the surface is a
+definition no document settles, and neither figure is changed here because of it. Stated in both directions so
+a reader does not read one as an error: the ids (150 → 170) agree on one base; the groups (28 vs 31/32) do not.
