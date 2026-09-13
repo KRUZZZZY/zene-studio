@@ -1240,6 +1240,7 @@ set_tests_properties(ControlWarpCommandsTest PROPERTIES
 # Engine and drives project-free commands through the registry. Neither opens a
 # window, both want a real Qt platform plugin.
 set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The transport.tempo_map_* group constructs a full Engine and drives the map
 # through the registry (and the engine's undo stack), so it needs a Qt platform
 # plugin even though nothing opens a window - the same reason as the two groups
@@ -1370,6 +1371,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+endif()
 # ControlCommandsSnapshot - the MCP tooling spine's freshness ratchet.
 #
 # `tools/mcp-zene-control/zene_control/registry.py` generates the bridge's tool
