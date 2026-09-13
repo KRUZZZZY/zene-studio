@@ -362,7 +362,7 @@ anywhere:
 | `ScriptEngineTest.cpp:139` (was) | `tempPath()/lmms-version-test.lua` | **fixed here** (now `:144-146`) | Fixed name in the shared temp dir, written then executed then removed; a concurrent process changes what is executed. §5.2. |
 | `run-all-gates.sh:87` (tooling) | `/tmp/gate1-build.log` | **fixed here** | Two concurrent gate runs clobber one log; `/tmp` evidence has already been lost to a reclaim. §5.3. |
 | `StemModelStoreTest.cpp:62-64` | `/tmp/lmms-stem-model-dir-test` | benign-with-a-reason | Sets `LMMS_STEM_MODEL_DIR` before use, then every case uses a `QTemporaryDir`; `WANT_STEM_SPLIT=OFF`, so it is not built here. |
-| `ClapEffectIntegrationTest.cpp:341-342` | `/tmp/clap_{before,after}.wav` | benign-with-a-reason | Write-only evidence artefacts: nothing is read back into an assertion (the levels are computed in memory). A concurrent run overwrites the artefact, not the verdict. Same shape in the unregistered `Vst3EffectIntegrationTest.cpp:283-284`. |
+| `ClapEffectIntegrationTest.cpp:341-342` | `/tmp/clap_{before,after}.wav` | benign-with-a-reason | Write-only evidence artefacts: nothing is read back into an assertion (the levels are computed in memory). A concurrent run overwrites the artefact, not the verdict. Same shape in the now-registered `Vst3EffectIntegrationTest.cpp:293-294` (registered by the 0.2.1 coverage-gap pass below). |
 | `CrashReporterTest.cpp:226` | `"/tmp/crash reporter test.mmp"` | benign-with-a-reason | A path *string* handed to `setProjectPath()` and recorded in the report; no file is created or read. |
 | `LoudnessReportTest.cpp:217` | `"/tmp/silent.wav"` | benign-with-a-reason | Display argument to `reportText()`; no filesystem access. |
 | `ProjectRecoveryTest.cpp:96-212` | `/tmp/rec.mmp` etc. | benign-with-a-reason | Pure string comparisons of recovery decisions; no I/O. |
@@ -408,11 +408,17 @@ The two remaining unregistered sources are left unbuilt **deliberately and in wr
 * `tests/src/core/TwoTrackAlsaCaptureProbe.cpp` — a standalone probe with its own `main()` that
   needs a real ALSA capture device; it is not a QTest class.
 
-And three are recorded as **open items, not as deliberate exclusions** — the VST3 host tests
-(`tests/src/plugins/Vst3HostTest.cpp`, `Vst3BusMapTest.cpp`, `Vst3EffectIntegrationTest.cpp`)
-have no counterpart of the `if(WANT_CLAP)` block that registers their CLAP twins, so they compile
-nowhere. Wiring them needs VST3 SDK/fixture plumbing; that is a follow-up, and the gate will keep
-naming them until it is done.
+And three were recorded as **open items, not as deliberate exclusions** — the VST3 host tests
+(`tests/src/plugins/Vst3HostTest.cpp`, `Vst3BusMapTest.cpp`, `Vst3EffectIntegrationTest.cpp`) had
+no counterpart of the `if(WANT_CLAP)` block that registers their CLAP twins, so they compiled
+nowhere. **CLOSED 2026-09-13 (0.2.1 coverage gap 1):** they are registered in
+`tests/CMakeLists.txt` in a VST3 block guarded by `if(TARGET lmms_vst3_sdk)`, against an in-tree
+VST3 effect fixture built from the pinned SDK (`tests/data/vst3-test-effect`), and all three run
+green in the suite. The declarations left `tests/unregistered-tests-gate.sh`'s DECLARED table with
+this pass; the note there records why. What that wiring cost is on the record too: the first time
+they ever ran, `Vst3EffectIntegrationTest::testRendersBeforeAfterWav` aborted in `malloc` - a
+buffer over-run in the TEST's own frame loop (`totalFrames = 44100` is not a multiple of
+`fpp = 48`), fixed in the test and documented there.
 
 ### 7.1 Gate 10 — the check that stops the fourth
 
@@ -485,8 +491,10 @@ EXIT=3
 3. **No independent reproduction of the product's own "abort on exit after a render"** — the
    released alpha records it as a known limitation. It is the same code path (`~AudioEngine`), so
    the fix should cover it, but I did not measure an application exit, and I do not claim it.
-4. **The VST3 host tests are still unwired** (§7); Gate 10 now names them as open items.
-   Registering them is a build-system task with SDK/fixture plumbing, out of this lane's scope.
+4. **The VST3 host tests were unwired when this was written** (§7); they are registered as of
+   2026-09-13 (0.2.1 coverage gap 1) and run in the suite. That was a build-system task with
+   SDK/fixture plumbing, and the first run of the newly registered test found a defect in the test
+   itself (an off-by-12 frame over-run in its render loop), recorded in §7.
 5. **Gate 2 (coverage) was not run.**
 6. **`PhaseDPerfBench` was not run** (it is a benchmark; excluded deliberately, §7).
 7. The load in every measurement above is *real* sibling-lane compiles on this box (load average

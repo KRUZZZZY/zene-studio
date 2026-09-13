@@ -39,6 +39,32 @@ jobs:
   linux-x86_64:
     name: linux-x86_64
     runs-on: ubuntu-22.04
+    # WANT_VST3_TEST_INSTRUMENT=ON is passed by THIS job and by no other.
+    #
+    # The option (tests/CMakeLists.txt, default OFF) builds the MIT test-instrument
+    # FIXTURE and its three ctest targets - Vst3InstrumentFixtureProbe,
+    # Vst3InstrumentTest and Vst3InstrumentIntegrationTest - which are the only
+    # tests that exercise VST3 INSTRUMENT hosting, the 0.2.1 headline capability,
+    # end to end. Until this line existed no job passed it, so that capability had
+    # no CI-run test at all: the option defaulted OFF and nothing turned it on (a
+    # gap an audit of the release's own claim list found, alongside the three VST3
+    # effect-test sources that were registered nowhere). It is passed here, and
+    # only here, because this job is the fastest of the seven and already
+    # provisions the pinned VST3 SDK that the fixture needs, and one job is enough
+    # to prove the suite runs on every push. Elsewhere the default OFF stands, so
+    # an ordinary release package gains no test asset.
+    #
+    # The fixture is installed by nothing and is named "vst3-test-instrument", so
+    # it adds no module to a package and matches none of
+    # tests/advertised-features.tsv's module globs (the *vst3instrument* one is the
+    # product plug-in). There is deliberately NO row for this option in that
+    # manifest; its own header explains why (the option is declared inside a
+    # conditional in tests/CMakeLists.txt, so it only reaches lmmsversion.h's
+    # build-options dump on a build directory that has already been configured
+    # once, which would make such a row pass or fail on the build directory's
+    # history rather than on the build) - and this job's Release-honesty guard step
+    # reads the manifest's rows only, so turning the option on here cannot move it
+    # in either direction. Verified, not assumed (0.2.1 coverage-gap report).
     env:
       CMAKE_OPTS: >-
         -DUSE_WERROR=ON
@@ -48,6 +74,7 @@ jobs:
         -DWANT_DEBUG_CPACK=ON
         -DWANT_VST3=ON
         -DWANT_CLAP=ON
+        -DWANT_VST3_TEST_INSTRUMENT=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
