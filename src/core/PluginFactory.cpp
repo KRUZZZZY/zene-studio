@@ -25,8 +25,10 @@
 #include "PluginFactory.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 #include <QLibrary>
 #include <QRegularExpression>
 #include <memory>
