@@ -301,6 +301,9 @@ def check_stop_ends_the_clock(session, recorder):
     stopped = session.result("transport.stop")
     recorder.check("the transport stopped", stopped.get("playing") is False,
                    "state=%r" % stopped)
+    # The falling edge is emitted by the NEXT audio period (the clock is driven
+    # from the render thread), so the stop is a bounded wait, not a race.
+    pause(0.3)
     recorder.check("the master emitted a STOP for the falling edge",
                    emitted(session, "stop") == 1, "stop=%r" % emitted(session, "stop"))
     pause(0.5)
