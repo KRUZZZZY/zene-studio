@@ -56,7 +56,15 @@
  *
  * Windows: the module-loading half is skipped, with the same reasoning as
  * ScriptEngineTest - a Windows test host cannot load a plugin MODULE library
- * (its import descriptor names lmms.exe).
+ * (its import descriptor names zene.exe, the executable the modules link).
+ * "The module-loading half" means exactly the assertions that need a loaded
+ * descriptor (the plugin found in the list, its display name, its library
+ * loaded); everything else - the cache file, the fingerprints, the quarantine
+ * list, which files the scan counts as candidates, and the scan's own work
+ * counters - is asserted on every platform, because none of it needs a load.
+ * The module file NAME is the platform's own (see moduleFileName()), and its
+ * absence is why the count assertions used to be red on msvc-x64: see the note
+ * there.
  */
 
 #include <QtTest>
@@ -66,6 +74,19 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
+
+// LMMS_BUILD_WIN32 is only ever defined by the generated build-tree
+// lmmsconfig.h, never as a compile definition, so without this include the
+// #ifdef in moduleFileName() below is dead code on every platform - and the
+// fixture then looks for the Linux module name on Windows, where the scan's own
+// candidate filter (PluginFactory.cpp:51-54: "*.dll" under LMMS_BUILD_WIN32,
+// "lib*.so" otherwise) looks for *.dll. That is what made msvc-x64 report
+// "fixture plugin dir: ... module copied: false" and fail three count
+// assertions (job 103724228360, run 34757467632): the fixture module was never
+// copied, so the fixture directory held no candidate at all. Included first,
+// the way the library TU includes it (PluginFactory.cpp:35), so this test sees
+// the same configuration the code under test was compiled with.
+#include "lmmsconfig.h"
 
 #include "embed.h"
 #include "Plugin.h"
@@ -81,7 +102,10 @@
 namespace
 {
 
-/*! The module file name the scanner looks for on this platform. */
+/*! The module file name the scanner looks for on this platform: the scanner's
+    candidate filter is "*.dll" where LMMS_BUILD_WIN32 is set and "lib*.so"
+    otherwise (PluginFactory.cpp:51-54), so the fixture has to be copied in under
+    the name that filter can see. */
 constexpr auto moduleFileName() -> const char*
 {
 #ifdef LMMS_BUILD_WIN32
@@ -99,6 +123,14 @@ constexpr auto testHostCanLoadPluginModules() -> bool
 	return true;
 #endif
 }
+
+//! What every Windows skip in this suite says: the proven mechanism, named once
+//! (same words as AudioPluginTest.cpp and PluginPortsMigrationTest.cpp).
+constexpr const char* PluginModuleHostSkipMessage =
+	"a Windows test host cannot load plugin MODULE libraries: plugin modules link the "
+	"zene executable, so on Windows their import descriptor names zene.exe and a test "
+	"host cannot satisfy it; the product loads them inside zene.exe where that resolves "
+	"by construction (CI msvc-x64: QLibrary::load -> ERROR_MOD_NOT_FOUND, 126)";
 
 /*! Descriptor metadata of every instrument plugin, for set comparisons. */
 QStringList pluginFingerprints(lmms::PluginFactory& factory)
@@ -322,8 +354,21 @@ private slots:
 		QCOMPARE(factory.scanStats().candidateFiles, 1);
 		QCOMPARE(factory.scanStats().scanned, 1);
 		QCOMPARE(factory.scanStats().servedFromCache, 0);
-		QVERIFY2(!factory.pluginInfo("tripleoscillator").isNull(),
-			"a corrupt cache must never empty the plugin list");
+		if (testHostCanLoadPluginModules())
+		{
+			QVERIFY2(!factory.pluginInfo("tripleoscillator").isNull(),
+				"a corrupt cache must never empty the plugin list");
+		}
+		else
+		{
+			// The three counts above are the platform-independent half of "the
+			// corrupt cache degraded to a real full scan": the file was a
+			// candidate, the scan opened it, and nothing was served from the
+			// corrupt file. What needs a loaded descriptor - the plugin being in
+			// the list afterwards - is UNEXERCISED on this host.
+			qWarning("plugin-scan-cache: the descriptor half of this case is UNEXERCISED here: %s",
+				PluginModuleHostSkipMessage);
+		}
 
 		// The scan wrote a valid cache back, so the next start is warm.
 		{
@@ -331,8 +376,25 @@ private slots:
 			QVERIFY2(rewritten.load(), "the scan must replace a corrupt cache with a valid one");
 		}
 		PluginFactory second;
-		QCOMPARE(second.scanStats().servedFromCache, 1);
-		QVERIFY(!second.pluginInfo("tripleoscillator").isNull());
+		if (testHostCanLoadPluginModules())
+		{
+			QCOMPARE(second.scanStats().servedFromCache, 1);
+			QVERIFY(!second.pluginInfo("tripleoscillator").isNull());
+		}
+		else
+		{
+			// "The cache stopped the second scan repeating the work" is the part
+			// of this half that holds whoever loaded the module: the rewritten
+			// cache answered for the file, so no candidate was opened again.
+			QCOMPARE(second.scanStats().scanned, 0);
+			// Whether that answer was a plugin (the module loaded) or a
+			// remembered load failure cannot be observed on this host, because
+			// the module cannot load here at all - see the note on
+			// testHostCanLoadPluginModules(). Said out loud rather than asserted:
+			// the descriptor half of this case is UNEXERCISED on this host.
+			qWarning("plugin-scan-cache: the descriptor half of this case is UNEXERCISED here: %s",
+				PluginModuleHostSkipMessage);
+		}
 	}
 
 	// --- driven through PluginFactory and a real plugin module --------------
@@ -341,7 +403,7 @@ private slots:
 		using namespace lmms;
 
 		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
-		if (!testHostCanLoadPluginModules()) { QSKIP("a Windows test host cannot load plugin MODULE libraries"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
 
 		const QString cacheFile = cachePath("warm");
 		qputenv("LMMS_PLUGIN_SCAN_CACHE", cacheFile.toLocal8Bit());
@@ -385,7 +447,7 @@ private slots:
 		using namespace lmms;
 
 		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
-		if (!testHostCanLoadPluginModules()) { QSKIP("a Windows test host cannot load plugin MODULE libraries"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
 
 		const QString cacheFile = cachePath("changed");
 		qputenv("LMMS_PLUGIN_SCAN_CACHE", cacheFile.toLocal8Bit());
@@ -426,7 +488,7 @@ private slots:
 		using namespace lmms;
 
 		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
-		if (!testHostCanLoadPluginModules()) { QSKIP("a Windows test host cannot load plugin MODULE libraries"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
 
 		// A copy of the module this process has never opened, with a hand-written
 		// cache record standing in for a previous run that scanned it:
@@ -483,7 +545,7 @@ private slots:
 		using namespace lmms;
 
 		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
-		if (!testHostCanLoadPluginModules()) { QSKIP("a Windows test host cannot load plugin MODULE libraries"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
 
 		const QString cacheFile = cachePath("hidden");
 		qputenv("LMMS_PLUGIN_SCAN_CACHE", cacheFile.toLocal8Bit());
@@ -527,6 +589,7 @@ private slots:
 		using namespace lmms;
 
 		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
 
 		const QString badFile = m_pluginDir->filePath("libnotaplugin.so");
 		{
@@ -576,7 +639,7 @@ private slots:
 		using namespace lmms;
 
 		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
-		if (!testHostCanLoadPluginModules()) { QSKIP("a Windows test host cannot load plugin MODULE libraries"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
 
 		// Today's behaviour, byte for byte: no cache at all. An empty path means
 		// "no persistence" (set explicitly: whether the machine happens to have a
@@ -624,9 +687,18 @@ private slots:
 		QVERIFY2(PluginFactory::instanceExists(),
 			"showing the plugin browser must trigger plugin discovery");
 		QVERIFY(getPluginFactory()->scanStats().candidateFiles >= 1);
-		if (pluginModuleCopied())
+		// The candidate count above is the platform-independent half ("showing the
+		// browser scanned the plugin directory"); the descriptor below needs the
+		// module to LOAD, which a Windows test host cannot do - so it is asserted
+		// where it can be, and named out loud where it cannot.
+		if (pluginModuleCopied() && testHostCanLoadPluginModules())
 		{
 			QVERIFY(!getPluginFactory()->pluginInfo("tripleoscillator").isNull());
+		}
+		else
+		{
+			qWarning("plugin-scan-cache: the descriptor half of this case is UNEXERCISED here: %s",
+				PluginModuleHostSkipMessage);
 		}
 
 		browser.hide();
