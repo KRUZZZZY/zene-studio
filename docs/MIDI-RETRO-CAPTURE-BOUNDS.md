@@ -108,10 +108,10 @@ it with `aplaymidi`** — an external process, exactly like a keyboard. It asser
    `roll.get_state`, equal the file's own — position `0` and `240`, length `240`, key `60` at velocity `100`
    and key `64` at velocity `64`;
 3. exactly **one** `control.undo` removes the clip (SPEC A16);
-4. with a further **18000** events played into the window, `events_buffered` is exactly the
+4. with a further **20000** events played into the window, `events_buffered` is exactly the
    `capacity_events` the build reports, that capacity equals the figure stated on this page, and
-   `retained + overwritten + paused_dropped` equals **every event played in the run** (18004: the 4 of
-   point 2 and the 18000 of this one) — the documented policy, not a crash;
+   `retained + overwritten + paused_dropped` equals **every event played in the run** (20004: the 4 of
+   point 2 and the 20000 of this one) — the documented policy, not a crash;
 5. the instance is still answering `control.ping` afterwards.
 
 It reports ctest *Skipped* (exit 77), never *Passed*, on a host with no ALSA-sequencer tooling or an engine
@@ -121,6 +121,16 @@ that came up on the dummy MIDI client.
 sequencer event carrying the Standard MIDI File's own tick, and a receiver reads the tick back unchanged
 (`aplaymidi -p <port>` playing a file whose notes are at ticks 0/240/480 is received with
 `time.tick = 0/240/480`). That is what lets §6.2 assert positions rather than a range.
+
+**And the pacing probe §6.4 depends on, which found something worth recording.** The sixteen-byte window
+is not the only bounded thing in this path: the engine's ALSA client has a bounded **input pool**, and
+events blasted at it are dropped in the KERNEL before any capture code runs. Measured with a
+byte-counting receiver: one 18000-event burst delivered **614** events, and 100 runs of 200 events lost
+**400**. The same 20000 events, written into ONE file whose pairs are two ticks apart so aplaymidi paces
+it from the file's own timing (480 ppq at 120 bpm ≈ 1.042 ms per tick, ≈ 960 events/s), arrive
+**complete** in ~21 s. So the bound half of the ctest plays a paced file, and the only loss the
+accounting above can see is the window's own drop-oldest. A test that had asserted the burst instead
+would have been measuring the pool.
 
 ## 7. What this lane did NOT build: owner's-31 item 15 (retrospective AUDIO capture)
 

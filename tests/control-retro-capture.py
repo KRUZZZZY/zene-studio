@@ -62,18 +62,20 @@ TO_CLIP = "midi.retro_capture_to_clip"
 SMALL_NOTES = ((0, 60, 100, 240), (240, 64, 64, 240))
 SMALL_WINDOW_END = 480
 CLIP_LENGTH = 960
-# The bound half is played as BURST_RUNS repetitions of a BURST_PAIRS-pair file,
-# paced by BURST_GAP_SECONDS. The pacing is not tidiness: the engine's ALSA client
-# has a bounded INPUT POOL, so a single 20000-event burst overflows it IN THE
-# KERNEL and the capture never sees most of the events - measured on this box, one
-# 18000-event burst delivered 614 events and the rest were dropped before the ring,
-# which is a fact about the pool and not about the window under test. 200 events
-# per run is comfortably inside what one burst was measured to deliver, and pacing
-# lets the MIDI thread drain between runs so the accounting below is exact.
-# BURST_RUNS x BURST_PAIRS x 2 = 20000 events, 2.4x the window.
-BURST_PAIRS = 100
-BURST_RUNS = 100
-BURST_GAP_SECONDS = 0.15
+# The bound half plays ONE file of BIG_PAIRS note pairs spaced BIG_SPACING ticks
+# apart, which aplaymidi paces from the file's own timing: 480 ppq at the default
+# 120 bpm is ~1.042 ms per tick, so 10000 pairs 2 ticks apart is 20000 events over
+# ~21 seconds, i.e. ~960 events/s.
+#
+# The pacing is the point, and it was measured, not assumed. The engine's ALSA
+# client has a bounded INPUT POOL, so events blasted at it are dropped IN THE
+# KERNEL before the capture sees them: one 18000-event burst delivered 614 events,
+# and even 100 runs of 200 events lost 400. Pacing the same 20000 events into that
+# stream delivers all 20000, which is what makes the accounting below exact and the
+# assertion a statement about the window rather than about the kernel's pool.
+# BIG_PAIRS x 2 = 20000 events, 2.4x the window.
+BIG_PAIRS = 10000
+BIG_SPACING = 2
 SETTLE_SECONDS = 2.0
 BOUND_SECONDS = 180.0
 
@@ -102,6 +104,11 @@ def write_smf(path, notes):
     docs/MIDI-RETRO-CAPTURE-BOUNDS.md.
     """
     body = bytearray()
+    # 120 bpm and 4/4 as META events, so the file states the tempo aplaymidi paces
+    # it at instead of relying on the player's default. aplaymidi drops metas: they
+    # are not sequencer events and none of them reaches the engine.
+    body += b"\x00\xff\x51\x03" + bytes((0x07, 0xA1, 0x20))
+    body += b"\x00\xff\x58\x04" + bytes((4, 2, 24, 8))
     cursor = 0
     for tick, key, velocity, length in notes:
         body += vlq(tick - cursor) + bytes((0x90, key, velocity))
@@ -276,6 +283,9 @@ def check_recovery(context, problems):
                      % (written["unmatched_ons"], written["unmatched_offs"]))
 
     measured = roll_notes(session, written["clip"])
+    print("  window [%d, %d] of %d event(s) -> clip %s with %d note(s): %r"
+          % (written["window_start"], written["window_end"], written["events"],
+             written["clip"], written["events_written"], measured))
     problems.require(measured == expected_notes(),
                      "roll.get_state reports %r; the file that was played holds %r "
                      "(position, length, key, velocity)"
@@ -305,14 +315,6 @@ def check_undo(context, problems):
                      "pre-capture %r" % (sorted(after), sorted(before)))
 
 
-def play_bursts(aplaymidi, port, path, problems):
-    """Play the same file BURST_RUNS times, paced, so nothing is lost to the pool."""
-    for _ in range(BURST_RUNS):
-        if not play_notes(aplaymidi, port, path, problems):
-            return
-        time.sleep(BURST_GAP_SECONDS)
-
-
 def check_bound(context, problems):
     """Play more than the ring can hold and assert the DOCUMENTED behaviour.
 
@@ -329,9 +331,13 @@ def check_bound(context, problems):
                      "the build retains %r events, %s documents %r"
                      % (capacity, os.path.basename(BOUNDS_DOC), documented))
 
-    play_bursts(context["aplaymidi"], context["port"], context["burst_file"], problems)
-    played = context["played"] + 2 * BURST_PAIRS * BURST_RUNS
+    play_notes(context["aplaymidi"], context["port"], context["bound_file"], problems)
+    played = context["played"] + 2 * BIG_PAIRS
     status = wait_buffered(session, capacity, BOUND_SECONDS)
+    print("  played %d event(s) into a %d-event window: retained %d, overwritten %d, "
+        "paused %d, refused %d"
+        % (played, capacity, status["events_buffered"], status["overwritten"],
+           status["paused_dropped"], status["refused_snapshots"]))
     problems.require(status["events_buffered"] == capacity,
                      "the window holds %r events after %d were played; the documented "
                      "bound is %r" % (status["events_buffered"], played, capacity))
@@ -447,13 +453,14 @@ def main():
         port, running = prepare(session, instance, aconnect)
 
         small_file = os.path.join(instance.tmp, "retro-small.mid")
-        burst_file = os.path.join(instance.tmp, "retro-burst.mid")
+        bound_file = os.path.join(instance.tmp, "retro-bound.mid")
         write_smf(small_file, SMALL_NOTES)
-        write_smf(burst_file, tuple((0, 36 + (i % 84), 100, 0) for i in range(BURST_PAIRS)))
+        write_smf(bound_file, tuple((i * BIG_SPACING, 36 + (i % 84), 100, BIG_SPACING)
+                                    for i in range(BIG_PAIRS)))
 
         context = {"session": session, "instance": instance, "port": port,
                    "aplaymidi": aplaymidi, "small_file": small_file,
-                   "burst_file": burst_file, "played": 0}
+                   "bound_file": bound_file, "played": 0}
         print("")
         print("engine   : %r" % running["client"])
         print("source   : aplaymidi -> %d:%d (pid %d)"

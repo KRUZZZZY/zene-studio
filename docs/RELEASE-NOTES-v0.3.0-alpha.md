@@ -678,7 +678,7 @@ section 5 is the argument for each.
   carry the file's own tick timestamp. It requires the same file played BEFORE arming to leave the window
   empty and played again ARMED to come back as the notes' own positions, lengths, keys and velocities (read
   back out of the engine through `roll.get_state`: position 0 and 240, length 240, key 60 at velocity 100,
-  key 64 at velocity 64); exactly one `control.undo` to remove the clip; and, with 18000 further events
+  key 64 at velocity 64); exactly one `control.undo` to remove the clip; and, with 20000 further events
   played into an 8192-event window, `events_buffered` to be exactly the documented capacity with
   `retained + overwritten + paused_dropped` equal to everything played, the instance still answering
   `control.ping` afterwards. It reports *Skipped* (exit 77), never *Passed*, on a host with no
