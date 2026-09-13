@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Info.plist of the vst3-test-effect.vst3 CFBundle.
+
+  It exists because the SDK's macOS loader IS CoreFoundation's bundle loader
+  (public.sdk/source/vst/hosting/module_mac.mm):
+
+      CFBundleCreate(url)  +  CFBundleLoadExecutableAndReturnError(bundle)
+
+  and CFBundle resolves the module through CFBundleExecutable, which has to name
+  the file under Contents/MacOS. Without this file the fixture is a directory
+  CoreFoundation will not treat as a bundle of that layout, which is what the two
+  macOS jobs reported as
+
+      The bundle "vst3-test-effect.vst3" couldn't be loaded because its
+      executable couldn't be located.
+
+  The keys are the ones the SDK's own SMTG_Bundle.cmake has CMake generate for its
+  samples (CFBundleExecutable = the bundle stem, CFBundleIdentifier, BNDL), written
+  out here so the fixture carries the contract it depends on rather than inheriting
+  it from a target property. @...@ is substituted by configure_file() in
+  CMakeLists.txt, with the same variable the bundle directory is named from.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>@LMMS_VST3_TEST_EFFECT_NAME@</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.lmms.tests.@LMMS_VST3_TEST_EFFECT_NAME@</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>@LMMS_VST3_TEST_EFFECT_NAME@</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+</dict>
+</plist>

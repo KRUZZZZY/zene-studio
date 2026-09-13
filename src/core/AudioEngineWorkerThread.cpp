@@ -166,6 +166,12 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 		// every job, so nothing about the result depends on which worker was awake.
 		// run() drains in Dynamic mode, so a job that queues another job (the mixer's
 		// dependency-driven channels do) is picked up in the same call.
+		//
+		// Note that this branch is not on its own enough to make that true, and it
+		// never was: a worker that is already awake (or that wakes on its own bounded
+		// re-check - see run()) drains globalJobQueue without passing through here.
+		// The queue itself is what both threads share, so the switch is honoured on
+		// both sides: here, and in run().
 		globalJobQueue.run();
 		globalJobQueue.wait();
 		return;
@@ -210,7 +216,26 @@ void AudioEngineWorkerThread::run()
 		// sleeps again 10 times a second; while it renders, wake-ups arrive every
 		// period and this timer never fires.
 		queueReadyWaitCond->wait( &m, kQuitRecheckMs );
-		globalJobQueue.run();
+		// ... but an OFFLINE render never signals this condition at all: it sets
+		// deterministicProcessing() (ProjectRenderer) and drains the queue itself,
+		// precisely so that no worker is part of the result. This bounded wait is
+		// then the only thing that wakes an idle worker, and a render that lasts
+		// longer than kQuitRecheckMs - every real export does - would let that
+		// wake-up land *inside* the render and drain the queue next to the render
+		// thread. That is the scheduling decision the export switch exists to
+		// remove (docs/RENDER-DETERMINISM.md), so a worker must honour the switch
+		// instead of taking whatever is in the queue. It is atomic, so the render
+		// thread and this worker cannot disagree about it (see the header).
+		//
+		// Measured: without this check, RenderJobQueueTest's
+		// inlineModeNeverLetsThePoolTakeAJob took a job on a pool thread on both
+		// macOS jobs, while a quiet Linux box never lost that race - the windows in
+		// which the worker wakes are real on every platform, and it is only how
+		// long the render thread is preempted that decides whether it is seen.
+		if( !deterministicProcessing() )
+		{
+			globalJobQueue.run();
+		}
 		m.unlock();
 	}
 }

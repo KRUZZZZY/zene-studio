@@ -26,10 +26,24 @@
 #   vst3-test-effect          the plug-in MODULE, laid out as the SDK loader
 #                             expects it
 
-# The VST3 bundle on Linux is a DIRECTORY:
-#   <name>.vst3/Contents/<uname -m>-linux/<name>.so
-# The SDK's loader insists on that layout and derives the .so name from the
-# bundle directory stem (public.sdk/source/vst/hosting/module_linux.cpp:129-152).
+# The VST3 bundle is a DIRECTORY, and its layout is the loader's, not ours:
+#
+#   Linux    <name>.vst3/Contents/<uname -m>-linux/<name>.so
+#            The SDK's loader insists on that layout and derives the .so name from
+#            the bundle directory stem
+#            (public.sdk/source/vst/hosting/module_linux.cpp:129-152).
+#   macOS    <name>.vst3/Contents/MacOS/<name>  +  Contents/Info.plist
+#            There the loader is public.sdk/source/vst/hosting/module_mac.mm, which
+#            asks CoreFoundation for the bundle
+#              CFBundleCreate(url) + CFBundleLoadExecutableAndReturnError(bundle)
+#            and CFBundle looks for the executable its Info.plist NAMES, under
+#            Contents/MacOS - the layout SMTG_Bundle.cmake's own `BUNDLE TRUE` +
+#            `BUNDLE_EXTENSION vst3` produce for the SDK's samples.
+#            Laying this fixture out in the -linux location on Darwin is why
+#            Vst3HostTest and Vst3EffectIntegrationTest failed on both macOS jobs
+#            with "The bundle ... couldn't be loaded because its executable
+#            couldn't be located" while every Linux job was green: the loader was
+#            asked for a CFBundle and handed a Linux tree.
 execute_process(COMMAND uname -m
 	OUTPUT_VARIABLE LMMS_VST3_TEST_MACHINE
 	OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -41,8 +55,22 @@ endif()
 set(LMMS_VST3_TEST_EFFECT_NAME "vst3-test-effect")
 set(LMMS_VST3_TEST_EFFECT_BUNDLE_DIR
 	"${CMAKE_CURRENT_BINARY_DIR}/${LMMS_VST3_TEST_EFFECT_NAME}.vst3")
-set(LMMS_VST3_TEST_EFFECT_BUNDLE_SO
-	"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux/${LMMS_VST3_TEST_EFFECT_NAME}.so")
+
+if(APPLE)
+	# Contents/MacOS/<stem>, plus the Info.plist whose CFBundleExecutable has to
+	# name that same stem for CFBundle to find it.
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR "Contents/MacOS")
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_FILE "${LMMS_VST3_TEST_EFFECT_NAME}")
+	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+		"${CMAKE_CURRENT_BINARY_DIR}/bundle-Info.plist" @ONLY)
+else()
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR
+		"Contents/${LMMS_VST3_TEST_MACHINE}-linux")
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_FILE "${LMMS_VST3_TEST_EFFECT_NAME}.so")
+endif()
+
+set(LMMS_VST3_TEST_EFFECT_BUNDLE_BIN
+	"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/${LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR}/${LMMS_VST3_TEST_EFFECT_BUNDLE_FILE}")
 
 # --- the sample's generated version header --------------------------------
 # The sample's version.h includes "projectversion.h", a file the SDK's own build
@@ -135,13 +163,22 @@ set_target_properties(${LMMS_VST3_TEST_EFFECT_NAME} PROPERTIES
 	OUTPUT_NAME "${LMMS_VST3_TEST_EFFECT_NAME}")
 target_link_libraries(${LMMS_VST3_TEST_EFFECT_NAME} PRIVATE lmms_vst3_sdk)
 
-# Lay the module out as the SDK's loader expects it.
-add_custom_command(TARGET ${LMMS_VST3_TEST_EFFECT_NAME} POST_BUILD
+# Lay the module out as the SDK's loader expects it - the Linux tree, or the
+# CFBundle macOS's CFBundleCreate() requires (whose Info.plist names the stem).
+set(LMMS_VST3_TEST_EFFECT_LAYOUT_STEPS
 	COMMAND ${CMAKE_COMMAND} -E make_directory
-		"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux"
+		"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/${LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR}"
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"$<TARGET_FILE:${LMMS_VST3_TEST_EFFECT_NAME}>"
-		"${LMMS_VST3_TEST_EFFECT_BUNDLE_SO}"
+		"${LMMS_VST3_TEST_EFFECT_BUNDLE_BIN}")
+if(APPLE)
+	list(APPEND LMMS_VST3_TEST_EFFECT_LAYOUT_STEPS
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${CMAKE_CURRENT_BINARY_DIR}/bundle-Info.plist"
+			"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/Contents/Info.plist")
+endif()
+add_custom_command(TARGET ${LMMS_VST3_TEST_EFFECT_NAME} POST_BUILD
+	${LMMS_VST3_TEST_EFFECT_LAYOUT_STEPS}
 	COMMENT "Laying out the ${LMMS_VST3_TEST_EFFECT_NAME}.vst3 bundle")
 
 # The tests live in ../.. (tests/CMakeLists.txt) and need this path; variables do

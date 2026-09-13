@@ -30,10 +30,20 @@
 // AudioEngineWorkerThread::setDeterministicProcessing(true) for the duration of an export,
 // which must mean: every job is processed exactly once, on the calling thread.
 //
-// The cases are deterministic by construction, except `inlineModeNeverLetsThePoolTakeAJob`
-// which starts a real worker thread and gives it a real opportunity to steal work - so
-// deleting the inline branch in AudioEngineWorkerThread::startAndWaitForJobs() turns that
-// case red on purpose instead of leaving a test that asserts nothing.
+// The cases are deterministic by construction, including `inlineModeNeverLetsThePoolTakeAJob`,
+// which starts a real worker thread, gives it a real opportunity to steal work, and then
+// holds the render open for longer than that worker's bounded re-check interval
+// (AudioEngineWorkerThread::run()'s kQuitRecheckMs, 100 ms) so a worker that ignores the
+// switch takes a job *with certainty* rather than by luck - which is what the macOS jobs
+// caught when this case was paced at 4 ms a job and the worker happened to win the race.
+// The case therefore pins the switch end to end: every job runs exactly once, and every one
+// of them on the calling thread. Deleting the switch's worker-side check in run() turns it
+// red with certainty (measured: 5 of 5 runs red with it removed, 20 of 20 green with it,
+// on the box that could not lose this race at 4 ms a job); deleting the inline branch in
+// startAndWaitForJobs() alone no longer does, and that is deliberate - see the note in that
+// branch. Keeping this a test that asserts the property instead of the schedule is the
+// point: a render is reproducible only if no worker can be the runner of a job, and the
+// property is what a release depends on.
 //
 // Two functions of this file's own test harness are also load-bearing (report:
 // docs/TEARDOWN-ABORT-SWEEP.md):
@@ -264,6 +274,15 @@ private slots:
 	//! THE regression case. With the pool awake and jobs that take real time, a render that
 	//! let the pool take the work would process some job on another thread - which is
 	//! exactly the variability the export switch exists to remove.
+	//!
+	//! The jobs are paced so that the drain is *longer* than the worker's bounded re-check
+	//! (kQuitRecheckMs, 100 ms in AudioEngineWorkerThread::run(), which the worker re-arms
+	//! every time it goes back to sleep): 16 jobs x 25 ms is 400 ms, so at least three of
+	//! those wake-ups land inside the render whatever phase the worker happens to be in,
+	//! and a worker that drains the queue when it wakes takes a job every time. That makes
+	//! the case red-with-certainty for a build that ignores the switch, instead of red only
+	//! when a 4 ms-per-job drain happens to overlap a 100 ms wake-up - which is how it
+	//! behaved before, and why the loaded macOS runners redded a release over it.
 	void inlineModeNeverLetsThePoolTakeAJob()
 	{
 		AudioEngineWorkerThread::setDeterministicProcessing(true);
@@ -273,7 +292,7 @@ private slots:
 
 		std::atomic<int> total{0};
 		std::vector<ThreadableJob*> pointers;
-		const auto jobs = makeJobs(total, 16, std::chrono::milliseconds{4}, &pointers);
+		const auto jobs = makeJobs(total, 16, std::chrono::milliseconds{25}, &pointers);
 
 		AudioEngineWorkerThread::fillJobQueue(pointers);
 		AudioEngineWorkerThread::startAndWaitForJobs();
@@ -290,6 +309,7 @@ private slots:
 
 		QVERIFY2(joined, "the test's own worker thread did not stop");
 		expectAllRanOn(jobs, std::this_thread::get_id());
+		QCOMPARE(total.load(), 16);
 	}
 
 	//! With the switch off the pool path is unchanged: a started worker may take jobs, and
