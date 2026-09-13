@@ -2,7 +2,7 @@
  * ClipWarpPersistenceTest.cpp - task #597: the warp map survives a save, and a
  *                               project that predates it still loads.
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

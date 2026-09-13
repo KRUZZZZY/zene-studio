@@ -22,7 +22,7 @@
 # Container format (verified against src/core/DataFile.cpp:410 `qCompress(xml.toUtf8())`):
 #   [4-byte big-endian uncompressed length][zlib stream, default level]
 #
-# Copyright (c) 2026 LMMS contributors
+# Copyright (c) 2026 Zene Studio contributors
 """mmpz-git: git-friendly LMMS project files."""
 
 from __future__ import annotations

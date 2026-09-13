@@ -3,7 +3,7 @@
  * serialization tests: legacy projects load with identical routing, and
  * Phase D projects round-trip through save/load.
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

@@ -2,7 +2,7 @@
  * RecordRingBufferTest.cpp - invariants of the lock-free SPSC ring buffer used
  *                            by the two-track recording prototype (task #556)
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

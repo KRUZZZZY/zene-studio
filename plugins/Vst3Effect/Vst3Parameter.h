@@ -1,7 +1,7 @@
 /*
  * Vst3Parameter.h - an AutomatableModel mapped onto one normalized VST3 parameter
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

@@ -1,7 +1,7 @@
 /*
  * StemModelStore.h - model discovery, checksum validation and optional download
  *
- * Copyright (c) 2026 LMMS Developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

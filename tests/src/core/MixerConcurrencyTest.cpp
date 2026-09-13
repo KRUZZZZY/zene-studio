@@ -2,7 +2,7 @@
  * MixerConcurrencyTest.cpp - regression tests for the graded mixer
  * concurrency and ordering defects (docs/MIXER-CONCURRENCY-FIXES.md, D1..D6).
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

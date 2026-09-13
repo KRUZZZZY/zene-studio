@@ -2,7 +2,7 @@
  * SampleFrameRingBuffer.h - lock-free single-producer/single-consumer ring
  *                           buffer of stereo sample frames
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

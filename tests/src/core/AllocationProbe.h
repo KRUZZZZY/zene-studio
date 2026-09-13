@@ -2,7 +2,7 @@
  * AllocationProbe.h - test-only global operator new/delete replacement that
  *                     counts allocations on the calling thread
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

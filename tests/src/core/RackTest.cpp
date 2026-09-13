@@ -1,7 +1,7 @@
 /*
  * RackTest.cpp - the rack: parallel chains and the chain selector (#599)
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

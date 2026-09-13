@@ -1,7 +1,7 @@
 /*
  * ScriptApiVersion.cpp - build-time version of the LMMS/Zene Lua scripting API
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

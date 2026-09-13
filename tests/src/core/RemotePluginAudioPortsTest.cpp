@@ -4,7 +4,7 @@
  *                                  the layout contract of the shared audio
  *                                  block it allocates
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

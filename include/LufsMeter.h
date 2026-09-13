@@ -1,7 +1,7 @@
 /*
  * LufsMeter.h - ITU-R BS.1770-4 / EBU R128 loudness and true-peak measurement
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

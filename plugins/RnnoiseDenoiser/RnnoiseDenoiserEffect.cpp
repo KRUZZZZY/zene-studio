@@ -1,7 +1,7 @@
 /*
  * RnnoiseDenoiserEffect.cpp - RNNoise-based real-time noise suppression effect
  *
- * Copyright (c) 2026 AI-KOS Team
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *
@@ -53,7 +53,7 @@ Plugin::Descriptor PLUGIN_EXPORT rnnoisedenoiser_plugin_descriptor =
 	"RNNoise Denoiser",
 	QT_TRANSLATE_NOOP("PluginBrowser",
 		"A real-time noise suppression plugin using the RNNoise neural network"),
-	"AI-KOS Team <https://github.com/ai-kos>",
+	"Zene Studio contributors",
 	0x0100,
 	Plugin::Type::Effect,
 	new PixmapLoader("zene-plugin-logo"),

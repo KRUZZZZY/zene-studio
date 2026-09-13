@@ -1,7 +1,7 @@
 /*
  * VcaGroup.cpp - VCA / mix-and-edit groups for the mixer (task #622)
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

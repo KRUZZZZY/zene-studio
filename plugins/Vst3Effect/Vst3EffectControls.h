@@ -1,7 +1,7 @@
 /*
  * Vst3EffectControls.h - controls and parameter models for the VST3 effect host
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

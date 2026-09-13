@@ -1,7 +1,7 @@
 /*
  * SampleWindow.h - the authored source window of a clip
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

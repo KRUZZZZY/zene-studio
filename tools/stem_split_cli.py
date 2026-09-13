@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # stem_split_cli.py - offline 4-stem separation (reference implementation, G1)
 #
-# Copyright (c) 2026 LMMS Developers
+# Copyright (c) 2026 Zene Studio contributors
 #
 # This file is part of LMMS - https://lmms.io
 #

@@ -1,7 +1,7 @@
 /*
  * Vst3InstrumentTest.cpp - host-level proof of the VST3 MIDI event path
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

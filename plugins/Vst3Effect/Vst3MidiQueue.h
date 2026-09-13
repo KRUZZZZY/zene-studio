@@ -1,7 +1,7 @@
 /*
  * Vst3MidiQueue.h - the MIDI queue between LMMS' MIDI path and a plug-in
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

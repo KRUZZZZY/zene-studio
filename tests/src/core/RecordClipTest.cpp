@@ -2,7 +2,7 @@
  * RecordClipTest.cpp - DEFECT 6: out-of-range floats must be CLIPPED, not
  *                      wrapped, on the recorder's WAV write path
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

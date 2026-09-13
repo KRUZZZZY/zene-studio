@@ -1,6 +1,6 @@
 # FindWasmtime.cmake - locate the wasmtime C API (optional dependency)
 #
-# Copyright (c) 2026 LMMS WASM DSP sandbox contributors
+# Copyright (c) 2026 Zene Studio contributors
 #
 # Redistribution and use is allowed according to the terms of the New BSD
 # license. For details see the accompanying COPYING-CMAKE-SCRIPTS file.

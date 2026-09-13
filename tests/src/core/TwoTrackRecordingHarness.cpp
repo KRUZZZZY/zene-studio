@@ -2,7 +2,7 @@
  * TwoTrackRecordingHarness.cpp - OFFLINE SYNTHETIC harness for the two-track
  *                                recording prototype (task #556)
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

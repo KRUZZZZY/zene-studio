@@ -1,7 +1,7 @@
 /*
  * NeuralAmpEffect.cpp - real-time neural amplifier (.nam) effect
  *
- * Copyright (c) 2026 AI-KOS Team
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *
@@ -46,7 +46,7 @@ Plugin::Descriptor PLUGIN_EXPORT neuralamp_plugin_descriptor =
 	"Neural Amp Modeler",
 	QT_TRANSLATE_NOOP("PluginBrowser",
 		"Runs .nam WaveNet neural amplifier models in real time"),
-	"AI-KOS Team <https://github.com/ai-kos>",
+	"Zene Studio contributors",
 	0x0100,
 	Plugin::Type::Effect,
 	new PixmapLoader("zene-plugin-logo"),

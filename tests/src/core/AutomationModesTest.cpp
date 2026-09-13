@@ -3,7 +3,7 @@
  *                           the no-destruction guarantee, the touch timeout
  *                           and the trim offset (post-alpha/automation-modes)
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

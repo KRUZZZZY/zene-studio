@@ -2,7 +2,7 @@
  * RecordRingBuffer.h - lock-free single-producer/single-consumer ring buffer
  *                      used by the two-track recording prototype
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

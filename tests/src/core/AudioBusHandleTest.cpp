@@ -1,7 +1,7 @@
 /*
  * AudioBusHandleTest.cpp - tests for the AudioBus-based audio path
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

@@ -1,7 +1,7 @@
 /*
  * StemJobManagerTest.cpp - job-manager state machine, progress and cancel
  *
- * Copyright (c) 2026 LMMS Developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

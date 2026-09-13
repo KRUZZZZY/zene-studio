@@ -1,7 +1,7 @@
 /*
  * TelemetryTest.cpp - proofs for opt-in telemetry v1
  *
- * Copyright (c) 2026 LMMS Developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

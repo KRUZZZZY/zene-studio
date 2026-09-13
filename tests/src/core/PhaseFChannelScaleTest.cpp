@@ -1,7 +1,7 @@
 /*
  * PhaseFChannelScaleTest.cpp - Phase F 100+ mixer-channel scale proof (#592)
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

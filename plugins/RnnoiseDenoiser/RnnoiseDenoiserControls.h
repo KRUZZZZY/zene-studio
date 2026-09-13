@@ -1,7 +1,7 @@
 /*
  * RnnoiseDenoiserControls.h - controls for the RNNoise denoiser effect
  *
- * Copyright (c) 2026 AI-KOS Team
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

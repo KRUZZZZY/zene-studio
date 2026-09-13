@@ -1,7 +1,7 @@
 /*
  * ScriptStabilisationTest.cpp - the Lua API stabilisation contract (task #613)
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

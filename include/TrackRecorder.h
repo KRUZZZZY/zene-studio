@@ -3,7 +3,7 @@
  *                   prototype: one input channel -> lock-free ring buffer ->
  *                   disk-writer thread -> 24-bit WAV
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

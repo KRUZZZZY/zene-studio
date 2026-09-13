@@ -1,7 +1,7 @@
 /*
  * MpeInputPathTest.cpp - MPE capture through the real MIDI input path (task #601)
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

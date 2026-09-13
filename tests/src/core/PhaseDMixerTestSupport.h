@@ -1,7 +1,7 @@
 /*
  * PhaseDMixerTestSupport.h - shared helpers for the Phase D tests (task #587)
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *
