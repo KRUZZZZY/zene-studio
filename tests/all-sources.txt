@@ -201,6 +201,8 @@ include/LedCheckBox.h
 include/LeftRightNav.h
 include/LfoController.h
 include/LfoGraph.h
+include/LinkPeerTransport.h
+include/LinkSync.h
 include/LinkedModelGroupViews.h
 include/LinkedModelGroups.h
 include/LmmsCommonMacros.h
@@ -910,6 +912,7 @@ src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
+src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
@@ -985,6 +988,9 @@ src/core/LadspaControl.cpp
 src/core/LadspaManager.cpp
 src/core/LatencyCompensation.cpp
 src/core/LfoController.cpp
+src/core/LinkSync.cpp
+src/core/LinkSyncWire.cpp
+src/core/LinkUdpTransport.cpp
 src/core/LinkedModelGroups.cpp
 src/core/LmmsSemaphore.cpp
 src/core/LocklessAllocator.cpp
@@ -1286,6 +1292,7 @@ tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
