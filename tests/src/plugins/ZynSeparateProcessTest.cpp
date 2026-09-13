@@ -52,8 +52,17 @@
  *   - Audio is not compared here. The unchanged-default proof is a render
  *     comparison (docs/OOP-HOSTING.md), not an assertion.
  *   - Windows cannot load a plugin module from a test host (a module's import
- *     descriptor names lmms.exe - see AudioPluginTest.cpp), so the whole suite
- *     skips there.
+ *     descriptor names zene.exe, the executable the modules link - see
+ *     AudioPluginTest.cpp), so the whole suite skips there. The skip happens in
+ *     initTestCase() before this test starts the engine, and cleanupTestCase()
+ *     therefore tears down only what the test actually started (Engine::destroy()
+ *     on an engine that was never initialised dereferences a null
+ *     ProjectJournal - the msvc-x64 job segfaulted exactly there after the skip).
+ *     Nothing here is observable on Windows, and it is not a subset either: every
+ *     case below reaches the instrument through the module's own lmms_plugin_main
+ *     (initTestCase() resolves it after QLibrary::load, and instantiate() calls
+ *     it), so with no loadable module there is no subject to assert about. A
+ *     stated skip is the whole of what this platform can honestly produce.
  *   - Where the host can read no process table at all, the separate-PID half of
  *     the toggle is UNEXERCISED and the three cases that read one report
  *     *Skipped*, naming that: their hosting-state assertions still ran, and the
@@ -287,11 +296,15 @@ private slots:
 	void initTestCase()
 	{
 #ifdef Q_OS_WIN
-		QSKIP("cannot load a plugin module from a Windows test host (its import "
-			"descriptor names lmms.exe): see AudioPluginTest.cpp");
-#endif
+		QSKIP("cannot load a plugin module from a Windows test host: plugin modules link "
+			"the zene executable, so their import descriptor names zene.exe and a test "
+			"host cannot satisfy it (the product loads them inside zene.exe where that "
+			"resolves by construction; CI msvc-x64: QLibrary::load -> "
+			"ERROR_MOD_NOT_FOUND, 126): see AudioPluginTest.cpp");
+	#endif
 
 		Engine::init(true);
+		m_engineInitialised = true;
 		QVERIFY2(Engine::audioEngine() != nullptr, "engine failed to initialise");
 		Engine::audioEngine()->audioDev()->stopProcessing();
 
@@ -329,7 +342,21 @@ private slots:
 
 	void cleanupTestCase()
 	{
-		Engine::destroy();
+		// Tear down only what this test started. Engine::destroy()
+		// (src/core/Engine.cpp:95) dereferences s_projectJournal without a
+		// null check, and only Engine::init() ever sets it - so destroying an
+		// engine that was never initialised is a null dereference. On Windows
+		// initTestCase() QSKIPs before Engine::init(), and this call was the
+		// crash the msvc-x64 job reported:
+		//   SKIP : ZynSeparateProcessTest::initTestCase() cannot load a plugin
+		//          module from a Windows test host ...
+		//   A crash occurred in ...\ZynSeparateProcessTest.exe.
+		//   While testing cleanupTestCase
+		//   # 8: QHash<unsigned int,lmms::JournallingObject *>::begin()
+		//   # 9: lmms::ProjectJournal::stopAllJournalling()
+		//  #10: lmms::Engine::destroy()
+		// (job 103724228360, run 34757467632). A skip must be a skip.
+		if (m_engineInitialised) { Engine::destroy(); }
 	}
 
 	//! No attribute (every project saved before the toggle existed): unchanged
@@ -491,6 +518,9 @@ private:
 
 	QLibrary m_library;
 	MainFn m_main = nullptr;
+	//! Whether this test started the engine (initTestCase ran past the Windows
+	//! skip), so cleanupTestCase destroys only an engine that exists.
+	bool m_engineInitialised = false;
 };
 
 QTEST_GUILESS_MAIN(ZynSeparateProcessTest)
