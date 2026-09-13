@@ -44,3 +44,19 @@ BUILD_PLUGIN(vst3effect
 )
 
 TARGET_LINK_LIBRARIES(vst3effect lmms_vst3_sdk)
+
+IF(MSVC)
+	# This module links the executable's import library (zene.lib), which exports std::vector<float>
+	# instantiations because LMMS's own exported classes carry them in inline members - and
+	# Vst3Host.cpp.obj instantiates the same members, so the link collides:
+	#   zene.lib(zene.exe) : error LNK2005: "public: __cdecl std::vector<float,...>::~vector(...)"
+	#                        already defined in Vst3Host.cpp.obj
+	#   plugins\vst3effect.dll : fatal error LNK1169: one or more multiply defined symbols found
+	# Both definitions are the same STL implementation from the same toolchain, so collapsing them
+	# changes nothing at runtime, and the flag is scoped to this target so it cannot hide a duplicate
+	# anywhere else. Precedent and the same honest limit: plugins/NeuralAmp/CMakeLists.txt lines 55-73
+	# - this is a workaround for an MSVC export interaction that cannot be reproduced off Windows.
+	# The clean fix, for a Windows CI loop: keep the STL type off the exported class surface (pimpl the
+	# std::vector<float> member in Vst3Host.h, or define the class destructor out-of-line).
+	TARGET_LINK_OPTIONS(vst3effect PRIVATE /FORCE:MULTIPLE)
+ENDIF()
