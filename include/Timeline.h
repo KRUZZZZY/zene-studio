@@ -80,6 +80,43 @@ public:
 	void setLoopPoints(TimePos begin, TimePos end);
 	void setLoopEnabled(bool enabled);
 
+	// ---- punch in/out (0.3.0) ---------------------------------------------
+	/*! A punch region is a tick range on the transport. While it is ARMED,
+	 *  capture is gated to it: only material whose transport position falls in
+	 *  [punchBegin, punchEnd) is captured, and a take armed outside the region
+	 *  captures nothing. This is the ENGINE half of the feature
+	 *  (docs/CLIP-CAPTURE-DESIGN.md slice B, which names the timeline as the
+	 *  natural host for a punch range): the range is project state - it is
+	 *  written with the timeline and survives a save/load - and
+	 *  punchCapturesAt() is the one predicate the capture path consults.
+	 *
+	 *  The audio-side gate itself is NOT wired in 0.3.0: no command reaches
+	 *  the recorder's input path, ALSA has no capture path in this build and
+	 *  nothing exercises it. The range, its arm flag and the predicate are
+	 *  real and drivable (transport.punch_set / punch_clear / punch_get_state);
+	 *  docs/KNOWN-LIMITATIONS.md carries the one-line statement. */
+	auto punchBegin() const -> tick_t { return m_punchBegin; }
+	auto punchEnd() const -> tick_t { return m_punchEnd; }
+	auto punchEnabled() const -> bool { return m_punchEnabled; }
+	//! True while an armed region covers at least one tick: the gate is live.
+	bool punchArmed() const { return m_punchEnabled && m_punchEnd > m_punchBegin; }
+	//! THE GATE. True when \a ticks is inside an ARMED region; false otherwise
+	//! (unarmed, empty, or outside). Deliberately a pure function of the range
+	//! so it can be asserted without an audio device.
+	bool punchCapturesAt(tick_t ticks) const;
+	//! True when the region is worth writing: armed, or holding a non-empty
+	//! range. False for a timeline that has never punched, which is what keeps
+	//! such a project's saved bytes identical to what it has always had.
+	bool shouldPersistPunch() const
+	{
+		return m_punchEnabled || m_punchBegin > 0 || m_punchEnd > 0;
+	}
+	//! Sets the range (normalised, as setLoopPoints is), keeping the arm flag.
+	void setPunchRange(tick_t begin, tick_t end);
+	void setPunchEnabled(bool enabled);
+	//! Disarm and forget the region: the state a project that never punched has.
+	void clearPunch();
+
 	auto playStartPosition() const -> TimePos { return m_playStartPosition; }
 	auto stopBehaviour() const -> StopBehaviour { return m_stopBehaviour; }
 
@@ -92,6 +129,7 @@ public:
 
 signals:
 	void loopEnabledChanged(bool enabled);
+	void punchChanged();
 	void stopBehaviourChanged(lmms::Timeline::StopBehaviour behaviour);
 	void positionChanged();
 	void positionJumped();
@@ -104,6 +142,11 @@ private:
 	TimePos m_loopBegin = TimePos{0};
 	TimePos m_loopEnd = TimePos{DefaultTicksPerBar};
 	bool m_loopEnabled = false;
+	// Punch in/out. Default: no region (begin == end == 0) and disarmed, so a
+	// timeline that has never punched writes no punch attributes at all.
+	tick_t m_punchBegin = 0;
+	tick_t m_punchEnd = 0;
+	bool m_punchEnabled = false;
 	TimePos m_pos = TimePos{0};
 
 	float m_frameOffset = 0;

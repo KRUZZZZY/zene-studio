@@ -331,6 +331,27 @@ LMMS_EXPORT void registerTransportCommands(ControlRegistry& registry);
  *  translation unit, NOT a separate group: every id keeps the `transport.`
  *  prefix, so an agent finds the map where it finds the tempo. */
 LMMS_EXPORT void registerTransportTempoMapCommands(ControlRegistry& registry);
+/*! transport.punch_set / punch_clear / punch_get_state - the punch in/out region
+ *  of the transport (0.3.0). The engine half is Timeline's punch range
+ *  (include/Timeline.h): a tick range plus an arm flag, saved with the timeline
+ *  so it survives save/load, and gated by Timeline::punchCapturesAt(). The ids
+ *  keep the `transport.` prefix for the same reason the tempo map's half does:
+ *  a punch region belongs to the transport, and an agent finds it where it
+ *  finds the transport. The AUDIO-SIDE GATE is not wired in 0.3.0 - the region
+ *  and the predicate are real, and no capture path consults them yet
+ *  (docs/KNOWN-LIMITATIONS.md). */
+LMMS_EXPORT void registerTransportPunchCommands(ControlRegistry& registry);
+/*! record.journal_begin / journal_update / journal_finish - the take journal
+ *  that makes a recording in progress recoverable after an abnormal exit
+ *  (0.3.0). The engine half is include/RecordingJournal.h plus TrackRecorder's
+ *  own arm()/disarm() wiring; this half is the journalling verbs of the
+ *  `record.` family AGENT-TOOLING.md's boarded list names. */
+LMMS_EXPORT void registerRecordingCommands(ControlRegistry& registry);
+/*! record.recovery_get_state / recovery_restore / recovery_discard - the
+ *  recovery half of the same group, in its own translation unit (the automation
+ *  and warp groups' split). What the next start does with a journal an abnormal
+ *  exit left behind, and the BOUND each offer states. */
+LMMS_EXPORT void registerRecordingRecoveryCommands(ControlRegistry& registry);
 //! mixer.*
 LMMS_EXPORT void registerMixerCommands(ControlRegistry& registry);
 //! project.open and render.render

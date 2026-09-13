@@ -28,8 +28,12 @@
 #include <algorithm>
 #include <chrono>
 
+#include <QFileInfo>
+#include <QString>
+
 #include <sndfile.h>
 
+#include "RecordingJournal.h"
 #include "SampleFrame.h"
 #include "lmms_constants.h"
 
@@ -114,8 +118,42 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 	// just is not free of an in-range delta, which the test measures.
 
 	m_stopRequested.store(false, std::memory_order_release);
+	// The take journal (0.3.0) BEFORE the writer thread starts: a recording in
+	// progress is journalled to disk, so an exit that never reaches disarm()
+	// leaves something the next start can recover FROM rather than a half-written
+	// WAV nobody can identify. Written here, off the audio thread; updated by
+	// writerLoop() once per second of audio (the whole of the lag bound in
+	// include/RecordingJournal.h).
+	m_journalTake = QString::fromStdString(filePath);
+	m_journalPath = recordingjournal::journalPathFor(m_journalTake).toStdString();
+	m_journalFrames = 0;
+	m_journalSampleRate = sampleRate;
+	m_journalIntervalFrames = recordingjournal::updateIntervalFrames(sampleRate);
+	writeJournal();
+	if (!QFileInfo::exists(QString::fromStdString(m_journalPath)))
+	{
+		// The journal is the recovery AID, not the recording: a take written into
+		// a directory that refuses the side file is still recorded, and
+		// journalPath() answers empty so the caller can see it is not protected.
+		m_journalPath.clear();
+	}
+
 	m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
 	return true;
+}
+
+
+void TrackRecorder::writeJournal()
+{
+	if (m_journalPath.empty()) { return; }
+	TakeJournal journal;
+	journal.takePath = m_journalTake;
+	journal.state = QStringLiteral("in_progress");
+	journal.sampleRate = m_journalSampleRate;
+	journal.channels = 1;
+	journal.framesOnDisk = m_framesRecorded.load(std::memory_order_relaxed);
+	journal.startTicks = -1;
+	recordingjournal::write(QString::fromStdString(m_journalPath), journal);
 }
 
 
@@ -139,6 +177,17 @@ void TrackRecorder::disarm()
 		sf_write_sync(m_sf);
 		sf_close(m_sf);
 		m_sf = nullptr;
+	}
+
+	// A CLEAN stop leaves no journal (0.3.0): that is what makes "there is a
+	// journal" and "the capture died" the same fact. Removed after the writer
+	// thread is joined and the file is closed, so the frames the journal last
+	// recorded cannot exceed what the take holds.
+	if (!m_journalPath.empty())
+	{
+		recordingjournal::remove(QString::fromStdString(m_journalPath));
+		m_journalPath.clear();
+		m_journalFrames = 0;
 	}
 }
 
@@ -205,6 +254,17 @@ void TrackRecorder::writerLoop()
 		{
 			m_framesRecorded.fetch_add(static_cast<std::uint64_t>(written),
 				std::memory_order_relaxed);
+		}
+
+		// Keep the take journal current (0.3.0). Once per second of audio, on the
+		// disk-writer thread - the one thread that knows what has actually
+		// reached the file - so the recovery offer's guaranteed count lags real
+		// disk state by at most one update interval.
+		if (m_framesRecorded.load(std::memory_order_relaxed) - m_journalFrames
+			>= m_journalIntervalFrames)
+		{
+			m_journalFrames = m_framesRecorded.load(std::memory_order_relaxed);
+			writeJournal();
 		}
 	}
 

@@ -417,6 +417,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerControlGroupCommands(registry);
 	registerTransportCommands(registry);
 	registerTransportTempoMapCommands(registry);
+	registerTransportPunchCommands(registry);
+	registerRecordingCommands(registry);
+	registerRecordingRecoveryCommands(registry);
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
 	registerSurfaceCommands(registry);

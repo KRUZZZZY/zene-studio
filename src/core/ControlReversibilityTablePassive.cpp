@@ -103,6 +103,16 @@ const ReversibilityRow kPassiveRows[] = {
 		"write before.state_xml to a file, plugin.load the same dev-<n> onto "
 		"the same target, then plugin.state_load that file. The chain ORDER "
 		"is not restored"),
+	R("record.recovery_discard", RC::Irreversible, false,
+		"refusing the offer REMOVES the journal file, and the offer is the "
+		"journal: no engine record holds the bytes it carried, and the project "
+		"journal holds nothing for a side file beside a take",
+		"none. The transaction's before-state holds the journal's whole contents "
+		"(take, state, sample rate, channels, the frame count it recorded, the "
+		"project and track it named) so a caller can see exactly what was refused",
+		"the take's own WAV is NEVER deleted by this command - it stays on disk at "
+		"before.take, which is the fallback: bring it in by hand, and re-create the "
+		"offer with record.journal_begin if the crash story is still wanted"),
 
 	// =====================================================================
 	// writes nothing (or refuses every call) - there is no transaction, and
@@ -360,6 +370,25 @@ const ReversibilityRow kPassiveRows[] = {
 		"the notes of a clip that carry one",
 		"no write: note.expression_set and note.expression_clear are the "
 		"writers, and both carry a MidiClip checkpoint", ""),
+
+	// Punch in/out and the take journal's inspectors (0.3.0).
+	R("transport.punch_get_state", RC::NotMutating, false,
+		"reads the transport's punch region (its range, its arm flag) and "
+		"Timeline::punchCapturesAt() at the current play position - the gate's own "
+		"answer - so a caller can see whether a capture starting here would be "
+		"inside the region. Nothing is written",
+		"no write: transport.punch_set and transport.punch_clear are the writers, "
+		"and both carry a Timeline checkpoint", ""),
+	R("record.recovery_get_state", RC::NotMutating, false,
+		"READS a directory for take journals an abnormal exit left behind and "
+		"measures each take's own file for its frame count; it creates, rewrites "
+		"and removes nothing, so there is no transaction for control.undo to "
+		"reverse or to be blocked by",
+		"no write: record.journal_begin / journal_update / journal_finish are the "
+		"writers, record.recovery_restore and record.recovery_discard resolve an "
+		"offer. The recoverable count it reports is the smaller of what the "
+		"journal recorded and what the take's file holds, so the reading cannot "
+		"promise audio that is not on disk (include/RecordingJournal.h)", ""),
 
 	// The groove pool's read-only inspector (docs/GROOVE-POOL.md). Its six
 	// mutating siblings have their own rows: groove.apply and groove.quantize

@@ -153,6 +153,13 @@ set(LMMS_SRCS
 	# commands that expose them (SPEC A16, task #623).
 	core/ControlCommandsUndo.cpp
 	core/ControlCommandsTransportMap.cpp
+	# Punch in/out (0.3.0): the transport's punch region, on the transport group.
+	core/ControlCommandsPunch.cpp
+	# Recording crash recovery (0.3.0): the take journal and the two halves of the
+	# record.* group (the journalling verbs and the recovery verbs).
+	core/ControlCommandsRecording.cpp
+	core/ControlCommandsRecordingRecovery.cpp
+	core/ControlRecordingSupport.cpp
 	core/ControlCommandsWarp.cpp
 	core/ControlCommandsWarpEdit.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
@@ -257,6 +264,9 @@ set(LMMS_SRCS
 	# translation unit (include/ProjectJournal.h documents both).
 	core/ProjectJournalBounds.cpp
 	core/ProjectRecovery.cpp
+	# The take journal: what makes a recording in progress recoverable after an
+	# abnormal exit (0.3.0, docs/KNOWN-LIMITATIONS.md for the stated bound).
+	core/RecordingJournal.cpp
 	core/ProjectIds.cpp
 	core/ProjectRenderer.cpp
 	core/ProjectRevisions.cpp

@@ -345,15 +345,29 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **155 rows**, measured from the table itself:
-**84 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 59 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **164 rows**, measured from the table itself:
+**86 `true_inverse`, 13 `snapshot`, 4 `irreversible`, 61 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**153 rows / 57 `not_mutating`** - which is the base
+**162 rows / 59 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before.
+what left one of them stale before. The nine rows the punch in/out and recording crash-recovery lane
+added are the last of these: `transport.punch_set` and `transport.punch_clear` are `true_inverse` (a
+live `Timeline` checkpoint), the three journal verbs and `record.recovery_restore` are `snapshot` (the
+inverse is the paired command - a side file beside a take is not project state),
+`record.recovery_discard` is `irreversible` (removing the offer has no inverse; the take's WAV is the
+documented fallback), and `transport.punch_get_state` / `record.recovery_get_state` are `not_mutating`
+inspectors. The four rows the freeze/bounce lane's fix batch carries are `bounce.in_place`
+(`not_mutating`: it writes an output artefact, like `render.render`) and `freeze.track`,
+`freeze.region`, `freeze.unfreeze` (live Track checkpoints, because the take and the muted flags it
+records are both part of the track's own serialized state). `ReversibilityContractTest` asserts both
+sets, so a row added or moved between classes cannot ship with this page quoting the old split. The
+155-row figure this page carried before this merge was the pre-punch table's, and the 157 the
+incoming lane's own page quoted was measured on that lane's base, which does not carry the groove
+lane's seven rows - neither is the merged tree's, and this page now states the merged tree's own
+measurement of it. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
 (`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
 
 The seven rows the 0.3.0 groove lane added are `groove.list` (one `not_mutating`), `groove.apply` and
@@ -535,6 +549,82 @@ section 5 is the argument for each.
   registration in `~/.hermes/config.yaml`, which points at a scratch copy outside this repository; until that
   entry is re-pointed at this tree's `tools/mcp-zene-control`, the session's offline list is the stale 70.
   See `docs/KNOWN-LIMITATIONS.md`.
+
+## Punch in/out (`transport.punch_*`) — added 2026-09-13
+
+- **New: a punch region on the transport.** `transport.punch_set` sets the tick range `[start, end)` that
+  capture is gated to and arms it (or sets the range with `"enabled": false`), `transport.punch_clear` disarms
+  and forgets it, and `transport.punch_get_state` reads the range, the arm flag and `punch_active` — the gate's
+  own answer at the current play position. The region lives on `Timeline`, the design's own host for a punch
+  range (`docs/CLIP-CAPTURE-DESIGN.md` slice B), so it is written with the project as `punch0pos` / `punch1pos`
+  / `punchstate` on the `<timeline>` element — **only when it is set or armed**, so a project that never punched
+  re-saves exactly the bytes it always had — and `Timeline::loadSettings` clears it when the attributes are
+  absent, which is what lets a checkpoint taken before the first punch take the region back off.
+- **Control surface:** `transport.punch_set` and `transport.punch_clear` are `true_inverse` (a live `Timeline`
+  checkpoint; the timeline is a `JournallingObject` with its own id), and `transport.punch_get_state` writes
+  nothing. The ids keep the `transport.` prefix the tempo map's half of the group uses — the region belongs to
+  the transport, so an agent finds it where it finds the transport.
+- **UI absence — one line: punch in/out is drivable through the socket, not from the interface.**
+  Nothing in `src/gui/` draws a punch ruler, a region handle or a punch toggle.
+- **Stated limit, in the same place as the claim:** 0.3.0 ships the region and the gate
+  (`Timeline::punchCapturesAt()`), and **does not wire the audio-side capture gate** — this build has no
+  capture path to gate (ALSA records nothing; the two-track prototype is fed by tests), so a gate here would be
+  a change no test could exercise. `docs/KNOWN-LIMITATIONS.md` carries the sentence and the reason.
+- **The defect the round trip found, and the fix.** The first version of these verbs used
+  `song->getTimeline()`, the no-argument accessor. `Song::m_playMode` is `PlayMode::None` until
+  playback starts, so that accessor addresses `m_timelines[None]` — a **different** timeline from the
+  one the project carries (`Song::saveProjectFile` writes `getTimeline(PlayMode::Song)` and
+  `Song::loadProject` restores that one). The region was therefore real and drivable and tested
+  correctly at every boundary, and **vanished on the first save**: the punch-region transcript caught
+  it, because it reads the `punch0pos` attribute out of the saved file rather than trusting the
+  reply. The verbs now address the SONG transport explicitly (`songTransport()`), which is also the
+  transport a recording runs on (`Song::playAndRecord()` sets the mode to Song). This is the class of
+  defect the four-part scope contract exists to catch: an engine feature that works everywhere except
+  where the user will need it.
+- **Proof:** the registered ctest `ControlPunchTranscript` (`tests/control-punch-transcript.py`) drives a real
+  instance over `--control-socket`: it sets the region, then **asserts the gate on both sides of both
+  boundaries** (true at `start`, true inside, true at `end - 1`, false at `end`, false past it, false before
+  it), requires the range to survive `project.save` / `project.open` after the session has been moved
+  elsewhere, reads the three attributes out of the saved file rather than trusting the reply, requires a
+  session that never punched to carry NO punch attribute at all, and takes a first-ever region back off with one
+  `control.undo`.
+
+## Recording crash recovery (`record.*`) — added 2026-09-13
+
+- **New: a recording in progress is journalled, and the next start can recover it.** A capture writes a small
+  side file beside its take (`<take>.rec-journal`: the take, the sample rate, the frames the disk-writer had
+  flushed and when) through `record.journal_begin` / `record.journal_update` / `record.journal_finish`, and
+  `TrackRecorder::arm()` / `disarm()` are wired to the same journal — so a **clean stop leaves no journal**,
+  which is what makes "there is a journal" and "the capture died" the same fact. After an abnormal exit,
+  `record.recovery_get_state` finds the interrupted captures and reports each one's `frames_journalled`,
+  `frames_in_file` (measured from the take's own RIFF header, **falling back to the file's real byte length**
+  when a crashed header was never updated) and `frames_recoverable`; `record.recovery_restore` takes an offer,
+  and `record.recovery_discard` refuses one.
+- **Control surface:** the three journal verbs and `record.recovery_restore` are `snapshot` (the inverse is the
+  paired command, dispatched by `control.undo` — a side file is not project state, so no checkpoint can hold
+  it); `record.recovery_discard` is `irreversible` and `control.undo` fails typed, naming the fallback;
+  `record.recovery_get_state` writes nothing.
+- **THE BOUND, stated rather than implied.** **Guaranteed recoverable is `min(frames the journal recorded,
+  frames the take's file holds)`** — the reported number can never promise audio that is not on disk. **NOT
+  recoverable:** the audio written after the journal's last update (the journal lags by at most one second of
+  audio, `RecordingJournal::UpdateIntervalFrames`) and up to **65536 frames** still in the recorder's ring
+  buffer when the process died — audio that never reached a file. `include/RecordingJournal.h` is the
+  statement, `record.recovery_get_state` reports it per take, the registered ctest measures it.
+- **UI absence — one line: recording crash recovery is drivable through the socket, not from the interface.**
+  Nothing in `src/gui/` offers a recovery prompt, and `record.recovery_restore` does not yet put the recovered
+  take into the session — no command in 0.3.0 imports an audio file onto a track as a clip, so restore resolves
+  the offer and hands the material back untouched (`audio_untouched: true`, with `next_step` naming the
+  deferred half). `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bound.
+- **Proof:** the registered ctest `ControlRecordingRecovery` (`tests/control-recording-recovery.py`) journals a
+  capture against a real WAV, **SIGKILLs the instance (a real abnormal exit: the test asserts exit code -9 and
+  that no shutdown ran)**, starts a SECOND instance against the same working directory, and requires the next
+  start to find the capture, to report `frames_in_file` equal to the WAV's own frame count, to report
+  `frames_recoverable` as the smaller of the journal's count and the file's, to place the measured
+  beyond-the-journal material **inside the stated one-second lag bound**, and to report the ring frames it
+  cannot recover. It then restores the take and requires the WAV to be byte-identical afterwards (sha256), the
+  offer to be gone, a discard to remove the journal while keeping the audio, one `control.undo` to take a
+  `record.journal_begin` back off by dispatching the paired command, and `control.undo` to refuse, typed,
+  after an irreversible discard.
 
 ## Not in this draft yet
 
