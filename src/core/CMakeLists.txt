@@ -43,6 +43,22 @@ IF(ZENE_TELEMETRY_ENABLED)
 	LIST(APPEND LMMS_TELEMETRY_COMMAND_SRCS core/ControlCommandsTelemetry.cpp)
 ENDIF()
 
+# The wasm.* command group is the WASM DSP sandbox's agent surface, so it travels
+# with the sandbox (SPEC A11-A16, item #614). The engine half is
+# src/wasm/WasmSandboxHost.{h,cpp}; this is the surface half. Kept in its own
+# variable so the big source list below keeps the position it has always had, and
+# registerControlCommands() guards its call with #ifdef LMMS_HAVE_WASM, so a build
+# without wasmtime neither compiles these translation units nor advertises ids
+# whose handler could not exist.
+SET(LMMS_WASM_COMMAND_SRCS)
+IF(WANT_WASM)
+	LIST(APPEND LMMS_WASM_COMMAND_SRCS
+		core/ControlWasmSupport.cpp
+		core/ControlCommandsWasm.cpp
+		core/ControlCommandsWasmEdit.cpp
+	)
+ENDIF()
+
 # Session View data layer (opt-in, see include/SessionModel.h). Pure Qt: the
 # model, the clip slots and scenes, and the versioned <session> block.
 IF(LMMS_HAVE_SESSION_VIEW)
@@ -125,6 +141,7 @@ set(LMMS_SRCS
 	core/ControlCommandsTransportMap.cpp
 	core/ControlCommandsWarp.cpp
 	core/ControlCommandsWarpEdit.cpp
+	${LMMS_WASM_COMMAND_SRCS}
 	core/ControlDeviceCatalogue.cpp
 	core/ControlDeviceHosted.cpp
 	core/ControlDeviceState.cpp

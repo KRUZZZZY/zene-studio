@@ -164,8 +164,52 @@ const ReversibilityRow kSnapshotRows[] = {
 		"re-add recreates exactly",
 		"the recorded inverse is the paired COMMAND browser.tag.add with this "
 		"path and tag (`applies: command`), dispatched by control.undo; the "
-		"tag set the edit started from is in the transaction's before-state",
+		"the tag set the edit started from is in the transaction's before-state",
 		""),
+#ifdef LMMS_HAVE_WASM
+	// =====================================================================
+	// The wasm.* group (item #614) - the WASM DSP sandbox's agent surface. A
+	// hosted module is not project state: it lives in the host process, is
+	// saved nowhere and is not a JournallingObject, so its inverse is a
+	// recorded ACTION (the paired command) and never a checkpoint. The rows
+	// travel with the sandbox: a build without the wasmtime C API compiles the
+	// group out (src/core/ControlRegistry.cpp guards the registration with the
+	// same #ifdef), so these three commands leave the registry and their rows
+	// leave this table with them.
+	// =====================================================================
+	R("wasm.load", RC::Snapshot, true,
+		"the hosted module is process state, not project state: it is not "
+		"serialized, the project journal cannot hold it, and hosting a different "
+		"module over one destroys the instance that was there - which is also "
+		"why a refused load changes nothing (the host compiles into a fresh "
+		"sandbox and commits only on success)",
+		"the recorded inverse is the paired COMMAND - wasm.load with the path "
+		"hosted before this call (`applies: command`), or wasm.unload when "
+		"nothing was hosted - which control.undo dispatches through the "
+		"registry; before.path holds that path. Re-hosting instantiates from a "
+		"COLD memory image, so the module's own memory and its parameter slots "
+		"are NOT restored (docs/WASM-EFFECT-ABI.md section 7)",
+		""),
+	R("wasm.unload", RC::Snapshot, true,
+		"dropping the module releases its wasmtime store, and the instance with "
+		"everything it held goes with it; nothing the project journal holds can "
+		"bring that instance back",
+		"the recorded inverse is the command wasm.load with the dropped module's "
+		"path (`applies: command`), dispatched by control.undo, and before.path "
+		"holds the same path",
+		""),
+	R("wasm.set_param", RC::Snapshot, true,
+		"a parameter slot lives in the host's sandbox, not in an AutomatableModel: "
+		"it is neither serialized with the project nor journalled, so no engine "
+		"checkpoint can hold it",
+		"the recorded inverse is the command wasm.set_param with the slot's "
+		"previous value (`applies: command`) and before.value holds it, so one "
+		"control.undo puts the host's own value back. A module is free to ignore "
+		"host_get_param() entirely - there is no parameter ABI beyond the index - "
+		"so what the inverse restores is the host's slot, not the module's "
+		"behaviour",
+		""),
+#endif // LMMS_HAVE_WASM
 };
 
 constexpr int kSnapshotRowCount = static_cast<int>(sizeof(kSnapshotRows) / sizeof(kSnapshotRows[0]));

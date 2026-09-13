@@ -217,13 +217,20 @@ not rounded up.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON but **degrades to OFF** when the wasmtime C API is absent
   (`CMakeLists.txt`), and CI provisions none, so it is compiled out in practice. The `advertised-features.tsv`
   "required OFF" row holds by dependency absence, not by choice; `docs/INDEPENDENT-NOTES-READ.md` B5 raises this and
-  it is not closed. **Added 2026-09-13 (`#614`):** the ABI is now documented from the host source
-  (`docs/WASM-EFFECT-ABI.md`) and a conformance suite plus one example effect are committed as **source**
-  (`tests/src/wasm/WasmAbiConformanceTest.cpp`, `tests/data/wasm-effect-abi/softclip.wat`), registered under the
-  same `if(WANT_WASM)` guard as `WasmSandboxTest` — **and neither has been executed**, because no build here
-  compiles them. That is documentation and conformance material, not a capability. **B5 stays open until the
-  wasmtime C API is in the build environment** (`scripts/fetch-wasmtime.sh` installs the pinned v48.0.1 prebuilt,
-  `cmake -DWANT_WASM=ON -DWASMTIME_ROOT=<prefix>` picks it up), which would turn the required-OFF row from an
+  it is not closed. **Added 2026-09-13 (`#614`):** the ABI is documented from the host source
+  (`docs/WASM-EFFECT-ABI.md`), a conformance suite plus one example effect are committed
+  (`tests/src/wasm/WasmAbiConformanceTest.cpp`, `tests/data/wasm-effect-abi/softclip.wat`), and since
+  `030/w21-wasm-run` the sandbox is **present and runnable on a box that has the C API and drivable through
+  `--control-socket`** — six `wasm.*` commands (list / get_state / load / unload / set_param / process),
+  declared, defined and registered only under `#ifdef LMMS_HAVE_WASM`, with the committed transcript
+  `tests/control-wasm-sandbox.py` as the proof. **The release is unchanged by that:** none of the seven CI jobs
+  provisions wasmtime, so every released binary still has `WANT_WASM=OFF`, and the required-OFF row is still
+  true — it is simply no longer *only* a documentation item where the dependency is present. **The group drives
+  the HOST's sandbox, not a device's**: it does not put a module into an effect's audio path, and a module
+  hosted that way is not heard. **B5 stays open until the wasmtime C API is in CI**
+  (`scripts/fetch-wasmtime.sh` installs the pinned v48.0.1 prebuilt,
+  `cmake -DWANT_WASM=ON -DWASMTIME_ROOT=<prefix>` picks it up; the tree's own `min/` variant lacks
+  `wasmtime_module_new` and cannot link the sandbox), which would turn the required-OFF row from an
   absence-by-dependency into a choice and force `tests/advertised-features.tsv` and the honesty gate to be
   reconciled in the same commit.
 - **VST3 instrument regression tests** — `WANT_VST3_TEST_INSTRUMENT` defaults **OFF** (`tests/CMakeLists.txt`); the

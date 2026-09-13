@@ -117,6 +117,7 @@ include/ControlServer.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
+include/ControlWasmSupport.h
 include/Controller.h
 include/ControllerConnection.h
 include/ControllerConnectionDialog.h
@@ -929,6 +930,8 @@ src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
+src/core/ControlCommandsWasm.cpp
+src/core/ControlCommandsWasmEdit.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
@@ -949,6 +952,7 @@ src/core/ControlSession.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
+src/core/ControlWasmSupport.cpp
 src/core/Controller.cpp
 src/core/ControllerConnection.cpp
 src/core/CrashReporter.cpp
@@ -1244,6 +1248,8 @@ src/tracks/SampleTrack.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
+src/wasm/WasmSandboxHost.cpp
+src/wasm/WasmSandboxHost.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h

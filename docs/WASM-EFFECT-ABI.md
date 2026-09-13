@@ -208,9 +208,13 @@ linker defines exactly the three functions in §1 (`WasmSandbox.cpp:146-170`) an
 - **There is no parameter ABI beyond the index.** A module cannot declare a parameter's name, range,
   default, unit or automation behaviour to the host; the host has 16 anonymous floats. Everything a
   module wants beyond that must ride in its own module state.
-- **Parameters are not drivable through the control surface in this release.** No `wasm.*` command
-  group exists (`grep` over `src/core/ControlCommands*.cpp` finds no `wasm.` id), so the release's
-  "everything is operable through `--control-socket`" promise does not reach this feature. See §13.
+- **The parameter slots ARE drivable through the control surface, with one qualification that matters.**
+  `wasm.set_param {index, value}` writes any of the 16 slots in the **host's own** sandbox and reports the
+  slot's previous value; `wasm.get_state` reads all 16 back. What it does not do is reach the **effect
+  instance's** sandbox: a `wasm_effect` device's 8 parameter models are project state, and those are reached
+  with `plugin.param_get` / `plugin.param_set` on the device's `fx-<n>` id. So the ABI's "16 anonymous
+  floats" are addressable, and the plugin's 8-model surface is addressable, but they are two different
+  objects and neither command crosses over. See §13.
 
 ## 7. How sample rate and block size reach the module
 

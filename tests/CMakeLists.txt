@@ -1162,6 +1162,25 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 		)
 	endif()
+	# wasm.* (item #614): host the ABI example effect in the WASM DSP sandbox
+	# END TO END through --control-socket, and read back what the ABI does with it.
+	# Registered only when the sandbox is compiled in (WANT_WASM, which needs the
+	# wasmtime C API on the find path - see CMakeLists.txt:957-963), because the
+	# commands it drives do not exist otherwise: a test that could not run must not
+	# be registered as one that passed. It takes no fixture beyond the committed
+	# example module, tests/data/wasm-effect-abi/softclip.wat, which was written
+	# from docs/WASM-EFFECT-ABI.md alone - so this is the first thing that ever
+	# executes that document's claims.
+	if(WANT_WASM)
+		add_test(NAME ControlWasmSandbox
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-wasm-sandbox.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlWasmSandbox PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+		)
+	endif()
 else()
 	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
 endif()
@@ -1431,15 +1450,22 @@ endif()
 # pass by doing nothing. There is no WANT_* option that gates the bridge: it is
 # Python under tools/, not a build target.
 #
-# The two options that remove a whole command group at compile time are passed in
-# as --compiled-out prefixes, so a non-release configuration is compared against
-# the ids it could actually register instead of being failed for the options it
-# chose: WANT_SESSION_VIEW=OFF drops the session.* group,
-# ZENE_TELEMETRY=OFF drops telemetry.*. The flag is checked in BOTH directions -
-# a prefix declared compiled out that the binary DOES register is a failure, so
-# the flag can never become a blindfold. Both default ON, which is the
-# configuration the committed snapshot was captured from and the release
-# configuration, so on a default build both are compared in full.
+# The three options that move a whole command group at compile time are passed in
+# as prefixes, so a non-release configuration is compared against the ids it could
+# actually register instead of being failed for the options it chose:
+# WANT_SESSION_VIEW=OFF drops the session.* group and ZENE_TELEMETRY=OFF drops
+# telemetry.* (both `--compiled-out`, because the snapshot was captured from the
+# release configuration, which has them), and WANT_WASM=ON with the wasmtime C API
+# on the find path ADDS the wasm.* group (item #614) - six ids the release snapshot
+# cannot carry, because the snapshot is one file and a configuration is not, so
+# that one is `--compiled-in`. Every flag is checked in BOTH directions - a prefix
+# declared compiled out that the binary DOES register is a failure, and one
+# declared compiled in that the binary does NOT register (or that the snapshot
+# already carries) is a failure too - so no flag can become a blindfold.
+# SESSION_VIEW and TELEMETRY default ON (the configuration the snapshot was
+# captured from); WANT_WASM defaults ON but degrades to OFF without the wasmtime C
+# API, which is every CI job, so on a default build the sandbox's ids are absent
+# on both sides and this test compares the release surface in full.
 # ---------------------------------------------------------------------------
 if(PYTHON3_EXECUTABLE)
 	set(ZENE_SNAPSHOT_COMPILED_OUT "")
@@ -1449,11 +1475,16 @@ if(PYTHON3_EXECUTABLE)
 	if(NOT ZENE_TELEMETRY_ENABLED)
 		list(APPEND ZENE_SNAPSHOT_COMPILED_OUT --compiled-out telemetry.)
 	endif()
+	set(ZENE_SNAPSHOT_COMPILED_IN "")
+	if(WANT_WASM)
+		list(APPEND ZENE_SNAPSHOT_COMPILED_IN --compiled-in wasm.)
+	endif()
 	add_test(NAME ControlCommandsSnapshot
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-commands-snapshot.py
 			$<TARGET_FILE:zene>
 			${ZENE_SNAPSHOT_COMPILED_OUT}
+			${ZENE_SNAPSHOT_COMPILED_IN}
 	)
 	set_tests_properties(ControlCommandsSnapshot PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

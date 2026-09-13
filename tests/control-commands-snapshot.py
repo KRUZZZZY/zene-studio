@@ -40,6 +40,17 @@ for a reason that is not drift. `tests/CMakeLists.txt` passes each one in as
 flag is checked in BOTH directions, so a flag naming a group the binary DOES
 declare is a failure rather than a silent blindfold.
 
+There is ONE option in the other direction, and it needs both directions checked
+for the same reason: `WANT_WASM=ON` with the wasmtime C API on the find path
+compiles the `wasm.*` group in (item #614, src/core/ControlCommandsWasm.cpp), so
+such a build has a LONGER live list than the release snapshot - six ids the
+offline list cannot carry, because the snapshot is one file and a configuration
+is not. `--compiled-in <prefix>` declares that, is checked in both directions
+too (declared but the binary registers none of them -> failure; declared and the
+snapshot carries them -> failure, because then the flag is not describing a
+difference), and `tests/CMakeLists.txt` passes `--compiled-in wasm.` exactly when
+it configured the sandbox in.
+
 SKIP, NOT PASS. Exit 77 (ctest reports "Skipped" through SKIP_RETURN_CODE) when
 the bridge package cannot be imported at all: that is the one condition under
 which this test cannot look at anything, and a test that cannot look must never
@@ -50,7 +61,7 @@ with a message(STATUS)) is the other configuration that does not run it.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python3 control-commands-snapshot.py <zene-binary> \
-        [--compiled-out PREFIX]...
+        [--compiled-out PREFIX]... [--compiled-in PREFIX]...
 
 Exit codes: 0 the snapshot matches; 1 drift, or the snapshot is unusable;
 2 cannot run (no binary at the path); 77 skipped (the bridge is not importable).
@@ -88,6 +99,11 @@ def parse_args(argv):
                         help="a command-id prefix this build's configuration removed at "
                              "compile time (session. for -DWANT_SESSION_VIEW=OFF, "
                              "telemetry. for -DZENE_TELEMETRY=OFF); repeatable")
+    parser.add_argument("--compiled-in", action="append", default=[], metavar="PREFIX",
+                        help="a command-id prefix this build's configuration ADDS to the "
+                             "surface, which the release snapshot therefore cannot carry "
+                             "(wasm. for -DWANT_WASM=ON with the wasmtime C API present); "
+                             "repeatable")
     return parser.parse_args(argv[1:])
 
 
@@ -167,18 +183,45 @@ def excused_ids(live, committed, prefixes):
     return excused, problems
 
 
-def compare(live, committed, prefixes):
+def admitted_ids(live, committed, prefixes):
+    """(ids a --compiled-in flag excuses, problems with the flag itself).
+
+    The mirror of excused_ids. These are ids this configuration ADDS, which a
+    snapshot captured from the release configuration cannot carry: the snapshot
+    is one file and a configuration is not. Checked in both directions for the
+    same reason excused_ids is - a prefix the binary does not register describes
+    nothing, and a prefix the snapshot already carries would excuse real drift.
+    """
+    problems = []
+    admitted = set()
+    for prefix in prefixes:
+        present = {entry for entry in live if entry.startswith(prefix)}
+        if not present:
+            problems.append("--compiled-in %s names no id this binary registers, so the flag "
+                            "does not describe this build" % prefix)
+            continue
+        if any(entry.startswith(prefix) for entry in committed):
+            problems.append("--compiled-in %s was declared, but the snapshot ALREADY carries "
+                            "ids with that prefix: the flag would excuse real drift" % prefix)
+            continue
+        admitted |= present
+    return admitted, problems
+
+
+def compare(live, committed, compiled_out, compiled_in):
     """Every way the two id sets can disagree.
 
-    Returns (problems, absent, extra, excused):
+    Returns (problems, absent, extra, excused, admitted):
       * `absent` - ids this binary registers and the snapshot does not offer: the
         snapshot is stale, or a new command group was never regenerated into it.
       * `extra`  - ids the snapshot offers and this binary does not register: a group
         was removed or renamed and the offline list still advertises it.
     """
     live_set = set(live)
-    excused, problems = excused_ids(live, committed, prefixes)
-    absent = sorted(live_set - committed)
+    excused, problems = excused_ids(live, committed, compiled_out)
+    admitted, admitted_problems = admitted_ids(live, committed, compiled_in)
+    problems += admitted_problems
+    absent = sorted(live_set - committed - admitted)
     extra = sorted(committed - excused - live_set)
     if absent:
         problems.append("%d command id(s) this binary registers are NOT in the snapshot"
@@ -186,13 +229,13 @@ def compare(live, committed, prefixes):
     if extra:
         problems.append("%d command id(s) the snapshot carries are NOT registered by this "
                         "binary" % len(extra))
-    return problems, absent, extra, excused
+    return problems, absent, extra, excused, admitted
 
 
-def print_diff(absent, extra, excused):
-    if excused:
-        print("excused by flags  %d command id(s) this configuration removed at compile time"
-              % len(excused))
+def print_diff(absent, extra, excused, admitted):
+    if excused or admitted:
+        print("excused by flags  %d id(s) this configuration removed at compile time, %d it adds"
+              % (len(excused), len(admitted)))
     for label, ids, why in (
             ("MISSING from the snapshot", absent,
              "the binary registers these; the offline list does not offer them"),
@@ -237,8 +280,9 @@ def main(argv):
         return 1
     print("binary            %s" % os.path.abspath(options.binary))
     live = live_ids(options.binary)
-    problems, absent, extra, excused = compare(live, committed, options.compiled_out)
-    print_diff(absent, extra, excused)
+    problems, absent, extra, excused, admitted = compare(
+        live, committed, options.compiled_out, options.compiled_in)
+    print_diff(absent, extra, excused, admitted)
     if problems:
         for item in problems:
             print("  - %s" % item)
@@ -246,7 +290,9 @@ def main(argv):
         return 1
     print("PASS: the committed offline snapshot and this binary register the SAME %d command "
           "id(s)%s" % (len(committed) - len(excused),
-                       "" if not excused else " (%d excused by --compiled-out)" % len(excused)))
+                       "" if not (excused or admitted)
+                       else " (%d excused by --compiled-out, %d admitted by --compiled-in)"
+                            % (len(excused), len(admitted))))
     return 0
 
 
