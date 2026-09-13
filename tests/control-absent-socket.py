@@ -335,6 +335,21 @@ def the_no_flag_instance_has_no_socket_and_exits_cleanly(binary, window_s):
     return (not problems), problems
 
 
+def probe_method_available():
+    """Is this test's observation method available on this platform?
+
+    The method is Linux-only: /proc/net/unix maps a socket inode to its path, and
+    /proc/<pid>/fd says what the process holds open right now - which is exactly the
+    question the absence claim asks. On Darwin (and anything else without procfs) the
+    probe returns nothing, the method control cannot see a real control socket, and the
+    test fails for its tooling rather than for the product. It skips loudly instead:
+    the no-socket claim is verified on Linux, and this platform's socket behaviour is
+    covered by the control tests that do run there. A skip is not a pass - nothing is
+    asserted here - and the message says so.
+    """
+    return os.path.isfile("/proc/net/unix") and os.access("/proc/net/unix", os.R_OK)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -343,6 +358,14 @@ def main():
     if not os.path.exists(binary):
         print("FAIL: no lmms binary at %s" % binary)
         return 1
+
+    if not probe_method_available():
+        print("SKIP: the no-socket claim is Linux-observable only - this test's method needs")
+        print("      /proc/net/unix (socket inode -> path) and /proc/<pid>/fd (what the process")
+        print("      holds open). Without procfs the probe cannot see a real control socket, so")
+        print("      its method control cannot pass and NOTHING is asserted here. That is a skip,")
+        print("      not a pass; the claim itself is verified on Linux.")
+        return 0
 
     results = []
 
