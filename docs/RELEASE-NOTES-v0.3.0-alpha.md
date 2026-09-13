@@ -541,9 +541,9 @@ section 5 is the argument for each.
   the **freshest** readable offline copy (`registry.rank_offline_bundles`) instead of the old cache-first
   order, which had let a 70-id 0.1.0-alpha cache leave **74 ids** of this tree's surface unreachable while
   the committed snapshot was current (`docs/COVERAGE-MATRIX-2026-09-13.md` §4.4). Measured by the test itself on
-  the merged tip (freeze + groove + the MCP lane together): **155 ids registered, 155 exposed live, 155
-  exposed offline** (157 tools with the two bridge-owned ones), **0 missing and 0 extra** in both directions
-  in all three modes — live, empty state directory, and with the stale cache planted and passed over.
+  the merged tip (freeze + groove + the MCP lane + punch/recording crash recovery together): **164 ids
+  registered, 164 exposed live, 164 exposed offline** (166 tools with the two bridge-owned ones), **0 missing
+  and 0 extra** in both directions in all three modes — live, empty state directory, and with the stale cache planted and passed over.
 - **UI absence — one line:** none of this is in the interface; the tool list exists only through the MCP
   bridge over a control socket. **And the limit, stated plainly:** a Hermes session reads the bridge from the
   registration in `~/.hermes/config.yaml`, which points at a scratch copy outside this repository; until that
