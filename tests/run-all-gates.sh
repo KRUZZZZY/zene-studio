@@ -12,23 +12,29 @@
 #                                               # Upstream code is grandfathered in
 #                                               # tests/*-baseline-all.tsv.
 #
-# SCOPE POLICY (2026-09-12, corrected 2026-09-13). The default run is the ENFORCED scope: the
-# fork scope plus the tools scope, which is also what CI's static-gates job runs. The whole-tree
-# scope is NOT part of a default run, and saying so is the point of the summary's scope line:
-# between the post-alpha merges and 2026-09-12 the all-scope ratchets were red while every
-# default run and every CI job reported green, because nothing that runs by default measured
-# them. They were reconciled on 2026-09-12, with the reasons recorded in tests/QA-GATES.md
-# "Scope policy" and printed by the two --reanchor runs, and they are refreshed with
-# `--reanchor "reason"` at integration points, never silently. **The all scope is RED again at
-# the 0.2.1-alpha tip (2026-09-13, post-alpha/integration @ 5565b4b1b)**: `--check --scope all`
-# exits 1 on tests/complexity-gate.sh (28 regression lines) and on tests/file-length-gate.sh
-# (34). The fork and tools scopes this script runs by default are green — the disagreement is a
-# stale all-scope baseline (the fork manifest holds 244 files, the all manifest 1,263, and 55 of
-# the 62 failing lines are in files the fork manifest does not list at all), not a product
-# regression the fork ratchets missed. The smallest honest action is a decision, not a silence:
-# a per-file recorded re-anchor naming tests/upstream-modifications.txt for the inherited
-# growth, or leaving the scope red and recorded as the owner's. Run `--whole-tree` before a
-# freeze and before publishing a release.
+# SCOPE POLICY (2026-09-12, corrected 2026-09-13; the whole-tree scope is GREEN again as of the
+# 0.3.0 W2-process lane). The default run is the ENFORCED scope: the fork scope plus the tools
+# scope, which is also what CI's static-gates job runs. The whole-tree scope is NOT part of a
+# default run, and saying so is the point of the summary's scope line: between the post-alpha
+# merges and 2026-09-12 the all-scope ratchets were red while every default run and every CI job
+# reported green, because nothing that runs by default measured them.
+#
+# 2026-09-13 (W2-process): the all scope went red a third time at the 0.2.1-alpha tip
+# (`post-alpha/integration` @ 5565b4b1b, carried into 70f2d087c) — 28 complexity and 34
+# file-length regression lines — while three documents still said it was green. The decision taken
+# was the "smallest honest action" the handoff named, executed as a recorded act rather than a
+# whole-scope `--reanchor`: **49 per-path `--reanchor-file <path> "<reason>"` calls** over 35
+# distinct files (15 complexity paths, 34 file-length paths; one file can need both), each reason
+# naming the path, its measured growth and its class — 36 of the 49 sit in 24 upstream-inherited
+# files declared in tests/upstream-modifications.txt, 4 in 3 fork-authored product sources, 9 in 8
+# fork-authored test sources that the all scope measures because tests/fork-sources.txt
+# deliberately excludes test-side sources. The reasons and the path lists are recorded in
+# tests/QA-GATES.md ("Scope policy", "The 2026-09-13 re-anchor, per path"). A whole-tree run now
+# exits 0 on all three of its gates. Ratchets still move ONLY by a recorded act (never by hand,
+# never by trimming code): `--reanchor-file <path> "<reason>"` per file, or a whole-scope
+# `--reanchor "<reason>"` at an integration point, with the reason naming the CI failure or the
+# growth accepted, and TOLERANCE 0. Run `--whole-tree` before a freeze and before publishing a
+# release; it is no longer a scope that can be left red and unreported.
 #
 # Gate 2 (coverage) and Gate 5 (mutation) stay fork-scoped: their runs are expensive and
 # their baselines are meaningful per-file. Whole-tree coverage is measured separately

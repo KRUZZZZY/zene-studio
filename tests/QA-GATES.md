@@ -13,11 +13,17 @@ carries the command that regenerates it and the five `tests/src/core` entries it
 name, so this paragraph's figure is a dated measurement rather than an invariant.
 
 **Whole-tree scope (added 2026-09-11).** Gates 4, 7 and 8 also accept `--scope all`, which points
-them at `tests/all-sources.txt` — **1,133 first-party files** on 2026-09-12 (upstream-inherited
-code plus the fork's own). Their baselines are separate files (`tests/*-baseline-all.tsv`) so the
+them at `tests/all-sources.txt` — **1,263 first-party files** (upstream-inherited
+code plus the fork's own; the 2026-09-12 reading of this paragraph said 1,133). Their baselines are
+separate files (`tests/*-baseline-all.tsv`) so the
 two ratchets cannot shadow each other, and `run-all-gates.sh --whole-tree` runs the set. Measured
 whole-tree state on 2026-09-12, after the reconciliation recorded under "Scope policy" below:
-**9,462 functions with 275 over CCN 10; 112 files over 500 lines; 1.21% duplicated lines**. The
+**9,462 functions with 275 over CCN 10; 112 files over 500 lines; 1.21% duplicated lines**.
+**Re-measured 2026-09-13, after the per-path re-anchor and the manifest regeneration recorded under
+"Scope policy": 10,864 functions with 282 over CCN 10 (281 rows in `tests/complexity-baseline-all.tsv`
+— the keyed baseline keeps the worst value where a qualified name repeats in one file); 121 files over
+500 lines (121 rows in `tests/file-length-baseline-all.tsv`, 1,262 sources measured because
+`tests/file-length-exempt.txt` exempts one); 1.29 % duplicated lines; all three gates exit 0.** The
 whole-tree coverage ratchet lives in
 [`docs/CONVENTIONS.md`](https://github.com/KRUZZZZY/zene-studio/blob/main/docs/CONVENTIONS.md) and
 was **not** re-measured here (it needs an instrumented build). Everything in *this* document below
@@ -121,15 +127,19 @@ Only two of them run by default, and that gap is the defect this section exists 
 |---|---|---|---|
 | **fork** (default) | `tests/fork-sources.txt` (129) | `run-all-gates.sh`, CI `static-gates`, every gate's bare invocation | **GREEN** — and this is the **release gate**, per `docs/CONVENTIONS.md` |
 | **tools** (default) | `tests/tools-sources.txt` (12) | `run-all-gates.sh` (same gate rows), CI `static-gates` (own steps) | **GREEN** |
-| **whole tree** (advisory) | `tests/all-sources.txt` (1,133) | **nothing by default** — `run-all-gates.sh --whole-tree`, or `--scope all` by hand | **RED at the 0.2.1-alpha tip (2026-09-13)** — GREEN on the 2026-09-12 tree this table records, and RED and unreported before that; see the correction below |
+| **whole tree** (advisory) | `tests/all-sources.txt` (1,263) | **nothing by default** — `run-all-gates.sh --whole-tree`, or `--scope all` by hand | **GREEN since 2026-09-13** — red at the 0.2.1-alpha tip, and red and unreported before the 2026-09-12 pass; reconciled a third time on 2026-09-13 by a recorded per-path re-anchor (below) |
 
-**Correction — the all scope is red again at the 0.2.1-alpha tip (2026-09-13, `post-alpha/integration`
-@ `5565b4b1b`).** The 2026-09-12 reconciliation above did not hold to the tip. Re-measured 2026-09-13:
-`bash tests/complexity-gate.sh --check --scope all` exits **1** with **28** regression lines, and
-`bash tests/file-length-gate.sh --check --scope all` exits **1** with **34** — 62 regression lines over
-35 distinct files. The scopes that CI and `run-all-gates.sh` run by default are still **green**: the
-fork scope and the tools scope each exit 0 on both gates. The counts in the table above are the
-2026-09-12 ones; the manifests have grown since (fork **244** files, all **1,263**).
+**Correction, and then the resolution (2026-09-13, `030/w2-process`).** The 2026-09-12 reconciliation
+did not hold to the 0.2.1-alpha tip. Re-measured at `post-alpha/integration` @ `5565b4b1b` (carried into
+`70f2d087c`): `bash tests/complexity-gate.sh --check --scope all` exited **1** with **28** regression
+lines, and `bash tests/file-length-gate.sh --check --scope all` exited **1** with **34** — 62 regression
+lines over 35 distinct files — while three documents still said the scope was green. That is the defect
+`HANDOFF-0.2.0-RELEASE.md` §0.37 recorded, and the 0.3.0 W2-process lane took the decision it named.
+The scope is **green** now, on a recorded act rather than a silence:
+`--check --scope all` exits **0** on complexity, file-length and duplication, and
+`run-all-gates.sh --whole-tree --no-mutation` exits **3** (gates 1/2/5 skipped: no build). The scopes
+CI and a default `run-all-gates.sh` run (fork + tools) were green before and after, and their baselines
+were not touched by any of it.
 
 **Why the two scopes can disagree, stated plainly.** The fork manifest holds **244** files and the all
 manifest **1,263** first-party C/C++ sources (upstream LMMS plus the fork's own), and the two sets are
@@ -138,16 +148,110 @@ the remaining 7 are in four files both scopes list, where the fork-scope entry i
 exits 0) and only the all-scope entry is stale. So this is a stale whole-tree baseline, not a product
 regression the fork ratchets missed.
 
-**The smallest honest action, named rather than implied.** For each failing file, one
-`--reanchor-file <path> "<reason>"` on the all-scope baseline, the reason naming the file, its measured
-size or CCN, the delta, the commit that moved it and — for an inherited file — the corresponding row in
-`tests/upstream-modifications.txt`; **or** leave the scope red and record it as the owner's decision,
-which is what the planned **GATE-1** (*cut the gate suite to what changes behaviour*) and **GATE-2**
-(*measure coverage over the whole fork scope, once, in one job*) rows in the program's planned-work
-master list cover. What is not honest is neither: a red scope that no run reports is the defect the
-2026-09-12 pass existed to close. A re-anchor is not a silencer — every entry needs a recorded reason
-and an unrecorded re-anchor exits 2 (`docs/CONVENTIONS.md` rule 4). Re-anchoring is a decision, so this
-page records it rather than making it.
+**The action taken, per path (2026-09-13, `030/w2-process`).** The decision was the small one the
+paragraph above named, executed as a recorded act: **49 `--reanchor-file <path> "<reason>"`
+invocations on the two whole-tree baselines** — 15 complexity paths and 34 file-length paths, over
+35 distinct files (a file can need both). Every invocation exited 0 and moved exactly one path's
+entries; nothing else in either baseline was touched, and no code was trimmed. The class counts:
+
+| class | re-anchored path-scope entries | distinct files |
+|---|---|---|
+| upstream-inherited (declared in `tests/upstream-modifications.txt`) | 36 | 24 |
+| fork-authored product source (`tests/fork-sources.txt`) | 4 | 3 |
+| fork-authored test source (measured by the all scope) | 9 | 8 |
+| **total** | **49** | **35** |
+
+The shared reason shape, per file (the gate prints it; the baselines do not carry it, so it is
+recorded here): *"whole-tree baseline catch-up for <class>. The -all baselines were last written by
+`cd45da4ef` (2026-09-12 02:21) and the merged tree moved past them; the fork-scope ratchet CI
+enforces is green on the same tree, which is why nothing else reported it. Growth accepted:
+<the measured regression line>. Re-anchored per file, per the rule that a ratchet moves only by a
+recorded act; no code was trimmed and TOLERANCE is 0 elsewhere."*
+
+Every path re-anchored, with the growth the reason named:
+
+| scope | path | class | growth accepted |
+|---|---|---|---|
+| C | `plugins/LadspaEffect/LadspaEffect.cpp` | inherited | lmms::LadspaEffect::pluginInstantiation@267-547@plugins/LadspaEffect/LadspaEffect.cpp CCN rose 36 -> 40 |
+| C | `plugins/Vst3Effect/Vst3Host.cpp` | fork | lmms::vst3::HostedPlugin::load@268-411@plugins/Vst3Effect/Vst3Host.cpp CCN rose 25 -> 27 ;; lmms::vst3::HostedPlugin::prepare@565-662@plugins/Vst3Effect/Vst3Host.cpp CCN rose 13 -> 14 ;; lmms::vst3::HostedPlugin::process@714-785@plugins/Vst3Effect/Vst3Host.cpp CCN rose 12 -> 13 |
+| C | `src/core/AudioEngine.cpp` | inherited | lmms::AudioEngine::tryAudioDevices@763-920@src/core/AudioEngine.cpp CCN rose 35 -> 36 |
+| C | `src/core/ConfigManager.cpp` | inherited | lmms::ConfigManager::loadConfigFile@424-620@src/core/ConfigManager.cpp CCN rose 50 -> 51 |
+| C | `src/core/DataFile.cpp` | inherited | lmms::DataFile::writeFile@359-535@src/core/DataFile.cpp CCN rose 13 -> 21 ;; lmms::DataFile::loadData@2235-2318@src/core/DataFile.cpp CCN rose 16 -> 17 |
+| C | `src/core/Mixer.cpp` | inherited | lmms::MixerChannel::doProcessing@421-575@src/core/Mixer.cpp CCN rose 16 -> 20 ;; lmms::Mixer::deleteChannel@870-987@src/core/Mixer.cpp CCN rose 19 -> 20 ;; lmms::Mixer::loadSettings@1925-2059@src/core/Mixer.cpp CCN rose 13 -> 20 ;; lmms::Mixer::masterMix@1632-1751@src/core/Mixer.cpp CCN rose 16 -> 18 ;; lmms::Mixer::moveChannelLeft@991-1068@src/core/Mixer.cpp CCN rose 13 -> 14 ;; new function over target: lmms::Mixer::saveSettings@1820-1909@src/core/Mixer.cpp (CCN 12) |
+| C | `src/core/SampleClip.cpp` | inherited | new function over target: lmms::SampleClip::loadSettings@519-599@src/core/SampleClip.cpp (CCN 18) ;; new function over target: lmms::SampleClip::saveSettings@455-514@src/core/SampleClip.cpp (CCN 11) |
+| C | `src/core/Song.cpp` | inherited | lmms::Song::loadProject@1105-1404@src/core/Song.cpp CCN rose 31 -> 38 ;; lmms::Song::processNextBuffer@213-401@src/core/Song.cpp CCN rose 27 -> 34 ;; lmms::Song::processAutomations@404-519@src/core/Song.cpp CCN rose 14 -> 18 |
+| C | `src/core/Track.cpp` | inherited | lmms::Track::loadTrack@279-366@src/core/Track.cpp CCN rose 15 -> 18 |
+| C | `src/core/TrackContainer.cpp` | inherited | lmms::TrackContainer::loadSettings@85-171@src/core/TrackContainer.cpp CCN rose 15 -> 16 |
+| C | `src/core/main.cpp` | inherited | main@325-1362@src/core/main.cpp CCN rose 155 -> 173 |
+| C | `src/gui/MainWindow.cpp` | inherited | new function over target: lmms::gui::MainWindow::finalize@276-609@src/gui/MainWindow.cpp (CCN 12) ;; new function over target: lmms::gui::MainWindow::mayChangeProject@697-771@src/gui/MainWindow.cpp (CCN 12) |
+| C | `src/gui/editors/PianoRoll.cpp` | inherited | new function over target: lmms::gui::PianoRoll::finishRecordNote@4510-4556@src/gui/editors/PianoRoll.cpp (CCN 11) |
+| C | `src/tracks/InstrumentTrack.cpp` | inherited | lmms::InstrumentTrack::processInEvent@394-554@src/tracks/InstrumentTrack.cpp CCN rose 36 -> 39 ;; lmms::InstrumentTrack::play@792-939@src/tracks/InstrumentTrack.cpp CCN rose 26 -> 28 |
+| C | `tests/src/core/VcaGroupTest.cpp` | test | new function over target: stateOf@256-290@tests/src/core/VcaGroupTest.cpp (CCN 11) |
+| F | `include/AutomatableModel.h` | inherited | include/AutomatableModel.h grew 514 -> 623 lines |
+| F | `include/Mixer.h` | inherited | include/Mixer.h grew 502 -> 562 lines |
+| F | `include/Song.h` | inherited | include/Song.h grew 539 -> 587 lines |
+| F | `plugins/LadspaEffect/LadspaEffect.cpp` | inherited | plugins/LadspaEffect/LadspaEffect.cpp grew 556 -> 596 lines |
+| F | `plugins/MidiImport/MidiImport.cpp` | inherited | plugins/MidiImport/MidiImport.cpp grew 595 -> 598 lines |
+| F | `plugins/Vst3Effect/Vst3Host.cpp` | fork | plugins/Vst3Effect/Vst3Host.cpp grew 714 -> 800 lines |
+| F | `src/core/AudioEngine.cpp` | inherited | src/core/AudioEngine.cpp grew 974 -> 1039 lines |
+| F | `src/core/AutomatableModel.cpp` | inherited | src/core/AutomatableModel.cpp grew 761 -> 946 lines |
+| F | `src/core/ConfigManager.cpp` | inherited | src/core/ConfigManager.cpp grew 783 -> 895 lines |
+| F | `src/core/CrashReporter.cpp` | fork | src/core/CrashReporter.cpp grew 526 -> 564 lines |
+| F | `src/core/DataFile.cpp` | inherited | src/core/DataFile.cpp grew 2239 -> 2349 lines |
+| F | `src/core/EffectChain.cpp` | inherited | new file over 500 lines: src/core/EffectChain.cpp (505) |
+| F | `src/core/Mixer.cpp` | inherited | src/core/Mixer.cpp grew 1725 -> 2116 lines |
+| F | `src/core/NotePlayHandle.cpp` | inherited | src/core/NotePlayHandle.cpp grew 712 -> 721 lines |
+| F | `src/core/PluginFactory.cpp` | inherited | src/core/PluginFactory.cpp grew 688 -> 690 lines |
+| F | `src/core/SampleClip.cpp` | inherited | new file over 500 lines: src/core/SampleClip.cpp (610) |
+| F | `src/core/ScriptBindings.cpp` | fork | src/core/ScriptBindings.cpp grew 1169 -> 1174 lines |
+| F | `src/core/Song.cpp` | inherited | src/core/Song.cpp grew 1572 -> 1776 lines |
+| F | `src/core/Track.cpp` | inherited | src/core/Track.cpp grew 670 -> 726 lines |
+| F | `src/core/main.cpp` | inherited | src/core/main.cpp grew 1155 -> 1362 lines |
+| F | `src/core/midi/MidiAlsaSeq.cpp` | inherited | src/core/midi/MidiAlsaSeq.cpp grew 706 -> 718 lines |
+| F | `src/gui/MainWindow.cpp` | inherited | src/gui/MainWindow.cpp grew 1800 -> 1928 lines |
+| F | `src/gui/editors/PianoRoll.cpp` | inherited | src/gui/editors/PianoRoll.cpp grew 5939 -> 5947 lines |
+| F | `src/gui/editors/TrackContainerView.cpp` | inherited | new file over 500 lines: src/gui/editors/TrackContainerView.cpp (512) |
+| F | `src/gui/widgets/Fader.cpp` | inherited | src/gui/widgets/Fader.cpp grew 753 -> 766 lines |
+| F | `src/tracks/InstrumentTrack.cpp` | inherited | src/tracks/InstrumentTrack.cpp grew 1116 -> 1240 lines |
+| F | `tests/src/core/AutomationModesTest.cpp` | test | new file over 500 lines: tests/src/core/AutomationModesTest.cpp (652) |
+| F | `tests/src/core/RackTest.cpp` | test | new file over 500 lines: tests/src/core/RackTest.cpp (701) |
+| F | `tests/src/core/ScriptEngineTest.cpp` | test | tests/src/core/ScriptEngineTest.cpp grew 592 -> 627 lines |
+| F | `tests/src/core/SessionSchedulerTest.cpp` | test | new file over 500 lines: tests/src/core/SessionSchedulerTest.cpp (549) |
+| F | `tests/src/core/VcaGroupTest.cpp` | test | new file over 500 lines: tests/src/core/VcaGroupTest.cpp (1022) |
+| F | `tests/src/plugins/Vst3InstrumentIntegrationTest.cpp` | test | new file over 500 lines: tests/src/plugins/Vst3InstrumentIntegrationTest.cpp (616) |
+| F | `tests/src/tracks/SampleClipWindowTest.cpp` | test | new file over 500 lines: tests/src/tracks/SampleClipWindowTest.cpp (511) |
+| F | `tests/src/wasm/WasmSandboxTest.cpp` | test | tests/src/wasm/WasmSandboxTest.cpp grew 1022 -> 1025 lines |
+
+Verified after the last invocation, unpiped:
+
+```sh
+bash tests/complexity-gate.sh  --check --scope all   # EXIT=0
+bash tests/file-length-gate.sh --check --scope all   # EXIT=0
+bash tests/duplication-gate.sh --scope all           # EXIT=0
+bash tests/run-all-gates.sh --whole-tree --no-mutation  # EXIT=3 (gates 1/2/5 skipped: no build)
+```
+
+**The manifests were wrong in the other direction too, and regenerating found it.**
+`tests/all-sources.txt` did not hold `src/core/ControlServerSocket.cpp` — the file commit
+`2d959af8d`'s ratchet fix split out of `ControlServer.cpp` when the control-socket path fix grew
+that file past 500 lines with four over-CCN functions. The split file was registered in
+`tests/fork-sources.txt` (so Gate 9 was green) while the whole-tree scope measured neither it nor
+its entries: registered and unmeasured at the same time, the same class of defect Gate 9's own
+header records for `modules/wasm/demo/gain_clip.c`. The entry list was regenerated from the
+manifest's own command (`diff` against it now prints `REPRODUCES`); the file has no over-target
+function and is under 500 lines, so no baseline moved. Adding it is a widening of the advisory
+scope onto a source it was always supposed to measure, not a narrowing.
+
+**The 8 fork-authored test sources are measured by the all scope on purpose.** `tests/fork-
+sources.txt` excludes test-side sources by an explicit allow-list in its own regeneration
+command, and its header records the reason (integration wave 3A refused exactly that widening for
+`plugins/RnnoiseDenoiser/testdata/*.sh`). So `tests/src/core/{AutomationModesTest,RackTest,
+ScriptEngineTest,SessionSchedulerTest,VcaGroupTest}.cpp`, `tests/src/plugins/
+Vst3InstrumentIntegrationTest.cpp`, `tests/src/tracks/SampleClipWindowTest.cpp` and
+`tests/src/wasm/WasmSandboxTest.cpp` are inside `tests/all-sources.txt` — which is why Gate 9 is
+green and why the fork manifest was left alone here. HANDOFF-0.2.0-RELEASE.md §0.37 called them
+"files fork-sources.txt never registered"; this is the resolution of that observation: they are
+registered, in the whole-tree manifest, and re-anchored above with that class named in the reason.
 
 **The whole-tree scope was red from the post-alpha merges until 2026-09-12, and no default runner,
 CI job or merge record said so.** At `87b9a5397` it stood at 23 file-length regressions (5 new files

@@ -41,6 +41,15 @@
 # the other way round. An unpinned command therefore reported ~100 spurious line moves on every
 # regeneration, which is why this file was never actually re-derived from it. Byte order is
 # identical on every machine, which is what makes the verify step above mean something.
+#
+# 2026-09-13 (W2-process, the whole-tree ratchet decision). The entry list below is the
+# command's output again, which it was not: src/core/ControlServerSocket.cpp was missing
+# from this manifest. It is the file commit 2d959af8d's ratchet fix split out of
+# ControlServer.cpp when the control-socket path fix grew that file past 500 lines with four
+# over-CCN functions - so the split file was registered in tests/fork-sources.txt (Gate 9 was
+# green) while the whole-tree scope measured neither it nor its entries. Regenerating is what
+# found it; the file has no over-target function and is under 500 lines, so this adds a
+# measured file and moves no baseline.
 include/AboutDialog.h
 include/ActionGroup.h
 include/ArrayVector.h
@@ -899,6 +908,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
+src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
 src/core/ControlVocabulary.cpp
 src/core/Controller.cpp
