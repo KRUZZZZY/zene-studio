@@ -14,6 +14,12 @@ that is this page's fault — report it and it gets added.
 > Applied verbatim from `drafts/KNOWN-LIMITATIONS-v0.2.0-alpha-DRAFT.md` (reviewed) on
 > `post-alpha/release-prep` (base `post-alpha/integration` @ `34c1f4f86`) except for the marker resolutions
 > noted inline; the resolution table is `docs/RELEASE-PREP-0.2.0.md` §3.
+>
+> **2026-09-13 check.** Three claims on this page were re-checked against the tip (`post-alpha/integration` @
+> `5565b4b1b`) for the four-audit verification
+> (`projects/lmms-fl-research/STATUS-CORRECTION-2026-09-13.md`) and corrected in place, each carrying its own
+> date: the automation-mode wording, the clip-editing-gestures bullet and the fork-scope count in the coverage
+> bullet. The rest of the page was left as written.
 
 ## Before you download
 
@@ -152,6 +158,12 @@ that is this page's fault — report it and it gets added.
   rack can only be reached through a project file.
 - **No clip editing gestures.** The clip model is in (an authored window that survives playback and is saved
   with the project) but there are **no trim, slip, fade, crossfade or clip-gain tools** in the UI yet.
+  *Corrected 2026-09-13: "trim" here means the **source window**, and the same word names a feature that does
+  exist — a clip's **length** is changed today by dragging its edge and by the agent command `clip.resize`
+  (`STATUS-CORRECTION-2026-09-13.md` §3, "Clip-length resize"; the source-window trim/slip has a model —
+  `include/SampleWindow.h`, `srcin`/`srcout` — and registered tests but no authoring gesture, §3 "Clip
+  source-window trim / slip"). What this bullet still means, and what is still absent, is fades, crossfades,
+  clip gain and a slip tool.*
 - **No take lanes and no comping.** Verified as an absence in this tree:
   `grep -rniI "takelane\|take lane\|comping" src/ include/` returns 0 hits.
 - **No plugin-scanning interface worth the name.** A scan cache and a quarantine list exist; the user-facing
@@ -207,6 +219,12 @@ that is this page's fault — report it and it gets added.
   configuration is the honest one. **Today's 87.21 % is not comparable with that pair**: it is a rate over the
   165 files that produced a record in the current capture, and the merge trains grew the fork scope from 175
   entries to 242 in between, so the denominator moved with the tree.
+  *Corrected 2026-09-13: `242` and the 165-file rate are correctly attributed to the capture commit, and the
+  rates are unchanged. What this page got wrong is "every commit after it is documentation only" — false at
+  this tip: `cbbaf315f` and `e6050eed9` both changed `tests/fork-sources.txt`, and at `5565b4b1b` the ledger
+  holds **244** non-comment entries, which is the figure the four-audit verification records
+  (`STATUS-CORRECTION-2026-09-13.md` §3, last bullet). Re-run at this tip the universe behind that rate is two
+  entries larger.*
 - **Our own coverage gate fails on that same build, and we are telling you rather than exempting it away.**
   `tests/coverage-gate.sh --check` reports **15 new files below its 50 % entry floor**. **Ten** are dialogs,
   views and plugin-browser code that **cannot be constructed in a headless test binary** — a `Knob` needs
@@ -224,6 +242,17 @@ that is this page's fault — report it and it gets added.
   rather than a sample. Verified in the tree via the automation lane's own record: `docs/AUTOMATION-MODES.md`
   states that automation is evaluated once per tick and names the line that stands between that and a
   per-frame read.
+- **And there is no way to choose an automation mode — added 2026-09-13.** The sentence above is true of the
+  *engine*; it is not true of the product. The modes exist in the model and a test covers them
+  (`include/AutomatableModel.h:342-384`, `src/core/AutomatableModel.cpp:780-910`,
+  `tests/src/core/AutomationModesTest.cpp`, registered at `tests/CMakeLists.txt:15`), but nothing can
+  **select** or **persist** one: `setAutomationMode()` is called only from that test, no save/load path stores
+  the mode, and the agent command `automation.mode_set` **refuses every call**
+  (`STATUS-CORRECTION-2026-09-13.md` §8 — the automation-modes ruling: engine and tests exist, selection and
+  persistence do not). Treat Read as what the engine runs, not as something you can switch to. The refusal's
+  own justification still cites a `docs/KNOWN-LIMITATIONS.md:84` line reading "No automation modes", which this
+  page does not contain at this tip — a stale comment in the code, reported here rather than silently
+  harmonised.
 - **Warping changes pitch.** The warp engine attaches markers and lets a clip follow or lead the project tempo,
   but the time-stretch is done by resampling: a 2× stretch is an octave up. Pitch-preserving stretch is not
   built.

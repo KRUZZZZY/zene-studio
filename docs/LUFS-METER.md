@@ -5,6 +5,14 @@
 > now feeds it and reports it to the user. See **[docs/LUFS-WIRING.md](LUFS-WIRING.md)** for what was
 > wired, the measured renders and the passivity proof. Every statement below that says nothing
 > consumes the class is marked `[SUPERSEDED]` and describes the tree as it stood when this lane landed.
+>
+> **2026-09-13 — read `docs/LUFS-WIRING.md` first; the headline above is the history.** Re-checked by the
+> four-audit verification of `post-alpha/integration` @ `5565b4b1b`
+> (`projects/lmms-fl-research/STATUS-CORRECTION-2026-09-13.md` §2, "LUFS metering — `HAVE` (offline / render
+> only)"): the render path constructs the report at `src/core/ProjectRenderer.cpp:173`, the export dialog's
+> checkbox is `src/gui/modals/ExportProjectDialog.cpp:163-168` and the CLI flag is `--loudness-report`
+> (`src/core/main.cpp:744`), with `LufsMeterTest` and `LoudnessReportTest` registered. "Nothing calls it" was
+> true when this page was written and is **false at this tip**; it stays only as the `[SUPERSEDED]` record.
 
 **Lane:** `post-alpha/lufs-meter` · **Branch base:** `post-alpha/v0.2` @ `0c23587d2`
 **Scope:** one coherent slice — a realtime-safe measurement core plus a consumption point. The
@@ -44,9 +52,16 @@ const lmms::LufsMeter::Reading reading = meter.read();                // UI thre
   code constructed a `LufsMeter` when this lane landed; the class was inert in the default audio
   path (verified with `grep`, see "Wiring" below). `post-alpha/lufs-wire` added the consumer: the
   render path constructs a `LoudnessReport` (which owns a `LufsMeter`) when the render asked for a
-  report and feeds it each rendered block — see [docs/LUFS-WIRING.md](LUFS-WIRING.md). `grep` for
-  the class now finds `src/core/ProjectRenderer.cpp`, `src/core/LoudnessReport.cpp` and
-  `src/core/RenderManager.cpp`, all reachable from `lmms render` and the export dialog.
+  report and feeds it each rendered block — see [docs/LUFS-WIRING.md](LUFS-WIRING.md).
+  *(Consumer list corrected 2026-09-13: this sentence named the wrong files. At `5565b4b1b` a `grep` for
+  `LufsMeter` outside its own sources finds `include/LoudnessReport.h:161` (the `m_meter` member),
+  `src/core/LoudnessReport.cpp`, and a consumer this page did not know about —
+  `src/core/MasteringChain.cpp:103`, where auto-mastering wave 1 measures its own candidates. The render path
+  is `src/core/ProjectRenderer.cpp:173`, which constructs a `LoudnessReport` and never names the class;
+  `src/core/RenderManager.cpp` carries the report text and the sidecar path, not a `LufsMeter`. Reachable from
+  `lmms render` (`src/core/main.cpp:744`) and the export dialog
+  (`src/gui/modals/ExportProjectDialog.cpp:163-168`, `:271`). Source: the correction file's §2, plus this
+  worktree read at `5565b4b1b`.)*
 
 ## The algorithm, and where each piece comes from
 

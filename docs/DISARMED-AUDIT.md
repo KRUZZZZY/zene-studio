@@ -6,6 +6,14 @@ USER can reach five named features, or whether each is wired to nothing.
 source-trace verdict — **the application was not built and was not run.**
 **Worktree:** `projects/lmms-fl-research/zene-pa-integration` @ `ccd07f490` (branch `post-alpha/integration`).
 
+> **Corrections 2026-09-13 — at `5565b4b1b` (version 0.2.1-alpha) this page understates the tree.** The page is
+> kept as written, with three dated corrections at the point each appears. The four-audit verification of the
+> tip (`projects/lmms-fl-research/STATUS-CORRECTION-2026-09-13.md`, §2 and the closing paragraph of §6) found:
+> the `post-alpha/crash-report` and `post-alpha/plugin-scan` lanes are now **ancestors of HEAD** and both
+> features are in the tree with registered tests; the `RoutingGraph` comparison in §1 is no longer apt, because
+> the graph is instantiated on the live audio path; and `WANT_SESSION_VIEW`'s line reference has moved.
+> Everything else here is a source trace at `ccd07f490` and was not re-run.
+
 ## Headline
 
 Two of the five features named for this audit are **not on this branch at all**. They exist only on
@@ -32,6 +40,15 @@ returns nothing, and the commits are `NOT-ancestor`
 | **Crash reporter** | **absent from HEAD** | **NONE on this branch** | n/a | **NOT-ON-BRANCH** | files exist only on unmerged `post-alpha/crash-report` (`98a706dbe`, `36d0155fe`); branch-only trace below |
 | **Plugin scan cache + quarantine** | **absent from HEAD** | **NONE on this branch** | n/a | **NOT-ON-BRANCH** | files exist only on unmerged `post-alpha/plugin-scan` (`023770f7b`, `897a22670`, `2e6ae6b56`, `49d29f51f`); branch-only trace below |
 | **Session View** (`WANT_SESSION_VIEW`) | `include/SessionModel.h`; `src/core/SessionModel.cpp`; `src/core/SessionClip.cpp` (compiled only when flag ON) | **build flag only** — `OPTION(WANT_SESSION_VIEW … OFF)` at `CMakeLists.txt:110` | **0** (`sessionModel()` accessor is never called) | **DISARMED-DOCUMENTED** | `docs/STATUS.md:31` — "**Not on `main`; no UI.**"; flag genuinely defaults OFF; even ON there is no consumer |
+
+> **Correction 2026-09-13.** The two `NOT-ON-BRANCH` rows above are superseded, not deleted. At `5565b4b1b`
+> both lanes are ancestors of HEAD (`git merge-base --is-ancestor post-alpha/crash-report HEAD` and
+> `… post-alpha/plugin-scan HEAD` both exit 0; so do `98a706dbe` and `023770f7b`), and both features are in the
+> tree with registered tests: `include/CrashReporter.h`, `src/core/CrashReporter.cpp`,
+> `tests/src/core/CrashReporterTest.cpp` (`tests/CMakeLists.txt:23`); `include/PluginScanCache.h`,
+> `src/core/PluginScanCache.cpp`, `tests/src/core/PluginScanCacheTest.cpp` (`tests/CMakeLists.txt:46`).
+> Read §3 and §4 from here as "was not on this branch at `ccd07f490`". Source:
+> `STATUS-CORRECTION-2026-09-13.md` §2 (both items `HAVE`) and the closing paragraph of its §6.
 
 ## Per-feature traces
 
@@ -64,6 +81,13 @@ explicitly, twice:
 
 So it is built-and-inert **as designed and said aloud**. No defect. (It is the `RoutingGraph` pattern,
 but with the required disclosure.)
+
+> **Correction 2026-09-13 — the comparison in that parenthesis is no longer apt.** At `ccd07f490` it was plain;
+> at `5565b4b1b` the graph is instantiated on the live audio path: `src/core/Rack.cpp:55` and
+> `src/core/EffectChain.cpp:50` each construct a `RoutingGraph`, `src/core/Mixer.cpp:513-524` renders a rack
+> channel through it, and `RoutingGraphLiveTest` is registered (`tests/CMakeLists.txt:60`). It landed
+> `3875183fa` (2026-09-11), an ancestor of this tip; only the patcher GUI is still absent. Source:
+> `STATUS-CORRECTION-2026-09-13.md` §2 ("`RoutingGraph` on the live audio path — `HAVE`") and §6 item 3.
 
 ### 2. MIDI learn — REACHABLE
 
@@ -174,6 +198,16 @@ include/Song.h:334-339:         #ifdef LMMS_HAVE_SESSION_VIEW → SessionModel& 
 include/Song.h:474-476:         #ifdef LMMS_HAVE_SESSION_VIEW → SessionModel m_sessionModel;
 ```
 
+> **Correction 2026-09-13, two parts.** (a) The option's line has moved: at `5565b4b1b`
+> `OPTION(WANT_SESSION_VIEW … OFF)` is at `CMakeLists.txt:121` (`WANT_STEM_SPLIT` at `:120`), so the `:110`
+> above is where it sat at `ccd07f490`. The verdict does not change — it still defaults OFF, no release job
+> passes it, and there is still no clip launcher and no clip grid (`STATUS-CORRECTION-2026-09-13.md` §4, the
+> `session-view` row). (b) The claim below that "even with `-DWANT_SESSION_VIEW=ON`, nothing consumes the model"
+> is superseded: the launch scheduler (`src/core/SessionScheduler.cpp`, task `#595`) is merged and consumes the
+> model behind that flag, as `tests/advertised-features.tsv` records in its own 2026-09-12 correction. What
+> remains true, and is what the release claim rests on, is that the flag is off in every release build, so the
+> data layer and its scheduler ship disabled and not operable.
+
 So with the default OFF build, `SessionModel` is not compiled and `Song` has no session member at all.
 There is genuinely **no UI code** that constructs it:
 
@@ -229,6 +263,8 @@ source, so the command's own output does not cover it — also not a defect.)
    `post-alpha/crash-report` and `post-alpha/plugin-scan`. Auditing them "as merged on this branch" is
    impossible; a reviewer reading this branch will not find them. If the parent's lane accounting assumed
    ten merged lanes, the count is eight.
+   *(Corrected 2026-09-13: true at `ccd07f490` and resolved at `5565b4b1b` — both lanes are ancestors of HEAD
+   there, so the count of merged lanes in this list is ten.)*
 2. **No DISARMED-SILENT feature found among the three targets actually present on the branch.** LufsMeter
    and Session View are disarmed *and say so* (quoted above); MIDI learn is reachable.
 3. **No unregistered source.** `tests/fork-sources.txt` is complete against its documented baseline.

@@ -1,5 +1,33 @@
 # MCP-ZENE-CONTROL — `zene-control` stdio MCP bridge (AGENT-TOOLING §6 slice S4)
 
+> **Snapshot note — added 2026-09-13, and it is why this README under-states the DAW today.**
+> `zene_control/commands_snapshot.json` is the committed copy of **one instance's** `control.commands_list`,
+> derived (never hand-written — see `snapshot_commands.py`) so that `zene_commands`, and therefore
+> `tools/list`, still answer with no instance running. The copy in this tree is **stale**. From the file's own
+> `instance` block: binary `sha256 0a13ee76…`, lane head `059bf6bad`, version `0.1.0-alpha.15+a244564`, proto 1,
+> **70 commands**, captured **2026-09-12T01:43:20Z**. The tree's command registry declares **74**, so four
+> commands are missing from the snapshot — **`midi.learn_toggle`**, **`project.restore_revision`**,
+> **`telemetry.consent`** and **`telemetry.status`**. Consequence, and the size of it: with no live instance and
+> no cache, the bridge offers **70 generated tools + the 2 bridge tools**; against a live instance it generates
+> one per registered command, so nothing is broken, only discovered later than it could be.
+> The "23 generated tools" / "25 = 23 generated + 2 bridge tools" figures below (§"Status", §3.3, §9, and the
+> 8.2 transcript) are **not** wrong as history: they are the verbatim 2026-09-11 verification run against the
+> `post-alpha/agent-control-surface` lane build, which registered 23 commands. They are stale in the same
+> direction as the snapshot, and one regeneration corrects both. This README is the note rather than the
+> snapshot file because the snapshot is strict JSON (`json.load`, declared `"schema": 1`) that the bridge
+> parses; the marker belongs in prose, not inside data a program reads.
+> **Regenerating it needs a live instance** (see §2 for the headless recipe; there is no default binary and no
+> offline mode for this). The real invocation, read from `snapshot_commands.py`'s own docstring and `argparse`
+> block:
+> `python3 snapshot_commands.py --socket /tmp/<an-instance>/zene.sock` — or, from a commands array
+> you already have, `python3 snapshot_commands.py --from-file /tmp/commands.json`. It writes
+> `zene_control/commands_snapshot.json` by default (`--out` to change that), records the binary, its sha256, the
+> lane directory and its HEAD as provenance, and exits non-zero *without writing* if the source carries no
+> commands.
+> **Source:** the 2026-09-13 four-audit verification (`projects/lmms-fl-research/STATUS-CORRECTION-2026-09-13.md`
+> §6, closing paragraph), which names the four missing commands; the invocation is read from the script, and the
+> 70-command provenance from the JSON itself.
+
 **Status:** built and verified 2026-09-11 against a live, headless Zene Studio
 instance. The bridge answers `initialize` + `tools/list` + `tools/call` +
 `resources/*` over stdio MCP; its tool list is **generated** from the instance's
@@ -921,7 +949,12 @@ undo:   transactions recorded for mixer.add_channel, mixer.set_volume, project.o
   per request, so a command that appears while the bridge is running is listed on the
   next `tools/list` — but an MCP client that caches the list per session will not see
   it without re-listing or restarting the session.
-* **The snapshot is a committed copy** of one instance's command list (provenance:
-  binary `sha256 94582147…`, lane head `6b01b98eb`, version `0.2.0-alpha`, proto 1,
-  23 commands, captured 2026-09-11T22:54:33Z). It is what makes `zene_commands` work
-  before any instance exists; it can go stale. `snapshot_commands.py` regenerates it.
+* **The snapshot is a committed copy** of one instance's command list. The provenance that used to be printed
+  here (`binary sha256 94582147…`, lane head `6b01b98eb`, version `0.2.0-alpha`, proto 1, 23 commands,
+  captured 2026-09-11T22:54:33Z) described an **earlier capture**; corrected 2026-09-13 against the committed
+  file itself, `zene_control/commands_snapshot.json` records binary `sha256 0a13ee76…`, lane head `059bf6bad`,
+  version `0.1.0-alpha.15+a244564`, proto 1, **70 commands**, captured **2026-09-12T01:43:20Z** — and it is
+  stale against the registry's 74 (see the snapshot note at the top of this file). It is what makes
+  `zene_commands` work before any instance exists, and it can go stale; `snapshot_commands.py` regenerates it
+  from a live instance (`--socket`) or a saved commands array (`--from-file`), with `--out` defaulting to this
+  file.
