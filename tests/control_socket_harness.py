@@ -34,7 +34,7 @@ and the reporting helpers (`dump`, `finish`). The per-case payloads - the pure
 mechanical (Gate 7, the 500-line per-file ratchet); no behaviour moved with it.
 
 The diagnostic that says why a frozen instance stopped answering - liveness, the
-kernel's wait channel, a debugger backtrace - lives in `control_socket_diagnosis.py`
+kernel's wait channel, a debugger backtrace - lives in `control_instance_diagnosis.py`
 for the same Gate 7 reason: `spawn()` records the instance with `remember()` and the
 bounded reads print `instance_diagnosis()`, exactly the text they printed before.
 
@@ -45,6 +45,7 @@ Exit code 0 only when every assertion passed.
 
 import json
 import os
+import pathlib
 import shutil
 import socket
 import stat  # noqa: F401  (kept: tests import it through this module historically)
@@ -54,7 +55,7 @@ import tempfile
 import time
 from typing import NoReturn
 
-from control_socket_diagnosis import instance_diagnosis, remember
+from control_instance_diagnosis import instance_diagnosis, register_instance
 
 # ---------------------------------------------------------------------------
 # bounds and constants
@@ -256,7 +257,7 @@ class Instance:
         self.process = subprocess.Popen(
             [self.binary, "--config", self.config_path, "--control-socket", self.socket_path],
             stdout=self._stdout, stderr=self._stderr, env=self.env(), cwd=self.tmp)
-        remember(self)
+        register_instance(self)
         return self.process
 
     def alive(self):

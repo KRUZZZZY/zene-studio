@@ -138,8 +138,11 @@ not rounded up.
   contract row `vst3-instrument-hosting WANT_VST3 ON vst3instrument`, enforced by `tests/release-honesty-gate.sh`
   (`[PASS] … ON matches ON`). *Missing:* CLAP instrument hosting (`ClapEffect` hosts effects only); a plugin editor
   (`IPlugView` unimplemented, so what opens is the host's generated knob grid); more than one instrument per track;
-  multi-out, presets and instrument PDC; and its own in-tree suites (`Vst3InstrumentTest`,
-  `Vst3InstrumentIntegrationTest`) sit behind `WANT_VST3_TEST_INSTRUMENT`, **default OFF**, so CI never runs them.
+  multi-out, presets and instrument PDC; and its own in-tree suites
+  (`Vst3InstrumentFixtureProbe`, `Vst3InstrumentTest`, `Vst3InstrumentIntegrationTest`) sit behind
+  `WANT_VST3_TEST_INSTRUMENT`, **default OFF** — which the `linux-x86_64` release job now passes as
+  `-DWANT_VST3_TEST_INSTRUMENT=ON` (2026-09-13), so they run on every push there; the other six jobs keep the
+  default. Measured green on that option on this box (linux, Qt6, RelWithDebInfo: 0 failed in all three).
   Proven only against the MIT test instrument that ships in the source.
 - **Automation modes** — *Exists:* the model and its test (`include/AutomatableModel.h`,
   `src/core/AutomatableModel.cpp`, `tests/src/core/AutomationModesTest.cpp`). *Missing:* any way for a user or an
@@ -216,7 +219,8 @@ not rounded up.
   "required OFF" row holds by dependency absence, not by choice; `docs/INDEPENDENT-NOTES-READ.md` B5 raises this and
   it is not closed.
 - **VST3 instrument regression tests** — `WANT_VST3_TEST_INSTRUMENT` defaults **OFF** (`tests/CMakeLists.txt`); the
-  host module ships, its own tests do not run in CI.
+  host module ships, and since 2026-09-13 the `linux-x86_64` job passes the option `ON`, so its three suites run
+  there on every push. The other six jobs do not run them.
 - **CLAP hosting; Qt6** — CLAP is in the release on Linux and macOS and **OFF on the three Windows jobs**
   (`ClapHost.cpp` needs `dlfcn.h`); the manifest records it per platform and the honesty guard asserts the absence
   on Windows. Qt6 is built only by the msvc job (`-DWANT_QT6=ON`); the other six use the default (Qt5).
@@ -328,8 +332,10 @@ Different numbering, and not a problem: the 0.2.0-alpha release-gate items **are
   were not read. The old page's "6 of 7 green" is a 2026-09-11 snapshot.
 - **Whether released artefacts contain the `vst3instrument` module**: the tip honesty log receives no artifacts
   ("module presence is not checked"), and the 0.2.0 release-prep log records a `[FAIL]` with artifacts. Needs CI
-  artifact inspection. Likewise **whether the VST3 instrument suites pass** in a release configuration (option
-  default OFF), and whether a `WANT_SESSION_VIEW=ON` or `WANT_STEM_SPLIT=ON` build compiles at all.
+  artifact inspection. Likewise **whether the VST3 instrument suites pass** in a release configuration: measured green on
+  this box on 2026-09-13 with the option ON (linux, Qt6, RelWithDebInfo), and the `linux-x86_64` CI job runs them
+  with the release options — but no CI run of them has been read yet, and the other six jobs do not run them. Also
+  open: whether a `WANT_SESSION_VIEW=ON` or `WANT_STEM_SPLIT=ON` build compiles at all.
 - The **`specs/` citations**: several docs cite `specs/SPEC-lua-api-v0.md` and `specs/SPEC-two-track-recording.md`,
   but no `specs/` directory is tracked — those paths are not here.
 - **Runtime behaviour** of audition, drag-and-drop, MIDI learn, racks, warp and stem export: not exercised in a

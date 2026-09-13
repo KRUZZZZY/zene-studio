@@ -95,6 +95,87 @@ private slots:
 	}
 
 
+	//! THE HISTOGRAM (0.2.1 coverage gap 3a). The release's own notes state the
+	//! table's shape as four counts - "the table that ships as data in
+	//! src/core/ControlReversibilityTable.cpp has 74 rows today, one per registered
+	//! command: 30 `true_inverse`, 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`"
+	//! (docs/RELEASE-NOTES-v0.2.1-alpha.md) - and nothing asserted them. The two
+	//! tests above hold the table to account for COVERAGE (every registered command
+	//! has a row, every row names a registered command) and for behaviour; a row
+	//! added or moved between classes could therefore ship with the notes still
+	//! quoting the old split.
+	//!
+	//! The counts are computed from the table itself (never from a second copy of
+	//! the rows) and asserted against the documented literals, so adding a row
+	//! without updating the histogram fails here, naming the row count and the four
+	//! counts. Expected values are keyed on ZENE_TELEMETRY_ENABLED because the two
+	//! `telemetry.*` rows are compiled out with the client - their commands leave
+	//! the registry, so their rows must leave the table, and the notes' 74-row
+	//! figure is the telemetry-on build (see ControlReversibilityTable.cpp and
+	//! docs/TELEMETRY-KILL-SWITCH.md).
+	void theTableHistogramIsTheDocumentedOne()
+	{
+		const control::ReversibilityTable& table = control::ReversibilityTable::instance();
+		const QVector<control::ReversibilityEntry> entries = table.entries();
+
+		int trueInverse = 0;
+		int snapshot = 0;
+		int irreversible = 0;
+		int notMutating = 0;
+		for (const control::ReversibilityEntry& entry : entries)
+		{
+			switch (entry.cls)
+			{
+				case control::ReversibilityClass::TrueInverse:  { ++trueInverse; break; }
+				case control::ReversibilityClass::Snapshot:     { ++snapshot; break; }
+				case control::ReversibilityClass::Irreversible: { ++irreversible; break; }
+				case control::ReversibilityClass::NotMutating:  { ++notMutating; break; }
+			}
+		}
+
+#ifdef ZENE_TELEMETRY_ENABLED
+		// The table as shipped, WITH the two telemetry.* rows: the shape the release
+		// notes state for 0.2.1.
+		constexpr int kRows = 74;
+		constexpr int kTrueInverse = 30;
+		constexpr int kSnapshot = 5;
+		constexpr int kIrreversible = 3;
+		constexpr int kNotMutating = 36;
+#else
+		// The same table with the telemetry client compiled out of the binary
+		// (-DZENE_TELEMETRY=OFF): its two commands leave the registry, so their two
+		// not_mutating rows leave the table with them.
+		constexpr int kRows = 72;
+		constexpr int kTrueInverse = 30;
+		constexpr int kSnapshot = 5;
+		constexpr int kIrreversible = 3;
+		constexpr int kNotMutating = 34;
+#endif
+
+		const QByteArray measured = QStringLiteral("%1 true_inverse, %2 snapshot, "
+			"%3 irreversible, %4 not_mutating")
+			.arg(trueInverse).arg(snapshot).arg(irreversible).arg(notMutating).toUtf8();
+		const QByteArray documented = QStringLiteral("%1 true_inverse, %2 snapshot, "
+			"%3 irreversible, %4 not_mutating")
+			.arg(kTrueInverse).arg(kSnapshot).arg(kIrreversible).arg(kNotMutating).toUtf8();
+
+		QVERIFY2(entries.size() == kRows,
+			qPrintable(QStringLiteral("the table has %1 rows, the documented histogram ")
+				.arg(entries.size())
+				+ QStringLiteral("counts %1. If a row was added, update the histogram in ")
+				.arg(kRows)
+				+ QStringLiteral("docs/RELEASE-NOTES-v0.2.1-alpha.md (and here) - the ")
+				+ QStringLiteral("point of this assertion is that the two cannot drift.")));
+
+		QVERIFY2(trueInverse == kTrueInverse && snapshot == kSnapshot
+				&& irreversible == kIrreversible && notMutating == kNotMutating,
+			qPrintable(QStringLiteral("the table's classes measure %1, the documented ")
+				.arg(QString::fromUtf8(measured))
+				+ QStringLiteral("histogram is %1. A row that moved between classes, or ")
+				.arg(QString::fromUtf8(documented))
+				+ QStringLiteral("one added without updating the notes, fails here.")));
+	}
+
 	//! DIRECTION 2: every row names a registered command, and the only mutating
 	//! commands the table calls "writes nothing" are the three the handlers
 	//! refuse on every call. Anything else would be a command whose class and

@@ -751,11 +751,122 @@ if(TARGET lmms_clap)
 	)
 endif()
 
+# Native VST3 hosting tests — the twins of the CLAP block above, and the reason
+# tests/src/plugins/Vst3{BusMap,Host,EffectIntegration}Test.cpp exist.
+#
+# Until 0.2.1 these three compiled NOWHERE: their CLAP twins were registered and
+# green while the VST3 three sat in the tree, and tests/unregistered-tests-gate.sh
+# (Gate 10) carried them in its DECLARED table as "an open item, NOT a deliberate
+# exclusion" — a test that never builds is invisible to every other gate (it is
+# not covered by the coverage ratchet and not compiled by the complexity
+# ratchet). This registers them exactly as the CLAP three are registered.
+#
+# Guarded on TARGET lmms_vst3_sdk, the target cmake/modules/Vst3Sdk.cmake creates
+# only when the pinned MIT SDK checkout is present (WANT_VST3=AUTO skips without
+# it, WANT_VST3=OFF disables it, Vst3Sdk.cmake FATAL_ERRORs when ON and absent).
+# So a configure with no SDK skips these tests instead of failing, which is the
+# same shape as the CLAP block's `if(TARGET lmms_clap)`.
+#
+# The subject is the SDK's own `again_sampleaccurate` gain effect, built as a
+# .vst3 bundle from the same pinned checkout by
+# tests/data/vst3-test-effect/CMakeLists.txt.
+if(TARGET lmms_vst3_sdk)
+	set(LMMS_VST3_EFFECT_DIR ${CMAKE_SOURCE_DIR}/plugins/Vst3Effect)
+
+	# The test subject: a real VST3 stereo gain effect (two parameters, Bypass
+	# and Gain) built from the pinned SDK's own sample.
+	add_subdirectory(data/vst3-test-effect)
+
+	add_executable(Vst3BusMapTest
+		src/plugins/Vst3BusMapTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+	)
+	add_test(NAME Vst3BusMapTest COMMAND Vst3BusMapTest)
+	target_include_directories(Vst3BusMapTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		${CMAKE_SOURCE_DIR}/include
+		${LMMS_VST3_EFFECT_DIR}
+	)
+	target_compile_features(Vst3BusMapTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3BusMapTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+	)
+
+	# Host-level proof: it compiles the shipped host sources itself, exactly as
+	# ClapHostTest does for the CLAP host, and loads the fixture bundle.
+	add_executable(Vst3HostTest
+		src/plugins/Vst3HostTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+	)
+	add_test(NAME Vst3HostTest COMMAND Vst3HostTest)
+	target_include_directories(Vst3HostTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		${CMAKE_SOURCE_DIR}/include
+		${LMMS_VST3_EFFECT_DIR}
+	)
+	target_compile_features(Vst3HostTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3HostTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(Vst3HostTest PRIVATE
+		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}")
+	add_dependencies(Vst3HostTest vst3-test-effect)
+
+	# Product-level proof: the effect is loaded into an EffectChain on an
+	# AudioBus and driven through the engine, its state round-trips through the
+	# .mmp, and the renders before/after are written. It compiles the plug-in's
+	# own sources (as ClapEffectIntegrationTest does for the CLAP effect) so that
+	# the descriptor and controls under test are the shipped ones.
+	add_executable(Vst3EffectIntegrationTest
+		src/plugins/Vst3EffectIntegrationTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Effect.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControlDialog.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControls.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Parameter.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3SubPluginFeatures.cpp
+	)
+	add_test(NAME Vst3EffectIntegrationTest COMMAND Vst3EffectIntegrationTest)
+	target_include_directories(Vst3EffectIntegrationTest PRIVATE
+		# generated plugin_export.h (PLUGIN_EXPORT) of the vst3effect plug-in
+		${CMAKE_BINARY_DIR}/plugins/Vst3Effect
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${LMMS_VST3_EFFECT_DIR}
+	)
+	# the test compiles the plug-in sources itself, so it needs the generated
+	# export header of the plug-in target to exist first
+	add_dependencies(Vst3EffectIntegrationTest vst3effect)
+	target_static_libraries(Vst3EffectIntegrationTest PRIVATE lmmsobjs)
+	target_compile_features(Vst3EffectIntegrationTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3EffectIntegrationTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(Vst3EffectIntegrationTest PRIVATE
+		LMMS_TESTING
+		PLUGIN_NAME=vst3effect
+		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}"
+	)
+	add_dependencies(Vst3EffectIntegrationTest vst3-test-effect)
+endif()
+
 # Instrument the plugin/gate test executables as well - they compile fork
 # sources directly, so their objects carry the coverage the ratchet tracks.
 # PluginPortsMigrationReference is deliberately left un-instrumented: the
 # reference side of the behaviour comparison must stay plain.
 foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapEffectIntegrationTest
+		Vst3BusMapTest Vst3HostTest Vst3EffectIntegrationTest
 		WasmSandboxTest PluginPortsMigrationTest AudioPluginTest
 		synthetic_audio_plugin)
 	if(TARGET ${LMMS_GATE_TEST})
@@ -956,7 +1067,20 @@ endif()
 # framing and the command groups are exercised end to end.
 # ---------------------------------------------------------------------------
 find_program(PYTHON3_EXECUTABLE NAMES python3)
-if(PYTHON3_EXECUTABLE)
+# The control surface is POSIX-only: the server itself refuses with a typed error on Windows
+# (ControlServer::listen's !Q_OS_UNIX branch), so its suite has no socket to drive there. The
+# tests were registered on every platform and failed on Windows in 0.07 s each - run #34731085749
+# (msvc-x64: 10 control-surface failures out of 14) - which reads as a defect and is a platform
+# fact. Registered on UNIX only; the Windows refusal path is covered by the unit tests that need
+# no socket. The suite stays ACTIVE everywhere it can run, including the hardware-less CI runners,
+# where its failure mode is the real thing it exists to catch.
+IF(WIN32)
+	SET(CONTROL_SUITE_AVAILABLE FALSE)
+ELSE()
+	SET(CONTROL_SUITE_AVAILABLE TRUE)
+ENDIF()
+
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketIntegration
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-integration.py
@@ -1007,7 +1131,7 @@ endif()
 # All four are bounded by ctest's TIMEOUT and by deadlines inside each script: a
 # hang counts as a failure, never as a wait.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlShutdown
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-shutdown.py
@@ -1054,7 +1178,7 @@ endif()
 # --check is passed explicitly: this gate must never rewrite its own baseline
 # during a test run; only a deliberate --reanchor "reason" does that.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# -DZENE_TELEMETRY=OFF: the telemetry.* group is compiled out with the
 	# client, so this binary has no telemetry.consent for the allowlist entry to
 	# name. The gate is told which ids the configuration removed instead of
@@ -1113,7 +1237,7 @@ set_tests_properties(StableTrackIdsTest PROPERTIES
 # tests cannot pass by accident. Reproductions against the base commit
 # 6b01b98eb are recorded in the lane's evidence.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	foreach(HEADLESS_TEST
 			"ControlHeadlessProjectOpen|control-headless-project-open.py|${CMAKE_SOURCE_DIR}/data/projects/tutorials/editing_note_volumes.mmp ${CMAKE_CURRENT_SOURCE_DIR}/data/error-carrying-project.mmp"
 			"ControlHeadlessWorkingDirectory|control-headless-working-directory.py|"
@@ -1149,13 +1273,75 @@ endif()
 # refused instead of buffering without bound.
 # See docs/CONTROL-SOCKET-PATH-SAFETY.md.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketPathSafety
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-path-safety.py
 			$<TARGET_FILE:zene>
 	)
 	set_tests_properties(ControlSocketPathSafety PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+endif()
+
+# ---------------------------------------------------------------------------
+# ControlAbsentSocket (0.2.1 coverage gap 3b). The release notes claim the
+# control surface's opt-in is INVISIBLE: "an instance that was not started that
+# way has no socket at all". Every other test in this directory starts the binary
+# WITH `--control-socket`, so nothing checked the other direction.
+#
+# The test starts the real binary without the flag and watches what it holds:
+# /proc/<pid>/fd against /proc/net/unix answers "which AF_UNIX sockets with a
+# filesystem path does this process have open right now", sampled every 20 ms for
+# a window measured from a positive control (the same binary WITH the flag, whose
+# time-to-socket this test records first, so the window is not a guess), plus a
+# recursive S_ISSOCK scan of the instance's own directory. It then asks the
+# instance to quit (SIGINT, the product's documented shutdown request for a GUI
+# run) and asserts the shutdown was clean: session marker removed, no crash
+# report, the product's own SIGINT exit code.
+#
+# Registered where the OTHER python tests that spawn the binary are registered
+# (python3 AND a UNIX-like platform): the script spawns `zene`, and the tag it
+# checks is platform-independent, so nothing false is claimed by its absence on
+# Windows - this test simply does not run there, and docs/STATUS.md's vocabulary
+# is what keeps that visible.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+	add_test(NAME ControlAbsentSocket
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-absent-socket.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(ControlAbsentSocket PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+endif()
+
+# ---------------------------------------------------------------------------
+# RenderSoftwareTag (0.2.1 coverage gap 3c). The release notes claim the WAV
+# files this build renders carry `Zene Studio (libsndfile-…)` in their software
+# tag "where they used to credit LMMS"; the only witness was a committed log of a
+# render parsed by hand once (tests/integration-logs-3d/final/chunk-parse.log).
+#
+# This renders a short project headlessly with the real binary and reads the tag
+# out of the output's LIST/INFO/ISFT chunk, with a method control (a WAV the
+# script writes itself carrying the PRE-FIX tag must be parsed and REJECTED, so a
+# parser that finds nothing cannot pass). LMMS_PLUGIN_DIR is passed explicitly so
+# the render does not depend on the caller's environment. Gated like the other
+# scripts that spawn the binary; see the script's own header for what it does NOT
+# cover (the FLAC writer's twin call).
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+	add_test(NAME RenderSoftwareTag
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/render-software-tag.py
+			$<TARGET_FILE:zene>
+			${CMAKE_BINARY_DIR}/plugins
+			${CMAKE_SOURCE_DIR}/data/projects/tutorials/editing_note_volumes.mmp
+	)
+	set_tests_properties(RenderSoftwareTag PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
