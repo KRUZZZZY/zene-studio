@@ -1395,6 +1395,49 @@ def render_to_file(flow, out, process, log_path):
     return None
 
 
+def big_reply_over_a_small_receive_buffer(path, schema, process, log_path):
+    """The same big reply, over a connection whose receive buffer is tiny.
+
+    A reply larger than the peer's socket buffer is NORMAL - macOS gives an AF_UNIX
+    socket 8 KiB and `control.commands_list` answers with a few hundred kilobytes - and
+    the server must deliver it whole: a non-blocking write that cannot take every byte
+    is flow control, not a failure. The macOS job showed what the old code did instead
+    (server closed the connection, client read EOF), so this case reproduces the
+    condition on any platform by shrinking THIS client's receive buffer and holding it
+    full while the server writes (the sleep keeps the client from draining during the
+    server's first write, which is what makes the reproduction deterministic).
+    """
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    sock.settimeout(RESPONSE_TIMEOUT)
+    buffered = b""
+    try:
+        sock.connect(path)
+        request = {"id": 41, "cmd": "control.commands_list", "args": {}, "proto": 1}
+        sock.sendall(json.dumps(request, separators=(",", ":")).encode("utf-8") + b"\n")
+        time.sleep(0.5)
+        while b"\n" not in buffered:
+            chunk = sock.recv(65536)
+            if not chunk:
+                fail("the server closed the connection on a big reply (4 KiB receive "
+                     "buffer): a reply larger than the socket buffer must be delivered "
+                     "whole, not truncated", process, log_path)
+            buffered += chunk
+    finally:
+        sock.close()
+    reply = json.loads(buffered.split(b"\n", 1)[0].decode("utf-8", "replace"))
+    if reply.get("id") != 41 or reply.get("ok") is not True:
+        fail("control.commands_list over a 4 KiB receive buffer answered %r" % reply,
+             process, log_path)
+    over_small = {entry.get("id") for entry in (reply.get("result") or {}).get("commands", [])}
+    over_large = {entry.get("id") for entry in schema.get("commands", [])}
+    if not over_small or over_small != over_large:
+        fail("the small-buffer reply is not the same answer (%d vs %d commands): a line "
+             "truncated on a boundary would still parse" % (len(over_small), len(over_large)),
+             process, log_path)
+    print("PASS: a %d-command reply arrives whole over a 4 KiB receive buffer" % len(over_small))
+
+
 def wait_for_socket(path, process, log_path):
     deadline = time.time() + CONNECT_TIMEOUT
     while time.time() < deadline:

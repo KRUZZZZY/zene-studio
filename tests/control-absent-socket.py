@@ -14,14 +14,14 @@ to quit:
 
   phase 1 (the claim)       start `lmms --config <cfg>` with no `--control-socket`;
                             wait for the crash reporter's session marker, which is
-                            written in main() before the GUI exists (main.cpp
-                            crashreporter::beginSession), so the process has
+                            written in main() before the GUI exists
+                            (crashreporter::beginSession), so the process has
                             demonstrably reached the product's own startup path;
-                            then observe for a measured window (see below) and
-                            assert it holds NO AF_UNIX socket with a filesystem
-                            path at any sample, that no socket file ever appears
-                            anywhere under its own temporary world, and that
-                            nothing ever printed "control socket listening on".
+                            then observe for a measured window (see below) and assert
+                            it holds NO AF_UNIX socket with a filesystem path at any
+                            sample, that no socket file ever appears anywhere under
+                            its own temporary world, and that nothing ever printed
+                            "control socket listening on".
   phase 2 (the method)      start a second instance WITH `--control-socket` and
                             assert the SAME probe finds the socket and the path -
                             otherwise phase 1's silence would prove nothing about
@@ -34,24 +34,22 @@ to quit:
                             -> `sigintOccurred()` -> `qApp->exit(3)`, then
                             `crashreporter::endSession()`). The evidence that the
                             shutdown was clean rather than a crash is that the
-                            session marker is GONE and no crash report was
-                            written; the evidence that the request was served at
-                            all is that the process exited inside the bound, which
-                            it can only do with its event loop running.
+                            session marker is GONE and no crash report was written;
+                            the evidence it was served at all is that the process
+                            exited inside the bound, which it can only do with its
+                            event loop running.
 
 WHICH PROBE. "Does this process hold an AF_UNIX socket with a path" comes from
 /proc/net/unix + /proc/<pid>/fd where procfs is mounted, and from `lsof -a -p <pid> -U
--Fn` where it is not - Darwin has no /proc, which is what made the macOS jobs red this
-test while the product was behaving. A host that can do neither SKIPs (exit 77, out
-loud) rather than reading a blind probe as a clean process; the positive control below
-is unchanged, so a broken /proc probe on Linux still FAILS.
+-Fn` where it is not - Darwin has no /proc. A host that can do neither SKIPs (exit 77,
+out loud) rather than reading a blind probe as a clean process; the positive control
+below is unchanged, so a broken /proc probe on Linux still FAILS.
 
 WHY THE OBSERVATION WINDOW IS MEASURED, NOT ASSUMED. Phase 2 records how long the
-same binary took to create and accept on its control socket (T). Phase 1 then
-watches an instance of the same binary, started the same way but without the flag,
-for at least 3*T (floor 8 s), sampling every 20 ms. So the window in which a
-socket would have appeared is not a guess: it is the time this very binary was
-measured to need, times three.
+same binary took to create and accept on its control socket (T); phase 1 then watches
+an instance of the same binary, started the same way but without the flag, for at
+least 3*T (floor 8 s), sampling every 20 ms. The window in which a socket would have
+appeared is therefore measured, not guessed.
 
 Bounded everywhere: a hang is a failure, never a wait.
 
@@ -70,7 +68,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import control_socket_harness as harness  # noqa: E402
 from control_socket_harness import (  # noqa: E402
-    Client, Instance, Problems, Timeout, dump, finish,
+    QUIT_TIMEOUT, STARTUP_BOUND, Client, Instance, Problems, Timeout, dump, finish,
 )
 
 # The crash reporter's session marker (include/CrashReporter.h, kSessionMarkerName),
@@ -186,7 +184,11 @@ def lsof_socket_name(field):
             if tail.strip().upper() in LSOF_SOCKET_TYPES:
                 name = head.strip()
             break
-    return name
+    # An UNNAMED socket is not a path: lsof prints a kernel address for it on Darwin
+    # ("0x...", "->0x...", "<->0x..."), and reading one as a held path is what made
+    # the macOS job red while the product was behaving. A control socket path is
+    # always absolute (listen() refuses anything else), so "/" is the discriminator.
+    return name if name.startswith("/") else ""
 
 
 def lsof_socket_paths(pid):
@@ -330,14 +332,17 @@ def socket_probe_sees_the_control_socket(binary):
                       "pid %d after %.2fs" % (inst.socket_path, inst.process.pid, elapsed))
             client = Client(inst.socket_path)
             try:
-                reply = client.call(1, "control.ping")
+                # Bounded by the readiness budget, not by one socket read: the engine
+                # start blocks the thread that serves the socket (CI linux-arm64: ~34s),
+                # and a single socket timeout there reports a slow platform as a hang.
+                reply = client.call(1, "control.ping", timeout=STARTUP_BOUND)
                 if (reply.get("result") or {}).get("pong") is not True:
                     problems.add("control.ping on the control instance answered %r" % reply)
             finally:
                 client.close()
             client = Client(inst.socket_path)
             try:
-                client.call(2, "control.quit")
+                client.call(2, "control.quit", timeout=QUIT_TIMEOUT)
             finally:
                 client.close()
             exited, code, _ = inst.wait_for_exit(30.0)

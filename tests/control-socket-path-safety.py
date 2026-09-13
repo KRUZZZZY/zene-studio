@@ -333,7 +333,28 @@ def case_request_line_cap(binary):
     instance = start_instance(binary)
     try:
         client = connect(instance)
-        client.sock.sendall(b"x" * (REQUEST_LINE_CAP * 2))
+        # The 2 MiB write needs a server that is DRAINING this socket, and the socket
+        # is serviced only while the app's event loop runs: on a slow platform the
+        # engine start blocks it (~34s on CI's linux-arm64), and a sendall against a
+        # server that is not reading fills the kernel buffer and blocks. Poll
+        # readiness on its OWN connection, so the poll's replies (one can still be in
+        # flight when the poll gives up) cannot be read as this case's refusal.
+        poll = connect(instance)
+        try:
+            wait_ready(instance, poll, Transcript(), seconds=READY_TIMEOUT)
+        except (Blocked, Timeout) as error:
+            problems.add("the instance never became ready, so the cap could not be exercised: %s"
+                         % error)
+            client.close()
+            return outcome(name, problems)
+        finally:
+            poll.close()
+        try:
+            client.sock.sendall(b"x" * (REQUEST_LINE_CAP * 2))
+        except (Blocked, OSError) as error:
+            problems.add("the server did not drain the over-cap request line: %s" % error)
+            client.close()
+            return outcome(name, problems)
         # The harness's own reader, not a request: call() would have to SEND on a
         # connection the server is retiring, which is the thing being tested.
         try:

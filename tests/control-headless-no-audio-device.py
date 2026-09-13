@@ -57,9 +57,10 @@ from control_socket_flows import (  # noqa: E402
     diagnose_block, healthy_control, parse_args, report_pre_fix,
 )
 from control_socket_harness import (  # noqa: E402
-    DUMMY_DEVICE, PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, fail,
-    ok, start_instance, wait_ready,
+    DUMMY_DEVICE, PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, fail, ok,
+    start_instance, wait_ready,
 )
+from control_socket_harness import BROKEN_DEVICE_ENV  # noqa: E402
 
 USAGE = __doc__
 
@@ -72,6 +73,14 @@ SCENARIOS = (
     ("configured backend that cannot open a device", SDL_BACKEND),
     ("backend name that is not a known backend", BOGUS_BACKEND),
 )
+
+# The first scenario must fail to OPEN on every platform, not just where the box has
+# no sound card: "SDL (Simple DirectMedia Layer)" + a driver name SDL cannot know
+# (BROKEN_DEVICE_ENV) makes SDL_Init fail everywhere. Without it the same scenario
+# PASSES on a machine whose SDL has a working driver - macOS opens CoreAudio, the
+# branch that prints the report is never taken, and this test failed there for the
+# environment rather than for the product.
+SCENARIO_ENV = {SDL_BACKEND: BROKEN_DEVICE_ENV}
 
 
 def audio_line(log):
@@ -106,7 +115,7 @@ def expect_blocked(binary):
     healthy = healthy_control(binary)
     print("control: the same binary with the dummy device became ready in %.1fs" % healthy)
     for label, backend in SCENARIOS:
-        instance = start_instance(binary, audiodev=backend)
+        instance = start_instance(binary, audiodev=backend, extra_env=SCENARIO_ENV.get(backend))
         transcript = Transcript()
         try:
             client = connect(instance)
@@ -138,7 +147,7 @@ def expect_blocked(binary):
 
 def expect_fixed(binary):
     for label, backend in SCENARIOS:
-        instance = start_instance(binary, audiodev=backend)
+        instance = start_instance(binary, audiodev=backend, extra_env=SCENARIO_ENV.get(backend))
         transcript = Transcript()
         try:
             try:

@@ -26,8 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from control_socket_flows import check_clean_shutdown, check_ping_shape  # noqa: E402
 from control_socket_harness import (  # noqa: E402
-    BROKEN_DEVICE, BROKEN_DEVICE_ENV, DEFAULT_DEVICE, Client, Instance, Problems,
-    Timeout, dump, finish,
+    BROKEN_DEVICE, BROKEN_DEVICE_ENV, DEFAULT_DEVICE, STARTUP_BOUND, Blocked, Client,
+    Instance, Problems, Timeout, dump, finish,
 )
 
 CONNECT_TIMEOUT = 60.0
@@ -37,11 +37,21 @@ STDERR_DUMP_LIMIT = 4000
 
 
 def wait_for_ready(client, timeout_s, problems):
-    """Poll control.ping until engine_ready, bounded. Returns the last reply."""
+    """Poll control.ping until engine_ready, bounded. Returns the last reply.
+
+    Each ping is bounded by the readiness budget: while the engine starts the socket
+    answers nothing (CI: ~34s of Engine::init on the linux-arm64 job), and letting
+    one socket read decide made this test report a slow platform as a blocked
+    shutdown instead of as the slow start it is.
+    """
     deadline = time.time() + timeout_s
     reply = None
     while time.time() < deadline:
-        reply = client.call(1, "control.ping")
+        try:
+            reply = client.call(1, "control.ping", timeout=STARTUP_BOUND)
+        except Blocked as error:
+            problems.add("no answer to control.ping inside %.0fs: %s" % (STARTUP_BOUND, error))
+            return reply
         problems.extend(check_ping_shape(reply, 1))
         if (reply.get("result") or {}).get("engine_ready") is True:
             return reply
