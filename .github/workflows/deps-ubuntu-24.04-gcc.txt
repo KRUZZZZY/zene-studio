@@ -5,6 +5,7 @@ cmake
 file
 fluid
 gcc
+gdb
 git
 gpg
 g++

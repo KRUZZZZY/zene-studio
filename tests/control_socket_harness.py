@@ -420,19 +420,35 @@ def connect(instance, seconds=SOCKET_TIMEOUT):
 
 
 def wait_ready(instance, client, transcript, seconds=READY_TIMEOUT, ping_timeout=PING_TIMEOUT):
-    """Poll control.ping until engine_ready is true. Blocked when it never answers."""
+    """Poll control.ping until engine_ready is true. Blocked when it never answers.
+
+    A ping that does not answer is NOT the end of the budget: the engine initialises on
+    this socket's own thread, so while it starts a ping is answered late or not at all -
+    measured on CI, an instance answered control.ping at 0.006s (engine_missing) and then
+    went silent for its whole engine start, which silently made one ping_timeout the real
+    readiness bound where this signature declares `seconds`. The budget that ends the poll
+    is therefore `seconds`, and its expiry carries the last error beside the instance's own
+    diagnosis (control_instance_diagnosis.py), so a real hang fails exactly as before.
+    """
     deadline = time.time() + seconds
     last = None
+    last_error = None
     while time.time() < deadline:
         if not instance.alive():
             raise Blocked("the instance exited (code %s) while waiting for the engine"
                           % instance.process.returncode)
-        last = client.call(0, "control.ping", timeout=ping_timeout, transcript=transcript)
+        try:
+            last = client.call(0, "control.ping", timeout=ping_timeout, transcript=transcript)
+        except Blocked as error:
+            last_error = str(error).splitlines()[0]
+            time.sleep(0.2)
+            continue
         result = last.get("result") or {}
         if last.get("ok") and result.get("engine_ready"):
             return last
         time.sleep(0.2)
-    raise Blocked("the engine never became ready within %.0fs (last ping: %r)" % (seconds, last))
+    raise Blocked("the engine never became ready within %.0fs (last ping: %r, last error: %s)"
+                  % (seconds, last, last_error))
 
 
 def ok_result(reply, expected_id):
