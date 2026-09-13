@@ -468,6 +468,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerAutomationCommands(registry);
 	registerAutomationEditCommands(registry);
 	registerScriptCommands(registry);
+	registerRackCommands(registry);
 }
 
 } // namespace lmms

@@ -102,6 +102,7 @@ include/ControlAutomationSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlLayout.h
+include/ControlRackSupport.h
 include/ControlRegistry.h
 include/ControlReversibility.h
 include/ControlServer.h
@@ -300,7 +301,9 @@ include/ProjectRevisions.h
 include/ProjectVersion.h
 include/QuadratureLfo.h
 include/Rack.h
+include/RackMacros.h
 include/RackNodes.h
+include/RackZones.h
 include/RaiiHelpers.h
 include/RecentProjectsMenu.h
 include/RecordRingBuffer.h
@@ -884,6 +887,9 @@ src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginState.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsRack.cpp
+src/core/ControlCommandsRackMacros.cpp
+src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
@@ -894,9 +900,11 @@ src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlRackSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
+src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlSession.cpp
@@ -965,7 +973,9 @@ src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
 src/core/ProjectVersion.cpp
 src/core/Rack.cpp
+src/core/RackMacros.cpp
 src/core/RackNodes.cpp
+src/core/RackZones.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
 src/core/RingBuffer.cpp
@@ -1245,7 +1255,10 @@ tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectVersionTest.cpp
+tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTest.cpp
+tests/src/core/RackTestSupport.h
+tests/src/core/RackZonesTest.cpp
 tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RecordingRealtimeTest.cpp

@@ -47,7 +47,9 @@ set(LMMS_TESTS
 	src/core/ProjectOpenIntegrityTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp
+	src/core/RackMacrosTest.cpp
 	src/core/RackTest.cpp
+	src/core/RackZonesTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RecordingRealtimeTest.cpp
@@ -193,8 +195,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 endforeach()
 
 # RecordingRealtimeTest constructs a real Engine to measure the capture path
-# (D9b/D9a), which needs a Qt platform plugin even though the test is guiless.
+# (D9a/D9b), which needs a Qt platform plugin even though the test is guiless.
 set_tests_properties(RecordingRealtimeTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# The rack command-group tests (rack.* macros and key/velocity zones) construct a
+# full Engine and drive the mixer's own save/load, so they need the same
+# headless Qt platform as the test above - and the developer box has no display.
+set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

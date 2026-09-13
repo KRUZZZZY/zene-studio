@@ -199,6 +199,7 @@ include/AudioPortsSettings.h
 include/ControlAutomationSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
+include/ControlRackSupport.h
 include/ControlRegistry.h
 include/ControlReversibility.h
 include/ControlServer.h
@@ -224,7 +225,9 @@ include/ProjectIds.h
 include/ProjectRecovery.h
 include/ProjectRevisions.h
 include/Rack.h
+include/RackMacros.h
 include/RackNodes.h
+include/RackZones.h
 include/RecordRingBuffer.h
 include/RemotePluginAudioPorts.h
 include/RoutingChainNodes.h
@@ -332,6 +335,9 @@ src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginState.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsRack.cpp
+src/core/ControlCommandsRackMacros.cpp
+src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
@@ -342,9 +348,11 @@ src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlRackSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
+src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
@@ -366,7 +374,9 @@ src/core/ProjectIds.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRevisions.cpp
 src/core/Rack.cpp
+src/core/RackMacros.cpp
 src/core/RackNodes.cpp
+src/core/RackZones.cpp
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
@@ -425,6 +435,9 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
+tests/src/core/RackMacrosTest.cpp
+tests/src/core/RackTestSupport.h
+tests/src/core/RackZonesTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
