@@ -33,6 +33,11 @@ and the reporting helpers (`dump`, `finish`). The per-case payloads - the pure
 `control_socket_flows.py`, which imports their plumbing from here. The split is
 mechanical (Gate 7, the 500-line per-file ratchet); no behaviour moved with it.
 
+The diagnostic that says why a frozen instance stopped answering - liveness, the
+kernel's wait channel, a debugger backtrace - lives in `control_socket_diagnosis.py`
+for the same Gate 7 reason: `spawn()` records the instance with `remember()` and the
+bounded reads print `instance_diagnosis()`, exactly the text they printed before.
+
 Usage (each test script owns its own argv):
     QT_QPA_PLATFORM=offscreen python3 <test>.py <lmms> [...]
 Exit code 0 only when every assertion passed.
@@ -48,6 +53,8 @@ import sys
 import tempfile
 import time
 from typing import NoReturn
+
+from control_socket_diagnosis import instance_diagnosis, remember
 
 # ---------------------------------------------------------------------------
 # bounds and constants
@@ -249,8 +256,7 @@ class Instance:
         self.process = subprocess.Popen(
             [self.binary, "--config", self.config_path, "--control-socket", self.socket_path],
             stdout=self._stdout, stderr=self._stderr, env=self.env(), cwd=self.tmp)
-        global _LAST_INSTANCE
-        _LAST_INSTANCE = self
+        remember(self)
         return self.process
 
     def alive(self):
@@ -340,53 +346,6 @@ def start_instance(binary, workingdir=None, audiodev=DUMMY_DEVICE, configured=1)
     instance = Instance(binary, audiodev=audiodev, configured=configured, workingdir=workingdir)
     instance.spawn()
     return instance
-
-
-# ---- why an instance stopped answering ------------------------------------------------
-# A frozen instance is a HANG, and a hang is a failure - but until 2026-09-13 a CI run
-# reported only "no response line inside 30.0s", which named the symptom and not the cause.
-# The runners (no audio hardware, no /dev/snd) are the one place this happens and the one
-# place it cannot be reproduced off-runner, so the harness now collects the evidence itself:
-# liveness, the kernel's wait channel, and a debugger backtrace when one is present.
-_LAST_INSTANCE = None
-
-
-def instance_diagnosis() -> str:
-    instance = _LAST_INSTANCE
-    if instance is None or instance.process is None:
-        return "diagnosis: no instance was launched by this process"
-    proc = instance.process
-    if proc.poll() is not None:
-        return ("diagnosis: the instance EXITED with %s - a crash or a refusal, not a hang "
-                "(its stdout/stderr are the transcript above)" % proc.returncode)
-    pid = proc.pid
-    lines = ["diagnosis: the instance is STILL RUNNING (pid %d) - a HANG, not a crash" % pid]
-    for path, label in (("/proc/%d/wchan" % pid, "kernel wait channel"),
-                        ("/proc/%d/status" % pid, "state")):
-        try:
-            with open(path) as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        if label == "kernel wait channel":
-            lines.append("%s: %s" % (label, text.strip()))
-        else:
-            lines.extend(l.strip() for l in text.splitlines()
-                         if l.startswith(("State:", "Threads:", "voluntary")))
-    for tool, args in (("gdb", ["-p", str(pid), "-batch", "-ex", "thread apply all bt"]),
-                       ("lldb", ["-p", str(pid), "-b", "-o", "thread backtrace all", "-o", "quit"])):
-        if not shutil.which(tool):
-            continue
-        try:
-            done = subprocess.run([tool] + args, capture_output=True, text=True, timeout=180)
-            body = (done.stdout or done.stderr or "").splitlines()
-            lines.append("--- %s, first 100 lines ---" % tool)
-            lines.extend(body[:100])
-            lines.append("--- end %s ---" % tool)
-        except Exception as exc:  # a debugger that cannot attach is not the test's failure
-            lines.append("%s could not attach: %s" % (tool, exc))
-        break
-    return "\n".join(lines)
 
 
 class Client:

@@ -8,7 +8,7 @@
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
-#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -18,7 +18,7 @@
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools/local-ci.sh tools/ncpu-shim.c plugins/Vst3Instrument/logo.png ; \
-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -188,11 +188,22 @@
 #     control surface (ControlAutomationScriptTest, ControlDeviceCatalogueTest,
 #     ControlEditCommandsTest, ControlRegistryTest, ReversibilityContractTest,
 #     ReversibilityUndoTest, StableTrackIdsTest) and ReversibilityTestSupport.h;
-#   * a THIRD explicit pathspec line admits the thirteen tests/*.py control-surface
+#   * a THIRD explicit pathspec line admits the fourteen tests/*.py control-surface
 #     harnesses by name - the same "admitted by name rather than by widening the
 #     extension filter" shape the tools/ line above uses, because widening the
 #     extension filter would also admit every other tests/ script.
 # Verified after the merge: the file reproduces (0 added, 0 removed, 0 duplicates).
+#
+# Added 2026-09-13 (030/cf4-complexity). tests/control_socket_diagnosis.py is the
+# FOURTEENTH .py entry and is named in the third pathspec above. It is the diagnostic
+# half of tests/control_socket_harness.py - the "why did this instance stop answering"
+# observations - split out by that lane to close two measured reds on the 0.3.0 base,
+# both of them this scope's own ratchets: the harness file was 524 lines against the
+# 500-line limit (Gate 7), and its instance_diagnosis measured CCN 14 against the 10
+# target (Gate 4). It is admitted by name rather than by widening the extension filter,
+# for the reason the paragraph above gives; the two ratchets it widens were re-measured
+# with it registered and pass, and no baseline was re-anchored for either red.
+# Reproduces verified with the command under "Verify it" after the entry was committed.
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
@@ -419,6 +430,7 @@ tests/control-shutdown.py
 tests/control-socket-path-safety.py
 tests/control-stable-ids.py
 tests/control-warp-commands-transcript.py
+tests/control_socket_diagnosis.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
 tests/src/core/ClipSerialisationTest.cpp
