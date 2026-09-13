@@ -114,6 +114,9 @@ set(LMMS_SRCS
 	core/ControlCommandsSurface.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
+	# The bounded-undo slice: the depth caps, the coalescing window, and the
+	# commands that expose them (SPEC A16, task #623).
+	core/ControlCommandsUndo.cpp
 	core/ControlCommandsWarp.cpp
 	core/ControlCommandsWarpEdit.cpp
 	core/ControlDeviceCatalogue.cpp
@@ -124,9 +127,16 @@ set(LMMS_SRCS
 	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlReversibility.cpp
+	# The contract table's three blocks, split by what the inverse IS (a live
+	# checkpoint / a bounded recorded state / nothing): see
+	# include/ControlReversibility.h.
 	core/ControlReversibilityTable.cpp
 	core/ControlReversibilityTablePassive.cpp
-	core/ControlReversibilityTableTrueInverse.cpp
+	core/ControlReversibilityTableSnapshot.cpp
+	# The transaction record's accounting, and the rule that decides when two
+	# commands are one undo step.
+	core/ControlTransactions.cpp
+	core/ControlUndoCoalescing.cpp
 	core/ControlSchema.cpp
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
@@ -194,6 +204,9 @@ set(LMMS_SRCS
 	core/PluginScanCache.cpp
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
+	# The undo stack's two-sided bound and its coalescing primitive, in their own
+	# translation unit (include/ProjectJournal.h documents both).
+	core/ProjectJournalBounds.cpp
 	core/ProjectRecovery.cpp
 	core/ProjectIds.cpp
 	core/ProjectRenderer.cpp

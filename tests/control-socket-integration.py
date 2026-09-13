@@ -706,6 +706,17 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
              {"target": instrument_track, "plugin": fx, "name": name, "value": low - 1000.0})
 
     # --- SPEC A16: a parameter change is a journal checkpoint ------------
+    # The undo below asserts PER-CALL granularity: one param_set, one step. Under
+    # the control surface's coalescing rule (docs/UNDO-BOUNDS.md) two consecutive
+    # param_set calls on the SAME parameter inside the window are ONE gesture -
+    # and an earlier line in this flow set this very parameter, so without an
+    # explicit boundary this step would merge into that one and the undo below
+    # would restore the value from before the EARLIER call. Window 0 is exactly
+    # "one step per call": the flow states the granularity it asserts instead of
+    # depending on how fast the two calls happen to be.
+    window_before = max(0, int(flow.ok("control.undo_depth")
+                            .get("coalescing", {}).get("window_ms", 0)))
+    flow.ok("control.set_undo_coalescing", {"window_ms": 0})
     away = low + (high - low) * 0.25
     flow.ok("plugin.param_set", {"target": instrument_track, "plugin": fx, "name": name, "value": away})
     undone = flow.ok("control.undo")
@@ -716,6 +727,7 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
         fail("control.undo did not restore the parameter: %r" % after_undo, process, log_path)
     print("control.undo reversed plugin.param_set: %s back to %r"
           % (name, after_undo.get("parameter", {}).get("value")))
+    flow.ok("control.set_undo_coalescing", {"window_ms": window_before})
 
     # --- plugin.state_save / plugin.state_load ---------------------------
     state_path = os.path.join(tmp, "plugin-state.xml")

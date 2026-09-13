@@ -74,6 +74,9 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp
 	src/core/ReversibilityUndoTest.cpp
+	# The bounded, coalescing undo (task #623): the declared depth caps, the
+	# drag rule, the byte budget and the refusal of an evicted step.
+	src/core/UndoBoundsTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
@@ -222,6 +225,12 @@ set_tests_properties(RecordingRealtimeTest PROPERTIES
 # headless Qt platform as the test above - and the developer box has no display.
 set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# UndoBoundsTest constructs a full Engine, drives the control surface and starts
+# a QThread-paced window test, so it needs the same headless Qt platform.
+set_tests_properties(UndoBoundsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	TIMEOUT 300)
 
 # ---------------------------------------------------------------------------
 # PhaseDSidechainTest loads the native Compressor module.

@@ -234,24 +234,72 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 	const bool mutating = cmd->mutating;
 	const QString commandId = cmd->id;
 	return runOnUiThread([this, handler, mutating, commandId, args]() {
-		// ONE agent command = ONE undo step (SPEC A16 deliverable 3). The mark is
-		// taken before the handler runs and everything it pushed is merged after,
-		// because AutomatableModel::setValue() pushes checkpoints of its own on
-		// every non-automated write - so a command that writes N models would
-		// otherwise cost N undos.
-		ProjectJournal* journal = Engine::projectJournal();
-		const int mark = journal != nullptr ? journal->undoDepth() : -1;
-		ControlResult result = handler(args);
-		if( journal != nullptr ) { journal->mergeCheckpointsFrom( mark ); }
-		if (mutating && result.ok) { recordTransactionOf(commandId, &result); }
-		result.result.remove(QStringLiteral("__transaction"));
-		return result;
+		return runHandler(handler, commandId, mutating, args);
 	});
 }
 
-//! Records what a successful mutating handler described (SPEC A16).
-void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResult* result)
+/*! Everything that has to happen around one handler: the one-command-one-step
+ *  merge, the coalescing rule, and the transaction record.
+ *
+ *  Split out of invoke() so neither function carries the dispatch AND the
+ *  bookkeeping (the complexity ratchet counts the lambda's decisions as
+ *  invoke's - the same reason the file-length and complexity gates pushed the
+ *  transaction record into ControlTransactions.cpp).
+ *
+ *  ONE agent command = ONE undo step (SPEC A16 deliverable 3): the depth is
+ *  marked before the handler runs and everything it pushed is merged after,
+ *  because AutomatableModel::setValue() pushes a checkpoint of its own on every
+ *  non-automated write, so a command that writes N models would otherwise cost
+ *  N undos.
+ */
+ControlResult ControlRegistry::runHandler(
+	const std::function<ControlResult(const QJsonObject&)>& handler, const QString& commandId,
+	bool mutating, const QJsonObject& args)
 {
+	ProjectJournal* journal = Engine::projectJournal();
+	const int mark = journal != nullptr ? journal->undoDepth() : -1;
+	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
+
+	ControlResult result = handler(args);
+
+	bool coalesced = false;
+	quint64 step = 0;
+	if (journal != nullptr)
+	{
+		// The merge first: one command is one step however many models it wrote.
+		// THEN the coalescing rule, which can merge that step into the previous
+		// command's when this call continues the same gesture.
+		journal->mergeCheckpointsFrom(mark);
+		// Did THIS call produce a step? Asked by SERIAL, not by depth: a bound
+		// can evict steps while the handler runs, so the depth can be exactly
+		// what it was before the call even though a step was pushed. (Found by
+		// measurement - docs/UNDO-BOUNDS.md, "the step serial".)
+		const quint64 produced = journal->topStepSerial();
+		if (produced != serialBefore)
+		{
+			step = produced;
+			coalesced = coalesceStepOf(*journal, commandId, args, true);
+		}
+	}
+	if (mutating && result.ok)
+	{
+		recordTransactionOf(commandId, &result, coalesced, step);
+	}
+	result.result.remove(QStringLiteral("__transaction"));
+	return result;
+}
+
+//! Records what a successful mutating handler described (SPEC A16).
+void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResult* result,
+	bool coalesced, quint64 step)
+{
+	// One record per UNDO STEP, not per call: when the coalescing rule merged
+	// this call's step into the previous run's, the record that run started is
+	// extended and no second record is written. Nothing this call reported is
+	// lost - `before` is still the state before the gesture and `inverse` still
+	// reverts all of it - so the count is the only thing that changes.
+	if (coalesced) { extendTopTransaction(); return; }
+
 	// The handler describes before-state + inverse under the private
 	// "__transaction" key; the registry records it. A handler that supplies
 	// nothing still gets an honest record saying so, and the CLASS always comes
@@ -261,6 +309,7 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 	{
 		Transaction honest;
 		honest.command = commandId;
+		honest.step = step;
 		stampContract(commandId, &honest);
 		honest.mechanism = QStringLiteral("this command recorded no inverse or "
 			"snapshot; ") + honest.mechanism;
@@ -274,6 +323,7 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 	tx.inverse = recorded.value(QStringLiteral("inverse")).toObject();
 	tx.reversible = recorded.value(QStringLiteral("reversible")).toBool(false);
 	tx.mechanism = recorded.value(QStringLiteral("mechanism")).toString();
+	tx.step = step;
 	stampContract(commandId, &tx);
 	recordTransaction(tx);
 }
@@ -331,81 +381,10 @@ QJsonObject ControlRegistry::describeAll() const
 	return out;
 }
 
-void ControlRegistry::recordTransaction(const Transaction& tx)
-{
-	// The record is bounded TWO ways (SPEC A16 deliverable 2):
-	//   - a hard count cap of MaxTransactionRecords records;
-	//   - a hard total cap of MaxTransactionBytes of serialised before-state
-	//     plus inverse descriptor.
-	// Eviction policy: FIFO - the OLDEST record is dropped first, so the most
-	// recent history is never the part that is lost, and the newest record
-	// (the one control.undo reads) is always present. What happens at the cap
-	// is reported, not hidden: `control.transactions` returns `evicted`,
-	// `capped` and the retained/limit byte counts. The engine's own undo stack
-	// evicts at the same depth (ProjectJournal::MAX_UNDO_STATES = 100), so an
-	// agent never sees a record for a step it can no longer undo.
-	Transaction stamped = tx;
-	stamped.bytes = QJsonDocument(stamped.before).toJson(QJsonDocument::Compact).size()
-		+ QJsonDocument(stamped.inverse).toJson(QJsonDocument::Compact).size()
-		+ stamped.mechanism.toUtf8().size()
-		+ static_cast<int>(stamped.command.toUtf8().size());
 
-	m_transactions.append(stamped);
-	m_recordedBytes += stamped.bytes;
 
-	while (m_transactions.size() > control::MaxTransactionRecords
-		|| (m_recordedBytes > control::MaxTransactionBytes && m_transactions.size() > 1))
-	{
-		m_recordedBytes -= m_transactions.first().bytes;
-		m_transactions.remove(0);
-		++m_evicted;
-	}
-}
 
-const ControlRegistry::Transaction* ControlRegistry::lastTransaction() const
-{
-	return m_transactions.isEmpty() ? nullptr : &m_transactions.last();
-}
 
-QJsonArray ControlRegistry::transactions() const
-{
-	QJsonArray out;
-	for (const Transaction& tx : m_transactions)
-	{
-		QJsonObject entry;
-		entry.insert(QStringLiteral("command"), tx.command);
-		entry.insert(QStringLiteral("class"), tx.cls);
-		entry.insert(QStringLiteral("before"), tx.before);
-		entry.insert(QStringLiteral("inverse"), tx.inverse);
-		entry.insert(QStringLiteral("reversible"), tx.reversible);
-		entry.insert(QStringLiteral("mechanism"), tx.mechanism);
-		entry.insert(QStringLiteral("bytes"), tx.bytes);
-		out.append(entry);
-	}
-	return out;
-}
-
-QJsonObject ControlRegistry::transactionsReport() const
-{
-	QJsonObject out;
-	out.insert(QStringLiteral("transactions"), transactions());
-	out.insert(QStringLiteral("count"), m_transactions.size());
-	out.insert(QStringLiteral("retained_bytes"), m_recordedBytes);
-	out.insert(QStringLiteral("cap_records"), control::MaxTransactionRecords);
-	out.insert(QStringLiteral("cap_bytes"), control::MaxTransactionBytes);
-	out.insert(QStringLiteral("evicted"), m_evicted);
-	// `capped` says out loud that older records were dropped, so a client can
-	// tell "this is the whole history" from "this is what the bound retains".
-	out.insert(QStringLiteral("capped"), m_evicted > 0);
-	return out;
-}
-
-void ControlRegistry::clearTransactions()
-{
-	m_transactions.clear();
-	m_recordedBytes = 0;
-	m_evicted = 0;
-}
 
 void ControlRegistry::addShutdownHook(std::function<void()> hook)
 {
@@ -430,18 +409,6 @@ void ControlRegistry::runShutdownHooks()
 
 namespace control
 {
-
-ControlRegistry::Transaction makeTransaction(const QString& command, QJsonObject before,
-	QJsonObject inverse, bool reversible, const QString& mechanism)
-{
-	ControlRegistry::Transaction tx;
-	tx.command = command;
-	tx.before = std::move(before);
-	tx.inverse = std::move(inverse);
-	tx.reversible = reversible;
-	tx.mechanism = mechanism;
-	return tx;
-}
 
 } // namespace control
 

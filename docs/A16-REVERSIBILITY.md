@@ -3,6 +3,11 @@
 **Status:** implemented and tested on `post-alpha/reversibility`, branched from the gate-clean
 integrated tree `post-alpha/agent-surface-integration` @ `149068c06`.
 
+**Extended (2026-09-13, lane `030/w11-undo-depth`, base `8effd96ae`):** the undo stack is now BOUNDED
+(two caps, both reported) and its drags COALESCE (a run of the same command on the same target is one
+step), with three new `control.*` commands and a per-command coalescing declaration in the table below.
+See §10 and `docs/UNDO-BOUNDS.md` for the two decisions the extension makes.
+
 This is the DESIGN + IMPLEMENTATION record. The measured baseline it starts from is
 `ableton-gap/A16-STATUS-MEASURED.md` (36 mutating commands exercised, 17 `reversible: true`); where
 this table disagrees with that measurement, the row says so and section 2 argues it.
@@ -11,28 +16,34 @@ this table disagrees with that measurement, the row says so and section 2 argues
 
 ## 1. The classification table for EVERY registered command
 
-One row per registered command. The table is DATA in
-`src/core/ControlReversibilityTable.cpp` - one file, so it can be reviewed as a table and so an
-anti-drift test (`tests/src/core/ReversibilityContractTest.cpp`) can compare it against the
+One row per registered command. The table is DATA, split across three files by WHAT THE INVERSE IS
+(`ControlReversibilityTable.cpp` = `true_inverse`, `ControlReversibilityTableSnapshot.cpp` =
+`snapshot`, `ControlReversibilityTablePassive.cpp` = `irreversible` + `not_mutating`; the file split
+exists because this fork's file-length ratchet measures a file as a unit). It is still ONE table:
+`ReversibilityTable`'s constructor assembles the three blocks, so it can be reviewed as a table and so
+an anti-drift test (`tests/src/core/ReversibilityContractTest.cpp`) can compare it against the
 registry in both directions: every registered command has a row, and every row names a registered
 command.
 
-The wire names are `true_inverse`, `snapshot`, `irreversible` and `not_mutating`. **70 commands are
-registered; this table has 71 rows** - the 70 plus `project.restore_revision`, which this change
-ADDS (SPEC A16 deliverable 4: the file-level restore path, reachable through the control surface).
+The wire names are `true_inverse`, `snapshot`, `irreversible` and `not_mutating`. **Re-measured on the
+`030/w11-undo-depth` tree (2026-09-13, base `8effd96ae`): 111 commands are registered and the table has
+111 rows, one per command** — 108 at the base plus the three this lane adds (`control.undo_depth`,
+`control.set_undo_depth`, `control.set_undo_coalescing`, §10). The counts in the original version of
+this paragraph (70/71) were measured before eight more command groups landed and are superseded; the
+figures below are the ones this tree produces.
 
-The three classes SPEC A16 names apply to the 40 commands that write something. The other 31 write
-nothing - a read-only inspector, a refused handler, or `control.undo` itself - and are classed
-`not_mutating`, because a command that changes no project state is not "reversible", it is
-*not a mutation*. Grouping counts:
+The three classes SPEC A16 names apply to the 64 rows that write something. The other 47 write nothing
+— a read-only inspector, a refused handler, or `control.undo` itself — and are classed `not_mutating`,
+because a command that changes no project state is not "reversible", it is *not a mutation*. Grouping
+counts, per block as the tree ships it:
 
 | class | rows |
 |---|---|
-| `true_inverse` | 30 |
-| `snapshot` | 5 |
+| `true_inverse` | 54 |
+| `snapshot` | 7 |
 | `irreversible` | 3 |
-| `not_mutating` | 34 (of which 3 are declared-mutating refusals and 2 are selection commands) |
-| **total** | **72** |
+| `not_mutating` | 47 (of which 3 are declared-mutating refusals and 2 are selection commands) |
+| **total** | **111** |
 
 ### 1.1 `true_inverse` - a live checkpoint on the engine's own undo stack
 
@@ -194,7 +205,11 @@ One record per successful mutating command, built by the registry from the handl
                "args": { ... } },
   "reversible": true,           <- the CALL's verdict
   "mechanism": "...",           <- how it is reversed, or why it cannot be
-  "bytes": 412 }
+  "bytes": 412,
+  "commands": 200,              <- how many COMMANDS this one undo step covers
+                                <-   (1 normally; a coalesced drag is one step)
+  "step": 41 }                  <- the serial of the journal step it describes,
+                                <-   0 when the inverse is a command
 ```
 
 **Bounds, eviction, and what happens at the cap.**
@@ -206,6 +221,7 @@ One record per successful mutating command, built by the registry from the handl
 | per-field caps inside `before` | 64 KiB for a device state XML (`ControlCommandsPlugin.cpp`), 64 KiB for a captured track XML (`MaxTrackSnapshotChars`) |
 | eviction policy | **FIFO - oldest first.** The newest record (the one `control.undo` reads) is never the one dropped |
 | at the cap | the oldest record is evicted and the eviction is **counted and reported**, never hidden: `control.transactions` returns `count`, `retained_bytes`, `cap_records`, `cap_bytes`, `evicted` and `capped` |
+| **one record per undo step** (0.3.0, task #623) | a COALESCED run of commands extends the record it started instead of appending one per call, and the count is readable per record as `commands`. `step` is the serial of the journal step the record describes: the record list and the stack no longer evict at the same point (the stack also has a byte budget), so `control.undo` REFUSES, typed, when `step` is older than the stack's oldest retained step instead of unwinding a later edit. See `docs/UNDO-BOUNDS.md` §Decision 1 |
 
 **Invariant enforced by the registry, not by convention:** the `class` is stamped from the table.
 A handler may record LESS than its class allows (an instrument replacement inside `plugin.load` is
@@ -333,8 +349,13 @@ The three irreversible commands and what an agent should do instead:
 
 ## 8. Honest limits (what this does NOT do)
 
-1. **Undo depth is 100 steps** for both the model stack and the record; past it the oldest step is
-   evicted and `capped: true` says so. The record does not survive a restart.
+1. **Undo depth is bounded, and the bound is DECLARED and READABLE** (task #623's second half; §10 and
+   `docs/UNDO-BOUNDS.md`): a count cap (100 steps by default, `ProjectJournal::MAX_UNDO_STATES`) **and** a
+   byte budget (16 MiB by default) over the serialised checkpoints, evicting oldest-first with the newest
+   step never dropped. `control.undo_depth` reports both caps, the bytes retained and how many steps were
+   evicted; `control.set_undo_depth` sets them. The records evict at the count cap of 100 as before, and a
+   record whose journal step a bound has evicted makes `control.undo` REFUSE, typed, rather than unwind an
+   older step. Neither the stack nor the record survives a restart.
 2. **`track.remove`'s inverse is bounded at 64 KiB of track XML.** A larger track refuses the
    inverse (typed, with the reason) rather than keeping a truncated one - its before-state names
    what was removed and the fallback is a project revision.
@@ -376,3 +397,41 @@ The three irreversible commands and what an agent should do instead:
 4. **`control.undo` used to unwind an OLDER checkpoint when the last command had none of its own**,
    which is the pretending SPEC A16 forbids. It now refuses, typed, and the refusal names the
    fallback.
+
+---
+
+## 10. Bounded undo and coalescing (the second half of task #623) — added 2026-09-13
+
+`docs/UNDO-BOUNDS.md` is the decision record; this section says what the contract table and the command
+surface gained, so the two documents agree.
+
+**Three new commands in `control.*`** (rows in §1, schemas and reversibility metadata as for every other
+command):
+
+| command | class | what it does |
+|---|---|---|
+| `control.undo_depth` | `not_mutating` | reads the depth, the two caps, the bytes retained, the eviction count and the coalescing rule in force |
+| `control.set_undo_depth` | `snapshot` (reversible) | sets the count cap and/or the byte budget; the previous caps are the before-state and the recorded inverse is the command itself (`applies: command`). What it CANNOT restore is named: the steps a lower cap evicted are gone (`dropped` reports how many) |
+| `control.set_undo_coalescing` | `not_mutating` | sets the window a same-command-same-target run is grouped in; `0` disables grouping, which reproduces the pre-0.3.0 behaviour exactly |
+
+**One new column in the table below, as DATA:** `RC(id, cls, rev, reason, mechanism, fallback, target)`
+declares that a run of that command on the named target argument(s) is ONE undo step. Five rows use it —
+`clip.move` (`clip`), `clip.resize` (`clip`), `mixer.set_volume` (`channel`), `plugin.param_set`
+(`target,plugin,name,index`), `rack.macro_set` (`channel,macro`) — and every one of them is
+`true_inverse`, because a step can only be merged into another step when both restore live state.
+`ReversibilityContractTest::coalescingIsDeclaredOnlyForCommandsWithALiveCheckpoint` asserts both the
+class and that the declaration is reachable through `control.undo_depth`.
+
+**Two behaviours the contract now states rather than implies.** (1) A coalesced run is ONE record, with
+the count in `control.transactions`' new per-record `commands` field: `before` and `inverse` still
+describe the state before the gesture and still revert the whole of it. (2) `control.undo` on a record
+whose journal step a bound has evicted FAILS with the typed `irreversible` error naming the caps —
+the same "never pretend" rule as §6, now also covering the case the bound itself creates.
+
+**What did NOT change.** The inverses of existing commands are unchanged: a merged step keeps the
+EARLIEST capture of each object, which is the pre-gesture state, so one `control.undo` (or one Ctrl+Z,
+the same stack and the same call) still returns the object to where the gesture started. The GUI's own
+gestures were already one step each (a checkpoint at mouse-press, journalling off during the drag —
+`ClipView`, `Fader`, `AutomatableSlider`), and nothing about that path changed.
+
+---

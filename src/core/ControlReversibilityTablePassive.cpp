@@ -43,14 +43,16 @@
 #include "lmmsconfig.h"
 
 /*!
- * The second literal block of THE classification table (see
- * ControlReversibilityTable.cpp for the first): the rows for the commands that
- * have no inverse - irreversible (an undo attempt must FAIL, typed, and name
- * the fallback) and not_mutating (nothing is written, so there is nothing to
- * reverse). The two files are ONE table assembled by ReversibilityTable's
- * constructor; the split exists because this fork's file-length ratchet reads a
- * file as a unit, and a table that has to be read as a whole is still printed
- * as a whole by control.transactions and by tests/…/ReversibilityContractTest.
+ * The THIRD literal block of THE classification table (see
+ * ControlReversibilityTable.cpp for the first, the true_inverse rows, and
+ * ControlReversibilityTableSnapshot.cpp for the second, the snapshot rows):
+ * the rows for the commands that have no inverse - irreversible (an undo
+ * attempt must FAIL, typed, and name the fallback) and not_mutating (nothing is
+ * written, so there is nothing to reverse). The files are ONE table assembled
+ * by ReversibilityTable's constructor; the split exists because this fork's
+ * file-length ratchet reads a file as a unit, and a table that has to be read as
+ * a whole is still printed as a whole by control.transactions and by
+ * tests/…/ReversibilityContractTest.
  */
 
 namespace lmms
@@ -65,7 +67,7 @@ using RC = ReversibilityClass;
 
 //! A literal row: R(id, class, reversible, reason, mechanism, fallback).
 #define R(id, cls, rev, reason, mechanism, fallback) \
-	{ id, cls, reason, mechanism, fallback, rev }
+	{ id, cls, reason, mechanism, fallback, rev, nullptr }
 
 const ReversibilityRow kPassiveRows[] = {
 
@@ -106,6 +108,14 @@ const ReversibilityRow kPassiveRows[] = {
 	// writes nothing (or refuses every call) - there is no transaction, and
 	// therefore nothing for control.undo to reverse or to be blocked by.
 	// =====================================================================
+	R("export.get_settings", RC::NotMutating, false,
+		"a read of the render settings (dither, SRC quality): it writes "
+		"nothing, so there is no transaction and nothing for control.undo to "
+		"reverse or to be blocked by",
+		"nothing to inverse. export.set_dither and export.set_src_quality are "
+		"the writers, and both carry an action checkpoint",
+		""),
+
 	R("clip.select", RC::NotMutating, false,
 		"selection is control-surface view state: it is not serialized, the "
 		"GUI keeps its own copy in QGraphicsItem state, and no engine "
@@ -169,6 +179,10 @@ const ReversibilityRow kPassiveRows[] = {
 		"nothing to reverse: calling midi.learn_toggle again is the operation a "
 		"client calls, and setArmed() keeps the Edit menu tick in step",
 		""),
+	R("control.set_undo_coalescing", RC::NotMutating, false,
+		"it sets the WINDOW the control surface groups a same-command-same-target run in: control-surface grouping state, not project state. It cannot change, destroy or restore anything already on the stack, and it is reported by control.undo_depth",
+		"no write. The window is not carried by any project file; it affects only how LATER commands are grouped, and 0 disables coalescing entirely, which is what reproduces the pre-0.3.0 behaviour exactly",
+		""),
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The two telemetry.* rows travel with the client: with the packager kill
 	// switch off the commands are absent from the registry, and this table must
@@ -199,30 +213,10 @@ const ReversibilityRow kPassiveRows[] = {
 	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
 	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
-	// The browser.* group's read half (W8 tag/metadata search plus the waveform
-	// peak cache). None of the four writes project state. browser.query and
-	// browser.peaks do fill an in-memory cache, which is not project state and
-	// is not serialized - the same shape render.render's row records for its
-	// output artefact, and the reason no transaction is recorded: a cached read
-	// must not shadow the undo of the real edit underneath it.
-	R("browser.roots", RC::NotMutating, false,
-		"reads the browser's root directories and whether each exists",
-		"no write", ""),
-	R("browser.query", RC::NotMutating, false,
-		"walks the browser's directories and reads the tag store; it opens an "
-		"audio file for its metadata only when the caller sets 'probe', and it "
-		"writes nothing",
-		"no write: the result is derived state, and nothing is kept between "
-		"calls", ""),
-	R("browser.tags", RC::NotMutating, false,
-		"reads the tag store and the vocabulary derived from it", "no write", ""),
-	R("browser.peaks", RC::NotMutating, false,
-		"opens the audio file and fills the peak cache: the cache is a "
-		"memory-resident derived view of the file, keyed on its path and last "
-		"modification, and it is neither project state nor written to disk",
-		"no write: an entry is dropped when the file changes, and the whole "
-		"cache is bounded (BrowserPeakCache::Capacity entries of "
-		"BrowserPeakCache::BaseBuckets peaks each)", ""),
+	R("control.undo_depth", RC::NotMutating, false,
+		"reads the engine's own undo stack - its depth, the two caps it is bounded by, the serialised bytes it retains, how many steps a bound has evicted, and the coalescing window - and writes nothing",
+		"no write",
+		""),
 	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
 	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
 	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),
@@ -252,6 +246,26 @@ const ReversibilityRow kPassiveRows[] = {
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
+
+#ifdef LMMS_HAVE_SESSION_VIEW
+	// The session.* launch requests write NO project state - they queue into
+	// SessionScheduler exactly like transport.play - so recording a transaction
+	// for one would shadow the undo of the real edit underneath it (the defect
+	// clip.select's row records).
+	R("session.launch_slot", RC::NotMutating, false,
+		"the request queues into the scheduler's lock-free queue; the slot's launch state lives on the audio thread and is not project state", "nothing to reverse: session.stop_slot is the operation a client calls, and it is available directly", ""),
+	R("session.launch_scene", RC::NotMutating, false,
+		"the same queued requests, one per non-empty cell of the row; nothing in the <session> block is written", "nothing to reverse: session.stop_all drops every launched slot and session.stop_slot stops one", ""),
+	R("session.stop_slot", RC::NotMutating, false,
+		"a stop request is the same engine-state queue; the scheduled stop fires on the audio thread", "nothing to reverse: a stopped slot is relaunched with session.launch_slot", ""),
+	R("session.stop_all", RC::NotMutating, false,
+		"one atomic reset request; it edits no model and drops only the audio thread's transient slot table", "nothing to reverse: the slots are relaunched from the model, which the reset did not touch", ""),
+	R("session.get_state", RC::NotMutating, false,
+		"reads the model and the launch engine's atomics", "no write", ""),
+#endif // LMMS_HAVE_SESSION_VIEW
+
+	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
+
 };
 
 constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));

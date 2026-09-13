@@ -81,6 +81,12 @@ void insertRows(QHash<QString, ReversibilityEntry>* entries, const Reversibility
 		entry.mechanism = QString::fromUtf8(row.mechanism);
 		entry.fallback = QString::fromUtf8(row.fallback);
 		entry.reversible = row.reversible;
+		// A null coalescing declaration is the common case: the command never
+		// groups with its neighbour.
+		if (row.coalesceTarget != nullptr)
+		{
+			entry.coalesceTarget = QString::fromUtf8(row.coalesceTarget);
+		}
 		entries->insert(entry.command, entry);
 	}
 }
@@ -90,14 +96,18 @@ void insertRows(QHash<QString, ReversibilityEntry>* entries, const Reversibility
 ReversibilityTable::ReversibilityTable() :
 	m_entries()
 {
-	// ONE table, assembled from its two literal blocks (see the header): the rows
-	// that have an inverse, and the rows that have none. Both are captured here,
-	// so every consumer still reads one contract.
+	// ONE table, assembled from its THREE literal blocks (see the header): the
+	// rows whose inverse is a live checkpoint, the rows whose inverse is a
+	// bounded recorded state, and the rows that have no inverse at all. Every
+	// consumer still reads one contract.
 	int rowCount = 0;
 	const ReversibilityRow* rows = reversibilityRowTable(&rowCount);
+	int snapshotCount = 0;
+	const ReversibilityRow* snapshots = reversibilitySnapshotRowTable(&snapshotCount);
 	int passiveCount = 0;
 	const ReversibilityRow* passive = reversibilityPassiveRowTable(&passiveCount);
 	insertRows(&m_entries, rows, rowCount);
+	insertRows(&m_entries, snapshots, snapshotCount);
 	insertRows(&m_entries, passive, passiveCount);
 }
 

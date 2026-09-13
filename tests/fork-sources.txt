@@ -1,26 +1,25 @@
 # Sources added by this fork on top of upstream master 4e677cb6c6ab.
 #
 # The entry list below is the byte-exact output of the command under "Regenerate with".
-#
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #       | awk '/^tests\// && !/^tests\/src\/core\/(BrowserCatalogTest|ControlBrowserCommandsTest|AudioResamplerRatioTest|ExportDitherTest|ExportWavDitherTest|ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(BrowserTestSupport|StemExportTestSupport|ReversibilityTestSupport|RackTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest|UndoBoundsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py ; \
 #   } | LC_ALL=C sort
-#
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
 #        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | awk '/^tests\// && !/^tests\/src\/core\/(BrowserCatalogTest|ControlBrowserCommandsTest|AudioResamplerRatioTest|ExportDitherTest|ExportWavDitherTest|ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(BrowserTestSupport|StemExportTestSupport|ReversibilityTestSupport|RackTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest|UndoBoundsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
-#
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
 # product command cannot derive on its own. Each is named here with its reason, so no entry in
 # this file is a hand-edit nobody can account for:
@@ -44,7 +43,6 @@
 #     the awk filter admits exactly these ten. A new fork test source belongs in
 #     tests/all-sources.txt by default; add it to the awk pattern above only if it must carry the
 #     fork ratchets too, and then re-run this command.
-#
 #     Merged 2026-09-12 (integration wave 3C). The three post-alpha/warp test sources
 #     (ClipWarpPersistenceTest, WarpMarkersTest, SampleClipWarpTest) arrived registered HERE,
 #     where this file's own command cannot produce them: the awk allow-list above does not admit
@@ -54,7 +52,6 @@
 #     names as the default for a new fork test source. This is the same "put the entry where its
 #     home actually is" move post-alpha/stem-export's tool needed at wave 3A.
 #     include/WarpMarkers.h stays here: it is fork-NEW product code and the command derives it.
-#
 #     Merged 2026-09-12 (integration wave 3A). The two clip-lane entries arrived on the
 #     integration side of this merge and were hand-added there (their lane's own comment says
 #     so); the gate-hygiene side, branched before that lane landed, could not produce them. They
@@ -101,7 +98,6 @@
 #     moved to tests/tools-sources.txt on 2026-09-12 (gate hygiene): tooling has one home, and
 #     that list is the home tests/tools-sources.txt itself declares for tools/. It is not in the
 #     command above any more, and this file no longer carries it.
-#
 # Why the base is a fixed commit and not `origin/master`. `origin` in this clone is
 # upstream LMMS/lmms; this repo never pushes to it, and its `master` ref tracks whatever
 # upstream publishes - on 2026-09-11 it was 518a7e8ef, which is NOT an ancestor of the
@@ -116,20 +112,16 @@
 #   git cat-file -e 4e677cb6c6ab^{commit} && echo ok
 # (`git merge-base origin/master HEAD` returns the same commit - 4e677cb6c6ab - but only
 # while origin has been fetched; the literal commit is the base that cannot drift.)
-#
 # Vendored third-party trees are excluded on purpose (524 files): src/3rdparty
 # (lua, luabridge), plugins/NeuralAmp/rtneural (RTNeural), plugins/NeuralAmp/nam
 # (Neural Amp Modeler), plugins/NeuralAmp/tests, plugins/RnnoiseDenoiser/rnnoise
 # (RNNoise). They are not this fork's code and these gates never refactor them.
-#
 # lcov extract patterns are anchored to the repo root (tests/run-coverage.sh
 # resolves this file's directory to the repo root).
-#
 # The collation is pinned to C for the same reason tests/all-sources.txt's is: plain `sort`
 # follows the caller's locale, so an unpinned command does not reproduce this file on a
 # machine with a different one, and the tail entries appended by merge lanes ended up out of
 # order for the same reason.
-#
 # Merged 2026-09-12 (integration wave 3B, merge #2 = post-alpha/brand-placeholders). That lane
 # added four entries to this file by hand; NONE of them can be produced by this file's own
 # command, so keeping them would make the file stop reproducing. Each is resolved by where its
@@ -150,7 +142,6 @@
 #     docs/BRAND-PLACEHOLDERS.md; the two tests/evidence/ scripts here were removed with
 #     the committed evidence on 2026-09-13 (REPO-1/CP-1) and their hashes are in
 #     tests/evidence-manifest.tsv, so only tests/brand-resource-sweep.py remains on disk.
-#
 # Merged 2026-09-12 (integration wave 3B, merge #5 = post-alpha/racks). That lane added
 # tools/rack-render-fixture.py and tools/rack-render-proof.py here by hand; neither can be
 # produced by this file's own command, and the regeneration run proved it (both reported
@@ -158,7 +149,6 @@
 # fork's own tooling under tools/ and the list whose own command DOES produce them - a
 # recorded move of home, not a lost entry, and the same treatment merge #2 gave
 # tools/brand/rasterise-placeholders.py.
-#
 # Merged 2026-09-12 (integration wave 3D, merge #1 = post-alpha/instrument-hosting-impl).
 # That lane added eight entries here (the Vst3Instrument module's four sources, the two
 # Vst3Midi* files and Vst3MidiQueue.h extracted from the effect host, and
@@ -175,7 +165,6 @@
 # a hand-built union of 216 entries that its OWN command could not produce (the command
 # printed 195 of them - its header says so and names the 21 hand-registered entries, and
 # this train verified the number by running that command against the pinned commit).
-#
 # Carrying 216 here would have made this file stop reproducing, which is the one thing
 # its own header forbids, so the 21 entries are ADMITTED instead - the same resolution
 # this header already records for tests/src/tracks/SampleClipWindowTest.cpp ("The awk
@@ -193,7 +182,6 @@
 #     extension filter" shape the tools/ line above uses, because widening the
 #     extension filter would also admit every other tests/ script.
 # Verified after the merge: the file reproduces (0 added, 0 removed, 0 duplicates).
-#
 # Added 2026-09-13 (030/cf4-complexity). tests/control_socket_diagnosis.py is the
 # FOURTEENTH .py entry and is named in the third pathspec above. It is the diagnostic
 # half of tests/control_socket_harness.py - the "why did this instance stop answering"
@@ -204,7 +192,6 @@
 # for the reason the paragraph above gives; the two ratchets it widens were re-measured
 # with it registered and pass, and no baseline was re-anchored for either red.
 # Reproduces verified with the command under "Verify it" after the entry was committed.
-#
 # Repaired 2026-09-13 (030/w12-forkrecipe). The third pathspec line above, and three
 # names in the awk allow-list, were LOST by the scripted entry-union that landed the
 # 030/w7-dither-src merge (72b1e7889, parents 57ca389a7 and 671e5656b): that merge kept
@@ -244,6 +231,7 @@ include/ControlRackSupport.h
 include/ControlRegistry.h
 include/ControlReversibility.h
 include/ControlServer.h
+include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
 include/CrashReporter.h
@@ -401,6 +389,7 @@ src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTransport.cpp
+src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlDeviceCatalogue.cpp
@@ -413,11 +402,14 @@ src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTablePassive.cpp
+src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrueInverse.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
+src/core/ControlTransactions.cpp
+src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
 src/core/CrashReporter.cpp
 src/core/ExportDither.cpp
@@ -434,6 +426,7 @@ src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectIds.cpp
+src/core/ProjectJournalBounds.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRevisions.cpp
 src/core/Rack.cpp
@@ -521,6 +514,7 @@ tests/src/core/SessionModelTest.cpp
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
+tests/src/core/UndoBoundsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tools/local-ci.sh
 tools/ncpu-shim.c

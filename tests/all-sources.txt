@@ -8,7 +8,6 @@
 # the code they were written against. (docs/CONVENTIONS.md states the definition; until
 # 2026-09-12 this file was missing 20 of the fork's own sources, which is what made it
 # contradict that definition - see the note under the verify step.)
-#
 # Vendored third-party trees are excluded on purpose - they are not this repo's code and
 # no gate here rewrites them:
 #   git submodules (doc/wiki, plugins/LadspaEffect/{calf,cmt,swh,tap}, plugins/CarlaBase/carla,
@@ -18,30 +17,25 @@
 #   src/3rdparty (85 tracked files), plugins/NeuralAmp/{rtneural,nam,tests},
 #   plugins/RnnoiseDenoiser/rnnoise, and tests/reference (verbatim copies of upstream plugin
 #   sources kept for A/B comparison - real sources, but duplicates by construction).
-#
 # Regenerate with (the whole command - no remote state, no arguments):
 #   git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
 #     | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #     | LC_ALL=C sort
-#
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/all-sources.txt) \
 #        <(git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
 #            | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | LC_ALL=C sort) && echo REPRODUCES
-#
 # On 2026-09-12 that check printed 20 paths (the Lua console / MIDI-learn / Session View /
 # LUFS + loudness-report / script-package sources): every one of them fork-NEW, every one of
 # them already registered in tests/fork-sources.txt, and none of them here. Nothing caught it,
 # because Gate 9 checks registered->exists and never file->registered. They are in the list
 # below now.
-#
 # The collation is pinned to C deliberately. Plain `sort` follows the caller's locale: under
 # en_US.UTF-8 it puts `include/aeffectx.h` before `include/ArrayVector.h`, under C it puts them
 # the other way round. An unpinned command therefore reported ~100 spurious line moves on every
 # regeneration, which is why this file was never actually re-derived from it. Byte order is
 # identical on every machine, which is what makes the verify step above mean something.
-#
 # 2026-09-13 (W2-process, the whole-tree ratchet decision). The entry list below is the
 # command's output again, which it was not: src/core/ControlServerSocket.cpp was missing
 # from this manifest. It is the file commit 2d959af8d's ratchet fix split out of
@@ -119,6 +113,7 @@ include/ControlRackSupport.h
 include/ControlRegistry.h
 include/ControlReversibility.h
 include/ControlServer.h
+include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
 include/Controller.h
@@ -925,6 +920,7 @@ src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTransport.cpp
+src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlDeviceCatalogue.cpp
@@ -937,11 +933,14 @@ src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTablePassive.cpp
+src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrueInverse.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
+src/core/ControlTransactions.cpp
+src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
 src/core/Controller.cpp
 src/core/ControllerConnection.cpp
@@ -1004,6 +1003,7 @@ src/core/PluginScanCache.cpp
 src/core/PresetPreviewPlayHandle.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournal.cpp
+src/core/ProjectJournalBounds.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
@@ -1332,6 +1332,7 @@ tests/src/core/TelemetryTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
+tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp

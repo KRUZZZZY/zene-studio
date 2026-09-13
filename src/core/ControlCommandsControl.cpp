@@ -290,6 +290,26 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 			irreversibleUndoMessage(*top, control::ReversibilityTable::instance().lookup(top->command)));
 	}
 
+	// The stack is BOUNDED (task #623), so a record can outlive the step it
+	// describes: a lower cap, or the byte budget, evicts the oldest steps while
+	// the record list keeps its own. Unwinding then would take back a LATER edit
+	// than the one asked about - the exact pretending SPEC A16 exists to remove -
+	// so this REFUSES, typed, and names the bound that did it. `step == 0` is a
+	// record whose inverse is a command rather than a step (a file revision):
+	// it has no step to have lost.
+	ProjectJournal* journal = Engine::projectJournal();
+	if (top->step != 0 && journal != nullptr && top->step < journal->oldestStepSerial())
+	{
+		return ControlResult::failure(ControlErrorKind::Irreversible,
+			QStringLiteral("cannot undo '%1': the undo step this record describes was EVICTED by the "
+				"stack's bound (cap %2 steps / %3 bytes), so undoing now would take back a LATER edit "
+				"than the one asked for. Read control.undo_depth's evicted/bounded fields to see the "
+				"bound at work, raise the caps with control.set_undo_depth, or re-drive the edit")
+				.arg(top->command)
+				.arg(journal->maxUndoStates())
+				.arg(journal->maxUndoBytes()));
+	}
+
 	const QJsonObject inverse = top->inverse;
 	const QString op = inverse.value(QStringLiteral("op")).toString();
 	const QString applies = inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
@@ -401,6 +421,10 @@ void registerControlGroupCommands(ControlRegistry& registry)
 	registerUndoCommand(registry);
 	registerRedoCommand(registry);
 	registerQuitCommand(registry);
+	// The bounded-undo slice (task #623): the depth, the two caps and the
+	// coalescing window. Its own translation unit because this file is at the
+	// file-length ratchet's limit; the same group either way.
+	registerUndoBoundsCommands(registry);
 }
 
 } // namespace lmms

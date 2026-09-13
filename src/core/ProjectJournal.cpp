@@ -42,7 +42,13 @@ namespace lmms
 //! and newly created IDs (have the bit set)
 static const int EO_ID_MSB = 1 << 23;
 
-const int ProjectJournal::MAX_UNDO_STATES = 100; // TODO: make this configurable in settings
+//! The DEFAULT count cap. It is no longer a compile-time constant of the
+//! mechanism: it is the value maxUndoStates() starts at, and a client changes
+//! the live cap with control.set_undo_depth (SPEC A16's "undo depth" obligation,
+//! task #623). Kept as MAX_UNDO_STATES because the transaction record's count cap
+//! is defined as "the same depth as the undo stack", and one name for one
+//! concept is worth more than a rename here.
+const int ProjectJournal::MAX_UNDO_STATES = 100;
 
 ProjectJournal::ProjectJournal() :
 	m_joIDs(),
@@ -55,23 +61,12 @@ ProjectJournal::ProjectJournal() :
 
 
 
-ProjectJournal::CheckPoint ProjectJournal::actionCheckPoint( std::function<void()> undo,
-	std::function<void()> redo )
-{
-	CheckPoint step;
-	step.actions.append( qMakePair( std::move( undo ), std::move( redo ) ) );
-	return step;
-}
-
-
-
-
 //! Captures \a jo's current state, which becomes the redo half of a step.
 void ProjectJournal::captureState( JournallingObject * jo, SavedObject * into ) const
 {
 	DataFile currentState( DataFile::Type::JournalData );
 	jo->saveState( currentState, currentState.content() );
-	*into = SavedObject( jo->id(), currentState );
+	*into = SavedObject( jo->id(), currentState, serialisedBytes( currentState ) );
 }
 
 //! Restores one object from its saved XML, with journalling off so the restore
@@ -106,6 +101,7 @@ bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
 		if( jo == nullptr ) { continue; }
 		SavedObject current;
 		captureState( jo, &current );
+		redo->bytes += current.bytes;
 		redo->objects.append( current );
 		restoreState( saved );
 		restoredAny = true;
@@ -118,6 +114,10 @@ void ProjectJournal::undo()
 	while( !m_undoCheckPoints.isEmpty() )
 	{
 		CheckPoint c = m_undoCheckPoints.pop();
+		// The step has left the bounded undo stack; the redo side is not
+		// budgeted (it can only hold what the undo stack held) so the bytes are
+		// released here and taken back on redo().
+		m_retainedBytes -= c.bytes;
 		CheckPoint redo;
 
 		// Objects first: an action may FREE one of them (deleting a MixerChannel
@@ -164,7 +164,14 @@ void ProjectJournal::redo()
 			did = true;
 		}
 		if( !did ) { continue; }
+		// A fresh serial: the step is a new entry on the stack, and a record
+		// that still names the old one must not match it. The caps are re-applied
+		// because a client may have LOWERED them while these steps sat on the
+		// redo stack.
+		undoState.serial = ++m_stepSerial;
 		m_undoCheckPoints.push( undoState );
+		m_retainedBytes += undoState.bytes;
+		trimUndoStack();
 		Engine::getSong()->setModified();
 		break;
 	}
@@ -189,8 +196,12 @@ void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 	DataFile dataFile( DataFile::Type::JournalData );
 	jo->saveState( dataFile, dataFile.content() );
 
+	const int bytes = serialisedBytes( dataFile );
 	m_redoCheckPoints.clear();
-	m_undoCheckPoints.push( CheckPoint( jo->id(), dataFile ) );
+	CheckPoint step( jo->id(), dataFile, bytes );
+	step.serial = ++m_stepSerial;
+	m_undoCheckPoints.push( step );
+	m_retainedBytes += bytes;
 	trimUndoStack();
 }
 
@@ -203,17 +214,22 @@ void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &o
 	// One checkpoint, N objects: undo() pops it once and restores all of them,
 	// which is what makes one agent command one Ctrl+Z (SPEC A16).
 	CheckPoint step;
+	int bytes = 0;
 	for( JournallingObject * jo : objects )
 	{
 		if( jo == nullptr ) { continue; }
 		SavedObject saved;
 		captureState( jo, &saved );
+		bytes += saved.bytes;
 		step.objects.append( saved );
 	}
 	if( step.objects.isEmpty() ) { return; }
+	step.bytes = bytes;
 
 	m_redoCheckPoints.clear();
+	step.serial = ++m_stepSerial;
 	m_undoCheckPoints.push( step );
+	m_retainedBytes += bytes;
 	trimUndoStack();
 }
 
@@ -224,19 +240,15 @@ void ProjectJournal::addJournalAction( std::function<void()> undoAction, std::fu
 	if( !isJournalling() || !undoAction ) { return; }
 
 	m_redoCheckPoints.clear();
-	m_undoCheckPoints.push( actionCheckPoint( std::move( undoAction ), std::move( redoAction ) ) );
+	// An action-only step serialises nothing of its own (its bytes are 0): what
+	// it can cost is bounded by the closure it carries, not by a serialised
+	// state, and the closure is one recorded operation.
+	CheckPoint step = actionCheckPoint( std::move( undoAction ), std::move( redoAction ) );
+	step.serial = ++m_stepSerial;
+	m_undoCheckPoints.push( step );
 	trimUndoStack();
 }
 
-
-
-void ProjectJournal::trimUndoStack()
-{
-	if( m_undoCheckPoints.size() > MAX_UNDO_STATES )
-	{
-		m_undoCheckPoints.remove( 0, m_undoCheckPoints.size() - MAX_UNDO_STATES );
-	}
-}
 
 
 jo_id_t ProjectJournal::allocID(JournallingObject* obj)
@@ -297,8 +309,21 @@ void ProjectJournal::mergeCheckpointsFrom( int depth )
 	}
 	if( merged.empty() ) { m_undoCheckPoints.remove( depth, excess ); return; }
 
+	// The FIRST step of the window keeps its identity: a record that already
+	// names it stays valid through the merge. The bytes are re-summed from the
+	// surviving captures (a later capture of the same object is dropped, so the
+	// step is smaller than the sum of what it replaces).
+	merged.serial = m_undoCheckPoints.at( depth ).serial;
+	merged.bytes = 0;
+	for( const SavedObject & saved : merged.objects ) { merged.bytes += saved.bytes; }
+	for( int i = depth; i < m_undoCheckPoints.size(); ++i )
+	{
+		m_retainedBytes -= m_undoCheckPoints.at( i ).bytes;
+	}
+
 	m_undoCheckPoints.remove( depth, excess );
 	m_undoCheckPoints.push( merged );
+	m_retainedBytes += merged.bytes;
 }
 
 
@@ -307,6 +332,12 @@ void ProjectJournal::clearJournal()
 {
 	m_undoCheckPoints.clear();
 	m_redoCheckPoints.clear();
+	// A fresh document starts with a fresh accounting. m_stepSerial is NOT
+	// rewound: serials must stay unique for the life of the journal, so a record
+	// left over from the previous document can never match a new step.
+	m_retainedBytes = 0;
+	m_evicted = 0;
+	m_coalesced = 0;
 
 	for( JoIdMap::Iterator it = m_joIDs.begin(); it != m_joIDs.end(); )
 	{
