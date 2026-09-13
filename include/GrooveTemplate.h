@@ -46,17 +46,30 @@ namespace lmms
  *  `timing` is a signed offset in TICKS, bounded by half the slot width
  *  (see GrooveTemplate::setStep). The bound is what makes a groove a *feel*
  *  rather than a rearrangement: a note is never moved so far that it belongs
- *  to a different slot, so applying a groove twice leaves the second
- *  application with nothing to do (idempotence), and the slot a note is read
- *  back into is the slot it was written into.
+ *  to a different slot, so the slot a note is read back into is the slot it
+ *  was written into.
  *
- *  `velocity` is a signed offset on the engine's own note volume (volume_t,
- *  0..200 - see volume.h), clamped at both ends when it is applied.
+ *  `velocity` is the velocity the slot is GIVEN, on the engine's own note
+ *  volume (volume_t, 0..200 - see volume.h), or `NoVelocityOpinion` (-1) for a
+ *  slot that says nothing about velocity at all. A groove says how loud its
+ *  slots are the same way it says where they sit, and applying it REPLACES both
+ *  (by the call's strength). Two decisions are load-bearing:
+ *
+ *    - an absolute target rather than an offset, because an offset would be
+ *      added again on every repeat - a groove applied twice would keep getting
+ *      louder, where an absolute target makes a second application a no-op;
+ *    - the explicit "no opinion", because absolute means a slot with NO note in
+ *      the source clip would otherwise say "velocity 0" and silence the notes
+ *      that land there. A template with two used slots out of four must not
+ *      flatten the other two.
  */
 struct GrooveStep
 {
+	//! The velocity of a slot that says nothing about velocity.
+	static constexpr int NoVelocityOpinion = -1;
+
 	tick_t timing = 0;
-	int velocity = 0;
+	int velocity = NoVelocityOpinion;
 
 	bool operator==(const GrooveStep& other) const
 	{
@@ -64,8 +77,9 @@ struct GrooveStep
 	}
 	bool operator!=(const GrooveStep& other) const { return !(*this == other); }
 
-	//! True for the step that changes nothing.
-	bool neutral() const { return timing == 0 && velocity == 0; }
+	//! True for the step that changes nothing: no timing shift and no velocity
+	//! opinion. This is the step of a slot the source clip never played.
+	bool neutral() const { return timing == 0 && velocity == NoVelocityOpinion; }
 };
 
 /*! A named groove: a cycle length, a slot width, and one step per slot.
@@ -79,16 +93,14 @@ struct GrooveStep
  *  TWO OPERATIONS, both in this header, and both pure functions over a note
  *  list (no Engine, no track, no GUI), so they are testable headlessly:
  *
- *    - extract(): read the feel OUT of a clip. Each slot's timing offset is the
+ *    - extract(): read the feel OUT of a clip. Each slot's timing step is the
  *      MEAN signed deviation of the notes that fell in it from that slot's grid
- *      position, and its velocity offset is the slot's mean velocity expressed
- *      RELATIVE to the clip's own mean velocity. Relative velocity is what makes
- *      a template portable: re-applying "this slot is 20 louder than the rest"
- *      to a quiet clip keeps it quiet, where an absolute velocity would
- *      overwrite the second clip's own dynamics.
+ *      position, and its velocity step is the slot's MEAN velocity. A slot the
+ *      clip never played gets the neutral step - no shift and NO velocity
+ *      opinion - rather than a velocity of 0.
  *    - apply(): write the feel INTO a clip, with a strength, by snapping each
- *      note to its slot and shifting it by the step (see the free function
- *      below - the target and the interpolation are documented there).
+ *      note to its slot and giving it that slot's velocity (see the free
+ *      function below - the target and the interpolation are documented there).
  *
  *  BOUNDS. Everything is bounded so a template can never be a memory or a
  *  transaction-record problem: at most MaxSteps slots, a slot width in
@@ -151,8 +163,9 @@ public:
 	//! The step of \a slot, or a neutral step outside 0..slotCount()-1.
 	GrooveStep step(int slot) const;
 	/*! Writes one step. False - and nothing changes - when \a slot is out of
-	 *  range, when |timing| exceeds half the slot width, or when |velocity|
-	 *  exceeds the engine's own volume range. */
+	 *  range, when |timing| exceeds half the slot width, or when \a velocity is
+	 *  neither GrooveStep::NoVelocityOpinion nor inside the engine's own volume
+	 *  range (a velocity is a velocity, so a smaller one is not a negative one). */
 	bool setStep(int slot, const GrooveStep& value);
 
 	//! The step that governs a note at \a pos: the slot \a pos falls in, modulo
@@ -163,8 +176,10 @@ public:
 	tick_t gridTickFor(tick_t pos) const noexcept;
 	//! Where the groove puts a note currently at \a pos, at full strength.
 	tick_t targetTickFor(tick_t pos) const noexcept;
-	//! The velocity the groove gives a note at \a velocity, at full strength.
-	int targetVelocityFor(tick_t pos, int velocity) const noexcept;
+	/*! The velocity the groove gives a note at \a pos, at full strength, or
+	 *  GrooveStep::NoVelocityOpinion when the slot it falls in has none - which
+	 *  is the answer for a slot the source clip never played. */
+	int targetVelocityFor(tick_t pos) const noexcept;
 
 	//! This template as a <groove> element appended to \a parent.
 	void saveXml(QDomDocument& doc, QDomElement& parent) const;
@@ -187,10 +202,10 @@ private:
  *
  *  Every note is assigned to the grid slot it is nearest to, and the slot's
  *  step becomes the MEAN of its notes' signed deviations and the mean of their
- *  velocities minus the clip's own mean velocity (rounded to whole ticks and
- *  whole velocity units). A slot nothing landed in is neutral, which is the
- *  honest reading: the groove says nothing about a position the clip did not
- *  play.
+ *  velocities (rounded to whole ticks and whole velocity units). A slot nothing
+ *  landed in gets the NEUTRAL step - no timing shift and no velocity opinion -
+ *  which is the honest reading: the groove says nothing about a position the
+ *  clip did not play, and applying it there must change neither.
  *
  *  False - with \a out untouched - when the triple is not writable, or when
  *  \a notes is empty (there is no feel in an empty clip, and writing a
@@ -203,16 +218,18 @@ bool extractGroove(const NoteVector& notes, const QString& name, tick_t lengthTi
 
 /*! Writes \a groove into \a notes, with a strength.
  *
- *  For each note: its slot is found from its CURRENT position, the groove's
- *  target for that slot is `slotGrid + step.timing`, and the note moves
- *  `strength` of the way there - `pos + round(strength * (target - pos))`.
- *  The velocity moves `round(strength * step.velocity)`, clamped to the
- *  engine's 0..200.
+ *  For each note, its slot is found from its CURRENT position and both of the
+ *  slot's targets are approached by `strength`:
  *
- *  At strength 1 the note lands exactly on the groove's target, so a second
- *  application is a no-op (the target of a note already at its target is
- *  itself, because a step's timing is bounded by half the slot width); at
- *  strength 0 nothing moves; in between it is a partial feel, which is what a
+ *      position:  pos + round(strength * (slotGrid + step.timing - pos))
+ *      velocity:  vel + round(strength * (step.velocity            - vel))
+ *                 ... and NOT AT ALL for a slot whose velocity is "no opinion"
+ *
+ *  At strength 1 the note lands exactly on the groove - the slot's tick AND the
+ *  slot's velocity - so a second application is a no-op: the target of a note
+ *  already at its target is itself, because a step's timing is bounded by half
+ *  the slot width and its velocity is an absolute target rather than an offset.
+ *  At strength 0 nothing moves; in between it is a partial feel, which is what a
  *  strength control is for.
  *
  *  \a strength is clamped to [0, 1]. Returns the number of notes whose

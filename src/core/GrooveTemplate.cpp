@@ -132,7 +132,9 @@ bool GrooveTemplate::setStep(int slot, const GrooveStep& value)
 {
 	if (slot < 0 || slot >= m_slotCount) { return false; }
 	if (std::abs(value.timing) > m_stepTicks / 2) { return false; }
-	if (std::abs(value.velocity) > static_cast<int>(MaxVolume)) { return false; }
+	const bool noOpinion = value.velocity == GrooveStep::NoVelocityOpinion;
+	if (!noOpinion && (value.velocity < static_cast<int>(MinVolume)
+		|| value.velocity > static_cast<int>(MaxVolume))) { return false; }
 	m_steps[static_cast<std::size_t>(slot)] = value;
 	return true;
 }
@@ -159,10 +161,12 @@ tick_t GrooveTemplate::targetTickFor(tick_t pos) const noexcept
 }
 
 
-int GrooveTemplate::targetVelocityFor(tick_t pos, int velocity) const noexcept
+int GrooveTemplate::targetVelocityFor(tick_t pos) const noexcept
 {
-	if (m_slotCount <= 0) { return clampNoteVelocity(velocity); }
-	return clampNoteVelocity(velocity + stepForPosition(pos).velocity);
+	if (m_slotCount <= 0) { return GrooveStep::NoVelocityOpinion; }
+	const int wanted = stepForPosition(pos).velocity;
+	if (wanted == GrooveStep::NoVelocityOpinion) { return GrooveStep::NoVelocityOpinion; }
+	return clampNoteVelocity(wanted);
 }
 
 
@@ -249,7 +253,6 @@ struct SlotSums
 	std::array<long long, GrooveTemplate::MaxSteps> timing{};
 	std::array<long long, GrooveTemplate::MaxSteps> velocity{};
 	std::array<int, GrooveTemplate::MaxSteps> counts{};
-	long long totalVelocity = 0;
 	int read = 0;
 
 	void add(const Note& note, tick_t stepTicks, int slotCount) noexcept
@@ -260,18 +263,17 @@ struct SlotSums
 		timing[slot] += static_cast<long long>(pos) - static_cast<long long>(slotIndex * stepTicks);
 		velocity[slot] += static_cast<int>(note.getVolume());
 		++counts[slot];
-		totalVelocity += static_cast<int>(note.getVolume());
 		++read;
 	}
 };
 
 /*! Writes one slot's step: the mean deviation from the slot's own grid
- *  position, and the slot's mean velocity relative to the clip's average. A
- *  slot nothing landed in is left neutral - the slot COUNT is the template's
- *  shape. Returns false only when the template refuses a step, which its own
- *  two bounds make impossible here. */
-bool writeSlot(GrooveTemplate* out, int slot, const SlotSums& sums, int reference,
-	tick_t stepTicks)
+ *  position and the slot's mean velocity. A slot nothing landed in is left
+ *  NEUTRAL - no shift and no velocity opinion - because the slot count is the
+ *  template's shape and an unplayed slot must not silence the notes that land
+ *  there in the clip the groove is applied to. Returns false only when the
+ *  template refuses a step, which its own two bounds make impossible here. */
+bool writeSlot(GrooveTemplate* out, int slot, const SlotSums& sums, tick_t stepTicks)
 {
 	if (sums.counts[static_cast<std::size_t>(slot)] == 0) { return true; }
 	GrooveStep value;
@@ -280,7 +282,7 @@ bool writeSlot(GrooveTemplate* out, int slot, const SlotSums& sums, int referenc
 		roundedMean(sums.timing[static_cast<std::size_t>(slot)],
 			sums.counts[static_cast<std::size_t>(slot)]), -half, half));
 	value.velocity = roundedMean(sums.velocity[static_cast<std::size_t>(slot)],
-		sums.counts[static_cast<std::size_t>(slot)]) - reference;
+		sums.counts[static_cast<std::size_t>(slot)]);
 	if (out->setStep(slot, value)) { return true; }
 	return out->setStep(slot, GrooveStep());
 }
@@ -306,12 +308,9 @@ bool extractGroove(const NoteVector& notes, const QString& name, tick_t lengthTi
 	}
 	if (sums.read == 0) { return false; }
 
-	// The clip's own mean velocity is the reference a template records against,
-	// so a template is a SHAPE and not a loudness.
-	const int reference = roundedMean(sums.totalVelocity, sums.read);
 	for (int slot = 0; slot < slotCount; ++slot)
 	{
-		if (!writeSlot(&wanted, slot, sums, reference, stepTicks)) { return false; }
+		if (!writeSlot(&wanted, slot, sums, stepTicks)) { return false; }
 	}
 
 	*out = wanted;
@@ -335,7 +334,12 @@ int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float str
 		const tick_t moved = pos + static_cast<tick_t>(std::lround(amount
 			* static_cast<double>(target - pos)));
 		const int velocity = static_cast<int>(note->getVolume());
-		const int newVelocity = clampNoteVelocity(groove.targetVelocityFor(pos, velocity));
+		const int velocityTarget = groove.targetVelocityFor(pos);
+		// "No opinion" leaves the velocity exactly as it is: a slot the source
+		// clip never played must not silence the note that lands there.
+		const int newVelocity = velocityTarget == GrooveStep::NoVelocityOpinion ? velocity
+			: clampNoteVelocity(velocity + static_cast<int>(std::lround(
+				amount * static_cast<double>(velocityTarget - velocity))));
 
 		if (moved != pos) { note->setPos(TimePos(moved)); }
 		if (newVelocity != velocity) { note->setVolume(static_cast<volume_t>(newVelocity)); }

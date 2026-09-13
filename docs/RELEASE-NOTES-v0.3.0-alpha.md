@@ -302,13 +302,14 @@ that marker is published as-is, and no unverified claim is published without one
   one timing/velocity step per slot (`include/GrooveTemplate.h`); a *pool* is the project's named
   grooves (`include/GroovePool.h`). `groove.extract` reads the feel out of a clip's notes — each
   slot's timing step is the mean signed deviation of the notes that fell in it, and its velocity
-  step is that slot's mean velocity **relative to the clip's own mean**, so a template is a shape
-  and not a loudness. `groove.apply` writes it back: each note is snapped to its slot and shifted by
-  that slot's step, by `strength` (0..1) of the way — at 1 it lands exactly, at 0.5 it is half the
-  feel. `groove.quantize` is the grid quantise with the same strength control plus a
+  step is that slot's mean velocity; a slot the clip never played carries no velocity opinion, so it
+  cannot flatten the notes that land there later. `groove.apply` writes it back: each note is snapped
+  to its slot and given that slot's velocity, by `strength` (0..1) of the way — at 1 it lands
+  exactly, at 0.5 it is half the feel, and because both targets are absolute a second apply has
+  nothing left to do. `groove.quantize` is the grid quantise with the same strength control plus a
   `humanise_ticks` / `humanise_velocity` jitter drawn from a **seed** and each note's own identity
-  (the mechanism MIDI depth's rolls use), so a take is reproducible and a second seed is a second
-  take. `groove.set` writes a groove verbatim, `groove.remove` deletes one and `groove.rename`
+  (the mechanism MIDI depth's rolls use), so the same call on the same notes reproduces the take and
+  a second seed is a second take. `groove.set` writes a groove verbatim, `groove.remove` deletes one and `groove.rename`
   renames one in place.
 - **Engine:** `include/GrooveTemplate.h` + `src/core/GrooveTemplate.cpp` (the value type, the
   extraction and application arithmetic), `include/GroovePool.h` + `src/core/GroovePool.cpp` (the

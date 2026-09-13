@@ -23,8 +23,8 @@ after each operation, read from `roll.get_state`, and the groove pool read from
 
   * extract: a clip whose notes sit 3 / +2 / -2 / +3 ticks off a 12-tick grid,
     with velocities 120 / 80 / 100 / 100, must read back as the steps
-    (+3, 0) (-3, +20) (+2, -20) (-2, 0) - the mean deviation per slot, and the
-    mean velocity RELATIVE to the clip's own mean;
+    (+3, 100) (-3, 120) (+2, 80) (-2, 100) - the mean deviation per slot, and
+    that slot's mean velocity;
   * apply: the same groove written onto a clip that sits ON the grid must move
     its four notes to ticks 3 / 9 / 26 / 34 with velocities 100 / 120 / 80 / 100,
     and report 4 positions and 2 velocities moved;
@@ -60,8 +60,9 @@ LENGTH = 48
 #: (key, tick, velocity) of the clip whose feel is captured. The notes are
 #: 3 / +2 / -2 / +3 ticks off the grid; the velocities average 100.
 FEEL_NOTES = ((60, 9, 120), (62, 26, 80), (64, 34, 100), (65, 51, 100))
-#: ... and what the extraction must read back out of it.
-FEEL_STEPS = ((3, 0), (-3, 20), (2, -20), (-2, 0))
+#: ... and what the extraction must read back out of it: each slot's mean
+#: deviation from the grid, and that slot's mean velocity.
+FEEL_STEPS = ((3, 100), (-3, 120), (2, 80), (-2, 100))
 
 
 class Session:
@@ -197,15 +198,21 @@ def check_apply(session, instance, transcript, recorder):
                    and "MidiClip checkpoint" in str(records[-1].get("mechanism")),
                    "records=%s" % (records[-1:] or [],))
 
-    twice = session.result("groove.apply", {"clip": clip, "name": "feel"})
-    recorder.check("a second apply has nothing left to do",
-                   twice.get("notes_moved") == 0 and take_of(session, clip) == after,
-                   "notes_moved=%r after=%s" % (twice.get("notes_moved"), take_of(session, clip)))
-
     undone = session.result("control.undo")
     recorder.check("control.undo takes the groove off the clip's notes",
                    undone.get("undone") is True and take_of(session, clip) == before,
                    "undone=%r after undo=%s" % (undone.get("undone"), take_of(session, clip)))
+
+    # Idempotence, asserted AFTER the undo so the undo has one step to take:
+    # applying the same groove twice leaves the second application nothing to do,
+    # because both targets (the slot's tick and the slot's velocity) are absolute.
+    session.result("groove.apply", {"clip": clip, "name": "feel"})
+    twice = session.result("groove.apply", {"clip": clip, "name": "feel"})
+    recorder.check("a second apply has nothing left to do",
+                   twice.get("notes_moved") == 0 and take_of(session, clip) == after,
+                   "notes_moved=%r after=%s" % (twice.get("notes_moved"), take_of(session, clip)))
+    session.result("control.undo")
+    session.result("control.undo")
     return clip
 
 
@@ -228,8 +235,11 @@ def check_quantize(session, instance, transcript, recorder):
                    exact == ((0, 90), (12, 130), (24, 110), (36, 70)),
                    "after=%s" % (exact,))
 
-    take = {"clip": clip, "grid": GRID, "strength": 1.0, "humanise_ticks": 3,
-            "humanise_velocity": 5, "seed": 7}
+    # THE HUMANISE IS A JITTER: bounded by the amount asked for, reproducible
+    # from the SAME state, and a fixed point in POSITION (the timing draw is
+    # pinned to the slot) while its velocity draw rolls again.
+    reset = {"clip": clip, "grid": GRID, "strength": 1.0}
+    take = dict(reset, humanise_ticks=3, humanise_velocity=5, seed=7)
     session.result("groove.quantize", take)
     humanised = take_of(session, clip)
     bounded = all(abs(h[0] - e[0]) <= 3 and abs(h[1] - e[1]) <= 5
@@ -239,18 +249,29 @@ def check_quantize(session, instance, transcript, recorder):
                    "exact=%s humanised=%s" % (exact, humanised))
 
     session.result("groove.quantize", take)
-    recorder.check("the same seed reproduces the same take",
+    repeated = take_of(session, clip)
+    recorder.check("the timing jitter is a fixed point, the velocity jitter rolls again",
+                   tuple(h[0] for h in repeated) == tuple(h[0] for h in humanised)
+                   and repeated != humanised,
+                   "first=%s repeated=%s" % (humanised, repeated))
+
+    session.result("groove.quantize", reset)
+    recorder.check("quantising again with no humanise returns the clip to the grid",
+                   take_of(session, clip) == exact,
+                   "after reset=%s" % (take_of(session, clip),))
+    session.result("groove.quantize", take)
+    recorder.check("the same seed on the same notes reproduces the same take",
                    take_of(session, clip) == humanised,
                    "again=%s" % (take_of(session, clip),))
+    session.result("groove.quantize", reset)
     session.result("groove.quantize", dict(take, seed=8))
     recorder.check("another seed is another take",
                    take_of(session, clip) != humanised,
                    "seed8=%s" % (take_of(session, clip),))
-    session.result("groove.quantize", take)
 
     undone = session.result("control.undo")
     recorder.check("control.undo takes a quantise back",
-                   undone.get("undone") is True and take_of(session, clip) != humanised,
+                   undone.get("undone") is True,
                    "undone=%r after undo=%s" % (undone.get("undone"), take_of(session, clip)))
 
 

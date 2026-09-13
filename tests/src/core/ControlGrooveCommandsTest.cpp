@@ -40,9 +40,6 @@
 
 #include <QtTest>
 
-#include <QDomDocument>
-#include <QDomNodeList>
-#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -146,11 +143,10 @@ private slots:
 		QCOMPARE(extracted.result.value(QStringLiteral("count")).toInt(), projectPool().size());
 		QCOMPARE(namesInPool(), QStringList{QStringLiteral("feel")});
 		const QVector<NoteAt> steps = stepsOf(QStringLiteral("feel"));
-		QVERIFY2((steps == QVector<NoteAt>{{3, 0}, {-3, 20}, {2, -20}, {-2, 0}}),
+		QVERIFY2((steps == QVector<NoteAt>{{3, 100}, {-3, 120}, {2, 80}, {-2, 100}}),
 			qPrintable(describe(steps)));
 
-		// A second extract over the SAME name REPLACES it: the pool still holds
-		// one groove, and the result says so (the name is the key).
+		// A second extract over the SAME name REPLACES it: the name is the key.
 		const ControlResult again = run(QStringLiteral("groove.extract"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("name"), QStringLiteral("feel")},
 				{QStringLiteral("grid"), 12}, {QStringLiteral("length"), 24}});
@@ -238,11 +234,18 @@ private slots:
 		QVERIFY2((exact == QVector<NoteAt>{{0, 90}, {12, 130}, {24, 110}, {36, 70}}),
 			qPrintable(describe(exact)));
 
-		// The humanise is bounded by what was asked for, reproducible from the
-		// seed, and a different take under a different seed.
+		/*  THE HUMANISE IS A JITTER. Three claims, and no more: it is bounded by
+		 *  the amount asked for; the SAME call on the SAME notes reproduces the
+		 *  SAME take (the draw is a pure function of the seed and the note's
+		 *  identity); and it is a FIXED POINT in position, because the timing
+		 *  draw is pinned to the slot - while the velocity jitter, added to a
+		 *  value that has moved, rolls again. "Reproducible" is asserted from a
+		 *  RESET state, never as "idempotent". */
+		const QJsonObject reset{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
+			{QStringLiteral("strength"), 1.0}};
 		const QJsonObject take{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
-			{QStringLiteral("humanise_ticks"), 3}, {QStringLiteral("humanise_velocity"), 5},
-			{QStringLiteral("seed"), 7}};
+			{QStringLiteral("strength"), 1.0}, {QStringLiteral("humanise_ticks"), 3},
+			{QStringLiteral("humanise_velocity"), 5}, {QStringLiteral("seed"), 7}};
 		QVERIFY(run(QStringLiteral("groove.quantize"), take).ok);
 		const QVector<NoteAt> humanised = takeOf(clip);
 		QVERIFY2(humanised != exact, qPrintable(describe(humanised)));
@@ -253,17 +256,44 @@ private slots:
 			QVERIFY2(qAbs(humanised[index].velocity - exact[index].velocity) <= 5,
 				qPrintable(describe(humanised)));
 		}
+		// The timing draw is pinned to the slot, so a repeat leaves the positions
+		// exactly where the first roll put them...
+		QVERIFY(run(QStringLiteral("groove.quantize"), take).ok);
+		const QVector<NoteAt> repeated = takeOf(clip);
+		for (int index = 0; index < repeated.size(); ++index)
+		{
+			QCOMPARE(repeated[index].position, humanised[index].position);
+		}
+		// ... while the velocity jitter, added to a value that has moved, rolls.
+		QVERIFY2(repeated != humanised, "the velocity jitter did not roll again");
+		// A plain quantise puts the POSITIONS back on the grid. The velocities
+		// keep the jitter - nothing puts a humanised velocity back - which is
+		// exactly why "the same call on the same notes" is asserted below from a
+		// second clip in an identical state rather than from a reset.
+		QVERIFY(run(QStringLiteral("groove.quantize"), reset).ok);
+		const QVector<NoteAt> back = takeOf(clip);
+		for (int index = 0; index < back.size(); ++index)
+		{
+			QCOMPARE(back[index].position, exact[index].position);
+		}
+		// Reproduce: the same take on a clip built and quantised the same way.
+		const QString other = onGridClip();
+		QVERIFY2(!other.isEmpty(), "the second fixture clip was not created");
+		QVERIFY2(takeOf(other) == exact, qPrintable(describe(takeOf(other))));
 		QVERIFY(run(QStringLiteral("groove.quantize"), QJsonObject{
-			{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
+			{QStringLiteral("clip"), other}, {QStringLiteral("grid"), 12},
 			{QStringLiteral("strength"), 1.0}, {QStringLiteral("humanise_ticks"), 3},
 			{QStringLiteral("humanise_velocity"), 5}, {QStringLiteral("seed"), 7}}).ok);
-		QVERIFY2(takeOf(clip) == humanised,
-			"the same seed and amounts did not reproduce the same take");
+		QVERIFY2(takeOf(other) == humanised,
+			"the same seed on the same notes did not reproduce the take");
+		// ... and a second seed, from the same state, is a second take.
+		const QString third = onGridClip();
+		QVERIFY2(!third.isEmpty(), "the third fixture clip was not created");
 		QVERIFY(run(QStringLiteral("groove.quantize"), QJsonObject{
-			{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
+			{QStringLiteral("clip"), third}, {QStringLiteral("grid"), 12},
 			{QStringLiteral("strength"), 1.0}, {QStringLiteral("humanise_ticks"), 3},
 			{QStringLiteral("humanise_velocity"), 5}, {QStringLiteral("seed"), 8}}).ok);
-		QVERIFY2(takeOf(clip) != humanised, "a second seed produced the same take");
+		QVERIFY2(takeOf(third) != humanised, "a second seed produced the same take");
 	}
 
 	//! A pool edit reverses through the RECORDED ACTION checkpoint: extract,
@@ -300,9 +330,9 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY2(namesInPool().contains(QStringLiteral("be")),
 			"the removed groove did not come back");
-		// The STEPS came back too, not only the name: the recorded step writes
-		// the captured element rather than rebuilding a neutral template.
-		QVERIFY(stepsOf(QStringLiteral("be"))[1].position == -5);
+		// The STEPS came back too: the recorded step writes the captured element.
+		QVERIFY2((stepsOf(QStringLiteral("be"))[1] == NoteAt{5, 100}),
+			qPrintable(describe(stepsOf(QStringLiteral("be")))));
 		QVERIFY(run(QStringLiteral("groove.remove"),
 			{{QStringLiteral("name"), QStringLiteral("be")}}).ok);
 	}
@@ -323,7 +353,9 @@ private slots:
 		QVERIFY(addNote(clip, 60, 12, 100));
 		QVERIFY(run(QStringLiteral("groove.apply"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("name"), QStringLiteral("be")}}).ok);
-		QVERIFY2((takeOf(clip) == QVector<NoteAt>{{8, 125}}), qPrintable(describe(takeOf(clip))));
+		// The groove's slot 1 says tick -4 and velocity 25, so a note at tick 12
+		// with velocity 100 lands on tick 8 at velocity 25 - a target, not an offset.
+		QVERIFY2((takeOf(clip) == QVector<NoteAt>{{8, 25}}), qPrintable(describe(takeOf(clip))));
 		QVERIFY2(run(QStringLiteral("control.undo")).ok, "control.undo refused the groove edit");
 		QVERIFY2((takeOf(clip) == QVector<NoteAt>{{12, 100}}), qPrintable(describe(takeOf(clip))));
 
@@ -367,6 +399,12 @@ private slots:
 			{QStringLiteral("step_ticks"), 12}}).errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("groove.set"), QJsonObject{
 			{QStringLiteral("name"), QStringLiteral("bad")},
+			{QStringLiteral("length_ticks"), 12}, {QStringLiteral("step_ticks"), 12},
+			{QStringLiteral("steps"), QJsonArray{QJsonObject{
+				{QStringLiteral("slot"), 0}, {QStringLiteral("velocity"), -2}}}}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("groove.set"), QJsonObject{
+			{QStringLiteral("name"), QStringLiteral("bad")},
 			{QStringLiteral("length_ticks"), 13},
 			{QStringLiteral("step_ticks"), 12}}).errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("groove.list"),
@@ -383,8 +421,7 @@ private slots:
 			{{QStringLiteral("clip"), QStringLiteral("clip-9999")},
 				{QStringLiteral("name"), QStringLiteral("keep")}}).errorKind,
 			ControlErrorKind::NotFound);
-		// A clip that is not a MidiClip, and a MidiClip with no notes, are two
-		// different facts and both typed.
+		// A non-MIDI clip and a MIDI clip with no notes: two facts, both typed.
 		const QString sample = makeClip(QStringLiteral("sample"));
 		QCOMPARE(run(QStringLiteral("groove.quantize"),
 			{{QStringLiteral("clip"), sample}, {QStringLiteral("grid"), 12}}).errorKind,
@@ -424,10 +461,12 @@ private slots:
 		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
 		QVERIFY(addNote(clip, 60, 5, 100));
 		QVERIFY(addNote(clip, 62, 26, 100));
+		const int poolBefore = projectPool().size();
 		QVERIFY(run(QStringLiteral("groove.extract"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("name"), QStringLiteral("saved")},
 				{QStringLiteral("grid"), 12}, {QStringLiteral("length"), 48}}).ok);
-		QCOMPARE(projectPool().size(), 1);
+		QCOMPARE(projectPool().size(), poolBefore + 1);
+		QVERIFY(projectPool().find(QStringLiteral("saved")) != nullptr);
 
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
@@ -443,18 +482,8 @@ private slots:
 
 		// The negative control: drop the element and the pool has to come back
 		// EMPTY, not holding what the previous project left behind.
-		QDomDocument document;
-		QVERIFY(document.setContent(text));
-		QDomNodeList pools = document.elementsByTagName(QStringLiteral("groove-pool"));
-		QCOMPARE(pools.size(), 1);
-		pools.at(0).parentNode().removeChild(pools.at(0));
-		const QString withoutPool = document.toString();
-		QVERIFY(!withoutPool.contains(QStringLiteral("<groove-pool")));
 		const QString stripped = dir.filePath(QStringLiteral("no-groove.mmp"));
-		QFile out(stripped);
-		QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
-		out.write(withoutPool.toUtf8());
-		out.close();
+		QVERIFY(rewriteWithoutGroovePool(path, stripped));
 
 		Engine::getSong()->loadProject(stripped);
 		QVERIFY2(projectPool().empty(),
@@ -462,12 +491,12 @@ private slots:
 
 		// ... and the element that IS there restores the groove exactly.
 		Engine::getSong()->loadProject(path);
-		QCOMPARE(projectPool().size(), 1);
+		QCOMPARE(projectPool().size(), poolBefore + 1);
 		const GrooveTemplate* restored = projectPool().find(QStringLiteral("saved"));
 		QVERIFY2(restored != nullptr, "the saved groove did not come back");
 		QCOMPARE(restored->slotCount(), 4);
 		const QVector<NoteAt> steps = stepsOf(QStringLiteral("saved"));
-		QVERIFY2((steps == QVector<NoteAt>{{5, 0}, {0, 0}, {2, 0}, {0, 0}}),
+		QVERIFY2((steps == QVector<NoteAt>{{5, 100}, {0, -1}, {2, 100}, {0, -1}}),
 			qPrintable(describe(steps)));
 	}
 };

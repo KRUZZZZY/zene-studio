@@ -35,6 +35,9 @@
 
 #include <memory>
 
+#include <QDomDocument>
+#include <QDomNodeList>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -182,19 +185,67 @@ inline const lmms::control::ReversibilityEntry* contractRow(const QString& id)
 	return lmms::control::ReversibilityTable::instance().lookup(id);
 }
 
-/*! The "feel" fixture as ARGUMENTS: four 1/16 slots at 12 ticks, timing
- *  3 / -3 / +2 / -2 and velocity 0 / +20 / -20 / 0 relative to a mean of 100. */
+/*! The QUANTISE fixture: four notes at 5 / 17 / 29 / 41 with velocities
+ *  90 / 130 / 110 / 70, quantised onto the grid first, on a clip of its own.
+ *
+ *  It exists because a humanised take has to be reproduced from an IDENTICAL
+ *  starting state, velocities included: a re-quantise puts the POSITIONS back on
+ *  the grid but nothing puts a jittered velocity back, so "the same call on the
+ *  same notes" is asserted from a second clip built this way rather than from a
+ *  reset. */
+inline QString onGridClip()
+{
+	const QString clip = makeClip(QStringLiteral("instrument"));
+	if (clip.isEmpty()) { return clip; }
+	if (!addNote(clip, 60, 5, 90) || !addNote(clip, 62, 17, 130)
+		|| !addNote(clip, 64, 29, 110) || !addNote(clip, 65, 41, 70))
+	{
+		return QString();
+	}
+	const ControlResult quantised = run(QStringLiteral("groove.quantize"),
+		{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
+			{QStringLiteral("strength"), 1.0}});
+	return quantised.ok ? clip : QString();
+}
+
+/*! Writes \a path's project text to \a outPath with its <groove-pool> element
+ *  removed: the negative control for the reset-on-absence rule, because the
+ *  element is written only when the pool is non-empty and therefore has to be
+ *  able to restore "no pool at all". False when the file, the element or the
+ *  rewrite is not what this control needs. */
+inline bool rewriteWithoutGroovePool(const QString& path, const QString& outPath)
+{
+	QFile in(path);
+	if (!in.open(QIODevice::ReadOnly)) { return false; }
+	const QString text = QString::fromUtf8(in.readAll());
+	in.close();
+	QDomDocument document;
+	if (!document.setContent(text)) { return false; }
+	const QDomNodeList pools = document.elementsByTagName(QStringLiteral("groove-pool"));
+	if (pools.size() != 1) { return false; }
+	pools.at(0).parentNode().removeChild(pools.at(0));
+	QFile out(outPath);
+	if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+	out.write(document.toString().toUtf8());
+	out.close();
+	return true;
+}
+
+/*! The "feel" fixture as ARGUMENTS: four 1/16 slots at 12 ticks, taken from a
+ *  clip whose notes sit at 9 / 26 / 34 / 51 with velocities 120 / 80 / 100 / 100.
+ *  A slot's timing step is its notes' mean deviation (3 / -3 / +2 / -2) and its
+ *  velocity step is their mean velocity, so the slots read 100 / 120 / 80 / 100. */
 inline QJsonArray feelSteps()
 {
 	return QJsonArray{
 		QJsonObject{{QStringLiteral("slot"), 0}, {QStringLiteral("timing"), 3},
-			{QStringLiteral("velocity"), 0}},
+			{QStringLiteral("velocity"), 100}},
 		QJsonObject{{QStringLiteral("slot"), 1}, {QStringLiteral("timing"), -3},
-			{QStringLiteral("velocity"), 20}},
+			{QStringLiteral("velocity"), 120}},
 		QJsonObject{{QStringLiteral("slot"), 2}, {QStringLiteral("timing"), 2},
-			{QStringLiteral("velocity"), -20}},
+			{QStringLiteral("velocity"), 80}},
 		QJsonObject{{QStringLiteral("slot"), 3}, {QStringLiteral("timing"), -2},
-			{QStringLiteral("velocity"), 0}},
+			{QStringLiteral("velocity"), 100}},
 	};
 }
 

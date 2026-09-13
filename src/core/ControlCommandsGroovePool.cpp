@@ -81,8 +81,8 @@ bool readStepList(const QJsonArray& steps, GrooveTemplate* out, ControlResult* e
 		{
 			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("slot %1 of '%2' is out of range or out of bounds: a slot is "
-					"0..%3, a timing offset at most half the slot width, and a velocity offset "
-					"at most %4 in either direction").arg(slot).arg(out->name())
+					"0..%3, a timing offset at most half the slot width, and a velocity in "
+					"0..%4").arg(slot).arg(out->name())
 					.arg(out->slotCount() - 1).arg(MaxVolume));
 			return false;
 		}
@@ -301,7 +301,7 @@ void registerGrooveSet(ControlRegistry& registry)
 	cmd.group = QStringLiteral("groove");
 	cmd.verb = QStringLiteral("set");
 	cmd.description = QStringLiteral("Write a groove VERBATIM: its name, its cycle length and "
-		"slot width in ticks, and (optionally) the timing and velocity offset of every slot - "
+		"slot width in ticks, and (optionally) each slot's timing offset and velocity - "
 		"so a groove can be authored by hand as well as captured by groove.extract, and so an "
 		"extract that replaced a groove has a real inverse to record. The name is the key: an "
 		"existing groove of that name is replaced. One undoable step (a recorded action "

@@ -135,15 +135,22 @@ struct QuantizeOptions
 	float strength = 1.0f;
 	//! The largest timing jitter, in ticks, added AFTER the quantise (0 = no
 	//! humanise). A note is never moved more than this from where the grid put
-	//! it, and never before tick 0.
+	//! it, and never before tick 0. The control surface caps it at
+	//! `(grid - 1) / 2`, past which a jittered note is nearer a different grid
+	//! step than its own.
 	tick_t humaniseTicks = 0;
-	//! The largest velocity jitter added after the quantise, in engine volume
-	//! units, clamped to the note's own range.
+	/*! The largest velocity jitter added after the quantise, in engine volume
+	 *  units, clamped to the note's own range.
+	 *
+	 *  It is added to the note's CURRENT velocity, so - unlike the timing jitter,
+	 *  whose draw is pinned to the slot the note is taken to and is therefore a
+	 *  fixed point - a second humanise on top of the first rolls again. That is
+	 *  what a velocity jitter is: a roll, not a target. */
 	int humaniseVelocity = 0;
 	/*! The jitter is a PURE FUNCTION of this seed and each note's identity
-	 *  (pitch, position, length - NoteRandom::rollUnit), never a hidden random
-	 *  state: the same clip, seed and amounts always humanise to the same
-	 *  notes, so an agent can reproduce a take it liked. */
+	 *  (pitch, length, and the grid slot it is taken to - NoteRandom::rollUnit),
+	 *  never a hidden random state: the same call on the same notes always
+	 *  produces the same take, so an agent can reproduce a take it liked. */
 	uint32_t seed = 0;
 };
 

@@ -115,17 +115,17 @@ bool readQuantizeMode(const QJsonObject& args, NoteTransform::QuantizeMode* out,
 
 /*! Reads the optional humanise arguments.
  *
- *  The timing jitter may not exceed the grid: a jitter that large could move a
- *  note into a different slot, which is a rearrangement and not a
- *  humanisation. The velocity jitter is bounded by the engine's own volume
- *  range. The seed is bounded by what the schema subset can carry, since it
- *  travels as an integer.
+ *  The timing jitter is capped at `(grid - 1) / 2`: past that a jittered note
+ *  can land nearer a DIFFERENT grid step than its own, which is a rearrangement
+ *  and not a humanisation - the next call to quantise would take it to the other
+ *  step. The velocity jitter is bounded by the engine's own volume range, and
+ *  the seed by what the schema subset can carry (it travels as an integer).
  */
 bool readHumanise(const QJsonObject& args, tick_t grid, NoteTransform::QuantizeOptions* options,
 	ControlResult* error)
 {
 	if (args.contains(QStringLiteral("humanise_ticks"))
-		&& !readTicks(args, QStringLiteral("humanise_ticks"), 0, grid,
+		&& !readTicks(args, QStringLiteral("humanise_ticks"), 0, (grid - 1) / 2,
 			&options->humaniseTicks, error))
 	{
 		return false;
@@ -261,11 +261,11 @@ void registerGrooveApply(ControlRegistry& registry)
 	cmd.group = QStringLiteral("groove");
 	cmd.verb = QStringLiteral("apply");
 	cmd.description = QStringLiteral("Apply a named groove to a MIDI clip's notes: each note is "
-		"snapped to the slot it is nearest to and shifted by that slot's timing offset, and "
-		"its velocity shifted by the slot's velocity offset (clamped to 0..200). 'strength' "
-		"(0..1, default 1) is how far each note travels, so 0.5 is half the feel. Reversible "
-		"through the ProjectJournal (MidiClip checkpoint): one control.undo restores every "
-		"position and velocity.");
+		"snapped to the slot it is nearest to and given that slot's tick and that slot's "
+		"velocity. 'strength' (0..1, default 1) is how far each note travels toward both, so "
+		"0.5 is half the feel and 1 is the groove exactly - at which point a second apply has "
+		"nothing left to do. Reversible through the ProjectJournal (MidiClip checkpoint): one "
+		"control.undo restores every position and velocity.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("name"), stringProperty()},
@@ -296,9 +296,10 @@ void registerGrooveQuantize(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Quantise a MIDI clip's notes onto a grid of 'grid' "
 		"ticks, with 'strength' (0..1, default 1) for how far each note travels and a "
 		"'humanise_ticks' / 'humanise_velocity' amount added afterwards. 'mode' is 'nearest' "
-		"(default), 'floor' or 'ceil'. The humanise jitter is a pure function of 'seed' "
-		"(default 0) and each note's own identity, so the same call always produces the same "
-		"take. Reversible through the ProjectJournal (MidiClip checkpoint).");
+		"(default), 'floor' or 'ceil'. The jitter is a pure function of 'seed' (default 0) and "
+		"each note's own identity, so the SAME call on the same notes reproduces the same "
+		"take; and it is a jitter, so applying it again on top of itself rolls again rather "
+		"than being a no-op. Reversible through the ProjectJournal (MidiClip checkpoint).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("grid"), integerProperty(1, kMaxSchemaInteger)},

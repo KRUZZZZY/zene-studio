@@ -228,7 +228,7 @@ void registerGrooveCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("list");
 		cmd.description = QStringLiteral("The project's groove pool: every named groove with "
 			"its cycle length, slot width and slot count, and - with 'name' - one groove's own "
-			"steps (the timing offset in ticks and the velocity offset each slot applies). "
+			"steps (the tick and the velocity each slot applies, both absolute). "
 			"Read-only. A groove is the timing and velocity feel of a note pattern, captured "
 			"from a clip by groove.extract and written back by groove.apply.");
 		cmd.argsSchema = objectSchema({{QStringLiteral("name"), stringProperty()}});
@@ -247,8 +247,7 @@ void registerGrooveCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("extract");
 		cmd.description = QStringLiteral("Capture the feel of a MIDI clip's notes into a NAMED "
 			"groove: each slot's step becomes the mean timing deviation of the notes that fell "
-			"in it and their mean velocity relative to the clip's own mean, so the template is "
-			"a shape and not a loudness. The name is the key - extracting over an existing "
+			"in it and their mean velocity. The name is the key - extracting over an existing "
 			"name replaces that groove. One undoable step (a recorded action checkpoint: the "
 			"pool is project state the Song's journal checkpoint does not carry).");
 		cmd.argsSchema = objectSchema({

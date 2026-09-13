@@ -19,7 +19,7 @@ re-applied to another. In this engine it is a `GrooveTemplate` (`include/GrooveT
 | `name` | the pool key: 1..64 characters, trimmed. A groove is found, replaced and addressed **by name**, so extracting under an existing name replaces that groove. |
 | `lengthTicks` | the cycle length: a positive whole number of slots, at most `MaxSteps` (64) of them. |
 | `stepTicks` | the slot width, in ticks: 1..`DefaultTicksPerBar` (192). |
-| `steps[]` | one `GrooveStep` per slot: a signed `timing` offset in ticks and a signed `velocity` offset on the engine's own note volume (0..200, `volume.h`). |
+| `steps[]` | one `GrooveStep` per slot: a signed `timing` offset in ticks, and a `velocity` on the engine's own note volume (0..200, `volume.h`) — or "no opinion" (`-1`), for a slot the source clip never played. |
 
 The template **cycles**: a note anywhere on the timeline is governed by the step of the slot it
 falls in, modulo the cycle. A four-slot template over 12-tick slots is therefore a one-beat
@@ -36,26 +36,36 @@ that refusal with the permitted interval.
 template can never be an unbounded value. All of this is a plain value type with no Engine, no
 track and no GUI in sight.
 
+Two decisions in that table are load-bearing, and both were made by measurement rather than by
+taste:
+
+* **A velocity is an absolute target, not an offset.** An offset is added again on every repeat, so
+  a groove applied twice would keep getting louder; with a target, a second application has nothing
+  left to do. This is asserted (`GrooveTemplateTest::applicationIsExactAndIdempotent`, and the socket
+  ctest's "a second apply has nothing left to do").
+* **"No opinion" is explicit.** Absolute velocities mean a slot with no note in the source clip would
+  otherwise say "velocity 0" and *silence* the notes that land on it in the target clip. A template
+  with two used slots out of four must not flatten the other two, so a step carries either a
+  velocity between 0 and 200 or the explicit `NoVelocityOpinion`.
+
 ## 2. Extraction: how the feel is read out
 
 `extractGroove(notes, name, lengthTicks, stepTicks, out, notesRead)`:
 
 1. every note is assigned to the grid slot it is **nearest** to;
-2. the slot's `timing` offset is the **mean signed deviation** of its notes from that slot's grid
+2. the slot's `timing` step is the **mean signed deviation** of its notes from that slot's grid
    position, rounded to whole ticks, clamped to half a slot;
-3. the slot's `velocity` offset is the slot's mean velocity **minus the clip's own mean velocity**,
-   rounded to whole velocity units;
-4. a slot nothing landed in is **neutral** (0, 0) — the honest reading: the groove says nothing
-   about a position the clip did not play.
-
-Step 3 is the load-bearing decision. **Relative** velocity is what makes a template portable:
-"this slot is 20 louder than the rest" carried onto a quiet clip keeps it quiet, where an absolute
-velocity would overwrite the second clip's own dynamics.
+3. the slot's `velocity` step is that slot's **mean velocity**, rounded to whole units;
+4. a slot nothing landed in is **neutral**: no timing shift and *no velocity opinion* — the honest
+   reading is that the groove says nothing about a position the clip did not play, and an
+   unplayed slot that claimed "velocity 0" would flatten the notes that land there.
 
 The measured fixture (the same numbers the tests assert): four notes at ticks **9 / 26 / 34 / 51**
-with velocities **120 / 80 / 100 / 100** over a 12-tick grid and a 48-tick cycle read back as
-`(+3, 0) (-3, +20) (+2, -20) (-2, 0)` — the clip's mean velocity is 100, so the velocity offsets are
-exactly `120-100`, `80-100`, `100-100`, `100-100` once the notes are grouped by slot.
+with velocities **120 / 80 / 100 / 100** over a 12-tick grid and a 48-tick cycle land in slots
+1 / 2 / 3 / 0, so the template reads back as `(+3, 100) (-3, 120) (+2, 80) (-2, 100)` — each slot's
+timing being the note's own deviation and its velocity being that note's own velocity. A note at
+tick 5 over the same grid reads `(+5, v)` into slot 0, and a slot the clip never played reads
+`(0, −1)`.
 
 An empty clip is refused (there is no feel in one, and writing a neutral template for it would be an
 edit that records nothing), and so is a triple the engine cannot hold (`GrooveTemplate::isWritable`).
@@ -66,15 +76,16 @@ edit that records nothing), and so is a triple the engine cannot hold (`GrooveTe
 
 ```
 slot      = the grid slot the note is NEAREST to
-target    = slotStart + step(slot).timing
-newPos    = pos + round(strength * (target - pos))
-newVel    = clamp(vel + round(strength * step(slot).velocity), 0, 200)
+newPos    = pos + round(strength * (slotStart + step(slot).timing - pos))
+newVel    = vel + round(strength * (step(slot).velocity          - vel))
+            ... clamped to 0..200, and NOT TOUCHED when the slot has no velocity opinion
 ```
 
-At `strength` 1 a note lands **exactly** on the groove's target, so a second application is a no-op
-(§1's half-slot bound). At 0 nothing moves. In between it is a partial feel, which is what a
-strength control is for. `strength` outside `0..1` is **refused rather than clamped**: a caller that
-asked for 5 asked for something this engine cannot mean.
+At `strength` 1 a note lands **exactly** on the groove — the slot's tick *and* the slot's velocity —
+so a second application is a no-op: both targets are absolute, and a note already at its target has
+that target. At 0 nothing moves. In between it is a partial feel, which is what a strength control is
+for. `strength` outside `0..1` is **refused rather than clamped**: a caller that asked for 5 asked for
+something this engine cannot mean.
 
 `NoteTransform::quantizeNotes(notes, options)` — **quantise to a grid**:
 
@@ -93,12 +104,21 @@ The two knobs are two different facts:
 
 The jitter is a **pure function** of `seed` and the note's own identity — its pitch, its length, and
 the grid slot it is being taken to — through `NoteRandom::rollUnit`, the same seeded mechanism MIDI
-depth uses (`docs/MIDI-DEPTH.md`). It is deliberately **not** drawn from the note's current position:
-a position-derived jitter would re-roll on every repeat (the position has changed), so the same call
-on the same clip would wander inside the bound instead of reproducing the take it just produced.
-Drawn from the slot, the same call is a **fixed point**: same seed, same amounts, same result, and a
-different seed is a different take. There is no hidden random state anywhere on this path, and
-nothing here is called from a render path.
+depth uses (`docs/MIDI-DEPTH.md`). There is no hidden random state anywhere on this path, and nothing
+here is called from a render path.
+
+Three claims about it are true, and they are exactly the three the tests assert:
+
+* **bounded**: no note lands further than `humanise_ticks` from where the grid put it, nor its
+  velocity further than `humanise_velocity`;
+* **reproducible from the same state**: the same call on the same notes produces the same take,
+  because the draw is pinned to the slot the note is being taken to rather than to its current,
+  already-moved position (a position-derived draw would wander inside the bound instead of repeating).
+  The timing draw being slot-pinned also makes it a **fixed point** — a repeat leaves the positions
+  where the first roll put them;
+* **not idempotent**: the *velocity* jitter is added to the note's current velocity, so applying it on
+  top of itself rolls again. That is what a jitter is — a roll, not a target. A caller that wants a
+  different take resets with a plain `strength: 1` quantise first, or simply uses another seed.
 
 Note that a *neutral* groove applied at strength 1 is exactly a grid quantise — applying a groove
 lands every note on its slot, so "quantise to the grid" and "quantise to this groove" are one
@@ -185,6 +205,10 @@ changes nothing — it would destroy the groove that holds it.
   the percentage knob, but the template itself has no generator.)
 * **No audio-clip grooves.** A groove moves MIDI notes; a `SampleClip` has no note list and every
   verb of the group refuses it, typed.
+* **A groove REPLACES the timing and the velocity of the notes it governs**, by the call's
+  strength — it is not a "nudge". Applying one to a clip with its own carefully set dynamics will
+  overwrite them (one `control.undo` back). A slot the source clip never played carries no velocity
+  opinion and therefore leaves the velocities of the notes that land on it alone.
 * **Not a playback feature.** A groove is applied once and the notes are ordinary notes afterwards:
   un-applying it is `control.undo`, not a switch. Nothing on the audio path reads a template.
 * **The pool is per project, not per track.** There is one pool on the `Song`; a groove is
