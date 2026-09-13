@@ -22,16 +22,18 @@ name: build
 # hosts. The two cache steps hash the pin-bearing cmake modules, and the
 # Release-honesty guard step fails the job if a documented feature is compiled out.
 #
-# EXCEPTION (2026-09-12): the three Windows jobs pass -DWANT_CLAP=OFF, because the
-# CLAP host loads plugins with dlopen/dlsym and neither MinGW nor MSVC has <dlfcn.h>
-# (plugins/ClapEffect/ClapHost.cpp:34:10: fatal error: dlfcn.h: No such file or directory
-# — the v0.2.1-alpha tag run is the first Windows build ever to reach that file, CLAP
-# having been compiled out of every platform before this week's provisioning fix).
-# tests/advertised-features.tsv carries the claim per platform (clap-hosting is
-# `linux,macos`), and the honesty guard asserts the INVERSE on Windows — WANT_CLAP must
-# not be ON and no clapeffect module may exist — so the Windows jobs still check this
-# row rather than skipping it. Porting the loader to LoadLibraryW/GetProcAddress is the
-# named follow-up; the release notes and known-limitations state the scope.
+# CLAP ON WINDOWS (2026-09-13). Every platform job in this matrix now passes
+# -DWANT_CLAP=ON (six job definitions, seven platforms — the macOS job is one
+# definition over two arches). The three Windows jobs used to pass -DWANT_CLAP=OFF,
+# because plugins/ClapEffect/ClapHost.cpp loaded its plugins with dlopen/dlsym and
+# neither MinGW nor MSVC ships <dlfcn.h> (the v0.2.1-alpha tag run failed at that very
+# include — it was the first Windows build ever to reach the file, CLAP having been
+# compiled out of every platform before the provisioning fix). The loader now has a
+# Windows half behind `#ifdef _WIN32` (LoadLibraryW/GetProcAddress/FreeLibrary, with the
+# wide path so a non-ASCII install directory works), and tests/advertised-features.tsv lists
+# clap-hosting for `*`, so the honesty guard enforces WANT_CLAP=ON *and* a clapeffect
+# module on Windows exactly as it does on Linux and macOS. The port is CI-verified
+# only: the development box has no MinGW or MSVC toolchain.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -465,14 +467,14 @@ jobs:
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
         -DWANT_VST3=ON
-        -DWANT_CLAP=OFF
+        -DWANT_CLAP=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
       # This job runs on a Linux runner but builds a WINDOWS target, so the uname-based
-      # platform detection in tests/release-honesty-gate.sh would call it `linux` and demand
-      # the clap-hosting row that this job deliberately builds WITHOUT (-DWANT_CLAP=OFF) --
-      # a false failure on a job whose build is correct. Say what the target is instead.
+      # platform detection in tests/release-honesty-gate.sh would judge `linux` and never
+      # exercise the Windows direction of a platform-scoped row. Say what the target is
+      # instead: the Windows build is what this job must prove.
       RELEASE_HONESTY_PLATFORM: windows
     steps:
       - name: Configure git
@@ -654,7 +656,7 @@ jobs:
             -DUSE_COMPILE_CACHE=ON `
             -DUSE_WERROR=ON `
             -DWANT_VST3=ON `
-            -DWANT_CLAP=OFF `
+            -DWANT_CLAP=ON `
             -DVCPKG_TARGET_TRIPLET="x64-windows" `
             -DVCPKG_HOST_TRIPLET="x64-windows" `
             -DVCPKG_MANIFEST_INSTALL="${{ env.should_install_manifest }}"
@@ -763,7 +765,7 @@ jobs:
         -DTARGET_UARCH=official
         -DUSE_COMPILE_CACHE=ON
         -DWANT_VST3=ON
-        -DWANT_CLAP=OFF
+        -DWANT_CLAP=ON
         -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
