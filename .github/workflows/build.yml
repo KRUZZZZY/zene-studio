@@ -864,3 +864,77 @@ jobs:
           /clang64/bin/ccache.exe --show-stats --verbose
         env:
           CCACHE_MAXSIZE: 500MB
+
+  # REL-2 (2026-09-13): a tag publishes only from a commit whose own matrix is green.
+  #
+  # The defect this closes. Every build job uploads its package when the ref is a tag
+  # (six `if: startsWith(github.ref, 'refs/tags/')` upload steps), and no job `needs:`
+  # another, so a tag pushed to a red commit still produced that release's assets. It
+  # happened twice in a row: v0.2.0-alpha, and the v0.2.1-alpha re-cut, were both cut
+  # from a commit whose own seven-platform matrix was red. This job is the release's
+  # gate and it is the workflow half of "a tag is cut from a commit whose own CI run is
+  # green" (the program workspace's `NEXT-0.3.0-AGENT-PROMPT.md` §4).
+  #
+  #   * `needs:` names every build job, so this job is SKIPPED — it never runs — when
+  #     any of them fails or is cancelled. Do NOT give it `if: always()`, `if:
+  #     success() || failure()` or `continue-on-error`: running the gate on a red
+  #     matrix is the defect, not the fix.
+  #   * the first step re-asserts that contract against ${{ toJSON(needs) }}, so a
+  #     future edit that drops a build job from this list (the matrix has gained and
+  #     lost jobs before) fails the job instead of silently narrowing the gate.
+  #   * the second step asks the Actions API whether this commit's own push runs of
+  #     build.yml, checks.yml and quality-gates.yml are green
+  #     (`tests/release-honesty-gate.sh --tag-run`), so a tag on a commit whose main
+  #     run was red is refused as well.
+  #
+  # The publish path is `~/.local/bin/zene-release`, which creates the release object
+  # and is run only after this job is green (HANDOFF-0.2.0-RELEASE.md §0.38); this job
+  # is what makes that order checkable instead of remembered. It uploads nothing and
+  # publishes nothing itself.
+  release-gate:
+    name: release gate (green matrix required)
+    needs:
+      - linux-x86_64
+      - linux-arm64
+      - macos
+      - mingw
+      - msvc
+      - msys2
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every build job succeeded, and every build job is still named here
+        run: |
+          # The `needs` context as JSON. It is inlined into the script rather than passed
+          # through `env:` because the run-script interpolation is the form the docs
+          # guarantee for this context; the JSON contains no single quotes, so the
+          # single-quoted assignment is literal.
+          NEEDS='${{ toJSON(needs) }}'
+          echo "$NEEDS"
+          rc=0
+          for job in linux-x86_64 linux-arm64 macos mingw msvc msys2; do
+            case "$NEEDS" in
+              *"\"$job\":{"*) : ;;
+              *) echo "release gate: build job '$job' is not in needs: — this gate no longer covers it" >&2; rc=1 ;;
+            esac
+          done
+          # A skipped entry would mean a build job never produced a result, so it is
+          # refused alongside failure and cancellation rather than read as "not red".
+          case "$NEEDS" in
+            *'"result":"failure"'*|*'"result":"cancelled"'*|*'"result":"skipped"'*)
+              echo "release gate: at least one build job did not succeed — refusing the release" >&2
+              rc=1 ;;
+          esac
+          if [ "$rc" -ne 0 ]; then
+            echo "A release is published only from a commit whose own matrix is green." >&2
+            exit 1
+          fi
+          echo "release gate: every build job succeeded and every build job is covered."
+      - name: This commit's own push runs must be green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tests/release-honesty-gate.sh --tag-run "$GITHUB_SHA"

@@ -98,11 +98,12 @@ bash tests/file-length-gate.sh --scope all --check
 bash tests/duplication-gate.sh --scope all
 ```
 
-Whole-tree baselines live in `tests/complexity-baseline-all.tsv` (**274** entries) and
-`tests/file-length-baseline-all.tsv` (**112** entries) — separate files from the fork baselines so a
+Whole-tree baselines live in `tests/complexity-baseline-all.tsv` (**281** entries) and
+`tests/file-length-baseline-all.tsv` (**121** entries) — separate files from the fork baselines so a
 fork regression is never shadowed by upstream grandfathering, or vice versa. Those are the counts the
-files hold on this tree (checked 2026-09-13); the 2026-09-11 table below carries the numbers of its
-own date.
+files hold on this tree (checked 2026-09-13, **after** that day's per-file re-anchor of the whole-tree
+scope: the 274 / 112 this paragraph carried before it were the pre-re-anchor numbers, and the scope
+exited 1 on both gates); the 2026-09-11 table below carries the numbers of its own date.
 
 Measured 2026-09-11 with the gates' own tools:
 
@@ -134,20 +135,35 @@ Until a whole-tree run has been made green, a statement like "the codebase passe
 true only of the fork scope — say which scope you mean, and for coverage say which *measured subset*
 of it (the capture measured 119 of the 175 entries the scope then held; see the scope note above).
 
-**The whole-tree scope is NOT green at the 0.2.1-alpha tip** (checked 2026-09-13,
-`post-alpha/integration` @ `5565b4b1b`): `bash tests/complexity-gate.sh --check --scope all` exits **1**
-with **28** regression lines and `bash tests/file-length-gate.sh --check --scope all` exits **1** with
-**34** — 62 lines over 35 files. The fork and tools scopes are green on both gates. The two
-disagree because the fork manifest holds 244 files and the all manifest 1,263, and **55 of the 62
-failing lines are in files `tests/fork-sources.txt` does not list at all**; the rest are in files both
-scopes list, where the fork-scope baseline entry is current and the all-scope one is stale. So it is a
-stale whole-tree baseline, not product code the fork ratchets missed.
-**The smallest honest action is a decision, not a silence:** one recorded
-`--reanchor-file <path> "<reason>"` per failing file on the all-scope baseline — the reason citing
-`tests/upstream-modifications.txt` where the growth is in inherited code — **or** leaving the scope red
-and recorded as the owner's call (the planned GATE-1/GATE-2 rows in the program's planned-work master
-list). `tests/QA-GATES.md` "Scope policy" carries the per-gate detail; nothing here re-anchors a
-baseline, and no baseline file is edited by this document.
+**The whole-tree scope is GREEN as of 2026-09-13** (checked on the `030/w2-process` tree): it was
+**not** green at the 0.2.1-alpha tip — `bash tests/complexity-gate.sh --check --scope all` exited **1**
+with **28** regression lines and `bash tests/file-length-gate.sh --check --scope all` exited **1** with
+**34**, 62 lines over 35 files, while this document and two others said otherwise — and the 0.3.0
+process lane took the decision the paragraph below named. It executed it as **49 recorded per-path
+`--reanchor-file <path> "<reason>"` invocations** on the two `-all` baselines (36 entries in 24
+upstream-inherited files declared in `tests/upstream-modifications.txt`, 4 in 3 fork-authored product
+sources, 9 in 8 fork-authored test sources), and then regenerated `tests/all-sources.txt` from its own
+command — which found `src/core/ControlServerSocket.cpp` missing from it entirely, a file registered in
+`tests/fork-sources.txt` and measured by no whole-tree gate. Every reason names the class, the file and
+the measured growth; the per-path list is in `tests/QA-GATES.md` "Scope policy". Measured after:
+
+```sh
+bash tests/complexity-gate.sh  --check --scope all       # EXIT=0
+bash tests/file-length-gate.sh --check --scope all       # EXIT=0
+bash tests/duplication-gate.sh --scope all               # EXIT=0
+bash tests/run-all-gates.sh --whole-tree --no-mutation   # EXIT=3 (1/2/5 skipped: no build)
+```
+
+The two scopes disagreed because the fork manifest holds 244 files and the all manifest 1,263, and 55
+of the 62 failing lines were in files `tests/fork-sources.txt` does not list at all; the rest were in
+files both scopes list, where the fork-scope baseline entry was current and the all-scope one stale. So
+it was a stale whole-tree baseline — and now it is a current one.
+**A re-anchor is a recorded act, never a silencer:** one
+`--reanchor-file <path> "<reason>"` per file on the scope's own baseline — the reason naming the
+growth accepted and citing `tests/upstream-modifications.txt` where the growth is in inherited code, or
+naming the class where it is not — or a whole-scope `--reanchor "<reason>"` at an integration point.
+An unrecorded re-anchor exits 2 and a blank reason is refused. `tests/QA-GATES.md` "Scope policy"
+carries the per-gate detail and the full path list; no baseline file is edited by hand anywhere.
 
 ## Running it
 

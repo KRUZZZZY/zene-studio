@@ -63,6 +63,27 @@
 # The platform is detected from uname (Darwin→macos, Linux→linux, MINGW*/MSYS*/
 # CYGWIN*→windows). RELEASE_HONESTY_PLATFORM overrides the detection, which is how
 # the other platform's branch is tested on one machine.
+#
+# TAG-RUN MODE (REL-2, 2026-09-13) — "a tag is cut from a commit whose own CI run is
+# green" (the program workspace's `NEXT-0.3.0-AGENT-PROMPT.md` §4) as a command with an
+#
+#   bash tests/release-honesty-gate.sh --tag-run <sha> [--repo owner/name]
+#
+# The build.yml `release-gate` job calls it with $GITHUB_SHA before the release is
+# published, so the refusal is mechanical rather than remembered. It asks the Actions
+# API for the PUSH runs of <sha> on the three workflows that run on every push
+# (build.yml, checks.yml, quality-gates.yml) and PASSES only when each workflow has at
+# least one completed push run and NO completed push run whose conclusion is anything
+# other than `success`. A run still in flight is not a failure — the release job's own
+# tag run is one — but a completed red run for the same commit is exactly the state
+# REL-2 exists to refuse (v0.2.0-alpha and the v0.2.1-alpha re-cut were both cut from a
+# commit whose own seven-platform matrix was red).
+#
+# Exit status: 0 green, 1 at least one workflow's own push run is red or missing,
+# 2 a usage error or the API/tooling is unavailable. `gh` is used because it is the
+# tool the release path already authenticates with (GH_TOKEN / GITHUB_TOKEN); the
+# repo name is --repo, else $RELEASE_HONESTY_REPO / $GITHUB_REPOSITORY, else the
+# `product` remote of this worktree.
 
 set -uo pipefail
 
@@ -75,21 +96,120 @@ MANIFEST="$ROOT/tests/advertised-features.tsv"
 SOURCE=""
 SOURCE_KIND=""
 ARTIFACTS=""
+TAG_RUN_SHA=""
+REPO="${RELEASE_HONESTY_REPO:-${GITHUB_REPOSITORY:-}}"
 
 usage() {
 	sed -n '2,60p' "$HERE/release-honesty-gate.sh" | sed -n 's/^# \{0,1\}//p' | sed '/^$/q'
 }
 
 while [ $# -gt 0 ]; do
+	# Every option below takes a value, and a missing one must be a usage error
+	# (exit 2, this script's usage status) rather than bash's `${2:?}` exit 1 —
+	# the header names 2 for "usage error" and callers branch on it.
+	case "$1" in
+		--dump|--header|--artifacts|--manifest|--tag-run|--repo)
+			if [ $# -lt 2 ]; then
+				echo "release-honesty-gate: $1 needs a value" >&2
+				exit 2
+			fi ;;
+	esac
 	case "$1" in
 		--dump)      SOURCE="${2:?--dump needs a file}";      SOURCE_KIND="dump";   shift 2 ;;
 		--header)    SOURCE="${2:?--header needs a file}";    SOURCE_KIND="header"; shift 2 ;;
 		--artifacts) ARTIFACTS="${2:?--artifacts needs a directory}";                 shift 2 ;;
 		--manifest)  MANIFEST="${2:?--manifest needs a file}";                        shift 2 ;;
+		--tag-run)   TAG_RUN_SHA="${2:?--tag-run needs a commit sha}";                shift 2 ;;
+		--repo)      REPO="${2:?--repo needs owner/name}";                            shift 2 ;;
 		-h|--help)   usage; exit 0 ;;
 		*) echo "release-honesty-gate: unknown argument '$1'" >&2; exit 2 ;;
 	esac
 done
+
+# ---- tag-run mode (REL-2) ---------------------------------------------------
+# Runs BEFORE the feature check and replaces it: a tag's own run being red is a
+# different claim from a documented feature being compiled out, and the release job
+# asks this question first.
+tag_run_repo() {
+	if [ -n "$REPO" ]; then printf '%s' "$REPO"; return 0; fi
+	local url
+	url="$(git -C "$ROOT" remote get-url product 2>/dev/null || true)"
+	case "$url" in
+		https://github.com/*/*) printf '%s' "${url#https://github.com/}" | sed 's/\.git$//' ;;
+		git@github.com:*/*)     printf '%s' "${url#git@github.com:}"         | sed 's/\.git$//' ;;
+		*) return 1 ;;
+	esac
+}
+
+tag_run_check() {
+	local sha="$1" repo wf _id path base status conclusion
+	repo="$(tag_run_repo)" || {
+		echo "release-honesty-gate: cannot determine the repository — pass --repo owner/name" >&2
+		exit 2
+	}
+	if ! command -v gh >/dev/null 2>&1; then
+		echo "release-honesty-gate: 'gh' is required for --tag-run (the release path's own client)" >&2
+		exit 2
+	fi
+	echo "=== release gate: is this commit's own CI run green? ==="
+	echo "repo     : $repo"
+	echo "commit   : $sha"
+	echo "workflows: build.yml checks.yml quality-gates.yml (every push run for this commit)"
+	echo
+	local runs
+	runs="$(gh api "repos/$repo/actions/runs?head_sha=$sha&per_page=100" --paginate \
+		-q '.workflow_runs[] | select(.event=="push") | [.path,.id,.status,.conclusion] | @tsv' 2>&1)" || {
+		echo "release-honesty-gate: the Actions API call failed:" >&2
+		printf '%s\n' "$runs" >&2
+		exit 2
+	}
+	declare -A COMPLETED_SEEN BAD_SEEN
+	for wf in build.yml checks.yml quality-gates.yml; do
+		COMPLETED_SEEN[$wf]=0
+		BAD_SEEN[$wf]=0
+	done
+	while IFS=$'	' read -r path _id status conclusion; do
+		[ -n "${path:-}" ] || continue
+		base="${path##*/}"
+		case "$base" in build.yml|checks.yml|quality-gates.yml) ;; *) continue ;; esac
+		if [ "$status" = "completed" ]; then
+			COMPLETED_SEEN[$base]=1
+			if [ "$conclusion" != "success" ]; then
+				BAD_SEEN[$base]=1
+				echo "  [FAIL] $base: a completed push run for this commit concluded '$conclusion'"
+			else
+				echo "  [ ok ] $base: a completed push run for this commit is success"
+			fi
+		else
+			echo "  [    ] $base: a push run for this commit is $status (in flight — not a result)"
+		fi
+	done <<< "$runs"
+	local failures=0
+	for wf in build.yml checks.yml quality-gates.yml; do
+		if [ "${BAD_SEEN[$wf]}" -eq 1 ]; then
+			failures=$((failures + 1))
+		elif [ "${COMPLETED_SEEN[$wf]}" -eq 0 ]; then
+			echo "  [FAIL] $wf: no COMPLETED push run exists for this commit"
+			failures=$((failures + 1))
+		fi
+	done
+	echo
+	if [ "$failures" -gt 0 ]; then
+		echo "RESULT: FAIL — $failures of 3 workflow(s) have no green completed push run on $sha"
+		echo "A tag is cut from a commit whose own CI run is green. Re-run the matrix on this"
+		echo "commit (or move the tag to a commit that has one) before publishing."
+		exit 1
+	fi
+	echo "RESULT: PASS — every push run completed for $sha on all three workflows is green"
+	exit 0
+}
+
+if [ -n "$TAG_RUN_SHA" ]; then
+	case "$TAG_RUN_SHA" in
+		-*) echo "release-honesty-gate: --tag-run needs a commit sha, not '$TAG_RUN_SHA'" >&2; exit 2 ;;
+	esac
+	tag_run_check "$TAG_RUN_SHA"
+fi
 
 if [ -z "$SOURCE" ]; then
 	echo "release-honesty-gate: one of --dump FILE or --header FILE is required" >&2

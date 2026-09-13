@@ -508,8 +508,9 @@ if scope_entries:
 		f"{len(scope_missing)} did not")
 	print(f"       the line-coverage number above is a claim about those {len(scope_seen)} "
 		f"files, NOT about the {len(scope_entries)}-entry scope")
-	print("       (per-entry reason for the gap: python3 tests/coverage-green/classify-scope.py "
-		f"{os.path.relpath(tracefile, repo_root)} <build-dir>)")
+	print("       (per-entry reason for the gap: the classify-scope.py helper that used to "
+		f"explain it was removed with the committed evidence (tests/evidence-manifest.tsv); "
+		f"tracefile: {os.path.relpath(tracefile, repo_root)})")
 
 # The ratchet only compares files the baseline knows about, so report that scope's own
 # figure too: for a fork-scoped tracefile the two coincide, for a whole-tree tracefile

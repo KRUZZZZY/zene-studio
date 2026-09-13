@@ -148,7 +148,7 @@ command), **UNVERIFIABLE FROM THIS BOX** (with what would settle it).
 | F24 | `plugin.unload` cannot be replayed; the chain order is not restored | **TRUE** | `docs/A16-REVERSIBILITY.md:103` → "…would need plugin.load by catalogue id plus a state restore, and the instance id (fx-<n>) is position-derived - the inverse is not one operation the registry can run… **The chain ORDER is not restored**". |
 | F25 | the contract's own limits: undo depth 100 for both stacks; `track.remove` inverse bounded at 64 KiB; `track.set_solo` does not restore `Track::mutedBeforeSolo`; neither survives a restart | **TRUE** | `docs/A16-REVERSIBILITY.md:336-343` → "1. **Undo depth is 100 steps** … 2. **`track.remove`'s inverse is bounded at 64 KiB of track XML.** … 4. **`track.set_solo` does not restore `Track::mutedBeforeSolo`**…" |
 | F26 | the surface's tests run on the Dummy device; `tests/control-no-audio-device.py` proves the fallback; no test drives a real backend | **TRUE** | `ls tests/control-no-audio-device.py` → present; `ctest -N` in `build-coverage/tests` → `Test #89: ControlHeadlessNoAudioDevice`; no test in the tree opens a real device. |
-| F27 | `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` are "in the repository root" | **TRUE** | both files are in the worktree root. |
+| F27 | `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` are "in the repository root" | **TRUE (both tips)** | both files were in the worktree root when this audit ran. **Superseded 2026-09-13 (REPO-4):** they now live in `docs/reports/`, and `DOCS-NAMING.md` — the third root lane artefact — in `docs/`. The finding is left as written because it was true; the location moved. |
 
 ### G. "What else is new"
 

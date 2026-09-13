@@ -18,7 +18,7 @@ Brewfile.lock.json
 compile_commands.json
 /third_party/
 
-# Generated output of the CI-tag-failure verification harnesses under
-# tests/integration-logs-ci-fix/ (their run.sh regenerates it; only run.log and
-# the sources in each run.sh are tracked).
-tests/integration-logs-ci-fix/**/out/
+# (The tests/integration-logs-ci-fix/**/out/ ignore rule that stood here was removed with
+# the committed evidence on 2026-09-13, REPO-1/CP-1: the harness directory it covered is
+# gone, and an ignore rule for a path that no longer exists only hides a future reuse of
+# the name. tests/evidence-manifest.tsv records what was removed and its hashes.)

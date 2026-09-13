@@ -1,0 +1,18 @@
+# tests/evidence-gate-exempt.txt — the files tests/evidence-gate.sh does NOT refuse.
+#
+# Format: <path-prefix or glob><TAB><reason>. A trailing "/" means "everything under
+# this directory"; a "*" is matched as a bash glob; anything else is an exact path.
+# A blank reason is a setup error (exit 2), not an exemption: the gate refuses to
+# honour an entry that does not say why, so this file cannot become a mute button.
+#
+# Keep this list short and specific. Every entry here is a place the gate cannot see,
+# so an entry that is not vendored third-party data or a declared test fixture is a
+# defect in the entry, not in the gate.
+#
+# --- vendored third-party trees -------------------------------------------------
+plugins/RnnoiseDenoiser/rnnoise/	vendored RNNoise: the library's own generated model tables (rnnoise_data.c is 78 MB, rnnoise_data_little.c 30 MB). Third-party data, not this repo's evidence, and the same tree tests/fork-sources.txt and Gate 9 already exclude from every scope.
+plugins/NeuralAmp/rtneural/	vendored rtneural: Eigen's lapacke.h (1.0 MB) and json.hpp (0.9 MB) are upstream library headers, excluded from every scope by tests/fork-sources.txt and Gate 9 like the rest of this tree.
+plugins/LadspaEffect/caps/	vendored CAPS plugin sources: dsp/tonestack/vs_tab.h is a 1.2 MB generated DSP coefficient table (Copyright 2006 David Yeh, GPL) — byte-identical to upstream 4e677cb6c6ab, all 80 files present in both.
+#
+# --- fork-authored test data, flagged rather than silently grandfathered ---------
+plugins/RnnoiseDenoiser/testdata/	Fork-authored RNNoise measurement harness (0 files at upstream 4e677cb6c6ab): the eight .mmp fixtures, harness scripts and CSV/text measurements the plugin's tests use. Its crash-evidence/*.log and strace_A.log are OUTPUT (nothing in the tree reads them) and are therefore the same class as the evidence REPO-1 removed — they are exempt here because the owner's CP-1 decision named a specific deletion set and this directory is not in it. This is a recorded OPEN ITEM for a later pass, not a judgement that they belong in the tree.

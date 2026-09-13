@@ -187,7 +187,7 @@ retained. Zene Studio is not affiliated with or endorsed by the LMMS project.
 ## Naming
 
 The product name is **Zene Studio**. The repository was renamed to `zene-studio` on 2026-09-09, and
-the deferred code and branding items (wave R of [DOCS-NAMING.md](DOCS-NAMING.md)) landed on top of the
+the deferred code and branding items (wave R of [DOCS-NAMING.md](docs/DOCS-NAMING.md)) landed on top of the
 v0.1.0-alpha release: the CMake project is `zene`, the built executable is `zene`, the desktop entry,
 the window title and `--version` all say Zene Studio, and the release packages are named `zene-*`.
 

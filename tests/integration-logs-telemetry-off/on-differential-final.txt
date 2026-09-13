@@ -1,3 +1,0 @@
-ON  nm: 99
-ON  stripped strings: 156
-ON  raw strings: 690

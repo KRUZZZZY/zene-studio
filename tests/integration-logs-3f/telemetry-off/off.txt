@@ -1,3 +1,0 @@
-OFF binary (ZENE_TELEMETRY=OFF):
-  nm telemetry symbols : 99
-  strings 'telemetry'  : 305
