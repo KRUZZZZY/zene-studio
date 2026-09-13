@@ -12,7 +12,13 @@ speak the protocol:
   - the pure `evidence -> problems` checkers (`check_*`), which take the raw
     evidence a test has already gathered and return the list of failed claims.
     There is no I/O in them: a checker can be pointed at a hand-written reply
-    (that is what tests/control-negative-control.py does).
+    (that is what tests/control-negative-control.py does);
+  - one reader, `read_cap_refusal`: it takes an already-connected client and the
+    problems it reports into, because the case that needs it must NOT send on the
+    connection it is reading (the server is retiring it), so `Client.call` is not
+    usable there - and a raw one-line read was measured being fooled by a late
+    reply to an earlier request (job 103762607496, linux-arm64). This is the only
+    thing here that touches a socket, and it owns no bound of its own.
 
 Everything these functions call - the bounds, the launch recipe, the socket
 client, the readiness poll - is imported from `control_socket_harness`; there is
@@ -26,13 +32,56 @@ Exit code 0 only when every assertion passed. A hang is still a failure, and
 every bound still lives in `control_socket_harness`.
 """
 
+import json
 import sys
 import time
 
 from control_socket_harness import (  # noqa: E402
-    FATAL_GUARD_MARKER, LEGACY_WATCHDOG_LINE, PING_TIMEOUT, Blocked, Transcript,
+    FATAL_GUARD_MARKER, LEGACY_WATCHDOG_LINE, PING_TIMEOUT, Blocked, Timeout, Transcript,
     connect, ok, start_instance, wait_ready,
 )
+
+
+def read_cap_refusal(client, problems):
+    """The typed refusal for an over-cap request line, once it IS the cap refusal.
+
+    Raw on purpose: `Client.call` would SEND on the connection being retired, so the
+    caller cannot use it, and a raw reader that takes the first line has already been
+    fooled once. It therefore applies the harness's own staleness rule itself - a line
+    that answers a DISPATCHED request (id >= 0) is a late reply to an earlier request
+    and is discarded; an over-cap line is never dispatched, so its refusal is the line
+    with a negative id.
+
+    Measured, job 103762607496 (linux-arm64): the readiness poll's pings are answered
+    late there (one core inside Engine::init for ~34s), a ping's reply was still in the
+    buffer AHEAD of the refusal, and the first raw line was taken as the refusal -
+    "an over-cap request line answered {'id': 0, ...}", "the refusal does not name the
+    1048576-byte cap: {}", "the refusal carries id 0". The refusal itself had been sent
+    (typed, naming the cap, id -1): it was one line further back.
+
+    Bounded by PING_TIMEOUT across the discards, so a pre-fix server that buffered the
+    junk and answered it as a dispatched request still fails, as "the line was buffered
+    instead of capped". Returns the refusal, or None after adding the problem.
+    """
+    deadline = time.time() + PING_TIMEOUT
+    while True:
+        remaining = deadline - time.time()
+        try:
+            line = client._read_line(remaining if remaining > 0 else 0.05)  # noqa: SLF001
+        except Timeout as nothing:
+            problems.add("no refusal arrived for an over-cap request line inside %.0fs: %s "
+                         "(the line was buffered instead of capped)" % (PING_TIMEOUT, nothing))
+            return None
+        try:
+            candidate = json.loads(line.decode("utf-8", "replace"))
+        except ValueError:
+            print("note: discarded a line that is not a JSON reply while reading the cap "
+                  "refusal: %r" % line[:160])
+            continue
+        if candidate.get("id", 0) < 0:
+            return candidate
+        print("note: discarded a reply to an earlier request while reading the cap refusal: %s"
+              % line.decode("utf-8", "replace")[:160])
 
 # ---------------------------------------------------------------------------
 # flow helpers - a whole case, in one call
@@ -115,6 +164,21 @@ def check_clean_shutdown(exited, exit_code, socket_exists, stderr_text, elapsed_
                         "complete (it must never fire)")
     if expect_socket_unlinked and socket_exists:
         problems.append("the control socket file was not unlinked on exit")
+    return problems
+
+
+def check_recovery_cleaned(exited, recovery_exists):
+    """A clean quit removes the autosave recovery file.
+
+    `MainWindow::closeEvent` calls `sessionCleanup()` on an accepted close when
+    autosave is on, and that removes `recover.mmp`. A shutdown that leaves it
+    behind is a failure: the file is the crash marker the next launch offers to
+    recover, so a clean quit that keeps it makes the next launch lie.
+    """
+    problems = []
+    if exited and recovery_exists:
+        problems.append("the autosave recovery file survived a clean quit "
+                        "(MainWindow::closeEvent -> sessionCleanup did not run)")
     return problems
 
 

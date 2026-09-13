@@ -1,0 +1,11 @@
+== job 103762607470 (msvc-x64) - Vst3EffectIntegrationTest at line 293
+
+FAIL!  : lmms::Vst3EffectIntegrationTest::testRendersBeforeAfterWav() 'writeWav(QStringLiteral("/tmp/vst3_before.wav"), dry, sampleRate)' returned FALSE. ()
+Vst3EffectIntegrationTest.cpp(293) : failure location
+
+-- and the tests that PASSED in the same binary (the module loads on Windows
+   now: the wave-2 lane's fixture fix is not in question)
+PASS   : lmms::Vst3EffectIntegrationTest::cleanupTestCase
+PASS   : lmms::Vst3EffectIntegrationTest::initTestCase
+PASS   : lmms::Vst3EffectIntegrationTest::testProcessesAudioThroughAudioBus
+PASS   : lmms::Vst3EffectIntegrationTest::testStateRoundTripThroughMmp

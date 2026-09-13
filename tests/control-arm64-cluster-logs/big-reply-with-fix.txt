@@ -1,0 +1,2 @@
+2:PASS: 8 pipelined 74-command replies arrive whole over a 4 KiB receive buffer (372 KiB through a socket nobody was draining)
+94:PASS: control socket integration (offscreen, external client)

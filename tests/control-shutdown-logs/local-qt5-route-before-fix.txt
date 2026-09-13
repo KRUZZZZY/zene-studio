@@ -1,0 +1,27 @@
+On the CI route, reproduced on this box (Qt 6.4.2) by stubbing
+scheduleQuit()'s quit() with the Qt5 implementation:
+
+    // DIAGNOSTIC ONLY (reverted before commit): exit(0) is exactly what Qt 5.15's
+    // QCoreApplication::quit() does, so this reproduces the CI (Qt5) route on this
+    // Qt6 box: no QEvent::Quit, no QApplication::event -> closeAllWindows(), no
+    // QCloseEvent, no MainWindow::closeEvent.
+    QTimer::singleShot(0, app, []() { QCoreApplication::exit(0); });
+
+  build/zene rebuilt, then from build/tests:
+  ctest -R '^ControlShutdown$' --output-on-failure   [exit 8]
+
+Observed:
+
+  1/1 Test #82: ControlShutdown ..................***Failed    4.07 sec
+  [shutdown: undo/redo (dirty project)] exit=0 after 0.02s, socket exists=False
+  ---- shutdown: undo/redo (dirty project) stderr ----
+  ---- end shutdown: undo/redo (dirty project) stderr ----
+  [shutdown: no usable audio device] exit=0 after 0.02s, socket exists=False
+  ---- shutdown: no usable audio device stderr ----
+  ---- end shutdown: no usable audio device stderr ----
+  === FAIL ===
+    shutdown: undo/redo (dirty project)            FAILED (1)
+        the autosave recovery file survived a clean quit (MainWindow::closeEvent -> sessionCleanup did not run)
+    shutdown: no usable audio device               FAILED (1)
+        the autosave recovery file survived a clean quit (MainWindow::closeEvent -> sessionCleanup did not run)
+  0% tests passed, 1 tests failed out of 1

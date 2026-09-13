@@ -18,7 +18,8 @@
  *
  *   - separateProcessChoiceSpawnsAClient(): the stored choice really does start
  *     RemoteZynAddSubFx as a *child process of this process*: the test finds it
- *     in /proc, so "separate process" is a separate PID, not a second thread.
+ *     in the host's own process table, so "separate process" is a separate PID,
+ *     not a second thread.
  *
  *   - savedChoiceRoundTripsThroughSaveAndReload(): the choice is written by the
  *     plugin's own saveSettings (the same BoolModel convention forwardmidicc
@@ -31,6 +32,18 @@
  *     case is what the toggle buys, and it is the strongest claim this test
  *     can make - the client is killed by the test, not by a real plugin crash.
  *
+ * HOW THE SEPARATE-PID CLAIM IS READ
+ *
+ * Out of the host's own process table, read the way the platform provides it:
+ * /proc where procfs is mounted (exact, and what this test was written on), `ps
+ * -A -o pid=,ppid=,comm=` where it is not - Darwin has no /proc at all, and the
+ * macOS jobs redded three of the cases below because an empty /proc answer was
+ * read as "no client is running". Neither mechanism is *assumed* to work: a
+ * control child the test starts itself has to be found in the table by name
+ * first, and the cases SKIP - never pass - where it is not.
+ * `ZYN_TEST_PROCESS_OBSERVER=proc|ps` forces one mechanism, which is how the
+ * fallback is exercised where it is not the default.
+ *
  * WHAT THIS DOES NOT PROVE (kept explicit so a green run is not misread)
  *
  *   - No plugin is actually crashed: the client is SIGKILLed from outside, so
@@ -39,8 +52,22 @@
  *   - Audio is not compared here. The unchanged-default proof is a render
  *     comparison (docs/OOP-HOSTING.md), not an assertion.
  *   - Windows cannot load a plugin module from a test host (a module's import
- *     descriptor names lmms.exe - see AudioPluginTest.cpp), so the whole suite
- *     skips there.
+ *     descriptor names zene.exe, the executable the modules link - see
+ *     AudioPluginTest.cpp), so the whole suite skips there. The skip happens in
+ *     initTestCase() before this test starts the engine, and cleanupTestCase()
+ *     therefore tears down only what the test actually started (Engine::destroy()
+ *     on an engine that was never initialised dereferences a null
+ *     ProjectJournal - the msvc-x64 job segfaulted exactly there after the skip).
+ *     Nothing here is observable on Windows, and it is not a subset either: every
+ *     case below reaches the instrument through the module's own lmms_plugin_main
+ *     (initTestCase() resolves it after QLibrary::load, and instantiate() calls
+ *     it), so with no loadable module there is no subject to assert about. A
+ *     stated skip is the whole of what this platform can honestly produce.
+ *   - Where the host can read no process table at all, the separate-PID half of
+ *     the toggle is UNEXERCISED and the three cases that read one report
+ *     *Skipped*, naming that: their hosting-state assertions still ran, and the
+ *     client spawn is proven independently by RemotePluginClientE2ETest (same
+ *     client, real handshake) on the same job.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -62,6 +89,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QCoreApplication>
 #include <QLibrary>
 #include <QDomDocument>
 #include <QDomElement>
@@ -69,7 +97,6 @@
 #include <QFileInfo>
 #include <QList>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QString>
 #include <QtTest>
 
@@ -120,72 +147,35 @@ inline auto remoteClientPath() -> QString { return QStringLiteral(ZYN_REMOTE_CLI
 inline auto remoteClientPath() -> QString { return {}; }
 #endif
 
-/*!
- * PIDs of the client executable running *under this process right now*.
- *
- * RemotePlugin starts the client with QProcess from this process, so a live
- * remote client is a child process of this process: that is the whole
- * difference between "in-process" and "separate process", and reading it out
- * of /proc is what makes the toggle's effect a fact rather than an inference
- * from the plugin's own state.
- *
- * @return the PIDs whose executable basename is `name` and whose parent is this
- *         process; empty when no such client is running. Read from /proc on
- *         Linux and from `ps` everywhere else (see runningClientPidsFromPs).
- */
-#if !defined(Q_OS_WIN) && !defined(Q_OS_LINUX)
-//! The portable half, and the only one Darwin has: /proc does not exist there, so
-//! the /proc scan in runningClientPids() finds nothing, reports "no separate-process
-//! client", and makes all three of this file's separate-process cases fail (measured:
-//! 135 s of QTRY_VERIFY timeouts on both macOS jobs, one per case, each reporting
-//! that the client process could not be found). `ps -o pid=,ppid=,command= -ax` is
-//! POSIX and present on macOS and the BSDs; `command`'s first word is the executable
-//! path, whose basename is the same field the /proc branch compares against
-//! readlink(/proc/<pid>/exe). Defined only where it is used: Linux builds would
-//! otherwise fail -Werror=unused-function, which is how this was caught.
-auto runningClientPidsFromPs(const QString& name) -> QList<long>
-{
-	QList<long> pids;
-	QProcess ps;
-	ps.start(QStringLiteral("ps"),
-		{QStringLiteral("-o"), QStringLiteral("pid=,ppid=,command="), QStringLiteral("-ax")});
-	if (!ps.waitForStarted(5000) || !ps.waitForFinished(10000)) { return pids; }
+#ifndef Q_OS_WIN
 
-	const auto self = static_cast<long>(QCoreApplication::applicationPid());
-	const auto lines = QString::fromLocal8Bit(ps.readAllStandardOutput()).split('\n');
-	for (const auto& line : lines)
-	{
-		const auto fields = line.trimmed().split(QRegularExpression(QStringLiteral("\\s+")),
-			Qt::SkipEmptyParts);
-		if (fields.size() < 3) { continue; }
-		bool pidOk = false;
-		bool ppidOk = false;
-		const long pid = fields.at(0).toLong(&pidOk);
-		const long ppid = fields.at(1).toLong(&ppidOk);
-		if (!pidOk || !ppidOk || ppid != self) { continue; }
-		// `command`'s first word is the executable path, so its basename is the
-		// same field the /proc branch compares against readlink(/proc/<pid>/exe).
-		if (QFileInfo(fields.at(2)).fileName() == name) { pids.append(pid); }
-	}
-	return pids;
+//! Whether this run reads /proc (present, and exact) or `ps` (its absence - Darwin);
+//! ZYN_TEST_PROCESS_OBSERVER=proc|ps forces one, which is how the fallback is exercised here
+auto useProcFs() -> bool
+{
+	const auto forced = qEnvironmentVariable("ZYN_TEST_PROCESS_OBSERVER");
+	if (forced == QLatin1String("proc")) { return true; }
+	if (forced == QLatin1String("ps")) { return false; }
+	return QFile::exists(QStringLiteral("/proc/self/status"));
 }
-#endif
 
+//! Whether a table's name for a process is `wanted`. `ps` reports the kernel's own name, which
+//! Linux truncates to 15 characters ("RemoteZynAddSubF"), so a truncation either way still counts.
+auto processNameMatches(const QString& reported, const QString& wanted) -> bool
+{
+	const auto name = QFileInfo{reported}.fileName();
+	if (name == wanted) { return true; }
+	if (name.size() >= 8 && wanted.startsWith(name)) { return true; }
+	return wanted.size() >= 8 && name.startsWith(wanted);
+}
 
-auto runningClientPids(const QString& name) -> QList<long>
+//! Children of this process whose executable is `name`, out of /proc: exact, and what this test
+//! was written on - see psClientPids() for the hosts that have no procfs. Empty when nothing
+//! matches, and equally empty when /proc cannot be read at all (control: the file header).
+auto procFsClientPids(const QString& name) -> QList<long>
 {
 	QList<long> pids;
-#ifdef Q_OS_WIN
-	Q_UNUSED(name);
-#elif !defined(Q_OS_LINUX)
-	// Darwin (and every BSD) has no /proc at all, so the scan below finds nothing
-	// and every separate-process case in this file reports "no client" - which on
-	// the two macOS jobs of the v0.2.1-alpha tag run was three failures after
-	// 135 s, one per case, each one a QTRY_VERIFY(...) budget burnt waiting for a
-	// client that had in fact started. The parent/child relation this file's whole
-	// claim rests on is the same fact either way; only the way it is read differs.
-	pids = runningClientPidsFromPs(name);
-#else
+
 	auto* proc = opendir("/proc");
 	if (proc == nullptr) { return pids; }
 
@@ -196,7 +186,8 @@ auto runningClientPids(const QString& name) -> QList<long>
 		if (pid.isEmpty() || pid.at(0) < '0' || pid.at(0) > '9') { continue; }
 
 		char target[4096];
-		const auto length = ::readlink("/proc/" + pid + "/exe", target, sizeof(target) - 1);
+		const QByteArray exe = "/proc/" + pid + "/exe";
+		const auto length = ::readlink(exe.constData(), target, sizeof(target) - 1);
 		if (length <= 0) { continue; }
 		target[length] = '\0';
 		if (QFileInfo{QString::fromLocal8Bit(target)}.fileName() != name) { continue; }
@@ -206,20 +197,88 @@ auto runningClientPids(const QString& name) -> QList<long>
 		const QByteArray text = status.readAll();
 		const auto marker = text.indexOf("PPid:");
 		if (marker < 0) { continue; }
-		// "PPid:\t<pid>\nName:..." - take the value up to the end of the line
+		// "PPid:	<pid>\nName:..." - the value up to the end of the line
 		const auto ppid = text.mid(marker + 5, 32).split('\n').first().trimmed().toLong();
 		if (ppid == self) { pids.append(pid.toLong()); }
 	}
 	closedir(proc);
-#endif
 	return pids;
 }
 
-//! How many clients are running under this process right now
-auto runningClients(const QString& name) -> int
+//! The same, from `ps -A -o pid=,ppid=,comm=`: `-A` is every process on macOS and Linux alike and
+//! the trailing `=` suppresses each field's header, so the output is parsed positionally - pid,
+//! parent, then the rest of the line as the executable. Empty when the call cannot be made or read.
+auto psClientPids(const QString& name) -> QList<long>
 {
-	return runningClientPids(name).size();
+	QList<long> pids;
+	if (!QFile::exists(QStringLiteral("/bin/ps"))) { return pids; }
+
+	QProcess ps;
+	ps.start(QStringLiteral("/bin/ps"), {QStringLiteral("-A"), QStringLiteral("-o"),
+		QStringLiteral("pid=,ppid=,comm=")});
+	if (!ps.waitForStarted(5000) || !ps.waitForFinished(5000) || ps.exitCode() != 0) { return pids; }
+
+	const auto self = QCoreApplication::applicationPid();
+	for (const auto& line : QString::fromLocal8Bit(ps.readAllStandardOutput())
+								.split(QLatin1Char('\n'), Qt::SkipEmptyParts))
+	{
+		const auto fields = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+		bool pidOk = false;
+		bool parentOk = false;
+		const long pid = fields.value(0).toLong(&pidOk);
+		const long parent = fields.value(1).toLong(&parentOk);
+		if (fields.size() < 3 || !pidOk || !parentOk || parent != self) { continue; }
+		if (processNameMatches(fields.mid(2).join(QLatin1Char(' ')), name)) { pids.append(pid); }
+	}
+	return pids;
 }
+
+//! PIDs of the client executable running *under this process now*: children of this process whose
+//! executable is `name`, read the way this host can read a process table
+auto runningClientPids(const QString& name) -> QList<long>
+{
+	return useProcFs() ? procFsClientPids(name) : psClientPids(name);
+}
+
+//! How many clients are running under this process right now
+auto runningClients(const QString& name) -> int { return runningClientPids(name).size(); }
+
+//! Whether this host's process table can be trusted for the claims above - proven with a control
+//! child of this process that this test starts itself.
+//!
+//! An empty table is not evidence that no client is running, only that this host cannot be looked
+//! at, and the "no client" assertions below would then hold for the wrong reason. The live
+//! `/bin/sleep` child has to show up *by the name this test looks for the client by*, which
+//! exercises the mechanism, the parent filter and the name rule in one step. Cases QSKIP where it
+//! does not hold - they never pass on a table they cannot read.
+auto clientObservationIsUsable() -> bool
+{
+	QProcess control;
+	control.start(QStringLiteral("/bin/sleep"), {QStringLiteral("5")});
+	if (!control.waitForStarted(5000)) { return false; }
+
+	const bool found = runningClientPids(QStringLiteral("sleep")).contains(control.processId());
+	control.kill();
+	control.waitForFinished(2000);
+	return found;
+}
+
+//! Why the cases that read the process table QSKIP where it cannot be read, and never "pass"
+auto noProcessTableReason() -> const char*
+{
+	return "this host can read no process table (/proc is absent and `ps -A -o pid=,ppid=,comm=` did "
+		   "not report this process's own control child by name), so whether the separate-process "
+		   "client is a SEPARATE PID - what /proc proves on Linux - is UNEXERCISED by this run";
+}
+
+#else // Q_OS_WIN: initTestCase() QSKIPs the suite, but the file still has to compile
+
+auto clientObservationIsUsable() -> bool { return false; }
+auto runningClientPids(const QString&) -> QList<long> { return {}; }
+auto runningClients(const QString&) -> int { return 0; }
+auto noProcessTableReason() -> const char* { return "no process table on Windows"; }
+
+#endif
 
 } // namespace
 
@@ -237,11 +296,15 @@ private slots:
 	void initTestCase()
 	{
 #ifdef Q_OS_WIN
-		QSKIP("cannot load a plugin module from a Windows test host (its import "
-			"descriptor names lmms.exe): see AudioPluginTest.cpp");
-#endif
+		QSKIP("cannot load a plugin module from a Windows test host: plugin modules link "
+			"the zene executable, so their import descriptor names zene.exe and a test "
+			"host cannot satisfy it (the product loads them inside zene.exe where that "
+			"resolves by construction; CI msvc-x64: QLibrary::load -> "
+			"ERROR_MOD_NOT_FOUND, 126): see AudioPluginTest.cpp");
+	#endif
 
 		Engine::init(true);
+		m_engineInitialised = true;
 		QVERIFY2(Engine::audioEngine() != nullptr, "engine failed to initialise");
 		Engine::audioEngine()->audioDev()->stopProcessing();
 
@@ -279,7 +342,21 @@ private slots:
 
 	void cleanupTestCase()
 	{
-		Engine::destroy();
+		// Tear down only what this test started. Engine::destroy()
+		// (src/core/Engine.cpp:95) dereferences s_projectJournal without a
+		// null check, and only Engine::init() ever sets it - so destroying an
+		// engine that was never initialised is a null dereference. On Windows
+		// initTestCase() QSKIPs before Engine::init(), and this call was the
+		// crash the msvc-x64 job reported:
+		//   SKIP : ZynSeparateProcessTest::initTestCase() cannot load a plugin
+		//          module from a Windows test host ...
+		//   A crash occurred in ...\ZynSeparateProcessTest.exe.
+		//   While testing cleanupTestCase
+		//   # 8: QHash<unsigned int,lmms::JournallingObject *>::begin()
+		//   # 9: lmms::ProjectJournal::stopAllJournalling()
+		//  #10: lmms::Engine::destroy()
+		// (job 103724228360, run 34757467632). A skip must be a skip.
+		if (m_engineInitialised) { Engine::destroy(); }
 	}
 
 	//! No attribute (every project saved before the toggle existed): unchanged
@@ -289,20 +366,37 @@ private slots:
 		auto plugin = instantiate(track);
 
 		QCOMPARE(hostingState(plugin.get()), QString::fromLatin1(InProcessState));
+		if (!clientObservationIsUsable())
+		{
+			QSKIP(noProcessTableReason());
+		}
 		QCOMPARE(runningClients(QString::fromLatin1(RemoteClientName)), 0);
 	}
 
-	//! The stored choice starts a client that is a child process of this one
+	//! The stored choice starts a client, and the client is a child process of this one: the
+	//! hosting-state half runs on every platform, the process table is read last, because that
+	//! is the half a host can be unable to see.
 	void separateProcessChoiceSpawnsAClient()
 	{
 		InstrumentTrack track{Engine::getSong()};
 		auto plugin = instantiate(track);
 
 		loadChoice(*plugin, QStringLiteral("1"));
+		QCOMPARE(hostingState(plugin.get()), QString::fromLatin1(SeparateProcessState));
 
+		// ... and the choice is not one-way: turning it off takes the client away again.
+		loadChoice(*plugin, QStringLiteral("0"));
+		QCOMPARE(hostingState(plugin.get()), QString::fromLatin1(InProcessState));
+
+		if (!clientObservationIsUsable())
+		{
+			QSKIP(noProcessTableReason());
+		}
+
+		loadChoice(*plugin, QStringLiteral("1"));
 		QCOMPARE(hostingState(plugin.get()), QString::fromLatin1(SeparateProcessState));
 		// The client is started asynchronously by RemotePlugin::init(), so it
-		// takes a moment to appear in /proc.
+		// takes a moment to appear in the process table.
 		QTRY_COMPARE_WITH_TIMEOUT(runningClients(QString::fromLatin1(RemoteClientName)), 1, 10000);
 		qInfo("separate process: RemoteZynAddSubFx is a child of pid %lld",
 			static_cast<long long>(QCoreApplication::applicationPid()));
@@ -340,6 +434,11 @@ private slots:
 
 		loadChoice(*plugin, saved);
 		QCOMPARE(hostingState(plugin.get()), QString::fromLatin1(SeparateProcessState));
+
+		if (!clientObservationIsUsable())
+		{
+			QSKIP(noProcessTableReason());
+		}
 		QTRY_COMPARE_WITH_TIMEOUT(runningClients(QString::fromLatin1(RemoteClientName)), 1, 10000);
 	}
 
@@ -350,6 +449,12 @@ private slots:
 		auto plugin = instantiate(track);
 		loadChoice(*plugin, QStringLiteral("1"));
 		QCOMPARE(hostingState(plugin.get()), QString::fromLatin1(SeparateProcessState));
+
+		// No unkilled-client half to assert first here: the pid *is* the subject.
+		if (!clientObservationIsUsable())
+		{
+			QSKIP(noProcessTableReason());
+		}
 
 		QTRY_VERIFY_WITH_TIMEOUT(clientPid() > 0, 10000);
 		const auto client = clientPid();
@@ -413,6 +518,9 @@ private:
 
 	QLibrary m_library;
 	MainFn m_main = nullptr;
+	//! Whether this test started the engine (initTestCase ran past the Windows
+	//! skip), so cleanupTestCase destroys only an engine that exists.
+	bool m_engineInitialised = false;
 };
 
 QTEST_GUILESS_MAIN(ZynSeparateProcessTest)

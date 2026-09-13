@@ -37,7 +37,7 @@ from control_socket_flows import (  # noqa: E402
     check_busy_carries_reason, check_ping_shape, check_readiness_reason,
 )
 from control_socket_harness import (  # noqa: E402
-    Client, Instance, Problems, Timeout, dump, finish,
+    PING_TIMEOUT, STARTUP_BOUND, Blocked, Client, Instance, Problems, Timeout, dump, finish,
 )
 
 CONNECT_TIMEOUT = 60.0
@@ -55,14 +55,20 @@ def observe_not_ready(client, connected_at, problems):
     """
     deadline = time.time() + NOT_READY_WINDOW
     while time.time() < deadline:
-        reply = client.call(1, "control.ping")
+        # Both calls happen BEFORE readiness, so both are bounded by the readiness
+        # budget: the engine initialises on the thread that serves this socket, so
+        # on a slow platform (CI: linux-arm64 spends ~34s inside Engine::init) the
+        # answer arrives a whole engine start later. Bounding them by one socket
+        # read reported a slow platform as a hang - measured as
+        # "no response line inside 30.0s" on the arm64 job.
+        reply = client.call(1, "control.ping", timeout=STARTUP_BOUND)
         problems.extend(check_ping_shape(reply, 1))
         ready = (reply.get("result") or {}).get("engine_ready")
         if ready is False:
             elapsed = time.time() - connected_at
             problems.extend(check_readiness_reason(reply))
             print("not ready %.3fs after connect: %r" % (elapsed, reply.get("result")))
-            busy = client.call(2, "mixer.get_state")
+            busy = client.call(2, "mixer.get_state", timeout=STARTUP_BOUND)
             problems.extend(check_busy_carries_reason(busy))
             print("engine command before ready: %r" % busy)
             return True, elapsed
@@ -72,11 +78,25 @@ def observe_not_ready(client, connected_at, problems):
     return False, None
 
 
-def wait_until_ready(client, problems):
-    """Poll to readiness and require it. Returns True when ready."""
+def wait_until_ready(inst, client, problems):
+    """Poll to readiness within READY_TIMEOUT. Returns True when ready.
+
+    A ping that does not answer inside its own bound is not the end of the window: the
+    engine initialises on the thread that serves this socket, so while it starts the
+    client's ping is answered late or not at all (measured on CI: 10.0s timeouts here
+    while the engine's own start took ~34s). READY_TIMEOUT is the bound that applies;
+    past it, this returns False exactly as before.
+    """
     deadline = time.time() + READY_TIMEOUT
     while time.time() < deadline:
-        reply = client.call(3, "control.ping")
+        if not inst.alive():
+            problems.add("the instance exited (code %s) while polling for readiness"
+                         % inst.process.returncode)
+            return False
+        try:
+            reply = client.call(3, "control.ping", timeout=PING_TIMEOUT)
+        except Blocked:
+            continue
         problems.extend(check_ping_shape(reply, 3))
         result = reply.get("result") or {}
         if result.get("engine_ready") is True:
@@ -110,7 +130,7 @@ def drive_readiness(inst, problems):
                 "this test's whole point is the pre-readiness window. Either the instance was "
                 "already ready when the client connected (make this scenario deterministic "
                 "before trusting a green run), or ping stopped reporting readiness honestly.")
-        if wait_until_ready(client, problems):
+        if wait_until_ready(inst, client, problems):
             print("ready after %.2fs" % (time.time() - started))
             exercise_engine_commands(client, problems)
             return client.call(6, "control.quit")

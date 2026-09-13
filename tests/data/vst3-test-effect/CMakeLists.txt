@@ -26,10 +26,57 @@
 #   vst3-test-effect          the plug-in MODULE, laid out as the SDK loader
 #                             expects it
 
-# The VST3 bundle on Linux is a DIRECTORY:
-#   <name>.vst3/Contents/<uname -m>-linux/<name>.so
-# The SDK's loader insists on that layout and derives the .so name from the
-# bundle directory stem (public.sdk/source/vst/hosting/module_linux.cpp:129-152).
+# The VST3 bundle is a DIRECTORY, and its layout AND its entry point are the
+# loader's contract, not ours. Three loaders, three layouts, three entry-point
+# translation units - each stated with the file in the pinned SDK that demands it:
+#
+#   Linux    <name>.vst3/Contents/<uname -m>-linux/<name>.so
+#            entry point: public.sdk/source/main/linuxmain.cpp - exports
+#            ModuleEntry/ModuleExit, resolved by dlsym in
+#            module_linux.cpp:172-177 ("The shared library does not export the
+#            required 'ModuleEntry' function" is what its absence says).
+#   macOS    <name>.vst3/Contents/MacOS/<name>  +  Contents/Info.plist
+#            entry point: public.sdk/source/main/macmain.cpp - exports
+#            bundleEntry/bundleExit, looked up with
+#            CFBundleGetFunctionPointerForName in module_mac.mm:117-121. The
+#            loader itself is CoreFoundation: CFBundleCreate(url) +
+#            CFBundleLoadExecutableAndReturnError(bundle), and CFBundle looks for
+#            the executable its Info.plist NAMES under Contents/MacOS - the layout
+#            SMTG_Bundle.cmake's own `BUNDLE TRUE` + `BUNDLE_EXTENSION vst3`
+#            produce for the SDK's samples.
+#            The layout AND the symbol are the contract, and the two failures are
+#            distinguishable: a wrong layout fails inside CFBundle, while a
+#            present-but-symbol-less Mach-O gets past the load and then reports
+#               FAIL! : Vst3HostTest::initTestCase() ... returned FALSE.
+#                 (Bundle does not export the required 'bundleEntry' function)
+#            That is what both macOS jobs reported for Vst3HostTest and
+#            Vst3EffectIntegrationTest (jobs 103724228405 macos-arm64 and
+#            103724228370 macos-x86_64, run 34757467632): the layout was already
+#            Contents/MacOS + Info.plist, so CFBundleCreate and
+#            CFBundleLoadExecutableAndReturnError both succeeded - and the build
+#            log for 103724228405 shows the entry point compiled was still
+#            public.sdk/source/main/linuxmain.cpp.o, so the symbol the loader
+#            asks for next was never in the Mach-O. The symbol is the second
+#            half of the contract.
+#   Windows  <name>.vst3/Contents/<arch>-win/<name>.vst3  (a PE DLL with a .vst3
+#            extension; no Info.plist)
+#            entry point: public.sdk/source/main/dllmain.cpp - provides DllMain
+#            and exports InitDll/ExitDll. The arch directory and the file name
+#            are the loader's own: module_win32.cpp:152-166 appends
+#            "Contents"/<architectureString>/<bundle directory name> - the last
+#            component is p.filename() of the bundle path, so the file name is
+#            the bundle directory's own. architectureString is a compile-time
+#            constant of the HOST (:89-107): "x86_64-win" on every 64-bit x86
+#            Windows, "arm64-win" on a native ARM64 build and "arm64ec-win" on
+#            ARM64EC (which retries "arm64x-win" and then "x86_64-win", :89-98),
+#            and the 32-bit "arm-win"/"x86-win" otherwise. Laying this fixture
+#            out in the -linux location on Windows is why the msvc-x64 job
+#            reported
+#            "LoadLibraryW failed for path ...\vst3-test-effect.vst3\Contents\
+#            x86_64-win\vst3-test-effect.vst3: The specified module could not be
+#            found" for Vst3HostTest and Vst3EffectIntegrationTest (job
+#            103724228360, run 34757467632): the loader asked for a Windows
+#            package and there was none.
 execute_process(COMMAND uname -m
 	OUTPUT_VARIABLE LMMS_VST3_TEST_MACHINE
 	OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -41,8 +88,92 @@ endif()
 set(LMMS_VST3_TEST_EFFECT_NAME "vst3-test-effect")
 set(LMMS_VST3_TEST_EFFECT_BUNDLE_DIR
 	"${CMAKE_CURRENT_BINARY_DIR}/${LMMS_VST3_TEST_EFFECT_NAME}.vst3")
-set(LMMS_VST3_TEST_EFFECT_BUNDLE_SO
-	"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux/${LMMS_VST3_TEST_EFFECT_NAME}.so")
+
+if(APPLE)
+	# Contents/MacOS/<stem>, plus the Info.plist whose CFBundleExecutable has to
+	# name that same stem for CFBundle to find it.
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR "Contents/MacOS")
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_FILE "${LMMS_VST3_TEST_EFFECT_NAME}")
+	set(LMMS_VST3_TEST_EFFECT_ENTRY_MAIN
+		"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/macmain.cpp")
+	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+		"${CMAKE_CURRENT_BINARY_DIR}/bundle-Info.plist" @ONLY)
+elseif(WIN32)
+	# The arch directory the SDK's Windows loader looks in, spelled the way IT
+	# spells it (module_win32.cpp:89-107): a name of our own invention here is a
+	# bundle the loader never opens, which is exactly what the msvc-x64 job
+	# reported. `uname -m` answers x86_64 on the Windows runners (Git Bash is on
+	# PATH); where it is absent or silent, CMAKE_SYSTEM_PROCESSOR is the
+	# generator's own architecture word - AMD64 on MSVC x64, ARM64 on MSVC/LLVM
+	# arm64 - and the fallback above takes it. Anything outside this mapping is
+	# reported rather than guessed, and the guessed name is the one the loader
+	# will not open:
+	if(LMMS_VST3_TEST_MACHINE MATCHES "^(x86_64|X86_64|amd64|AMD64)$")
+		set(LMMS_VST3_TEST_WIN_ARCH "x86_64-win")
+	elseif(LMMS_VST3_TEST_MACHINE MATCHES "^(arm64|ARM64|aarch64|AARCH64)$")
+		set(LMMS_VST3_TEST_WIN_ARCH "arm64-win")
+	elseif(LMMS_VST3_TEST_MACHINE MATCHES "^(x86|X86|i386|i686)$")
+		set(LMMS_VST3_TEST_WIN_ARCH "x86-win")
+	else()
+		# Do not fail the build over a fixture: name the value, keep the shape the
+		# loader expects, and say that this is the unloadable case. No job that
+		# RUNS these tests is on an architecture outside the three above (only
+		# msvc-x64 runs them, on AMD64).
+		message(WARNING
+			"VST3 test fixture: unrecognised machine '${LMMS_VST3_TEST_MACHINE}': "
+			"laying the bundle out as Contents/${LMMS_VST3_TEST_MACHINE}-win, "
+			"which the SDK's Windows loader will not open - "
+			"add the architectureString this SDK uses "
+			"(module_win32.cpp:85-110) to the mapping above.")
+		set(LMMS_VST3_TEST_WIN_ARCH "${LMMS_VST3_TEST_MACHINE}-win")
+	endif()
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR "Contents/${LMMS_VST3_TEST_WIN_ARCH}")
+	# A Windows VST3 module is a PE DLL under the .vst3 extension, and the loader
+	# takes the file name from the bundle directory's own name.
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_FILE
+		"${LMMS_VST3_TEST_EFFECT_NAME}.vst3")
+	set(LMMS_VST3_TEST_EFFECT_ENTRY_MAIN
+		"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/dllmain.cpp")
+else()
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR
+		"Contents/${LMMS_VST3_TEST_MACHINE}-linux")
+	set(LMMS_VST3_TEST_EFFECT_BUNDLE_FILE "${LMMS_VST3_TEST_EFFECT_NAME}.so")
+	set(LMMS_VST3_TEST_EFFECT_ENTRY_MAIN
+		"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/linuxmain.cpp")
+endif()
+
+# --- the contract, asserted where it can be asserted ------------------------
+# Neither the macOS nor the Windows half of this fixture can be exercised on a
+# Linux box, so the two parts of the loader's contract that are checkable at
+# CONFIGURE time are checked here: the entry-point translation unit has to be in
+# the pinned checkout, and on Windows the bundle file name has to be the bundle
+# directory's own name (module_win32.cpp:157-159 derives it that way). A wrong
+# path here is otherwise a module that builds, lays out, and then fails on a
+# platform only CI runs - see the Windows note above.
+if(NOT EXISTS "${LMMS_VST3_TEST_EFFECT_ENTRY_MAIN}")
+	message(FATAL_ERROR
+		"The VST3 test fixture needs the SDK's ${CMAKE_SYSTEM_NAME} entry point, "
+		"and ${LMMS_VST3_TEST_EFFECT_ENTRY_MAIN} is not in the pinned checkout at "
+		"LMMS_VST3_SDK_PATH (${LMMS_VST3_SDK_PATH}). Each loader resolves a "
+		"different symbol - ModuleEntry (Linux), bundleEntry/bundleExit (macOS), "
+		"GetPluginFactory/InitDll (Windows) - and the SDK selects the same three "
+		"files by platform in cmake/modules/SMTG_AddSMTGLibrary.cmake:186-206.")
+endif()
+
+if(WIN32)
+	get_filename_component(LMMS_VST3_TEST_EFFECT_BUNDLE_STEM
+		"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}" NAME)
+	if(NOT LMMS_VST3_TEST_EFFECT_BUNDLE_FILE STREQUAL LMMS_VST3_TEST_EFFECT_BUNDLE_STEM)
+		message(FATAL_ERROR
+			"The Windows VST3 loader opens <bundle>/Contents/<arch>/<bundle "
+			"directory name> (module_win32.cpp:152-166), so the fixture's file "
+			"name (${LMMS_VST3_TEST_EFFECT_BUNDLE_FILE}) has to be the bundle "
+			"directory's own (${LMMS_VST3_TEST_EFFECT_BUNDLE_STEM}).")
+	endif()
+endif()
+
+set(LMMS_VST3_TEST_EFFECT_BUNDLE_BIN
+	"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/${LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR}/${LMMS_VST3_TEST_EFFECT_BUNDLE_FILE}")
 
 # --- the sample's generated version header --------------------------------
 # The sample's version.h includes "projectversion.h", a file the SDK's own build
@@ -91,9 +222,13 @@ set(LMMS_VST3_SAMPLE_DIR
 # SDK's own smtg_add_vst3plugin adds.
 #
 # An OBJECT library, not a STATIC one, on purpose: a .vst3 module is loaded by
-# dlopen, so nothing inside it references ModuleEntry/ModuleExit and a static
-# library would have linuxmain.cpp.o dropped by the linker - the module would
-# then fail with "does not export the required 'ModuleEntry' function".
+# dlopen/LoadLibrary/CFBundle, so nothing inside it references the entry points
+# below and a static library would have the entry-point object dropped by the
+# linker - the module would then fail with "does not export the required
+# 'ModuleEntry' function" on Linux, "'bundleEntry'" on macOS, or load with no
+# InitDll on Windows. The entry-point translation unit is per-platform (the
+# selection above): linuxmain.cpp, macmain.cpp, dllmain.cpp. Object libraries are
+# always linked whole.
 add_library(${LMMS_VST3_TEST_EFFECT_NAME}-sdkbase OBJECT
 	"${LMMS_VST3_SAMPLE_DIR}/agsa_controller.cpp"
 	"${LMMS_VST3_SAMPLE_DIR}/agsa_factory.cpp"
@@ -103,7 +238,7 @@ add_library(${LMMS_VST3_TEST_EFFECT_NAME}-sdkbase OBJECT
 	"${LMMS_VST3_SAMPLE_DIR}/tutorial.h"
 	"${LMMS_VST3_SAMPLE_DIR}/version.h"
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/common/pluginview.cpp"
-	"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/linuxmain.cpp"
+	"${LMMS_VST3_TEST_EFFECT_ENTRY_MAIN}"
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/moduleinit.cpp"
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/pluginfactory.cpp"
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/vst/utility/testing.cpp"
@@ -135,13 +270,23 @@ set_target_properties(${LMMS_VST3_TEST_EFFECT_NAME} PROPERTIES
 	OUTPUT_NAME "${LMMS_VST3_TEST_EFFECT_NAME}")
 target_link_libraries(${LMMS_VST3_TEST_EFFECT_NAME} PRIVATE lmms_vst3_sdk)
 
-# Lay the module out as the SDK's loader expects it.
-add_custom_command(TARGET ${LMMS_VST3_TEST_EFFECT_NAME} POST_BUILD
+# Lay the module out as the SDK's loader expects it - the Linux tree, the
+# CFBundle macOS's CFBundleCreate() requires (whose Info.plist names the stem), or
+# the Windows package module_win32.cpp::loadAsPackage() opens.
+set(LMMS_VST3_TEST_EFFECT_LAYOUT_STEPS
 	COMMAND ${CMAKE_COMMAND} -E make_directory
-		"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux"
+		"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/${LMMS_VST3_TEST_EFFECT_BUNDLE_SUBDIR}"
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"$<TARGET_FILE:${LMMS_VST3_TEST_EFFECT_NAME}>"
-		"${LMMS_VST3_TEST_EFFECT_BUNDLE_SO}"
+		"${LMMS_VST3_TEST_EFFECT_BUNDLE_BIN}")
+if(APPLE)
+	list(APPEND LMMS_VST3_TEST_EFFECT_LAYOUT_STEPS
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${CMAKE_CURRENT_BINARY_DIR}/bundle-Info.plist"
+			"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}/Contents/Info.plist")
+endif()
+add_custom_command(TARGET ${LMMS_VST3_TEST_EFFECT_NAME} POST_BUILD
+	${LMMS_VST3_TEST_EFFECT_LAYOUT_STEPS}
 	COMMENT "Laying out the ${LMMS_VST3_TEST_EFFECT_NAME}.vst3 bundle")
 
 # The tests live in ../.. (tests/CMakeLists.txt) and need this path; variables do

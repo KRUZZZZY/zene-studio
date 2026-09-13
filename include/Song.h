@@ -299,6 +299,24 @@ public:
 	//TODO: Add Q_DECL_OVERRIDE when Qt4 is dropped
 	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const override;
 
+	/*! Forgets @p model in the automated-value cache of the live song, if there
+	 *  is one (see `m_oldAutomatedValues`). The cache holds the RAW pointers of
+	 *  the models the song automated on the last frame, and both
+	 *  `Song::processAutomations()` and `Song::stop()` dereference every entry;
+	 *  a model that is destroyed while it is cached (an instrument or an
+	 *  automation track deleted while the transport runs) would be a
+	 *  use-after-free in those two walks. `AutomatableModel`'s destructor calls
+	 *  this, so the cache cannot end up naming a dead model.
+	 *
+	 *  Static because the model has no safe way to reach the song: resolving
+	 *  `Engine::getSong()` would hand back a song whose cache may already be
+	 *  destroyed, since the song's own models are destroyed after it (see the
+	 *  declarations below). This pointer is cleared *before* any member of the
+	 *  song is destroyed, and only the live song is ever resolvable through it
+	 *  (there is one song per `Engine`).
+	 */
+	static void forgetAutomatedModel( AutomatableModel* model );
+
 	/*! The seed MIDI depth randomisation rolls from. It lives in the project
 	 *  header ("midiseed") and is written only when it is not the default 0,
 	 *  so a project that does not use it serialises byte-identically. */
@@ -641,6 +659,18 @@ private:
 	//! key whose model the test had already destroyed. QPointer nulls itself when the
 	//! model goes, so the restore skips exactly the models that are gone.
 	QMap<QPointer<AutomatableModel>, float> m_oldAutomatedValues;
+
+	//! The song that `Song::forgetAutomatedModel()` reports into, or nullptr.
+	//! Set by `Song::Song()`, cleared at the top of `Song::~Song()`.
+	//!
+	//! It exists because a destroyed model has to be able to reach the cache
+	//! above, and the cache has to outlive every model that can report into it:
+	//! the song's own models (`m_tempoModel` above, the metronome's below) are
+	//! destroyed *after* `m_oldAutomatedValues` is, so a report that arrived
+	//! during song teardown would reach a map that is already gone. Clearing this
+	//! first is what makes the report a no-op from that point on, instead of
+	//! relying on how the members happen to be ordered.
+	static Song* s_automationCacheSong;
 
 	Metronome m_metronome;
 

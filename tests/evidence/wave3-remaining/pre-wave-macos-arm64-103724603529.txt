@@ -1,0 +1,10 @@
+== job 103724603529 (macos-arm64, run 34757610204 at ec07dd3a0) - the PRE-wave
+   state: test #85 failed the same way, so the wave-2 control-shutdown lane did
+   not regress it (7c557ef1d touches neither control-negative-control.py nor
+   control_socket_flows.py; git show --stat 7c557ef1d lists 13 files)
+
+Test #81: ControlSocketIntegration .........***Failed    2.63 sec
+Test #81: ControlSocketIntegration ..........***Failed    3.90 sec
+Test #85: ControlNegativeControl ...........***Failed   11.99 sec
+Test #85: ControlNegativeControl ............***Failed   16.14 sec
+a stopped instance looked like a clean shutdown (exited=True)

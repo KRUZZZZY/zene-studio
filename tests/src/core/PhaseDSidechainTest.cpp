@@ -36,12 +36,18 @@
 //!
 //! Every measurement is printed as a flushed PARTD_EVIDENCE line so the
 //! output can be pasted into PART-D-SIDECHAIN.md verbatim.
+//!
+//! Windows: one case - demoProjectBusWithNativeSidechainCompressor - needs the
+//! native Compressor MODULE to load, which a Windows test host cannot do (see
+//! testHostCanLoadPluginModules()); it QSKIPs there, with the reason. Every other
+//! case in this file is DSP in this process and runs on every platform.
 
 #include <QtTest>
 
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
+#include <QFileInfo>
 #include <QString>
 #include <QTemporaryDir>
 
@@ -87,6 +93,39 @@ bool nearValue(float actual, float expected, float eps = 1.0e-6f)
 	return std::fabs(actual - expected) <= eps;
 }
 
+/*!
+ * Windows: a test host cannot load a plugin MODULE library at runtime.
+ *
+ * Every plugin module links the zene executable, so an MSVC module's import
+ * descriptor names zene.exe; the Windows loader then fails with
+ * ERROR_MOD_NOT_FOUND (126) because the test host is not zene.exe. CI
+ * (msvc-x64, QT_FORCE_STDERR_LOGGING=1) shows the loader error verbatim:
+ *   QWARN : ... Cannot load library ...\plugins	ripleoscillator.dll:
+ *           The specified module could not be found.
+ * On Linux/macOS the module's undefined lmms symbols are bound from the
+ * loading process's exported symbol table (the test target sets
+ * ENABLE_EXPORTS), so the same load succeeds there. The product loads these
+ * modules inside zene.exe, where the import resolves by construction: this
+ * is a test-host limitation, not a product defect.
+ */
+constexpr auto testHostCanLoadPluginModules() -> bool
+{
+#ifdef Q_OS_WIN
+	return false;
+#else
+	return true;
+#endif
+}
+
+//! What the one Windows skip in this suite says: the proven mechanism, named once
+//! (same words as AudioPluginTest.cpp and PluginPortsMigrationTest.cpp).
+constexpr const char* PluginModuleHostSkipMessage =
+	"this case loads the native Compressor MODULE, and a Windows test host cannot load "
+	"plugin modules: plugin modules link the zene executable, so on Windows their import "
+	"descriptor names zene.exe and a test host cannot satisfy it; the product loads them "
+	"inside zene.exe where that resolves by construction (CI msvc-x64: QLibrary::load -> "
+	"ERROR_MOD_NOT_FOUND, 126)";
+
 } // namespace
 
 class PhaseDSidechainTest : public QObject
@@ -100,12 +139,25 @@ private slots:
 		// plugin factory scans $LMMS_PLUGIN_DIR once, on first access, so
 		// point it at a private directory holding just a link to the
 		// compressor built by the normal build.
+		//
+		// The link is named after the built module's OWN file name
+		// (libcompressor.so here, compressor.dll on Windows): the scan's
+		// candidate filter is "lib*.so"/"*.dll" (PluginFactory.cpp:51-54), so
+		// a name invented at this call site - the hardcoded "libcompressor.so"
+		// this used to pass - is a file the scan never looks at on Windows,
+		// and the fixture directory then holds no candidate at all. That is
+		// what the msvc-x64 run reported: "plugin-scan: 0 file(s)" and
+		// "The plugin \"compressor\" wasn't found or could not be loaded"
+		// (job 103724228360, run 34757467632).
 		const QString compressor = QString::fromUtf8(PART_D_COMPRESSOR_LIBRARY);
 		QVERIFY2(QFile::exists(compressor), qPrintable(compressor));
 		m_pluginDir = std::make_unique<QTemporaryDir>();
 		QVERIFY2(m_pluginDir->isValid(), "could not create the plugin directory");
-		const QString linkPath = m_pluginDir->path() + QString("/libcompressor.so");
-		QVERIFY2(QFile::link(compressor, linkPath), "could not link libcompressor.so");
+		const QString linkPath = m_pluginDir->path() + QLatin1Char('/')
+			+ QFileInfo(compressor).fileName();
+		QVERIFY2(QFile::link(compressor, linkPath),
+			qPrintable(QStringLiteral("could not link %1 into the fixture plugin "
+				"directory").arg(QFileInfo(compressor).fileName())));
 		qputenv("LMMS_PLUGIN_DIR", m_pluginDir->path().toUtf8());
 
 		initEngine();
@@ -304,6 +356,13 @@ private slots:
 	//! The bus must be transparent without a key and duck hard with one.
 	void demoProjectBusWithNativeSidechainCompressor()
 	{
+		// The subject here is the native Compressor MODULE, loaded through the
+		// ordinary plugin factory - and that load is the one thing a Windows
+		// test host cannot do (see testHostCanLoadPluginModules()). Skip, with
+		// the reason, rather than fail at the load; every other case in this
+		// file runs on every platform.
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
 		auto mixer = Engine::mixer();
 		mixer->clear(); // each test builds its own graph from the master channel
 		while (mixer->numChannels() < 5) { mixer->createChannel(); }

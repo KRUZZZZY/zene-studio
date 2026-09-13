@@ -1,0 +1,9 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-wave3/build/tests
+    Start 90: ControlSocketPathSafety
+1/2 Test #90: ControlSocketPathSafety ..........   Passed   10.39 sec
+    Start 91: ControlAbsentSocket
+2/2 Test #91: ControlAbsentSocket ..............   Passed    9.90 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =  20.29 sec

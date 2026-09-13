@@ -57,9 +57,10 @@ from control_socket_flows import (  # noqa: E402
     diagnose_block, healthy_control, parse_args, report_pre_fix,
 )
 from control_socket_harness import (  # noqa: E402
-    BROKEN_DEVICE_ENV, DUMMY_DEVICE, PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript,
-    connect, fail, ok, start_instance, wait_ready,
+    DUMMY_DEVICE, PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, fail, ok,
+    start_instance, wait_ready,
 )
+from control_socket_harness import BROKEN_DEVICE_ENV  # noqa: E402
 
 USAGE = __doc__
 

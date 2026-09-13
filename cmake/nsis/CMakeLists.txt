@@ -65,6 +65,16 @@ IF(WIN64)
 	# why the cause was invisible. Reproduced and fixed end to end on 2026-09-13 against Ubuntu's
 	# nsis 3.09, the same makensis the mingw64 job packages with (job 103647387841 / run 34728692245).
 	SET(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64" PARENT_SCOPE)
+	# InstallDir is set by CPack itself: its NSIS template emits
+	#   InstallDir "@CPACK_NSIS_INSTALL_ROOT@\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
+	# which is QUOTED, and CPACK_NSIS_INSTALL_ROOT defaults to $PROGRAMFILES64 for
+	# a win64 target. An unquoted "InstallDir <path>" is a single NSIS parameter
+	# only while <path> contains no space; CPACK_PACKAGE_INSTALL_DIRECTORY became
+	# "Zene Studio" in the rename, so the override that used to be appended below
+	# had two, and makensis aborted before compressing anything ("InstallDir
+	# expects 1 parameters, got 2"). Removing it also keeps the default install
+	# directory identical to the one CPack's own install/repair checks compare
+	# $INSTDIR against.
 ENDIF()
 
 # Setup missing parent scopes

@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include <QDataStream>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 
@@ -76,6 +77,24 @@ auto rms(const std::vector<float>& samples) -> double
 		sum += static_cast<double>(sample) * static_cast<double>(sample);
 	}
 	return std::sqrt(sum / static_cast<double>(samples.size()));
+}
+
+//! Where a rendered WAV for inspection goes, on THIS platform.
+//!
+//! The two write sites used to spell "/tmp/vst3_before.wav" literally, which is
+//! a POSIX assumption rather than a path: on Windows "/tmp" resolves to
+//! "C:/tmp", that directory does not exist, QFile::open() fails and the
+//! QVERIFY at the write site fails on a box whose hosting is otherwise fine.
+//! That is exactly what reddened msvc-x64 (job 103762607470,
+//! Vst3EffectIntegrationTest.cpp(293)) while the same test passed on Linux and
+//! macOS, where "/tmp" does exist. QDir::tempPath() is the platform's own
+//! temporary directory ($TMPDIR, %TMP%/%TEMP%, /tmp), and the resolved path is
+//! logged so the artefact can be found afterwards.
+auto renderedWavPath(const QString& name) -> QString
+{
+	const auto path = QDir{QDir::tempPath()}.filePath(name);
+	qInfo("rendered wav: %s", qPrintable(path));
+	return path;
 }
 
 //! Minimal 16-bit stereo PCM WAV writer, so rendered audio can be inspected.
@@ -290,8 +309,8 @@ void Vst3EffectIntegrationTest::testRendersBeforeAfterWav()
 		}
 	}
 
-	QVERIFY(writeWav(QStringLiteral("/tmp/vst3_before.wav"), dry, sampleRate));
-	QVERIFY(writeWav(QStringLiteral("/tmp/vst3_after.wav"), wet, sampleRate));
+	QVERIFY(writeWav(renderedWavPath(QStringLiteral("vst3_before.wav")), dry, sampleRate));
+	QVERIFY(writeWav(renderedWavPath(QStringLiteral("vst3_after.wav")), wet, sampleRate));
 
 	const auto dryRms = rms(dry);
 	const auto wetRms = rms(wet);

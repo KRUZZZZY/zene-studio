@@ -1,0 +1,30 @@
+== job 103762607454 (macos-arm64) - the two failures, verbatim
+
+-- test #81 ControlSocketIntegration: the assertion that failed
+FAIL: plugin.list's format breakdown has no lv2 bucket: {'builtin': 53, 'ladspa': 280}
+
+-- test #81: the earlier dropped-connection cause is GONE (this PASSES now)
+PASS: 8 pipelined 74-command replies arrive whole over a 4 KiB receive buffer (372 KiB through a socket nobody was draining)
+
+-- test #81: the engine's LV2 world on this box, from the test's own app log
+Lv2 plugin SUMMARY: 0 of 0  loaded in 0 msecs.
+Lv2 plugin SUMMARY: 0 of 0  loaded in 0 msecs.
+
+-- the build's own declaration of the LV2 host (app.version build_options)
+LMMS_HAVE_LV2='TRUE'
+WANT_LV2='ON'
+
+-- the mda-lv2 fixture the Brewfile installs, installed on this runner
+mda-lv2/1.2.12:
+
+-- test #85 ControlNegativeControl: the summary block
+=== FAIL ===
+negative control: assertion level              ok
+negative control: end
+a stopped instance looked like a clean shutdown (exited=True)
+
+-- the catalogue the test saw (no lv2 key possible: counts_by_format lists only
+   formats with >=1 device)
+"counts_by_format":{"additionalProperties":false,"properties":{}
+"counts_by_format":{"builtin":53,"ladspa":280}
+"counts_by_format":{"ladspa":205}

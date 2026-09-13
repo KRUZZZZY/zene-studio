@@ -24,10 +24,12 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from control_socket_flows import check_clean_shutdown, check_ping_shape  # noqa: E402
+from control_socket_flows import (  # noqa: E402
+    check_clean_shutdown, check_ping_shape, check_recovery_cleaned,
+)
 from control_socket_harness import (  # noqa: E402
-    BROKEN_DEVICE, BROKEN_DEVICE_ENV, DEFAULT_DEVICE, Client, Instance, Problems,
-    Timeout, dump, finish,
+    BROKEN_DEVICE, BROKEN_DEVICE_ENV, DEFAULT_DEVICE, PING_TIMEOUT, Client, Instance,
+    Problems, Timeout, dump, finish,
 )
 
 CONNECT_TIMEOUT = 60.0
@@ -36,17 +38,43 @@ QUIT_TIMEOUT = 30.0
 STDERR_DUMP_LIMIT = 4000
 
 
-def wait_for_ready(client, timeout_s, problems):
-    """Poll control.ping until engine_ready, bounded. Returns the last reply."""
+def wait_for_ready(inst, client, timeout_s, problems):
+    """Poll control.ping until engine_ready, spending the whole declared budget.
+
+    A ping that does not answer inside PING_TIMEOUT is not the end of the window:
+    the engine initialises on the thread that serves this socket, so while it
+    starts the client's ping is answered late or not at all. This poll used to end
+    on ONE unanswered ping (client.call's 30s socket timeout), so the 120s budget
+    READY_TIMEOUT declares was really 30s - the defect 9d15bd7e9 fixed in
+    control-readiness.py and in the harness's wait_ready, left behind in this copy.
+    Measured on CI: the linux-arm64 runner's engine start is ~34s, past one 30s
+    ping, so a starting instance was reported as a HANG ("no response line inside
+    30.0s") before the scenario could reach any shutdown assertion. The budget that
+    ends the poll is therefore `timeout_s`, and its expiry carries the last error
+    beside the instance's own diagnosis, so a real hang still fails, bounded, and a
+    healthy slow start is not called one. The shape of every reply that arrives is
+    asserted, as before.
+    """
     deadline = time.time() + timeout_s
     reply = None
+    last_error = None
     while time.time() < deadline:
-        reply = client.call(1, "control.ping")
+        if not inst.alive():
+            problems.add("the instance exited (code %s) while polling for readiness"
+                         % inst.process.returncode)
+            return reply
+        try:
+            reply = client.call(1, "control.ping", timeout=PING_TIMEOUT)
+        except Timeout as error:
+            last_error = str(error).splitlines()[0]
+            time.sleep(0.2)
+            continue
         problems.extend(check_ping_shape(reply, 1))
         if (reply.get("result") or {}).get("engine_ready") is True:
             return reply
         time.sleep(0.2)
-    problems.add("the engine never became ready within %.1fs (last ping: %r)" % (timeout_s, reply))
+    problems.add("the engine never became ready within %.1fs (last ping: %r, last error: %s)"
+                 % (timeout_s, reply, last_error))
     return reply
 
 
@@ -83,9 +111,7 @@ def quit_and_observe(inst, problems):
     exited, exit_code, elapsed = inst.wait_for_exit(QUIT_TIMEOUT)
     socket_exists = inst.socket_exists()
     stderr_text = inst.stderr_text()
-    if exited and os.path.exists(inst.recovery_file):
-        problems.add("the autosave recovery file survived a clean quit "
-                     "(MainWindow::closeEvent -> sessionCleanup did not run)")
+    problems.extend(check_recovery_cleaned(exited, os.path.exists(inst.recovery_file)))
     return exited, exit_code, socket_exists, stderr_text, elapsed
 
 
@@ -93,7 +119,7 @@ def drive_and_quit(inst, steps, problems):
     """Wait for readiness, run the steps, then quit and observe."""
     client = Client(inst.socket_path)
     try:
-        wait_for_ready(client, READY_TIMEOUT, problems)
+        wait_for_ready(inst, client, READY_TIMEOUT, problems)
         run_steps(client, steps, problems)
     finally:
         client.close()

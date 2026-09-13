@@ -134,13 +134,19 @@ and no divergence in inherited code).
 
 ## 4. The two sibling defects from the same report
 
-**(a) A partial write could leave half a JSON line.** `writeAll()` returned a bool that the caller
-**ignored**. The socket is non-blocking, so a write can accept part of a reply and then `EAGAIN`; the old
-code wrote the first half, then wrote the *next* reply's bytes after it on the same connection, where they
-read as the tail of the broken line. Now a failed `writeAll()` **retires the connection immediately**, so
-the peer reads a partial line followed by EOF — a bounded, diagnosable failure instead of a spliced line.
-This is the "atomic per line or refuse" rule from the brief, implemented as *refuse*: the bytes already
-written cannot be unsent, and queueing the remainder would mean buffering an unbounded reply.
+**(a) A reply larger than the socket buffer was TRUNCATED and the client dropped.** `writeAll()` returned a
+bool that the caller **ignored**. The socket is non-blocking, so a write can accept part of a reply and then
+`EAGAIN`; the old code wrote the first half and dropped the connection, on the assumption that `EAGAIN` meant
+"this reply cannot be delivered". It does not: `EAGAIN` means the peer's receive buffer is full *right now*,
+which is what happens to every reply bigger than that buffer — **8 KiB on macOS** for an AF_UNIX socket. The
+macOS job showed the cost exactly: `control.commands_list` (a few hundred kilobytes) made the server close
+the connection, and the client read EOF instead of its answer (`ControlSocketIntegration`, `agent_surface`).
+Now `ControlServer::sendBytes()` writes what the socket takes, keeps the whole-byte tail in `Client::pending`
+and flushes it from a `QSocketNotifier(Write)` (`onClientWritable`), so a line is still delivered whole and
+in order — the "atomic per line" rule — without ever truncating it. The queue is bounded
+(`MaxQueuedReplyBytes`, 8 MiB) so a peer that stops reading still cannot make the instance buffer without
+limit: past that bound the client is retired exactly as before (partial line, then EOF). A REAL write error
+(`EPIPE`/`ECONNRESET`) still drops the client immediately.
 
 **(b) The request buffer was unbounded.** `onClientReadable()` appended every readable chunk to a per-client
 `QByteArray` and searched for `'\n'` afterwards, so one client that never sent a newline could make the

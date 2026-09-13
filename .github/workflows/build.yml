@@ -164,6 +164,38 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Signal-death backtrace (a SIGSEGV must name its frame)
+        # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
+        # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
+        # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
+        # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        run: |
+          cd build/tests || exit 0
+          log=Testing/Temporary/LastTestsFailed.log
+          if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
+          command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
+          # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
+          # so the crash/no-crash split cannot be read out of this file; the debugger reports
+          # the signal itself. The python-driven Control* suite is skipped: its harness collects
+          # its own liveness/CPU/backtrace evidence and already prints it.
+          head -3 "$log" | while read -r entry; do
+            name=${entry#*:}
+            [ -x "./$name" ] || continue
+            case "$name" in Control*) continue ;; esac
+            echo "=== $dbg backtrace of failed test $name ==="
+            if [ "$dbg" = gdb ]; then
+              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+                -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
+            else
+              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+                -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
+            fi
+          done
+          echo "=== end of signal backtraces ==="
       - name: Crash evidence (a signal death must name its cause)
         # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
         # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
@@ -171,13 +203,18 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -310,6 +347,38 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Signal-death backtrace (a SIGSEGV must name its frame)
+        # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
+        # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
+        # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
+        # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        run: |
+          cd build/tests || exit 0
+          log=Testing/Temporary/LastTestsFailed.log
+          if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
+          command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
+          # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
+          # so the crash/no-crash split cannot be read out of this file; the debugger reports
+          # the signal itself. The python-driven Control* suite is skipped: its harness collects
+          # its own liveness/CPU/backtrace evidence and already prints it.
+          head -3 "$log" | while read -r entry; do
+            name=${entry#*:}
+            [ -x "./$name" ] || continue
+            case "$name" in Control*) continue ;; esac
+            echo "=== $dbg backtrace of failed test $name ==="
+            if [ "$dbg" = gdb ]; then
+              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+                -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
+            else
+              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+                -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
+            fi
+          done
+          echo "=== end of signal backtraces ==="
       - name: Crash evidence (a signal death must name its cause)
         # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
         # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
@@ -317,13 +386,18 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -467,6 +541,38 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Signal-death backtrace (a SIGSEGV must name its frame)
+        # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
+        # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
+        # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
+        # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        run: |
+          cd build/tests || exit 0
+          log=Testing/Temporary/LastTestsFailed.log
+          if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
+          command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
+          # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
+          # so the crash/no-crash split cannot be read out of this file; the debugger reports
+          # the signal itself. The python-driven Control* suite is skipped: its harness collects
+          # its own liveness/CPU/backtrace evidence and already prints it.
+          head -3 "$log" | while read -r entry; do
+            name=${entry#*:}
+            [ -x "./$name" ] || continue
+            case "$name" in Control*) continue ;; esac
+            echo "=== $dbg backtrace of failed test $name ==="
+            if [ "$dbg" = gdb ]; then
+              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+                -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
+            else
+              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+                -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
+            fi
+          done
+          echo "=== end of signal backtraces ==="
       - name: Crash evidence (a signal death must name its cause)
         # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
         # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
@@ -474,13 +580,18 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -620,13 +731,18 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -644,20 +760,30 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
-      - name: Capture the NSIS log when packaging fails
-        # Every Windows packaging failure in this matrix has been a CPack/NSIS failure whose real
-        # error is written to <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log -- a file no step
-        # ever printed or uploaded, so the cause had to be inferred from "CPack Error: Problem
-        # running NSIS command" alone (that is where the windows-arm64 Package failure stands).
-        # Print it when the package step fails, so the next failing run names its own cause.
-        # Diagnostic only: it never changes the job's status.
+      - name: NSIS compiler output (a packaging failure names its cause here)
+        # CPack sends makensis' own stderr to NSISOutput.log and prints only that
+        # file's path, so a packaging failure states no cause in this log: the
+        # 0.2.1 matrix lost a cycle to an unquoted `InstallDir` whose one line
+        # ("expects 1 parameters, got 2") existed nowhere else. Always print it.
+        #
+        # The 0.3.0 line found the same file from the other end, and its note is
+        # kept here too: every Windows packaging failure in this matrix has been a
+        # CPack/NSIS failure whose real error is written to
+        # <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log - a file no step
+        # ever printed or uploaded, so the cause had to be inferred from
+        # "CPack Error: Problem running NSIS command" alone (that is where the
+        # windows-arm64 Package failure stands).
         if: failure()
+        # Evidence only: the Package step above is the gate, this prints its
+        # cause, so it must never fail a job the Package step did not. Both guards
+        # are kept: continue-on-error makes the step tolerable whatever runs it,
+        # and the trailing `exit 0` makes the script itself unable to fail.
+        continue-on-error: true
         run: |
           for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
-            if [ -f "$f" ]; then
-              echo "=== $f ==="
-              cat "$f"
-            fi
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
           done
           exit 0
       - name: Upload artifacts
@@ -821,13 +947,18 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -851,20 +982,30 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
-      - name: Capture the NSIS log when packaging fails
-        # Every Windows packaging failure in this matrix has been a CPack/NSIS failure whose real
-        # error is written to <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log -- a file no step
-        # ever printed or uploaded, so the cause had to be inferred from "CPack Error: Problem
-        # running NSIS command" alone (that is where the windows-arm64 Package failure stands).
-        # Print it when the package step fails, so the next failing run names its own cause.
-        # Diagnostic only: it never changes the job's status.
+      - name: NSIS compiler output (a packaging failure names its cause here)
+        # CPack sends makensis' own stderr to NSISOutput.log and prints only that
+        # file's path, so a packaging failure states no cause in this log: the
+        # 0.2.1 matrix lost a cycle to an unquoted `InstallDir` whose one line
+        # ("expects 1 parameters, got 2") existed nowhere else. Always print it.
+        #
+        # The 0.3.0 line found the same file from the other end, and its note is
+        # kept here too: every Windows packaging failure in this matrix has been a
+        # CPack/NSIS failure whose real error is written to
+        # <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log - a file no step
+        # ever printed or uploaded, so the cause had to be inferred from
+        # "CPack Error: Problem running NSIS command" alone (that is where the
+        # windows-arm64 Package failure stands).
         if: failure()
+        # Evidence only: the Package step above is the gate, this prints its
+        # cause, so it must never fail a job the Package step did not. Both guards
+        # are kept: continue-on-error makes the step tolerable whatever runs it,
+        # and the trailing `exit 0` makes the script itself unable to fail.
+        continue-on-error: true
         run: |
           for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
-            if [ -f "$f" ]; then
-              echo "=== $f ==="
-              cat "$f"
-            fi
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
           done
           exit 0
       - name: Upload artifacts
@@ -969,13 +1110,18 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -993,20 +1139,30 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
-      - name: Capture the NSIS log when packaging fails
-        # Every Windows packaging failure in this matrix has been a CPack/NSIS failure whose real
-        # error is written to <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log -- a file no step
-        # ever printed or uploaded, so the cause had to be inferred from "CPack Error: Problem
-        # running NSIS command" alone (that is where the windows-arm64 Package failure stands).
-        # Print it when the package step fails, so the next failing run names its own cause.
-        # Diagnostic only: it never changes the job's status.
+      - name: NSIS compiler output (a packaging failure names its cause here)
+        # CPack sends makensis' own stderr to NSISOutput.log and prints only that
+        # file's path, so a packaging failure states no cause in this log: the
+        # 0.2.1 matrix lost a cycle to an unquoted `InstallDir` whose one line
+        # ("expects 1 parameters, got 2") existed nowhere else. Always print it.
+        #
+        # The 0.3.0 line found the same file from the other end, and its note is
+        # kept here too: every Windows packaging failure in this matrix has been a
+        # CPack/NSIS failure whose real error is written to
+        # <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log - a file no step
+        # ever printed or uploaded, so the cause had to be inferred from
+        # "CPack Error: Problem running NSIS command" alone (that is where the
+        # windows-arm64 Package failure stands).
         if: failure()
+        # Evidence only: the Package step above is the gate, this prints its
+        # cause, so it must never fail a job the Package step did not. Both guards
+        # are kept: continue-on-error makes the step tolerable whatever runs it,
+        # and the trailing `exit 0` makes the script itself unable to fail.
+        continue-on-error: true
         run: |
           for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
-            if [ -f "$f" ]; then
-              echo "=== $f ==="
-              cat "$f"
-            fi
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
           done
           exit 0
       - name: Upload artifacts
