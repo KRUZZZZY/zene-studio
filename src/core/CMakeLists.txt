@@ -119,6 +119,7 @@ set(LMMS_SRCS
 	core/ControlReversibility.cpp
 	core/ControlReversibilityTable.cpp
 	core/ControlReversibilityTablePassive.cpp
+	core/ControlReversibilityTableTrueInverse.cpp
 	core/ControlSchema.cpp
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp

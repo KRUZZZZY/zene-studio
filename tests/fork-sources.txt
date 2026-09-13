@@ -377,6 +377,7 @@ src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTablePassive.cpp
+src/core/ControlReversibilityTableTrueInverse.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
