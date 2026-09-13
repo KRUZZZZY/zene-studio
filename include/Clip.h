@@ -30,6 +30,7 @@
 #include <QColor>
 
 #include "AutomatableModel.h"
+#include "ClipEdits.h"
 
 
 namespace lmms
@@ -119,6 +120,17 @@ public:
 	auto color() const -> const std::optional<QColor>& { return m_color; }
 	void setColor(const std::optional<QColor>& color);
 
+	/*! The clip's fade ramps and its clip gain (fade/crossfade/clip-gain wave).
+	 *
+	 *  All defaults neutral, so a clip nobody has edited renders exactly as it
+	 *  did before these values existed and writes no attribute to the project
+	 *  file (docs/CLIP-CAPTURE-DESIGN.md §2.2 places them on the base type -
+	 *  a MIDI clip can carry a fade too; §4.1 says the audio application lives
+	 *  in the play handle, never in `Sample::render`, which the browser preview
+	 *  and the metronome share). */
+	const ClipEdits& clipEdits() const { return m_edits; }
+	void setClipEdits(const ClipEdits& edits) { m_edits = edits; }
+
 	virtual void movePosition( const TimePos & pos );
 	virtual void changeLength( const TimePos & length );
 	virtual void updateLength() {};
@@ -181,6 +193,15 @@ signals:
 protected:
 	Clip(const Clip& other);
 
+	/*! Writes the NON-DEFAULT part of `clipEdits()` onto the clip's own element,
+	 *  and reads it back. Additive, invariant I9: a clip with no fade and unity
+	 *  gain writes nothing at all, so a project that never used these attributes
+	 *  serialises byte for byte as it did before (the same rule
+	 *  `SampleClip::saveSettings` already follows for `srcin`/`srcout` and for
+	 *  the `<warp>` child element). */
+	void saveClipEdits(QDomElement& element) const;
+	void loadClipEdits(const QDomElement& element);
+
 private:
 	Track * m_track;
 	QString m_name;
@@ -196,6 +217,9 @@ private:
 	bool m_selectViewOnCreate;
 
 	std::optional<QColor> m_color;
+
+	//! The clip's fades and its gain. Neutral by default (see clipEdits()).
+	ClipEdits m_edits;
 
 	friend class ClipView;
 

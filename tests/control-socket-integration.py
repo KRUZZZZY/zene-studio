@@ -1372,6 +1372,128 @@ def automation_flow(client, process, log_path, tmp, project, last_id):
     return flow.id
 
 
+def clip_edits_flow(client, process, log_path, last_id):
+    """clip.set_fade / clip.set_gain / clip.crossfade, end to end over the socket.
+
+    The AUDIO truth for these three commands is
+    tests/src/core/ClipFadesRenderTest.cpp (rendered fades, the crossfade sum, the
+    byte-identical default render). This leg proves the other half, which only the
+    socket can: that the commands STORE what they claim, report it back through
+    arrangement.get_state, refuse what they must with a typed error, and record a
+    reversible SPEC A16 transaction whose inverse a real control.undo applies.
+
+    Everything is created before anything is crossfaded, because control.undo acts
+    on the LAST recorded mutating command: a clip.duplicate after the crossfade
+    would be the one undone.
+    """
+    request = last_id
+
+    def call(name, args=None):
+        nonlocal request
+        request += 1
+        return request, client.call(request, name, args or {})
+
+    def ok(name, args=None):
+        rid, reply = call(name, args)
+        return ok_result(reply, rid)
+
+    def typed(name, args, kind):
+        rid, reply = call(name, args)
+        typed_error(reply, rid, kind)
+
+    def clip_entry(clip_id):
+        state = ok("arrangement.get_state")
+        return next((c for c in state.get("clips", []) if c.get("id") == clip_id), None)
+
+    # --- a SAMPLE track: clip.add on it creates a SampleClip, the only clip type
+    # this release applies fades and gain to (a MIDI clip is refused below).
+    sample_track = ok("track.add", {"type": "sample"}).get("track")
+    first = ok("clip.add", {"track": sample_track, "position": 0, "length": 192}).get("clip")
+    if not first:
+        fail("clip.add on a sample track returned no clip", process, log_path)
+
+    # --- clip.set_fade: stored, and read back through the arrangement ---
+    faded = ok("clip.set_fade", {"clip": first, "fade_out": 96, "fade_out_shape": "equal_power"})
+    if faded.get("fade_out") != 96 or faded.get("fade_out_shape") != "equal_power":
+        fail("clip.set_fade returned %r" % faded, process, log_path)
+    if faded.get("fade_in") != 0 or faded.get("fade_in_shape") != "linear":
+        fail("clip.set_fade changed the arguments it was not given: %r" % faded, process, log_path)
+    entry = clip_entry(first)
+    if entry is None or entry.get("fade_out") != 96 or entry.get("fade_out_shape") != "equal_power":
+        fail("arrangement.get_state does not report the fade clip.set_fade wrote: %r" % entry,
+             process, log_path)
+
+    # --- clip.set_gain: dB on the wire, read back in dB ---
+    gained = ok("clip.set_gain", {"clip": first, "gain_db": -6})
+    if abs(gained.get("gain_db", 0.0) + 6.0) > 1e-3:
+        fail("clip.set_gain reported %r for -6 dB" % gained, process, log_path)
+    entry = clip_entry(first)
+    if entry is None or abs(entry.get("gain_db", 0.0) + 6.0) > 1e-3:
+        fail("arrangement.get_state does not report the gain clip.set_gain wrote: %r" % entry,
+             process, log_path)
+
+    # --- the two clips the crossfade pairs, and the ones it must refuse ---
+    second = ok("clip.duplicate", {"clip": first, "position": 96}).get("clip")
+    far = ok("clip.duplicate", {"clip": first, "position": 5000}).get("clip")
+    ok("clip.set_fade", {"clip": second, "fade_in": 0, "fade_out": 0})
+    midi_track = ok("track.add", {"type": "instrument"}).get("track")
+    midi_clip = ok("clip.add", {"track": midi_track, "position": 0, "length": 192}).get("clip")
+
+    # --- the refusals, every one of them typed ---
+    typed("clip.set_gain", {"clip": first, "gain_db": 60}, "invalid_args")           # out of range
+    typed("clip.set_fade", {"clip": first, "fade_in": 192, "fade_out": 96}, "invalid_args")
+    typed("clip.set_fade", {"clip": first, "fade_in_shape": "s-curve"}, "invalid_args")
+    typed("clip.crossfade", {"out": first, "in": first}, "invalid_args")             # same clip
+    typed("clip.crossfade", {"out": first, "in": far}, "invalid_args")               # no overlap
+    typed("clip.set_gain", {"clip": "clip-9999", "gain_db": 0}, "not_found")
+    # A MIDI clip can HOLD these fields (they live on the base Clip) but nothing in
+    # this release renders them, so the commands refuse rather than write state that
+    # would silently do nothing.
+    typed("clip.set_gain", {"clip": midi_clip, "gain_db": -6}, "refused")
+    typed("clip.set_fade", {"clip": midi_clip, "fade_in": 48}, "refused")
+
+    # --- clip.crossfade: last, so that control.undo below is its inverse ---
+    crossed = ok("clip.crossfade", {"out": first, "in": second})
+    if crossed.get("overlap") != 96 or crossed.get("shape") != "equal_power":
+        fail("clip.crossfade reported %r for a 96-tick overlap" % crossed, process, log_path)
+    if crossed.get("out_fade_out") != 96 or crossed.get("in_fade_in") != 96:
+        fail("clip.crossfade did not set both ramps to the overlap: %r" % crossed, process, log_path)
+    entry = clip_entry(second)
+    if entry is None or entry.get("fade_in") != 96 or entry.get("fade_in_shape") != "equal_power":
+        fail("the incoming clip's fade-in did not reach the arrangement state: %r" % entry,
+             process, log_path)
+    if abs(entry.get("gain_db", 0.0) + 6.0) > 1e-3:
+        fail("clip.crossfade overwrote the incoming clip's gain: %r" % entry, process, log_path)
+
+    # --- SPEC A16: each command recorded a reversible transaction ---
+    transactions = ok("control.transactions").get("transactions", [])
+    by_command = {}
+    for entry in transactions:
+        by_command[entry.get("command")] = entry
+    for command in ("clip.set_fade", "clip.set_gain", "clip.crossfade"):
+        entry = by_command.get(command)
+        if entry is None:
+            fail("no transaction recorded for %s" % command, process, log_path)
+        if not entry.get("reversible"):
+            fail("%s was not recorded as reversible: %r" % (command, entry), process, log_path)
+        if not entry.get("mechanism"):
+            fail("%s records no inverse mechanism: %r" % (command, entry), process, log_path)
+
+    # --- and the inverse is real: one control.undo restores both clips ---
+    undone = ok("control.undo")
+    if not undone.get("undone"):
+        fail("control.undo did not undo the crossfade: %r" % undone, process, log_path)
+    entry = clip_entry(second)
+    if entry is None or entry.get("fade_in") != 0:
+        fail("control.undo did not restore the incoming clip's fade-in: %r" % entry,
+             process, log_path)
+
+    print("clip fades/gain/crossfade: %s fade_out=%s ticks (equal_power), %s gain=%.3f dB, "
+          "crossfade overlap=%s ticks, and control.undo restored it"
+          % (first, crossed["out_fade_out"], first, gained["gain_db"], crossed["overlap"]))
+    return request
+
+
 def render_to_file(flow, out, process, log_path):
     """Render the session to \a out, retrying once.
 
@@ -1894,6 +2016,9 @@ def main():
 
         # --- automation.*: model state, and the rendered audio truth -------
         last_id = automation_flow(client, process, log_path, tmp, project, last_id)
+
+        # --- clip.*: the fade / crossfade / clip-gain commands ---------------
+        last_id = clip_edits_flow(client, process, log_path, last_id)
 
         # --- shutdown unlinks the socket ----------------------------------
         client.call(last_id + 1, "control.quit")

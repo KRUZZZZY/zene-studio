@@ -276,6 +276,18 @@ QJsonObject clipState(const ClipRef& ref)
 		midiClip == nullptr ? QJsonValue(QJsonValue::Null)
 			: QJsonValue(static_cast<int>(midiClip->notes().size())));
 	entry.insert(QStringLiteral("selected"), selectedClipId() == clipId(ref.ordinal));
+	// The clip's fades and gain (the fade/crossfade/clip-gain wave). Reported
+	// for EVERY clip, neutral or not, so an agent reading arrangement.get_state
+	// or roll.get_state can see what clip.set_fade / clip.set_gain left behind
+	// without a second call - and can compare two clips' fades before pairing
+	// them with clip.crossfade.
+	const auto& edits = ref.clip->clipEdits();
+	entry.insert(QStringLiteral("gain_db"),
+		static_cast<double>(gainLinearToDb(edits.gain)));
+	entry.insert(QStringLiteral("fade_in"), edits.fadeInTicks);
+	entry.insert(QStringLiteral("fade_out"), edits.fadeOutTicks);
+	entry.insert(QStringLiteral("fade_in_shape"), fadeShapeName(edits.fadeInShape));
+	entry.insert(QStringLiteral("fade_out_shape"), fadeShapeName(edits.fadeOutShape));
 	return entry;
 }
 

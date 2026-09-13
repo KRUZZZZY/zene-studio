@@ -503,6 +503,11 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		}
 		_this.appendChild( warp );
 	}
+	// The clip's fades and its clip gain (fade/crossfade/clip-gain wave), written
+	// by the base class so every clip type that serialises shares one rule.
+	// Additive like the two blocks above: a clip with no fade and unity gain
+	// writes nothing, so a project without them serialises as it always did.
+	saveClipEdits(_this);
 	if (const auto& c = color())
 	{
 		_this.setAttribute("color", c->name());
@@ -590,6 +595,11 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	{
 		setColor(QColor{_this.attribute("color")});
 	}
+
+	// The clip's fades and its clip gain (fade/crossfade/clip-gain wave). Read
+	// last because nothing else in this function depends on them and they depend
+	// on nothing here: a file without the attributes keeps the neutral defaults.
+	loadClipEdits(_this);
 
 	if(_this.hasAttribute("reversed"))
 	{

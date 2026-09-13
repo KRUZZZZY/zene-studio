@@ -196,6 +196,7 @@ include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
+include/ClipEdits.h
 include/ControlAutomationSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
@@ -316,12 +317,14 @@ plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 src/core/AudioBus.cpp
 src/core/AudioPortsModel.cpp
+src/core/ClipEdits.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsClip.cpp
+src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsMixer.cpp
