@@ -98,8 +98,10 @@ private slots:
 	//! THE HISTOGRAM (0.2.1 coverage gap 3a). The release's own notes state the
 	//! table's shape as four counts - "the table that ships as data in
 	//! src/core/ControlReversibilityTable.cpp has 74 rows today, one per registered
-	//! command: 30 `true_inverse`, 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`"
-	//! (docs/RELEASE-NOTES-v0.2.1-alpha.md) - and nothing asserted them. The two
+	//! command" (docs/RELEASE-NOTES-v0.2.1-alpha.md, at 0.2.1: 30 `true_inverse`,
+	//! 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`) - and nothing asserted them.
+	//! At 0.3.0 the same four counts read 54 / 9 / 3 / 51 over 117 rows, and the
+	//! current figure lives in docs/RELEASE-NOTES-v0.3.0-alpha.md. The two
 	//! tests above hold the table to account for COVERAGE (every registered command
 	//! has a row, every row names a registered command) and for behaviour; a row
 	//! added or moved between classes could therefore ship with the notes still
@@ -136,20 +138,20 @@ private slots:
 #ifdef ZENE_TELEMETRY_ENABLED
 		// The table as shipped, WITH the two telemetry.* rows: the shape the release
 		// notes state for 0.2.1.
-		constexpr int kRows = 74;
-		constexpr int kTrueInverse = 30;
-		constexpr int kSnapshot = 5;
+		constexpr int kRows = 117;
+		constexpr int kTrueInverse = 54;
+		constexpr int kSnapshot = 9;
 		constexpr int kIrreversible = 3;
-		constexpr int kNotMutating = 36;
+		constexpr int kNotMutating = 51;
 #else
 		// The same table with the telemetry client compiled out of the binary
 		// (-DZENE_TELEMETRY=OFF): its two commands leave the registry, so their two
 		// not_mutating rows leave the table with them.
-		constexpr int kRows = 72;
-		constexpr int kTrueInverse = 30;
-		constexpr int kSnapshot = 5;
+		constexpr int kRows = 115;
+		constexpr int kTrueInverse = 54;
+		constexpr int kSnapshot = 9;
 		constexpr int kIrreversible = 3;
-		constexpr int kNotMutating = 34;
+		constexpr int kNotMutating = 49;
 #endif
 
 		const QByteArray measured = QStringLiteral("%1 true_inverse, %2 snapshot, "
@@ -164,7 +166,7 @@ private slots:
 				.arg(entries.size())
 				+ QStringLiteral("counts %1. If a row was added, update the histogram in ")
 				.arg(kRows)
-				+ QStringLiteral("docs/RELEASE-NOTES-v0.2.1-alpha.md (and here) - the ")
+				+ QStringLiteral("docs/RELEASE-NOTES-v0.3.0-alpha.md (and here) - the ")
 				+ QStringLiteral("point of this assertion is that the two cannot drift.")));
 
 		QVERIFY2(trueInverse == kTrueInverse && snapshot == kSnapshot

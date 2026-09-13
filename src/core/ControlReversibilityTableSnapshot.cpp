@@ -141,6 +141,31 @@ const ReversibilityRow kSnapshotRows[] = {
 		"the depth cap is not project state, but LOWERING it evicts undo steps, and an evicted step is gone. The previous cap is a bounded scalar, so the change itself is reversible - what it dropped is not",
 		"snapshot: the transaction's before-state holds the previous cap, and the recorded inverse is the command itself (control.undo dispatches control.set_undo_depth with steps/bytes set back). The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",
 		"the steps evicted by a cap change are NOT recoverable: control.undo restores the CAP, not the history it dropped. Raise the cap before a long session, or re-drive the edits"),
+
+	// The browser's tag commands (030/w10-browser): restored after a merge
+	// resolution took the other side wholesale and dropped them. The A16 contract
+	// test caught it - it requires a row for every registered command.
+	//
+	// Row order note: this block is scanned before true_inverse, so these
+	// appear first in the assembled table. Nothing depends on it.
+	R("browser.tag.add", RC::Snapshot, true,
+		"the tag store is a user-config file, not a JournallingObject: there "
+		"is no object checkpoint that holds a path's tag set, and the project "
+		"journal is deliberately not used for state outside the project",
+		"the recorded inverse is the paired COMMAND browser.tag.remove with "
+		"this path and tag (`applies: command`), which control.undo dispatches "
+		"through the registry; the tag set the edit started from is in the "
+		"transaction's before-state, bounded by the store's own "
+		"distinct-tag cap",
+		""),
+	R("browser.tag.remove", RC::Snapshot, true,
+		"the same store and the same absence of a checkpoint; removing the "
+		"LAST tag of a file drops its entry from the store, which a "
+		"re-add recreates exactly",
+		"the recorded inverse is the paired COMMAND browser.tag.add with this "
+		"path and tag (`applies: command`), dispatched by control.undo; the "
+		"tag set the edit started from is in the transaction's before-state",
+		""),
 };
 
 constexpr int kSnapshotRowCount = static_cast<int>(sizeof(kSnapshotRows) / sizeof(kSnapshotRows[0]));

@@ -266,6 +266,27 @@ const ReversibilityRow kPassiveRows[] = {
 
 	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
 
+
+	// The browser's four read-only commands (030/w10-browser): restored after
+	// a merge resolution took the other side wholesale and dropped them.
+	R("browser.roots", RC::NotMutating, false,
+		"reads the browser's root directories and whether each exists",
+		"no write", ""),
+	R("browser.query", RC::NotMutating, false,
+		"walks the browser's directories and reads the tag store; it opens an "
+		"audio file for its metadata only when the caller sets 'probe', and it "
+		"writes nothing",
+		"no write: the result is derived state, and nothing is kept between "
+		"calls", ""),
+	R("browser.tags", RC::NotMutating, false,
+		"reads the tag store and the vocabulary derived from it", "no write", ""),
+	R("browser.peaks", RC::NotMutating, false,
+		"opens the audio file and fills the peak cache: the cache is a "
+		"memory-resident derived view of the file, keyed on its path and last "
+		"modification, and it is neither project state nor written to disk",
+		"no write: an entry is dropped when the file changes, and the whole "
+		"cache is bounded (BrowserPeakCache::Capacity entries of "
+		"BrowserPeakCache::BaseBuckets peaks each)", ""),
 };
 
 constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));

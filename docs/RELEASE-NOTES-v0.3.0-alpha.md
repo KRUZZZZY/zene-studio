@@ -226,6 +226,16 @@ that marker is published as-is, and no unverified claim is published without one
   rule (`note.move`/`note.resize`, whose target is re-derived by the move itself, and `warp.move`, whose
   marker key *is* the value being edited).
 
+## The A16 contract table, and its histogram
+
+The SPEC A16 classification table now holds **117 rows** measured from the table itself:
+**54 , 9 , 3 , 51 **. With the telemetry
+client compiled out () the two  rows leave with their
+commands, giving **115 rows / 49 **.  asserts both
+sets, so a row added or moved between classes cannot ship with this page still quoting the
+old split. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
+(docs/RELEASE-NOTES-v0.2.1-alpha.md) - that record is left as written.
+
 ## Not in this draft yet
 
 Written per lane as it lands, so the list below is state as of **2026-09-13** and W12 owns turning this file
