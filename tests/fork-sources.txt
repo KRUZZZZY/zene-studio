@@ -6,8 +6,9 @@
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#       | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|ExportDitherTest|ExportWavDitherTest|ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport|RackTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -15,8 +16,9 @@
 #        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#            | awk '/^tests\// && !/^tests\/src\/core\/(ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|ExportDitherTest|ExportWavDitherTest|ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport|RackTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -186,7 +188,7 @@
 #     control surface (ControlAutomationScriptTest, ControlDeviceCatalogueTest,
 #     ControlEditCommandsTest, ControlRegistryTest, ReversibilityContractTest,
 #     ReversibilityUndoTest, StableTrackIdsTest) and ReversibilityTestSupport.h;
-#   * a THIRD explicit pathspec line admits the fourteen tests/*.py control-surface
+#   * a THIRD explicit pathspec line admits the eighteen tests/*.py control-surface
 #     harnesses by name - the same "admitted by name rather than by widening the
 #     extension filter" shape the tools/ line above uses, because widening the
 #     extension filter would also admit every other tests/ script.
@@ -202,6 +204,30 @@
 # for the reason the paragraph above gives; the two ratchets it widens were re-measured
 # with it registered and pass, and no baseline was re-anchored for either red.
 # Reproduces verified with the command under "Verify it" after the entry was committed.
+#
+# Repaired 2026-09-13 (030/w12-forkrecipe). The third pathspec line above, and three
+# names in the awk allow-list, were LOST by the scripted entry-union that landed the
+# 030/w7-dither-src merge (72b1e7889, parents 57ca389a7 and 671e5656b): that merge kept
+# the integration side's copy of both, so the file stopped reproducing - the command
+# under "Regenerate with" no longer produced entries that ARE in the entry list below
+# (every tests/*.py harness it names, plus AudioResamplerRatioTest, ExportDitherTest,
+# ExportWavDitherTest, RackMacrosTest, RackTestSupport.h and RackZonesTest.cpp). What
+# was done, with the source of each name:
+#   * the third pathspec line is RESTORED as the union of that merge's two sides - the
+#     lane side (671e5656b) named fifteen harnesses, the integration side (57ca389a7)
+#     named seventeen, and the union is the eighteen the entry list below holds
+#     (control-export-settings.py was on the lane side alone);
+#   * AudioResamplerRatioTest, ExportDitherTest and ExportWavDitherTest are RESTORED to
+#     the awk allow-list, which is where the 030/w7-dither-src lane had put them;
+#   * RackMacrosTest and RackZonesTest are ADDED to that allow-list and RackTestSupport.h
+#     to its support-header alternative: the 030/w8-rack-macros merge (cd47b8803)
+#     registered those three tests/src/core entries without extending the allow-list, so
+#     they were entries no copy of the command had ever produced.
+# No entry line was touched: the entry list below is byte-identical to the merged one,
+# `bash tests/fork-sources-gate.sh` still reports every tracked source in scope
+# registered with 0 stale entry(ies), and the repair's own diff is comment lines only.
+# Reproduces verified with the command under "Verify it" after the repair: it prints
+# REPRODUCES and exits 0.
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
