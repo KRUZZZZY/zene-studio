@@ -930,6 +930,23 @@ if(PYTHON3_EXECUTABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Session View milestone M1 (SPEC-zene-studio A1/A2, NEXT-0.3.0-AGENT-PROMPT
+	# 3.2): a saved project launches 4 clips across 2 scenes in sync at the next
+	# bar, driven END TO END through --control-socket. It is registered only
+	# when the session.* group is compiled in, because the commands it drives do
+	# not exist otherwise - a test that could not run must not be registered as
+	# one that passed. It takes no fixture: it builds the session through the
+	# socket, saves it, and reopens it, which is the point of the milestone.
+	if(LMMS_HAVE_SESSION_VIEW)
+		add_test(NAME ControlSessionLaunch
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-m1.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionLaunch PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+		)
+	endif()
 else()
 	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
 endif()

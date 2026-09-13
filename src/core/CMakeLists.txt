@@ -50,6 +50,12 @@ IF(LMMS_HAVE_SESSION_VIEW)
 		core/SessionClip.cpp
 		core/SessionModel.cpp
 		core/SessionScheduler.cpp
+		# The session.* control-surface group (SPEC A11-A16). It travels with
+		# the data layer: with WANT_SESSION_VIEW=OFF the registry must not
+		# advertise commands whose model is not compiled in, and
+		# registerControlCommands() guards the two calls the same way.
+		core/ControlCommandsSession.cpp
+		core/ControlCommandsSessionLaunch.cpp
 	)
 ENDIF()
 

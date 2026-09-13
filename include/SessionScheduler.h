@@ -171,6 +171,26 @@ LaunchEvent advanceLaunchState( SlotLaunchState& state, LaunchMode mode,
 // The engine
 // ---------------------------------------------------------------------------
 
+//! Grid line of a lastStartLine() value (the tick the start events were
+//! scheduled on, i.e. SlotLaunchState::startedTick - not the audio period that
+//! noticed them).
+inline tick_t startLineTick( std::uint64_t packed ) noexcept
+{
+	return static_cast<tick_t>( packed >> 32 );
+}
+
+//! Start events that fired on that one grid line.
+inline std::uint32_t startLineStarts( std::uint64_t packed ) noexcept
+{
+	return static_cast<std::uint32_t>( packed & 0xffffffffULL );
+}
+
+//! Packs (grid line, start count) the way lastStartLine() reports them.
+inline std::uint64_t packStartLine( tick_t line, std::uint32_t starts ) noexcept
+{
+	return ( static_cast<std::uint64_t>( static_cast<std::uint32_t>( line ) ) << 32 ) | starts;
+}
+
 /*! Owns the launch state of the launched slots and the lock-free command
  *  queue. See the file comment for the threading contract. */
 class LMMS_EXPORT SessionScheduler
@@ -249,6 +269,30 @@ public:
 		return m_processed.load( std::memory_order_relaxed );
 	}
 
+	/*! The most recent start events, packed as ONE value so a reader can never
+	 *  see a grid line and a count from different events: see packStartLine()
+	 *  / startLineTick() / startLineStarts(). `startLineStarts() == 4` after
+	 *  four clips were launched at one bar line is the session-launch sync
+	 *  proof - four starts on ONE grid line, reported without reading the
+	 *  audio thread's slot table from the model thread.
+	 *
+	 *  A later start on a different line REPLACES the pair with a count of 1,
+	 *  so the value always describes the newest line only. Any thread; relaxed,
+	 *  because it is a diagnostic and never a synchronisation primitive. */
+	std::uint64_t lastStartLine() const noexcept
+	{
+		return m_lastStartLine.load( std::memory_order_relaxed );
+	}
+
+	/*! The audio thread's clock when it noticed the most recent start event.
+	 *  The distance from startLineTick(lastStartLine()) is the audio period the
+	 *  event was noticed in - it is what makes the grid line a measurement
+	 *  rather than a restatement of the request. Any thread. */
+	tick_t lastStartObservedTick() const noexcept
+	{
+		return m_lastStartObservedTick.load( std::memory_order_relaxed );
+	}
+
 	//! The session clock's tick position after the last processAudio(). Audio
 	//! thread.
 	tick_t positionTicks() const noexcept { return m_positionTicks; }
@@ -316,6 +360,24 @@ private:
 	ActiveSlot* findSlot( int track, int scene ) noexcept;
 	ActiveSlot* claimSlot( int track, int scene ) noexcept;
 	void drainCommands( const SessionClockContext& ctx ) noexcept;
+	/*! Publishes one start event for the model thread: repacks the pair when the
+	 *  event landed on the line already reported, so the count is the number of
+	 *  clips that began on THAT line. Audio thread; two relaxed stores. Defined
+	 *  here rather than in the .cpp because that file is at the file-length
+	 *  ratchet and this is the whole of it - the surrounding state machine lives
+	 *  in the .cpp, the hot path belongs beside the atomics it writes. */
+	void publishStart( tick_t line, tick_t observed ) noexcept
+	{
+		const std::uint64_t previous = m_lastStartLine.load( std::memory_order_relaxed );
+		const std::uint32_t starts = startLineStarts( previous );
+		const std::uint32_t count = ( startLineTick( previous ) == line && starts > 0 )
+			? starts + 1 : 1;
+		m_lastStartObservedTick.store( observed, std::memory_order_relaxed );
+		// The pair goes in as ONE store, so a reader can never see the new line
+		// with the old count (or the reverse) and conclude a synchronisation
+		// that did not happen.
+		m_lastStartLine.store( packStartLine( line, count ), std::memory_order_relaxed );
+	}
 	//! Applies a pending reset() request. True when everything was dropped.
 	bool consumeResetRequest() noexcept;
 	//! Moves the session clock for this period (SPEC A2's separate domain).
@@ -328,6 +390,12 @@ private:
 	std::atomic<std::uint64_t> m_dropped{ 0 };
 	std::atomic<std::uint64_t> m_launches{ 0 };
 	std::atomic<std::uint64_t> m_processed{ 0 };
+	//! Packed (grid line, start count) of the newest start events; see
+	//! lastStartLine(). Model-thread readable, so it is a plain relaxed atomic
+	//! rather than a member of the audio thread's slot table.
+	std::atomic<std::uint64_t> m_lastStartLine{ 0 };
+	//! The audio clock when that event was noticed; see lastStartObservedTick().
+	std::atomic<tick_t> m_lastStartObservedTick{ 0 };
 	//! Project-change generation; bumping it makes the audio thread drop every
 	//! active slot on its next period (see reset()).
 	std::atomic<std::uint32_t> m_resetGeneration{ 0 };

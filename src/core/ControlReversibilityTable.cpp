@@ -235,6 +235,23 @@ const ReversibilityRow kRows[] = {
 		"action checkpoint: the recorded undo step restores the revision the "
 		"restore replaced",
 		""),
+#ifdef LMMS_HAVE_SESSION_VIEW
+	// The session.* group: SessionModel is not a JournallingObject, so each edit
+	// captures the whole <session> block and records ONE action checkpoint that
+	// restores it (the true_inverse form clip.split and track.add use).
+	R("session.set_grid", RC::TrueInverse, true,
+		"grid dimensions live in the <session> block, which is not a JournallingObject", "action checkpoint: the captured <session> XML is restored whole through SessionModel::restoreState, so dimensions, slots and scenes come back together", ""),
+	R("session.set_quantisation", RC::TrueInverse, true,
+		"one field of the <session> block (launchquantisation)", "action checkpoint: the captured <session> block is restored whole", ""),
+	R("session.set_scene", RC::TrueInverse, true,
+		"a scene's name and its tempo / time-signature overrides live in the <session> block", "action checkpoint: the block is restored whole, so an override that was OFF before is OFF again rather than merely zeroed", ""),
+	R("session.set_slot", RC::TrueInverse, true,
+		"a clip slot's reference and launch settings are cells of the <session> block and have no journalled object behind them", "action checkpoint: the block is restored whole, so the slot's previous reference kind, launch mode and playback settings return together", ""),
+	R("session.clear_slot", RC::TrueInverse, true,
+		"clearing a cell destroys a reference id or an audio source path that no live object holds a copy of", "action checkpoint: the captured <session> block is the only place the cleared reference still exists, and it is restored", ""),
+	R("session.clear", RC::TrueInverse, true,
+		"it empties every cell, every scene override and the global quantisation at once, on a model the engine does not journal", "action checkpoint: ONE control.undo restores the whole session, so clearing a grid is one undoable step rather than one per cell", ""),
+#endif // LMMS_HAVE_SESSION_VIEW
 
 	// =====================================================================
 	// snapshot - no live object can be restored. The inverse is a bounded
@@ -446,6 +463,22 @@ const ReversibilityRow kRows[] = {
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
+#ifdef LMMS_HAVE_SESSION_VIEW
+	// The session.* launch requests write NO project state - they queue into
+	// SessionScheduler exactly like transport.play - so recording a transaction
+	// for one would shadow the undo of the real edit underneath it (the defect
+	// clip.select's row records).
+	R("session.launch_slot", RC::NotMutating, false,
+		"the request queues into the scheduler's lock-free queue; the slot's launch state lives on the audio thread and is not project state", "nothing to reverse: session.stop_slot is the operation a client calls, and it is available directly", ""),
+	R("session.launch_scene", RC::NotMutating, false,
+		"the same queued requests, one per non-empty cell of the row; nothing in the <session> block is written", "nothing to reverse: session.stop_all drops every launched slot and session.stop_slot stops one", ""),
+	R("session.stop_slot", RC::NotMutating, false,
+		"a stop request is the same engine-state queue; the scheduled stop fires on the audio thread", "nothing to reverse: a stopped slot is relaunched with session.launch_slot", ""),
+	R("session.stop_all", RC::NotMutating, false,
+		"one atomic reset request; it edits no model and drops only the audio thread's transient slot table", "nothing to reverse: the slots are relaunched from the model, which the reset did not touch", ""),
+	R("session.get_state", RC::NotMutating, false,
+		"reads the model and the launch engine's atomics", "no write", ""),
+#endif // LMMS_HAVE_SESSION_VIEW
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));

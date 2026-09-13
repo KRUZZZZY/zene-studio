@@ -79,13 +79,15 @@ that is this page's fault — report it and it gets added.
   content, `<bus>` and `<sidechain-send>` routing, `prefader` flags, slide data. Silently is the operative
   word: you get a project that looks fine and is missing content. **Do not open a 0.2 project in an older
   build.** If you must, open a *copy* and compare.
-- **Session View data survives a round-trip through this build, but the feature is not in it.** The session
-  data layer and the launch scheduler that builds on it are **in the source and not compiled into these
-  builds** (`WANT_SESSION_VIEW` defaults off and our release jobs do not pass it; the same is true of the WASM
-  sandbox and stem separation). A project containing `<session>` data is **preserved** by this build rather
-  than dropped — that is fixed in this release — but a build with the feature compiled out cannot *use* it, and
-  even a build with the flag on has **no clip launcher and no clip grid**, so there is no way to operate it from
-  the interface.
+- **The Session View is in the 0.3.0-alpha builds, and there is still no way to operate it from the
+  interface.** From 0.3.0 `WANT_SESSION_VIEW` **defaults ON**, so the data layer, the launch scheduler and the
+  `session.*` control-surface group are in the release builds. The honest limits, because the option's value is
+  not the claim: there is **no clip launcher, no scene launcher and no clip grid** — no UI at all — and a
+  launched session slot **does not render audio**, because this tree has no session-clip playback path
+  (`src/core/SessionClip.cpp` is serialisation only). An agent can build a grid, launch a clip or a whole
+  scene, and read the launch back through `--control-socket` (`session.get_state`, `session.set_slot`,
+  `session.launch_scene`, ...); a user cannot see or hear any of it. A project containing `<session>` data is
+  also **preserved across a round trip**, which was already fixed in 0.2.1 and is unchanged.
 - **A failed save is now reported rather than silent.** If a project cannot be moved aside on save (an existing
   file the platform refuses to rename over), the save is refused **and you are told**, rather than reporting
   success.
@@ -187,6 +189,8 @@ that is this page's fault — report it and it gets added.
   directories that happen to sit on this box it does not pass (3 of 6 rows on `build-coverage/zene`, 1 of 6 on
   `build/zene`) — those directories are configured against the manifest, and the guard is right to fail them;
   the release run above is this claim's evidence. The two features above are deliberately absent either way.
+  **Changed in 0.3.0-alpha:** the `session-view` row is no longer one of them — the option defaults ON and the
+  row now requires ON (see the Session View bullet above for what that does and does not include).
 
 ## Where the quality bars are not met yet
 

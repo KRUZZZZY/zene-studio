@@ -65,6 +65,13 @@ LMMS_EXPORT QJsonObject arrayProperty();
 LMMS_EXPORT QJsonObject objectProperty();
 //! A tick position: an integer that cannot be negative.
 LMMS_EXPORT QJsonObject tickProperty();
+/*! A string property restricted to \p values (the registry's validator
+ *  enforces "enum"). Added 2026-09-13 for the session.* group, whose mode and
+ *  quantisation arguments ARE closed vocabularies (LaunchMode,
+ *  LaunchQuantisation) and must be rejected by name rather than silently
+ *  coerced - the same reason the groups before it inline this shape, except
+ *  that three call sites in one group is where a local copy starts to drift. */
+LMMS_EXPORT QJsonObject enumProperty(const QStringList& values);
 
 // ---------------------------------------------------------------------------
 // The id grammar (AGENT-TOOLING.md #4). Every formatter is

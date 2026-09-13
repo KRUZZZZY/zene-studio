@@ -105,6 +105,18 @@ QJsonObject tickProperty()
 	return integerProperty(0, 0x7fffffff);
 }
 
+QJsonObject enumProperty(const QStringList& values)
+{
+	QJsonArray allowed;
+	for (const QString& value : values)
+	{
+		allowed.append(value);
+	}
+	QJsonObject property{{QStringLiteral("type"), QStringLiteral("string")}};
+	property.insert(QStringLiteral("enum"), allowed);
+	return property;
+}
+
 // ---------------------------------------------------------------------------
 // the id grammar
 // ---------------------------------------------------------------------------
