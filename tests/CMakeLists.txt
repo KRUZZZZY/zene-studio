@@ -1145,3 +1145,61 @@ if(PYTHON3_EXECUTABLE)
 		TIMEOUT 300
 	)
 endif()
+
+# ---------------------------------------------------------------------------
+# ControlCommandsSnapshot - the MCP tooling spine's freshness ratchet.
+#
+# `tools/mcp-zene-control/zene_control/registry.py` generates the bridge's tool
+# list from a live instance's `control.commands_list` AT REQUEST TIME, so a new
+# command group is automatically an MCP tool with no per-feature bridge work.
+# The mode with no live instance (and no cache) is served from the committed
+# snapshot `zene_control/commands_snapshot.json`, and nothing enforced that the
+# snapshot was fresh: tests/test_units.py asserted only that the file existed and
+# held five sample ids. It had drifted to 70 commands while the registry declared
+# 108 - 38 missing, every one a 0.3.0 feature - so tooling for the new work
+# looked absent in exactly the mode a reader tries first.
+#
+# This test is that ratchet, in the ControlSessionLaunch mould: it starts
+# $<TARGET_FILE:zene> with --control-socket, asks it for
+# control.commands_list, loads the committed snapshot through the bridge's own
+# loader (`zene_control.registry.load_bundle`) and fails on drift in EITHER
+# direction, naming the ids and the exact regeneration command.
+#
+# Registered whenever python3 exists - the same gate as every other Python
+# control-surface test here - and SKIPPED (exit 77 -> ctest "Skipped", never
+# "Passed") when the bridge package itself cannot be imported, so it can never
+# pass by doing nothing. There is no WANT_* option that gates the bridge: it is
+# Python under tools/, not a build target.
+#
+# The two options that remove a whole command group at compile time are passed in
+# as --compiled-out prefixes, so a non-release configuration is compared against
+# the ids it could actually register instead of being failed for the options it
+# chose: WANT_SESSION_VIEW=OFF drops the session.* group,
+# ZENE_TELEMETRY=OFF drops telemetry.*. The flag is checked in BOTH directions -
+# a prefix declared compiled out that the binary DOES register is a failure, so
+# the flag can never become a blindfold. Both default ON, which is the
+# configuration the committed snapshot was captured from and the release
+# configuration, so on a default build both are compared in full.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	set(ZENE_SNAPSHOT_COMPILED_OUT "")
+	if(NOT LMMS_HAVE_SESSION_VIEW)
+		list(APPEND ZENE_SNAPSHOT_COMPILED_OUT --compiled-out session.)
+	endif()
+	if(NOT ZENE_TELEMETRY_ENABLED)
+		list(APPEND ZENE_SNAPSHOT_COMPILED_OUT --compiled-out telemetry.)
+	endif()
+	add_test(NAME ControlCommandsSnapshot
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-commands-snapshot.py
+			$<TARGET_FILE:zene>
+			${ZENE_SNAPSHOT_COMPILED_OUT}
+	)
+	set_tests_properties(ControlCommandsSnapshot PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+		SKIP_RETURN_CODE 77
+	)
+else()
+	message(STATUS "python3 not found: ControlCommandsSnapshot is not registered")
+endif()

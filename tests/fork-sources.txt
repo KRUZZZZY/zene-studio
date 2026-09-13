@@ -8,7 +8,7 @@
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #       | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|ExportDitherTest|ExportWavDitherTest|ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport|RackTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
-#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py tests/control-commands-snapshot.py ; \
 #   } | LC_ALL=C sort
 #
 # Verify it - this must print REPRODUCES and nothing else:
@@ -18,7 +18,7 @@
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
 #            | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|ExportDitherTest|ExportWavDitherTest|ClipSerialisationTest|DataFileSaveIntegrityTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|SessionModelTest|StemExportTest|ControlAutomationScriptTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|StableTrackIdsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(StemExportTestSupport|ReversibilityTestSupport|RackTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py tests/control-commands-snapshot.py ; \
 #        } | LC_ALL=C sort) && echo REPRODUCES
 #
 # The pathspec is `src include plugins` (this fork's product code) plus four extras the
@@ -228,6 +228,21 @@
 # registered with 0 stale entry(ies), and the repair's own diff is comment lines only.
 # Reproduces verified with the command under "Verify it" after the repair: it prints
 # REPRODUCES and exits 0.
+# Added 2026-09-13 (030/w16-spine). tests/control-commands-snapshot.py is the
+# NINETEENTH .py entry (eighteen stood in the list before it, per the paragraph
+# above) and is named in the third pathspec line for the same reason as its
+# eighteen siblings: it is a control-surface test script under tests/, admitted by
+# name rather than by widening the extension filter. It is the registered ctest
+# that makes the MCP bridge's committed offline snapshot
+# (tools/mcp-zene-control/zene_control/commands_snapshot.json) a measured artifact:
+# it starts the built binary with --control-socket, asks it for
+# control.commands_list, loads the snapshot through the bridge's OWN loader
+# (zene_control.registry.load_bundle) and fails on drift in either direction,
+# naming the ids and the regeneration command. Registered here rather than left
+# outside every scope because the two ratchets it widens were re-measured with it
+# registered and pass (Gate 4: max CCN 8; Gate 7: 254 lines), and no baseline was
+# re-anchored for either. Reproduces verified with the command under "Verify it"
+# after the entry was committed.
 include/AudioBus.h
 include/AudioPlugin.h
 include/AudioPorts.h
@@ -466,6 +481,7 @@ src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
+tests/control-commands-snapshot.py
 tests/control-export-settings.py
 tests/control-headless-no-audio-device.py
 tests/control-headless-project-open.py
