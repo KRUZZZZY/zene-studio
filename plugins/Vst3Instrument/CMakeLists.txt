@@ -64,8 +64,10 @@ TARGET_LINK_LIBRARIES(vst3instrument lmms_vst3_sdk)
 
 IF(MSVC)
 	# Same collision as vst3effect, and the same reasoning: this module links the executable's import
-	# library, whose exported classes carry std::vector<float> in inline members, while the host TU
-	# instantiates the same members. See plugins/Vst3Effect/CMakeLists.txt for the full note, the
-	# precedent in plugins/NeuralAmp/CMakeLists.txt and the clean fix (pimpl the buffer member).
+	# library, whose export list CMake generates from every external symbol in zene.exe's objects
+	# (ENABLE_EXPORTS + Source/bindexplib.cxx) without filtering template or inline members, while the
+	# host TU instantiates the same members. See plugins/Vst3Effect/CMakeLists.txt for the full note,
+	# why pimpl-ing the buffer member would NOT remove those symbols, and the precedent in
+	# plugins/NeuralAmp/CMakeLists.txt.
 	TARGET_LINK_OPTIONS(vst3instrument PRIVATE /FORCE:MULTIPLE)
 ENDIF()

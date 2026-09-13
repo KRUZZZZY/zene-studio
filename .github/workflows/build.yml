@@ -555,6 +555,22 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
+      - name: Capture the NSIS log when packaging fails
+        # Every Windows packaging failure in this matrix has been a CPack/NSIS failure whose real
+        # error is written to <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log -- a file no step
+        # ever printed or uploaded, so the cause had to be inferred from "CPack Error: Problem
+        # running NSIS command" alone (that is where the windows-arm64 Package failure stands).
+        # Print it when the package step fails, so the next failing run names its own cause.
+        # Diagnostic only: it never changes the job's status.
+        if: failure()
+        run: |
+          for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
+            if [ -f "$f" ]; then
+              echo "=== $f ==="
+              cat "$f"
+            fi
+          done
+          exit 0
       - name: Upload artifacts
         # Only a tag (the release path) or a deliberate dispatch publishes a package:
         # per-push uploads of ~700 MB exhausted the artifact storage quota.
@@ -731,6 +747,22 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
+      - name: Capture the NSIS log when packaging fails
+        # Every Windows packaging failure in this matrix has been a CPack/NSIS failure whose real
+        # error is written to <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log -- a file no step
+        # ever printed or uploaded, so the cause had to be inferred from "CPack Error: Problem
+        # running NSIS command" alone (that is where the windows-arm64 Package failure stands).
+        # Print it when the package step fails, so the next failing run names its own cause.
+        # Diagnostic only: it never changes the job's status.
+        if: failure()
+        run: |
+          for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
+            if [ -f "$f" ]; then
+              echo "=== $f ==="
+              cat "$f"
+            fi
+          done
+          exit 0
       - name: Upload artifacts
         # Only a tag (the release path) or a deliberate dispatch publishes a package:
         # per-push uploads of ~700 MB exhausted the artifact storage quota.
@@ -842,6 +874,22 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
+      - name: Capture the NSIS log when packaging fails
+        # Every Windows packaging failure in this matrix has been a CPack/NSIS failure whose real
+        # error is written to <build>/_CPack_Packages/<system>/NSIS/NSISOutput.log -- a file no step
+        # ever printed or uploaded, so the cause had to be inferred from "CPack Error: Problem
+        # running NSIS command" alone (that is where the windows-arm64 Package failure stands).
+        # Print it when the package step fails, so the next failing run names its own cause.
+        # Diagnostic only: it never changes the job's status.
+        if: failure()
+        run: |
+          for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
+            if [ -f "$f" ]; then
+              echo "=== $f ==="
+              cat "$f"
+            fi
+          done
+          exit 0
       - name: Upload artifacts
         # Only a tag (the release path) or a deliberate dispatch publishes a package:
         # per-push uploads of ~700 MB exhausted the artifact storage quota.

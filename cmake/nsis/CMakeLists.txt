@@ -43,11 +43,28 @@ IF(WIN64)
 	else()
 		set(CPACK_PACKAGE_FILE_NAME      "${CMAKE_PROJECT_NAME}-${VERSION}-${WIN_PLATFORM}-win64")
 	endif()
-	SET(CPACK_INSTALL_FIX "$PROGRAMFILES64\\\\${CPACK_PACKAGE_INSTALL_DIRECTORY}\\\\")
-	SET(CPACK_NSIS_DEFINES "
-		${CPACK_NSIS_DEFINES} 
-		InstallDir ${CPACK_INSTALL_FIX}
-		")
+	# 64-bit builds install into the 64-bit Program Files. That belongs in CPACK_NSIS_INSTALL_ROOT:
+	# CPack's NSIS template renders its own InstallDir line from it
+	# (`InstallDir "@CPACK_NSIS_INSTALL_ROOT@\@CPACK_PACKAGE_INSTALL_DIRECTORY@"`, quoted), and the
+	# template's repair/uninstall comparison uses the same variable, so the installer and the
+	# uninstaller agree on $INSTDIR.
+	#
+	# The inherited code injected the path through CPACK_NSIS_DEFINES instead:
+	#   SET(CPACK_INSTALL_FIX "$PROGRAMFILES64\\${CPACK_PACKAGE_INSTALL_DIRECTORY}\\")
+	#   SET(CPACK_NSIS_DEFINES "${CPACK_NSIS_DEFINES} \n InstallDir ${CPACK_INSTALL_FIX}")
+	# which reaches makensis as an UNQUOTED, space-containing path:
+	#   InstallDir $PROGRAMFILES64\\Zene Studio\\
+	# makensis tokenises that as several parameters and aborts the whole package immediately:
+	#   InstallDir expects 1 parameters, got 2.
+	#   Usage: InstallDir default_install_directory
+	#   Error in script ".../project.nsi" on line 49 -- aborting creation process
+	# CPack reports only its generic pair ("Problem running NSIS command" and "Problem compressing
+	# the directory") because makensis's own output goes to _CPack_Packages/<system>/NSIS/
+	# NSISOutput.log, which no workflow step printed or uploaded -- which is why this failed on every
+	# Windows job that reached packaging (the arm64 job's Package step has never once succeeded) and
+	# why the cause was invisible. Reproduced and fixed end to end on 2026-09-13 against Ubuntu's
+	# nsis 3.09, the same makensis the mingw64 job packages with (job 103647387841 / run 34728692245).
+	SET(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64" PARENT_SCOPE)
 ENDIF()
 
 # Setup missing parent scopes
