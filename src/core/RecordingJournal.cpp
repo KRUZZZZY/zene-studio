@@ -53,6 +53,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QTextStream>
 
 #include "lmms_constants.h"
 

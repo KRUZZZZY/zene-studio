@@ -13,5 +13,12 @@ set_target_properties(clap-test-gain PROPERTIES
 target_link_libraries(clap-test-gain PRIVATE lmms_clap)
 
 # Plain C plug-in, no LMMS code, no Qt: keep the warnings strict so the test
-# subject stays clean.
-target_compile_options(clap-test-gain PRIVATE -Wall -Wextra)
+# subject stays clean. -Wall and -Wextra are GNU-style flags and cl.exe rejects
+# -Wextra outright ("cl : Command line error D8021 : invalid numeric argument
+# '/Wextra'"), so they are guarded the way the rest of this tree guards a
+# GNU-style flag - the same shape as tests/CMakeLists.txt:625. MSVC needs no flag
+# of its own here: cmake/modules/ErrorFlags.cmake already gives every non-SYSTEM
+# target /W2 plus the /external: policy this target inherits.
+if(NOT MSVC)
+	target_compile_options(clap-test-gain PRIVATE -Wall -Wextra)
+endif()

@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <limits>
 
+#include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
 #include <QVector>

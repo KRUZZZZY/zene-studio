@@ -39,6 +39,7 @@
 
 #include <algorithm>
 
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QPair>

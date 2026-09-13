@@ -454,7 +454,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// same #ifdef, so the two stay consistent in both directions.
 	registerSessionCommands(registry);
 	registerSessionLaunchCommands(registry);
-#endif
+#endif // LMMS_HAVE_SESSION_VIEW
 	registerExportCommands(registry);
 	registerRackCommands(registry);
 	// The browser group carries no compile-time switch: it reads directories and
@@ -472,7 +472,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// groups above follow). The A16 table guards its six rows with the same
 	// #ifdef, so the two stay consistent in both directions.
 	registerWasmCommands(registry);
-#endif
+#endif // LMMS_HAVE_WASM
 	// The modulation layer (#602): the layer + LFO half, the route half, and the
 	// per-note expression group. No compile-time switch - the layer is a plain
 	// value on Song and a Note field, so its ids are honest in every
