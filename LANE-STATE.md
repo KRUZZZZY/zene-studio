@@ -32,22 +32,47 @@ constraint).
 - `MasteringTest` and `PluginPortsMigrationTest` — **EXIT=0 each when run alone**; they only failed inside
   the full `ctest -j2` run, so their reds read as parallel-load flakes, not code. Re-check in the final run.
 
+## The final acceptance run — `bash /tmp/rc-030-retro-capture-verify/accept.sh 334790219`
+
+Every code unpiped, each gate's own log in `/tmp/rc-030-retro-capture-verify/a-*.log`:
+
+| command | exit |
+|---|---|
+| `bash tools/local-ci.sh --build-dir build --jobs 2` (configure + build + ctest) | **0** — ctest `100% tests passed, 0 tests failed out of 131`, `ControlRetroCapture` Passed 31.92 s, `RetroMidiRingTest` Passed 0.05 s |
+| `bash tests/run-all-gates.sh` | **3** — PASS-WITH-SKIPS: all 11 gates PASS (ctest, no-tautology, complexity, mutation, upstream-regression, file-length, duplication, fork-sources, unregistered-tests, evidence); gate 2 (coverage) SKIPs without `--with-coverage`. 3 is the accepted outcome; 1 never appeared |
+| `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | **0** |
+| `bash tests/complexity-gate.sh --check` | **0** |
+| `bash tests/file-length-gate.sh --check` | **0** |
+| `bash tests/duplication-gate.sh` | **0** |
+| `bash tests/fork-sources-gate.sh` | **0** |
+| `bash tests/no-upstream-regression-gate.sh` | **0** |
+| `bash tests/unregistered-tests-gate.sh` | **0** |
+| `bash tests/evidence-gate.sh` | **0** |
+| both manifest recipes (`tests/all-sources.txt`, `tests/fork-sources.txt` "Verify it") | **0** — each prints `REPRODUCES` |
+
+`run-all-gates.sh` states in its own summary that the WHOLE-TREE scope (gates 4/7/8 `--scope all`) was NOT
+measured by it; only the enforced fork+tools scope was. That is the scope `WAVE-1-BRIEFS.md` asks for.
+
+### The two load-flake reds, resolved
+
+`MasteringTest` (34) and `PluginPortsMigrationTest` (101) failed only in the first `ctest -j2` sweep, which
+ran under a heavily loaded box (that sweep took 342 s against 134 s for the final one, and the SAME window
+produced a `/usr/bin/ld: final link failed: file truncated` on an unrelated target). Re-run alone they both
+pass (`ctest -R '^(MasteringTest|PluginPortsMigrationTest)$'` → EXIT=0, 2/2), and in the final full sweep
+they are green: 131/131. They are not this lane's code — neither file is touched by the branch.
+
 ## Left to do
 
-1. **The final acceptance run** — `bash /tmp/rc-030-retro-capture-verify/accept.sh 334790219` (local-ci plus
-   the nine gates in `WAVE-1-BRIEFS.md`, each exit code echoed unpiped). `local-ci` must end with
-   `ctest … 100% tests passed`; 0 tests is an error, not a pass.
-2. **If `MasteringTest`/`PluginPortsMigrationTest` are red again in the full run**, re-run them alone and
-   report them as load-dependent with both readings — do not re-anchor anything for them.
-3. **Write the lane report** (SHA, base, every command with its unpiped exit code, the ids and their
-   reversibility class, the test name and the real effect asserted, the documented bound, what could not be
-   verified) and **stop** — the parent merges. Never push.
-4. **Delete `build/`** and hand `030/retro-capture` to the parent.
+1. **The parent merges `030/retro-capture` and re-runs the build, suite and gates on the merged tip.** That
+   re-run is the verification; this lane's green is a hypothesis until then.
+2. **`build/` has been deleted** (disk is the binding constraint, ~21 GB). Rebuild with
+   `bash tools/local-ci.sh --build-dir build --jobs 2` if the suite has to be run again.
 
 ## Not verified by this lane (say so in the report)
 
-Real USB/PCI MIDI hardware delivery (the ctest's source is `aplaymidi`, a real external ALSA client, but not
-a keyboard's driver); the sequencer-tick vs transport-tick agreement for the raw clients; the MIDI thread's
-end-to-end allocation profile; `Ctrl+Shift+M`'s availability across the whole shortcut table (which is why no
-shortcut is taken). Owner's-31 item 15 (retrospective AUDIO capture) is deliberately NOT built — declared in
-`docs/KNOWN-LIMITATIONS.md` and `docs/RELEASE-NOTES-v0.3.0-alpha.md`.
+Real USB/PCI MIDI hardware delivery (the ctest's MIDI source is `aplaymidi`, a real external ALSA client, but
+not a keyboard's driver); the sequencer-tick vs transport-tick agreement for the raw clients; the MIDI
+thread's end-to-end allocation profile; `Ctrl+Shift+M`'s availability across the whole shortcut table (which is
+why no shortcut is taken). Owner's-31 item 15 (retrospective AUDIO capture) is deliberately NOT built, and is
+declared in `docs/KNOWN-LIMITATIONS.md` and `docs/RELEASE-NOTES-v0.3.0-alpha.md` in the same line as the UI
+absence.
