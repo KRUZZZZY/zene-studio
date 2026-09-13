@@ -338,7 +338,6 @@ const ReversibilityRow kPassiveRows[] = {
 		"is REPORTED ('status': 'trap' with the wasmtime trap code) rather than "
 		"thrown, because a contained trap is the sandbox's whole purpose", ""),
 #endif // LMMS_HAVE_WASM
-=======
 
 	// The modulation layer's two read-only inspectors (#602). modulator.get_state
 	// reports the layer AND the number of routes the audio thread will actually
