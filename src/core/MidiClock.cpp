@@ -385,21 +385,35 @@ void MidiClock::trackTransport(bool transportRunning, qint64 playPosTicks, qint6
 	emitMessage(MidiClockMessage::SongPosition, playPosTicks, songPositionOf(playPosTicks));
 }
 
+int MidiClock::pulsesForPeriod(double carryTicks, double advancedTicks,
+	double* carryAfter) noexcept
+{
+	const double pulseTicks = static_cast<double>(TicksPerMidiClockPulse);
+	double remainder = carryTicks + advancedTicks;
+	int pulses = 0;
+	// Bounded in practice: one audio period advances a few ticks, so this cannot
+	// spin - and nothing here allocates or locks.
+	while (remainder >= pulseTicks)
+	{
+		remainder -= pulseTicks;
+		++pulses;
+	}
+	if (carryAfter != nullptr) { *carryAfter = remainder; }
+	return pulses;
+}
+
 void MidiClock::emitPulses(int frames) noexcept
 {
 	const float framesPerTick = Engine::framesPerTick();
 	if (framesPerTick <= 0.0f || frames <= 0) { return; }
 	const double advance = static_cast<double>(frames) / static_cast<double>(framesPerTick);
-	double remainder = m_tickRemainder.load() + advance;
-	const double pulseTicks = static_cast<double>(TicksPerMidiClockPulse);
-	// Bounded: `advance` is one audio period, so this cannot loop for long, and
-	// nothing here allocates or locks.
-	while (remainder >= pulseTicks)
+	double carry = 0.0;
+	const int pulses = pulsesForPeriod(m_tickRemainder.load(), advance, &carry);
+	for (int i = 0; i < pulses; ++i)
 	{
-		remainder -= pulseTicks;
 		emitMessage(MidiClockMessage::Clock, m_lastPlayPosTicks.load());
 	}
-	m_tickRemainder.store(remainder);
+	m_tickRemainder.store(carry);
 }
 
 void MidiClock::processAudioPeriod(int frames, bool transportRunning, qint64 playPosTicks,

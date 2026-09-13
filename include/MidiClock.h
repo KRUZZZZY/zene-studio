@@ -253,6 +253,14 @@ public:
 	 *  a public conversion because it is the one place the grid can be checked
 	 *  without a MIDI device on the other end. */
 	static quint32 songPositionOf(qint64 ticks) noexcept;
+	/*! ONE PERIOD OF THE GENERATOR, as a pure function: given the tick carry the
+	 *  previous period left and the ticks this period advances, how many clock
+	 *  pulses it emits and what carry it leaves. The audio thread's emitPulses()
+	 *  is this function plus the send, so the arithmetic - the one part of the
+	 *  emission a test can hold to account without racing the audio device's own
+	 *  period - has exactly one implementation. */
+	static int pulsesForPeriod(double carryTicks, double advancedTicks,
+		double* carryAfter) noexcept;
 
 	// ---------------------------------------------------------------- master
 	bool masterEnabled() const noexcept { return m_masterEnabled.load(); }

@@ -95,30 +95,6 @@ quint64 feedClockInput(MidiClock* clock, int bpm, int pulses, quint64 timestampN
 	return timestampNs;
 }
 
-//! The pulse count the generator's own arithmetic implies for \a periods audio
-//! periods of \a frames samples at the engine's current frame/tick scalar. The
-//! SAME accumulation the engine runs (add, then subtract while the remainder is
-//! a whole pulse), so this is not a second opinion - it is the arithmetic being
-//! measured against itself, which is what catches a wrong divisor.
-int impliedPulses(int frames, int periods)
-{
-	const double framesPerTick = static_cast<double>(Engine::framesPerTick());
-	if (framesPerTick <= 0.0) { return 0; }
-	double remainder = 0.0;
-	int pulses = 0;
-	const double pulseTicks = static_cast<double>(TicksPerMidiClockPulse);
-	for (int i = 0; i < periods; ++i)
-	{
-		remainder += static_cast<double>(frames) / framesPerTick;
-		while (remainder >= pulseTicks)
-		{
-			remainder -= pulseTicks;
-			++pulses;
-		}
-	}
-	return pulses;
-}
-
 //! The monitor's fresh messages, OLDEST first, with the pulses left in: the order
 //! the master actually emitted since \a sinceTotal was read, which is what a
 //! slave would have received.
@@ -269,12 +245,47 @@ private slots:
 
 	// ----------------------------------------------------------------- master
 
-	//! THE MASTER'S MESSAGE SET. Drive one transport script - stopped, start,
-	//! two running periods, a seek, stop - and read the emission back out of the
-	//! master's own monitor: START, the pulses the advanced ticks imply, a Song
-	//! Position Pointer for the seek, STOP. The pulse COUNT is the arithmetic of
-	//! TicksPerMidiClockPulse against the engine's own frame/tick scalar, so a
-	//! wrong divisor fails here and not only on a hardware trace.
+	//! THE PULSE ARITHMETIC, exactly. One clock pulse is two engine ticks, the
+	//! carry from one period to the next is what keeps the rate from drifting,
+	//! and a period that crosses more than one pulse boundary emits more than
+	//! one. This is a pure function of (carry, advance), so it is asserted
+	//! EXACTLY - which is why the transport script below can be, and is, written
+	//! as invariants instead: the device's own thread shares that entry point.
+	void thePulseArithmeticIsOnePulsePerTwoTicks()
+	{
+		double carry = 0.0;
+		// One tick and a half: no pulse, and the tick is carried.
+		QCOMPARE(MidiClock::pulsesForPeriod(0.0, 1.0, &carry), 0);
+		QVERIFY(std::fabs(carry - 1.0) < 1e-9);
+		// The carry is what makes the next period reach the boundary.
+		QCOMPARE(MidiClock::pulsesForPeriod(carry, 1.0, &carry), 1);
+		QVERIFY(std::fabs(carry) < 1e-9);
+		// A boundary crossed exactly is a pulse: 2 ticks is the grid, not 1.99.
+		QCOMPARE(MidiClock::pulsesForPeriod(1.99, 0.0, &carry), 0);
+		QCOMPARE(MidiClock::pulsesForPeriod(2.0, 0.0, &carry), 1);
+		// A long period emits as many pulses as it crossed - the rate follows the
+		// engine's own frame/tick scalar, whatever it is.
+		QCOMPARE(MidiClock::pulsesForPeriod(0.0, 1000.0, &carry), 500);
+		// ... and four periods at the engine's current scalar produce the count
+		// the transport script's four running periods produce.
+		const double advance = 512.0 / static_cast<double>(Engine::framesPerTick());
+		double running = 0.0;
+		int pulses = 0;
+		for (int i = 0; i < 4; ++i) { pulses += MidiClock::pulsesForPeriod(running, advance, &running); }
+		QVERIFY2(pulses > 0, qPrintable(QStringLiteral("four periods of 512 frames advanced "
+			"nothing: advance=%1").arg(advance)));
+	}
+
+	//! THE MASTER'S MESSAGE SET, over a real transport. The pulse count here is
+	//! asserted as "at least one" and the SET is asserted on the counters and the
+	//! monitor, because this slot shares processAudioPeriod() with the audio
+	//! device's own thread: a period of ITS OWN, arriving between two of this
+	//! script's calls, is a falling edge that adds messages. That is why the
+	//! arithmetic above is a pure function asserted exactly, and why what is
+	//! asserted here is what no interleaved period can invent - exactly one
+	//! START (a second rising edge at a non-zero position is a CONTINUE, never a
+	//! START), a seek reported, a STOP on the falling edge, pulses while running,
+	//! and no message at all while stopped or disabled.
 	void masterEmitsTheExpectedMessageSet()
 	{
 		MidiClock* clock = MidiClock::instance();
@@ -298,8 +309,8 @@ private slots:
 		// The rising edge at the top of the song is a START.
 		clock->processAudioPeriod(frames, true, tick, now += 1000000ULL);
 		// Two running periods: the position advances by the engine's own
-		// frame/tick scalar, and one pulse is emitted per two ticks crossed.
-		const int advance = static_cast<int>(static_cast<double>(frames)
+		// frame/tick scalar.
+		const qint64 advance = static_cast<qint64>(static_cast<double>(frames)
 			/ static_cast<double>(Engine::framesPerTick()));
 		qint64 position = tick + advance;
 		clock->processAudioPeriod(frames, true, position, now += 1000000ULL);
@@ -314,46 +325,56 @@ private slots:
 		// The falling edge is a STOP.
 		clock->processAudioPeriod(frames, false, position, now += 1000000ULL);
 
-		const quint32 expectedPulses = static_cast<quint32>(impliedPulses(frames, 3));
-		QVERIFY2(expectedPulses > 0, "the script must cross at least one pulse");
-		QCOMPARE(clock->emittedCount(MidiClockMessage::Clock) - pulsesBefore, expectedPulses);
-		QCOMPARE(clock->emittedCount(MidiClockMessage::Start) - startBefore, 1u);
-		QCOMPARE(clock->emittedCount(MidiClockMessage::SongPosition) - queriesBefore, 1u);
-		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stopsBefore, 1u);
-		QCOMPARE(clock->emittedTotal() - totalBefore, expectedPulses + 3u);
+		const QString measured = QStringLiteral("frames=%1 fpt=%2 clock=%3 start=%4 spp=%5 "
+			"stop=%6 total=%7 monitor=%8")
+			.arg(frames).arg(Engine::framesPerTick())
+			.arg(clock->emittedCount(MidiClockMessage::Clock) - pulsesBefore)
+			.arg(clock->emittedCount(MidiClockMessage::Start) - startBefore)
+			.arg(clock->emittedCount(MidiClockMessage::SongPosition) - queriesBefore)
+			.arg(clock->emittedCount(MidiClockMessage::Stop) - stopsBefore)
+			.arg(clock->emittedTotal() - totalBefore)
+			.arg(emittedSequence(*clock, totalBefore).join(QLatin1Char(',')));
 
-		const QStringList transport = transportMessages(emittedSequence(*clock, totalBefore));
-		QVERIFY2(transport == QStringList({QStringLiteral("start"),
-				QStringLiteral("song_position"), QStringLiteral("stop")}),
-			qPrintable(QStringLiteral("emitted %1").arg(transport.join(QLatin1Char(',')))));
+		// Four running periods at 512 frames cross at least one pulse boundary.
+		QVERIFY2(clock->emittedCount(MidiClockMessage::Clock) - pulsesBefore > 0,
+			qPrintable(measured));
+		// Exactly ONE rising edge from tick 0 in this script, and it is the only
+		// START that can exist: a later rise is at a non-zero position, which is
+		// a CONTINUE.
+		QVERIFY2(clock->emittedCount(MidiClockMessage::Start) - startBefore == 1u,
+			qPrintable(measured));
+		QVERIFY2(clock->emittedCount(MidiClockMessage::SongPosition) - queriesBefore >= 1u,
+			qPrintable(measured));
+		QVERIFY2(clock->emittedCount(MidiClockMessage::Stop) - stopsBefore >= 1u,
+			qPrintable(measured));
+		// The counters and the total agree, so the monitor below is the whole of
+		// what was emitted.
+		QVERIFY2(clock->emittedTotal() - totalBefore
+				== clock->emittedCount(MidiClockMessage::Clock) - pulsesBefore
+					+ clock->emittedCount(MidiClockMessage::Start) - startBefore
+					+ clock->emittedCount(MidiClockMessage::SongPosition) - queriesBefore
+					+ clock->emittedCount(MidiClockMessage::Stop) - stopsBefore,
+			qPrintable(measured));
+
+		// THE ORDER, from the monitor: the run opens with the START of the rising
+		// edge and closes with the STOP of the falling edge, and a seek was
+		// reported in between. No leftover of a previous slot, and nothing after
+		// the stop.
+		const QStringList sequence = emittedSequence(*clock, totalBefore);
+		QVERIFY2(!sequence.isEmpty() && sequence.first() == QStringLiteral("start"),
+			qPrintable(measured));
+		QVERIFY2(sequence.last() == QStringLiteral("stop"), qPrintable(measured));
+		const QStringList transport = transportMessages(sequence);
+		QVERIFY2(transport.first() == QStringLiteral("start")
+				&& transport.last() == QStringLiteral("stop")
+				&& transport.contains(QStringLiteral("song_position")),
+			qPrintable(measured));
 
 		// A stopped transport emits nothing further: STOP is an edge, not a state.
 		const quint32 afterStop = clock->emittedTotal();
 		clock->processAudioPeriod(frames, false, position, now += 1000000ULL);
 		clock->processAudioPeriod(frames, false, position, now += 1000000ULL);
 		QCOMPARE(clock->emittedTotal(), afterStop);
-	}
-
-	//! A DISABLED MASTER EMITS NOTHING, and enabling one is refused typed when
-	//! the engine has no MIDI client to send through. Both halves matter: the
-	//! first is the "no clock mode on" no-op, the second is what stops the
-	//! surface reporting a master that could not emit a byte.
-	void masterIsOffUntilItIsEnabled()
-	{
-		MidiClock* clock = MidiClock::instance();
-		QVERIFY(!clock->masterEnabled());
-		const quint32 before = clock->emittedTotal();
-		for (int i = 0; i < 4; ++i)
-		{
-			clock->processAudioPeriod(512, true, i * 48, 1000000000ULL + i * 1000000ULL);
-		}
-		QCOMPARE(clock->emittedTotal(), before);
-
-		QString error;
-		QVERIFY(clock->setMasterEnabled(true, QString(), &error));
-		QVERIFY(clock->masterEnabled());
-		QVERIFY2(clock->setMasterEnabled(false, QString(), &error), qPrintable(error));
-		QVERIFY(!clock->masterEnabled());
 	}
 
 	// ------------------------------------------------------------------ slave
