@@ -31,7 +31,22 @@
 #include <memory>
 #include <thread>
 
-#include <dlfcn.h>
+#ifdef _WIN32
+// The Windows half of the module loader: LoadLibraryW/GetProcAddress. Neither
+// MinGW nor MSVC ships <dlfcn.h>, so CLAP hosting could not be built for
+// Windows while the loader was dlopen/dlsym only (the v0.2.1-alpha tag run
+// failed at this include). NOMINMAX/WIN32_LEAN_AND_MEAN keep <windows.h> from
+// defining the min/max macros this file uses std::min/std::max for.
+#	ifndef WIN32_LEAN_AND_MEAN
+#		define WIN32_LEAN_AND_MEAN
+#	endif
+#	ifndef NOMINMAX
+#		define NOMINMAX
+#	endif
+#	include <windows.h>
+#else
+#	include <dlfcn.h>
+#endif
 
 #include <clap/clap.h>
 
@@ -53,6 +68,71 @@ void setError(QString* error, const QString& message)
 {
 	if (error) { *error = message; }
 }
+
+// --- module loading ---------------------------------------------------------
+// The one place the host touches the platform's dynamic loader. The Windows
+// branch is LoadLibraryW/GetProcAddress; the POSIX branch is dlopen/dlsym. The
+// module is opened through the wide path on Windows so an install directory
+// with non-ASCII characters works, while the UTF-8 path (modulePathUtf8) is
+// still what clap_entry.init() is handed, as the CLAP spec requires.
+#ifdef _WIN32
+using ModuleHandle = HMODULE;
+
+auto openModule(const QString& path) -> ModuleHandle
+{
+	return ::LoadLibraryW(reinterpret_cast<LPCWSTR>(path.utf16()));
+}
+
+auto moduleSymbol(ModuleHandle module, const char* name) -> void*
+{
+	return reinterpret_cast<void*>(::GetProcAddress(module, name));
+}
+
+void closeModule(ModuleHandle module)
+{
+	if (module) { ::FreeLibrary(module); }
+}
+
+//! The Win32 equivalent of dlerror(): the message for the last loader failure.
+auto moduleError() -> QString
+{
+	const auto code = ::GetLastError();
+	if (code == 0) { return QStringLiteral("unknown error"); }
+	LPWSTR buffer = nullptr;
+	const auto length = ::FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		reinterpret_cast<LPWSTR>(&buffer), 0, nullptr);
+	const auto message = length > 0
+		? QString::fromWCharArray(buffer, static_cast<int>(length)).trimmed()
+		: QStringLiteral("error %1").arg(code);
+	if (buffer) { ::LocalFree(buffer); }
+	return message;
+}
+#else
+using ModuleHandle = void*;
+
+auto openModule(const QString& path) -> ModuleHandle
+{
+	return dlopen(QFile::encodeName(path).constData(), RTLD_NOW | RTLD_LOCAL);
+}
+
+auto moduleSymbol(ModuleHandle module, const char* name) -> void*
+{
+	return dlsym(module, name);
+}
+
+void closeModule(ModuleHandle module)
+{
+	if (module) { dlclose(module); }
+}
+
+auto moduleError() -> QString
+{
+	const auto* message = dlerror();
+	return QString::fromLocal8Bit(message ? message : "unknown error");
+}
+#endif
 
 //! Value of a parameter mapped into 0..1; 0 for degenerate ranges.
 auto normalize(const ParamDescriptor& descriptor, double value) -> float
@@ -104,7 +184,7 @@ struct HostedPlugin::Impl
 	};
 
 	// --- module -----------------------------------------------------------
-	void* library = nullptr;
+	ModuleHandle library = nullptr;
 	const clap_plugin_entry_t* entry = nullptr;
 	bool entryInitialized = false;
 	const clap_plugin_factory_t* factory = nullptr;
@@ -473,16 +553,15 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	auto& impl = *m_impl;
 	impl.modulePathUtf8 = QFile::encodeName(modulePath);
 
-	impl.library = dlopen(impl.modulePathUtf8.constData(), RTLD_NOW | RTLD_LOCAL);
+	impl.library = openModule(modulePath);
 	if (!impl.library)
 	{
-		const auto* message = dlerror();
 		setError(error, QStringLiteral("Could not load CLAP module '%1': %2")
-			.arg(modulePath, QString::fromLocal8Bit(message ? message : "unknown error")));
+			.arg(modulePath, moduleError()));
 		return false;
 	}
 
-	const auto* entry = static_cast<const clap_plugin_entry_t*>(dlsym(impl.library, "clap_entry"));
+	const auto* entry = static_cast<const clap_plugin_entry_t*>(moduleSymbol(impl.library, "clap_entry"));
 	if (!entry)
 	{
 		setError(error, QStringLiteral("'%1' does not export clap_entry").arg(modulePath));
@@ -651,7 +730,7 @@ void HostedPlugin::unload()
 	}
 	if (impl.library)
 	{
-		dlclose(impl.library);
+		closeModule(impl.library);
 		impl.library = nullptr;
 	}
 	impl.entry = nullptr;
@@ -837,19 +916,18 @@ auto listClasses(const QString& modulePath, QString* error) -> std::vector<Class
 {
 	std::vector<ClassInfo> classes;
 	const auto pathUtf8 = QFile::encodeName(modulePath);
-	auto* library = dlopen(pathUtf8.constData(), RTLD_NOW | RTLD_LOCAL);
+	auto library = openModule(modulePath);
 	if (!library)
 	{
-		const auto* message = dlerror();
 		setError(error, QStringLiteral("Could not load CLAP module '%1': %2")
-			.arg(modulePath, QString::fromLocal8Bit(message ? message : "unknown error")));
+			.arg(modulePath, moduleError()));
 		return classes;
 	}
-	const auto* entry = static_cast<const clap_plugin_entry_t*>(dlsym(library, "clap_entry"));
+	const auto* entry = static_cast<const clap_plugin_entry_t*>(moduleSymbol(library, "clap_entry"));
 	if (!entry || entry->clap_version.major < 1 || !entry->init(pathUtf8.constData()))
 	{
 		setError(error, QStringLiteral("'%1' is not a usable CLAP module").arg(modulePath));
-		dlclose(library);
+		closeModule(library);
 		return classes;
 	}
 	const auto* factory =
@@ -868,7 +946,7 @@ auto listClasses(const QString& modulePath, QString* error) -> std::vector<Class
 		setError(error, QStringLiteral("'%1' has no %2 factory").arg(modulePath, CLAP_PLUGIN_FACTORY_ID));
 	}
 	entry->deinit();
-	dlclose(library);
+	closeModule(library);
 	return classes;
 }
 
