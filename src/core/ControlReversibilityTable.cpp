@@ -124,21 +124,6 @@ const ReversibilityRow kRows[] = {
 		"the muted flag is a BoolModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (Track mute BoolModel checkpoint)",
 		""),
-	R("track.folder_set_collapsed", RC::TrueInverse, true,
-		"the collapse flag is part of the folder's own serialized state: the "
-		"<trackfolder> child element carries `collapsed`, and "
-		"TrackFolder::loadTrackSpecificSettings RESETS it on absence, which is "
-		"what lets a checkpoint taken before the first collapse take it back off",
-		"ProjectJournal (Track checkpoint on the folder; the restore re-loads the "
-		"folder's own element)",
-		""),
-	R("track.set_pinned", RC::TrueInverse, true,
-		"the pin flag is part of the folder's own serialized state (`pinned` on "
-		"the <trackfolder> element), reset on absence by the same loader, so the "
-		"checkpoint is a real inverse and not a state that survives its own "
-		"absence",
-		"ProjectJournal (Track checkpoint on the folder)",
-		""),
 	R("track.set_solo", RC::TrueInverse, true,
 		"the action is NOT one object: the solo flag rides the solo BoolModel "
 		"and Track::toggleSolo (driven from the solo model's dataChanged) "
@@ -485,22 +470,26 @@ constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
 
 } // namespace
 
-/*! The true_inverse block, in its TWO files JOINED: this file's
- *  live-checkpoint rows first, then ControlReversibilityTableAction.cpp's
- *  action rows. The block is split across two translation units (see the
- *  header), but every caller - ReversibilityTable's constructor, and through it
- *  control.transactions and tests/…/ReversibilityContractTest - still reads ONE
- *  block with ONE row count. The join is built once, on the first call; the
- *  rows themselves are static data.
+/*! The true_inverse block, in its THREE files JOINED: this file's
+ *  live-checkpoint rows first, then the recorded-ACTION rows
+ *  (ControlReversibilityTableAction.cpp), then the folder group's
+ *  (ControlReversibilityTableTrackFolder.cpp). The block is split across three
+ *  translation units (see the header), but every caller - ReversibilityTable's
+ *  constructor, and through it control.transactions and
+ *  tests/…/ReversibilityContractTest - still reads ONE block with ONE row count.
+ *  The join is built once, on the first call; the rows are static data.
  */
 const ReversibilityRow* reversibilityRowTable(int* rowCount)
 {
 	static const std::vector<ReversibilityRow> joined = [] {
 		int actionCount = 0;
 		const ReversibilityRow* actionRows = reversibilityActionRowTable(&actionCount);
-		std::vector<ReversibilityRow> both(kRows, kRows + kRowCount);
-		both.insert(both.end(), actionRows, actionRows + actionCount);
-		return both;
+		int folderCount = 0;
+		const ReversibilityRow* folderRows = reversibilityTrackFolderRowTable(&folderCount);
+		std::vector<ReversibilityRow> all(kRows, kRows + kRowCount);
+		all.insert(all.end(), actionRows, actionRows + actionCount);
+		all.insert(all.end(), folderRows, folderRows + folderCount);
+		return all;
 	}();
 	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }
 	return joined.data();

@@ -192,6 +192,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableAction.cpp
 	core/ControlReversibilityTablePassive.cpp
 	core/ControlReversibilityTableSnapshot.cpp
+	core/ControlReversibilityTableTrackFolder.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

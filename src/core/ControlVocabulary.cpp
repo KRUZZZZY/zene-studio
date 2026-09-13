@@ -40,6 +40,7 @@
 
 #include <utility>
 
+#include "ControlRegistry.h"  // ControlErrorKind (controlErrorKindName's own declaration)
 #include "Track.h"  // trackIdOf(): the id lives on the track object
 
 namespace lmms
@@ -165,5 +166,29 @@ int idToIndex(const QString& id, const QString& prefix)
 }
 
 } // namespace control
+
+/*! The wire name of \a kind - "not_found", "invalid_args", ... - and the empty
+ *  string for None (an answer carries a `kind` only when there was an error).
+ *
+ *  Moved here from ControlRegistry.cpp (2026-09-13) for the same reason the id
+ *  formatters were: the registry's own file had reached the file-length ratchet
+ *  and this is vocabulary, not registry machinery. The declaration stays in
+ *  include/ControlRegistry.h, beside ControlErrorKind itself, so the wire
+ *  vocabulary still has one home.
+ */
+QString controlErrorKindName(ControlErrorKind kind)
+{
+	switch (kind)
+	{
+		case ControlErrorKind::None: return QString();
+		case ControlErrorKind::NotFound: return QStringLiteral("not_found");
+		case ControlErrorKind::Requires: return QStringLiteral("requires");
+		case ControlErrorKind::InvalidArgs: return QStringLiteral("invalid_args");
+		case ControlErrorKind::Busy: return QStringLiteral("busy");
+		case ControlErrorKind::Refused: return QStringLiteral("refused");
+		case ControlErrorKind::Irreversible: return QStringLiteral("irreversible");
+	}
+	return QString();
+}
 
 } // namespace lmms

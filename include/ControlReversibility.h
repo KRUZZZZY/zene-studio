@@ -101,12 +101,16 @@ struct ReversibilityRow
  *
  *    ControlReversibilityTable.cpp         true_inverse - LIVE object checkpoint
  *    ControlReversibilityTableAction.cpp   true_inverse - ACTION checkpoint
+ *    ControlReversibilityTableTrackFolder.cpp
+ *                                          the folder-track group's rows (two
+ *                                          live-checkpoint, five action), joined
+ *                                          into the block above
  *    ControlReversibilityTableSnapshot.cpp  snapshot (a bounded recorded state,
  *                                           replayed by an inverse command or
  *                                           named as the manual fallback)
  *    ControlReversibilityTablePassive.cpp   irreversible + not_mutating
  *
- *  This function returns the true_inverse block JOINED across its two files, so
+ *  This function returns the true_inverse block JOINED across its files, so
  *  a caller still reads ONE block with ONE row count. ReversibilityTable's
  *  constructor reads all of them, so the contract is still read, and tested, as
  *  one table; the files are separate because this fork's file-length ratchet
@@ -118,6 +122,10 @@ LMMS_EXPORT const ReversibilityRow* reversibilityRowTable(int* rowCount);
 //! recorded operation rather than a live object checkpoint. Joined into
 //! reversibilityRowTable(); not read by the constructor on its own.
 LMMS_EXPORT const ReversibilityRow* reversibilityActionRowTable(int* rowCount);
+//! The folder-track GROUP's rows (owner items 3+20+21): two live-checkpoint rows
+//! and five recorded-action rows. Joined into reversibilityRowTable() as well,
+//! so the block's class still comes from each row and not from its file.
+LMMS_EXPORT const ReversibilityRow* reversibilityTrackFolderRowTable(int* rowCount);
 //! The second block: the snapshot rows.
 LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.

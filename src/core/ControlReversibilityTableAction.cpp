@@ -441,57 +441,6 @@ const ReversibilityRow kActionRows[] = {
 		"action checkpoint: the recorded step writes the captured pool back, and "
 		"the descriptor re-issues groove.rename with the names swapped",
 		""),
-	R("track.set_folder", RC::TrueInverse, true,
-		"the relation lives on the CHILD's own <track> element as the `folder` "
-		"attribute, and re-loading that element sets only the pending parent id - "
-		"nothing runs the post-load resolution pass during a checkpoint restore, "
-		"so a live checkpoint alone could not re-link the track",
-		"action checkpoint: the recorded undo step re-parents the track to the "
-		"folder it was in (or to the container root when it was in none) through "
-		"the same Track::setParentFolder call the write uses. The track keeps its "
-		"row in the flat container list - membership is the ONLY state this "
-		"command changes - so no position has to be restored and the inverse is "
-		"exact",
-		""),
-	R("track.set_routing", RC::TrueInverse, true,
-		"the mode is in the folder's own <trackfolder> element, but the action is "
-		"NOT one object: switching the mode on points every child's own mixer "
-		"channel at the folder's channel, and those bindings belong to the "
-		"children, so a folder checkpoint would restore half of the action and "
-		"make one agent command cost more than one Ctrl+Z",
-		"action checkpoint: the recorded undo step switches the mode back through "
-		"the same call, which restores the mode AND every child's channel as ONE "
-		"step - the folder's `prevch` attribute holds the binding recorded before "
-		"the write. LIMIT: a channel released by the switch is deleted and "
-		"switching back creates a fresh one, so a child can come back on a "
-		"different channel INDEX (Mixer::deleteChannel renumbers) while still "
-		"being routed through the folder, exactly as track.add's re-add takes a "
-		"fresh trk-<n>",
-		""),
-	R("track.visibility_set_save", RC::TrueInverse, true,
-		"a set is a NAMED selection in the container's own store, not a live "
-		"object: there is no JournallingObject behind it, so no checkpoint can "
-		"carry one",
-		"action checkpoint: the recorded undo step writes the definition captured "
-		"before the write back through the same call - and removes the set again "
-		"when this was the save that created it",
-		""),
-	R("track.visibility_set_apply", RC::TrueInverse, true,
-		"one apply writes the visible flag of EVERY track of the song plus the "
-		"active-set name, and only the members' flags are in the set, so the "
-		"recorded state - not the set - is what an inverse must put back",
-		"action checkpoint: the recorded undo step writes every track's captured "
-		"visible flag back and restores the previous active-set name, as ONE step "
-		"(SPEC A16 deliverable 3: one agent command is one undo)",
-		""),
-	R("track.visibility_set_remove", RC::TrueInverse, true,
-		"a deleted set has no live object behind it; the container's store holds "
-		"the only copy of the definition",
-		"action checkpoint: the recorded undo step writes the captured definition "
-		"back through the same call and, when it was the active set, that fact "
-		"too. The tracks' own visible flags are deliberately untouched in either "
-		"direction - a set is a saved selection over them",
-		""),
 };
 
 constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kActionRows[0]));

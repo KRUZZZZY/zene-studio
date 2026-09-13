@@ -39,6 +39,8 @@
 
 #include "AutomatableModel.h"
 #include "ControlEdit.h"
+#include "ControlCommandsTrackFolderShared.h"  // the group's shared helpers
+#include "ControlRegistry.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -51,86 +53,11 @@ namespace lmms
 {
 
 using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
+using namespace trackfoldercontrol;  // this group's helpers
 
 namespace
 {
 
-//! Resolve a `track` argument that must name a FOLDER. A well-formed id naming a
-//! track of another type is a typed Refused - the same shape track.set_arm uses -
-//! and never a silent no-op.
-TrackFolder* resolveFolder(const QJsonObject& args, ControlResult* error)
-{
-	Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), error);
-	if (track == nullptr) { return nullptr; }
-	if (track->type() != Track::Type::Folder)
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("trk-%1 is a %2 track, not a folder: only a folder holds tracks or "
-				"carries a mode, a pin or a collapse state")
-				.arg(track->id()).arg(control::trackTypeNameOf(track->type())));
-		return nullptr;
-	}
-	return static_cast<TrackFolder*>(track);
-}
-
-//! Index of \a track in the SONG container, or -1 when it is not in it (the
-//! index the flat `tracks` array of every get_state uses).
-int trackIndexInSong(Track* track)
-{
-	const TrackContainer::TrackList& list = Engine::getSong()->tracks();
-	for (int i = 0; i < static_cast<int>(list.size()); ++i)
-	{
-		if (list[i] == track) { return i; }
-	}
-	return -1;
-}
-
-//! Every child's own mixer channel, as the before-state of a mode switch.
-QJsonArray childChannels(TrackFolder* folder)
-{
-	QJsonArray channels;
-	for (Track* child : folder->children())
-	{
-		IntModel* model = child->mixerChannelModel();
-		QJsonObject entry;
-		entry.insert(QStringLiteral("track"), control::trackIdOf(child));
-		entry.insert(QStringLiteral("mixer_channel"), model != nullptr ? model->value() : -1);
-		channels.append(entry);
-	}
-	return channels;
-}
-
-//! One folder and its children, as every read of the group reports them.
-QJsonObject folderState(TrackFolder* folder)
-{
-	QJsonArray children;
-	for (Track* child : folder->children())
-	{
-		QJsonObject entry;
-		entry.insert(QStringLiteral("track"), control::trackIdOf(child));
-		entry.insert(QStringLiteral("name"), child->name());
-		entry.insert(QStringLiteral("type"), control::trackTypeNameOf(child->type()));
-		IntModel* model = child->mixerChannelModel();
-		// -1 for a child with no mixer channel of its own (an automation track):
-		// routing mode leaves such a child where it is, and the read says so
-		// rather than inventing a channel it does not have.
-		entry.insert(QStringLiteral("mixer_channel"), model != nullptr ? model->value() : -1);
-		children.append(entry);
-	}
-
-	QJsonObject state;
-	state.insert(QStringLiteral("track"), control::trackIdOf(folder));
-	state.insert(QStringLiteral("name"), folder->name());
-	state.insert(QStringLiteral("mode"), folder->isRouting()
-		? QStringLiteral("routing") : QStringLiteral("group"));
-	state.insert(QStringLiteral("routing"), folder->isRouting());
-	state.insert(QStringLiteral("collapsed"), folder->isCollapsed());
-	state.insert(QStringLiteral("pinned"), folder->isPinned());
-	state.insert(QStringLiteral("mixer_channel"), static_cast<int>(folder->mixerChannel()));
-	state.insert(QStringLiteral("child_count"), folder->childCount());
-	state.insert(QStringLiteral("children"), children);
-	return state;
-}
 
 //! Resolve the `folder` argument of track.set_folder into a destination:
 //! nullptr means the container root, and a target that is not a folder (or would
