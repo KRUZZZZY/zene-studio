@@ -642,6 +642,18 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
+      - name: NSIS compiler output (a packaging failure names its cause here)
+        # CPack sends makensis' own stderr to NSISOutput.log and prints only that
+        # file's path, so a packaging failure states no cause in this log: the
+        # 0.2.1 matrix lost a cycle to an unquoted `InstallDir` whose one line
+        # ("expects 1 parameters, got 2") existed nowhere else. Always print it.
+        if: failure()
+        run: |
+          for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
+          done
       - name: Upload artifacts
         # Only a tag (the release path) or a deliberate dispatch publishes a package:
         # per-push uploads of ~700 MB exhausted the artifact storage quota.
@@ -833,6 +845,18 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
+      - name: NSIS compiler output (a packaging failure names its cause here)
+        # CPack sends makensis' own stderr to NSISOutput.log and prints only that
+        # file's path, so a packaging failure states no cause in this log: the
+        # 0.2.1 matrix lost a cycle to an unquoted `InstallDir` whose one line
+        # ("expects 1 parameters, got 2") existed nowhere else. Always print it.
+        if: failure()
+        run: |
+          for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
+          done
       - name: Upload artifacts
         # Only a tag (the release path) or a deliberate dispatch publishes a package:
         # per-push uploads of ~700 MB exhausted the artifact storage quota.
@@ -959,6 +983,18 @@ jobs:
         run: bash tests/release-version-gate.sh
       - name: Package
         run: cmake --build build --target package
+      - name: NSIS compiler output (a packaging failure names its cause here)
+        # CPack sends makensis' own stderr to NSISOutput.log and prints only that
+        # file's path, so a packaging failure states no cause in this log: the
+        # 0.2.1 matrix lost a cycle to an unquoted `InstallDir` whose one line
+        # ("expects 1 parameters, got 2") existed nowhere else. Always print it.
+        if: failure()
+        run: |
+          for f in build/_CPack_Packages/*/NSIS/NSISOutput.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
+          done
       - name: Upload artifacts
         # Only a tag (the release path) or a deliberate dispatch publishes a package:
         # per-push uploads of ~700 MB exhausted the artifact storage quota.
