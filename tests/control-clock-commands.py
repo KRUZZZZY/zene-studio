@@ -53,9 +53,7 @@ The checks, in order:
                                     the tempo a follower wrote is not part of it.
 
 Started through the shared harness (tests/control_socket_harness.py), so this
-file adds no second launch path.
-
-Usage: QT_QPA_PLATFORM=offscreen python3 control-clock-commands.py <zene>
+file adds no second launch path. Usage: QT_QPA_PLATFORM=offscreen python3 control-clock-commands.py <zene>
 Exit code 0 only when every assertion held.
 """
 
@@ -465,7 +463,9 @@ def run_checks(session, instance, recorder):
     check_master_off_emits_nothing(session, recorder)
     check_refusals(session, recorder)
     check_transactions(session, recorder)
-    check_undo(session, recorder)
+    # Both inverses, in the order that makes each of them the top of the stack.
+    check_undo_reverses_the_master(session, recorder)
+    check_undo_restores_the_slave_configuration(session, recorder)
 
 
 def main(argv):
