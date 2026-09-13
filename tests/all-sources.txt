@@ -939,9 +939,9 @@ src/core/ControlRackSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
+src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
-src/core/ControlReversibilityTableTrueInverse.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
@@ -1339,6 +1339,8 @@ tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/TakeLaneCompTest.cpp
+tests/src/core/TakeLaneTest.cpp
+tests/src/core/TakeLaneTestSupport.h
 tests/src/core/TelemetryTest.cpp
 tests/src/core/TempoMapPersistenceTest.cpp
 tests/src/core/TempoMapTest.cpp

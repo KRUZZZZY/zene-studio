@@ -206,8 +206,10 @@ that is this page's fault — report it and it gets added.
   `comp.lane_list`) with a lane tag on each take clip (`clip`'s `lane` attribute), the assignment of an audio take to
   a lane (`comp.assign`), and the non-destructive composite — per-segment selection, rebuild and a state query
   (`comp.select`, `comp.rebuild`, `comp.get_state`) — over `include/TakeLane.h` / `src/core/TakeLane.cpp`, with A16
-  rows in `src/core/ControlReversibilityTable{TrueInverse,Passive}.cpp` and the proof in
-  `tests/src/core/TakeLaneCompTest.cpp`; the decisions are recorded in **`docs/COMPING.md`**.
+  rows in `src/core/ControlReversibilityTable.cpp` and `...Passive.cpp` and the proof split across the two
+  comping test files, `tests/src/core/TakeLaneTest.cpp` (the lanes, the take audio and the project file) and
+  `tests/src/core/TakeLaneCompTest.cpp` (the composite and the `comp.*` surface); the decisions are recorded
+  in **`docs/COMPING.md`**.
   *What this bullet still means, and what is still absent: **nothing renders a composite** — no playback path reads
   it, so a comp sounds exactly like the track's clips as they lie and the per-segment `srcpos` slip is recorded but
   not applied; there is **no lane geometry, no lane handle, no comping gesture and no waveform drawing** anywhere in

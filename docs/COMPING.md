@@ -59,7 +59,7 @@ Three decisions say exactly what that means:
 **The non-destructive property, stated as the thing the test measures:** after every `comp.*`
 command, after a save and after a load, the takes' **files** and the takes' **in-memory buffers**
 are byte-identical (sha256), while what a tick resolves to changes when the selection changes.
-`tests/src/core/TakeLaneCompTest.cpp` asserts exactly that pair; a comp that copied or rewrote a
+`tests/src/core/TakeLaneTest.cpp` asserts exactly that pair; a comp that copied or rewrote a
 take would pass every field-level assertion in that file and fail those two.
 
 ## 3. The project-file shape (and the one trap in it)
@@ -138,12 +138,18 @@ not have (`not_found`, naming the lanes it does have), a MIDI clip (`refused`), 
   by the *track's* default clip type rather than by the element's node name — a new clip node name
   would need that dispatch changed and a `createView()` for a type the GUI never draws. The design's
   own acceptance test ("4 takes → comp of 2 regions → reload → identical composite; the source
-  takes' file hashes unchanged") is exactly what `tests/src/core/TakeLaneCompTest.cpp` proves,
+  takes' file hashes unchanged") is exactly what the two comping test files prove
+  (`tests/src/core/TakeLaneTest.cpp` for the take hashes and the element round trip,
+  `tests/src/core/TakeLaneCompTest.cpp` for the composite itself),
   which is the reason the divergence is acceptable rather than a shortcut.
 
 ## 6. The proof
 
-`tests/src/core/TakeLaneCompTest.cpp` (registered ctest `TakeLaneCompTest`, offscreen Qt):
+`tests/src/core/TakeLaneTest.cpp` (registered ctest `TakeLaneTest`; the take-lane half - the lane
+list, the takes' audio and the project-file shape - proves claims 1, 6, 7 and 8) and
+`tests/src/core/TakeLaneCompTest.cpp` (registered ctest `TakeLaneCompTest`; the composite half -
+the selection model, the `comp.*` surface and its A16 rows - proves claims 2, 3, 4, 5, 9 and 10),
+both offscreen Qt and both built on the shared fixtures in `tests/src/core/TakeLaneTestSupport.h`:
 
 1. lane indices are stable and the lowest free index is reused;
 2. an invalid selection is refused and writes nothing;

@@ -95,17 +95,29 @@ struct ReversibilityRow
 };
 
 /*! The rows of THE classification table. It is THREE literal blocks, split by
- *  WHAT THE INVERSE IS: ControlReversibilityTable.cpp holds the true_inverse
- *  rows (a live checkpoint on the engine's own undo stack),
- *  ControlReversibilityTableSnapshot.cpp the snapshot rows (a bounded recorded
- *  state, replayed by an inverse command or named as the manual fallback) and
- *  ControlReversibilityTablePassive.cpp the rows that have no inverse
- *  (irreversible and not_mutating). ReversibilityTable's constructor reads all
- *  three, so the contract is still read, and tested, as one table; the files
- *  are separate because this fork's file-length ratchet measures a file as a
- *  unit, and the true_inverse block alone had grown past the 500-line limit.
+ *  WHAT THE INVERSE IS, and the first block is itself in two files along the
+ *  same seam (within true_inverse the inverse is either the engine's own live
+ *  object checkpoint or a recorded ACTION checkpoint):
+ *
+ *    ControlReversibilityTable.cpp         true_inverse - LIVE object checkpoint
+ *    ControlReversibilityTableAction.cpp   true_inverse - ACTION checkpoint
+ *    ControlReversibilityTableSnapshot.cpp  snapshot (a bounded recorded state,
+ *                                           replayed by an inverse command or
+ *                                           named as the manual fallback)
+ *    ControlReversibilityTablePassive.cpp   irreversible + not_mutating
+ *
+ *  This function returns the true_inverse block JOINED across its two files, so
+ *  a caller still reads ONE block with ONE row count. ReversibilityTable's
+ *  constructor reads all of them, so the contract is still read, and tested, as
+ *  one table; the files are separate because this fork's file-length ratchet
+ *  measures a file as a unit, and the true_inverse block alone had grown past
+ *  the 500-line limit twice.
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityRowTable(int* rowCount);
+//! The ACTION half of the first block: the true_inverse rows whose inverse is a
+//! recorded operation rather than a live object checkpoint. Joined into
+//! reversibilityRowTable(); not read by the constructor on its own.
+LMMS_EXPORT const ReversibilityRow* reversibilityActionRowTable(int* rowCount);
 //! The second block: the snapshot rows.
 LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.

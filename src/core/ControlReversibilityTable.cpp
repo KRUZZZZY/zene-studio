@@ -1,22 +1,33 @@
 /*
- * ControlReversibilityTable.cpp - THE SPEC A16 classification table: one row
- *                                  for every command the control surface
- *                                  registers, and the reason for its class.
+ * ControlReversibilityTable.cpp - THE SPEC A16 classification table's LIVE rows:
+ *                                  one row per command whose inverse is the
+ *                                  engine's own live checkpoint, and the reason
+ *                                  for its class.
  *
  * This file is data. It is deliberately separate from
  * ControlReversibility.cpp (the machinery) so that the whole contract can be
  * read and reviewed as a table in one place, and so the anti-drift test has
  * exactly one thing to compare against the registry.
  *
- * It holds the FIRST of the table's three literal blocks - the true_inverse
- * rows, whose inverse is a LIVE checkpoint on the engine's own undo stack.
- * ControlReversibilityTableSnapshot.cpp holds the second (snapshot: a bounded
- * recorded state, replayed by an inverse command or named as the manual
- * fallback) and ControlReversibilityTablePassive.cpp the third (irreversible
- * and not_mutating: no inverse, or nothing written). ReversibilityTable's
- * constructor reads all three: the file split exists because this fork's
- * file-length ratchet measures a file as a unit, not because the contract is
- * three contracts.
+ * It holds the true_inverse rows whose inverse is a LIVE checkpoint - a plain
+ * object checkpoint, a COMPOSITE one (several objects restored as ONE step), or
+ * a parameter/model checkpoint - and the not_mutating read-only inspector rows
+ * that have lived in this file since before the split (24 of those 25 rows are
+ * also stated in ControlReversibilityTablePassive.cpp; they are carried here
+ * rather than dropped so that reversibilityRowTable()'s row count, and the
+ * table's, do not move). The true_inverse rows whose inverse is a RECORDED
+ * ACTION - a created or deleted object, a scalar outside the project, a
+ * captured XML block the transaction replays - are in
+ * ControlReversibilityTableAction.cpp, the snapshot rows in
+ * ControlReversibilityTableSnapshot.cpp and the irreversible / not_mutating
+ * rows in ControlReversibilityTablePassive.cpp.
+ *
+ * ReversibilityTable's constructor reads all four files through
+ * reversibilityRowTable(), which JOINS this file's rows with the action block's
+ * (see the function at the end): the true_inverse block is still ONE table with
+ * ONE row count, and the anti-drift test still compares the registry against
+ * every row. The files are separate because this fork's file-length ratchet
+ * measures a file as a unit, not because the contract is four contracts.
  *
  * The blocks are split by WHAT THE INVERSE IS, not by command group, so each
  * file answers one question: "what does the engine actually put back?"
@@ -52,6 +63,8 @@
  */
 
 #include "ControlReversibility.h"
+
+#include <vector>
 
 // lmmsconfig.h carries the ZENE_TELEMETRY_ENABLED packager-kill-switch define.
 // ControlReversibility.h does not pull it in, and this file's rows are guarded
@@ -91,20 +104,17 @@ const ReversibilityRow kRows[] = {
 
 	// =====================================================================
 	// true_inverse - a live checkpoint on the engine's own ProjectJournal
-	// restores it. Either a plain object checkpoint, a COMPOSITE checkpoint
-	// (several objects, one undo step) or an ACTION checkpoint (a recorded
-	// operation, for a created or deleted object that has no live state to
-	// restore). undo() pops all of these through one ProjectJournal.
+	// restores it: a plain object checkpoint, a COMPOSITE checkpoint
+	// (several objects, one undo step) or a parameter/model checkpoint.
+	// undo() pops all of these through one ProjectJournal. The true_inverse
+	// rows whose inverse is a RECORDED ACTION are in
+	// ControlReversibilityTableAction.cpp; reversibilityRowTable() joins the
+	// two halves, so this is still ONE block with ONE row count.
 	// =====================================================================
+
 	R("transport.set_tempo", RC::TrueInverse, true,
 		"one scalar on the Song, which is a JournallingObject",
 		"ProjectJournal (Song checkpoint): Song::saveState carries the tempo",
-		""),
-	R("transport.seek", RC::TrueInverse, true,
-		"the play head is engine state, not project state, and is not a "
-		"JournallingObject - so no object checkpoint exists for it",
-		"action checkpoint: the recorded undo step calls Song::setPlayPos with "
-		"the tick the transaction's before-state holds",
 		""),
 	R("track.rename", RC::TrueInverse, true,
 		"the name is part of the Track's own serialized state",
@@ -124,28 +134,6 @@ const ReversibilityRow kRows[] = {
 		"as ONE checkpoint (ProjectJournal::addJournalCheckPoint(QVector)), so "
 		"one control.undo and one Ctrl+Z restore the solo flag and every mute "
 		"together. This is SPEC A16 deliverable 3",
-		""),
-	R("track.add", RC::TrueInverse, true,
-		"a created Track has no before-state to restore, so the inverse is the "
-		"operation, not a snapshot. DISAGREEMENT with A16-STATUS-MEASURED.md, "
-		"which records this as reversible:false (no checkpoint exists)",
-		"action checkpoint: the recorded undo step removes the created track "
-		"through the product's own TrackContainerView::deleteTrackView path "
-		"(the path whose checkpoint upstream left commented out); a fresh "
-		"instrument track carries only defaults, so removing it restores the "
-		"container exactly. The project-scoped next-id counter is monotonic and "
-		"is NOT rewound: a re-add gets a fresh trk-<n>, which is the documented "
-		"limit of this inverse",
-		""),
-	R("track.remove", RC::TrueInverse, true,
-		"a deleted JournallingObject's journal id resolves to nullptr, so a "
-		"checkpoint cannot bring it back. DISAGREEMENT with "
-		"A16-STATUS-MEASURED.md, which records this as reversible:false",
-		"action checkpoint: the track's own XML (Track::saveState into a "
-		"JournalData DataFile) is captured before the delete and the recorded "
-		"undo step recreates it with Track::create(element, song) - the same "
-		"call TrackContainer::loadSettings makes. The capture is bounded like "
-		"the device-state snapshot (64 KiB)",
 		""),
 	R("clip.add", RC::TrueInverse, true,
 		"the clip is created inside a Track, and a Track checkpoint carries "
@@ -217,18 +205,6 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (MixerChannel volume model checkpoint)",
 		"",
 		"channel"),
-	R("mixer.add_channel", RC::TrueInverse, true,
-		"a created MixerChannel has no before-state; the mixer is a "
-		"JournallingObject but restoring its checkpoint would destroy and "
-		"recreate every channel, and a MixerView holds those pointers - the "
-		"same GUI-safety reason the TrackContainer checkpoints are commented "
-		"out upstream. DISAGREEMENT with A16-STATUS-MEASURED.md, which records "
-		"this as reversible:false",
-		"action checkpoint: the recorded undo step deletes the channel it "
-		"created (Mixer::deleteChannel), through the same code path "
-		"mixer.remove_channel uses; a fresh channel carries only defaults, so "
-		"removing it restores the mixer exactly",
-		""),
 	R("automation.add_point", RC::TrueInverse, true,
 		"the point lives on an AutomationClip, which is a JournallingObject - "
 		"EXCEPT on the call that has to create the AutomationClip first",
@@ -278,53 +254,6 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (parameter model checkpoint)",
 		"",
 		"target,plugin,name,index"),
-	R("plugin.state_load", RC::TrueInverse, true,
-		"the load replaces the device's settings, and the device's PREVIOUS "
-		"settings are captured in the transaction's before-state",
-		"action checkpoint: the recorded undo step restores the captured "
-		"state XML through the same controlRestoreDeviceState path "
-		"plugin.state_load itself uses",
-		""),
-	R("plugin.preset_load", RC::TrueInverse, true,
-		"same as plugin.state_load: the preset replaces the device's "
-		"parameters and the previous settings are captured first",
-		"action checkpoint: the recorded undo step restores the captured "
-		"state XML",
-		""),
-	R("settings.set", RC::TrueInverse, true,
-		"ConfigManager is not a JournallingObject, so there is no object "
-		"checkpoint - but the previous value is a bounded scalar",
-		"action checkpoint: the recorded undo step writes the previous value "
-		"back and saves the config file, exactly as the command does",
-		""),
-	R("export.set_dither", RC::TrueInverse, true,
-		"ExportRenderSettings is not a JournallingObject, so there is no object "
-		"checkpoint - but the choice is a bounded scalar (on/off) and the "
-		"previous value is captured before the write",
-		"action checkpoint: the recorded undo step restores the previous dither "
-		"choice through ExportRenderSettings::setDither, exactly as the command "
-		"sets the new one. The step goes on the engine's own stack, so a user's "
-		"Ctrl+Z and control.undo are one history",
-		""),
-	R("export.set_src_quality", RC::TrueInverse, true,
-		"same shape as export.set_dither: a bounded enum owned by "
-		"ExportRenderSettings rather than by a project object, with the previous "
-		"converter selection captured before the write",
-		"action checkpoint: the recorded undo step restores the previous "
-		"SrcQuality through ExportRenderSettings::setSrcQuality, exactly as the "
-		"command sets the new one",
-		""),
-	R("audio.device_set", RC::TrueInverse, true,
-		"the preference is a scalar in the config file, not in the project",
-		"action checkpoint: the recorded undo step writes the previous device "
-		"name back and saves the config file",
-		""),
-	R("project.restore_revision", RC::TrueInverse, true,
-		"a revision restore is a file write; before it runs, the file it "
-		"replaces is rotated into the same bounded revision set",
-		"action checkpoint: the recorded undo step restores the revision the "
-		"restore replaced",
-		""),
 
 	// ---------- read-only inspectors ----------
 	R("app.version", RC::NotMutating, false, "reads the build identity", "no write", ""),
@@ -356,92 +285,6 @@ const ReversibilityRow kRows[] = {
 	R("transport.tempo_map_get", RC::NotMutating, false,
 		"reads the tempo map and what its queries answer at the play head", "no write", ""),
 	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
-#ifdef LMMS_HAVE_SESSION_VIEW
-	// The session.* group: SessionModel is not a JournallingObject, so each edit
-	// captures the whole <session> block and records ONE action checkpoint that
-	// restores it (the true_inverse form clip.split and track.add use).
-	R("session.set_grid", RC::TrueInverse, true,
-		"grid dimensions live in the <session> block, which is not a JournallingObject", "action checkpoint: the captured <session> XML is restored whole through SessionModel::restoreState, so dimensions, slots and scenes come back together", ""),
-	R("session.set_quantisation", RC::TrueInverse, true,
-		"one field of the <session> block (launchquantisation)", "action checkpoint: the captured <session> block is restored whole", ""),
-	R("session.set_scene", RC::TrueInverse, true,
-		"a scene's name and its tempo / time-signature overrides live in the <session> block", "action checkpoint: the block is restored whole, so an override that was OFF before is OFF again rather than merely zeroed", ""),
-	R("session.set_slot", RC::TrueInverse, true,
-		"a clip slot's reference and launch settings are cells of the <session> block and have no journalled object behind them", "action checkpoint: the block is restored whole, so the slot's previous reference kind, launch mode and playback settings return together", ""),
-	R("session.clear_slot", RC::TrueInverse, true,
-		"clearing a cell destroys a reference id or an audio source path that no live object holds a copy of", "action checkpoint: the captured <session> block is the only place the cleared reference still exists, and it is restored", ""),
-	R("session.clear", RC::TrueInverse, true,
-		"it empties every cell, every scene override and the global quantisation at once, on a model the engine does not journal", "action checkpoint: ONE control.undo restores the whole session, so clearing a grid is one undoable step rather than one per cell", ""),
-#endif // LMMS_HAVE_SESSION_VIEW
-
-	// ---- racks (#599): the chains, the selector, the macros and the zones ----
-	R("rack.add_chain", RC::TrueInverse, true,
-		"a created chain has no before-state to restore; the rack is a member "
-		"of the MixerChannel, not a JournallingObject, so no object checkpoint "
-		"exists for it",
-		"action checkpoint: the recorded undo step removes the chain the "
-		"command created, through the same Rack::removeChain rack.remove_chain "
-		"uses, so the rack is exactly as it was - a fresh chain carries no "
-		"effects",
-		""),
-	R("rack.set_selected", RC::TrueInverse, true,
-		"the selection is a scalar the rack owns and the rack does not journal, "
-		"so the inverse is the operation rather than an object checkpoint",
-		"action checkpoint: the recorded undo step calls Rack::setSelectedChain "
-		"with the previous selection the transaction's before-state holds",
-		""),
-	R("rack.macro_add", RC::TrueInverse, true,
-		"a created macro has no before-state; the macro list lives on the rack, "
-		"which is not a JournallingObject",
-		"action checkpoint: the recorded undo step removes the macro the "
-		"command created (RackMacros::removeMacro). A new macro carries only "
-		"its name and its value, so removing it restores the list exactly",
-		""),
-	R("rack.macro_remove", RC::TrueInverse, true,
-		"a removed macro has no live object behind it, and the rack journals "
-		"nothing",
-		"action checkpoint: the recorded undo step re-inserts the captured "
-		"macro - name, value and the whole target list - at its own index "
-		"(RackMacros::insertMacro), so the list and the macro-<n> ids come back "
-		"exactly",
-		""),
-	R("rack.macro_target_add", RC::TrueInverse, true,
-		"a target is the macro's own data: no model is created or destroyed by "
-		"binding one",
-		"action checkpoint: the recorded undo step removes the target the "
-		"command appended, at the same index",
-		""),
-	R("rack.macro_target_remove", RC::TrueInverse, true,
-		"same list; a removed target has no live object behind it",
-		"action checkpoint: the recorded undo step re-inserts the captured "
-		"target at its own index, so the bind order - which is the order the "
-		"targets are applied in - comes back exactly",
-		""),
-	RC("rack.macro_set", RC::TrueInverse, true,
-		"the call writes MORE THAN ONE object: the macro's own scalar, which "
-		"lives on the rack and is not journalled, plus every parameter model it "
-		"drives. A model checkpoint alone would leave the macro's value behind, "
-		"and the macro alone is not a JournallingObject",
-		"action checkpoint: ONE recorded undo step puts the macro's value back "
-		"and writes every parameter the call changed back to the value it had. "
-		"Each target is re-resolved by chain/effect/parameter name when the "
-		"step runs - never a raw device pointer - and a target whose device is "
-		"gone is skipped rather than dereferenced",
-		"",
-		"channel,macro"),
-	R("rack.zone_add", RC::TrueInverse, true,
-		"a created zone has no before-state; the zone list is the rack's own "
-		"data",
-		"action checkpoint: the recorded undo step drops the zone the command "
-		"appended, the same shape rack.add_chain uses, so a later edit to "
-		"another zone cannot make the undo eat a zone nobody asked about",
-		""),
-	R("rack.zone_remove", RC::TrueInverse, true,
-		"a removed zone has no live object behind it",
-		"action checkpoint: the recorded undo step re-inserts the captured zone "
-		"at its own index, so the list - and the order the first-match rule "
-		"reads - comes back exactly",
-		""),
 
 
 	// Rows restored from ControlReversibilityTableTrueInverse.cpp, which this
@@ -498,10 +341,25 @@ constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
 
 } // namespace
 
+/*! The true_inverse block, in its TWO files JOINED: this file's
+ *  live-checkpoint rows first, then ControlReversibilityTableAction.cpp's
+ *  action rows. The block is split across two translation units (see the
+ *  header), but every caller - ReversibilityTable's constructor, and through it
+ *  control.transactions and tests/…/ReversibilityContractTest - still reads ONE
+ *  block with ONE row count. The join is built once, on the first call; the
+ *  rows themselves are static data.
+ */
 const ReversibilityRow* reversibilityRowTable(int* rowCount)
 {
-	if (rowCount != nullptr) { *rowCount = kRowCount; }
-	return kRows;
+	static const std::vector<ReversibilityRow> joined = [] {
+		int actionCount = 0;
+		const ReversibilityRow* actionRows = reversibilityActionRowTable(&actionCount);
+		std::vector<ReversibilityRow> both(kRows, kRows + kRowCount);
+		both.insert(both.end(), actionRows, actionRows + actionCount);
+		return both;
+	}();
+	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }
+	return joined.data();
 }
 
 } // namespace control
