@@ -202,7 +202,7 @@ inline QString onGridClip()
 	{
 		return QString();
 	}
-	const ControlResult quantised = run(QStringLiteral("groove.quantize"),
+	const lmms::ControlResult quantised = run(QStringLiteral("groove.quantize"),
 		{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
 			{QStringLiteral("strength"), 1.0}});
 	return quantised.ok ? clip : QString();
