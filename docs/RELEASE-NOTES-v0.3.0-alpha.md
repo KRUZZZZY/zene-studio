@@ -228,6 +228,14 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## Not in this draft yet
 
-The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
-0.3.0 scope, plus the release-bar statements, are the responsibility of their own lanes and wave W12. This
-file grows as those land; it is not a summary of 0.3.0 and must not be read as one.
+Written per lane as it lands, so the list below is state as of **2026-09-13** and W12 owns turning this file
+into the user-first notes. **In and described above:** warp marker editing, export dither and SRC quality, rack
+macros and key/velocity zones, clip fades/crossfades/gain, browser tag/metadata search with its peak cache, and
+bounded coalescing undo — plus the Session View and the process items, whose sections W12 adds.
+
+**Still absent from 0.3.0's scope:** comping (take lanes and non-destructive composite), the `#602` modulation
+layer, Ableton Link sync, sample-accurate automation, freeze/bounce-in-place, groove pool and quantise, punch
+in/out, tempo automation and time signatures, recording crash recovery, the two verification programmes
+(real-time-safety and golden-audio), `#614` (doc-only; wasmtime is absent here) and `ARCH-2`. Their lanes are
+dispatched or open; each gets a section here and a line in `docs/KNOWN-LIMITATIONS.md` when it lands. This file
+grows as those land; it is not a summary of 0.3.0 and must not be read as one.
