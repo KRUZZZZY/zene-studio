@@ -1,7 +1,7 @@
 /*
  * gain_clip.c - reference LMMS WASM DSP module (G4)
  *
- * Copyright (c) 2026 Zene Studio contributors
+ * Copyright (c) 2026 LMMS WASM DSP sandbox contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

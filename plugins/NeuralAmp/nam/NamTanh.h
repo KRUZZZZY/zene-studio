@@ -13,7 +13,7 @@
  * an already-initialised function pointer. If libmvec is unavailable the
  * scalar fallback is used, byte-for-byte the pre-optimisation behaviour.
  *
- * Copyright (c) 2026 Zene Studio contributors
+ * Copyright (c) 2026 AI-KOS Team
  *
  * This file is part of LMMS - https://lmms.io
  *

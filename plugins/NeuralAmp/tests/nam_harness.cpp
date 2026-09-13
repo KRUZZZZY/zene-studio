@@ -17,7 +17,7 @@
  *       plugins/NeuralAmp/nam/NamModel.cpp \
  *       plugins/NeuralAmp/nam/NamModelLoader.cpp -o build/nam_harness
  *
- * Copyright (c) 2026 Zene Studio contributors. GPL-2.0-or-later (see plugin sources).
+ * Copyright (c) 2026 AI-KOS Team. GPL-2.0-or-later (see plugin sources).
  */
 
 #include "nam/NamModel.h"

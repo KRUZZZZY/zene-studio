@@ -13,7 +13,7 @@
  *   then per-array head_rechannel (+ bias), and finally head_scale as the
  *   last element of the weights array.
  *
- * Copyright (c) 2026 Zene Studio contributors
+ * Copyright (c) 2026 AI-KOS Team
  *
  * This file is part of LMMS - https://lmms.io
  *

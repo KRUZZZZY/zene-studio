@@ -13,7 +13,7 @@
  * head_rechannel and the model-wide head_scale. All state is causal, so the
  * model introduces zero latency.
  *
- * Copyright (c) 2026 Zene Studio contributors
+ * Copyright (c) 2026 AI-KOS Team
  *
  * This file is part of LMMS - https://lmms.io
  *
