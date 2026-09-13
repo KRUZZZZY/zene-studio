@@ -227,6 +227,20 @@ def check_capture(session, source, recorder):
                    PRESET in store_names(session), "store=%s" % (store_names(session),))
 
 
+def chain_order(session, target):
+    """The plugin name of every device of a live target, in the chain's own order."""
+    return tuple(entry[0] for entry in signature(session, target))
+
+
+def apply_record(session):
+    """The A16 record of the most recent chain.apply, or {} when there is none."""
+    records = session.result("control.transactions").get("transactions") or []
+    for record in reversed(records):
+        if record.get("command") == "chain.apply":
+            return record
+    return {}
+
+
 def check_apply(session, source, target, recorder):
     """THE REAL EFFECT: the second track ends up with the same chain, measured."""
     before = signature(session, source)
@@ -239,8 +253,7 @@ def check_apply(session, source, target, recorder):
     applied = session.result("chain.apply", {"name": PRESET, "target": target})
     after = signature(session, target)
     recorder.check("chain.apply gives the target the SAME devices in the SAME order",
-                   tuple(entry[0] for entry in after) == tuple(entry[0] for entry in before)
-                   and len(after) == DEVICES,
+                   chain_order(session, target) == chain_order(session, source),
                    "source=%s target=%s" % (before, after))
     recorder.check("chain.apply gives the target the SAME parameter values",
                    after == before, "source=%s target=%s" % (before, after))
@@ -249,14 +262,11 @@ def check_apply(session, source, target, recorder):
                    and len(applied.get("devices") or []) == DEVICES,
                    "applied=%r" % (applied,))
 
-    records = [record for record in
-               session.result("control.transactions").get("transactions") or []
-               if record.get("command") == "chain.apply"]
+    record = apply_record(session)
     recorder.check("the A16 record classes chain.apply true_inverse on the chain's own XML",
-                   bool(records) and records[-1].get("class") == "true_inverse"
-                   and records[-1].get("reversible") is True
-                   and "<fxchain>" in str(records[-1].get("mechanism")),
-                   "records=%s" % (records[-1:] or [],))
+                   record.get("class") == "true_inverse" and record.get("reversible") is True
+                   and "<fxchain>" in str(record.get("mechanism")),
+                   "record=%r" % (record,))
 
     session.result("control.undo")
     recorder.check("control.undo takes the applied chain back off the target",

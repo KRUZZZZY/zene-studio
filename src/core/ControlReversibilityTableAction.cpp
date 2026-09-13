@@ -442,18 +442,13 @@ const ReversibilityRow kActionRows[] = {
 		"the descriptor re-issues groove.rename with the names swapped",
 		""),
 
-	// =====================================================================
-	// The chain-preset store (the 0.3.0 ladder's "plugin-chain presets",
-	// OWNER-31 item 2). These four are true_inverse for ONE shared reason and it
-	// is not the project: the store is a file tree OUTSIDE the project (the user
-	// preset tree's chainpresets/, so a preset is usable across projects), which
-	// no Song checkpoint carries and no live object restores. Each command
-	// therefore records an ACTION checkpoint (control::addUndoStep) that undoes
-	// its own file operation - the same mechanism the groove pool's four edits
-	// and plugin.preset_load use - so control.undo really reverses it rather than
-	// describing a fallback. The two read-only ids are in
-	// ControlReversibilityTablePassive.cpp.
-	// =====================================================================
+	// The chain-preset store (OWNER-31 item 2). These four are true_inverse for
+	// ONE shared reason, and it is not the project: the store is a file tree
+	// OUTSIDE the project (the user preset tree's chainpresets/, so a preset is
+	// usable across projects), which no Song checkpoint carries and no live
+	// object restores. Each command therefore records an ACTION checkpoint that
+	// undoes its own file operation - the groove pool's four edits' mechanism.
+	// The two read-only ids are in ControlReversibilityTablePassive.cpp.
 	R("chain.save", RC::TrueInverse, true,
 		"captures the target's chain - the ordered device list plus each "
 		"device's own state document - and writes ONE file in the preset store. "

@@ -240,6 +240,31 @@ bool controlReadChainPreset(const QString& path, ControlChainPreset* out, Contro
 	return true;
 }
 
+namespace
+{
+
+/*! True when \a candidate is the device \a identity names, by the identity the
+ *  format itself defines: an LV2 device by its URI (every LV2 device shares the
+ *  descriptor name), a LADSPA device by file + label, a built-in by name. One
+ *  rule, in one place, so the capture and the lookup cannot disagree.
+ */
+bool entryMatchesIdentity(const ControlDeviceEntry& candidate,
+	const ControlChainPresetDevice& identity)
+{
+	if (!identity.uri.isEmpty())
+	{
+		return candidate.format == QLatin1String("lv2") && candidate.uri == identity.uri;
+	}
+	if (!identity.label.isEmpty() || !identity.file.isEmpty())
+	{
+		return candidate.format == QLatin1String("ladspa")
+			&& candidate.label == identity.label && candidate.file == identity.file;
+	}
+	return candidate.format == QLatin1String("builtin") && candidate.name == identity.plugin;
+}
+
+} // namespace
+
 bool controlChainPresetEntry(const ControlChainPresetDevice& device, ControlDeviceEntry* entry,
 	int* index, ControlResult* error)
 {
@@ -250,23 +275,7 @@ bool controlChainPresetEntry(const ControlChainPresetDevice& device, ControlDevi
 	for (int i = 0; i < catalogue.size(); ++i)
 	{
 		const ControlDeviceEntry& candidate = catalogue.at(i);
-		bool matches = false;
-		if (!identity.uri.isEmpty())
-		{
-			// Every LV2 device shares the descriptor name, so the URI is the
-			// identity and the format is checked with it.
-			matches = candidate.format == QLatin1String("lv2") && candidate.uri == identity.uri;
-		}
-		else if (!identity.label.isEmpty() || !identity.file.isEmpty())
-		{
-			matches = candidate.format == QLatin1String("ladspa")
-				&& candidate.label == identity.label && candidate.file == identity.file;
-		}
-		else
-		{
-			matches = candidate.format == QLatin1String("builtin") && candidate.name == identity.plugin;
-		}
-		if (!matches) { continue; }
+		if (!entryMatchesIdentity(candidate, identity)) { continue; }
 		if (!candidate.loadable)
 		{
 			*error = ControlResult::failure(ControlErrorKind::Refused,

@@ -135,6 +135,63 @@ void recordStoreWrite(const QString& path, bool replaced, const QByteArray& prev
 		});
 }
 
+/*! Writes a preset document into the store, and records the action checkpoint
+ *  that puts the file back the way it was (the revision it replaced, or no file
+ *  at all).
+ *
+ *  The refusal for an existing preset happens BEFORE the previous revision is
+ *  captured, so a refused save leaves no undo step behind and no half-written
+ *  preset - the rule every mutating handler in this surface follows. \a existed
+ *  and \a snapshot come back for the transaction record and are never guessed
+ *  afterwards (the file has changed by then).
+ */
+bool storeWrite(const QString& path, const QByteArray& bytes, bool overwrite, bool* existed,
+	QJsonObject* snapshot, ControlResult* error)
+{
+	*existed = QFileInfo::exists(path);
+	if (*existed && !overwrite)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 already exists; pass \"overwrite\":true to replace it").arg(path));
+		return false;
+	}
+	QByteArray previous;
+	if (*existed) { controlReadFileBytes(path, &previous, error); }
+	*snapshot = controlFileSnapshot(path);
+
+	if (!QDir().mkpath(controlChainPresetDir()))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot create the preset store %1").arg(controlChainPresetDir()));
+		return false;
+	}
+	if (!controlWriteFileBytes(path, bytes, true, error)) { return false; }
+	recordStoreWrite(path, *existed, previous, bytes);
+	return true;
+}
+
+//! The recorded inverse of a store write: a created file is removed, a replaced
+//! one is put back, and the redo half re-writes the captured document.
+QJsonObject storeWriteTransaction(const QJsonObject& snapshot, bool existed, const QString& name)
+{
+	if (existed)
+	{
+		return transactionPayload(snapshot, QStringLiteral("chain.save"),
+			QJsonObject{{QStringLiteral("name"), name},
+				{QStringLiteral("note"), QStringLiteral("re-issue the same capture to rebuild "
+					"this revision")}},
+			true,
+			QStringLiteral("action checkpoint: the recorded step writes the revision this "
+				"command replaced (before.previous_sha256) back to the preset\'s own path, so "
+				"one control.undo restores the store exactly"));
+	}
+	return transactionPayload(snapshot, QStringLiteral("chain.remove"),
+		QJsonObject{{QStringLiteral("name"), name}},
+		true,
+		QStringLiteral("action checkpoint: the recorded step removes the preset file this "
+			"command created, so one control.undo leaves the store as it was"));
+}
+
 void registerChainList(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -269,28 +326,13 @@ void registerChainSave(ControlRegistry& registry)
 		if (!captureDevices(target, &devices, &error)) { return error; }
 		const QByteArray bytes = controlChainPresetDocument(controlChainPresetName(path), devices);
 
-		// The refusal happens BEFORE the previous revision is captured and
-		// before anything is written, so a refused save leaves no undo step
-		// behind and no half-written preset (the rule every mutating handler in
-		// this surface follows).
-		const bool existed = QFileInfo::exists(path);
-		if (existed && !args.value(QStringLiteral("overwrite")).toBool(false))
+		bool existed = false;
+		QJsonObject snapshot;
+		if (!storeWrite(path, bytes, args.value(QStringLiteral("overwrite")).toBool(false),
+				&existed, &snapshot, &error))
 		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("%1 already exists; pass \"overwrite\":true to replace it")
-					.arg(path));
+			return error;
 		}
-		const QJsonObject snapshot = controlFileSnapshot(path);
-		QByteArray previous;
-		if (existed) { controlReadFileBytes(path, &previous, &error); }
-
-		if (!QDir().mkpath(controlChainPresetDir()))
-		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("cannot create the preset store %1").arg(controlChainPresetDir()));
-		}
-		if (!controlWriteFileBytes(path, bytes, true, &error)) { return error; }
-		recordStoreWrite(path, existed, previous, bytes);
 
 		ControlChainPreset preset;
 		preset.name = controlChainPresetName(path);
@@ -302,20 +344,7 @@ void registerChainSave(ControlRegistry& registry)
 		result.insert(QStringLiteral("replaced"), existed);
 		result.insert(QStringLiteral("target"), target.id);
 		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(snapshot,
-				existed ? QStringLiteral("chain.save") : QStringLiteral("chain.remove"),
-				existed ? QJsonObject{{QStringLiteral("name"), preset.name},
-						{QStringLiteral("note"), QStringLiteral("re-issue the same capture to "
-							"rebuild this revision")}}
-					: QJsonObject{{QStringLiteral("name"), preset.name}},
-				true,
-				existed
-					? QStringLiteral("action checkpoint: the recorded step writes the revision "
-						"this command replaced (before.previous_sha256) back to the preset's own "
-						"path, so one control.undo restores the store exactly")
-					: QStringLiteral("action checkpoint: the recorded step removes the preset "
-						"file this command created, so one control.undo leaves the store as it "
-						"was")));
+			storeWriteTransaction(snapshot, existed, preset.name));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
