@@ -488,12 +488,19 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
 	{
 		AutomatableModel * am = it.key();
-		if (!values.contains(am))
+		// A guarded key can be null here: the model was destroyed between the frame
+		// that automated it and this restore (see the member's comment). There is
+		// nothing to move back to a controller for a model that no longer exists.
+		if (am != nullptr && !values.contains(am))
 		{
 			am->setUseControllerValue(true);
 		}
 	}
-	m_oldAutomatedValues = values;
+	m_oldAutomatedValues.clear();
+	for (auto it = values.begin(); it != values.end(); ++it)
+	{
+		m_oldAutomatedValues.insert(it.key(), it.value());
+	}
 
 	// Apply values
 	for (auto it = values.begin(); it != values.end(); it++)
@@ -775,7 +782,13 @@ void Song::stop()
 	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
 	{
 		AutomatableModel * am = it.key();
-		am->setUseControllerValue(true);
+		// Null when the model was destroyed while the transport was playing (the
+		// member's comment has the mechanism); skipping it is the whole point of
+		// guarding the keys - this loop has no other way to tell.
+		if (am != nullptr)
+		{
+			am->setUseControllerValue(true);
+		}
 	}
 	m_oldAutomatedValues.clear();
 

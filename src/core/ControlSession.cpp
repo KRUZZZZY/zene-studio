@@ -36,8 +36,10 @@
 #include <QTimer>
 
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectRecovery.h"
 #include "Song.h"
 
 namespace lmms
@@ -135,6 +137,28 @@ void ControlRegistry::scheduleQuit()
 	// for the two #626 reproductions; both of their stacks are in the lane
 	// report.
 	QTimer::singleShot(0, app, &QCoreApplication::quit);
+
+	// ... but "the termination closes the main window" is a platform behaviour, not
+	// a guarantee: it holds where Qt closes the windows as the loop exits, and it
+	// does NOT on macOS, where the same quit exits 0 and unlinks the control socket
+	// (main() does that itself) while MainWindow::closeEvent never runs - so
+	// sessionCleanup() never removes the recovery project and a clean agent quit
+	// leaves recover.mmp behind. That is exactly what control-shutdown.py measured
+	// on both macOS jobs: exit=0, socket gone, recovery file still there.
+	//
+	// Removing the recovery file on aboutToQuit makes the contract platform
+	// independent - the signal is emitted by the quitting event loop everywhere,
+	// and this is the layer that knows a quit was requested through the control
+	// surface. removeRecovery() is idempotent, so where closeEvent did run this
+	// removes a file that is already gone and changes nothing.
+	static bool quitCleanupHooked = false;
+	if (!quitCleanupHooked)
+	{
+		quitCleanupHooked = true;
+		QObject::connect(app, &QCoreApplication::aboutToQuit, app, []() {
+			ProjectRecovery::removeRecovery(ConfigManager::inst()->recoveryFile());
+		});
+	}
 
 	// Absolute last resort. The shutdown path walks Qt widget teardown, plugin
 	// destructors, the audio thread and the autosaver - code this process does

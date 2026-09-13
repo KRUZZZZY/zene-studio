@@ -68,6 +68,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QList>
+#include <QProcess>
+#include <QRegularExpression>
 #include <QString>
 #include <QtTest>
 
@@ -127,14 +129,62 @@ inline auto remoteClientPath() -> QString { return {}; }
  * of /proc is what makes the toggle's effect a fact rather than an inference
  * from the plugin's own state.
  *
- * @return the /proc PIDs whose executable basename is `name` and whose parent
- *         is this process; empty when no such client is running
+ * @return the PIDs whose executable basename is `name` and whose parent is this
+ *         process; empty when no such client is running. Read from /proc on
+ *         Linux and from `ps` everywhere else (see runningClientPidsFromPs).
  */
+#if !defined(Q_OS_WIN) && !defined(Q_OS_LINUX)
+//! The portable half, and the only one Darwin has: /proc does not exist there, so
+//! the /proc scan in runningClientPids() finds nothing, reports "no separate-process
+//! client", and makes all three of this file's separate-process cases fail (measured:
+//! 135 s of QTRY_VERIFY timeouts on both macOS jobs, one per case, each reporting
+//! that the client process could not be found). `ps -o pid=,ppid=,command= -ax` is
+//! POSIX and present on macOS and the BSDs; `command`'s first word is the executable
+//! path, whose basename is the same field the /proc branch compares against
+//! readlink(/proc/<pid>/exe). Defined only where it is used: Linux builds would
+//! otherwise fail -Werror=unused-function, which is how this was caught.
+auto runningClientPidsFromPs(const QString& name) -> QList<long>
+{
+	QList<long> pids;
+	QProcess ps;
+	ps.start(QStringLiteral("ps"),
+		{QStringLiteral("-o"), QStringLiteral("pid=,ppid=,command="), QStringLiteral("-ax")});
+	if (!ps.waitForStarted(5000) || !ps.waitForFinished(10000)) { return pids; }
+
+	const auto self = static_cast<long>(QCoreApplication::applicationPid());
+	const auto lines = QString::fromLocal8Bit(ps.readAllStandardOutput()).split('\n');
+	for (const auto& line : lines)
+	{
+		const auto fields = line.trimmed().split(QRegularExpression(QStringLiteral("\\s+")),
+			Qt::SkipEmptyParts);
+		if (fields.size() < 3) { continue; }
+		bool pidOk = false;
+		bool ppidOk = false;
+		const long pid = fields.at(0).toLong(&pidOk);
+		const long ppid = fields.at(1).toLong(&ppidOk);
+		if (!pidOk || !ppidOk || ppid != self) { continue; }
+		// `command`'s first word is the executable path, so its basename is the
+		// same field the /proc branch compares against readlink(/proc/<pid>/exe).
+		if (QFileInfo(fields.at(2)).fileName() == name) { pids.append(pid); }
+	}
+	return pids;
+}
+#endif
+
+
 auto runningClientPids(const QString& name) -> QList<long>
 {
 	QList<long> pids;
 #ifdef Q_OS_WIN
 	Q_UNUSED(name);
+#elif !defined(Q_OS_LINUX)
+	// Darwin (and every BSD) has no /proc at all, so the scan below finds nothing
+	// and every separate-process case in this file reports "no client" - which on
+	// the two macOS jobs of the v0.2.1-alpha tag run was three failures after
+	// 135 s, one per case, each one a QTRY_VERIFY(...) budget burnt waiting for a
+	// client that had in fact started. The parent/child relation this file's whole
+	// claim rests on is the same fact either way; only the way it is read differs.
+	pids = runningClientPidsFromPs(name);
 #else
 	auto* proc = opendir("/proc");
 	if (proc == nullptr) { return pids; }

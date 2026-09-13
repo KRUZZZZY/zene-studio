@@ -341,9 +341,15 @@ class Instance:
         return False
 
 
-def start_instance(binary, workingdir=None, audiodev=DUMMY_DEVICE, configured=1):
-    """Construct and spawn an Instance. The socket may not be up yet."""
-    instance = Instance(binary, audiodev=audiodev, configured=configured, workingdir=workingdir)
+def start_instance(binary, workingdir=None, audiodev=DUMMY_DEVICE, configured=1, extra_env=None):
+    """Construct and spawn an Instance. The socket may not be up yet.
+
+    `extra_env` reaches the instance's environment (Instance's own parameter):
+    it is how a caller makes a backend deterministically fail to open rather
+    than relying on the host having no audio device.
+    """
+    instance = Instance(binary, audiodev=audiodev, configured=configured, workingdir=workingdir,
+                        extra_env=extra_env)
     instance.spawn()
     return instance
 
