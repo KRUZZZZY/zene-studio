@@ -1494,6 +1494,21 @@ endif()
 # loader (`zene_control.registry.load_bundle`) and fails on drift in EITHER
 # direction, naming the ids and the exact regeneration command.
 #
+# IT ALSO CHECKS WHAT THE BRIDGE ACTUALLY EXPOSES, which the snapshot comparison
+# alone did not (2026-09-13, 030/mcp-coverage). The registered ratchet compared
+# the snapshot FILE with the binary; the bridge, with no instance running, used to
+# serve its offline copies in a fixed order - cache first - so a cache written by
+# an older instance shadowed a newer committed snapshot for good, and the ratchet
+# stayed green while the served list was something else entirely. Measured on this
+# tree (COVERAGE-MATRIX-2026-09-13.md §4.4): a 70-id 0.1.0-alpha cache left 74 ids
+# of the current surface unreachable with no per-feature bridge work outstanding.
+# So the test now asks `zene_control.tools.Bridge` what it would expose, in three
+# modes - with the instance answering, with an empty state directory, and with a
+# synthetic cache captured 2000-01-01T00:00:00Z planted in it - and fails on any
+# id the DAW registers and the bridge offers no tool for, in any mode. The
+# freshest readable offline copy must win (`registry.rank_offline_bundles`), and
+# the stale-cache mode is the guard on that rule.
+#
 # Registered whenever python3 exists - the same gate as every other Python
 # control-surface test here - and SKIPPED (exit 77 -> ctest "Skipped", never
 # "Passed") when the bridge package itself cannot be imported, so it can never

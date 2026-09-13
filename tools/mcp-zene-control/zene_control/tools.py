@@ -61,7 +61,15 @@ class Bridge:
 
     def resolve(self, prefer_live: bool = True,
                 timeout: float | None = None) -> R.CommandSource:
-        """The command list to serve. Never raises; says where it came from."""
+        """The command list to serve. Never raises; says where it came from.
+
+        Live first when asked for. With no instance, the offline copies are
+        ranked by freshness (`registry.rank_offline_bundles`) instead of being
+        taken in a fixed order: the cache is just "the list the last live fetch
+        saw", so serving it unconditionally let a stale cache shadow a newer
+        committed snapshot. The copy that is served is named, and the ones that
+        were ranked staler are reported in `skipped`.
+        """
         error: ZeneControlError | None = None
         offline = self.config.offline
         if prefer_live and not offline:
@@ -72,17 +80,34 @@ class Bridge:
             except Exception as exc:  # defensive: a listing must never kill tools/list
                 error = ZeneControlError(ErrorKind.BRIDGE_ERROR,
                                          f"could not read the live command list: {exc}")
-        for path, source in ((self.cache_path(), "cache"), (self.snapshot_path(), "snapshot")):
-            bundle = R.load_bundle(path)
-            if bundle is not None:
-                try:
-                    specs = R.specs_from_commands(bundle["commands"])
-                except ZeneControlError as exc:
-                    error = error or exc
-                    continue
-                return R.CommandSource(specs=specs, bundle=bundle, source=source,
-                                       path=path, error=error)
+        ranked = R.rank_offline_bundles([(self.cache_path(), "cache"),
+                                         (self.snapshot_path(), "snapshot")])
+        for path, source, bundle in ranked:
+            try:
+                specs = R.specs_from_commands(bundle["commands"])
+            except ZeneControlError as exc:
+                # A copy the bridge cannot turn into tools is skipped, not fatal:
+                # the next-freshest readable copy is still a real answer.
+                error = error or exc
+                continue
+            return R.CommandSource(specs=specs, bundle=bundle, source=source,
+                                   path=path, error=error,
+                                   skipped=self._staler_copies(ranked, path))
         return R.CommandSource(specs=[], bundle={}, source="none", error=error)
+
+    @staticmethod
+    def _staler_copies(ranked: list[tuple[str, str, dict]],
+                       served_path: str) -> tuple[dict, ...]:
+        """The readable offline copies the served one outranks, for the record."""
+        served = next((entry for entry in ranked if entry[0] == served_path), None)
+        if served is None or len(ranked) < 2:
+            return ()
+        return tuple({
+            "path": path, "source": source,
+            "captured_at": bundle.get("captured_at"),
+            "count": len(bundle.get("commands") or []),
+            "why": "ranked staler than the copy served",
+        } for path, source, bundle in ranked if path != served_path)
 
     def find_spec(self, command_id: str, source: R.CommandSource | None = None) -> R.CommandSpec:
         resolved = source or self.resolve()

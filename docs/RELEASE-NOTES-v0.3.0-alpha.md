@@ -415,6 +415,25 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   `RUN_SERIAL` (the multicast group is shared state by design) and reports ctest *Skipped*, never *Passed*,
   when the host cannot carry announcements.
 
+## MCP tooling: every registered command is an MCP tool (`zene_*`) — added 2026-09-13
+
+- **New: the bridge's coverage of the command surface is a registered assertion, not a promise.** The
+  `zene-control` bridge generates one MCP tool per id it reads from a live instance's
+  `control.commands_list` (`tools/mcp-zene-control/zene_control/registry.py`), and the registered ctest
+  `ControlCommandsSnapshot` (`tests/control-commands-snapshot.py`) now fails on **any** id this binary
+  registers that the bridge offers no tool for — with the instance answering, with no instance and an empty
+  state directory, and with a stale cache planted in it. The idle modes agree because the bridge now serves
+  the **freshest** readable offline copy (`registry.rank_offline_bundles`) instead of the old cache-first
+  order, which had let a 70-id 0.1.0-alpha cache leave **74 ids** of this tree's surface unreachable while
+  the committed snapshot was current (`docs/COVERAGE-MATRIX-2026-09-13.md` §4.4). Measured against a build of
+  this tip: **144 ids registered, 144 exposed live, 144 exposed offline** (146 tools with the two
+  bridge-owned ones).
+- **UI absence — one line:** none of this is in the interface; the tool list exists only through the MCP
+  bridge over a control socket. **And the limit, stated plainly:** a Hermes session reads the bridge from the
+  registration in `~/.hermes/config.yaml`, which points at a scratch copy outside this repository; until that
+  entry is re-pointed at this tree's `tools/mcp-zene-control`, the session's offline list is the stale 70.
+  See `docs/KNOWN-LIMITATIONS.md`.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
