@@ -1046,6 +1046,28 @@ shipped neither. Nothing failed and every test passed, because a host whose depe
 absent is compiled out with a `STATUS` line rather than an error. See
 [`docs/PLUGIN-HOSTING-IN-RELEASE.md`](../docs/PLUGIN-HOSTING-IN-RELEASE.md).
 
+**Tag-run mode (`--tag-run <sha>`, REL-2) — 2026-09-13, release path.** The same script
+also answers a different question, because both are "the release must not claim what is not
+true":
+
+```sh
+bash tests/release-honesty-gate.sh --tag-run "$GITHUB_SHA"      # --repo owner/name to override
+```
+
+**Pass criterion**: exit 0. For the given commit it asks the Actions API (`gh api`) for that
+commit's **push** runs of the three workflows that run on every push — `build.yml`,
+`checks.yml`, `quality-gates.yml` — and requires, per workflow, at least one *completed* push
+run and no completed push run whose conclusion is anything but `success`. Runs still in
+flight are not results and are ignored (the release job's own tag run is one of them); a
+completed red run for the same commit is refused. Exit 1 is the refusal, exit 2 is a usage
+error or the API/tooling being unavailable.
+
+**Why**: twice in a row a tag was cut from a commit whose own seven-platform matrix was red
+(`v0.2.0-alpha`, and the `v0.2.1-alpha` re-cut at `2fc41d3e3`), because the tag push creates
+the release's upload run and nothing in the workflow compared the commit's *other* runs. This
+mode is the comparison, and `.github/workflows/build.yml`'s `release-gate` job — which
+`needs:` every build job as well — calls it before anything is published.
+
 ## Packager kill-switch build guard (`telemetry-off-build.sh`) — 2026-09-12, release path
 
 **Command**:
