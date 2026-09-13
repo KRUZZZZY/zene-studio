@@ -66,6 +66,20 @@ QJsonObject trackState(Track* track, int index)
 	entry.insert(QStringLiteral("type"), trackTypeName(track->type()));
 	entry.insert(QStringLiteral("muted"), track->isMuted());
 	entry.insert(QStringLiteral("soloed"), track->isSolo());
+	// The frozen take (freeze / bounce-in-place): whether this track plays a
+	// render instead of its clips (freeze.track / freeze.region), the file, the
+	// window it covers, and how many clips the freeze muted. `audio_ready` is
+	// false for a take whose file has moved since it was frozen: the state is
+	// still frozen but nothing sounds, and a caller must be able to see that.
+	entry.insert(QStringLiteral("frozen"), track->isFrozen());
+	entry.insert(QStringLiteral("frozen_audio"), track->frozenTake().path);
+	entry.insert(QStringLiteral("frozen_audio_ready"), track->frozenAudioReady());
+	entry.insert(QStringLiteral("frozen_start_ticks"),
+		static_cast<qint64>(track->frozenTake().startTicks));
+	entry.insert(QStringLiteral("frozen_end_ticks"),
+		static_cast<qint64>(track->frozenTake().endTicks));
+	entry.insert(QStringLiteral("frozen_muted_clips"),
+		static_cast<int>(track->frozenTake().mutedClips.size()));
 	return entry;
 }
 
@@ -270,6 +284,12 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("id"), stringProperty()},
 			{QStringLiteral("name"), stringProperty()},
 			{QStringLiteral("type"), stringProperty()},
+			{QStringLiteral("frozen"), booleanProperty()},
+			{QStringLiteral("frozen_audio"), stringProperty()},
+			{QStringLiteral("frozen_audio_ready"), booleanProperty()},
+			{QStringLiteral("frozen_start_ticks"), integerProperty()},
+			{QStringLiteral("frozen_end_ticks"), integerProperty()},
+			{QStringLiteral("frozen_muted_clips"), integerProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) {
 			const QString id = args.value(QStringLiteral("track")).toString();

@@ -792,6 +792,16 @@ void InstrumentTrack::removeMidiPortNode( DataFile & _dataFile )
 bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 							const f_cnt_t _offset, int _clip_num )
 {
+	// The frozen take (freeze / bounce-in-place): the render IS this track's
+	// output, so a pass inside the take's window plays the take and never
+	// reaches the instrument - which is what "the source is disabled" means in
+	// the engine. A single-clip playback (_clip_num >= 0: the piano roll's and
+	// the beat/bassline editor's own play mode) is NOT the arrangement and keeps
+	// playing the source.
+	if (isFrozen() && _clip_num < 0)
+	{
+		return playFrozenTake(_start, _frames, _offset);
+	}
 	if( ! m_instrument || ! tryLock() )
 	{
 		return false;

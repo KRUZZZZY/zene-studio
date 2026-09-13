@@ -1182,6 +1182,24 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 		)
 	endif()
+	# freeze / bounce-in-place (the engine-level Bar 2 gap): a track's output is
+	# rendered to a WAV and the track made to play it, driven END TO END through
+	# --control-socket. It is registered unconditionally - the bounce.*/freeze.*
+	# groups carry no compile-time switch, because the render is the product's
+	# own CLI render path and the take is a plain value on Track - and it takes
+	# no fixture: it builds an AUDIBLE session through the socket (an instrument
+	# track, two clips, notes), which is what lets it prove the take actually
+	# plays. It reports ctest *Skipped* (exit 77) when the build offers no
+	# loadable instrument, because an inaudible fixture could not make that
+	# proof and a test that cannot prove its claim must not report Passed.
+	add_test(NAME ControlFreezeCommandsTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-freeze-commands-transcript.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlFreezeCommandsTranscript PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+	)
 	# wasm.* (item #614): host the ABI example effect in the WASM DSP sandbox
 	# END TO END through --control-socket, and read back what the ABI does with it.
 	# Registered only when the sandbox is compiled in (WANT_WASM, which needs the

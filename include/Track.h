@@ -25,6 +25,8 @@
 #ifndef LMMS_TRACK_H
 #define LMMS_TRACK_H
 
+#include <atomic>
+#include <memory>
 #include <vector>
 
 #include <QColor>
@@ -42,6 +44,7 @@ namespace lmms
 class TimePos;
 class TrackContainer;
 class Clip;
+class SampleBuffer;
 
 
 namespace gui
@@ -148,6 +151,62 @@ public:
 	TakeLaneModel& takeLanes() { return m_takeLanes; }
 	const TakeLaneModel& takeLanes() const { return m_takeLanes; }
 
+	/*! A FROZEN TAKE: this track's own output rendered to audio, which the
+	 *  engine then plays INSTEAD of the clips it was rendered from.
+	 *
+	 *  Freeze / bounce-in-place, docs/RELEASE-NOTES-v0.3.0-alpha.md. The take
+	 *  carries the track's devices, fader, pan and sends - it is exactly the
+	 *  signal the stems export produces (BounceInPlace) - so the engine plays it
+	 *  at the mix level and NOT through the track's own chain a second time.
+	 *  The source is disabled for as long as the take covers the timeline: the
+	 *  concrete Track::play() overloads return the take for a pass inside the
+	 *  take's window and never schedule the source's own playback.
+	 *
+	 *  The state is per-track project state: it is serialised with the track
+	 *  (`<frozen>` inside the track element, written only when frozen, and reset
+	 *  on absence by Track::loadTrack - the rule every journal checkpoint
+	 *  restore depends on), so a frozen track survives save/load and one
+	 *  `control.undo` can take the freeze off. */
+	struct FrozenTake
+	{
+		QString path;           //!< the rendered audio file
+		tick_t startTicks = 0;  //!< where the take begins on the timeline
+		tick_t endTicks = 0;    //!< where it ends (0 = to its own end)
+		//! A clip the freeze muted, recorded so unfreeze restores exactly what
+		//! it muted and nothing else. `freeze.track` mutes nothing (the engine
+		//! substitution already silences the source); `freeze.region` mutes the
+		//! clips that start inside the region, which the substitution does not
+		//! cover.
+		struct MutedClip
+		{
+			tick_t startTicks = 0;
+			tick_t lengthTicks = 0;
+		};
+		std::vector<MutedClip> mutedClips;
+
+		bool isFrozen() const { return !path.isEmpty(); }
+	};
+
+	bool isFrozen() const { return m_frozen.isFrozen(); }
+	const FrozenTake& frozenTake() const { return m_frozen; }
+	//! True when the take's audio is in memory, i.e. it will actually sound.
+	bool frozenAudioReady() const { return m_frozenBuffer != nullptr; }
+
+	/*! Loads \a path into memory and makes this track play it instead of its own
+	 *  clips. The load happens HERE, on the calling (control or load) thread,
+	 *  never on the audio thread. Returns false, with \a error filled, when the
+	 *  file cannot be opened - in which case nothing is changed. */
+	bool freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
+			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error);
+	//! Unmutes the clips this freeze muted and drops the take: the track plays
+	//! its own clips again.
+	void unfreeze();
+	//! Drops the take WITHOUT touching any clip's mute state. Used where the
+	//! incoming state is authoritative - Track::loadTrack's reset on absence,
+	//! which is what makes a checkpoint restore (undo) unable to resurrect a
+	//! take the file does not carry.
+	void clearFrozenTake();
+
 	void createClipsForPattern(int pattern);
 
 
@@ -240,6 +299,12 @@ public slots:
 private:
 	void saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode);
 	void loadTrack(const QDomElement& element, bool presetMode);
+	//! Reads the <frozen> child a project file carries (freeze / bounce-in-place)
+	//! and opens its audio. A no-op on an element with no audio attribute.
+	void loadFrozenTake(const QDomElement& element);
+	//! Connects (once) the transport signals that end a pass through a take: a
+	//! stop, a seek or loop, and a mute change. Called when a take is installed.
+	void subscribeFrozenTakeSignals();
 
 private:
 	TrackContainer* m_trackContainer;
@@ -252,6 +317,18 @@ protected:
 	BoolModel m_mutedModel;
 	BoolModel m_soloModel;
 
+	/*! Queues the frozen take for a pass that starts at \a start, on its own
+	 *  mix-level bus handle: the take already carries this track's devices,
+	 *  fader, pan and sends, so it is summed into the mix and NOT through the
+	 *  track's chain a second time. Returns true when a handle was queued.
+	 *
+	 *  Called from the AUDIO thread by InstrumentTrack::play and
+	 *  SampleTrack::play - the two audio-producing track types - and reads only
+	 *  state the control thread published before the take became visible
+	 *  (the buffer and the take's window), plus one atomic flag that keeps one
+	 *  pass through the take to one play handle. */
+	bool playFrozenTake(const TimePos& start, f_cnt_t frames, f_cnt_t offset);
+
 private:
 	bool m_mutedBeforeSolo;
 
@@ -260,6 +337,16 @@ private:
 	//! Take lanes + composite (comping; docs/COMPING.md). Serialised by
 	//! Track::saveTrack as a <takelanes> child, absent when empty.
 	TakeLaneModel m_takeLanes;
+
+	//! The frozen take (freeze / bounce-in-place). `m_frozenBuffer` is loaded
+	//! on the control thread and never touched by the audio thread while the
+	//! take is frozen; `m_frozenTakePlaying` is the one member the audio thread
+	//! writes, so that one pass through the take queues one play handle.
+	FrozenTake m_frozen;
+	std::shared_ptr<const SampleBuffer> m_frozenBuffer;
+	std::atomic<bool> m_frozenTakePlaying{false};
+	//! Control-thread only: subscribeFrozenTakeSignals() runs once per track.
+	bool m_frozenSignalsConnected = false;
 
 	QMutex m_processingLock;
 	

@@ -216,6 +216,14 @@ const ReversibilityRow kPassiveRows[] = {
 		"the project is unchanged; the rendered file is an output, not project "
 		"state, and overwriting it is the caller's decision",
 		""),
+	R("bounce.in_place", RC::NotMutating, false,
+		"it writes an OUTPUT ARTEFACT and nothing else: the render runs in a "
+		"child process against a serialised copy of the session with every other "
+		"track muted, so no project state, clip or model in this instance is "
+		"touched and there is nothing for a checkpoint to capture",
+		"the session is unchanged; the bounce file is an output, not project "
+		"state - freeze.track / freeze.region are the verbs that record a take",
+		""),
 
 	// ---------- read-only inspectors ----------
 	R("app.version", RC::NotMutating, false, "reads the build identity", "no write", ""),

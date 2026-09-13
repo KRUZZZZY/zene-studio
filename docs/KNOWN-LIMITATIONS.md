@@ -462,6 +462,20 @@ that is this page's fault — report it and it gets added.
   stops another instance's transport (`link.set_start_stop_sync` is announced and reported, never acted on),
   and the play head is not moved onto the session grid — the shared phase and this engine's phase are
   reported together, with the error between them, and `docs/LINK-SYNC.md` §5 lists every stated limit.
+- **Freeze and bounce-in-place have no interface — added 2026-09-13.** A track's own output (its devices,
+  fader, pan and sends) can be rendered to a WAV and the track made to play that render instead of its clips —
+  drivable through `--control-socket` (`bounce.in_place`, `freeze.track`, `freeze.region`, `freeze.unfreeze`),
+  and the frozen state is saved with the project and one `control.undo` takes it off — but **nothing in
+  `src/gui/` renders a track, marks it frozen or plays a take**: drivable through the socket, not from the
+  interface. Stated limits: a **region** freeze mutes the clips that *start* inside the region, so a clip that
+  begins before the region and runs into it is left alone and sounds twice inside the region (the command names
+  it in `overlapping_clips`); the render is 44.1 kHz and the take is re-sampled to the session's device rate,
+  so a frozen render is not bit-identical to the same track unfrozen; a range's frame window is derived from
+  the project tempo, so a project that also uses a tempo map can have its region offset read from the wrong
+  tempo; a frozen track's take bypasses the
+  track's own device chain and fader (they are already baked into the render), so those controls are inert
+  until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true` but
+  has nothing to play, which `track.get_state` reports as `frozen_audio_ready: false`.
 
 ## Telemetry and privacy
 

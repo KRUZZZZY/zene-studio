@@ -34,18 +34,49 @@
 
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
+#include "AudioEngine.h"
+#include "Clip.h"
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectIds.h"
+#include "Sample.h"
+#include "SampleBuffer.h"
+#include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
 
 namespace lmms
 {
+
+namespace
+{
+
+/*! The clip of a track whose position and length are exactly these ticks, or
+ *  nullptr.
+ *
+ *  A freeze records a clip it muted by its TICKS, never by index or pointer:
+ *  the record is serialised with the track and replayed on load, and clip ids
+ *  in this engine are still index-derived (SPEC-stable-ids.md slice 2), so an
+ *  index would name a different clip after any edit before it.
+ */
+Clip* clipAt(Track::clipVector& clips, tick_t startTicks, tick_t lengthTicks)
+{
+	for (Clip* clip : clips)
+	{
+		if (clip != nullptr && clip->startPosition().getTicks() == startTicks
+			&& clip->length().getTicks() == lengthTicks)
+		{
+			return clip;
+		}
+	}
+	return nullptr;
+}
+
+} // namespace
 
 /*! \brief Create a new (empty) track object
  *
@@ -87,8 +118,32 @@ Track::Track( Type type, TrackContainer * tc ) :
 	                                 * either way, so the order here is a no-op). */
 	m_clips()        /*!< The clips (segments) */
 {	
-	m_trackContainer->addTrack( this );
-	m_height = -1;
+m_trackContainer->addTrack( this );
+m_height = -1;
+}
+
+/*! Subscribe to the signals that END a pass through a frozen take (freeze /
+ *  bounce-in-place): a stop, a seek or loop, and a mute change.
+ *
+ *  Without these, the "one handle per pass" flag would still be set after a stop
+ *  inside the take and the next play would return early, leaving the track
+ *  silent until a seek past the take - which is exactly why the engine's own
+ *  clip state is reset on these same signals (SampleClip.cpp's constructor,
+ *  "playbutton clicked or space key / on Export Song set isPlaying to false").
+ *
+ *  Connected lazily, when a take is installed: the tracks a Song creates in its
+ *  own constructor are built before Engine::s_song is assigned, so connecting in
+ *  the Track constructor would connect to nothing for exactly the tracks a
+ *  default project has.
+ */
+void Track::subscribeFrozenTakeSignals()
+{
+	if (m_frozenSignalsConnected) { return; }
+	m_frozenSignalsConnected = true;
+	auto endPass = [this] { m_frozenTakePlaying.store(false, std::memory_order_relaxed); };
+	connect(Engine::getSong(), &Song::playbackStateChanged, this, endPass, Qt::DirectConnection);
+	connect(Engine::getSong(), &Song::playbackPositionJumped, this, endPass, Qt::DirectConnection);
+	connect(getMutedModel(), &BoolModel::dataChanged, this, endPass, Qt::DirectConnection);
 }
 
 void Track::setId(int id)
@@ -274,6 +329,33 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 		element.appendChild(lanesElement);
 	}
 
+	// The frozen take (freeze / bounce-in-place). ONE element, written ONLY when
+	// a take is installed, so a track that was never frozen serialises exactly
+	// the bytes it always did. `metadata="1"` is load-bearing for the reason the
+	// take-lane element's comment gives: Track::loadTrack turns an unrecognised
+	// child element of <track> into a REAL Clip, and so would an older build
+	// reading this file.
+	if (m_frozen.isFrozen())
+	{
+		QDomElement frozenElement = doc.createElement(QStringLiteral("frozen"));
+		frozenElement.setAttribute(QStringLiteral("metadata"), 1);
+		frozenElement.setAttribute(QStringLiteral("audio"), m_frozen.path);
+		frozenElement.setAttribute(QStringLiteral("start"),
+			QString::number(static_cast<qint64>(m_frozen.startTicks)));
+		frozenElement.setAttribute(QStringLiteral("end"),
+			QString::number(static_cast<qint64>(m_frozen.endTicks)));
+		for (const FrozenTake::MutedClip& muted : m_frozen.mutedClips)
+		{
+			QDomElement mutedElement = doc.createElement(QStringLiteral("mutedclip"));
+			mutedElement.setAttribute(QStringLiteral("start"),
+				QString::number(static_cast<qint64>(muted.startTicks)));
+			mutedElement.setAttribute(QStringLiteral("length"),
+				QString::number(static_cast<qint64>(muted.lengthTicks)));
+			frozenElement.appendChild(mutedElement);
+		}
+		element.appendChild(frozenElement);
+	}
+
 	// now save settings of all Clip's
 	for (const auto& clip : m_clips)
 	{
@@ -310,6 +392,13 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// Get the mutedBeforeSolo value so we can recover the muted state if any solo was active.
 	// Older project files that didn't have this attribute will set the value to false (issue 5562)
 	m_mutedBeforeSolo = QVariant( element.attribute( "mutedBeforeSolo", "0" ) ).toBool();
+
+	// Reset the frozen take before reading the element (freeze / bounce-in-place):
+	// a track element with no <frozen> child is NOT frozen, whatever this object
+	// held before the call. A journal checkpoint restores by re-loading, so state
+	// that survived its own absence could never be undone - the same rule
+	// m_takeLanes follows below. A preset never carries a take either.
+	clearFrozenTake();
 
 	if (element.hasAttribute("color"))
 	{
@@ -378,6 +467,16 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 				// a marked element so that neither this loader nor an older
 				// build's turns it into a phantom Clip.
 				m_takeLanes.loadSettings( node.toElement() );
+			}
+			else if( node.nodeName() == "frozen" )
+			{
+				// The frozen take (freeze / bounce-in-place), a marked element
+				// for the same reason. The audio is opened here, on the loading
+				// thread: a take whose file has moved is still frozen state -
+				// freezing it is what the user asked for and the file is
+				// reported as unloaded by track.get_state - but it cannot sound,
+				// and nothing pretends otherwise.
+				loadFrozenTake(node.toElement());
 			}
 			else if( node.nodeName() != "muted"
 			&& node.nodeName() != "solo"
@@ -663,7 +762,179 @@ bar_t Track::length() const
 		}
 	}
 
+	// A frozen take sounds even where the clips it replaced do not: freeze
+	// mutes nothing for a whole-track take, but a REGION freeze mutes the clips
+	// inside the region, and Track::length() skips a muted clip during an
+	// export - so without this floor a render of a project whose last clips were
+	// frozen would stop before the take's own audio (the take would be silent in
+	// exactly the render it was made to feed).
+	if (m_frozen.isFrozen() && m_frozen.endTicks > last)
+	{
+		last = m_frozen.endTicks;
+	}
+
 	return last / TimePos::ticksPerBar();
+}
+
+
+/*! \brief Make this track play a rendered take instead of its own clips.
+ *
+ *  The take's audio is opened HERE, on the calling thread (a control-surface
+ *  handler or a project load), never on the audio thread. Nothing is changed
+ *  when the file cannot be opened: the caller gets a false and a reason, and the
+ *  track keeps playing its own clips.
+ *
+ *  \param path The rendered audio file
+ *  \param startTicks Where the take begins on the timeline
+ *  \param endTicks Where it ends
+ *  \param mutedClips The clips this freeze muted, so unfreeze restores exactly
+ *  those (empty for a whole-track freeze, which mutes nothing)
+ *  \param error Filled with a reason when this returns false
+ */
+bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
+		const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error)
+{
+	if (path.isEmpty())
+	{
+		if (error != nullptr) { *error = QStringLiteral("the take names no audio file"); }
+		return false;
+	}
+	std::shared_ptr<const SampleBuffer> buffer = SampleBuffer::fromFile(path);
+	if (buffer == nullptr || buffer->empty())
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("'%1' could not be opened as audio").arg(path);
+		}
+		return false;
+	}
+	subscribeFrozenTakeSignals();
+
+	for (const FrozenTake::MutedClip& muted : mutedClips)
+	{
+		if (Clip* clip = clipAt(m_clips, muted.startTicks, muted.lengthTicks))
+		{
+			clip->setMuted(true);
+		}
+	}
+
+	m_frozen.path = path;
+	m_frozen.startTicks = startTicks;
+	m_frozen.endTicks = endTicks;
+	m_frozen.mutedClips = mutedClips;
+	m_frozenBuffer = buffer;
+	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+	return true;
+}
+
+
+void Track::unfreeze()
+{
+	// Exactly the clips this freeze muted come back: a clip the user had muted
+	// themselves is not in the record, so it stays muted.
+	for (const FrozenTake::MutedClip& muted : m_frozen.mutedClips)
+	{
+		if (Clip* clip = clipAt(m_clips, muted.startTicks, muted.lengthTicks))
+		{
+			clip->setMuted(false);
+		}
+	}
+	clearFrozenTake();
+}
+
+
+void Track::clearFrozenTake()
+{
+	m_frozen = FrozenTake{};
+	m_frozenBuffer.reset();
+	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+}
+
+
+void Track::loadFrozenTake(const QDomElement& element)
+{
+	// Track::loadTrack has already cleared the take (reset on absence), so this
+	// only fills in what the file carries.
+	m_frozen.path = element.attribute(QStringLiteral("audio"));
+	if (m_frozen.path.isEmpty()) { return; }
+
+	m_frozen.startTicks = static_cast<tick_t>(
+		element.attribute(QStringLiteral("start")).toLongLong());
+	m_frozen.endTicks = static_cast<tick_t>(
+		element.attribute(QStringLiteral("end")).toLongLong());
+	for (QDomNode node = element.firstChild(); !node.isNull(); node = node.nextSibling())
+	{
+		if (!node.isElement() || node.nodeName() != QLatin1String("mutedclip")) { continue; }
+		const QDomElement mutedElement = node.toElement();
+		FrozenTake::MutedClip muted;
+		muted.startTicks = static_cast<tick_t>(
+			mutedElement.attribute(QStringLiteral("start")).toLongLong());
+		muted.lengthTicks = static_cast<tick_t>(
+			mutedElement.attribute(QStringLiteral("length")).toLongLong());
+		m_frozen.mutedClips.push_back(muted);
+	}
+
+	// The clips the file carries are already muted (the freeze saved them that
+	// way), so the record is NOT replayed here: a load must not write to the
+	// clips it is still reading.
+	subscribeFrozenTakeSignals();
+	m_frozenBuffer = SampleBuffer::fromFile(m_frozen.path);
+}
+
+
+bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t offset)
+{
+	if (!m_frozen.isFrozen()) { return false; }
+	// A muted track is silent and a frozen one is no exception - and solo, which
+	// is expressed as the other tracks' mute flags in this engine, is covered by
+	// the same line. A muted pass is not a pass: the flag is cleared so that
+	// unmuting resumes the take.
+	if (isMuted())
+	{
+		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+		return false;
+	}
+
+	const tick_t position = start.getTicks();
+	const bool pastTheEnd = m_frozen.endTicks > m_frozen.startTicks
+		&& position >= m_frozen.endTicks;
+	if (position < m_frozen.startTicks || pastTheEnd)
+	{
+		// Outside the take's window, or the transport was moved back before it:
+		// a handle queued by an earlier pass belongs to that pass, and the next
+		// pass through the window starts a new one.
+		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+		return false;
+	}
+	if (m_frozenBuffer == nullptr) { return false; }
+
+	// One handle per pass through the take. A handle renders to the end of what
+	// it was given, so queueing one per audio block would stack a copy of the
+	// take on every block (SampleTrack::play's clip handles are created for the
+	// same reason: a clip is started once, not once per block).
+	if (m_frozenTakePlaying.exchange(true)) { return false; }
+
+	const float framesPerTick = Engine::framesPerTick(m_frozenBuffer->sampleRate());
+	const qint64 sourceIn = static_cast<qint64>(
+		std::llround((position - m_frozen.startTicks) * framesPerTick));
+	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
+	if (sourceIn >= sourceOut)
+	{
+		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+		return false;
+	}
+
+	// The window is [where this pass starts in the take, the take's end): the
+	// Sample shares the loaded buffer, so this copies no audio, and the handle
+	// owns both its own mix-level bus handle and the Sample (the preview and
+	// metronome path's shape).
+	Sample* sample = new Sample(m_frozenBuffer);
+	sample->setStartFrame(static_cast<int>(sourceIn));
+	sample->setEndFrame(static_cast<int>(sourceOut));
+	auto* handle = new SamplePlayHandle(sample);
+	handle->setOffset(offset);
+	Engine::audioEngine()->addPlayHandle(handle);
+	return true;
 }
 
 

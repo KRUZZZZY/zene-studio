@@ -106,6 +106,15 @@ LMMS_EXPORT void registerNoteExpressionCommands(ControlRegistry& registry);
  *  it is permitted is docs/LINK-SYNC.md section 1). */
 LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
 
+/*! bounce.in_place / freeze.track / freeze.region / freeze.unfreeze - freeze /
+ *  bounce-in-place. The engine half is include/BounceInPlace.h (the offline
+ *  render of one track's own output, in a child process) and Track's own frozen
+ *  take (Track::FrozenTake, the play() substitution InstrumentTrack and
+ *  SampleTrack make, and the `frozen` element of the track's project XML);
+ *  this group is what makes any of it drivable, and it is the ONLY way to
+ *  reach it - there is no interface for freeze in this release. */
+LMMS_EXPORT void registerFreezeCommands(ControlRegistry& registry);
+
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

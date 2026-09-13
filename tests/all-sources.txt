@@ -90,6 +90,7 @@ include/AutomationTrackView.h
 include/BandLimitedWave.h
 include/BarModelEditor.h
 include/BasicFilters.h
+include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
 include/BufferManager.h
@@ -887,6 +888,7 @@ src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationNode.cpp
 src/core/BandLimitedWave.cpp
+src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserMetadata.cpp
 src/core/BrowserPeakCache.cpp
@@ -912,6 +914,7 @@ src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
+src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp

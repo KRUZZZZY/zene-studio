@@ -297,10 +297,14 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **139 rows**, measured from the table itself:
-**71 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 56 `not_mutating`**. With the telemetry
+The SPEC A16 classification table holds **143 rows**, measured from the table itself:
+**74 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 57 `not_mutating`**. With the telemetry
 client compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their
-commands, giving **137 rows / 54 `not_mutating`**. `ReversibilityContractTest` asserts both
+commands, giving **141 rows / 55 `not_mutating`**. The freeze/bounce lane's four rows are the
+last of these: `bounce.in_place` is `not_mutating` (it writes an output artefact, like
+`render.render`), and `freeze.track`, `freeze.region` and `freeze.unfreeze` are `true_inverse`
+(a live Track checkpoint, because the take and the muted flags it records are both part of the
+track's own serialized state). `ReversibilityContractTest` asserts both
 sets, so a row added or moved between classes cannot ship with this page quoting the old
 split. (The 129-row figure this page carried before the modulation layer landed was its ten
 rows short - six `modulator.*` action-checkpoint rows, two `not_mutating` rows
@@ -414,6 +418,53 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   `--control-socket`**, with the phase compared against elapsed wall time. `ControlLinkSync` is registered
   `RUN_SERIAL` (the multicast group is shared state by design) and reports ctest *Skipped*, never *Passed*,
   when the host cannot carry announcements.
+
+## Freeze / bounce-in-place (`bounce.in_place`, `freeze.*`) — added 2026-09-13
+
+- **New: a track's output can be rendered to audio and played in place of its clips.** `bounce.in_place`
+  renders ONE track's own contribution — its devices, fader, pan and sends, which is what the engine's stem
+  export already means by a stem — to a WAV and returns the file, its frame count and its sha256; with
+  `start`/`end` in ticks the file covers that region instead of the whole track. The render runs in a child
+  process against a serialised copy of the session with every other track muted (the reason
+  `ControlCommandsProject.cpp` gives for `render.render`: rendering in-process would drive this instance's
+  audio engine and leave it unable to quit cleanly), so `bounce.in_place` changes nothing in the session and
+  records no transaction.
+- **`freeze.track` makes the track play the render INSTEAD of its clips, and `freeze.unfreeze` puts the
+  source back.** The substitution is in the engine, not in the document: `InstrumentTrack::play` and
+  `SampleTrack::play` return the take for every pass inside its window and schedule none of the track's own
+  playback, which is what "the source is disabled" means. The take carries the track's devices, fader, pan and
+  sends, so it is summed at the mix level and NOT through the track's chain a second time.
+- **The frozen state is project state and survives save/load.** A frozen track serialises a `<frozen>` element
+  (marked `metadata="1"`, because `Track::loadTrack` turns an unrecognised child element of `<track>` into a
+  real clip — the trap `SPEC-stable-ids.md` §3.1 records for the track id), carrying the render's path and the
+  window it covers; a track element with no such child is NOT frozen, and that reset-on-absence is what makes
+  one `control.undo` take a freeze off. The audio is opened on the loading (control) thread, never on the
+  audio thread, and a take whose file has moved is still frozen state — reported as `frozen: true` with
+  `frozen_audio_ready: false` by `track.get_state` rather than silently dropped.
+- **`freeze.region` freezes one tick range.** The region is rendered and the take plays inside it, the source
+  keeps playing outside it, and the clips that START inside the region are muted — recorded by their ticks in
+  the same element, so `freeze.unfreeze` unmutes exactly those and nothing else (a clip the user had muted
+  themselves stays muted). A clip that starts before the region and runs into it is NOT muted, because that
+  would silence audio outside the region: it is named in the command's `overlapping_clips` and sounds twice
+  inside the region.
+- **Control surface:** `bounce.in_place`, `freeze.track`, `freeze.region` and `freeze.unfreeze` — with
+  argument/result schemas and SPEC A16 reversibility metadata. `bounce.in_place` is `not_mutating` (an output
+  artefact, like `render.render`); the three `freeze.*` verbs are `true_inverse` (a live Track checkpoint; the
+  take and the mute record are both part of the track's own serialized state).
+- **A frozen track's own length accounts for its take.** `Track::length()` floors on the take's end, because a
+  region freeze mutes the clips inside it and the export path skips a muted clip when it measures the song —
+  without that floor a render of a project whose last clips were frozen would stop before the take's audio.
+- **UI absence — one line: freeze and bounce-in-place are drivable through the socket, not from the
+  interface.** Nothing in `src/gui/` renders a track, marks it frozen or plays a take.
+  `docs/KNOWN-LIMITATIONS.md` carries the same sentence, plus the stated limits (region overlap, the 44.1 kHz
+  re-sample, the take bypassing the track's chain, and a moved take reporting itself as not ready).
+- **Proof:** the registered ctest `ControlFreezeCommandsTranscript` (`tests/control-freeze-commands-transcript.py`)
+  drives a real instance over `--control-socket`: it bounces a track and checks the returned file's frames and
+  sha256 against the file on disk, freezes it and requires `track.get_state` to report the take with the audio
+  loaded, **renders the frozen session and requires it to be non-silent with the same order of energy as the
+  unfrozen render** (which is what proves the take actually plays and the source actually stopped), saves and
+  reopens the project to require the freeze to survive the round trip, then takes it back off with both
+  `freeze.unfreeze` and `control.undo` and requires the clip mutes and the state to return.
 
 ## Not in this draft yet
 

@@ -75,6 +75,15 @@ SampleTrack::~SampleTrack()
 bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					const f_cnt_t _offset, int _clip_num )
 {
+	// The frozen take (freeze / bounce-in-place), the same substitution
+	// InstrumentTrack::play makes: inside the take's window the track plays the
+	// render and schedules none of its own clips. A single-clip playback
+	// (_clip_num >= 0) is not the arrangement and keeps playing the source.
+	if (isFrozen() && _clip_num < 0)
+	{
+		return playFrozenTake(_start, _frames, _offset);
+	}
+
 	bool played_a_note = false; // will be return variable
 
 	// Slice 0 of the clip-and-capture wave (task #611, docs/CLIP-CAPTURE-DESIGN.md
