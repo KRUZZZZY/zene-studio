@@ -467,6 +467,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSettingsCommands(registry);
 	registerAutomationCommands(registry);
 	registerAutomationEditCommands(registry);
+	registerWarpCommands(registry);
 	registerScriptCommands(registry);
 }
 

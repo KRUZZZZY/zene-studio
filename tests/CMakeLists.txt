@@ -20,6 +20,7 @@ set(LMMS_TESTS
 	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	src/core/ControlRegistryTest.cpp
+	src/core/ControlWarpCommandsTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
@@ -1033,6 +1034,10 @@ endif()
 # (tracks, MidiClips, notes) rather than only reading them, so it needs a Qt
 # platform plugin even though the assertions never open a window.
 set_tests_properties(ControlEditCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The warp.* group edits a SampleClip created through track.add/clip.add, which
+# also wants a real Qt platform plugin even though nothing opens a window.
+set_tests_properties(ControlWarpCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The stable-id tests construct a full Engine and drive project.open/save through
 # the control registry, so they need a Qt platform plugin even though nothing

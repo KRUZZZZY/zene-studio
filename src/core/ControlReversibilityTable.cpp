@@ -197,6 +197,29 @@ const ReversibilityRow kRows[] = {
 		"the point list is the clip's own state",
 		"ProjectJournal (AutomationClip checkpoint)",
 		""),
+	R("warp.add", RC::TrueInverse, true,
+		"the marker set is the SampleClip's own serialized state - the additive "
+		"<warp> child element #597 writes",
+		"ProjectJournal (Clip checkpoint): SampleClip::saveSettings writes the "
+		"<warp> element and SampleClip::loadSettings re-reads it, so the "
+		"checkpoint taken before the first marker was added restores an "
+		"unwarped clip",
+		""),
+	R("warp.move", RC::TrueInverse, true,
+		"a marker's timeline offset is part of the same serialized map",
+		"ProjectJournal (Clip checkpoint)",
+		""),
+	R("warp.remove", RC::TrueInverse, true,
+		"removing a marker rewrites the same <warp> element, and removing the "
+		"last one leaves an empty map the checkpoint restores exactly",
+		"ProjectJournal (Clip checkpoint)",
+		""),
+	R("warp.set", RC::TrueInverse, true,
+		"one call may write the marker list, the tempo mode and the source "
+		"tempo, and all three are fields of the same serialized <warp> element",
+		"ProjectJournal (Clip checkpoint): the three fields travel as ONE "
+		"checkpoint, so one control.undo restores the whole warp map",
+		""),
 	R("plugin.bypass", RC::TrueInverse, true,
 		"the On/Off control is the Effect's enabled model",
 		"ProjectJournal (Effect enabled-model checkpoint)",
@@ -446,6 +469,7 @@ const ReversibilityRow kRows[] = {
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
+	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
