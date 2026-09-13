@@ -28,6 +28,7 @@ set(LMMS_TESTS
 	# proof of the dither, the byte-level off-by-default proof, the converter
 	# ratio convention, and the quality reaching the resampler.
 	src/core/ExportDitherTest.cpp
+	src/core/ExportWavDitherTest.cpp
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
@@ -249,6 +250,8 @@ set_tests_properties(MasteringTest PROPERTIES
 # a Qt platform plugin even though the tests themselves are guiless - the same
 # reason as MasteringTest above.
 set_tests_properties(ExportDitherTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ExportWavDitherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AudioResamplerRatioTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

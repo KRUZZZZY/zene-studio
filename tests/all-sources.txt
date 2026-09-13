@@ -903,6 +903,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
+src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
 src/core/ControlVocabulary.cpp
 src/core/Controller.cpp
@@ -1224,6 +1225,7 @@ tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/ExportDitherTest.cpp
+tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp
