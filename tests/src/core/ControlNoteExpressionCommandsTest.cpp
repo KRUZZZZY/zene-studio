@@ -35,6 +35,7 @@
 #include <QString>
 
 #include "ModulationTestSupport.h"
+#include "MpeExpression.h"
 
 using namespace modtest;
 
