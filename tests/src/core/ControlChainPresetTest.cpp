@@ -352,7 +352,10 @@ private slots:
 			QStringLiteral("no_such_label"), 0));
 		QVERIFY(!controlChainPresetEntry(missing, &entry, &index, &error));
 		QCOMPARE(error.errorKind, ControlErrorKind::NotFound);
-		QVERIFY(error.errorMessage.contains(QStringLiteral("no_such_label")));
+		// ... and the refusal names the device in the FORMAT's own terms (a bare
+		// "ladspaeffect" names every LADSPA device, so the label and file are named).
+		QVERIFY2(error.errorMessage.contains(QStringLiteral("no_such_label (no-such-file)")),
+			qPrintable(error.errorMessage));
 	}
 
 	/*! THE MEASURED EFFECT. A chain captured from one track, applied to a second,
@@ -408,7 +411,9 @@ private slots:
 		// values, read off the target itself.
 		QCOMPARE(livePlugins(target), sourcePlugins);
 		QCOMPARE(liveValues(target), sourceValues);
-		QCOMPARE(deviceParameterValue(target, parameterisedId, 0), wanted);
+		// A device parameter is a float, so the value that comes back is the float
+		// the engine stored: compare within float precision, not bit for bit.
+		QVERIFY(qAbs(deviceParameterValue(target, parameterisedId, 0) - wanted) < 1e-6);
 
 		// The A16 record classes it as the table says, and the undo really
 		// reverses it: the target is empty again.

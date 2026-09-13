@@ -129,6 +129,25 @@ def signature(session, target):
     return tuple(devices)
 
 
+def same_chain(left, right, tolerance=1e-6):
+    """True when two signatures hold the same devices, order and values.
+
+    Compared within `tolerance` rather than exactly: a value that has been through
+    the project file is re-parsed text, while the same in-memory store gives back
+    the same float. The ORDER is still compared exactly - it is half of the claim.
+    """
+    if len(left) != len(right):
+        return False
+    for (left_name, left_parameters), (right_name, right_parameters) in zip(left, right):
+        if left_name != right_name or len(left_parameters) != len(right_parameters):
+            return False
+        for (left_key, left_value), (right_key, right_value) in zip(left_parameters,
+                                                                    right_parameters):
+            if left_key != right_key or abs(left_value - right_value) > tolerance:
+                return False
+    return True
+
+
 def store_names(session):
     return tuple(entry.get("name") for entry in
                  session.result("chain.list").get("presets") or [])
@@ -277,7 +296,7 @@ def check_cross_project(session, instance, source, target, recorder):
     """The applied chain survives save/open, and the preset is not project state."""
     session.result("chain.apply", {"name": PRESET, "target": target})
     recorder.check("the target carries the preset again before the round trip",
-                   signature(session, target) == signature(session, source),
+                   same_chain(signature(session, target), signature(session, source)),
                    "target=%s" % (signature(session, target),))
 
     project = os.path.join(instance.tmp, "workspace", "chain-preset-proof.mmp")
@@ -289,10 +308,12 @@ def check_cross_project(session, instance, source, target, recorder):
                    "saved=%r opened=%r" % (saved.get("saved"), opened.get("file")))
 
     reopened = find_track(session, "Chain Preset Target")
-    recorder.check("the applied chain survives a real save/open round trip",
-                   reopened is not None and signature(session, reopened) == signature(
-                       session, find_track(session, "Chain Preset Source")),
-                   "target=%r other=%r" % (signature(session, reopened or ""), ()))
+    source_again = find_track(session, "Chain Preset Source")
+    survived = reopened is not None and same_chain(signature(session, reopened),
+                                                   signature(session, source_again))
+    recorder.check("the applied chain survives a real save/open round trip", survived,
+                   "target=%s source=%s" % (signature(session, reopened or ""),
+                                            signature(session, source_again or "")))
 
     # The preset is NOT project state: the store is still the same store, which is
     # the whole point of a preset (a second project can use it).
@@ -300,10 +321,8 @@ def check_cross_project(session, instance, source, target, recorder):
                    PRESET in store_names(session), "store=%s" % (store_names(session),))
     third = make_track(session, instance, None, "Chain Preset Third")
     applied = session.result("chain.apply", {"name": PRESET, "target": third})
-    same = tuple(entry[0] for entry in signature(session, third))
-    source_names = tuple(entry[0] for entry in signature(session, source))
     recorder.check("... and applies to a THIRD track after the project changed",
-                   same == source_names and applied.get("device_count") == DEVICES,
+                   same_chain(signature(session, third), signature(session, source)),
                    "third=%s applied=%r" % (signature(session, third), applied))
     return third
 

@@ -1,40 +1,47 @@
 # LANE STATE — 030-chain-presets (worktree zene-030/wch, branch 030-chain-presets)
 
 Base: `501d2cd3e` (release/0.3.0). Item: OWNER-31 item 2, "plugin chains as reusable presets".
+Build: `build/` configured `-DCMAKE_BUILD_TYPE=RelWithDebInfo -DWANT_QT6=ON -DWANT_VST3=OFF
+-DWANT_CLAP=OFF -DWANT_WASM=OFF -DWANT_STEM_SPLIT=OFF`; `cmake --build build -j2` → BUILD_EXIT=0,
+0 `error:` lines.
 
-## Done
-- [x] worktree `zene-030/wch` on `030-chain-presets` from `501d2cd3e`; disk checked; NO leaked
-      zene/Xvfb instance older than this session (the two long-lived `mcp-zene-control/server.py`
-      processes are the bridge's own servers, not DAW instances; no leaked `zene` binary).
+## Done and VERIFIED (unpiped exit codes; logs in /tmp/wch-030-verify/)
 - [x] engine half + store: `include/ControlChainPresetSupport.h`,
-      `src/core/ControlChainPresetSupport.cpp` (the `.zcp` document, identity from the device
-      state document, `chain apply`/`chain xml` helpers).
+      `src/core/ControlChainPresetSupport.cpp` (the `.zcp` document; the device identity read out of
+      the device's own `zenepluginstate` document; the identity→catalogue lookup; the apply).
 - [x] command group: `src/core/ControlCommandsChain.cpp` (chain.list / chain.get_state /
       chain.save) + `src/core/ControlCommandsChainEdit.cpp` (chain.apply / chain.rename /
-      chain.remove); registered in `include/ControlRegistry.h` + `src/core/ControlRegistry.cpp`;
-      the three new sources in `src/core/CMakeLists.txt`.
-- [x] A16 rows: 4 `true_inverse` (action checkpoint) in `ControlReversibilityTableAction.cpp`,
-      2 `not_mutating` in `ControlReversibilityTablePassive.cpp`; histogram moved to
-      170 rows / 90 / 13 / 4 / 63 in `tests/src/core/ReversibilityContractTest.cpp` and
-      `docs/RELEASE-NOTES-v0.3.0-alpha.md`.
-- [x] UI-absence lines in BOTH docs (release notes section + `docs/KNOWN-LIMITATIONS.md` bullet).
+      chain.remove), registered in `include/ControlRegistry.h` + `src/core/ControlRegistry.cpp`,
+      sources in `src/core/CMakeLists.txt`.
+- [x] A16: 4 `true_inverse` (recorded action checkpoints) in
+      `ControlReversibilityTableAction.cpp`, 2 `not_mutating` in
+      `ControlReversibilityTablePassive.cpp`; histogram 170 / 90 / 13 / 4 / 63 in
+      `tests/src/core/ReversibilityContractTest.cpp` + `docs/RELEASE-NOTES-v0.3.0-alpha.md`.
+      `ReversibilityContractTest` PASS (exit 0), `ReversibilityUndoTest` PASS, `ControlRegistryTest` PASS.
+- [x] UI-absence lines in BOTH docs.
+- [x] proofs: `tests/src/core/ControlChainPresetTest.cpp` — PASS (exit 0);
+      `tests/control-chain-presets.py` (ctest `ControlChainPresets`) — PASS, 28 checks, run by hand
+      too (exit 0).
+- [x] manifests regenerated with their own recipes, both print `REPRODUCES`
+      (`tests/fork-sources.txt`, `tests/all-sources.txt`).
+- [x] gates: 4 PASS (exit 0), 6 PASS, 8 PASS, 9 PASS, unregistered-tests PASS.
+- [x] `commands_snapshot.json` regenerated from a live instance of this build (170 ids, six
+      `chain.*`); `ControlCommandsSnapshot` PASS (exit 0). Instance exited cleanly (no leak).
+
+## Red, and NOT this lane's (proved: unchanged since `501d2cd3e`)
+- [ ] gate 7 (file length): `tests/control_socket_harness.py` 511, `tests/control-socket-path-safety.py`
+      551→574. Neither file is touched by this lane.
+- [ ] evidence gate: 27 refused log files under `tests/evidence*`, `tests/control-*-logs` — all
+      unchanged since the base tip.
+- [ ] release-honesty gate: 3 FAILs, all `WANT_VST3`/`WANT_CLAP` OFF — the smallest-tree
+      configuration WAVE-1-BRIEFS.md asks for. Needs a CI-config build (tools/local-ci.sh).
 
 ## Left
-- [x] tests written and registered in `tests/CMakeLists.txt`: `ControlChainPresetTest`
-      (in-process: the six ids/schemas, the six contract rows, the name rule, the store's
-      location, the document's identity round trip, and an apply whose device order and
-      parameter values are read back through dsp.get_state) and `ControlChainPresets`
-      (`tests/control-chain-presets.py`, the socket proof: apply to a second track, parameter
-      values off the wire, a real project.save→open round trip, the store surviving it, and
-      every inverse through control.undo).
-- [ ] BUILD: configure (`-DWANT_QT6=ON -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_WASM=OFF`),
-      then `cmake --build build -j2`; fix any compile error.
-- [ ] regenerate `tests/fork-sources.txt` and `tests/all-sources.txt` with their own recipes
-      and require `REPRODUCES`; re-run gates 4/7/8.
-- [ ] regenerate `tools/mcp-zene-control/zene_control/commands_snapshot.json` from a live
-      instance of this build; re-run `ControlCommandsSnapshot`.
-- [ ] configure + build (smallest tree), run the acceptance list in `WAVE-1-BRIEFS.md`.
+- [ ] full-suite `ctest -j2` result (running) and `tests/run-all-gates.sh --no-mutation` (running).
+- [ ] optional: `tools/local-ci.sh` (its own `build-ci/` tree, VST3+CLAP ON) for CI-exactness and a
+      release-honesty PASS.
+- [ ] delete `build/` when the parent has re-run the acceptance on the merged tip.
 
 ## Exact next command
     cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wch \
-      && cmake -S . -B build -DWANT_VST3=OFF -DWANT_CLAP=OFF > /tmp/wch-cfg.log 2>&1; echo EXIT=$?
+      && tail -20 /tmp/wch-030-verify/ctest-full.log; tail -40 /tmp/wch-030-verify/run-all-gates.log

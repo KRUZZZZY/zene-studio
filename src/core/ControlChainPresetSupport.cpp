@@ -86,6 +86,21 @@ QString identityFormat(const QString& file, const QString& label, const QString&
 	return QStringLiteral("builtin");
 }
 
+/*! The device identity as a refusal names it, in the format's own terms: an LV2
+ *  URI, a LADSPA label with the file it lives in, or a built-in name. A bare
+ *  descriptor name would name no device at all ("ladspaeffect" is every LADSPA
+ *  device), which is what makes a not_found worth reading.
+ */
+QString identityDescription(const ControlChainPresetDevice& identity)
+{
+	if (!identity.uri.isEmpty()) { return identity.uri; }
+	if (!identity.label.isEmpty())
+	{
+		return identity.label + QLatin1String(" (") + identity.file + QLatin1Char(')');
+	}
+	return identity.plugin;
+}
+
 } // namespace
 
 QString controlChainPresetDir()
@@ -210,8 +225,12 @@ bool controlReadChainPreset(const QString& path, ControlChainPreset* out, Contro
 
 	ControlChainPreset preset;
 	preset.path = path;
-	preset.name = root.attribute(QStringLiteral("name"));
-	if (preset.name.isEmpty()) { preset.name = controlChainPresetName(path); }
+	// The FILE NAME is the store's key: chain.rename renames the file and the
+	// document's own "name" attribute is only the name it was captured under, so
+	// letting the attribute win would report the OLD name after a rename - which is
+	// exactly the state chain.list's caller cannot act on.
+	preset.name = controlChainPresetName(path);
+	if (preset.name.isEmpty()) { preset.name = root.attribute(QStringLiteral("name")); }
 
 	for (QDomElement holder = root.firstChildElement(QStringLiteral("device"));
 		!holder.isNull(); holder = holder.nextSiblingElement(QStringLiteral("device")))
@@ -289,10 +308,9 @@ bool controlChainPresetEntry(const ControlChainPresetDevice& device, ControlDevi
 	}
 
 	*error = ControlResult::failure(ControlErrorKind::NotFound,
-		QStringLiteral("this build has no device '%1'%2: the preset was captured with a device "
+		QStringLiteral("this build has no device '%1': the preset was captured with a device "
 			"this binary cannot instantiate (plugin.list names the ones it has)")
-			.arg(identity.plugin,
-				identity.uri.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(identity.uri)));
+			.arg(identityDescription(identity)));
 	return false;
 }
 
