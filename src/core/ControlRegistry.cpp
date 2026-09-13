@@ -481,6 +481,10 @@ void registerControlCommands(ControlRegistry& registry)
 #endif
 	registerExportCommands(registry);
 	registerRackCommands(registry);
+	// The browser group carries no compile-time switch: it reads directories and
+	// a JSON file in the config directory, both of which exist in every
+	// configuration, so its ids are always honest.
+	registerBrowserCommands(registry);
 }
 
 } // namespace lmms

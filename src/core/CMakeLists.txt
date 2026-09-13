@@ -75,6 +75,10 @@ set(LMMS_SRCS
 	core/AutomationNode.cpp
 	core/BandLimitedWave.cpp
 	core/base64.cpp
+	core/BrowserCatalog.cpp
+	core/BrowserMetadata.cpp
+	core/BrowserPeakCache.cpp
+	core/BrowserTagStore.cpp
 	core/BufferManager.cpp
 	core/Clipboard.cpp
 	core/ComboBoxModel.cpp
@@ -85,8 +89,11 @@ set(LMMS_SRCS
 	core/ControlCommandsClipEdits.cpp
 	core/ClipEdits.cpp
 	core/ControlAutomationSupport.cpp
+	core/ControlBrowserSupport.cpp
 	core/ControlCommandsAutomation.cpp
 	core/ControlCommandsAutomationEdit.cpp
+	core/ControlCommandsBrowser.cpp
+	core/ControlCommandsBrowserTags.cpp
 	core/ControlCommandsControl.cpp
 	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp

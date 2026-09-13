@@ -96,6 +96,8 @@ include/AutomationTrackView.h
 include/BandLimitedWave.h
 include/BarModelEditor.h
 include/BasicFilters.h
+include/BrowserCatalog.h
+include/BrowserPeakCache.h
 include/BufferManager.h
 include/CPULoadWidget.h
 include/CaptionMenu.h
@@ -109,6 +111,7 @@ include/ComboBox.h
 include/ComboBoxModel.h
 include/ConfigManager.h
 include/ControlAutomationSupport.h
+include/ControlBrowserSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlLayout.h
@@ -880,6 +883,10 @@ src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationNode.cpp
 src/core/BandLimitedWave.cpp
+src/core/BrowserCatalog.cpp
+src/core/BrowserMetadata.cpp
+src/core/BrowserPeakCache.cpp
+src/core/BrowserTagStore.cpp
 src/core/BufferManager.cpp
 src/core/Clip.cpp
 src/core/ClipEdits.cpp
@@ -887,10 +894,13 @@ src/core/Clipboard.cpp
 src/core/ComboBoxModel.cpp
 src/core/ConfigManager.cpp
 src/core/ControlAutomationSupport.cpp
+src/core/ControlBrowserSupport.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsBrowser.cpp
+src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsControl.cpp
@@ -908,6 +918,9 @@ src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsScript.cpp
+src/core/ControlCommandsSession.cpp
+src/core/ControlCommandsSessionLaunch.cpp
+src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
@@ -1239,12 +1252,15 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
+tests/src/core/BrowserCatalogTest.cpp
+tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipEditsTest.cpp
 tests/src/core/ClipFadesRenderTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/ConfigMigrationTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
+tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
