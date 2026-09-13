@@ -121,7 +121,33 @@ Only two of them run by default, and that gap is the defect this section exists 
 |---|---|---|---|
 | **fork** (default) | `tests/fork-sources.txt` (129) | `run-all-gates.sh`, CI `static-gates`, every gate's bare invocation | **GREEN** — and this is the **release gate**, per `docs/CONVENTIONS.md` |
 | **tools** (default) | `tests/tools-sources.txt` (12) | `run-all-gates.sh` (same gate rows), CI `static-gates` (own steps) | **GREEN** |
-| **whole tree** (advisory) | `tests/all-sources.txt` (1,133) | **nothing by default** — `run-all-gates.sh --whole-tree`, or `--scope all` by hand | **GREEN** as of 2026-09-12; was RED and unreported until then |
+| **whole tree** (advisory) | `tests/all-sources.txt` (1,133) | **nothing by default** — `run-all-gates.sh --whole-tree`, or `--scope all` by hand | **RED at the 0.2.1-alpha tip (2026-09-13)** — GREEN on the 2026-09-12 tree this table records, and RED and unreported before that; see the correction below |
+
+**Correction — the all scope is red again at the 0.2.1-alpha tip (2026-09-13, `post-alpha/integration`
+@ `5565b4b1b`).** The 2026-09-12 reconciliation above did not hold to the tip. Re-measured 2026-09-13:
+`bash tests/complexity-gate.sh --check --scope all` exits **1** with **28** regression lines, and
+`bash tests/file-length-gate.sh --check --scope all` exits **1** with **34** — 62 regression lines over
+35 distinct files. The scopes that CI and `run-all-gates.sh` run by default are still **green**: the
+fork scope and the tools scope each exit 0 on both gates. The counts in the table above are the
+2026-09-12 ones; the manifests have grown since (fork **244** files, all **1,263**).
+
+**Why the two scopes can disagree, stated plainly.** The fork manifest holds **244** files and the all
+manifest **1,263** first-party C/C++ sources (upstream LMMS plus the fork's own), and the two sets are
+not nested. **55 of the 62 failing lines sit in files `tests/fork-sources.txt` does not list at all**;
+the remaining 7 are in four files both scopes list, where the fork-scope entry is current (that ratchet
+exits 0) and only the all-scope entry is stale. So this is a stale whole-tree baseline, not a product
+regression the fork ratchets missed.
+
+**The smallest honest action, named rather than implied.** For each failing file, one
+`--reanchor-file <path> "<reason>"` on the all-scope baseline, the reason naming the file, its measured
+size or CCN, the delta, the commit that moved it and — for an inherited file — the corresponding row in
+`tests/upstream-modifications.txt`; **or** leave the scope red and record it as the owner's decision,
+which is what the planned **GATE-1** (*cut the gate suite to what changes behaviour*) and **GATE-2**
+(*measure coverage over the whole fork scope, once, in one job*) rows in the program's planned-work
+master list cover. What is not honest is neither: a red scope that no run reports is the defect the
+2026-09-12 pass existed to close. A re-anchor is not a silencer — every entry needs a recorded reason
+and an unrecorded re-anchor exits 2 (`docs/CONVENTIONS.md` rule 4). Re-anchoring is a decision, so this
+page records it rather than making it.
 
 **The whole-tree scope was red from the post-alpha merges until 2026-09-12, and no default runner,
 CI job or merge record said so.** At `87b9a5397` it stood at 23 file-length regressions (5 new files
@@ -505,8 +531,10 @@ longer over target (`improved: … is no longer over CCN 10 (baseline entry is d
 deliberately)`) — it never pruned dead entries before, and a dead entry masks a future rise up to its
 recorded value. Two such keys were removed from the all-scope baseline with the 2026-09-12 pass:
 `lmms::PluginFactory::discoverPlugins` (CCN 32 → 7, so its grandfathered 15 was dead weight) and
-`lmms::RemotePlugin::process`. For the all scope the same run measures **9,462 functions with
-275 over target** and, after the 2026-09-12 re-anchor, exits 0 as well (see "Scope policy").
+`lmms::RemotePlugin::process`. For the all scope the same run measured **9,462 functions with
+275 over target** and, after the 2026-09-12 re-anchor, exited 0; **that no longer holds at the
+0.2.1-alpha tip** — `complexity-gate.sh --check --scope all` exits 1 with 28 regression lines and
+`file-length-gate.sh --check --scope all` exits 1 with 34 (see "Scope policy", correction above).
 
 The figures this section previously carried (13 of 514 functions, highest CCN 27) were measured
 on the standards fork's 42-file scope and no longer describe the product. The highest CCN in the

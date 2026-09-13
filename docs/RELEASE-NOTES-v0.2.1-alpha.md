@@ -387,15 +387,27 @@ prove the fallback; no test drives the surface against a real audio backend.
   it yet.
 - **A loudness meter and a loudness report on export** — integrated LUFS, short-term maximum and true peak,
   measured against the EBU R128 target, and independently cross-checked against a reference implementation.
+  **It is a render-path report, not a live meter**: the reading arrives with the render/export as a
+  `.loudness.txt` sidecar (and through the CLI `--loudness-report`), and there is no GUI meter — that is
+  deliberately out of scope (`docs/LUFS-METER.md`, `docs/LUFS-WIRING.md`).
 - **MIDI learn**: focus a control, move a knob, and the binding is saved in the project.
 - **Stem export**: render a project's tracks as separate files that line up and sum back to the mix.
-- **Automation modes** — Read / Touch / Latch / Write — so riding a fader in Read cannot destroy automation
-  you already wrote. Verified against the tree, and stated as a limitation deliberately: **sample-accurate
+  **CLI/headless only** — the action is `zene exportstems`, and no dialog control exists for it
+  (`grep StemExport src/gui` returns nothing). It is not the offline HTDemucs stem *separation*, which is off
+  in every release build.
+- **Automation modes** — the Read / Touch / Latch / Write engine is implemented and tested, with the
+  touch/latch state machine and the trim offset (`docs/AUTOMATION-MODES.md`). **You cannot select or persist a
+  mode in this build, and neither can an agent**: `setAutomationMode` is called only inside the engine's own
+  test, the mode is serialised nowhere, and `automation.mode_set` is registered with a full schema and then
+  **refuses every call**. The "riding a fader in Read" workflow this bullet used to describe is therefore not
+  reachable here. Verified against the tree, and stated as a limitation deliberately: **sample-accurate
   automation playback is NOT in this release** — automation is evaluated once per tick rather than per frame,
   so a value lands on a tick boundary rather than on a sample (`docs/AUTOMATION-MODES.md`, which names the
   line that blocks a per-frame producer).
 - **A clip model that survives a playback pass.** Trimming a clip used to be reverted by the next playback;
-  the authored window is now authoritative and is saved with the project. Editing gestures are not in yet.
+  the authored source window is now authoritative and is saved with the project. **There is still no authoring
+  gesture for that window** — no trim-in/out and no slip tool or command — and the clip *length* resize that
+  does exist (`clip.resize`, plus the ClipView edge drag) is a different feature that shares the word "trim".
 - **A warp engine**: markers that pin positions in the audio and let a clip follow (or lead) the project
   tempo. Time-stretching is done by resampling, so it **changes pitch** — a 2× stretch is an octave up.
   Verified against this tree: `docs/WARP.md` §0 is the implementing lane's report — `WarpMarkers` is a child of
@@ -610,9 +622,10 @@ is `docs/KNOWN-LIMITATIONS.md`, and **there is no version-suffixed 0.2.1 limitat
 `docs/KNOWN-LIMITATIONS-v0.1.0-alpha.md`, is the one it replaced), so a process looking for the suffixed name
 will not find the page this text points at. The short
 version: no instrument editor; instrument hosting is one-per-track and proven only against our own test
-instrument; no clip editing gestures, take lanes or comping; no plugin-scanning interface worth the name; no
-stable project format; no measured crash-free rate (the reporter is new); VCA groups and racks exist in the
-project format but **cannot be created from the interface**; and **renders are reproducible for 7 of the nine
+instrument; no trim, slip, fade, crossfade or clip-gain tools in the interface, and no take lanes or comping; no
+plugin-scanning interface worth the name; no stable project format; no measured crash-free rate (the reporter
+is new); automation modes exist in the engine but **cannot be selected or persisted**; VCA groups and racks
+exist in the project format but **cannot be created from the interface**; and **renders are reproducible for 7 of the nine
 projects the determinism sweep covers, with two still not** — those two are named in the limitations page, along with the reason
 the cause is inside their instruments rather than in the renderer.
 A **reported defect that is not fixed in this release**: a sample whose rate differs from the project's plays
