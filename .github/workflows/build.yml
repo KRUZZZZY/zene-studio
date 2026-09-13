@@ -871,7 +871,7 @@ jobs:
   # happened twice in a row: v0.2.0-alpha, and the v0.2.1-alpha re-cut, were both cut
   # from a commit whose own seven-platform matrix was red. This job is the release's
   # gate and it is the workflow half of "a tag is cut from a commit whose own CI run is
-  # green" (NEXT-0.3.0-AGENT-PROMPT.md §4).
+  # green" (the program workspace's `NEXT-0.3.0-AGENT-PROMPT.md` §4).
   #
   #   * `needs:` names every build job, so this job is SKIPPED — it never runs — when
   #     any of them fails or is cancelled. Do NOT give it `if: always()`, `if:

@@ -65,7 +65,7 @@
 # the other platform's branch is tested on one machine.
 #
 # TAG-RUN MODE (REL-2, 2026-09-13) — "a tag is cut from a commit whose own CI run is
-# green" (NEXT-0.3.0-AGENT-PROMPT.md §4) as a command with an exit code:
+# green" (the program workspace's `NEXT-0.3.0-AGENT-PROMPT.md` §4) as a command with an
 #
 #   bash tests/release-honesty-gate.sh --tag-run <sha> [--repo owner/name]
 #
