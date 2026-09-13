@@ -1,7 +1,7 @@
 /*
  * SyntheticAudioPlugin.cpp - test double for the AudioPlugin legacy bridge
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

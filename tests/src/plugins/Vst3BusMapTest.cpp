@@ -1,7 +1,7 @@
 /*
  * Vst3BusMapTest.cpp - unit tests for the VST3 bus/channel mapping
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

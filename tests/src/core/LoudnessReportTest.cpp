@@ -1,7 +1,7 @@
 /*
  * LoudnessReportTest.cpp - the render-path loudness report
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

@@ -2,7 +2,7 @@
  * AudioEngineTeardownTest.cpp - the engine's worker pool must not outlive its
  * QThread objects (test hygiene: a test must not abort because of teardown)
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

@@ -2,7 +2,7 @@
  * Vst3InstrumentIntegrationTest.cpp - end to end: a MIDI clip drives a VST3
  * instrument, and its state survives the project file
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

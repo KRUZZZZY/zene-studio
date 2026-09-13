@@ -1,7 +1,7 @@
 /*
  * NamModel.h - block-based WaveNet (A1) inference engine for .nam models
  *
- * Copyright (c) 2026 AI-KOS Team
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

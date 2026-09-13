@@ -1,7 +1,7 @@
 /*
  * MpeExpressionTest.cpp - MPE per-channel capture and pitch math (task #601)
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

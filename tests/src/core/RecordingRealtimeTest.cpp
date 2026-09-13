@@ -4,7 +4,7 @@
  *                              thread), D9c (no audio-thread allocation in the
  *                              clip record path), D9a (no unbounded growth)
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

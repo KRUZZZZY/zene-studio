@@ -2,7 +2,7 @@
  * OnnxRuntimeStemSeparatorTest.cpp - in-process ORT backend (only when the
  * ONNX Runtime SDK was found at configure time)
  *
- * Copyright (c) 2026 LMMS Developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

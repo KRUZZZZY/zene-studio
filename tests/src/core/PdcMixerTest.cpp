@@ -1,7 +1,7 @@
 /*
  * PdcMixerTest.cpp - plugin delay compensation (task #605)
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

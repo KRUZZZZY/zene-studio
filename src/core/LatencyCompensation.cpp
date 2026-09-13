@@ -2,7 +2,7 @@
  * LatencyCompensation.cpp - fixed-capacity delay line for plugin delay
  *                           compensation at a mixer summing point
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

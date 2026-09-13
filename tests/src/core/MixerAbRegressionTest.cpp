@@ -1,7 +1,7 @@
 /*
  * MixerAbRegressionTest.cpp - D1 byte-identical A/B render regression
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

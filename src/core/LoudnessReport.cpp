@@ -1,7 +1,7 @@
 /*
  * LoudnessReport.cpp - EBU R128 loudness report for a rendered project
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

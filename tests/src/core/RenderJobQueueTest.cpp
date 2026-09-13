@@ -1,7 +1,7 @@
 /*
  * RenderJobQueueTest.cpp - the offline render's job-queue contract
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

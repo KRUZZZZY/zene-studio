@@ -1,7 +1,7 @@
 /*
  * MpeNoteStorageTest.cpp - MPE per-note expression storage (task #601)
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

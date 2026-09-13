@@ -1,7 +1,7 @@
 /*
  * wat2wasm.cpp - assemble WebAssembly text modules with the runtime's parser
  *
- * Copyright (c) 2026 LMMS WASM DSP sandbox contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

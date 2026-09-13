@@ -47,7 +47,7 @@
  *   - The pre-#589 client is the fixture, not a real historical binary: the
  *     retired wire behaviour is emulated (retired id + interleaved writes).
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

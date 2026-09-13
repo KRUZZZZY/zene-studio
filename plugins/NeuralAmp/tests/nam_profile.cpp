@@ -1,7 +1,7 @@
 /*
  * nam_profile.cpp - stage-level CPU profile of NamModel::process()
  *
- * Copyright (c) 2026 AI-KOS Team
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

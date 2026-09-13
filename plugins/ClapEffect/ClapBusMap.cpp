@@ -1,7 +1,7 @@
 /*
  * ClapBusMap.cpp - maps CLAP audio ports onto the AudioPorts transport
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

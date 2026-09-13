@@ -1,7 +1,7 @@
 /*
  * StemTypes.h - shared types of the offline stem-separation feature
  *
- * Copyright (c) 2026 LMMS Developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

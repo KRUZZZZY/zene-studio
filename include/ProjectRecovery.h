@@ -2,7 +2,7 @@
  * ProjectRecovery.h - decide whether an autosave recovery file may be offered
  *                     as the recovery of the project the user is opening
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # make_stub_model.py - build a tiny 4-stem ONNX model for pipeline tests
 #
-# Copyright (c) 2026 LMMS Developers
+# Copyright (c) 2026 Zene Studio contributors
 #
 # This file is part of LMMS - https://lmms.io
 #

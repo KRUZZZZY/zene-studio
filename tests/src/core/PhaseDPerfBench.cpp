@@ -2,7 +2,7 @@
  * PhaseDPerfBench.cpp - D3 per-send CPU gate for the Phase D sidechain
  * implementation (task #587, mission lmms-mixer-routing-mission).
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

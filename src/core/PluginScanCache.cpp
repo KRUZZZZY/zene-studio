@@ -1,7 +1,7 @@
 /*
  * PluginScanCache.cpp - on-disk cache of plugin scan results plus a quarantine list.
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

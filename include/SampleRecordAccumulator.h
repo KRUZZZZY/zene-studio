@@ -1,7 +1,7 @@
 /*
  * SampleRecordAccumulator.h - background take builder for the clip record path
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

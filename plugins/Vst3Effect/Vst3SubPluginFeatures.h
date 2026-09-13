@@ -1,7 +1,7 @@
 /*
  * Vst3SubPluginFeatures.h - VST3 bundle discovery for the plugin browser
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

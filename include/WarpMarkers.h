@@ -1,7 +1,7 @@
 /*
  * WarpMarkers.h - the warp map: markers that pin source frames to the timeline
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

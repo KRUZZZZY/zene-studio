@@ -2,7 +2,7 @@
  * MultiTrackRecorder.h - owns the hardcoded two-track capture streams of the
  *                        two-track recording prototype
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

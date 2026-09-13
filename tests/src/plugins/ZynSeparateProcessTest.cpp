@@ -42,7 +42,7 @@
  *     descriptor names lmms.exe - see AudioPluginTest.cpp), so the whole suite
  *     skips there.
  *
- * Copyright (c) 2026 LMMS developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

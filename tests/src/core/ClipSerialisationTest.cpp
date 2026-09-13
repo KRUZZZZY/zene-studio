@@ -2,7 +2,7 @@
  * ClipSerialisationTest.cpp - Slice 1 of the clip-and-capture wave (task #611):
  *                             the clip's authored source window survives a save.
  *
- * Copyright (c) 2026 Zene Studio developers
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *

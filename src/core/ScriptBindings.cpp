@@ -1,7 +1,7 @@
 /*
  * ScriptBindings.cpp - Lua-facing wrapper classes for the LMMS Lua API v0
  *
- * Copyright (c) 2026 LMMS contributors
+ * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
  *
