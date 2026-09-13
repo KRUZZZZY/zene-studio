@@ -1325,6 +1325,12 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlAbsentSocket PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
+		# The probe reads held AF_UNIX sockets from /proc where it exists and from
+		# `lsof -a -p <pid> -U -Fn` where it does not (Darwin), and SKIPs with a
+		# stated reason when a host can do neither - an empty probe is not evidence
+		# that the product holds no socket. 77 is what ctest reports as Skipped;
+		# without this property the skip would be reported as a failure.
+		SKIP_RETURN_CODE 77
 	)
 endif()
 
