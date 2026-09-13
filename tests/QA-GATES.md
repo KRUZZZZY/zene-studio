@@ -985,6 +985,53 @@ committed in no scope list: at the pre-fix revision no such check exists and Gat
 undeclared change to upstream code; the fixed Gate 9 names it and exits 1, then exits 0 once the file
 is registered.
 
+## Gate 11: No committed evidence, no oversized files (`evidence-gate.sh`) — WIRED 2026-09-13
+
+**Command** (as `run-all-gates.sh` and CI's `static-gates` job run it):
+
+```sh
+bash tests/evidence-gate.sh          # EXIT=0
+bash tests/evidence-gate.sh --self-test   # the gate's own red/green control, EXIT=0
+```
+
+**Pass criterion**: exit 0. No tracked file may have an evidence suffix anywhere in the
+tree — `log`, `exit`, `ours`, `theirs` (the exit-code and merge-leftover files 0.2.x
+committed per lane), coverage data (`gcda`, `gcno`, `gcov`, `lcov`, `info`), LLVM profile
+data (`profraw`, `profdata`) or machine-readable test reports (`junit`, `jtr`) — and no
+render suffix (`wav`, `mp3`, `flac`, `ogg`, `aiff`, `aif`, `opus`, `mp4`, `mkv`, `webm`,
+`m4a`) outside `data/`, where bundled product content lives (181 `.ogg`, 26 `.wav`, 33
+`.flac` at this commit). Nothing may exceed `EVIDENCE_SIZE_CAP_BYTES` (default 1048576 =
+1 MiB). `--tree DIR` scans a directory instead of the git index, which is how the control
+is built.
+
+**Exemptions** live in `tests/evidence-gate-exempt.txt` as `<prefix or glob><TAB><reason>`.
+A blank reason is exit 2, not an exemption, and the file is a required input — its absence
+is exit 2 as well, so a deleted exemption home cannot silently mute the gate. At this
+commit there are four entries, all vendored third-party data (`plugins/RnnoiseDenoiser/
+rnnoise`, `plugins/NeuralAmp/rtneural`, `plugins/LadspaEffect/caps`) plus one recorded open
+item: `plugins/RnnoiseDenoiser/testdata/`, whose `crash-evidence/*.log` and `strace_A.log`
+are run output that no script in the tree reads. They are exempt because the owner's
+`CP-1` decision named a specific deletion set that does not include that directory — the
+entry says so in as many words, so the exemption is a record, not a silent grandfather.
+
+**Red/green proof**: `--self-test` builds four fixtures and asserts six exits — a clean
+tree (with a `.wav` under `data/`) 0, a `.log` 1, a 2 MB file against the 1 MiB cap 1, a
+render outside `data/` 1, an exempted prefix 0, a blank reason 2. The same three red
+verdicts reproduce against the real tree by staging one file each. The control is not
+decoration: it is how the suffix list's own bug was found — a `case` pattern whose
+alternatives came from a variable is one *literal* pattern in bash, so the first draft of
+this gate refused nothing by name and passed as a size-cap check only.
+
+**Why it exists** (`REPO-2`, the twin of `REPO-1`): the 0.2.x line shipped **140.4 MiB /
+1,368 tracked files** of run output inside `tests/` — 17 `integration-logs-*` directories,
+`coverage-green/`, `coverage-run/`, `evidence/` and `gate-hygiene-logs/` — and every one
+of the ten gates above stayed green while it did, because every one of them measures code.
+The owner took `CP-1` on 2026-09-13 ("delete the evidence, keep its hashes, and land
+REPO-2's gate that refuses evidence file types + oversized files"); `REPO-1` is the
+deletion, `tests/evidence-manifest.tsv` holds the sha256 of every removed file, and this
+gate is what stops the directory refilling in the next lane. Because the evidence is gone,
+**Gate 6 is not widened** and no accepted-violation row was added.
+
 ## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
 
 The adopted ruleset requires "dead code: zero (ruff/vulture)". The C++ equivalent is

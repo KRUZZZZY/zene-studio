@@ -32,10 +32,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  # Gates 3, 4, 6, 7, 8 and 9 need no build: they read the sources and git history.
-  # This is the job enforced on push and pull_request (see the trigger policy above).
+  # Gates 3, 4, 6, 7, 8, 9 and 11 need no build: they read the sources, the git history
+  # and the tracked file set. This is the job enforced on push and pull_request (see the
+  # trigger policy above).
+  #
+  # Gate 11 (REPO-2, 2026-09-13). The step is what makes the evidence deletion stick:
+  # 140.4 MiB of run logs, coverage captures and renders sat in tests/ through every
+  # green run of this job, because a gate suite that measures code cannot see a
+  # directory of *.log. The job name gains "11" in the same change, so the label and the
+  # work agree; nothing is bound to the old string yet - the repo has no
+  # required_status_checks rule (measured 2026-09-13: the three rulesets are
+  # main-protection, main-requires-pull-request and release-tag-protection, none of them
+  # a required check), and REL-1 is the item that will require these names.
   static-gates:
-    name: static gates (3, 4, 6, 7, 8, 9)
+    name: static gates (3, 4, 6, 7, 8, 9, 11)
     runs-on: ubuntu-latest
     steps:
       - name: Check out (full history - Gate 6 needs it)
@@ -64,6 +74,8 @@ jobs:
         run: bash tests/duplication-gate.sh --scope tools
       - name: Gate 9 - every tracked source is registered in a scope manifest
         run: bash tests/fork-sources-gate.sh
+      - name: Gate 11 - no committed evidence and nothing over the size cap
+        run: bash tests/evidence-gate.sh
 
   # Gate 1 needs a real build: "it compiles" never substitutes for a passing ctest.
   unit-tests:

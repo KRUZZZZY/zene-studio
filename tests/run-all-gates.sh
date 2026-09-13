@@ -2,7 +2,7 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10 (Gate 5 ≈3 min)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
@@ -37,6 +37,9 @@
 # Gates 4, 7 and 8 also run the `tools` scope (tests/tools-sources.txt — the fork's own
 # tooling under tools/, with its own baselines) in the same gate row, so a regression in
 # the tooling fails the same gate as a regression in the product.
+#
+# Gate 11 (evidence / oversized files, added 2026-09-13 with REPO-2) measures what the
+# tree carries besides code; tests/QA-GATES.md documents it and its --self-test control.
 #
 # Exit codes (a skipped gate is NOT a pass):
 #   0  every gate ran and passed
@@ -193,6 +196,18 @@ bash tests/fork-sources-gate.sh
 banner 10 "test-source registration"
 bash tests/unregistered-tests-gate.sh
 [[ $? -eq 0 ]] && record 10 "unregistered-tests" "PASS" || record 10 "unregistered-tests" "FAIL"
+
+# ---- Gate 11: no committed evidence, no oversized files -----------------------
+# Every other gate in this suite measures CODE. Gate 11 measures what the tree
+# carries besides code: run logs, exit files, merge leftovers, coverage captures,
+# stray renders and anything over the size cap. The 0.2.x line shipped 140.4 MiB
+# of it (1,368 tracked files) while all ten gates above stayed green, and the
+# owner's CP-1 decision on 2026-09-13 is what removed it; this gate is what stops
+# it re-accumulating. `bash tests/evidence-gate.sh --self-test` is its own red/green
+# control (the gate has been seen red on a .log, an over-cap file and a render).
+banner 11 "no committed evidence / no oversized files"
+bash tests/evidence-gate.sh
+[[ $? -eq 0 ]] && record 11 "evidence" "PASS" || record 11 "evidence" "FAIL"
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
