@@ -492,6 +492,31 @@ const ReversibilityRow kRows[] = {
 		"restored state is the same state, which the test asserts rather than "
 		"assumes",
 		""),
+
+	// The tempo map's true_inverse rows (030/w15-tempo-map): restored after a
+	// union took the other side wholesale and dropped them.
+	R("transport.tempo_map_add", RC::TrueInverse, true,
+		"the tempo map is a value type on the Song, not a JournallingObject, so "
+		"no object checkpoint covers it",
+		"action checkpoint: the recorded undo step writes the map captured before "
+		"the edit back through TempoMapPublisher::edit",
+		""),
+	R("transport.tempo_map_remove", RC::TrueInverse, true,
+		"the same value type, one event removed",
+		"action checkpoint: the recorded undo step restores the map captured "
+		"before the removal, event for event",
+		""),
+	R("transport.tempo_map_clear", RC::TrueInverse, true,
+		"it removes every event AND switches the map off in one command, so a "
+		"per-event inverse would not be one step",
+		"action checkpoint: the recorded undo step restores the whole captured "
+		"map, events and active flag together, as ONE Ctrl+Z",
+		""),
+	R("transport.tempo_map_set_active", RC::TrueInverse, true,
+		"the flag is engine-read project state with no model of its own",
+		"action checkpoint: the recorded undo step restores the map captured "
+		"before the switch, so the flag comes back with the events",
+		""),
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
