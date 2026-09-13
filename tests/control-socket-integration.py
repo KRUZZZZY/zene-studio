@@ -1548,6 +1548,36 @@ def wait_for_socket(path, process, log_path):
     fail("the control socket %s never became connectable" % path, process, log_path)
 
 
+def midi_learn_flow(client, process, log_path, last_id):
+    """midi.learn_toggle: the global MIDI-learn arm/disarm (SPEC A11).
+
+    The id the Edit > MIDI Learn action declares. The coverage audit
+    (docs/COVERAGE-MATRIX-2026-09-13.md section 3.3) measured it as referenced
+    nowhere but tests/upstream-modifications.txt - a manifest, not a test - so
+    this leg is its registered proof. The command is deliberately drivable
+    headlessly (its own description: an offscreen instance arms the mode exactly
+    like a visible one), so the assertions are the TOGGLE itself (armed, then not
+    armed), that each press reports `changed`, and that the mode is GUI/engine
+    state rather than project state: no transaction is recorded, so control.undo
+    has nothing to reverse. The mode is left disarmed.
+    """
+    flow = Flow(client, last_id)
+    armed = flow.ok("midi.learn_toggle")
+    if armed.get("armed") is not True or armed.get("changed") is not True:
+        fail("midi.learn_toggle did not arm the mode: %r" % armed, process, log_path)
+    disarmed = flow.ok("midi.learn_toggle")
+    if disarmed.get("armed") is not False or disarmed.get("changed") is not True:
+        fail("midi.learn_toggle did not disarm the mode again: %r" % disarmed, process, log_path)
+    records = flow.ok("control.transactions").get("transactions") or []
+    named = [record.get("command") for record in records]
+    if "midi.learn_toggle" in named:
+        fail("midi.learn_toggle recorded a transaction, but it is GUI/engine mode state and "
+             "not project state (transactions=%r)" % named, process, log_path)
+    print("midi.learn_toggle: armed -> disarmed (changed both times), no transaction "
+          "recorded (%d on the stack)" % len(records))
+    return flow.id
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
@@ -2031,6 +2061,9 @@ def main():
 
         # --- clip.*: the fade / crossfade / clip-gain commands ---------------
         last_id = clip_edits_flow(client, process, log_path, last_id)
+
+        # --- midi.*: the global MIDI-learn arm/disarm (SPEC A11) -------------
+        last_id = midi_learn_flow(client, process, log_path, last_id)
 
         # --- shutdown unlinks the socket ----------------------------------
         client.call(last_id + 1, "control.quit")

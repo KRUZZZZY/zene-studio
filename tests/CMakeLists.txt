@@ -1189,7 +1189,43 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 			TIMEOUT 300
 		)
+		# The five session.* ids the M1 milestone above does not drive:
+		# launch_slot, stop_slot, stop_all, clear_slot and clear. The coverage
+		# audit (docs/COVERAGE-MATRIX-2026-09-13.md section 3.3) measured them as
+		# referenced nowhere outside src/ and include/ - the group's only proof
+		# named those five as its gap. Registered under the same guard, because a
+		# build with the Session View compiled out has no session.* group and a
+		# test that cannot run must not be registered as one that passed (the
+		# transcript reports ctest *Skipped*, exit 77, if it finds no group).
+		add_test(NAME ControlSessionLifecycleTranscript
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-lifecycle-transcript.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionLifecycleTranscript PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+			SKIP_RETURN_CODE 77
+		)
 	endif()
+	# The export.* group (render settings): dither and the SRC converter. It had
+	# NO registered proof at all before the 2026-09-13 coverage audit - the only
+	# artefact that exercised it, tests/control-export-settings.py, was not in
+	# this file, which is the one group the audit listed as satisfying neither
+	# half of the 0.3.0 scope contract's criterion 3. The transcript itself is
+	# unchanged in what it asserts (defaults, the set, the transaction record,
+	# the undo, the typed refusal); it now starts its instance through the same
+	# headless recipe the other transcripts use and in a private run directory,
+	# so it can run beside a sibling lane's copy of itself.
+	add_test(NAME ControlExportSettings
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-export-settings.py
+			$<TARGET_FILE:zene>
+			${CMAKE_CURRENT_SOURCE_DIR}/data/agent-control-fixture.mmp
+	)
+	set_tests_properties(ControlExportSettings PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# freeze / bounce-in-place (the engine-level Bar 2 gap): a track's output is
 	# rendered to a WAV and the track made to play it, driven END TO END through
 	# --control-socket. It is registered unconditionally - the bounce.*/freeze.*

@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!DOCTYPE lmms-project>
+<lmms-project type="song" version="1.0" creator="Zene Studio">
+  <head timesig_denominator="4" bpm="140" masterpitch="0" mastervol="100" timesig_numerator="4"/>
+  <song>
+    <trackcontainer type="song">
+      <track type="0" name="mod" muted="0" frozen="0">
+        <instrumenttrack/>
+        <pattern type="0" name="p" muted="0" steps="16" pos="0" len="192" frozen="0">
+          <midiclip steps="16" name="c" muted="0" pos="0" len="192" type="0">
+            <note key="60" vol="100" pan="0" len="384" pos="0" type="0"/>
+          </midiclip>
+        </pattern>
+      </track>
+    </trackcontainer>
+    <!--
+      The modulation layer (#602, docs/MODULATION.md) as Song::saveProjectFile
+      writes it. NOTE the position, because it is the trap this fixture exists to
+      document: the element is a child of <song>, NOT of the project root.
+      Song::saveProjectFile passes DataFile::content() as the parent and that is
+      the <song> element, and Song::loadProject reads it back from the walk over
+      dataFile.content().firstChild() - the same walk that reads <session>. An
+      element placed beside <song> (as this lane first wrote it) parses cleanly,
+      loads with no error and restores an EMPTY layer: nothing reads it.
+
+      The element is written only when the layer is non-empty
+      (ModulationLayer::shouldPersist), which is why a project that never used a
+      modulator carries no block at all.
+
+      Two modulators, three routes: the second modulator covers a shape other than
+      sine, a unipolar source and a fractional phase, and the routes cover two
+      mixer channels, a second chain/effect and both signs of depth.
+      tests/src/core/ProjectOpenIntegrityTest.cpp opens THIS file through
+      Song::loadProject and asserts every one of those values comes back, and that
+      re-saving and re-opening is lossless.
+
+      The route addresses name rack-macro targets on mixer channels this minimal
+      project does not build, so the layer KEEPS them and the RUNTIME resolves
+      nothing - the documented behaviour (docs/MODULATION.md section 4: a route
+      that does not resolve is dropped from the runtime, never from the layer).
+      The live-project half of that round trip, with a resolvable target, is the
+      modulator lane's own socket transcript.
+    -->
+    <modulation-layer version="1" modulators="2" max-modulators="16">
+      <modulator name="Wobble" shape="sine" rate="2.5" phase="0.125" unipolar="0" active="1">
+        <route channel="0" chain="0" effect="0" parameter="Gain" depth="0.75"/>
+        <route channel="1" chain="0" effect="0" parameter="Panning" depth="-0.5"/>
+      </modulator>
+      <modulator name="Ramp" shape="saw" rate="0.25" phase="0.5" unipolar="1" active="1">
+        <route channel="0" chain="1" effect="1" parameter="Gain" depth="0.25"/>
+      </modulator>
+    </modulation-layer>
+  </song>
+</lmms-project>

@@ -1,8 +1,9 @@
 /*
  * ProjectOpenIntegrityTest.cpp - save/load integrity defects that need a real
  * Song: the <session> block a build without the Session View reader used to
- * drop silently, the state a failed open left behind, and the routing
- * elements this build round-trips for a reader that cannot.
+ * drop silently, the state a failed open left behind, the routing
+ * elements this build round-trips for a reader that cannot, and the modulation
+ * layer's restore through Song::loadProject (<modulation-layer>).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -35,6 +36,7 @@
 #include "DataFile.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ModulationLayer.h"
 #include "ProjectJournal.h"
 #include "Song.h"
 
@@ -125,6 +127,24 @@ QString projectWithSessionBlock()
 		"    </session>\n"
 		"  </song>\n"
 		"</lmms-project>\n" ).arg( version );
+}
+
+//! The modulation layer as the PROJECT WRITER writes it: a fresh document's
+//! root holding exactly the <modulation-layer> element saveSettings produces,
+//! serialised through the DOCUMENT (QDomDocument::toString, which every Qt this
+//! tree builds against has). Comparing two of these compares the layer the way
+//! the file format sees it. Empty for an empty layer (saveSettings writes
+//! nothing).
+QString layerXml( const ModulationLayer& layer )
+{
+	QDomDocument document;
+	QDomElement root = document.createElement( QStringLiteral( "root" ) );
+	document.appendChild( root );
+	if( !layer.saveSettings( document, root ) )
+	{
+		return QString();
+	}
+	return document.toString();
 }
 
 } // namespace
@@ -293,6 +313,108 @@ private slots:
 			"the bus flag did not survive this build's own round trip" );
 		QVERIFY2( mixer->channelSidechainSend( bus, 1 ) != nullptr,
 			"the sidechain send did not survive this build's own round trip" );
+	}
+
+	//! The modulation layer (#602, docs/MODULATION.md) restores through the path
+	//! a user's File > Open takes. ModulationLayerTest calls loadSettings on an
+	//! element it built itself, so the half a loadProject-only defect would break
+	//! - the walk over the <song> element's children in Song::loadProject, which
+	//! is where the layer's element lives (DataFile::content() is <song>), and the
+	//! rebuild of the published runtime that goes with it - is exercised nowhere
+	//! else. The fixture is tests/data/modulation-layer-fixture.mmp, the only
+	//! project in that directory that carries the element.
+	//!
+	//! The assertions are the fixture's DECLARED values, one by one, so the
+	//! fixture itself is verified rather than echoed back: a reader that dropped
+	//! an attribute, guessed a shape or lost a route fails here.
+	void modulationLayerIsRestoredByOpeningTheFixtureProject()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch( false );
+		QVERIFY2( song->modulationLayer().layer().modulatorCount() == 0,
+			"the layer did not start empty, so the open below could not prove anything" );
+
+		song->loadProject( QStringLiteral( LMMS_TEST_DATA_DIR "/modulation-layer-fixture.mmp" ) );
+
+		const ModulationLayer& layer = song->modulationLayer().layer();
+		QCOMPARE( layer.modulatorCount(), 2 );
+
+		const Modulator* wobble = layer.modulator( 0 );
+		QVERIFY( wobble != nullptr );
+		QCOMPARE( wobble->name, QStringLiteral( "Wobble" ) );
+		QCOMPARE( wobble->source.shape, ModulationShape::Sine );
+		QCOMPARE( wobble->source.rateHz, 2.5f );
+		QCOMPARE( wobble->source.phase, 0.125f );
+		QCOMPARE( wobble->source.unipolar, false );
+		QCOMPARE( wobble->source.active, true );
+		QCOMPARE( wobble->routeCount(), 2 );
+		QCOMPARE( wobble->routes[0].parameter, QStringLiteral( "Gain" ) );
+		QCOMPARE( wobble->routes[0].channel, 0 );
+		QCOMPARE( wobble->routes[0].chain, 0 );
+		QCOMPARE( wobble->routes[0].depth, 0.75f );
+		QCOMPARE( wobble->routes[1].parameter, QStringLiteral( "Panning" ) );
+		QCOMPARE( wobble->routes[1].channel, 1 );
+		QCOMPARE( wobble->routes[1].depth, -0.5f );
+
+		const Modulator* ramp = layer.modulator( 1 );
+		QVERIFY( ramp != nullptr );
+		QCOMPARE( ramp->name, QStringLiteral( "Ramp" ) );
+		QCOMPARE( ramp->source.shape, ModulationShape::Saw );
+		QCOMPARE( ramp->source.rateHz, 0.25f );
+		QCOMPARE( ramp->source.phase, 0.5f );
+		QCOMPARE( ramp->source.unipolar, true );
+		QCOMPARE( ramp->source.active, true );
+		QCOMPARE( ramp->routeCount(), 1 );
+		QCOMPARE( ramp->routes[0].parameter, QStringLiteral( "Gain" ) );
+		QCOMPARE( ramp->routes[0].chain, 1 );
+		QCOMPARE( ramp->routes[0].effect, 1 );
+		QCOMPARE( ramp->routes[0].depth, 0.25f );
+	}
+
+	//! ...and the layer that open produced survives being written and opened
+	//! again, byte-identically as the file format sees it, while a project with
+	//! no element does not inherit the layer it replaced. Two projects in one
+	//! instance is the case a live round trip over the socket cannot ask about.
+	void theOpenedModulationLayerResavesAndReopensIdentically()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch( false );
+		song->loadProject( QStringLiteral( LMMS_TEST_DATA_DIR "/modulation-layer-fixture.mmp" ) );
+
+		const QString firstXml = layerXml( song->modulationLayer().layer() );
+		QVERIFY2( !firstXml.isEmpty(),
+			"the layer the fixture declared did not serialise at all" );
+
+		const QString saved = dir.filePath( QStringLiteral( "with-modulation.mmp" ) );
+		QVERIFY( song->saveProjectFile( saved ) );
+		QVERIFY2( readText( saved ).contains( QStringLiteral( "<modulation-layer" ) ),
+			"the opened layer did not reach the saved project: it would be dropped "
+			"by any later save-and-close" );
+
+		song->loadProject( saved );
+		const ModulationLayer& reloaded = song->modulationLayer().layer();
+		QCOMPARE( reloaded.modulatorCount(), 2 );
+		QVERIFY( reloaded.modulator( 0 ) != nullptr );
+		QCOMPARE( reloaded.modulator( 0 )->name, QStringLiteral( "Wobble" ) );
+		QCOMPARE( layerXml( reloaded ), firstXml );
+
+		// The reverse direction: a project with no <modulation-layer> element
+		// loads as the EMPTY layer, so one project's modulators cannot keep
+		// driving the next one's parameters.
+		const QString plain = dir.filePath( QStringLiteral( "without-modulation.mmp" ) );
+		song->clearProject();
+		QVERIFY( song->saveProjectFile( plain ) );
+		QVERIFY2( !readText( plain ).contains( QStringLiteral( "modulation-layer" ) ),
+			"an empty layer wrote an element: a project that never used a modulator "
+			"must re-save without one" );
+
+		song->loadProject( plain );
+		QCOMPARE( song->modulationLayer().layer().modulatorCount(), 0 );
 	}
 };
 
