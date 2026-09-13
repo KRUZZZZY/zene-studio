@@ -1,0 +1,8 @@
+control  old reader on the arm64 ordering -> {"id": 0, "ok": true, "result": {"pong": true, "engine_ready": false, "version":  (is the late ping reply: True)
+note: discarded a reply to an earlier request while reading the cap refusal: {"id": 0, "ok": true, "result": {"pong": true, "engine_ready": false, "version": "0.2.1-alpha", "proto": 1, "audio": {"state": "ok", "device": "Dummy", "request
+scenario 1  fix on the arm64 ordering     -> id=-1 kind='invalid_args' problems=[]  OK
+scenario 1b the refusal the case asserts on: typed=True names_cap=True id=-1  OK
+note: discarded a reply to an earlier request while reading the cap refusal: {"id": 0, "ok": true, "result": {"pong": true, "engine_ready": false, "version": "0.2.1-alpha", "proto": 1, "audio": {"state": "ok", "device": "Dummy", "request
+note: discarded a reply to an earlier request while reading the cap refusal: {"id": 7, "ok": false, "error": {"kind": "invalid_args", "message": "ticks: expected integer"}}
+scenario 2  fix on the buffered shape     -> reply=None problems=['no refusal arrived for an over-cap request line inside 10s: the server closed the connection without answering (the line was buffered instead of capped)']  OK
+FAILURES=0

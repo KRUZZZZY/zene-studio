@@ -1,0 +1,33 @@
+== job 103762607496 (linux-arm64) - tests #90/#91, verbatim
+
+-- test #90 ControlSocketPathSafety: the case and its three problems
+FAIL: an over-cap request line is refused typed and the connection is retired
+  - an over-cap request line answered {'id': 0, 'ok': True, 'result': {'audio': {'device': 'Dummy (no sound output)', 'requested': 'Dummy (no sound 
+  - the refusal does not name the 1048576-byte cap: {}
+  - the refusal carries id 0: an over-cap line must not be dispatched as a request
+
+-- the refusal the product DID send on that connection (discarded as stale)
+"the request line exceeds the 1048576-byte limit and was refused"
+"id":-1,"ok":false}
+
+-- the seven cases that passed on the same job (so the path handling is fine)
+90: PASS: a directory at --control-socket is invalid_args, and survives with its
+90: PASS: a free path still binds normally (no refusal, no unlink line)
+90: PASS: a live listener at --control-socket is refused, and the listener survi
+90: PASS: a regular file at --control-socket is refused and left byte-identical
+90: PASS: a socket that replaced ours survives our clean exit
+90: PASS: a stale socket is still cleaned up, is reported, and the instance list
+90: PASS: a symlink at --control-socket is refused, and link and target both sur
+
+-- test #91 ControlAbsentSocket: the probe half passed, the control call did not
+91:   method control: with --control-socket, the probe saw /tmp/zctl-run-m8u6x4e3/zene.sock held by pid 37893 after 0.02s
+91:   method control: the probe sees a real control socket FAILED (1)
+91:       method control: no response line inside 30.0s (socket timed out)
+
+-- and the engine-construct window the harness sampled at that moment
+91: diagnosis: the instance is STILL RUNNING (pid 37893) - a HANG, not a crash
+91: cpu: burned 100% of one core over 1.0s (3005 -> 3105 ticks)
+
+-- test #81/#85 on this job (both PASS: the failures here are #90/#91 only)
+Test #81: ControlSocketIntegration ..........   Passed  176.69 sec
+Test #85: ControlNegativeControl ............   Passed   12.18 sec

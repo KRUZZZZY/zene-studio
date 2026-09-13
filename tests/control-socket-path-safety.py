@@ -61,6 +61,7 @@ import os
 import socket
 import stat
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -68,6 +69,7 @@ from control_socket_harness import (  # noqa: E402
     PING_TIMEOUT, QUIT_TIMEOUT, READY_TIMEOUT, Blocked, Instance, Problems,
     Timeout, Transcript, connect, finish, ok, start_instance, wait_ready,
 )
+from control_socket_flows import read_cap_refusal  # noqa: E402
 
 # A refusal is immediate (measured: exit 1 within a second); this bound is for the
 # PRE-FIX binary, which does not refuse at all and keeps running: the control run
@@ -371,15 +373,11 @@ def case_request_line_cap(binary):
         if not prime_over_cap_probe(instance, client, problems):
             client.close()
             return outcome(name, problems)
-        # The harness's own reader: call() would SEND on the connection being retired.
-        try:
-            line = client._read_line(PING_TIMEOUT)  # noqa: SLF001 (harness reader)
-        except Timeout as nothing:
-            problems.add("no refusal arrived for an over-cap request line inside %.0fs: %s "
-                         "(the line was buffered instead of capped)" % (PING_TIMEOUT, nothing))
+        # A late reply to an EARLIER request can precede the refusal: read_cap_refusal.
+        reply = read_cap_refusal(client, problems)
+        if reply is None:
             client.close()
             return outcome(name, problems)
-        reply = json.loads(line.decode("utf-8", "replace"))
         error = reply.get("error") or {}
         if reply.get("ok") is not False or error.get("kind") != "invalid_args":
             problems.add("an over-cap request line answered %r, expected a typed invalid_args "

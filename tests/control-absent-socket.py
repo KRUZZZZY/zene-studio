@@ -68,8 +68,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import control_socket_harness as harness  # noqa: E402
 from control_socket_harness import (  # noqa: E402
-    QUIT_TIMEOUT, STARTUP_BOUND, Client, Instance, Problems, Timeout, dump, finish,
-)
+    STARTUP_BOUND, Client, Instance, Problems, Timeout, dump, finish)
 
 # The crash reporter's session marker (include/CrashReporter.h, kSessionMarkerName),
 # relative to the configured working directory. main() writes it in
@@ -334,7 +333,8 @@ def socket_probe_sees_the_control_socket(binary):
             try:
                 # Bounded by the readiness budget, not by one socket read: the engine
                 # start blocks the thread that serves the socket (CI linux-arm64: ~34s),
-                # and a single socket timeout there reports a slow platform as a hang.
+                # and a single socket timeout there reports a slow platform as a hang, so
+                # the quit below gets the same budget for the same reason.
                 reply = client.call(1, "control.ping", timeout=STARTUP_BOUND)
                 if (reply.get("result") or {}).get("pong") is not True:
                     problems.add("control.ping on the control instance answered %r" % reply)
@@ -342,7 +342,7 @@ def socket_probe_sees_the_control_socket(binary):
                 client.close()
             client = Client(inst.socket_path)
             try:
-                client.call(2, "control.quit", timeout=QUIT_TIMEOUT)
+                client.call(2, "control.quit", timeout=STARTUP_BOUND)
             finally:
                 client.close()
             exited, code, _ = inst.wait_for_exit(30.0)

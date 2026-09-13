@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include <QDataStream>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 
@@ -79,6 +80,21 @@ auto rms(const std::vector<float>& samples) -> double
 		sum += static_cast<double>(sample) * static_cast<double>(sample);
 	}
 	return std::sqrt(sum / static_cast<double>(samples.size()));
+}
+
+//! Where a rendered WAV for inspection goes, on THIS platform.
+//!
+//! Same defect and same fix as Vst3EffectIntegrationTest.cpp: the write sites
+//! spelled "/tmp/clap_before.wav", which on Windows is "C:/tmp/...", a
+//! directory that does not exist, so QFile::open() failed. This test is not
+//! built on msvc-x64 today, so the assumption is latent there rather than red -
+//! QDir::tempPath() removes it before it becomes a failure on the next box that
+//! does build it. The resolved path is logged so the artefact can be found.
+auto renderedWavPath(const QString& name) -> QString
+{
+	const auto path = QDir{QDir::tempPath()}.filePath(name);
+	qInfo("rendered wav: %s", qPrintable(path));
+	return path;
 }
 
 //! Minimal 16-bit stereo PCM WAV writer, so rendered audio can be inspected.
@@ -338,8 +354,8 @@ void ClapEffectIntegrationTest::testRendersBeforeAfterWav()
 	render(wetUnity, 1.0f);
 	render(wetHalf, 0.5f);
 
-	QVERIFY(writeWav(QStringLiteral("/tmp/clap_before.wav"), dry, sampleRate));
-	QVERIFY(writeWav(QStringLiteral("/tmp/clap_after.wav"), wetHalf, sampleRate));
+	QVERIFY(writeWav(renderedWavPath(QStringLiteral("clap_before.wav")), dry, sampleRate));
+	QVERIFY(writeWav(renderedWavPath(QStringLiteral("clap_after.wav")), wetHalf, sampleRate));
 
 	const auto dryRms = rms(dry);
 	const auto unityRms = rms(wetUnity);

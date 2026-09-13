@@ -209,7 +209,40 @@ LV2_WORKED_EXAMPLE_PORTS = ("L Delay", "R Delay", "Feedback", "Fb Tone", "FX Mix
 
 # Where LV2 bundles live. Only used to read the bundles' own declarations for
 # the cross-check below - never to enumerate the device list under test.
-LV2_BUNDLE_DIRS = ("/usr/lib/lv2", "/usr/local/lib/lv2", "/usr/lib64/lv2")
+# The LV2 bundle roots to search when the environment does not say. The
+# convention is the one the C++ harness already uses
+# (tests/src/plugins/PluginPortsHarness.h, lv2BundleProvides()): LV2_PATH when
+# it is set, otherwise the standard per-platform roots.
+#
+# The Homebrew prefixes are named explicitly because lilv's own default path
+# does NOT include them: lilv 0.28's meson.build builds darwin's
+# LILV_DEFAULT_LV2_PATH from ['~/.lv2', '~/Library/Audio/Plug-Ins/LV2',
+# '/usr/local/lib/lv2', '/usr/lib/lv2', '/Library/Audio/Plug-Ins/LV2'] - there
+# is no /opt/homebrew/lib/lv2 in it. The arm64 macOS runner's mda-lv2 fixture
+# installs under /opt/homebrew/lib/lv2, so a host that is given no LV2_PATH
+# loads zero bundles - "Lv2 plugin SUMMARY: 0 of 0 loaded in 0 msecs." in job
+# 103762607454's own log - and the catalogue then legitimately carries no lv2
+# bucket, which is exactly what the old unconditional assertion refused to
+# allow. main() hands the instance the same roots this reader uses, so the
+# engine and the ground-truth reader agree on where the box keeps its bundles.
+LV2_BUNDLE_DIRS_DEFAULT = (
+    os.path.expanduser("~/.lv2"),
+    "/usr/lib/lv2",
+    "/usr/lib64/lv2",
+    "/usr/local/lib/lv2",
+    "/opt/homebrew/lib/lv2",
+    "/opt/local/lib/lv2",
+    os.path.expanduser("~/Library/Audio/Plug-Ins/LV2"),
+    "/Library/Audio/Plug-Ins/LV2",
+)
+
+
+def lv2_bundle_dirs():
+    """The LV2 bundle roots of this box, in search order: LV2_PATH wins."""
+    declared = os.environ.get("LV2_PATH")
+    if declared:
+        return tuple(path for path in declared.split(":") if path)
+    return LV2_BUNDLE_DIRS_DEFAULT
 
 TTL_PREFIX_RE = re.compile(r"@prefix\s+([A-Za-z][\w.\-]*|):\s*<([^>]*)>")
 TTL_SUBJECT_RE = re.compile(r"^\s*(<[^>]*>|[A-Za-z][\w.\-]*:[\w.\-]*)")
@@ -276,7 +309,7 @@ def lv2_bundle_declared_uris():
     host module): it is the ground truth the engine's list is checked against.
     """
     declared = {}
-    for root in LV2_BUNDLE_DIRS:
+    for root in lv2_bundle_dirs():
         if not os.path.isdir(root):
             continue
         for name in sorted(os.listdir(root)):
@@ -337,14 +370,56 @@ def fixture_track_ids(flow, process, log_path):
 def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
     """The LV2 leg: catalogue visibility, then load -> param_get -> param_set ->
     state_save -> state_load -> unload on a real installed LV2 plugin, plus the
-    typed refusals the LV2 port/state model produces (SPEC A11-A14)."""
+    typed refusals the LV2 port/state model produces (SPEC A11-A14).
+
+    The leg is gated on what THIS build and THIS box declare, measured - not on
+    an assumption that every box with an LV2 host has a bundle the host can see.
+    A box can legitimately have the host compiled in and expose no LV2 device:
+    with LV2_PATH unset all the host has is lilv's compiled-in default path, and
+    darwin's has no Homebrew prefix (see LV2_BUNDLE_DIRS_DEFAULT). Such a leg is
+    skipped OUT LOUD with its measurement - never asserted into a pass, and never
+    turned into a failure about a device the box cannot have.
+    """
     flow = Flow(client, last_id)
     instrument_track, pattern_track = fixture_track_ids(flow, process, log_path)
 
-    # --- the LV2 half of the catalogue ------------------------------------
+    # --- what this build declares -----------------------------------------
+    # app.version reports the build's own options: LMMS_HAVE_LV2='TRUE' when the
+    # LV2 host is compiled in and '' when it is not. The expectation follows that
+    # declaration, which is the one thing about the LV2 format the box cannot
+    # change.
+    build_options = flow.ok("app.version").get("build_options", "")
+    host_compiled = re.search(r"LMMS_HAVE_LV2='[^']+'", build_options) is not None
+
     devices = listing.get("devices", [])
     by_format = listing.get("counts_by_format", {})
     lv2_devices = [d for d in devices if d.get("format") == "lv2"]
+    roots = lv2_bundle_dirs()
+    declared = lv2_bundle_declared_uris()
+
+    if not host_compiled:
+        # The build says it has no LV2 host: the catalogue must not claim the
+        # format, and the leg's absence is itself the assertion.
+        if "lv2" in by_format or lv2_devices:
+            fail("this build declares no LV2 host (LMMS_HAVE_LV2 absent from %r) but "
+                 "plugin.list carries %d lv2 device(s)" % (build_options, len(lv2_devices)),
+                 process, log_path)
+        print("lv2: this build declares no LV2 host (LMMS_HAVE_LV2 absent from its own "
+              "build options), so plugin.list must not carry an lv2 bucket - it does not; "
+              "the LV2 leg is skipped")
+        return flow.id
+
+    if not declared and not lv2_devices:
+        # The host is compiled in, but no bundle this box installs is visible -
+        # the missing TEST FIXTURE case, which the C++ harness treats the same
+        # way (PluginPortsHarness.h, lv2BundleProvides: "a missing test fixture,
+        # not a migration defect"). Loud, with the roots that were searched.
+        print("lv2: SKIPPED - the LV2 host is compiled in but this box installs no LV2 "
+              "bundle it can see: no plugin manifest under %r and plugin.list lists no "
+              "lv2 device" % (roots,))
+        return flow.id
+
+    # --- the LV2 half of the catalogue ------------------------------------
     if "lv2" not in by_format:
         fail("plugin.list's format breakdown has no lv2 bucket: %r" % by_format, process, log_path)
     if int(by_format.get("lv2", 0)) != len(lv2_devices):
@@ -370,7 +445,6 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
     # The engine may only name devices the installed bundles declare, and every
     # bundle that declares a plugin must contribute at least one the engine can
     # see - a whole bundle silently missing is the bug this measures.
-    declared = lv2_bundle_declared_uris()
     if declared:
         declared_all = set().union(*declared.values())
         invented = [d["uri"] for d in lv2_devices if d["uri"] not in declared_all]
@@ -389,7 +463,7 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
                  len(lv2_devices), "device" if len(lv2_devices) == 1 else "devices"))
     else:
         print("lv2 bundles: no bundle manifest under %r declared a plugin; the "
-              "invented-URI cross-check is skipped" % (LV2_BUNDLE_DIRS,))
+              "invented-URI cross-check is skipped" % (roots,))
 
     # --- pick the worked example ------------------------------------------
     worked = next((d for d in lv2_devices if d.get("uri") == LV2_WORKED_EXAMPLE_URI), None)
@@ -541,7 +615,7 @@ def lv2_device_flow(client, process, log_path, tmp, last_id, listing):
               "\"bundle ships a UI\" case is not exercisable here")
     else:
         ui_binary = next((os.path.join(root, "calf.lv2", "calflv2gui.so")
-                          for root in LV2_BUNDLE_DIRS
+                          for root in roots
                           if os.path.exists(os.path.join(root, "calf.lv2", "calflv2gui.so"))),
                          None)
         loaded_calf = flow.ok("plugin.load", {"target": instrument_track, "device": calf["id"]})
@@ -1525,6 +1599,16 @@ def main():
     env["HOME"] = tmp
     env["XDG_CONFIG_HOME"] = os.path.join(tmp, "config")
     env["XDG_DATA_HOME"] = os.path.join(tmp, "data")
+    # Where this box keeps its LV2 bundles, handed to the instance the way a user
+    # sets LV2_PATH. It is the standard host-side setting for exactly this, and
+    # lilv reads it before its compiled-in default (lilv src/world.c:1169:
+    # lv2_path = getenv("LV2_PATH"), else LILV_DEFAULT_LV2_PATH). On darwin that
+    # default is ~/.lv2:~/Library/Audio/Plug-Ins/LV2:/usr/local/lib/lv2:
+    # /usr/lib/lv2:/Library/Audio/Plug-Ins/LV2 - no Homebrew prefix - so without
+    # this the arm64 macOS job cannot see the mda-lv2 fixture its own Brewfile
+    # installs, while its sibling PluginPortsHarness.h already reads LV2_PATH as
+    # the first source of truth for the same question.
+    env["LV2_PATH"] = ":".join(lv2_bundle_dirs())
     os.makedirs(env["XDG_CONFIG_HOME"], exist_ok=True)
     os.makedirs(env["XDG_DATA_HOME"], exist_ok=True)
 

@@ -1,0 +1,6 @@
+== job 103762607462 (macos-x86_64, SUCCESS) - the same two tests on the Intel
+   runner, where Homebrew's prefix IS /usr/local and therefore IS in lilv's
+   compiled-in darwin default LV2 path
+
+Test #81: ControlSocketIntegration ..........   Passed   11.00 sec
+Test #85: ControlNegativeControl ............   Passed   18.76 sec
