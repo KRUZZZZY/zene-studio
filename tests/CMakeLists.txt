@@ -39,6 +39,14 @@ set(LMMS_TESTS
 	src/core/ControlRegistryTest.cpp
 	src/core/ControlTempoMapCommandsTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
+	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
+	# half (the extraction and application arithmetic and the pool's XML form,
+	# with no Engine at all), and the surface half (the seven registered
+	# commands, their typed refusals, both inverses, and the <groove-pool>
+	# element). The end-to-end socket proof is the ControlGrooveCommands ctest
+	# below, which drives the real binary.
+	src/core/GrooveTemplateTest.cpp
+	src/core/ControlGrooveCommandsTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
@@ -1201,6 +1209,23 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 		)
 	endif()
+	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the release
+	# contract's section 3.1 claim for it, end to end through --control-socket.
+	# It starts the real binary, captures the feel of one clip into a named
+	# groove, applies that groove to another clip, quantises with a strength and
+	# a humanise amount, undoes every one of them, and reads every number back
+	# off the wire (a note's tick position and velocity before and after), so a
+	# command that answered ok without moving a note fails here. No fixture file:
+	# it builds its own clips through track.add / clip.add / note.add, which is
+	# what an agent has.
+	add_test(NAME ControlGrooveCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-groove-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlGrooveCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# Session sync, two real instances (D11 "Ableton Link sync", the
 	# two-instance proof the brief names): both join one session and one drives
 	# the other's tempo and beat phase with no relay between them, through

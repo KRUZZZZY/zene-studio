@@ -295,25 +295,79 @@ that marker is published as-is, and no unverified claim is published without one
   matching the pre-existing engine, which divides by `DefaultTicksPerBar` and never by the metre. There are no
   tempo *curves*: events are steps.
 
+## The groove pool and quantise (`groove.*`) — added 2026-09-13
+
+- **New: the feel of a note pattern can be captured, named and re-applied, and notes can be
+  quantised with a strength and a humanise amount.** A *groove* is a cycle length, a slot width and
+  one timing/velocity step per slot (`include/GrooveTemplate.h`); a *pool* is the project's named
+  grooves (`include/GroovePool.h`). `groove.extract` reads the feel out of a clip's notes — each
+  slot's timing step is the mean signed deviation of the notes that fell in it, and its velocity
+  step is that slot's mean velocity **relative to the clip's own mean**, so a template is a shape
+  and not a loudness. `groove.apply` writes it back: each note is snapped to its slot and shifted by
+  that slot's step, by `strength` (0..1) of the way — at 1 it lands exactly, at 0.5 it is half the
+  feel. `groove.quantize` is the grid quantise with the same strength control plus a
+  `humanise_ticks` / `humanise_velocity` jitter drawn from a **seed** and each note's own identity
+  (the mechanism MIDI depth's rolls use), so a take is reproducible and a second seed is a second
+  take. `groove.set` writes a groove verbatim, `groove.remove` deletes one and `groove.rename`
+  renames one in place.
+- **Engine:** `include/GrooveTemplate.h` + `src/core/GrooveTemplate.cpp` (the value type, the
+  extraction and application arithmetic), `include/GroovePool.h` + `src/core/GroovePool.cpp` (the
+  named pool and its XML form), `NoteTransform::quantizeNotes` (the strength-and-humanise grid
+  quantise, beside the existing strength-less `quantizePositions`, which is unchanged), and
+  `Song::groovePool()` — the pool is project state, saved as ONE `<groove-pool>` element written
+  **only when it holds a groove**, so a project that never used one re-saves byte for byte as
+  before. The decisions and the measured numbers are in **`docs/GROOVE-POOL.md`**.
+- **Control surface:** the `groove.*` group — `groove.list`, `groove.extract`, `groove.set`,
+  `groove.apply`, `groove.quantize`, `groove.remove`, `groove.rename` — with argument/result schemas
+  and A16 reversibility metadata. Six of the seven are `true_inverse`, and they are two different
+  mechanisms: a clip edit reverses through the MidiClip's own journal checkpoint, and a pool edit
+  through a recorded action checkpoint, because the pool is not in the track container and a Song
+  checkpoint does not carry it (the finding the tempo map and the modulation layer record). Every
+  refusal is typed and happens before anything is written.
+- **Proof:** the registered ctests `GrooveTemplateTest` (the arithmetic, with no Engine at all: the
+  exact per-slot numbers, idempotence, the strength interpolation, the velocity clamp, the pool's
+  XML round trip and its reset-on-absence), `ControlGrooveCommandsTest` (the seven ids, the contract
+  rows, the measured effect of an apply and a quantise read back through `roll.get_state`, both
+  inverses, and a real project save/load round trip whose negative control must leave an empty
+  pool) and `ControlGrooveCommands` (`tests/control-groove-commands.py`: a real binary driven over
+  `--control-socket` by an external client, asserting the same tick positions and velocities off the
+  wire).
+- **UI absence — one line: the groove pool and quantise are drivable through the socket, not from the
+  interface.** There is no groove list, no template browser, no drag-to-apply and no quantise
+  dialog; nothing in `src/gui/` creates, shows, edits or applies a groove.
+  `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
+- **Stated limits.** A groove's resolution is the slot, so several notes in one slot are described
+  by their mean; there is no swing-percentage template generator (`groove.set` writers or
+  `groove.extract` only); a groove moves MIDI notes, so a sample clip is refused typed; and a groove
+  is applied once and the notes are ordinary notes afterwards — nothing on the audio path reads a
+  template.
+
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **139 rows**, measured from the table itself:
-**71 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 56 `not_mutating`**. With the telemetry
-client compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their
-commands, giving **137 rows / 54 `not_mutating`**. `ReversibilityContractTest` asserts both
-sets, so a row added or moved between classes cannot ship with this page quoting the old
-split. (The 129-row figure this page carried before the modulation layer landed was its ten
-rows short - six `modulator.*` action-checkpoint rows, two `not_mutating` rows
-(`modulator.get_state`, `note.expression_get`) and the two `note.expression_*` `true_inverse` rows. The 117-row figure
-before the comping and tempo-map lanes landed was
-their twelve rows short - five `comp.*` `true_inverse`, two `comp.*` `not_mutating`,
-`transport.tempo_map_get` and the four `transport.tempo_map_*` edit rows that the merge which
-took the w11 table split dropped (they were written into the retired
-`ControlReversibilityTableTrueInverse.cpp`); the detector and
-`ControlTempoMapCommandsTest::contractRowsClassifyTheGroup` both caught it, which is what they
-are for.) At 0.2.1 the same
-four counts were 30 / 5 / 3 / 36 over 74 rows
+The SPEC A16 classification table holds **149 rows**, measured from the table itself:
+**81 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 56 `not_mutating`**, in the configuration this
+page's figures describe (the telemetry client compiled out, no wasmtime). A build with the client in
+adds the two `telemetry.*` rows with their commands (**151 rows / 58 `not_mutating`**), and a build
+with the wasmtime C API adds the six `wasm.*` rows (three `snapshot`, three `not_mutating`).
+`ReversibilityContractTest` asserts the whole split, so a row added or moved between classes cannot
+ship with this page quoting the old one. (The 139-row figure this page carried before the groove lane
+landed was not the table's own count in any configuration - the test's constant already said 142, and
+the notes were three rows short of it; both are now the same measured number. The 129-row figure
+before the modulation layer landed was its ten rows short, and the 117-row figure before the comping
+and tempo-map lanes landed was their twelve rows short - five `comp.*` `true_inverse`, two `comp.*`
+`not_mutating`, `transport.tempo_map_get` and the four `transport.tempo_map_*` edit rows that the
+merge which took the w11 table split dropped, because they had been written into the retired
+`ControlReversibilityTableTrueInverse.cpp`. The detector and
+`ControlTempoMapCommandsTest::contractRowsClassifyTheGroup` both caught that one, which is what they
+are for.) At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
 (`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
+
+The seven rows the 0.3.0 groove lane added are `groove.list` (one `not_mutating`), `groove.apply` and
+`groove.quantize` (live-checkpoint `true_inverse` rows: a clip edit reverses through the MidiClip's
+own journal checkpoint) and `groove.extract` / `groove.set` / `groove.remove` / `groove.rename`
+(recorded-action `true_inverse` rows: the pool is project state the Song's journal checkpoint does not
+carry, so the recorded step writes the captured `<groove-pool>` element back). `docs/GROOVE-POOL.md`
+section 5 is the argument for each.
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 

@@ -25,6 +25,7 @@
 #ifndef LMMS_NOTE_TRANSFORM_H
 #define LMMS_NOTE_TRANSFORM_H
 
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -112,6 +113,59 @@ int quantizePositions( const NoteVector& notes, int grid, QuantizeMode mode );
  *  already in the scale are left alone. An empty scale is a no-op. Returns the
  *  number of notes whose key actually changed. */
 int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees );
+
+/*! How a grid quantise is applied: the grid, how far a note travels to it, and
+ *  the humanise amount added afterwards.
+ *
+ *  Split out of quantizeNotes() so one argument carries the whole policy and the
+ *  function itself stays a loop (Gate 4: the complexity ratchet counts a
+ *  signature's parameters, and a six-argument call site is also the shape that
+ *  gets called with the arguments in the wrong order).
+ */
+struct QuantizeOptions
+{
+	//! Ticks per grid step. <= 0 is a no-op, the same rule quantizePositions()
+	//! follows.
+	tick_t grid = 0;
+	//! Where a note off the grid is taken: the nearest step, the one below it
+	//! or the one above it.
+	QuantizeMode mode = QuantizeMode::Nearest;
+	//! How far each note travels to the grid, in 0..1. 1 is the historical
+	//! "quantise" (the note lands exactly on the grid); 0 moves nothing.
+	float strength = 1.0f;
+	//! The largest timing jitter, in ticks, added AFTER the quantise (0 = no
+	//! humanise). A note is never moved more than this from where the grid put
+	//! it, and never before tick 0.
+	tick_t humaniseTicks = 0;
+	//! The largest velocity jitter added after the quantise, in engine volume
+	//! units, clamped to the note's own range.
+	int humaniseVelocity = 0;
+	/*! The jitter is a PURE FUNCTION of this seed and each note's identity
+	 *  (pitch, position, length - NoteRandom::rollUnit), never a hidden random
+	 *  state: the same clip, seed and amounts always humanise to the same
+	 *  notes, so an agent can reproduce a take it liked. */
+	uint32_t seed = 0;
+};
+
+/*! Grid quantisation with a STRENGTH and a HUMANISE amount.
+ *
+ *  For each note: the grid target is the step \a options.mode selects, the note
+ *  moves `strength` of the way there - `pos + round(strength * (target - pos))`
+ *  - and then a jitter of up to `humaniseTicks` (position) and
+ *  `humaniseVelocity` (velocity) is added, drawn from the note's identity and
+ *  `options.seed`.
+ *
+ *  Returns the number of notes whose position or velocity actually changed, and
+ *  it is the caller's job to re-sort the clip's note list (sortByPosition /
+ *  MidiClip::rearrangeAllNotes) - this function is a plain loop over a vector so
+ *  it can be tested with no Engine, no clip and no GUI.
+ *
+ *  Unlike quantizePositions() above, which is the strength-1, no-humanise case
+ *  and is left exactly as it was for its existing callers, this function never
+ *  moves a note before tick 0: a jitter that would take it negative is clamped
+ *  there rather than producing a position the engine cannot represent.
+ */
+int quantizeNotes(const NoteVector& notes, const QuantizeOptions& options);
 
 //! Puts a vector back into the order MidiClip expects (position, then key
 //! descending) after a transform moved keys or positions about.

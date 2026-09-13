@@ -380,6 +380,28 @@ const ReversibilityRow kRows[] = {
 		"the note list, attributes included - a cleared expression comes back "
 		"with its presence flag and all three axes)",
 		""),
+
+	// The two CLIP-editing verbs of the groove group (docs/GROOVE-POOL.md).
+	// The groove pool's OWN edits are action-checkpoint rows and live in
+	// ControlReversibilityTableAction.cpp: the pool is project state the Song
+	// checkpoint does not carry (it is not in the track container). What these
+	// two do is move NOTES, and a MidiClip's serialized state IS its note
+	// list, so the clip's own checkpoint is the inverse - the mechanism
+	// note.move and note.velocity_set already reverse with.
+	R("groove.apply", RC::TrueInverse, true,
+		"the groove moves notes: each note's position and velocity is part of "
+		"the MidiClip's serialized note list, and the clip is a "
+		"JournallingObject",
+		"ProjectJournal (MidiClip checkpoint: one undo restores every position "
+		"and velocity the apply moved, whatever the strength was)",
+		""),
+	R("groove.quantize", RC::TrueInverse, true,
+		"same object and same reasoning as groove.apply - the grid, the "
+		"strength and the humanise jitter all land in the note list, and the "
+		"jitter is a pure function of the seed rather than hidden state, so the "
+		"pre-command state is exactly what the checkpoint captured",
+		"ProjectJournal (MidiClip checkpoint)",
+		""),
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));

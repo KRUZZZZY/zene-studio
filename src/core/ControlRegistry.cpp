@@ -437,6 +437,11 @@ void registerControlCommands(ControlRegistry& registry)
 	registerAutomationCommands(registry);
 	registerAutomationEditCommands(registry);
 	registerWarpCommands(registry);
+	// The groove pool and quantise surface (docs/GROOVE-POOL.md): no
+	// compile-time switch, because the pool is a plain value on Song and the
+	// arithmetic is a function over a note list, so its ids are honest in every
+	// configuration.
+	registerGrooveCommands(registry);
 	registerScriptCommands(registry);
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// The session.* group travels with the Session View data layer: without

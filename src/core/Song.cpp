@@ -1118,6 +1118,13 @@ void Song::clearProject()
 	m_tempoMap.edit([](TempoMap& map) { map.clear(); return true; });
 	m_tempoMapAppliedTempo = -1;
 
+	// The groove pool is project state too. A groove from one project must not
+	// be applicable to the next one's clips, and the pool is written to the
+	// file ONLY when it is non-empty, so the empty state has to be reachable
+	// here as well as from the (absent) element in loadProject
+	// (docs/GROOVE-POOL.md section 4).
+	m_groovePool.clear();
+
 	// The modulation layer is project state too, and a layer from one project
 	// must not keep driving the next one's parameters. CLEARING the layer drops
 	// its resolved routes with it, so no write target outlives the project it
@@ -1583,6 +1590,14 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 		m_modulationLayer.layer().saveSettings( dataFile, dataFile.content() );
 	}
 
+	// And for the groove pool (docs/GROOVE-POOL.md section 4): written ONLY
+	// when the project actually holds a groove, so a project that never used
+	// one re-saves exactly the bytes it has always had.
+	if( m_groovePool.shouldPersist() )
+	{
+		m_groovePool.saveSettings( dataFile, dataFile.content() );
+	}
+
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// Only projects that use the session view carry a <session> block; a
 	// pre-session project re-saves without one (see SessionModel::shouldPersist).
@@ -1791,6 +1806,19 @@ bool Song::restorePublisherBackedSection(const QDomNode &node)
 			rebuildModulationRuntime(layer, &runtime);
 			return true;
 		});
+		return true;
+	}
+	// The groove pool (docs/GROOVE-POOL.md). A project whose file carries no
+	// <groove-pool> element - every project saved before this existed, and
+	// every project that never captured a groove - loads into an EMPTY pool,
+	// which is the state the engine was in before the feature. The clear in
+	// GroovePool::loadSettings is what makes that true: the element is written
+	// only when the pool is non-empty, so an absent element has to take the
+	// pool back to empty rather than leave the previous project's grooves
+	// behind (the reset-on-absence rule docs/UNDO-BOUNDS.md records).
+	if (node.nodeName() == "groove-pool")
+	{
+		m_groovePool.loadSettings(node.toElement());
 		return true;
 	}
 	return false;

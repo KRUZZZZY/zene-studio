@@ -26,12 +26,21 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+
+#include "NoteRandom.h"
 
 namespace lmms
 {
 
 namespace NoteTransform
 {
+
+/*! The two jitter streams of quantizeNotes()'s humanise amount. Distinct salts
+ *  mean one note's timing jitter and its velocity jitter are independent draws
+ *  from the same seed, which is NoteRandom's own convention for MIDI depth. */
+constexpr uint32_t HumaniseTimingSalt = 0x9e3779b9u;
+constexpr uint32_t HumaniseVelocitySalt = 0x85ebca6bu;
 
 namespace
 {
@@ -217,6 +226,69 @@ int quantizePositions( const NoteVector& notes, int grid, QuantizeMode mode )
 			note->setPos( TimePos( target ) );
 			++changed;
 		}
+	}
+	return changed;
+}
+
+
+namespace
+{
+
+//! The grid step a note at `pos` is taken to, by the mode's own rule.
+int gridTarget( int pos, int grid, QuantizeMode mode )
+{
+	switch( mode )
+	{
+		case QuantizeMode::Nearest: return ( ( pos + grid / 2 ) / grid ) * grid;
+		case QuantizeMode::Floor:   return ( pos / grid ) * grid;
+		case QuantizeMode::Ceil:    return ( ( pos + grid - 1 ) / grid ) * grid;
+	}
+	return pos;
+}
+
+/*! The humanise jitter for one note, in [-span, span], drawn from the caller's
+ *  seed and the note's OWN identity (NoteRandom's rule): its pitch, its LENGTH
+ *  and the grid SLOT it is being taken to - deliberately not its current
+ *  position, which is what makes the call a fixed point. A jitter drawn from
+ *  the position would re-roll on every repeat (the position has changed), so
+ *  the same call on the same clip would wander inside the bound instead of
+ *  reproducing the take it produced a moment ago. `salt` separates the timing
+ *  stream from the velocity one, exactly as MIDI depth's two streams are
+ *  separated. */
+int jitterFor( int span, uint32_t seed, const Note& note, int slotTick, uint32_t salt )
+{
+	if( span <= 0 ) { return 0; }
+	const float unit = NoteRandom::rollUnit( seed, note.key(), slotTick,
+		static_cast<int>( note.length().getTicks() ), salt );
+	return static_cast<int>( std::lround( unit * ( 2.0f * span ) - span ) );
+}
+
+} // namespace
+
+
+int quantizeNotes( const NoteVector& notes, const QuantizeOptions& options )
+{
+	if( options.grid <= 0 ) { return 0; }
+	const float strength = std::clamp( options.strength, 0.0f, 1.0f );
+
+	int changed = 0;
+	for( Note* note : notes )
+	{
+		if( note == nullptr ) { continue; }
+		const int pos = static_cast<int>( note->pos().getTicks() );
+		const int velocity = static_cast<int>( note->getVolume() );
+		const int target = gridTarget( pos, static_cast<int>( options.grid ), options.mode );
+
+		int moved = pos + static_cast<int>( std::lround( strength * ( target - pos ) ) );
+		moved = std::max( 0, moved + jitterFor( static_cast<int>( options.humaniseTicks ),
+			options.seed, *note, target, HumaniseTimingSalt ) );
+		const int newVelocity = std::clamp( velocity + jitterFor( options.humaniseVelocity,
+			options.seed, *note, target, HumaniseVelocitySalt ), static_cast<int>( MinVolume ),
+			static_cast<int>( MaxVolume ) );
+
+		if( moved != pos ) { note->setPos( TimePos( moved ) ); }
+		if( newVelocity != velocity ) { note->setVolume( static_cast<volume_t>( newVelocity ) ); }
+		if( moved != pos || newVelocity != velocity ) { ++changed; }
 	}
 	return changed;
 }

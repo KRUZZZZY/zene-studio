@@ -394,6 +394,20 @@ LMMS_EXPORT void registerWarpCommands(ControlRegistry& registry);
 //! warp.add / warp.move / warp.remove / warp.set - the mutating half of the
 //! group, in its own translation unit (the automation group's split).
 LMMS_EXPORT void registerWarpEditCommands(ControlRegistry& registry);
+/*! groove.list / groove.extract plus the two mutating halves - the groove pool
+ *  and quantise surface (docs/GROOVE-POOL.md). The engine half is
+ *  include/GrooveTemplate.h, include/GroovePool.h and NoteTransform's
+ *  quantizeNotes(); this group is what makes any of it drivable: without it a
+ *  groove could only be captured by editing the project file by hand, which is
+ *  the gap AGENT-TOOLING.md section 1 makes a defect. */
+LMMS_EXPORT void registerGrooveCommands(ControlRegistry& registry);
+//! groove.apply / groove.quantize - the CLIP-editing verbs, whose inverse is
+//! the clip's own journal checkpoint.
+LMMS_EXPORT void registerGrooveEditCommands(ControlRegistry& registry);
+//! groove.set / groove.remove / groove.rename - the POOL-editing verbs, whose
+//! inverse is a recorded action checkpoint (the pool is project state the Song
+//! checkpoint does not carry).
+LMMS_EXPORT void registerGroovePoolCommands(ControlRegistry& registry);
 /*! session.get_state / set_grid / set_quantisation / set_scene / set_slot /
  *  clear_slot / clear - the Session View grid, its cells and its scenes
  *  (SPEC-zene-studio A1). Declared and DEFINED only when the Session View is
