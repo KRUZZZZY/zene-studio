@@ -301,6 +301,66 @@ const ReversibilityRow kActionRows[] = {
 		"at its own index, so the list - and the order the first-match rule "
 		"reads - comes back exactly",
 		""),
+
+	// =====================================================================
+	// The modulation layer (#602, docs/MODULATION.md). A modulator is not a
+	// JournallingObject: it is a plain value on the Song's
+	// ModulationLayerPublisher, and a Song checkpoint captures the TRACK
+	// CONTAINER, which does not hold it - the same finding the tempo map
+	// records. Every layer edit is therefore a recorded ACTION, and every
+	// action restores the parameters' own values before it rebuilds the
+	// layer's write set (include/ModulationLayer.h,
+	// rebuildModulationRuntimeRestoring).
+	// =====================================================================
+	R("modulator.create", RC::TrueInverse, true,
+		"a created modulator has no before-state; the layer is the publisher's "
+		"own value and no object checkpoint carries it",
+		"action checkpoint: the recorded undo step removes the modulator the "
+		"command created, through the same ModulationLayer::removeModulator "
+		"modulator.remove uses; a new modulator carries a name, a source and no "
+		"routes",
+		""),
+	R("modulator.remove", RC::TrueInverse, true,
+		"a removed modulator and its route list have no live object behind them",
+		"action checkpoint: the recorded undo step re-inserts the captured "
+		"modulator - name, source and every route - at its own index, so the "
+		"layer and the modulator-<n> ids come back exactly. The removal also "
+		"hands every target back to its captured base before the runtime is "
+		"rebuilt, so a removed modulator leaves no parameter parked",
+		""),
+	R("modulator.rate_set", RC::TrueInverse, true,
+		"an LFO's shape, rate, phase and polarity are the layer's own data; no "
+		"object checkpoint carries them",
+		"action checkpoint: the recorded undo step writes the previous source "
+		"back through ModulationLayer::setSource and re-resolves the "
+		"modulator's targets from the values they had before it drove them. "
+		"Switching 'active' off is the same step, so deactivating a modulator "
+		"hands its parameters back",
+		""),
+	R("modulator.target_set", RC::TrueInverse, true,
+		"a created route has no before-state, and the parameter it binds is not "
+		"changed by the binding itself - the base value the route modulates "
+		"around is captured from the model as it stands",
+		"action checkpoint: the recorded undo step removes the route this "
+		"command appended (ModulationLayer::removeRoute at the same index) and "
+		"hands the parameter back to the value it had before it was bound",
+		""),
+	R("modulator.depth_set", RC::TrueInverse, true,
+		"a depth is a scalar in the layer, not a model value: nothing the "
+		"journal could checkpoint changes, and the route's captured base is "
+		"deliberately NOT re-read (a depth change is not a move of the "
+		"parameter)",
+		"action checkpoint: the recorded undo step writes the previous depth "
+		"back through ModulationLayer::setDepth. The transaction's before-state "
+		"holds the previous depth",
+		""),
+	R("modulator.target_remove", RC::TrueInverse, true,
+		"a removed route has no live object behind it",
+		"action checkpoint: the recorded undo step re-inserts the captured "
+		"route at its own index, so the bind order - which is the order the "
+		"routes are applied in - comes back exactly, and the target's base is "
+		"re-captured from the value it was handed back to",
+		""),
 };
 
 constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kActionRows[0]));

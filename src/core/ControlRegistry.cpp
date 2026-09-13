@@ -457,6 +457,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// composite half, each its own translation unit.
 	registerCompCommands(registry);
 	registerCompEditCommands(registry);
+<<<<<<< HEAD
 #ifdef LMMS_HAVE_WASM
 	// The wasm.* group travels with the WASM DSP sandbox: without LMMS_HAVE_WASM
 	// there is no wasmtime to host a module in, and the registry must not carry
@@ -465,6 +466,15 @@ void registerControlCommands(ControlRegistry& registry)
 	// #ifdef, so the two stay consistent in both directions.
 	registerWasmCommands(registry);
 #endif
+=======
+	// The modulation layer (#602): the layer + LFO half, the route half, and the
+	// per-note expression group. No compile-time switch - the layer is a plain
+	// value on Song and a Note field, so its ids are honest in every
+	// configuration.
+	registerModulatorCommands(registry);
+	registerModulatorRouteCommands(registry);
+	registerNoteExpressionCommands(registry);
+>>>>>>> 030/w18-modulation
 }
 
 } // namespace lmms

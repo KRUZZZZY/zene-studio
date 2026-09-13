@@ -250,6 +250,13 @@ void Song::processNextBuffer()
 	// runs at - BEFORE the value is captured below (docs/TEMPO-MAP.md section 4).
 	followTempoMap();
 
+	// The modulation layer (#602, docs/MODULATION.md): one pass per block,
+	// reading the publisher's lock-free snapshot. It returns before copying
+	// anything unless the layer is non-empty, so a project with no modulator
+	// runs exactly the block it has always run. Placed beside followTempoMap()
+	// because both are per-block readers of control-thread state.
+	processModulation();
+
 	// At the beginning of the song, we have to reset the LFOs
 	if (m_playMode == PlayMode::Song && getPlayPos() == 0)
 	{
@@ -745,6 +752,12 @@ void Song::stop()
 	// To avoid race conditions with the processing threads
 	Engine::audioEngine()->requestChangeInModel();
 
+	// The modulation layer (#602): a transport that stops hands every modulated
+	// parameter back to the base it was modulated around, so a stopped song does
+	// not leave a filter parked where the last block put it. The layer KEEPS its
+	// resolved routes - the next play starts from the same bases.
+	restoreModulationBases( m_modulationLayer.runtime() );
+
 	auto& timeline = getTimeline();
 	m_paused = false;
 	m_recording = true;
@@ -986,6 +999,31 @@ void Song::followTempoMap()
 }
 
 
+void Song::processModulation()
+{
+	// An empty layer is exactly today's engine, and the audio thread must pay
+	// nothing for it: no snapshot copy, no arithmetic, no model write. This
+	// early return IS the byte-identity guarantee on the audio path, and
+	// ModulationLayerTest measures it.
+	if( !m_modulationLayer.layer().shouldPersist() ) { return; }
+
+	// The snapshot is a fixed-capacity value copy with a version re-check - no
+	// lock, no allocation, no growth (include/ModulationLayer.h).
+	const ModulationRuntime runtime = m_modulationLayer.snapshot();
+	if( !runtime.active() ) { return; }
+
+	// The modulator runs on WALL-CLOCK seconds measured at the play head, so it
+	// follows the timeline (including a tempo map's own rate) rather than the
+	// transport's musical position: a rate in Hz means Hz. The float cast is
+	// widened before the divide because f_cnt_t is 32-bit.
+	const sample_rate_t rate = Engine::audioEngine()->baseSampleRate();
+	if( rate == 0 ) { return; }
+	const double frames = static_cast<double>( getPlayPos().getTicks() )
+		* static_cast<double>( Engine::framesPerTick() );
+	applyModulationBlock( runtime, frames / static_cast<double>( rate ) );
+}
+
+
 AutomatedValueMap Song::automatedValuesAt(TimePos time, int clipNum) const
 {
 	auto trackList = TrackList{m_globalAutomationTrack};
@@ -1079,6 +1117,16 @@ void Song::clearProject()
 	// from one project must not retime the next (docs/TEMPO-MAP.md).
 	m_tempoMap.edit([](TempoMap& map) { map.clear(); return true; });
 	m_tempoMapAppliedTempo = -1;
+
+	// The modulation layer is project state too, and a layer from one project
+	// must not keep driving the next one's parameters. CLEARING the layer drops
+	// its resolved routes with it, so no write target outlives the project it
+	// was bound in (the lifetime rule docs/MODULATION.md section 4 states).
+	m_modulationLayer.edit([](ModulationLayer& layer, ModulationRuntime& runtime) {
+		layer.clear();
+		runtime = ModulationRuntime{};
+		return true;
+	});
 
 	emit dataChanged();
 
@@ -1345,6 +1393,21 @@ void Song::loadProject( const QString & fileName )
 				m_tempoMap.edit([&mapElement](TempoMap& map) { return map.loadSettings(mapElement); });
 				m_tempoMapAppliedTempo = -1;
 			}
+			// The modulation layer (#602). A project with no block loads into an
+			// EMPTY layer, and the write targets are re-resolved here rather
+			// than carried across a load: the devices a route names are the
+			// NEW project's, and a pointer from the old one must never survive
+			// (docs/MODULATION.md section 4).
+			else if (node.nodeName() == "modulation-layer")
+			{
+				const QDomElement layerElement = node.toElement();
+				m_modulationLayer.edit([&layerElement](ModulationLayer& layer,
+					ModulationRuntime& runtime) {
+					layer.loadSettings(layerElement);
+					rebuildModulationRuntime(layer, &runtime);
+					return true;
+				});
+			}
 #ifdef LMMS_HAVE_SESSION_VIEW
 			else if( node.nodeName() == "session" )
 			{
@@ -1526,6 +1589,14 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	if( m_tempoMap.map().shouldPersist() )
 	{
 		m_tempoMap.map().saveSettings( dataFile, dataFile.content() );
+	}
+
+	// The same rule for the modulation layer (#602): written ONLY when the
+	// layer holds a modulator, so a project that never used one re-saves exactly
+	// the bytes it has always had (docs/MODULATION.md section 3).
+	if( m_modulationLayer.layer().shouldPersist() )
+	{
+		m_modulationLayer.layer().saveSettings( dataFile, dataFile.content() );
 	}
 
 #ifdef LMMS_HAVE_SESSION_VIEW

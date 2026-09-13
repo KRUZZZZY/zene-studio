@@ -110,6 +110,7 @@ include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlLayout.h
+include/ControlModulationSupport.h
 include/ControlRackSupport.h
 include/ControlRegistry.h
 include/ControlReversibility.h
@@ -266,6 +267,7 @@ include/MixerView.h
 include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
+include/ModulationLayer.h
 include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NStateButton.h
@@ -908,6 +910,9 @@ src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsModulator.cpp
+src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginParams.cpp
@@ -938,6 +943,7 @@ src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlModulationSupport.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
@@ -994,6 +1000,7 @@ src/core/MixHelpers.cpp
 src/core/Mixer.cpp
 src/core/Model.cpp
 src/core/ModelVisitor.cpp
+src/core/ModulationLayer.cpp
 src/core/Note.cpp
 src/core/NotePlayHandle.cpp
 src/core/NoteRandom.cpp
@@ -1278,6 +1285,8 @@ tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlModulatorCommandsTest.cpp
+tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
@@ -1297,6 +1306,9 @@ tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
+tests/src/core/ModulationLayerTest.cpp
+tests/src/core/ModulationLayerValueTest.cpp
+tests/src/core/ModulationTestSupport.h
 tests/src/core/MpeExpressionTest.cpp
 tests/src/core/MpeInputPathTest.cpp
 tests/src/core/MpeNoteStorageTest.cpp

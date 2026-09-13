@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T12:30:49Z",
+  "captured_at": "2026-09-13T13:44:48Z",
   "commands": [
     {
       "args_schema": {
@@ -2378,6 +2378,417 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "number"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "shape": {
+            "enum": [
+              "sine",
+              "triangle",
+              "square",
+              "saw"
+            ],
+            "type": "string"
+          },
+          "unipolar": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Create a modulator: a timeline-locked LFO. Returns its modulator-<n> id. It drives nothing until modulator.target_set binds a parameter to it. Reversible through the ProjectJournal (an action checkpoint removes the modulator this command created).",
+      "group": "modulator",
+      "id": "modulator.create",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "source": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "type": "number"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "target": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "modulator",
+          "target",
+          "depth"
+        ],
+        "type": "object"
+      },
+      "description": "Set one route's depth: the modulation amount as a FRACTION of the target's own range (-1..1). 0 leaves the route bound but driving nothing. The base value the parameter is modulated around is kept, so changing a depth does not re-read the parameter. Reversible through the ProjectJournal (the recorded undo step writes the previous depth back).",
+      "group": "modulator",
+      "id": "modulator.depth_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The modulation layer: every modulator with its source (shape, rate in Hz, phase, polarity, active) and every route it drives, with the route's address, its depth and whether it still resolves. 'driving' is the number of routes the audio thread will actually write - a route whose device is gone is reported, not hidden.",
+      "group": "modulator",
+      "id": "modulator.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "number"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "shape": {
+            "enum": [
+              "sine",
+              "triangle",
+              "square",
+              "saw"
+            ],
+            "type": "string"
+          },
+          "unipolar": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "modulator"
+        ],
+        "type": "object"
+      },
+      "description": "Set a modulator's LFO. 'rate' is in Hz and 'phase' is 0..1 where in its cycle the modulator starts; 'shape' is one of sine/triangle/square/saw and 'unipolar' makes the output 0..1 instead of -1..1. An argument the call omits keeps the value it had. Switching 'active' off hands every target back to its own value. Reversible through the ProjectJournal (the recorded undo step puts the previous source back).",
+      "group": "modulator",
+      "id": "modulator.rate_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "source": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "modulator": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "modulator"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a modulator and every route it drives. Its targets are handed back to the values they had before it modulated them. Reversible through the ProjectJournal (the recorded undo step re-inserts the captured modulator at its own index, target list included).",
+      "group": "modulator",
+      "id": "modulator.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "source": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "modulator": {
+            "type": "string"
+          },
+          "target": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "modulator",
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Unbind one parameter from a modulator, by its target index as modulator.get_state reports it. The parameter is handed back to the value it had before it was modulated. Reversible through the ProjectJournal (the recorded undo step re-inserts the captured route at its own index).",
+      "group": "modulator",
+      "id": "modulator.target_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "number"
+          },
+          "effect": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "target": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "modulator",
+          "channel",
+          "effect",
+          "parameter"
+        ],
+        "type": "object"
+      },
+      "description": "Bind a parameter to a modulator. 'channel', 'chain' and 'effect' address a device in a mixer channel's rack (fx-<n> order) and 'parameter' is its display name, exactly as rack.macro_target_add names one; 'depth' is the modulation amount as a FRACTION of that parameter's own range (-1..1), added to the value the parameter already has. Refused when the parameter does not resolve or is already driven, so a modulator never carries a route that can only fail. Reversible through the ProjectJournal.",
+      "group": "modulator",
+      "id": "modulator.target_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "clip": {
             "type": "string"
           },
@@ -2437,6 +2848,191 @@
           "position": {
             "maximum": 1919808,
             "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "note"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a note's per-note MPE expression entirely, and the optional mpepitch/mpepressure/mpetimbre attributes with it - so the note serializes exactly as one that never carried expression. A no-op on a note that carries none is a typed refusal rather than a silent write. Reversible through the ProjectJournal (a MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.expression_clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "expression_count": {
+            "type": "integer"
+          },
+          "has_expression": {
+            "type": "boolean"
+          },
+          "max_pitch_cents": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "pitch_cents": {
+            "type": "integer"
+          },
+          "pressure": {
+            "type": "integer"
+          },
+          "timbre": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "One note's per-note MPE expression, or - when 'note' is omitted - every note in the clip that carries one, with the count. 'has_expression' is the presence flag, so a captured-but-neutral note (every axis 0) is distinguishable from a note with no expression at all.",
+      "group": "note",
+      "id": "note.expression_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "expression_count": {
+            "type": "integer"
+          },
+          "has_expression": {
+            "type": "boolean"
+          },
+          "max_pitch_cents": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "pitch_cents": {
+            "type": "integer"
+          },
+          "pressure": {
+            "type": "integer"
+          },
+          "timbre": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pitch": {
+            "maximum": 4800,
+            "minimum": -4800,
+            "type": "integer"
+          },
+          "pressure": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "timbre": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "note"
+        ],
+        "type": "object"
+      },
+      "description": "Set a note's per-note MPE expression (task #601): 'pitch' is a bend offset in 1/100 semitone (+-4800), 'pressure' is channel pressure 0..127 and 'timbre' is CC74 0..127. An axis the call omits keeps the value it had, and the note is marked as carrying expression either way. Reversible through the ProjectJournal (a MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.expression_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "expression_count": {
+            "type": "integer"
+          },
+          "has_expression": {
+            "type": "boolean"
+          },
+          "max_pitch_cents": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "pitch_cents": {
+            "type": "integer"
+          },
+          "pressure": {
+            "type": "integer"
+          },
+          "timbre": {
             "type": "integer"
           }
         },
@@ -5838,16 +6434,16 @@
       }
     }
   ],
-  "count": 129,
+  "count": 139,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030-w17/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030-w18/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-q8wfslbe/zene.sock",
-    "version": "0.2.1-alpha.59+635bf6f"
+    "source_socket": "/tmp/w18-zene.sock",
+    "version": "0.2.0-alpha.112+5e83358"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

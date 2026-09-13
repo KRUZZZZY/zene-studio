@@ -360,6 +360,26 @@ const ReversibilityRow kRows[] = {
 		"action checkpoint: the recorded undo step restores the map captured "
 		"before the switch, so the flag comes back with the events",
 		""),
+
+	// The per-note expression pair (#602's per-note half, driving #601's own
+	// fields). A Note is a SerializingObject, not a JournallingObject, so there
+	// is no note-level checkpoint: the clip's is the live object that carries
+	// the note list, and it is the same mechanism note.velocity_set reverses
+	// with.
+	R("note.expression_set", RC::TrueInverse, true,
+		"the expression lives in the Note's own serialized state, and the "
+		"MidiClip that owns the note list is a JournallingObject",
+		"ProjectJournal (MidiClip checkpoint: MidiClip::loadSettings clears and "
+		"re-loads the clip's note list, which is the mechanism the piano roll's "
+		"own note edits reverse with)",
+		""),
+	R("note.expression_clear", RC::TrueInverse, true,
+		"dropping the expression also drops the note's optional mpe* "
+		"attributes, which is a change to the clip's serialized state",
+		"ProjectJournal (MidiClip checkpoint: the recorded checkpoint restores "
+		"the note list, attributes included - a cleared expression comes back "
+		"with its presence flag and all three axes)",
+		""),
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));

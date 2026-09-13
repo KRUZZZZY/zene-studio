@@ -459,6 +459,23 @@ LMMS_EXPORT void registerBrowserCommands(ControlRegistry& registry);
 //! record a snapshot-class transaction whose inverse is the paired command.
 LMMS_EXPORT void registerBrowserTagCommands(ControlRegistry& registry);
 
+/*! The modulation layer (#602): modulator.get_state / create / remove /
+ *  rate_set - the layer itself and a modulator's own LFO. The engine half is
+ *  include/ModulationLayer.h (a song-level, timeline-locked LFO per modulator,
+ *  driving a set of parameters by a relative amount); docs/MODULATION.md holds
+ *  the design decisions and the honest limits. Split from the route half for
+ *  the same reason the automation, warp, rack and comp groups are. */
+LMMS_EXPORT void registerModulatorCommands(ControlRegistry& registry);
+//! modulator.target_set / depth_set / target_remove - the route half, in its
+//! own translation unit: which parameters a modulator drives, and by how much.
+LMMS_EXPORT void registerModulatorRouteCommands(ControlRegistry& registry);
+
+/*! note.expression_set / get / clear - #602's per-note half, and the control
+ *  surface #601's per-note MPE expression never had. These commands drive the
+ *  Note fields and the optional mpepitch/mpepressure/mpetimbre attributes #601
+ *  already stores (docs/MPE.md); they are NOT a second expression store. */
+LMMS_EXPORT void registerNoteExpressionCommands(ControlRegistry& registry);
+
 //! Shared helpers for the command groups.
 namespace control
 {

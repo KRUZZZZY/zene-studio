@@ -249,11 +249,10 @@ that marker is published as-is, and no unverified claim is published without one
   are recorded in **`docs/COMPING.md`**.
 - **Control surface:** the new `comp.*` group, split across `src/core/ControlCommandsComp.cpp` (the take half) and
   `src/core/ControlCommandsCompEdits.cpp` (the composite half), with argument/result schemas and A16
-  reversibility rows for all seven ids (`src/core/ControlReversibilityTable.cpp` and
+  reversibility rows for all seven ids (`src/core/ControlReversibilityTableTrueInverse.cpp` and
   `...Passive.cpp`). Every mutating call takes the object's own ProjectJournal checkpoint before it writes, and
   every refusal is typed and happens BEFORE the checkpoint, so a refused call leaves no undo step behind.
-- **Proof:** the registered ctests `TakeLaneTest` (`tests/src/core/TakeLaneTest.cpp`, the take-lane half) and
-  `TakeLaneCompTest` (`tests/src/core/TakeLaneCompTest.cpp`, the composite half) — the ten claims
+- **Proof:** the registered ctest `TakeLaneCompTest` (`tests/src/core/TakeLaneCompTest.cpp`) — the ten claims
   listed in `docs/COMPING.md` §6, including the byte-identity proof, the round trip, the reset-on-absence
   behaviour on both levels, the seven typed refusals and `control.undo` unwinding a `comp.select`.
 - **UI absence — one line: take lanes and comping are drivable through the socket, not from the interface.**
@@ -265,23 +264,6 @@ that marker is published as-is, and no unverified claim is published without one
   but not applied; MIDI comping is out (`comp.assign` refuses a MIDI clip with a typed error); and `comp.audition`
   / `comp.flatten` from the design's sketch are not implemented — flatten is the destructive bounce, and it is
   deliberately absent while nothing renders a composite.
-
-## The A16 contract table, and its histogram
-
-The SPEC A16 classification table holds **129 rows**, measured from the table itself:
-**63 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 54 `not_mutating`**. With the telemetry
-client compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their
-commands, giving **127 rows / 52 `not_mutating`**. `ReversibilityContractTest` asserts both
-sets, so a row added or moved between classes cannot ship with this page quoting the old
-split. (The 117-row figure this page carried before the comping and tempo-map lanes landed was
-their twelve rows short - five `comp.*` `true_inverse`, two `comp.*` `not_mutating`,
-`transport.tempo_map_get` and the four `transport.tempo_map_*` edit rows that the merge which
-took the w11 table split dropped (they were written into the retired
-`ControlReversibilityTableTrueInverse.cpp`); the detector and
-`ControlTempoMapCommandsTest::contractRowsClassifyTheGroup` both caught it, which is what they
-are for.) At 0.2.1 the same
-four counts were 30 / 5 / 3 / 36 over 74 rows
-(`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
 
 ## Tempo map: tempo and time-signature changes on the timeline (`transport.tempo_map_*`) — added 2026-09-13
 
@@ -313,85 +295,85 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   matching the pre-existing engine, which divides by `DefaultTicksPerBar` and never by the metre. There are no
   tempo *curves*: events are steps.
 
-## The WASM effect ABI — documented, runnable, drivable, and still not in this release (`#614`) — added 2026-09-13
+## The A16 contract table, and its histogram
 
-**Read this section as three separate statements, because collapsing them is how a reader gets the wrong
-answer.** (1) The WASM DSP sandbox **is not in any binary of this release**: `WANT_WASM` defaults ON
-(`CMakeLists.txt:140`) and degrades to OFF when the wasmtime C API is absent from the find path
-(`CMakeLists.txt:957-963`), and none of the seven CI jobs provisions it. (2) On a machine that **does** have
-the C API the sandbox is a working feature with a documented ABI, an executed conformance suite and a command
-group that drives it through `--control-socket`. (3) The manifest row that says so is **unchanged and still
-true**.
+The SPEC A16 classification table holds **139 rows**, measured from the table itself:
+**71 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 56 `not_mutating`**. With the telemetry
+client compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their
+commands, giving **137 rows / 54 `not_mutating`**. `ReversibilityContractTest` asserts both
+sets, so a row added or moved between classes cannot ship with this page quoting the old
+split. (The 129-row figure this page carried before the modulation layer landed was its ten
+rows short - six `modulator.*` action-checkpoint rows, two `not_mutating` rows
+(`modulator.get_state`, `note.expression_get`) and the two `note.expression_*` `true_inverse` rows. The 117-row figure
+before the comping and tempo-map lanes landed was
+their twelve rows short - five `comp.*` `true_inverse`, two `comp.*` `not_mutating`,
+`transport.tempo_map_get` and the four `transport.tempo_map_*` edit rows that the merge which
+took the w11 table split dropped (they were written into the retired
+`ControlReversibilityTableTrueInverse.cpp`); the detector and
+`ControlTempoMapCommandsTest::contractRowsClassifyTheGroup` both caught it, which is what they
+are for.) At 0.2.1 the same
+four counts were 30 / 5 / 3 / 36 over 74 rows
+(`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
 
-- **The ABI is documented from the host source.** `docs/WASM-EFFECT-ABI.md` states what a module must export
-  (`process(in_offset, out_offset, frames, sample_rate) -> i32` and a linear memory named `memory`), what it may
-  export (`channels` and `latency`, as `i32` **globals**), what the host provides as imports from the `env`
-  module (a parameter read, a bounded log call and a transport-state read), the planar float32 memory layout
-  and the fact that the host passes **byte offsets, never pointers**, how parameters, the sample rate and the
-  block size reach a module, and the error and return conventions. Every statement names the file and symbol it
-  was read from in `src/wasm/WasmSandbox.cpp`, `src/wasm/WasmWorker.cpp` and `src/wasm/WasmAbi.h`; the things
-  that could not be determined from that source are listed as **UNKNOWN** rather than filled in from what a wasm
-  ABI usually looks like. Two facts there are worth a module author's attention because the opposite is the
-  common assumption: `process()` is entered **once per channel plane**, with the same frame count and rate and a
-  different offset pair each call; and the `i32` it returns is **recorded but never acted on** — a module cannot
-  signal an error by returning a non-zero value. The document also records that the `abi` version export the
-  header declares is **read by nothing** in this tree.
-- **A conformance suite and an example effect.** `tests/src/wasm/WasmAbiConformanceTest.cpp` asserts each
-  documented property, positive and negative, against modules assembled at run time from `.wat` source, and is
-  registered in `tests/CMakeLists.txt` under the same `if(WANT_WASM)` guard as `WasmSandboxTest`.
-  `tests/data/wasm-effect-abi/softclip.wat` is one example effect written from the document alone, as its
-  header states.
-- **The sandbox is now a capability of a WASM-ON build, with a headline for a user who never opens a
-  terminal.** With `-DWANT_WASM=ON` and the wasmtime C API on the find path
-  (`cmake -DWANT_QT6=ON -DWANT_WASM=ON -DWASMTIME_ROOT=<prefix>` — the pinned tree also carries a `min/`
-  variant that does **not** export `wasmtime_module_new` or `wasmtime_wat2wasm` and cannot link this sandbox, so
-  the full prefix is the one that works), the build reports `WASM DSP sandbox : Enabled` and the following
-  exist and run: the crash-isolated sandbox (`src/wasm/`), the `wasm_effect` plugin, `wasm-wat2wasm`, the
-  `WasmSandboxTest` and `WasmAbiConformanceTest` suites, and this release's six `wasm.*` control-surface
-  commands. `scripts/fetch-wasmtime.sh` fetches and checksums the pinned prebuilt C API (v48.0.1).
-- **`wasm.*` — six commands, and the contract leg the item was missing.** `wasm.list` (what the sandbox can
-  host: the ABI surface and the module files in a directory), `wasm.load` / `wasm.unload` (host and drop a
-  module), `wasm.get_state` (what is hosted), `wasm.set_param` (one of the 16 parameter slots) and
-  `wasm.process` (run one block and report the outcome — a contained trap is **reported**, not thrown). All
-  six are declared, defined and registered only under `#ifdef LMMS_HAVE_WASM`, so a build without wasmtime
-  neither compiles them, nor registers their ids, nor carries their six SPEC A16 rows
-  (`wasm.load` / `unload` / `set_param` are `snapshot`, recording a paired-command inverse that
-  `control.undo` replays; `wasm.list` / `get_state` / `process` are `not_mutating`). The proof is the
-  committed control-surface transcript `tests/control-wasm-sandbox.py`, registered as the
-  `ControlWasmSandbox` ctest in WASM-ON builds only.
-- **What the six commands do NOT reach — the honest half.** They drive the **host's own** sandbox. They do not
-  put a module into a device's audio path, and a module hosted with `wasm.load` is not heard: a `wasm_effect`
-  instance is still given a module through its own modal chooser (a display), and its 8 parameter models are
-  project state reachable with `plugin.param_*` on a `wasm_effect` device. Driving an effect instance's
-  sandbox through the socket is **not** in this draft.
-- **UI absence — one line:** there is no interface for the sandbox when it is compiled out (which is every
-  binary of this release), and even with `WANT_WASM=ON` the effect's only surface is a module picker, eight
-  anonymous parameter sliders and a status line — hosting, inspecting, driving or parameterising a module
-  **headlessly** is reachable only through `wasm.*`. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
-- **The A16 histogram is unaffected by this section, and here is why.** This release's builds have
-  `LMMS_HAVE_WASM` undefined, so the six `wasm.*` rows are **not in the table** and the counts below stand.
-  A WASM-ON build carries six more (three `snapshot`, three `not_mutating`); `ReversibilityContractTest`
-  computes them as an addition to the invariant part rather than as a second full set, so both configurations
-  are asserted.
-- **Still open:** `docs/INDEPENDENT-NOTES-READ.md` §B5 asked whether the manifest's required-OFF
-  `wasm-sandbox` row holds by **choice** or by **dependency absence**. It still holds by dependency absence at
-  the release: provisioning the wasmtime C API in the seven CI jobs is what would turn it into a choice, and
-  `tests/advertised-features.tsv` and `tests/release-honesty-gate.sh` would have to be reconciled in the same
-  commit. **The row is not flipped here, deliberately** — flipping it would fail the honesty gate, which is
-  the gate working, and the C API being present on a developer's box does not provision CI.
+## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
+
+- **New: a modulation layer.** A *modulator* is a timeline-locked LFO (shape, rate in Hz, phase,
+  polarity) that drives a **set** of parameters at once, each by its own **depth**. Ten ids:
+  `modulator.get_state`, `modulator.create`, `modulator.remove`, `modulator.rate_set`,
+  `modulator.target_set`, `modulator.depth_set`, `modulator.target_remove`, and `note.expression_set`,
+  `note.expression_get`, `note.expression_clear` for per-note expression.
+- **A depth is a fraction of the target's own range, and the write is RELATIVE.** `depth` is in
+  `-1..1` and means a fraction of that parameter's own `min..max`, the same unit the rack macros use
+  and for the same reason (the engine defines a parameter's range; recording its numbers would pin
+  the assignment to one build). What differs is what the fraction is applied to: a macro *replaces* a
+  parameter's value, a modulator *adds* to it —
+  `written = clamp(base + depth * output * (max - min), min, max)` — so two parameters with different
+  ranges and different current values move by the same fraction of their own range. That is what makes
+  the amount independent of each parameter's own absolute value. `docs/MODULATION.md` §2 records the
+  decision and the comparison with the macro lane.
+- **A modulator really reaches the audio path.** `Song::processModulation()` runs once per audio block
+  beside the tempo map's follower, reads the layer through a seqlock (`ModulationLayerPublisher`, the
+  `TempoMapPublisher` precedent), and writes each resolved route's target once. An empty layer returns
+  before copying anything, so a project that uses no modulator runs the block it has always run, and
+  `ModulationLayerTest` measures both halves: zero allocations on the block path, and a no-op on a
+  layer with no modulator, no resolved route, an inactive modulator or a zero depth.
+- **A route's address is the rack macro's address**, resolved through the effect's own parameter list
+  (channel, chain, effect, parameter display name), so a modulator route and a macro target cannot
+  disagree about what a parameter name means. A route that does not resolve at bind time is refused,
+  typed — and a route whose device disappears later is reported as unresolved by `modulator.get_state`
+  rather than silently miswritten.
+- **Every edit restores the parameters first.** Each `modulator.*` write rebuilds the layer's resolved
+  write set after handing every target back to the base it was modulated around, which is what makes
+  re-capturing a base idempotent: editing a modulator can never bake a modulated value into it.
+  `Song::stop()` does the same, so a stopped song does not leave a parameter parked where the last
+  block put it. The layer is saved with the project (a `<modulation-layer>` element inside `<song>`)
+  only when it holds a modulator, so a project that never used one re-saves byte-identically.
+- **Per-note expression is now reachable.** `note.expression_set` / `get` / `clear` drive the per-note
+  MPE fields `#601` already stores on a `Note` and serializes as the optional `mpepitch` /
+  `mpepressure` / `mpetimbre` attributes — they are not a second expression store, and the inverse is
+  a `MidiClip` checkpoint. **Only the pitch axis is applied by playback**, which is `#601`'s own
+  stated limit (`docs/MPE.md` §4), not a new one.
+- **UI absence — one line: modulators and per-note expression are drivable through the socket, not
+  from the interface.** Nothing in `src/gui/` creates, draws or edits a modulator or a note's
+  expression. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
+- **Proof:** four registered ctests. `ModulationLayerValueTest` (the four LFO shapes, the source
+  validation, the layer's bounds — values only, no engine), `ModulationLayerTest` (the target
+  resolver, the relative write against two ranges, the clamp, the no-op paths, **0 allocations over
+  64 blocks**, the base restore, the save/load round trip), `ControlModulatorCommandsTest` (the ids
+  with their schemas, the A16 classes, the typed refusals, `bindDriveUndoAndRebind` — create, bind,
+  apply a real block, `control.undo`, and re-bind) and `ControlNoteExpressionCommandsTest` (the
+  `note.expression.*` round trip with its checkpoint). Every mutating call records its SPEC A16
+  class (`true_inverse`: an action checkpoint for the layer, a `MidiClip` checkpoint for a note's
+  expression).
+- **Stated limits.** Modulation is applied **once per audio block** (about 11 ms at the default
+  period), not sample-accurately; the source is an **LFO only** (no envelope follower); targets are
+  device parameters inside a mixer channel's rack chains, so a route cannot name the Song's own master
+  gain or an instrument's parameters in this release; and while a modulator is active the parameter's
+  own control is taken over — the value you see is the base, and the modulator's offset is on top of
+  it until the modulator is deactivated, removed or `control.undo` takes the edit back.
 
 ## Not in this draft yet
 
-Written per lane as it lands, so this list is state as of **2026-09-13**; W12 owns turning this
-file into the user-first notes. **In and described above:** warp marker editing, export dither and
-SRC quality, rack macros and key/velocity zones, clip fades/crossfades/gain, browser tag/metadata
-search with its peak cache, bounded coalescing undo, and comping - plus the Session View and the
-process items, whose sections W12 adds.
-
-**Still absent from 0.3.0's scope:** the `#602` modulation layer, Ableton Link sync,
-sample-accurate automation, freeze/bounce-in-place, groove pool and quantise, punch in/out, tempo
-automation and time signatures, recording crash recovery, the two verification programmes
-(real-time-safety and golden-audio), `#614` — the sandbox itself, which is compiled out because wasmtime is
-absent here; only its ABI document and conformance material are in this draft, and the section above says so —
-and `ARCH-2`. Each gets a section here and a line in `docs/KNOWN-LIMITATIONS.md` when it lands; this file grows
-as those land and is not a summary of 0.3.0.
+The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
+0.3.0 scope, plus the release-bar statements, are the responsibility of their own lanes and wave W12. This
+file grows as those land; it is not a summary of 0.3.0 and must not be read as one.
