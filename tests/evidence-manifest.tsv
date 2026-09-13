@@ -8,9 +8,17 @@
 # recovered copy can be shown to be the artefact the record refers to.
 #
 # Columns (tab-separated): sha256 <TAB> bytes <TAB> repo-relative path
-# Removed: 1368 files, 147179609 bytes (140.4 MiB).
+# Removed: 1395 files, 150612892 bytes (143.6 MiB).
 # Directories: tests/integration-logs-*/ (17), tests/coverage-green/, tests/coverage-run/,
 #              tests/evidence/, tests/gate-hygiene-logs/.
+#
+# 2026-09-13, the v0.2.1-alpha fold (merge 501d2cd3e): the 0.2.1 release line had
+# committed 27 more run-output .log files under tests/ (its own wave evidence:
+# tests/evidence/*, tests/control-arm64-cluster-logs/*, tests/control-shutdown-logs/*,
+# 3433283 bytes). Gate 11 refused every one of them, and the same owner decision applies -
+# the value of a log is its hash. Their hashes are the block appended below, in the
+# same three columns; the lane reports that cite them (tests/evidence/*/REPORT.md,
+# DIAGNOSIS.md, README.md) are prose and stay in the tree.
 # docs/release-verification-*/ is NOT in this list: commit 3fe5addb9 had already moved the
 # 22 release-verification .log files out of docs/ ("Gate 6 rejects a .log under docs/"), so
 # by the time this decision was executed there were no such files left to remove.
@@ -21,6 +29,13 @@
 #   awk -F'\t' -v p="$PWD/<file>" '$3==p {print $1}' tests/evidence-manifest.tsv
 #   # or, for the whole set, from a restored snapshot of the removed paths:
 #   awk -F'\t' '!/^#/ && NF==3 {print $1"  "$3}' tests/evidence-manifest.tsv | sha256sum -c -
+3aa9c11a4e94158555d51f310880598a666305208c03dbb04b592476fe8c86d1	10219	tests/control-arm64-cluster-logs/ctest-92.log
+7898fd67f38bc3609c9161e55c4c75d3b187bb22aa1a2a8a65755c7b507c72d4	331300	tests/control-arm64-cluster-logs/run-all-gates.log
+076e748baafca5f7fcc9127d61b8f838eef63540c0386d77c859c50132a36d44	3244	tests/control-arm64-cluster-logs/slow-engine-simulation/slow130.log
+c99236e4c73210442e678faee7d23b4d7df89d6e29002b60510fc0e21d19b11d	17481	tests/control-arm64-cluster-logs/slow-engine-simulation/slow35-a.log
+062ba98a3b91e031a8d872ad821339dd07d3f0d177e7479c64452f3c0aa39248	3455	tests/control-arm64-cluster-logs/slow-engine-simulation/slow35-b.log
+51193c748685e183b79de8edb30d21b0806e42c9e2c96cba75e95fcaa297b547	10208	tests/control-shutdown-logs/ctest-full.log
+7fe4a6ead584d626e2a15d334af52d46469cffad899b930c4a48d8206979fe6d	331404	tests/control-shutdown-logs/run-all-gates-full.log
 88c2c3b23742b7c27f981caaf3d189b8316078c3cbc7351450ee7349260bc120	7177	tests/coverage-green/classify-scope.py
 467c6cdc63628169bc3a9da270317b7a2b7ee19602bd2d7e548bfa370c96a8ce	1900	tests/coverage-green/coverage-baseline.before.tsv
 4f3f9d2a17590a6c91f37756bb31316b83e447b0ee1f60c7254063c90f090845	38689	tests/coverage-green/coverage-fork.info.gz
@@ -108,6 +123,19 @@ f43a63b8a0230553101719edeec8172d4b147882608c2642cbf2a69ef15557ce	928	tests/evide
 591a1761dffd0a679e801bfcff35e44cabd2d1c1a07ccf6a09adbdd697ebfbdc	996	tests/evidence/instrument-view-safety/qt-probe/probe-offscreen.log
 5a4195ec7da8da7bc37d5e04b97a412eaeb6b6966d32275f9b3ebda3eefef88a	2582	tests/evidence/instrument-view-safety/qt-probe/probe-setwindowicon.cpp
 f96964a2a51659d77480762fb7bef1e5ae418af7b102c670c06e5732916e6633	978	tests/evidence/instrument-view-safety/qt-probe/probe-xvfb.log
+bc8bcc2916901e3de08c8a2f7db39679935090f5555d0f2b29d0a72c79b1521c	231040	tests/evidence/integration-0.2.1-wave2/build.log
+dc8970e0c7494059e5613fbf1a9f8aae53f6513c6748c731b01bcd0886bce0a8	18160	tests/evidence/integration-0.2.1-wave2/configure.log
+8e413620daa96a1f1bb69abd4e7a8166d118e646cdba8d91746ea095f0cc68d9	10222	tests/evidence/integration-0.2.1-wave2/ctest-final-tip.log
+0082197db9669e9a53e0d6a8e351503063ba732e73e56146d6df6312827de6d3	10222	tests/evidence/integration-0.2.1-wave2/ctest.log
+12835993182e6ab5e021c0e91313eccc2479dbc567dd4fc2dbabcfddd120678b	307	tests/evidence/integration-0.2.1-wave2/fork-sources-final-tip.log
+12835993182e6ab5e021c0e91313eccc2479dbc567dd4fc2dbabcfddd120678b	307	tests/evidence/integration-0.2.1-wave2/fork-sources-gate.log
+2ad44e9603830e0318914eec7354fddc66b7cbfbc6327b176607b0865ca9c9e6	299290	tests/evidence/integration-0.2.1-wave2/gate6-final-tip.log
+9eeb271620980def6c96cbb780c867c51a0a5e5664df5f1b0623c4ca29961421	298449	tests/evidence/integration-0.2.1-wave2/gate6.log
+43088e85f285038264810b3834867eca7c183af9a6f8ef4baf0e0b7299338e3e	334480	tests/evidence/integration-0.2.1-wave2/run-all-gates-BEFORE-FIX-gate6-fail.log
+21240d3fdf5e67cc9d32c876bd5cb3b66bda6bfb7b346fda7f4a6564bd8bff02	334250	tests/evidence/integration-0.2.1-wave2/run-all-gates.log
+f3809ad410e0b7f3e87db75a90801ac8e631b60abe132778871699cd77ca9152	1238	tests/evidence/integration-0.2.1-wave2/unregistered-final-tip.log
+f3809ad410e0b7f3e87db75a90801ac8e631b60abe132778871699cd77ca9152	1238	tests/evidence/integration-0.2.1-wave2/unregistered-tests-gate.log
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855	0	tests/evidence/integration-0.2.1-wave2/yamllint.log
 0814732dc8e939b6509ee786dcf6492c292584211b0749f6c827c05ef0a2581d	2301	tests/evidence/release-prep-0.2.0/01-version-untagged-ci-flags.txt
 fafbf8387f5ff26338e57f43570fa49c893d4f515989f926510e7ad32cbd67b1	2321	tests/evidence/release-prep-0.2.0/02-version-0.2.0-alpha.txt
 bebe984af2577d0e6430a7626959189ac84c881cdec85369a877f0d823133d30	261	tests/evidence/release-prep-0.2.0/03-configure-forceversion-internal.txt
@@ -122,6 +150,13 @@ fd06efcc1e4e479d6fe71d7238bee6bf1e4a12f368de1cba21bf7c49406b42ce	307	tests/evide
 700066b1263f966deab55ff4a0eb4dd12e4c45cf75071955244d088c0d0381c2	362	tests/evidence/release-prep-0.2.0/12-gate-runner-unbound-array.txt
 43f1ed0f6423b48eb1909716e6824920d7707d4f1a426d85a8d2727393358dd7	362	tests/evidence/release-prep-0.2.0/13-local-ci-summary.txt
 45bfc78d23169e33c11605134dae583a87a4ee2b01b40727f8a0e78950cf0dd9	2026	tests/evidence/release-prep-0.2.0/README.md
+3a9cf1affdd598e1aae1cd5491e29966d0da20a4acd1aa19beafd10dcadb26e4	712	tests/evidence/vst3-platform-fixtures/affected-5.log
+ac19710765d86d635c8d80964af34bcf9cc2e360896fa246151f03e08f11e439	10208	tests/evidence/vst3-platform-fixtures/ctest-92.log
+567213b671ffc876d3b0e207de39260f2f54a91b8dd334080c088ce9a16e740d	330959	tests/evidence/vst3-platform-fixtures/run-all-gates.log
+d485c3a3ecea148dd4b9dbaf459e34ded4bb25e5bb669d816397038a8bd2d63d	498846	tests/evidence/wave3-remaining/control-legs-verbose.log
+9be2ec5e55766a0c25c2beb5d7b15bd7e82fb186a97e7b958bade31516c6551a	10201	tests/evidence/wave3-remaining/ctest-full.log
+aa17770ed444fc087e0cea132520737738f975fab8d11b7cf78ea1a61cd169f9	395	tests/evidence/wave3-remaining/refactor-check-2-tests.log
+bc018376bda62c25769b17056af98c953581b8f13e1ddf76a64b11b473c0ef1c	335448	tests/evidence/wave3-remaining/run-all-gates.log
 b1534050f07bb3b36c9c49ef80faa881feac3bbd7c7808b9788a4a084780a5eb	82	tests/gate-hygiene-logs/after-build-two-tests.log
 bc8ef213a94cf3264db2e09f85fbd8ec32d42163ae182350b05f7ca6e10f3daa	43534	tests/gate-hygiene-logs/after-build.log
 21923e2baf5ceb4031f72daff0ab05d912ccc5fd18cd77ca60e8390bbf1d8f74	6743	tests/gate-hygiene-logs/after-configure.log
