@@ -32,7 +32,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from control_socket_flows import (  # noqa: E402
     check_audio_fallback, check_busy_carries_reason, check_clean_shutdown,
-    check_ping_shape, check_readiness_reason, check_requires_device_refusal,
+    check_ping_shape, check_readiness_reason, check_recovery_cleaned,
+    check_requires_device_refusal,
 )
 from control_socket_harness import (  # noqa: E402
     BROKEN_DEVICE, FATAL_GUARD_MARKER, LEGACY_WATCHDOG_LINE, Client, Instance,
@@ -82,6 +83,18 @@ def assertion_level_controls():
     must_reject(problems, "shutdown never finished",
                 (False, None, True, "", 30.0), shutdown_check,
                 "a hang must count as a failure, not as a wait")
+
+    # --- the autosave cleanup (test: control-shutdown.py) -------------------
+    # The file that survives is the crash marker the NEXT launch offers to
+    # recover, so a clean quit that keeps it is a false "the last session
+    # crashed". The real product failed this on Qt 5.15 (control.quit stopped the
+    # event loop without closing the window, so closeEvent never ran).
+    if check_recovery_cleaned(True, False):
+        problems.add("the recovery checker rejects a clean quit that DID clean up: %r"
+                     % (check_recovery_cleaned(True, False),))
+    must_reject(problems, "clean quit left recover.mmp behind",
+                (True, True), lambda evidence: check_recovery_cleaned(*evidence),
+                "control.quit must run the same cleanup a GUI quit does")
 
     # --- the readiness checker (test: control-readiness.py) -----------------
     prefix_ping = {"id": 1, "ok": True, "result": {

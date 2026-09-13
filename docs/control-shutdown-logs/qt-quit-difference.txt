@@ -1,0 +1,31 @@
+Qt 5.15 src/corelib/kernel/qcoreapplication.cpp:
+    2010: void QCoreApplication::quit()
+    2011: {
+    2012:     exit(0);
+    2013: }
+  -> no QEvent::Quit is ever sent, so QApplication::event()'s Quit branch
+     (Qt 5.15 qapplication.cpp:1858-1870, 'closeAllWindows()') is never
+     reached, no QCloseEvent reaches MainWindow, closeEvent never runs.
+
+Qt 6.4 src/corelib/kernel/qcoreapplication.cpp:
+    2057: void QCoreApplicationPrivate::quit()
+    2058: {
+    2061:     if (QThread::currentThread() == mainThread()) {
+    2062:         QEvent quitEvent(QEvent::Quit);
+    2063:         QCoreApplication::sendEvent(q, &quitEvent);
+    2064:     } else {
+    2065:         QCoreApplication::postEvent(q, new QEvent(QEvent::Quit));
+  -> the Quit event makes QApplication::event() close every window, which is
+     why MainWindow::closeEvent ran on a Qt6 dev box and not on any CI job.
+
+Verified locally, strace -f -k -e trace=unlink on the control-quit scenario
+(`control.quit` on an instance started with --control-socket), unlink of
+recover.mmp, bottom-up:
+    main -> QCoreApplication::exec -> QEventLoop::exec -> processEvents
+      -> sendPostedEvents (posted event) -> processApplicationTermination
+        -> QApplication::event(Quit) -> QApplication::closeAllWindows()
+          -> tryCloseAllWidgetWindows -> QWindow::close()
+            -> processCloseEvent -> QWidget::handleClose
+              -> MainWindow::closeEvent -> sessionCleanup
+                -> ProjectRecovery::removeRecovery -> unlink(recover.mmp)
+That chain is the Qt6-only one. The fix does not depend on it.

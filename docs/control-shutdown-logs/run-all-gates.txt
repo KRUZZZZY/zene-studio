@@ -1,0 +1,19 @@
+bash tests/run-all-gates.sh, on the committed tree (Qt 6.4.2, RelWithDebInfo):
+
+  GATES_EXIT=3
+
+Gate rows:
+
+1      ctest                    PASS
+2      coverage                 SKIP
+3      no-tautology             PASS
+4      complexity               PASS
+5      mutation                 PASS
+6      upstream-regression      PASS
+7      file-length              PASS
+8      duplication              PASS
+9      fork-sources             PASS
+10     unregistered-tests       PASS
+
+Gate 2 (coverage) SKIPs without --with-coverage; exit 3 is PASS-WITH-SKIPS.
+The full log is in run-all-gates-full.log.
