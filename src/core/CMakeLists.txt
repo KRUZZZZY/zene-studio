@@ -137,6 +137,7 @@ set(LMMS_SRCS
 	# checkpoint / a bounded recorded state / nothing): see
 	# include/ControlReversibility.h.
 	core/ControlReversibilityTable.cpp
+	core/ControlReversibilityTableAction.cpp
 	core/ControlReversibilityTablePassive.cpp
 	core/ControlReversibilityTableSnapshot.cpp
 	# The transaction record's accounting, and the rule that decides when two

@@ -100,7 +100,7 @@ private slots:
 	//! src/core/ControlReversibilityTable.cpp has 74 rows today, one per registered
 	//! command" (docs/RELEASE-NOTES-v0.2.1-alpha.md, at 0.2.1: 30 `true_inverse`,
 	//! 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`) - and nothing asserted them.
-	//! At 0.3.0 the same four counts read 54 / 9 / 3 / 51 over 117 rows, and the
+	//! At 0.3.0 the same four counts read 63 / 9 / 3 / 54 over 129 rows, and the
 	//! current figure lives in docs/RELEASE-NOTES-v0.3.0-alpha.md. The two
 	//! tests above hold the table to account for COVERAGE (every registered command
 	//! has a row, every row names a registered command) and for behaviour; a row
@@ -137,7 +137,7 @@ private slots:
 
 #ifdef ZENE_TELEMETRY_ENABLED
 		// The table as shipped, WITH the two telemetry.* rows: the shape the release
-		// notes state for 0.2.1.
+		// notes state for 0.3.0.
 		constexpr int kRows = 129;
 		constexpr int kTrueInverse = 63;
 		constexpr int kSnapshot = 9;

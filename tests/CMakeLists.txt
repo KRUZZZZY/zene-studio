@@ -79,6 +79,10 @@ set(LMMS_TESTS
 	# drag rule, the byte budget and the refusal of an evicted step.
 	src/core/UndoBoundsTest.cpp
 	src/core/TakeLaneCompTest.cpp
+	# The take lanes' own half of the comping tests (the composite half stays
+	# in TakeLaneCompTest.cpp); the fixtures both halves use are in
+	# tests/src/core/TakeLaneTestSupport.h.
+	src/core/TakeLaneTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
@@ -235,11 +239,13 @@ set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 set_tests_properties(UndoBoundsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
-# TakeLaneCompTest (comping: take lanes + the non-destructive composite, task
-# #600) constructs real SampleTracks with real SampleClips over real WAVs and
-# drives the comp.* group through the registry, so it needs the same headless Qt
-# platform as the tests above - the developer box has no display.
-set_tests_properties(TakeLaneCompTest PROPERTIES
+# TakeLaneCompTest (comping: the composite and the comp.* command surface, task
+# #600) and TakeLaneTest (the lane list, the clip's lane tag and the
+# non-destructive property of the take audio) construct real SampleTracks with
+# real SampleClips over real WAVs, and TakeLaneCompTest drives the comp.* group
+# through the registry, so both need the same headless Qt platform as the tests
+# above - the developer box has no display.
+set_tests_properties(TakeLaneCompTest TakeLaneTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

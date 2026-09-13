@@ -1,6 +1,6 @@
 # per-method CCN baseline for the whole tree (upstream + fork-NEW code) (functions over the target only)
 # keyed by function@path — maintained by tests/complexity-gate.sh; do not edit by hand
-main@src/core/main.cpp	173
+main@src/core/main.cpp	177
 lmms::gui::getKeyOffsetFromKeyEvent@src/gui/instrument/PianoView.cpp	113
 lmms::gui::PianoRoll::paintEvent@src/gui/editors/PianoRoll.cpp	103
 lmms::MonstroSynth::renderOutput@plugins/Monstro/Monstro.cpp	97
@@ -26,7 +26,7 @@ lmms::RemoteVstPlugin::processMessage@plugins/VstBase/RemoteVstPlugin.cpp	39
 lmms::SaProcessor::analyze@plugins/SpectrumAnalyzer/SaProcessor.cpp	39
 lmms::SfxrSynth::update@plugins/Sfxr/Sfxr.cpp	39
 lmms::InstrumentTrack::processInEvent@src/tracks/InstrumentTrack.cpp	39
-lmms::Song::loadProject@src/core/Song.cpp	38
+lmms::Song::loadProject@src/core/Song.cpp	39
 lmms::gui::SetupDialog::SetupDialog@src/gui/modals/SetupDialog.cpp	37
 lmms::GigInstrument::getDimensions@plugins/GigPlayer/GigPlayer.cpp	36
 lmms::InstrumentFunctionArpeggio::processNote@src/core/InstrumentFunctions.cpp	36
@@ -35,8 +35,8 @@ lmms::AudioBusHandle::doProcessing@src/core/AudioBusHandle.cpp	35
 lmms::GigInstrument::playImpl@plugins/GigPlayer/GigPlayer.cpp	35
 lmms::gui::PianoRoll::dragNotes@src/gui/editors/PianoRoll.cpp	35
 lmms::DataFile::validate@src/core/DataFile.cpp	34
-lmms::Song::processNextBuffer@src/core/Song.cpp	34
 lmms::gui::PianoRoll::wheelEvent@src/gui/editors/PianoRoll.cpp	34
+lmms::Song::processNextBuffer@src/core/Song.cpp	34
 lmms::BasicFilters::update@include/BasicFilters.h	33
 lmms::BitcrushEffect::processImpl@plugins/Bitcrush/Bitcrush.cpp	32
 lmms::gui::ClipView::mousePressEvent@src/gui/clips/ClipView.cpp	32
@@ -100,6 +100,7 @@ lmms::MixerChannel::doProcessing@src/core/Mixer.cpp	20
 lmms::Mixer::deleteChannel@src/core/Mixer.cpp	20
 lmms::Mixer::updateLatencyCompensation@src/core/Mixer.cpp	20
 lmms::Mixer::loadSettings@src/core/Mixer.cpp	20
+lmms::Song::processAutomations@src/core/Song.cpp	20
 PluginPortsMigrationTest::slice8PluginsAreLiveAndExact@tests/src/plugins/PluginPortsMigrationTest.cpp	19
 lmms::MonstroSynth::oscillate@plugins/Monstro/Monstro.h	19
 lmms::OpulenzInstrument::loadFile@plugins/OpulenZ/OpulenZ.cpp	19
@@ -107,6 +108,7 @@ lmms::PathUtil::baseLocation@src/core/PathUtil.cpp	19
 lmms::wasm::WasmSandboxTest::p3_moduleLatencyIsApplied@tests/src/wasm/WasmSandboxTest.cpp	19
 lmms::DataFile::upgrade_0_2_1_20070501@src/core/DataFile.cpp	19
 lmms::InstrumentTrack::loadTrackSpecificSettings@src/tracks/InstrumentTrack.cpp	19
+lmms::Track::loadTrack@src/core/Track.cpp	19
 lmms::AutomatableModel::valueBuffer@src/core/AutomatableModel.cpp	18
 lmms::WatsynObject::renderOutput@plugins/Watsyn/Watsyn.cpp	18
 lmms::gui::ExportProjectDialog::ExportProjectDialog@src/gui/modals/ExportProjectDialog.cpp	18
@@ -114,8 +116,6 @@ lmms::vst3::HostedPlugin::loadState@plugins/Vst3Effect/Vst3Host.cpp	18
 lmms::AudioEngine::isAudioDevNameValid@src/core/AudioEngine.cpp	18
 lmms::Mixer::masterMix@src/core/Mixer.cpp	18
 lmms::SampleClip::loadSettings@src/core/SampleClip.cpp	18
-lmms::Song::processAutomations@src/core/Song.cpp	18
-lmms::Track::loadTrack@src/core/Track.cpp	18
 lmms::AudioBus::update@src/core/AudioBus.cpp	17
 lmms::ExprSynth::renderOutput@plugins/Xpressive/ExprSynth.cpp	17
 lmms::GigInstrument::loadSample@plugins/GigPlayer/GigPlayer.cpp	17
@@ -144,10 +144,10 @@ lmms::gui::LOMMControlDialog::mousePressEvent@plugins/LOMM/LOMMControlDialog.cpp
 lmms::gui::MixerView::keyPressEvent@src/gui/MixerView.cpp	16
 lmms::gui::SaSpectrumView::makePath@plugins/SpectrumAnalyzer/SaSpectrumView.cpp	16
 main@tests/src/core/TwoTrackAlsaCaptureProbe.cpp	16
-lmms::Song::clearProject@src/core/Song.cpp	16
 lmms::TrackContainer::loadSettings@src/core/TrackContainer.cpp	16
 lmms::TrackContainer::automatedValuesFromTracks@src/core/TrackContainer.cpp	16
 lmms::gui::MainWindow::exportProject@src/gui/MainWindow.cpp	16
+lmms::Song::clearProject@src/core/Song.cpp	16
 lmms::AudioBus::sanitize@src/core/AudioBus.cpp	15
 lmms::AudioPortAudio::AudioPortAudio@src/core/audio/AudioPortAudio.cpp	15
 lmms::DynProcEffect::processImpl@plugins/DynamicsProcessor/DynamicsProcessor.cpp	15
@@ -187,8 +187,8 @@ lmms::gui::SampleClipView::paintEvent@src/gui/clips/SampleClipView.cpp	14
 lmms::gui::SampleThumbnail::visualize@src/gui/SampleThumbnail.cpp	14
 lmms::vst3::HostedPlugin::prepare@plugins/Vst3Effect/Vst3Host.cpp	14
 lmms::Mixer::moveChannelLeft@src/core/Mixer.cpp	14
-lmms::Track::toggleSolo@src/core/Track.cpp	14
 lmms::gui::MainWindow::MovableQMdiArea::mouseMoveEvent@src/gui/MainWindow.cpp	14
+lmms::Track::toggleSolo@src/core/Track.cpp	14
 RemoteZynAddSubFx::guiLoop@plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	13
 lmms::AudioJack::processCallback@src/core/audio/AudioJack.cpp	13
 lmms::AutomationClip::resolveAllIDs@src/core/AutomationClip.cpp	13
@@ -214,6 +214,7 @@ lmms::gui::PianoRoll::fitNoteLengths@src/gui/editors/PianoRoll.cpp	13
 lmms::gui::PianoRoll::parameterEditNoteUnderMouse@src/gui/editors/PianoRoll.cpp	13
 lmms::gui::PianoRollWindow::showEvent@src/gui/editors/PianoRoll.cpp	13
 lmms::InstrumentTrack::processAudioBuffer@src/tracks/InstrumentTrack.cpp	13
+runningClientPids@tests/src/plugins/ZynSeparateProcessTest.cpp	13
 lmms::AudioAlsa::setHWParams@src/core/audio/AudioAlsa.cpp	12
 lmms::AudioFileProcessor::playNoteImpl@plugins/AudioFileProcessor/AudioFileProcessor.cpp	12
 lmms::Effect::processAudioBuffer@src/core/Effect.cpp	12
@@ -233,7 +234,6 @@ lmms::gui::PianoView::mouseMoveEvent@src/gui/instrument/PianoView.cpp	12
 lmms::gui::SaSpectrumView::updateBuffers@plugins/SpectrumAnalyzer/SaSpectrumView.cpp	12
 lmms::gui::TrackContainerView::dropEvent@src/gui/editors/TrackContainerView.cpp	12
 lmms::wasm::WasmWorker::processSlot@src/wasm/WasmWorker.cpp	12
-runningClientPids@tests/src/plugins/ZynSeparateProcessTest.cpp	12
 lmms::Mixer::saveSettings@src/core/Mixer.cpp	12
 lmms::gui::MainWindow::finalize@src/gui/MainWindow.cpp	12
 lmms::gui::MainWindow::mayChangeProject@src/gui/MainWindow.cpp	12

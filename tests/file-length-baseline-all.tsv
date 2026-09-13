@@ -12,7 +12,7 @@ src/core/Song.cpp	1867
 plugins/Monstro/Monstro.cpp	1856
 src/gui/modals/SetupDialog.cpp	1513
 src/gui/clips/ClipView.cpp	1474
-src/core/main.cpp	1362
+src/core/main.cpp	1399
 src/gui/FileBrowser.cpp	1350
 plugins/GigPlayer/GigPlayer.cpp	1288
 plugins/Watsyn/Watsyn.cpp	1286
@@ -30,6 +30,7 @@ tests/src/wasm/WasmSandboxTest.cpp	1025
 tests/src/core/VcaGroupTest.cpp	1022
 include/AudioPorts.h	992
 src/gui/instrument/PianoView.cpp	956
+plugins/ClapEffect/ClapHost.cpp	953
 src/core/AutomatableModel.cpp	946
 plugins/VstBase/VstPlugin.cpp	940
 src/gui/clips/MidiClipView.cpp	938
@@ -42,7 +43,6 @@ plugins/Xpressive/Xpressive.cpp	895
 src/core/ConfigManager.cpp	895
 src/core/ScriptEngine.cpp	880
 plugins/OpulenZ/OpulenZ.cpp	877
-plugins/ClapEffect/ClapHost.cpp	875
 plugins/SpectrumAnalyzer/SaSpectrumView.cpp	845
 plugins/Compressor/CompressorControlDialog.cpp	843
 tests/src/core/ArrayVectorTest.cpp	841
@@ -57,6 +57,7 @@ tests/src/core/PdcMixerTest.cpp	786
 plugins/Lb302/Lb302.cpp	779
 plugins/Sid/SidInstrument.cpp	776
 src/gui/widgets/Fader.cpp	766
+src/core/Track.cpp	759
 plugins/ZynAddSubFx/ZynAddSubFx.cpp	757
 plugins/TripleOscillator/TripleOscillator.cpp	750
 src/gui/widgets/Graph.cpp	743
@@ -64,7 +65,6 @@ tests/src/core/ScriptBindingsTest.cpp	741
 tests/src/plugins/PluginPortsMigrationTest.cpp	731
 plugins/FreeBoy/FreeBoy.cpp	730
 plugins/Monstro/Monstro.h	730
-src/core/Track.cpp	726
 plugins/SlewDistortion/SlewDistortion.cpp	725
 src/core/NotePlayHandle.cpp	721
 src/core/midi/MidiAlsaSeq.cpp	718
@@ -84,6 +84,7 @@ include/RemotePluginBase.h	649
 include/PianoRoll.h	647
 tests/src/core/RoutingGraphTest.cpp	641
 plugins/Patman/Patman.cpp	638
+src/core/SampleClip.cpp	636
 src/core/midi/MidiApple.cpp	635
 plugins/LadspaEffect/caps/Amp.cc	634
 tests/src/core/AudioBusTest.cpp	633
@@ -95,7 +96,6 @@ src/gui/widgets/Knob.cpp	622
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp	616
 plugins/Compressor/Compressor.cpp	615
 plugins/Organic/Organic.cpp	615
-src/core/SampleClip.cpp	610
 include/ladspa.h	603
 src/core/RemotePlugin.cpp	601
 plugins/MidiImport/MidiImport.cpp	598

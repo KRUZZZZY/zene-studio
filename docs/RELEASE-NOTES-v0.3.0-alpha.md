@@ -249,10 +249,11 @@ that marker is published as-is, and no unverified claim is published without one
   are recorded in **`docs/COMPING.md`**.
 - **Control surface:** the new `comp.*` group, split across `src/core/ControlCommandsComp.cpp` (the take half) and
   `src/core/ControlCommandsCompEdits.cpp` (the composite half), with argument/result schemas and A16
-  reversibility rows for all seven ids (`src/core/ControlReversibilityTableTrueInverse.cpp` and
+  reversibility rows for all seven ids (`src/core/ControlReversibilityTable.cpp` and
   `...Passive.cpp`). Every mutating call takes the object's own ProjectJournal checkpoint before it writes, and
   every refusal is typed and happens BEFORE the checkpoint, so a refused call leaves no undo step behind.
-- **Proof:** the registered ctest `TakeLaneCompTest` (`tests/src/core/TakeLaneCompTest.cpp`) — the ten claims
+- **Proof:** the registered ctests `TakeLaneTest` (`tests/src/core/TakeLaneTest.cpp`, the take-lane half) and
+  `TakeLaneCompTest` (`tests/src/core/TakeLaneCompTest.cpp`, the composite half) — the ten claims
   listed in `docs/COMPING.md` §6, including the byte-identity proof, the round trip, the reset-on-absence
   behaviour on both levels, the seven typed refusals and `control.undo` unwinding a `comp.select`.
 - **UI absence — one line: take lanes and comping are drivable through the socket, not from the interface.**
@@ -267,12 +268,19 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **117 rows**, measured from the table itself:
-**54 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 51 `not_mutating`**. With the telemetry
+The SPEC A16 classification table holds **129 rows**, measured from the table itself:
+**63 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 54 `not_mutating`**. With the telemetry
 client compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their
-commands, giving **115 rows / 49 `not_mutating`**. `ReversibilityContractTest` asserts both
+commands, giving **127 rows / 52 `not_mutating`**. `ReversibilityContractTest` asserts both
 sets, so a row added or moved between classes cannot ship with this page quoting the old
-split. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
+split. (The 117-row figure this page carried before the comping and tempo-map lanes landed was
+their twelve rows short - five `comp.*` `true_inverse`, two `comp.*` `not_mutating`,
+`transport.tempo_map_get` and the four `transport.tempo_map_*` edit rows that the merge which
+took the w11 table split dropped (they were written into the retired
+`ControlReversibilityTableTrueInverse.cpp`); the detector and
+`ControlTempoMapCommandsTest::contractRowsClassifyTheGroup` both caught it, which is what they
+are for.) At 0.2.1 the same
+four counts were 30 / 5 / 3 / 36 over 74 rows
 (`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
 
 ## Tempo map: tempo and time-signature changes on the timeline (`transport.tempo_map_*`) — added 2026-09-13
