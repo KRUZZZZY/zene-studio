@@ -457,8 +457,6 @@ void registerControlCommands(ControlRegistry& registry)
 	// composite half, each its own translation unit.
 	registerCompCommands(registry);
 	registerCompEditCommands(registry);
-<<<<<<< HEAD
-<<<<<<< HEAD
 #ifdef LMMS_HAVE_WASM
 	// The wasm.* group travels with the WASM DSP sandbox: without LMMS_HAVE_WASM
 	// there is no wasmtime to host a module in, and the registry must not carry
@@ -467,7 +465,6 @@ void registerControlCommands(ControlRegistry& registry)
 	// #ifdef, so the two stay consistent in both directions.
 	registerWasmCommands(registry);
 #endif
-=======
 	// The modulation layer (#602): the layer + LFO half, the route half, and the
 	// per-note expression group. No compile-time switch - the layer is a plain
 	// value on Song and a Note field, so its ids are honest in every
@@ -475,15 +472,12 @@ void registerControlCommands(ControlRegistry& registry)
 	registerModulatorCommands(registry);
 	registerModulatorRouteCommands(registry);
 	registerNoteExpressionCommands(registry);
->>>>>>> 030/w18-modulation
-=======
 	// Session tempo/phase sync (D11 "Ableton Link sync"): the model in
 	// include/LinkSync.h, its UDP multicast transport, and the link.* commands.
 	// No compile-time switch: the model needs no audio device, no project and no
 	// display, and reports its own transport's availability, so its ids are
 	// honest in every configuration (docs/LINK-SYNC.md).
 	registerLinkCommands(registry);
->>>>>>> 030/w19-link
 }
 
 } // namespace lmms
