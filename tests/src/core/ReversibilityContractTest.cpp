@@ -190,12 +190,12 @@ private slots:
 			}
 		}
 
-		const DocumentedHistogram documented = documentedHistogram();
-		const int kRows = documented.rows;
-		const int kTrueInverse = documented.trueInverse;
-		const int kSnapshot = documented.snapshot;
-		const int kIrreversible = documented.irreversible;
-		const int kNotMutating = documented.notMutating;
+		const DocumentedHistogram counts = documentedHistogram();
+		const int kRows = counts.rows;
+		const int kTrueInverse = counts.trueInverse;
+		const int kSnapshot = counts.snapshot;
+		const int kIrreversible = counts.irreversible;
+		const int kNotMutating = counts.notMutating;
 
 		const QByteArray measured = QStringLiteral("%1 true_inverse, %2 snapshot, "
 			"%3 irreversible, %4 not_mutating")

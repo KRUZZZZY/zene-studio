@@ -219,9 +219,11 @@ def check_listing(session, recorder):
                    "import_module=%r limits=%s" % (demos.get("import_module"),
                                                    json.dumps(demos.get("limits"))))
     recorder.check("the required exports are named with their wasm types",
-                   exports_are_the_documented_ones(demos.get("exports")))
+                   exports_are_the_documented_ones(demos.get("exports")),
+                   "exports=%s" % json.dumps(demos.get("exports")))
     recorder.check("the three host imports are named",
-                   imports_are_the_documented_ones(demos.get("imports")))
+                   imports_are_the_documented_ones(demos.get("imports")),
+                   "imports=%s" % json.dumps(demos.get("imports")))
     example = session.result("wasm.list", {"root": ABI_DIR})
     names = [entry.get("name") for entry in example.get("modules") or []]
     recorder.check("wasm.list finds the #614 example under tests/data",
