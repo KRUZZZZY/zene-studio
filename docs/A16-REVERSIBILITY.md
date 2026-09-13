@@ -116,7 +116,7 @@ transport run state, and `render.render` (an output artefact).
 | `arrangement.get_state` | no | reads the model | no write | - |
 | `audio.device_list` | no | reads the device table | no write | - |
 | `automation.get_state` | no | reads the model | no write | - |
-| `automation.mode_set` | no | declared mutating, but the handler REFUSES every call: this build has no automation modes (docs/KNOWN-LIMITATIONS.md:84) | no write happens, so no transaction is recorded | use automation.add_point to write a curve instead |
+| `automation.mode_set` | no | declared mutating, but the handler REFUSES every call: this build has automation modes in the engine but no way to select or persist one (docs/KNOWN-LIMITATIONS.md) | no write happens, so no transaction is recorded | use automation.add_point to write a curve instead |
 | `clip.select` | no | selection is control-surface view state: it is not serialized, the GUI keeps its own copy in QGraphicsItem state, and no engine checkpoint can hold it | nothing to inverse in the project. The registry records NO transaction for this command (mutating is false), so a select cannot block or shadow the undo of a real edit; the previous selection is reported in the result so a client can restore the view itself | - |
 | `control.commands_list` | no | reads the registry | no write | - |
 | `control.ping` | no | liveness probe | no write | - |

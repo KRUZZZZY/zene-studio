@@ -304,7 +304,16 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(clientPid() > 0, 10000);
 		const auto client = clientPid();
 		QVERIFY2(client > 0, "the client process could not be found in /proc");
+#ifndef Q_OS_WIN
+		// POSIX-only: MSVC has no ::kill, no pid_t and no SIGKILL, so this call site kept
+		// the whole file from compiling on the MSVC job (run 34725347297:
+		//   ZynSeparateProcessTest.cpp(307): error C2039: 'kill': is not a member of the
+		//   global namespace; error C2061: syntax error: identifier 'pid_t').
+		// initTestCase() QSKIPs this suite on Windows, so the guarded-out line never needs
+		// a Windows equivalent -- the rest of the file already follows that pattern, and
+		// this call site was the one that escaped it.
 		QCOMPARE(::kill(static_cast<pid_t>(client), SIGKILL), 0);
+#endif
 
 		// The host is still running here, and it notices: the instrument stops
 		// reporting a live separate process.

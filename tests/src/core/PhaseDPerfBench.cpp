@@ -31,7 +31,8 @@
 // ------
 // One mixer, one process. Each repetition measures four windows of
 // `kPeriods` synchronous renders (48 kHz / 256 frames = 5333.33 us of one
-// core per period) with CLOCK_PROCESS_CPUTIME_ID, and the graph is toggled
+// core per period) with the process's own CPU time (std::clock(), which is
+// CLOCK_PROCESS_CPUTIME_ID's portable equivalent and the only form MSVC has), and the graph is toggled
 // between windows so that every window is bracketed by an identical-window
 // twin -- time-varying machine noise (other processes, frequency scaling)
 // therefore cancels in the deltas instead of landing on one state:
@@ -71,10 +72,13 @@ namespace
 
 double processCpuSeconds()
 {
-	timespec ts{};
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
-	return static_cast<double>(ts.tv_sec)
-			+ static_cast<double>(ts.tv_nsec) * 1.0e-9;
+	// std::clock() is the process's own CPU time on every platform, MSVC included, where
+	// clock_gettime(CLOCK_PROCESS_CPUTIME_ID) does not exist (<ctime> there has no
+	// CLOCK_PROCESS_CPUTIME_ID). Same quantity, portable, and this file is the one the
+	// unregistered-tests gate tells a reader to build by hand -- so it must build everywhere.
+	// The platform-absent call was found by a read-only sweep, not by CI: no target builds
+	// this file today, which is exactly why it would have failed the first time it was wired in.
+	return static_cast<double>(std::clock()) / static_cast<double>(CLOCKS_PER_SEC);
 }
 
 constexpr int kSenderChannels = 32;

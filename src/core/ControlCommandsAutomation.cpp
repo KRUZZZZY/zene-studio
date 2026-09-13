@@ -139,11 +139,12 @@ ControlResult automationGetState(const QJsonObject& args)
 
 /*! automation.mode_set - registered, and refused by name.
  *
- * The shipped alpha has no automation modes: AutomationClip carries a
- * progression type (discrete / linear / cubic_hermite), never an
- * off / read / touch / latch / write mode, and nothing in src/ or include/
- * names one - docs/KNOWN-LIMITATIONS.md:84 "No automation modes". The command
- * is registered with its full schema and asks for nothing it cannot read, the
+ * The modes exist in the engine (AutomatableModel's Read/Touch/Latch/Write enum, with the
+ * touch state machine and a test) but nothing can SELECT or PERSIST one: setAutomationMode
+ * has no caller outside its own test, the mode is not serialised, and the interface does not
+ * offer it - docs/KNOWN-LIMITATIONS.md. The engine has the modes; the product cannot
+ * select or persist one, which is the limitation this refusal reports.
+ * The command is registered with its full schema and asks for nothing it cannot read, the
  * shape mixer.set_pan and track.set_arm use.
  */
 ControlResult automationModeSet(const QJsonObject& args)
@@ -162,10 +163,10 @@ ControlResult automationModeSet(const QJsonObject& args)
 	}
 
 	return ControlResult::failure(ControlErrorKind::Refused,
-		QStringLiteral("this build has no automation modes: AutomationClip holds a progression "
-			"type (discrete/linear/cubic_hermite), never an off/read/touch/latch/write mode "
-			"(docs/KNOWN-LIMITATIONS.md:84, \"No automation modes\"). Use "
-			"automation.add_point to write a curve instead."));
+		QStringLiteral("this build has automation modes in the engine (Read/Touch/Latch/Write, "
+			"AutomatableModel) but no way to select or persist one: the mode is not saved with "
+			"the project and neither the interface nor this surface can set it "
+			"(docs/KNOWN-LIMITATIONS.md). Use automation.add_point to write a curve instead."));
 }
 
 } // namespace
@@ -202,7 +203,8 @@ void registerAutomationCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("automation");
 		cmd.verb = QStringLiteral("mode_set");
 		cmd.description = QStringLiteral("Set a parameter's automation mode. Refused: this build "
-			"has no automation modes (docs/KNOWN-LIMITATIONS.md:84), so no write is faked.");
+			"has automation modes in the engine but no way to select or persist one "
+			"(docs/KNOWN-LIMITATIONS.md), so no write is faked.");
 		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},

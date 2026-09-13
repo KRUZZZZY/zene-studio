@@ -1180,7 +1180,7 @@ def automation_flow(client, process, log_path, tmp, project, last_id):
     if "KNOWN-LIMITATIONS" not in (refused.get("message") or ""):
         fail("automation.mode_set's refusal does not cite its source: %r" % refused,
              process, log_path)
-    if "no automation modes" not in (refused.get("message") or ""):
+    if "select or persist" not in (refused.get("message") or ""):
         fail("automation.mode_set's refusal does not name what is missing: %r" % refused,
              process, log_path)
     flow.err("automation.mode_set", "invalid_args",

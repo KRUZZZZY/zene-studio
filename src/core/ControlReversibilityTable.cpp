@@ -359,7 +359,8 @@ const ReversibilityRow kRows[] = {
 		"none needed: the command is a typed refusal"),
 	R("automation.mode_set", RC::NotMutating, false,
 		"declared mutating, but the handler REFUSES every call: this build has "
-		"no automation modes (docs/KNOWN-LIMITATIONS.md:84)",
+		"automation modes in the engine but no way to select or persist one "
+		"(docs/KNOWN-LIMITATIONS.md)",
 		"no write happens, so no transaction is recorded",
 		"use automation.add_point to write a curve instead"),
 	R("control.undo", RC::NotMutating, false,
