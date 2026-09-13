@@ -296,13 +296,22 @@ private slots:
 
 		test::resetAllocationCount();
 		test::tlCountAllocations = true;
+		// The sink keeps the calls alive against the optimizer; it accumulates in a plain
+		// local and is stored once, because a compound assignment to a 'volatile' operand is
+		// deprecated in C++20 and the CI builds with -Werror:
+		//   WarpMarkersTest.cpp:302:30: error: compound assignment with 'volatile'-qualified
+		//   left operand is deprecated [-Werror=volatile]
+		// One volatile store is enough to make the loop's work observable, which is the whole
+		// point of the sink.
 		volatile f_cnt_t sink = 0;
+		f_cnt_t total = 0;
 		for (int i = 0; i < 10000; ++i)
 		{
-			sink += at(markers, i % 200);
-			sink += static_cast<f_cnt_t>(tickAt(markers, static_cast<f_cnt_t>(i * 7)));
-			sink += static_cast<f_cnt_t>(markers.framesPerTickAt(static_cast<f_cnt_t>(i * 3), kBaseRate));
+			total += at(markers, i % 200);
+			total += static_cast<f_cnt_t>(tickAt(markers, static_cast<f_cnt_t>(i * 7)));
+			total += static_cast<f_cnt_t>(markers.framesPerTickAt(static_cast<f_cnt_t>(i * 3), kBaseRate));
 		}
+		sink = total;
 		test::tlCountAllocations = false;
 		(void)sink;
 

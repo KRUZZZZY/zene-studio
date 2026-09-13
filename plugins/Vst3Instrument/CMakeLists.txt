@@ -61,3 +61,11 @@ BUILD_PLUGIN(vst3instrument
 )
 
 TARGET_LINK_LIBRARIES(vst3instrument lmms_vst3_sdk)
+
+IF(MSVC)
+	# Same collision as vst3effect, and the same reasoning: this module links the executable's import
+	# library, whose exported classes carry std::vector<float> in inline members, while the host TU
+	# instantiates the same members. See plugins/Vst3Effect/CMakeLists.txt for the full note, the
+	# precedent in plugins/NeuralAmp/CMakeLists.txt and the clean fix (pimpl the buffer member).
+	TARGET_LINK_OPTIONS(vst3instrument PRIVATE /FORCE:MULTIPLE)
+ENDIF()
