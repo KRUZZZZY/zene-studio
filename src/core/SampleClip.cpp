@@ -585,6 +585,22 @@ void SampleClip::loadSettings( const QDomElement & _this )
 				"are not strictly increasing; they were ignored."));
 		}
 	}
+	else
+	{
+		// No <warp> child means "this clip has no markers and follows the project"
+		// - #597 writes the element only when that is not the truth. Resetting the
+		// warp state here is what makes the clip's own journal checkpoint a TRUE
+		// inverse of a warp edit: the checkpoint a warp.* command takes captures
+		// the clip BEFORE its first marker is added, i.e. state with no <warp>
+		// element, and control.undo replays it through this function. Without this
+		// branch the restore would leave the added marker in place.
+		//
+		// A fresh load from a project file is unaffected - the members already
+		// hold exactly these defaults - so no existing project's sound moves.
+		m_warp.clear();
+		m_tempoMode = WarpTempoMode::FollowProject;
+		m_sourceTempo = 0.0f;
+	}
 
 	if (_this.hasAttribute("color"))
 	{

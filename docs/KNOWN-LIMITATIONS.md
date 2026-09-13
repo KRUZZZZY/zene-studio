@@ -262,6 +262,12 @@ that is this page's fault — report it and it gets added.
   for bit, and a headless render puts a source whose transients are at 0/1/2/3 s at 0/0.5/1.0/1.5 s under a
   marker pair declaring 2× — while the base binary renders that project as if the `<warp>` element were absent.
   The lane `post-alpha/warp` is an ancestor of this tip.
+- **And there is no warp UI at all — added 2026-09-13.** The sentence above is true of the *engine*; the
+  product can author markers only through the control surface. `warp.list` / `warp.add` / `warp.move` /
+  `warp.remove` / `warp.set` are registered commands (argument and result schemas, A16 reversibility records)
+  and a registered ctest plus a committed transcript cover them — but nothing in `src/gui/` draws a marker,
+  drags one, snaps one to the grid or places the first one, so an interface-only user cannot warp a clip at
+  all. Warp marker editing is drivable through the socket, not from the interface.
 - **MPE applies pitch only.** Per-note expression is captured from MPE input, stored on the note and editable;
   **pitch is applied on playback, while pressure and timbre are captured, stored and readable but not applied.**
   There is no per-note expression editor.

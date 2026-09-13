@@ -324,6 +324,13 @@ LMMS_EXPORT void registerAutomationCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerAutomationEditCommands(ControlRegistry& registry);
 //! script.run and script.list.
 LMMS_EXPORT void registerScriptCommands(ControlRegistry& registry);
+//! warp.list/add/move/remove/set - the warp-marker editing surface of a
+//! SampleClip (#597). The engine half is include/WarpMarkers.h and
+//! SampleClip's own accessors; this group is what makes it drivable.
+LMMS_EXPORT void registerWarpCommands(ControlRegistry& registry);
+//! warp.add / warp.move / warp.remove / warp.set - the mutating half of the
+//! group, in its own translation unit (the automation group's split).
+LMMS_EXPORT void registerWarpEditCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

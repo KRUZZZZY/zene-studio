@@ -95,6 +95,8 @@ set(LMMS_SRCS
 	core/ControlCommandsSurface.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
+	core/ControlCommandsWarp.cpp
+	core/ControlCommandsWarpEdit.cpp
 	core/ControlDeviceCatalogue.cpp
 	core/ControlDeviceHosted.cpp
 	core/ControlDeviceState.cpp
