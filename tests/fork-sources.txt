@@ -147,7 +147,9 @@
 #     scripts here would widen the fork-scoped file-length / complexity / duplication ratchets
 #     onto them, which is exactly the scope widening 3A refused for
 #     plugins/RnnoiseDenoiser/testdata/*.sh. Their commands are recorded in
-#     docs/BRAND-PLACEHOLDERS.md and beside the scripts in tests/evidence/.
+#     docs/BRAND-PLACEHOLDERS.md; the two tests/evidence/ scripts here were removed with
+#     the committed evidence on 2026-09-13 (REPO-1/CP-1) and their hashes are in
+#     tests/evidence-manifest.tsv, so only tests/brand-resource-sweep.py remains on disk.
 #
 # Merged 2026-09-12 (integration wave 3B, merge #5 = post-alpha/racks). That lane added
 # tools/rack-render-fixture.py and tools/rack-render-proof.py here by hand; neither can be
