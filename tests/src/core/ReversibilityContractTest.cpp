@@ -140,6 +140,36 @@ private slots:
 	}
 
 
+	//! The COALESCING declaration is data in the same table, and it is held to
+	//! account the same way (Zene Studio, task #623): a command that declares a
+	//! target must be a *true_inverse* row - a step can only be merged into
+	//! another step when both restore LIVE state - and what it declares must be
+	//! reachable from the surface, or the rule would be a declaration nothing
+	//! can act on.
+	void coalescingIsDeclaredOnlyForCommandsWithALiveCheckpoint()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const control::ReversibilityTable& table = control::ReversibilityTable::instance();
+		int declared = 0;
+		for (const control::ReversibilityEntry& entry : table.entries())
+		{
+			if (!entry.coalesces()) { continue; }
+			++declared;
+			QCOMPARE(entry.cls, control::ReversibilityClass::TrueInverse);
+			QVERIFY2(registry->command(entry.command) != nullptr,
+				qPrintable(entry.command + " declares coalescing but is not registered"));
+		}
+		QVERIFY2(declared > 0, "nothing declares coalescing, so the drag rule has no subject");
+
+		// ... and the rule is on the wire, not only in the table.
+		const ControlResult report = run(QStringLiteral("control.undo_depth"));
+		QVERIFY2(report.ok, qPrintable(report.errorMessage));
+		const QJsonArray onTheWire = report.result.value(QStringLiteral("coalescing"))
+			.toObject().value(QStringLiteral("commands")).toArray();
+		QCOMPARE(onTheWire.size(), declared);
+	}
+
+
 	//! THE NEGATIVE CONTROL (SPEC A16 deliverable 6). script.run has no inverse:
 	//! control.undo must FAIL with the typed 'irreversible' error naming the
 	//! command and its fallback - and must NOT quietly undo the reversible step

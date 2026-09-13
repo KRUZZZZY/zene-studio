@@ -35,6 +35,7 @@
 #include <QStringList>
 #include <QVector>
 
+#include "ControlUndoCoalescing.h"
 #include "ControlVocabulary.h"
 #include "lmms_export.h"
 
@@ -120,6 +121,18 @@ public:
 		//! Serialised size of this record (before + inverse + mechanism), the
 		//! quantity MaxTransactionBytes bounds.
 		int bytes = 0;
+		/*! How many commands this ONE record covers. 1 normally; more when the
+		 *  coalescing rule merged a same-command-same-target run into a single
+		 *  undo step - a 200-step drag is one step, so it is one record with
+		 *  commands == 200. `before` and `inverse` describe the state BEFORE the
+		 *  run and still revert the whole of it. */
+		int commands = 1;
+		/*! The serial of the journal step this record describes, 0 when the
+		 *  record's inverse is a command rather than a step (a file revision).
+		 *  control.undo compares it against the stack's oldest retained serial:
+		 *  a record whose step a bound has evicted must REFUSE, typed, instead
+		 *  of unwinding an older step the caller never asked about. */
+		quint64 step = 0;
 	};
 
 	static ControlRegistry* instance();
@@ -213,6 +226,13 @@ public:
 
 	void recordTransaction(const Transaction& tx);
 	QJsonArray transactions() const;
+
+	//! The coalescing window in force, milliseconds (0 = grouping disabled),
+	//! read by control.undo_depth and set by control.set_undo_coalescing.
+	int coalesceWindowMs() const { return m_coalescer.windowMs(); }
+	//! Sets it; false (and unchanged) outside [0, MaxUndoCoalesceWindowMs], which
+	//! the caller reports as a typed refusal.
+	bool setCoalesceWindowMs(int ms) { return m_coalescer.setWindowMs(ms); }
 	//! control.transactions' payload: the records plus the bounds they live
 	//! within (count/bytes caps, retained bytes, evicted count, `capped`).
 	QJsonObject transactionsReport() const;
@@ -238,13 +258,38 @@ public:
 private:
 	explicit ControlRegistry(QObject* parent = nullptr);
 	QString checkRequires(const ControlCommand& command) const;
+	/*! Runs one handler with everything that has to happen around it: the
+	 *  one-command-one-step merge, the coalescing rule and the transaction
+	 *  record. Split out of invoke() so neither function carries the dispatch
+	 *  and the bookkeeping (the complexity ratchet). */
+	ControlResult runHandler(const std::function<ControlResult(const QJsonObject&)>& handler,
+		const QString& commandId, bool mutating, const QJsonObject& args);
 	//! Stamps \a tx with the contract table's class for its command and refuses
 	//! to let a handler claim an inverse the contract says does not exist.
 	void stampContract(const QString& commandId, Transaction* tx) const;
 	//! Records the transaction a successful mutating handler described, under
 	//! the contract table's class. Split out of invoke() so one function does
 	//! not carry the dispatch, the merge and the record (complexity ratchet).
-	void recordTransactionOf(const QString& commandId, ControlResult* result);
+	//! \a coalesced says the step was merged into the previous run's (then the
+	//! record it belongs to is EXTENDED, not duplicated) and \a step is the
+	//! serial of the journal step the call produced (0 when it produced none).
+	void recordTransactionOf(const QString& commandId, ControlResult* result,
+		bool coalesced, quint64 step);
+	//! Drops the oldest records until both record caps hold. One definition,
+	//! called by the append path and by a coalesced run's re-measurement.
+	void trimTransactions();
+	/*! Applies the coalescing rule to the command that just ran (SPEC A16's
+	 *  "undo depth and drag coalescing", task #623): merges its step into the
+	 *  previous one when the contract table says this command coalesces on this
+	 *  target and the run is inside the window. Defined in
+	 *  ControlUndoCoalescing.cpp - this class's own member, kept out of
+	 *  ControlRegistry.cpp for the file-length ratchet. */
+	bool coalesceStepOf(ProjectJournal& journal, const QString& commandId,
+		const QJsonObject& args, bool producedStep);
+	//! The record covered one more command of the same run: the step it names is
+	//! unchanged (that is what coalescing means), so the command count grows and
+	//! the bytes are re-measured - and no second record is appended.
+	void extendTopTransaction();
 
 	//! Ask the application to quit through its normal path and arm the
 	//! last-resort guard. Called by requestQuit() (immediately) and by
@@ -259,6 +304,9 @@ private:
 
 	QHash<QString, ControlCommand> m_commands;
 	QVector<Transaction> m_transactions;
+	//! The coalescing state of the control surface: the run in flight, and the
+	//! window it is grouped in (control.set_undo_coalescing).
+	control::UndoCoalescer m_coalescer;
 	QVector<std::function<void()>> m_shutdownHooks;
 	int m_recordedBytes = 0;
 	int m_evicted = 0;
@@ -269,6 +317,12 @@ private:
 LMMS_EXPORT void registerControlCommands(ControlRegistry& registry);
 //! control.* — ping, version, commands_list, undo, redo, quit.
 LMMS_EXPORT void registerControlGroupCommands(ControlRegistry& registry);
+/*! control.undo_depth (read the depth, both caps, the retained bytes and the
+ *  coalescing rule), control.set_undo_depth (set the caps) and
+ *  control.set_undo_coalescing (set the window). The bounded-undo slice of
+ *  SPEC A16's obligation; registered by registerControlGroupCommands so the
+ *  group stays one group. */
+LMMS_EXPORT void registerUndoBoundsCommands(ControlRegistry& registry);
 //! transport.* and track.*
 LMMS_EXPORT void registerTransportCommands(ControlRegistry& registry);
 //! mixer.*
@@ -369,6 +423,10 @@ namespace control
 //! A fresh "mutating command is not undone by itself" transaction record.
 ControlRegistry::Transaction makeTransaction(const QString& command, QJsonObject before,
 	QJsonObject inverse, bool reversible, const QString& mechanism);
+//! The serialised size of one transaction record, in bytes - the quantity
+//! MaxTransactionBytes bounds. ONE definition: the append path and a coalesced
+//! run's re-measurement both call it, so the byte accounting cannot drift.
+LMMS_EXPORT int serialisedRecordBytes(const ControlRegistry::Transaction& tx);
 } // namespace control
 
 } // namespace lmms

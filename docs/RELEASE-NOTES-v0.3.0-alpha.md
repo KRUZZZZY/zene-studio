@@ -150,6 +150,52 @@ that marker is published as-is, and no unverified claim is published without one
   a warning. There is no fade curve editor, and no fade at all is drawn.
 >>>>>>> 030/w9-clip-fades
 
+## Bounded, coalescing undo (`control.*`) — added 2026-09-13
+
+- **The undo stack is bounded TWO ways, and both bounds are readable.** A count cap (100 steps by
+  default, settable up to 10000) and a **byte budget** over the serialised checkpoints (16 MiB by
+  default, settable up to 512 MiB), evicting oldest-first, with the newest step never dropped and every
+  eviction counted and reported. `control.undo_depth` returns the depth, both caps, the bytes retained,
+  how many steps a bound has evicted and whether it has evicted anything at all (`bounded`), so an agent
+  can tell "this is the whole history" from "this is what the bound retains";
+  `control.set_undo_depth {steps?, bytes?}` sets either cap and reports what lowering it cost
+  (`dropped`). Before this, the cap was a hardcoded 100 with no byte bound and no way to read either.
+- **A drag is one undo step, not one per call.** Two consecutive calls of the same command on the same
+  target, with no other step pushed in between and less than the coalescing window (400 ms) apart, are
+  **one** undo step — so a 200-call `clip.move` drag costs one Ctrl+Z instead of 200. The commands it
+  applies to are declared per command in the A16 contract table (`clip.move`, `clip.resize`,
+  `mixer.set_volume`, `plugin.param_set`, `rack.macro_set`) with the argument(s) that name the target,
+  and the gesture ends on any other command, any other target, any other step in between, a pause
+  longer than the window, or a window change. `control.set_undo_coalescing {window_ms}` sets the
+  window, and **0 turns grouping off entirely — which is the pre-0.3.0 behaviour, one step per call** —
+  so the effect of the rule is measurable rather than asserted. On the transaction record, a coalesced
+  run is ONE record with a `commands` count, never one record per call.
+- **`control.undo` refuses, typed, when a bound has evicted the step it would unwind** (the record
+  carries the serial of the step it describes), instead of taking back a later edit than the one asked
+  about. Both bounds are session state, not project state, and neither survives a restart.
+- **Engine:** `include/ProjectJournal.h` + `src/core/ProjectJournal.cpp` (the accounting) +
+  `src/core/ProjectJournalBounds.cpp` (the two caps, the eviction, the coalescing primitive);
+  `src/core/ControlUndoCoalescing.cpp` (the rule), `src/core/ControlTransactions.cpp` (the record),
+  `src/core/ControlCommandsUndo.cpp` (the three commands), and the contract table's new coalescing
+  column (`src/core/ControlReversibilityTable.cpp`, the `RC()` rows).
+- **Proof:** `tests/src/core/UndoBoundsTest.cpp` (registered ctest) — the declared depth and the count
+  cap measured through the socket; the 200-call drag asserted to be one journal step and one record,
+  then undone once and read back; the window-at-0 negative control in the same process (20 calls, 20
+  steps) against the same 20 calls coalesced into 1; a pause, a different target and an intervening
+  command each shown to break the run; the byte budget set from a step's own measured size with the
+  retained bytes held under it; and an evicted step proved to make `control.undo` refuse without
+  unwinding anything. `ReversibilityContractTest` gained the anti-drift assertion that every command
+  declaring coalescing is a `true_inverse` row and appears in `control.undo_depth`'s report.
+- **UI absence — one line: the undo depth, its caps and the coalescing window are drivable through the
+  socket, not from the interface.** There is no undo-history panel, no depth or memory setting in any
+  dialog, and no way to change the grouping gesture from the interface; Edit ▸ Undo / Redo (Ctrl+Z)
+  remains the one interface affordance and it drives the *same* `ProjectJournal::undo()` the socket
+  does. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
+- **Both decisions — the cap values and the coalescing rule — are written down in
+  `docs/UNDO-BOUNDS.md`**, with the reason for each and the two things deliberately left out of the
+  rule (`note.move`/`note.resize`, whose target is re-derived by the move itself, and `warp.move`, whose
+  marker key *is* the value being edited).
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the

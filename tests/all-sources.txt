@@ -116,6 +116,7 @@ include/ControlRackSupport.h
 include/ControlRegistry.h
 include/ControlReversibility.h
 include/ControlServer.h
+include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
 include/Controller.h
@@ -908,10 +909,14 @@ src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsScript.cpp
+src/core/ControlCommandsSession.cpp
+src/core/ControlCommandsSessionLaunch.cpp
+src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTransport.cpp
+src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlDeviceCatalogue.cpp
@@ -924,10 +929,13 @@ src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTablePassive.cpp
+src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
+src/core/ControlTransactions.cpp
+src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
 src/core/Controller.cpp
 src/core/ControllerConnection.cpp
@@ -990,6 +998,7 @@ src/core/PluginScanCache.cpp
 src/core/PresetPreviewPlayHandle.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournal.cpp
+src/core/ProjectJournalBounds.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
@@ -1315,6 +1324,7 @@ tests/src/core/TelemetryTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
+tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp

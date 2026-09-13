@@ -222,6 +222,18 @@ that is this page's fault — report it and it gets added.
   **Changed in 0.3.0-alpha:** the `session-view` row is no longer one of them — the option defaults ON and the
   row now requires ON (see the Session View bullet above for what that does and does not include).
 
+- **There is no undo-history UI — added 2026-09-13.** The undo stack is now bounded and its drags are
+  grouped: `control.undo_depth` reports the depth, the count cap and the byte budget it is kept within,
+  the bytes it retains and how many steps a bound has evicted, `control.set_undo_depth` sets the two
+  caps, and `control.set_undo_coalescing` sets the window inside which a run of the same command on the
+  same target is one undo step (a 200-call drag is one Ctrl+Z) — **the depth, the caps and the
+  coalescing window are drivable through the socket, not from the interface**: there is no undo-history
+  panel, no depth setting in any dialog and no gesture setting to change, and nothing in `src/gui/` draws
+  or configures any of them. The one thing the interface does have is Edit ▸ Undo / Redo (Ctrl+Z), which
+  is the *same* `ProjectJournal::undo()` the socket drives. What the bound cannot do is recover a step
+  it evicted: `control.undo` refuses, typed, when a record's step has fallen off the stack. The two
+  decisions and their values are in `docs/UNDO-BOUNDS.md`.
+
 ## Where the quality bars are not met yet
 
 - **Renders are reproducible — with two exceptions.** Exports now render on a single thread, so for **7 of the

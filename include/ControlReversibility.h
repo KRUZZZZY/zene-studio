@@ -84,18 +84,31 @@ struct ReversibilityRow
 	const char* mechanism;
 	const char* fallback; //!< empty string when the inverse is automatic
 	bool reversible;      //!< the class's default verdict for a call that succeeds
+	//! The COALESCING declaration (Zene Studio, bounded undo): the argument
+	//! name(s) - comma-separated - whose VALUES identify the thing a gesture is
+	//! being made on, or nullptr for a command that never coalesces. Two
+	//! consecutive calls of the same command with the same target values are
+	//! ONE undo step; see docs/UNDO-BOUNDS.md and include/ProjectJournal.h.
+	//! It is declared in the TABLE rather than in each command's handler so the
+	//! whole coalescing contract can be read (and anti-drift-test) as data.
+	const char* coalesceTarget;
 };
 
-/*! The rows of THE classification table. It is TWO literal blocks -
- *  ControlReversibilityTable.cpp holds the rows that have an inverse
- *  (true_inverse and snapshot) and ControlReversibilityTablePassive.cpp the rows
- *  that have none (irreversible and not_mutating) - and the two are assembled
- *  into the one table by ReversibilityTable's constructor, so the contract is
- *  still read, and tested, as a whole. The split exists because this fork's
- *  file-length ratchet measures a file as a unit.
+/*! The rows of THE classification table. It is THREE literal blocks, split by
+ *  WHAT THE INVERSE IS: ControlReversibilityTable.cpp holds the true_inverse
+ *  rows (a live checkpoint on the engine's own undo stack),
+ *  ControlReversibilityTableSnapshot.cpp the snapshot rows (a bounded recorded
+ *  state, replayed by an inverse command or named as the manual fallback) and
+ *  ControlReversibilityTablePassive.cpp the rows that have no inverse
+ *  (irreversible and not_mutating). ReversibilityTable's constructor reads all
+ *  three, so the contract is still read, and tested, as one table; the files
+ *  are separate because this fork's file-length ratchet measures a file as a
+ *  unit, and the true_inverse block alone had grown past the 500-line limit.
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityRowTable(int* rowCount);
-//! The second block: the irreversible and the not_mutating rows.
+//! The second block: the snapshot rows.
+LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount);
+//! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 
 //! One row of the contract table: what the command is, why, and what the
@@ -113,6 +126,14 @@ struct ReversibilityEntry
 	//! The class's default verdict: true when the mechanism applies the inverse
 	//! by itself, false when the recorded state is a manual fallback only.
 	bool reversible = false;
+	//! The argument name(s), comma-separated, whose VALUES identify the target
+	//! of a repeatable gesture ("clip", "channel", "target,plugin,name,index").
+	//! Empty for a command that never coalesces, which is every command that is
+	//! not a drag-shaped edit of one named thing.
+	QString coalesceTarget;
+
+	//! True when a run of this command on ONE target is a single undo step.
+	bool coalesces() const { return !coalesceTarget.isEmpty(); }
 };
 
 //! THE classification table: one row for every registered command.
@@ -156,6 +177,31 @@ constexpr int MaxTransactionRecords = 100;
 //! is capped at 64 KiB, a track snapshot at the same). The registry enforces
 //! this total on top, so a long session cannot grow the record without bound.
 constexpr int MaxTransactionBytes = 262144;
+
+// ---------------------------------------------------------------------------
+// The undo bound and the coalescing window (SPEC A16; task #623's "undo depth
+// and drag coalescing"). The ENGINE's two caps live with the mechanism that
+// enforces them (ProjectJournal::MAX_UNDO_STATES for the count,
+// ProjectJournal::DefaultMaxUndoBytes for the bytes); what belongs here is the
+// rule the CONTROL SURFACE adds on top, because coalescing is a command-surface
+// grouping decision and not an engine one.
+// ---------------------------------------------------------------------------
+
+/*! The window, in milliseconds, inside which a run of the SAME command on the
+ *  SAME target is ONE undo step. A drag is one gesture, not 200 edits: an agent
+ *  that streams `clip.move` at 50 Hz must not leave 200 Ctrl+Z presses behind
+ *  it, while two deliberate drags of the same clip seconds apart must stay two
+ *  steps. 400 ms is longer than a drag's frame interval and shorter than a
+ *  human's "I have stopped and started again" pause; it is DECLARED rather than
+ *  tuned per client so undo granularity is reproducible between agents.
+ *  control.set_undo_coalescing changes the live value, and 0 disables
+ *  coalescing entirely (which reproduces the pre-0.3.0 behaviour exactly).
+ *  See docs/UNDO-BOUNDS.md. */
+constexpr int UndoCoalesceWindowMs = 400;
+//! The largest window control.set_undo_coalescing accepts. Beyond a minute the
+//! grouping stops describing a gesture, and the cap keeps a client from making
+//! the undo stack's granularity unreproducible for everyone else.
+constexpr int MaxUndoCoalesceWindowMs = 60000;
 
 //! One undo step for a change that has no live object to restore - a created
 //! or deleted track/channel/automation track, a scalar owned by a subsystem the
