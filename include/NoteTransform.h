@@ -145,7 +145,14 @@ struct QuantizeOptions
 	 *  It is added to the note's CURRENT velocity, so - unlike the timing jitter,
 	 *  whose draw is pinned to the slot the note is taken to and is therefore a
 	 *  fixed point - a second humanise on top of the first rolls again. That is
-	 *  what a velocity jitter is: a roll, not a target. */
+	 *  what a velocity jitter is: a roll, not a target.
+	 *
+	 *  There is no velocity TARGET on a grid, and no pre-jitter velocity is
+	 *  stored anywhere, so a quantise with no humanise (`humaniseVelocity` 0)
+	 *  leaves every velocity exactly where it was: it puts the POSITIONS back on
+	 *  the grid and restores no velocity. A humanised take is therefore
+	 *  reproduced from a note list in an IDENTICAL state (velocities included),
+	 *  or taken back with `control.undo` - never by re-quantising. */
 	int humaniseVelocity = 0;
 	/*! The jitter is a PURE FUNCTION of this seed and each note's identity
 	 *  (pitch, length, and the grid slot it is taken to - NoteRandom::rollUnit),

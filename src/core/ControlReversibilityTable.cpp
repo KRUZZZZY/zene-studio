@@ -381,12 +381,16 @@ const ReversibilityRow kRows[] = {
 		"with its presence flag and all three axes)",
 		""),
 	// ---- freeze / bounce-in-place ----
-	// All three freeze verbs write ONE thing: the track's own <frozen> element
-	// (plus, for a region, the muted flags of the clips it covers). Both live on
-	// the Track, so the Track's own journal checkpoint is a real inverse, and
-	// Track::loadTrack's reset-on-absence is what makes clearing the take
-	// restore-able: the recorded XML has no <frozen> child, so a restore removes
-	// the take rather than leaving it in place.
+	// All three freeze verbs write ONE thing: the take, as four ATTRIBUTES on
+	// the track's OWN element - frozenAudio / frozenStart / frozenEnd /
+	// frozenMuted, never a <frozen> child (Track::loadTrack turns an
+	// unrecognised child of <track> into a real Clip, and a metadata-marked
+	// child does not survive a save at all - both measured in Track::saveTrack's
+	// own comment) - plus, for a region, the muted flags of the clips it covers.
+	// Both live on the Track, so the Track's own journal checkpoint is a real
+	// inverse, and Track::loadTrack's reset-on-absence is what makes clearing the
+	// take restore-able: the recorded XML carries no frozenAudio attribute, so a
+	// restore removes the take rather than leaving it in place.
 	R("freeze.track", RC::TrueInverse, true,
 		"the freeze adds the track's frozenAudio/frozenStart/frozenEnd attributes "
 		"and makes its play() return the take instead of the clips; the source's "

@@ -115,10 +115,13 @@ Three claims about it are true, and they are exactly the three the tests assert:
   because the draw is pinned to the slot the note is being taken to rather than to its current,
   already-moved position (a position-derived draw would wander inside the bound instead of repeating).
   The timing draw being slot-pinned also makes it a **fixed point** — a repeat leaves the positions
-  where the first roll put them;
+  where the first roll put them. "The same notes" means the same velocities too: a take is reproduced
+  from a note list in an **identical** state, not from a clip that has merely been re-quantised;
 * **not idempotent**: the *velocity* jitter is added to the note's current velocity, so applying it on
   top of itself rolls again. That is what a jitter is — a roll, not a target. A caller that wants a
-  different take resets with a plain `strength: 1` quantise first, or simply uses another seed.
+  different take uses another seed; a caller that liked one takes it back with `control.undo`, or
+  re-creates the state it started from, because a plain `strength: 1` quantise puts the POSITIONS back
+  on the grid and restores **no** velocity (the next bullet).
 
 Note that a *neutral* groove applied at strength 1 is exactly a grid quantise — applying a groove
 lands every note on its slot, so "quantise to the grid" and "quantise to this groove" are one
@@ -211,6 +214,13 @@ changes nothing — it would destroy the groove that holds it.
   opinion and therefore leaves the velocities of the notes that land on it alone.
 * **Not a playback feature.** A groove is applied once and the notes are ordinary notes afterwards:
   un-applying it is `control.undo`, not a switch. Nothing on the audio path reads a template.
+* **A re-quantise restores the POSITIONS, never the velocity.** The humanise's velocity roll is added to
+  each note's *current* velocity and no pre-jitter velocity is stored anywhere, so quantising again with
+  `strength: 1` and no humanise puts every note back on the grid and leaves the jittered velocity where
+  the last roll put it. A take is reversed by `control.undo` (the clip's own journal checkpoint), not by
+  re-running the command; to reproduce one exactly, start from a clip in an **identical** state. This is
+  the same class of bound `docs/UNDO-BOUNDS.md` states for undo depth and coalescing: a limit asserted
+  rather than implied.
 * **The pool is per project, not per track.** There is one pool on the `Song`; a groove is
   applicable to any MIDI clip in the project.
 

@@ -30,7 +30,9 @@ after each operation, read from `roll.get_state`, and the groove pool read from
     and report 4 positions and 2 velocities moved;
   * quantise: at strength 0.5 a note at tick 5 lands on 2 (5 + round(-2.5)), and
     at strength 1.0 on 0; a humanised quantise stays within the amount asked for,
-    reproduces exactly under the same seed, and differs under another;
+    reproduces exactly under the same seed on a clip in an IDENTICAL state (a
+    bare re-quantise restores the POSITIONS and no velocity), and differs under
+    another seed;
   * undo: control.undo restores the pre-command note positions, and takes an
     extracted, renamed or removed groove back out of the pool;
   * persistence: the groove survives a project.save + project.open round trip,
@@ -63,6 +65,12 @@ FEEL_NOTES = ((60, 9, 120), (62, 26, 80), (64, 34, 100), (65, 51, 100))
 #: ... and what the extraction must read back out of it: each slot's mean
 #: deviation from the grid, and that slot's mean velocity.
 FEEL_STEPS = ((3, 100), (-3, 120), (2, 80), (-2, 100))
+#: (key, tick, velocity) of the clip the QUANTISE checks use, and of the two
+#: extra clips the reproducibility checks build from it: four notes 5 / 17 / 29 /
+#: 41 ticks off the 12-tick grid, with velocities 90 / 130 / 110 / 70. Three
+#: clips share these numbers so a humanised take can be reproduced from an
+#: IDENTICAL starting state - the reset below restores no velocity.
+QUANTISE_NOTES = ((60, 5, 90), (62, 17, 130), (64, 29, 110), (65, 41, 70))
 
 
 class Session:
@@ -219,7 +227,7 @@ def check_apply(session, instance, transcript, recorder):
 def check_quantize(session, instance, transcript, recorder):
     """Strength is how far a note travels; humanise is a bounded seeded jitter."""
     clip = make_clip(session, instance, transcript, "Quantise Target")
-    add_notes(session, clip, ((60, 5, 90), (62, 17, 130), (64, 29, 110), (65, 41, 70)))
+    add_notes(session, clip, QUANTISE_NOTES)
 
     half = session.result("groove.quantize", {"clip": clip, "grid": GRID, "strength": 0.5})
     after_half = take_of(session, clip)
@@ -235,9 +243,26 @@ def check_quantize(session, instance, transcript, recorder):
                    exact == ((0, 90), (12, 130), (24, 110), (36, 70)),
                    "after=%s" % (exact,))
 
-    # THE HUMANISE IS A JITTER: bounded by the amount asked for, reproducible
-    # from the SAME state, and a fixed point in POSITION (the timing draw is
-    # pinned to the slot) while its velocity draw rolls again.
+    # THE HUMANISE IS A JITTER, and this transcript asserts exactly what the
+    # engine documents (include/NoteTransform.h, QuantizeOptions::humaniseTicks
+    # and ::humaniseVelocity): bounded by the amount asked for; the SAME call on
+    # the SAME notes reproduces the SAME take; and a fixed point in POSITION -
+    # the timing draw is pinned to the slot the note is being taken to - while
+    # the VELOCITY jitter, added to the note's current velocity, rolls again.
+    #
+    # A re-quantise with no humanise is therefore NOT a restore of the take: it
+    # puts the POSITIONS back on the grid and leaves every velocity exactly where
+    # the last humanise left it (the wire reports velocities_moved == 0). Nothing
+    # in this engine puts a jittered velocity back - a grid carries no velocity
+    # target, and no pre-jitter velocity is stored anywhere - so a humanised take
+    # can only be reproduced from a clip in an IDENTICAL starting state,
+    # velocities included. That is the engine's documented contract
+    # (docs/GROOVE-POOL.md section 3, and the C++ proof's helper
+    # GrooveTestSupport.h::onGridClip, which builds a second clip for this exact
+    # reason). The two checks below assert that bound; an earlier revision of this
+    # transcript demanded the PRE-JITTER velocities back after a reset, which no
+    # operation here can produce and none claims to. That expectation predates the
+    # C++ side's correction and was never re-run.
     reset = {"clip": clip, "grid": GRID, "strength": 1.0}
     take = dict(reset, humanise_ticks=3, humanise_velocity=5, seed=7)
     session.result("groove.quantize", take)
@@ -255,19 +280,41 @@ def check_quantize(session, instance, transcript, recorder):
                    and repeated != humanised,
                    "first=%s repeated=%s" % (humanised, repeated))
 
-    session.result("groove.quantize", reset)
-    recorder.check("quantising again with no humanise returns the clip to the grid",
-                   take_of(session, clip) == exact,
-                   "after reset=%s" % (take_of(session, clip),))
-    session.result("groove.quantize", take)
+    # A bare re-quantise puts the POSITIONS back on the grid and touches no
+    # velocity, so the notes keep the velocity the last humanise rolled - assert
+    # that bound rather than the pre-jitter values.
+    reset_reply = session.result("groove.quantize", reset)
+    reset_take = take_of(session, clip)
+    recorder.check("a bare re-quantise puts the positions back on the grid and "
+                   "leaves the jittered velocities alone",
+                   tuple(b[0] for b in reset_take) == tuple(e[0] for e in exact)
+                   and reset_reply.get("velocities_moved") == 0
+                   and tuple(b[1] for b in reset_take) == tuple(r[1] for r in repeated),
+                   "after reset=%s velocities_moved=%r"
+                   % (reset_take, reset_reply.get("velocities_moved")))
+
+    # The SAME call on the SAME notes: a second clip built and quantised onto the
+    # grid the same way, so its velocities start where the first clip's did. The
+    # reset above is not that state - it restores no velocity.
+    repeat_clip = make_clip(session, instance, transcript, "Quantise Repeat")
+    add_notes(session, repeat_clip, QUANTISE_NOTES)
+    session.result("groove.quantize", dict(reset, clip=repeat_clip))
+    recorder.check("the repeat fixture starts on the grid",
+                   take_of(session, repeat_clip) == exact,
+                   "before=%s" % (take_of(session, repeat_clip),))
+    session.result("groove.quantize", dict(take, clip=repeat_clip))
     recorder.check("the same seed on the same notes reproduces the same take",
-                   take_of(session, clip) == humanised,
-                   "again=%s" % (take_of(session, clip),))
-    session.result("groove.quantize", reset)
-    session.result("groove.quantize", dict(take, seed=8))
+                   take_of(session, repeat_clip) == humanised,
+                   "again=%s" % (take_of(session, repeat_clip),))
+
+    # ... and a second seed, from the same identical state, is a second take.
+    third_clip = make_clip(session, instance, transcript, "Quantise Third")
+    add_notes(session, third_clip, QUANTISE_NOTES)
+    session.result("groove.quantize", dict(reset, clip=third_clip))
+    session.result("groove.quantize", dict(take, clip=third_clip, seed=8))
     recorder.check("another seed is another take",
-                   take_of(session, clip) != humanised,
-                   "seed8=%s" % (take_of(session, clip),))
+                   take_of(session, third_clip) != humanised,
+                   "seed8=%s" % (take_of(session, third_clip),))
 
     undone = session.result("control.undo")
     recorder.check("control.undo takes a quantise back",

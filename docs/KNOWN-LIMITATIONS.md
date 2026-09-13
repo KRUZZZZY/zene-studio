@@ -486,8 +486,10 @@ that is this page's fault — report it and it gets added.
   `src/gui/` creates, shows, edits or applies a groove**: there is no groove list, no template browser, no
   drag-to-apply and no quantise dialog. The groove pool and quantise are drivable through the socket, not
   from the interface. `docs/GROOVE-POOL.md` also records the engine's own stated limits (a groove's
-  resolution is the slot, a sample clip is refused because there are no notes to move, and a groove is
-  applied once rather than played live).
+  resolution is the slot, a sample clip is refused because there are no notes to move, a groove is
+  applied once rather than played live, and a re-quantise with no humanise puts the positions back on
+  the grid but restores no velocity — a humanised take is reversed with `control.undo`, not by
+  re-quantising).
 
 ## Telemetry and privacy
 
