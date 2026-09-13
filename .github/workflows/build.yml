@@ -169,6 +169,9 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
@@ -317,6 +320,9 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
@@ -476,6 +482,9 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
@@ -624,6 +633,9 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
@@ -811,6 +823,9 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
@@ -945,6 +960,9 @@ jobs:
         # nothing between), which names the symptom and not the cause. This collects whatever the
         # product wrote, wherever it wrote it. Harmless when a job has no test step.
         if: failure()
+        # Evidence only: it must never fail a job that the test step already failed.
+        # (Cycle 8 showed it exiting 1 when no report existed, which is a normal outcome.)
+        continue-on-error: true
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
