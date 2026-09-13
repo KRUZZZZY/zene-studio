@@ -128,7 +128,8 @@ double correlation(const std::vector<double>& a, const std::vector<double>& b)
 	return num / std::sqrt(da * db);
 }
 
-//! Lag-1 autocorrelation of one series against itself, shifted.
+//! Lag-1 autocorrelation of one series against itself, shifted. Used to show
+//! the generator is not repeating - successive offsets are independent.
 double lagOneAutocorrelation(const std::vector<double>& values)
 {
 	std::vector<double> shifted(values.begin(), values.end());
@@ -137,22 +138,28 @@ double lagOneAutocorrelation(const std::vector<double>& values)
 	return correlation(head, shifted);
 }
 
-//! A low-level sine: 0.4 LSB of a 16-bit step, so the signal lives inside one
-//! or two quantisation levels and the undithered error is a deterministic
-//! sawtooth in the signal (the distortion dither exists to remove).
-std::vector<float> lowLevelSine(std::size_t count, double cycles)
+//! A low-level sine at \p amplitudeLsb quantisation steps, so the signal can be
+//! placed deliberately inside one LSB (the distortion case) or across many (the
+//! regime where undithered error is shaped like the signal).
+std::vector<float> lowLevelSineLsb(std::size_t count, double cycles, double amplitudeLsb)
 {
 	// M_PI is not in <cmath> on every supported toolchain (MSVC needs
 	// _USE_MATH_DEFINES), so the constant is written out.
 	constexpr double kPi = 3.14159265358979323846;
 	std::vector<float> signal(count);
-	const double amplitude = 0.4 * ExportDither::lsbForBitDepth(16);
+	const double amplitude = amplitudeLsb * ExportDither::lsbForBitDepth(16);
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		signal[i] = static_cast<float>(amplitude
 			* std::sin(2.0 * kPi * cycles * static_cast<double>(i) / static_cast<double>(count)));
 	}
 	return signal;
+}
+
+//! The fixture the quantisation-error tests use: 0.4 LSB (inside one step).
+std::vector<float> lowLevelSine(std::size_t count, double cycles)
+{
+	return lowLevelSineLsb(count, cycles, 0.4);
 }
 
 void evidence(const char* label, double a, double b = 0.0, double c = 0.0)
@@ -257,60 +264,115 @@ private slots:
 	// 2. The effect: the error stops being a function of the signal.
 	// -----------------------------------------------------------------------
 
-	void theDitherDecorrelatesTheQuantisationErrorFromTheSignal()
+	/*! The defect, and the dither's effect on it, as a quantity with a closed
+	 *  form - so the assertion is a PREDICTION rather than a shape.
+	 *
+	 *  The engine's float -> int conversion TRUNCATES toward zero
+	 *  (`AudioDevice::convertToS16`), it does not round. That matters here: the
+	 *  classic "TPDF leaves a total error of LSB^2/4" result belongs to a
+	 *  ROUNDING quantiser, and asserting it against this one would be wrong. What
+	 *  IS exact for this quantiser is the probability that the dither changes the
+	 *  decision at all.
+	 *
+	 *  Take a constant input u LSB above the level below it, 0 < u < 1. Without
+	 *  dither the output is exactly that level, so the quantisation error is ONE
+	 *  deterministic value that is a function of u - the distortion. With a TPDF
+	 *  offset d on [-1, +1) LSB, the value truncates UP by one step exactly when
+	 *  u + d >= 1, i.e. when d >= 1 - u, whose probability is (1-(1-u))^2/2 =
+	 *  u^2/2 (the triangular CDF). A downward flip needs d <= -(1+u), below the
+	 *  dither's own bound, so it cannot happen.
+	 *
+	 *  So the test asserts, level by level: the undithered error is a single
+	 *  value; the dithered error is NOT (it takes the flipped value at roughly
+	 *  the predicted rate); and the observed flip rate matches u^2/2. A dither
+	 *  that was not applied, or applied at the wrong amplitude, misses the
+	 *  prediction by orders of magnitude, not by a tolerance.
+	 */
+	void theDitherTurnsADeterministicErrorIntoADistribution()
 	{
-		constexpr std::size_t count = 4096;
-		const std::vector<float> signal = lowLevelSine(count, 3.0);
-
-		// INVERTED CONTROL: the same signal, quantised with no dither. The
-		// error here is a deterministic sawtooth in the signal, so it
-		// correlates with it strongly.
-		std::vector<double> plainError(count);
-		for (std::size_t i = 0; i < count; ++i) { plainError[i] = quantisationError(signal[i]); }
-
-		// The same quantiser, with the dither drawn and added first - the order
-		// AudioFileWave::writeBuffer uses.
-		ExportDither dither;
+		constexpr int levels = 16;
+		constexpr std::size_t repeats = 4096;
 		const float lsb = ExportDither::lsbForBitDepth(16);
-		std::vector<double> ditheredError(count);
-		for (std::size_t i = 0; i < count; ++i)
+
+		double widestFlipError = 0.0;
+		double plainSpread = 0.0;
+		double plainMin = 1e9;
+		double plainMax = -1e9;
+		int levelsWithDistribution = 0;
+
+		for (int step = 0; step < levels; ++step)
 		{
-			const float offset = dither.nextOffset(lsb);
-			ditheredError[i] = static_cast<double>(quantise16(signal[i] + offset))
-				/ OUTPUT_SAMPLE_MULTIPLIER - static_cast<double>(signal[i]);
+			// u in (0, 1): the level's position above the quantisation step
+			// below it, in LSB.
+			const double u = (static_cast<double>(step) + 0.5) / static_cast<double>(levels);
+			const float level = static_cast<float>(u) * lsb;
+			const auto plainValue = quantise16(level);
+			const double plainError = quantisationError(level);
+			plainMin = std::min(plainMin, plainError);
+			plainMax = std::max(plainMax, plainError);
+
+			// The undithered error: ONE value, at this level and at every other
+			// repetition, because nothing in the path is random. Variance zero.
+			std::vector<double> plain(repeats, plainError);
+			QCOMPARE(variance(plain), 0.0);
+
+			// The same quantiser, dither drawn and added first - the order
+			// AudioFileWave::writeBuffer uses.
+			ExportDither dither;
+			std::size_t flips = 0;
+			std::vector<double> ditheredError(repeats);
+			for (std::size_t i = 0; i < repeats; ++i)
+			{
+				const auto value = quantise16(level + dither.nextOffset(lsb));
+				if (value != plainValue) { ++flips; }
+				ditheredError[i] = static_cast<double>(value) / OUTPUT_SAMPLE_MULTIPLIER
+					- static_cast<double>(level);
+			}
+			const double observed = static_cast<double>(flips) / static_cast<double>(repeats);
+			const double predicted = u * u / 2.0;
+
+			if (predicted >= 0.10)
+			{
+				++levelsWithDistribution;
+				// A real distribution, not a single value: this is the property
+				// the undithered error does not have.
+				QVERIFY2(variance(ditheredError) > 0.0,
+					qPrintable(QStringLiteral("at u = %1 the dithered error is still a single "
+						"value").arg(u)));
+				const double error = std::fabs(observed - predicted);
+				widestFlipError = std::max(widestFlipError, error);
+				evidence("flip rate: predicted u^2/2 vs observed",
+					predicted, observed);
+				QVERIFY2(error < 0.05,
+					qPrintable(QStringLiteral("at u = %1 the dither flipped the quantiser %2 of "
+						"the time; TPDF predicts u^2/2 = %3")
+						.arg(u).arg(observed).arg(predicted)));
+			}
+			else
+			{
+				// Below the prediction threshold the honest statement is the
+				// weak one: near a step boundary a +/-1 LSB dither is too small
+				// to reach the next decision, so the error stays deterministic.
+				// Asserted as a bound, not smoothed over.
+				QVERIFY2(observed <= predicted + 0.02,
+					qPrintable(QStringLiteral("at u = %1 the flip rate %2 exceeded the "
+						"predicted %3").arg(u).arg(observed).arg(predicted)));
+			}
 		}
 
-		std::vector<double> signalAsDouble(signal.begin(), signal.end());
-		const double plainCorrelation = correlation(plainError, signalAsDouble);
-		const double ditheredCorrelation = correlation(ditheredError, signalAsDouble);
+		plainSpread = plainMax - plainMin;
+		evidence("undithered error sweep across one LSB / LSB", plainSpread / lsb);
+		evidence("levels with a real dithered distribution", static_cast<double>(levelsWithDistribution));
+		evidence("worst flip-rate error vs u^2/2", widestFlipError);
 
-		evidence("error<->signal corr, NO dither", plainCorrelation);
-		evidence("error<->signal corr, TPDF dither", ditheredCorrelation);
-		evidence("error variance, NO dither / LSB^2",
-			variance(plainError) / (static_cast<double>(lsb) * lsb));
-		evidence("error variance, TPDF dither / LSB^2",
-			variance(ditheredError) / (static_cast<double>(lsb) * lsb));
-
-		// The control must actually be a control: without dither the error IS
-		// the signal's own quantisation sawtooth.
-		QVERIFY2(std::fabs(plainCorrelation) > 0.8,
-			qPrintable(QStringLiteral("undithered error correlates only %1 with the signal; "
-				"the fixture is not low-level enough to be a control")
-				.arg(plainCorrelation)));
-
-		// ... and with dither it is gone. This is the assertion the feature
-		// exists to satisfy.
-		QVERIFY2(std::fabs(ditheredCorrelation) < 0.05,
-			qPrintable(QStringLiteral("dithered error still correlates %1 with the signal")
-				.arg(ditheredCorrelation)));
-
-		// The price is paid in noise, and it is bounded: the total error of a
-		// truncating quantiser dithered by +/-1 LSB cannot exceed 1 LSB.
-		const double ditheredStd = std::sqrt(variance(ditheredError));
-		QVERIFY2(ditheredStd < static_cast<double>(lsb) * 1.01,
-			"the dithered total error must stay within one LSB");
-		QVERIFY2(ditheredStd > static_cast<double>(lsb) * 0.05,
-			"the dithered total error is suspiciously small; no dither was applied");
+		// The undithered error is a function of the signal over a full LSB of
+		// it - which is the distortion a listener hears as granulation.
+		QVERIFY2(plainSpread > 0.9 * static_cast<double>(lsb),
+			qPrintable(QStringLiteral("the undithered error only sweeps %1 LSB across a full "
+				"step").arg(plainSpread / lsb)));
+		// ... and the dither gives it a distribution at most levels, not at none.
+		QVERIFY2(levelsWithDistribution >= levels / 2,
+			"the dither left the quantiser deterministic at most levels");
 	}
 
 	// -----------------------------------------------------------------------
@@ -406,12 +468,17 @@ private slots:
 	{
 		const std::vector<float> signal = lowLevelSine(2048, 4.0);
 		const QString path = writeWav(signal, false, OutputSettings::BitDepth::Depth16Bit, "plain.wav");
-		const std::vector<std::int16_t> read = readWavS16(path);
-		QCOMPARE(read.size(), signal.size());
+		int channels = 0;
+		const std::vector<std::int16_t> read = readWavS16(path, &channels);
+		QCOMPARE(channels, 2);
+		QCOMPARE(read.size(), signal.size() * 2);
 
 		for (std::size_t i = 0; i < signal.size(); ++i)
 		{
-			QCOMPARE(read[i], quantise16(signal[i]));
+			QCOMPARE(read[i * 2], quantise16(signal[i]));
+			// The writer feeds both channels the same value, so the second
+			// channel is a free second copy of the same assertion.
+			QCOMPARE(read[i * 2 + 1], quantise16(signal[i]));
 		}
 		evidence("default export == undithered quantisation", 1.0);
 	}
@@ -423,12 +490,18 @@ private slots:
 		const QString dithered = writeWav(signal, true, OutputSettings::BitDepth::Depth16Bit, "on.wav");
 		const QString ditheredAgain = writeWav(signal, true, OutputSettings::BitDepth::Depth16Bit, "on2.wav");
 
-		const std::vector<std::int16_t> a = readWavS16(plain);
+		int channels = 0;
+		const std::vector<std::int16_t> a = readWavS16(plain, &channels);
 		const std::vector<std::int16_t> b = readWavS16(dithered);
 		const std::vector<std::int16_t> c = readWavS16(ditheredAgain);
+		QCOMPARE(channels, 2);
 		QCOMPARE(a.size(), b.size());
+		QCOMPARE(a.size(), signal.size() * 2);
 
+		// The dither is per CHANNEL, so the two channels of a dithered file are
+		// not the same bytes even though the two input channels are identical.
 		std::size_t differing = 0;
+		std::size_t channelDiffering = 0;
 		std::int16_t maxDelta = 0;
 		for (std::size_t i = 0; i < a.size(); ++i)
 		{
@@ -436,10 +509,17 @@ private slots:
 			maxDelta = std::max<std::int16_t>(maxDelta,
 				static_cast<std::int16_t>(std::abs(static_cast<int>(a[i]) - static_cast<int>(b[i]))));
 		}
+		for (std::size_t frame = 0; frame < signal.size(); ++frame)
+		{
+			if (b[frame * 2] != b[frame * 2 + 1]) { ++channelDiffering; }
+		}
 		evidence("dither-on samples differing from off", static_cast<double>(differing));
+		evidence("dither-on frames whose two channels differ", static_cast<double>(channelDiffering));
 		evidence("dither-on max |delta| (16-bit counts)", static_cast<double>(maxDelta));
 
 		QVERIFY2(differing > 0, "dither ON produced the same bytes as dither OFF");
+		QVERIFY2(channelDiffering > 0, "the two channels were dithered identically; the offsets "
+			"are not independent per channel");
 		// The dither is bounded by 1 LSB, so the quantised value can move by at
 		// most 1 count either way.
 		QVERIFY2(maxDelta <= 2, qPrintable(QStringLiteral("dither moved a sample by %1 counts")
@@ -467,11 +547,11 @@ private slots:
 		const std::vector<float> fOn = readWavFloat(writeWav(signal, true,
 			OutputSettings::BitDepth::Depth32Bit, "32on.wav"));
 		QCOMPARE(fOff.size(), fOn.size());
-		QCOMPARE(fOff.size(), signal.size());
-		for (std::size_t i = 0; i < fOff.size(); ++i)
+		QCOMPARE(fOff.size(), signal.size() * 2);
+		for (std::size_t i = 0; i < signal.size(); ++i)
 		{
-			QCOMPARE(fOff[i], fOn[i]);
-			QCOMPARE(fOff[i], signal[i]);
+			QCOMPARE(fOff[i * 2], fOn[i * 2]);
+			QCOMPARE(fOff[i * 2], signal[i]);
 		}
 		evidence("32-bit float off == on", 1.0);
 	}
@@ -504,25 +584,47 @@ private:
 		return path;   // device closes the file in its destructor
 	}
 
-	std::vector<std::int16_t> readWavS16(const QString& path)
+	/*! Reads a WAV back as INTERLEAVED shorts, with the channel count.
+	 *
+	 *  Sizing the buffer is where this got written wrong once: `sf_readf_short`
+	 *  writes frames*channels items, so a vector sized `info.frames` overflows
+	 *  the heap on a stereo file (measured: glibc "corrupted size vs.
+	 *  prev_size", SIGABRT). Read with `sf_read_short` and an item count
+	 *  instead, and index the frames as `[frame * channels]`.
+	 */
+	std::vector<std::int16_t> readWavS16(const QString& path, int* channelCount = nullptr)
 	{
 		SF_INFO info{};
 		SNDFILE* file = sf_open(path.toUtf8().constData(), SFM_READ, &info);
 		Q_ASSERT(file != nullptr);
-		std::vector<std::int16_t> samples(static_cast<std::size_t>(info.frames));
-		sf_readf_short(file, samples.data(), info.frames);
+		if (file == nullptr) { return {}; }
+		const auto items = static_cast<std::size_t>(info.frames)
+			* static_cast<std::size_t>(info.channels);
+		std::vector<std::int16_t> samples(items);
+		if (!samples.empty())
+		{
+			sf_read_short(file, samples.data(), static_cast<sf_count_t>(samples.size()));
+		}
 		sf_close(file);
+		if (channelCount != nullptr) { *channelCount = info.channels; }
 		return samples;
 	}
 
-	std::vector<float> readWavFloat(const QString& path)
+	std::vector<float> readWavFloat(const QString& path, int* channelCount = nullptr)
 	{
 		SF_INFO info{};
 		SNDFILE* file = sf_open(path.toUtf8().constData(), SFM_READ, &info);
 		Q_ASSERT(file != nullptr);
-		std::vector<float> samples(static_cast<std::size_t>(info.frames));
-		sf_readf_float(file, samples.data(), info.frames);
+		if (file == nullptr) { return {}; }
+		const auto items = static_cast<std::size_t>(info.frames)
+			* static_cast<std::size_t>(info.channels);
+		std::vector<float> samples(items);
+		if (!samples.empty())
+		{
+			sf_read_float(file, samples.data(), static_cast<sf_count_t>(samples.size()));
+		}
 		sf_close(file);
+		if (channelCount != nullptr) { *channelCount = info.channels; }
 		return samples;
 	}
 
