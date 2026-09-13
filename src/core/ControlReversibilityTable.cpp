@@ -388,28 +388,28 @@ const ReversibilityRow kRows[] = {
 	// restore-able: the recorded XML has no <frozen> child, so a restore removes
 	// the take rather than leaving it in place.
 	R("freeze.track", RC::TrueInverse, true,
-		"the freeze adds a <frozen> element to the track and makes its play() "
-		"return the take instead of the clips; the source's own clips, positions "
-		"and mute flags are NOT touched (a whole-track freeze mutes nothing), so "
-		"the whole change is that one element",
+		"the freeze adds the track's frozenAudio/frozenStart/frozenEnd attributes "
+		"and makes its play() return the take instead of the clips; the source's "
+		"own clips, positions and mute flags are NOT touched (a whole-track freeze "
+		"mutes nothing), so the whole change is those attributes",
 		"ProjectJournal (Track checkpoint: Track::restoreState re-loads the "
 		"track's own XML, and Track::loadTrack clears the take when the element "
-		"carries no <frozen> child - the reset-on-absence rule a checkpoint "
+		"carries no frozenAudio attribute - the reset-on-absence rule a checkpoint "
 		"restore depends on)",
 		"the rendered WAV stays on disk - undoing a freeze is not a delete; "
 		"remove the file named in before/track.get_state if it is not wanted"),
 	R("freeze.region", RC::TrueInverse, true,
-		"the freeze adds the track's <frozen> element AND mutes the clips that "
-		"start inside the region, which is a change to the track's serialized "
+		"the freeze adds the track's frozenAudio attributes AND mutes the clips "
+		"that start inside the region, which is a change to the track's serialized "
 		"clip state",
 		"ProjectJournal (Track checkpoint: the same single checkpoint captures "
-		"the clips' mute flags and the absence of the <frozen> element, so one "
-		"step puts both back)",
+		"the clips' mute flags and the absence of the frozenAudio attributes, so "
+		"one step puts both back)",
 		"the rendered WAV stays on disk, as for freeze.track"),
 	R("freeze.unfreeze", RC::TrueInverse, true,
 		"dropping the take unmutes the clips the freeze muted and removes the "
-		"<frozen> element, both of which are changes to the track's serialized "
-		"state",
+		"frozenAudio attributes, both of which are changes to the track's "
+		"serialized state",
 		"ProjectJournal (Track checkpoint: Track::loadTrack clears the take on "
 		"absence and re-loads the clips' muted flags from the XML, so one undo "
 		"brings the exact take back - re-running freeze.track would render a new "

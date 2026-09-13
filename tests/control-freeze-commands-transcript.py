@@ -4,144 +4,58 @@
 The acceptance evidence for freeze / bounce-in-place, produced by driving the
 REAL `lmms` binary headless and printing every request and reply verbatim.
 
-What it drives, in order:
+It builds an AUDIBLE fixture through the commands an agent has (an instrument
+track that sounds, two one-bar clips, a note in each) and then, in order:
 
-  1. `track.add` + `plugin.load` + `clip.add` x2 + `note.add`   an AUDIBLE
-     fixture (two clips on an instrument track), so a render has something to
-     measure;
-  2. `render.render`                   the reference, in dBFS, measured;
-  3. `bounce.in_place`                  frames and sha256 checked against the
-     file on disk, and the bounced audio itself measured (a bounce that produced
-     silence fails here); with start/end ticks, a shorter region bounce;
-  4. `control.transactions`             the bounce records NO transaction (the
-     SPEC A16 not_mutating claim);
-  5. `freeze.track`                     the take is reported, its audio is
-     LOADED, and the clips are untouched (`muted_clips` == 0);
-  6. `render.render` (frozen)           THE PROOF: the frozen session still
-     renders audio within a tolerance of the reference. Silence here means the
-     source stopped and the take never played;
-  7. `project.save` + `project.open`    the freeze survives the round trip -
-     state, path and audio - and renders audio again after the reload;
-  8. `freeze.unfreeze` + `render.render`  the source comes back, within
-     tolerance of the reference again;
-  9. `freeze.track` + `control.undo`    SPEC A16: the freeze comes back off the
+  1. bounces the whole track and a region of it - each file's frames and sha256
+     checked against the bytes on disk, and each bounce's own level measured;
+  2. requires the bounce to leave NO A16 transaction (not_mutating);
+  3. freezes the track and requires the take to be reported, its audio LOADED
+     and the source clips untouched;
+  4. DELETES the source notes and requires the frozen session to still render
+     audio within a tolerance of the unfrozen reference. This is what proves the
+     take plays AND the source stopped: with the notes gone the source cannot
+     make a sound, so silence here would mean the take never played. The notes
+     are put back (control.undo) and read back before the round trip;
+  5. saves the project, greps the file for the take's own attributes, reopens it
+     and requires the freeze, its path and its audio to survive - and the
+     reopened session to still render audio;
+  6. unfreezes and requires the source back, within tolerance of the reference;
+  7. freezes again and requires ONE control.undo to take it off through the
      Track's own checkpoint;
- 10. `freeze.region`                    a region covering the second clip mutes
-     exactly that clip (read back through `arrangement.get_state`), records it,
-     and `freeze.unfreeze` unmutes exactly that clip;
- 11. refusals                           already frozen, not frozen, a bad range,
-     a partial range, an unknown track - every one typed;
- 12. `control.transactions`             the A16 records of the verbs.
+  8. freezes a region and requires it to mute exactly the clip that starts
+     inside it (read back through arrangement.get_state) and to leave the clip
+     outside it alone - then measures the REGION's bar of a render of that
+     session: its source clip is muted, so only the take can make that sound;
+  9. unfreezes and requires the mute restored, then drives every refusal
+     (already frozen, not frozen, a bad range, a partial range, an unknown
+     track) and reads the A16 records the verbs left.
 
-Started through the shared harness (tests/control_socket_harness.py), so this
-file adds no second launch path.
+The socket wrapper, the check recorder and the WAV measurements live in
+tests/freeze_bounce_evidence.py (the split tests/link_sync_evidence.py made, and
+for the same Gate 7 reason). The instance is started through the shared harness
+(tests/control_socket_harness.py), so this file adds no second launch path.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-freeze-commands-transcript.py <lmms>
 Exit code 0 only when every assertion held; 77 (ctest Skipped, never Passed) when
 this build has no loadable instrument to make an audible fixture with.
 """
 
-import array
 import hashlib
-import math
 import os
 import sys
-import wave
 
 import control_socket_harness as H
-
-REQUEST_IDS = iter(range(1, 1000))
+from freeze_bounce_evidence import (SILENT_DBFS, Recorder, Session, load_audible_instrument,
+                                    note_ids, render_measure, report_results, wav_measure)
 
 # The fixture is measured in ticks: 4/4, so 192 ticks to the bar.
 CLIP_TICKS = 192          # one bar per clip
 REGION_START = 192        # the second clip starts on bar 2
 REGION_END = 384          # ... and ends on bar 3 (it is fully inside a region)
-SILENT_DBFS = -60.0       # below this, "the render produced no audio"
+SONG_BARS = 2             # the two clips
+RENDER_BARS = 3           # the song plus the bar Song::startExport appends
 TAKE_TOLERANCE_DB = 6.0   # the take is re-sampled and carries the render's tail
-
-
-class Session:
-    """The socket client, a running request id and the raw transcript."""
-
-    def __init__(self, client, transcript):
-        self.client = client
-        self.transcript = transcript
-
-    def call(self, command, args=None):
-        return self.client.call(next(REQUEST_IDS), command, args, transcript=self.transcript)
-
-    def result(self, command, args=None):
-        """The reply, or {'error': ...} so a failed call is visible in a check."""
-        reply = self.call(command, args)
-        if reply.get("ok") is True:
-            return reply.get("result") or {}
-        return {"error": reply.get("error") or reply}
-
-    def typed_error(self, command, args=None):
-        reply = self.call(command, args)
-        return (reply.get("error") or {}) if reply.get("ok") is False else {}
-
-
-class Recorder:
-    """Collects the named checks and their evidence."""
-
-    def __init__(self):
-        self.results = []
-        self.problems = H.Problems()
-
-    def check(self, name, passed, evidence):
-        self.results.append((name, bool(passed), evidence))
-        if not passed:
-            self.problems.add("%s (%s)" % (name, evidence))
-
-
-def wav_measure(path):
-    """The file's own frame count and RMS in dBFS, measured not asserted."""
-    with wave.open(path, "rb") as handle:
-        width = handle.getsampwidth()
-        frames = handle.getnframes()
-        raw = handle.readframes(frames)
-    if width == 2:
-        samples, scale = array.array("h"), 32768.0
-    elif width == 4:
-        samples, scale = array.array("f"), 1.0
-    else:
-        raise AssertionError("unsupported WAV sample width %d" % width)
-    samples.frombytes(raw)
-    if not len(samples):
-        return frames, float("-inf")
-    total = 0.0
-    for value in samples:
-        total += float(value) * float(value)
-    return frames, 20.0 * math.log10(math.sqrt(total / len(samples)) / scale + 1e-20)
-
-
-def render_dbfs(session, path):
-    """render.render the live session and measure what it wrote."""
-    rendered = session.result("render.render", {"out": path, "format": "wav"})
-    if not rendered.get("path"):
-        return None, rendered
-    return wav_measure(path)[1], rendered
-
-
-# ---------------------------------------------------------------------------
-# the fixture
-# ---------------------------------------------------------------------------
-
-def load_instrument(session, track):
-    """Load the first loadable instrument the catalogue offers onto `track`.
-
-    None when this build offers no instrument that instantiates - then the
-    fixture could not be made audible and the run is Skipped rather than
-    quietly passing on silence.
-    """
-    catalogue = session.result("plugin.list", {"kind": "instrument", "loadable_only": True})
-    for device in (catalogue.get("devices") or [])[:5]:
-        loaded = session.result("plugin.load", {"target": track, "device": device.get("id")})
-        if loaded.get("plugin"):
-            print("instrument: %s (%s)" % (device.get("name"), device.get("format")))
-            return device.get("id")
-    return None
 
 
 def build_fixture(session, instance, transcript):
@@ -150,8 +64,8 @@ def build_fixture(session, instance, transcript):
     track = added.get("track")
     if not track:
         H.fail("track.add returned no track id (%r)" % added, instance, transcript)
-    if not load_instrument(session, track):
-        print("no loadable instrument in this build: the audibility checks cannot run")
+    if not load_audible_instrument(session, track):
+        print("no audible instrument in this build: the audibility checks cannot run")
         print("kinds: %r" % session.result("plugin.list").get("counts_by_kind"))
         return None
     clips = []
@@ -167,17 +81,13 @@ def build_fixture(session, instance, transcript):
 
 
 def clip_mutes(session, track, recorder, label):
-    """The track's clips and their mute flags, from arrangement.get_state."""
+    """The track's two clips and their mute flags, from arrangement.get_state."""
     state = session.result("arrangement.get_state")
     held = [c for c in (state.get("clips") or []) if c.get("track") == track]
     recorder.check("%s: arrangement.get_state lists the track's two clips" % label,
                    len(held) == 2, "clips=%s" % [c.get("id") for c in held])
     return sorted(bool(c.get("muted")) for c in held)
 
-
-# ---------------------------------------------------------------------------
-# the checks
-# ---------------------------------------------------------------------------
 
 def check_bounce(session, fixture, recorder, outdir):
     """bounce.in_place writes real audio, and reports it honestly."""
@@ -264,18 +174,45 @@ def check_freeze_track(session, fixture, recorder):
     return frozen
 
 
+def remove_source_notes(session, fixture, recorder):
+    """Delete the fixture's notes: the source can no longer make a sound."""
+    removed = 0
+    for clip in fixture["clips"]:
+        for note in note_ids(session, clip):
+            reply = session.result("note.remove", {"clip": clip, "note": note})
+            removed += 1 if reply.get("note_count") == 0 else 0
+    recorder.check("the source notes were removed from both clips", removed == 2,
+                   "removed=%d" % removed)
+    return removed
+
+
 def check_the_take_plays(session, recorder, outdir, reference):
-    """THE PROOF: the frozen session still renders audio, close to the reference."""
-    measured, rendered = render_dbfs(session, os.path.join(outdir, "frozen-session.wav"))
+    """THE PROOF: the frozen take plays where its source no longer can.
+
+    The source notes are gone (no clip is muted, so the song's length is
+    unchanged), so the ONLY thing that can make this render audible is the take.
+    """
+    measured, frames, rendered = render_measure(
+        session, os.path.join(outdir, "frozen-session.wav"))
     recorder.check("a frozen session renders a file", rendered.get("path") is not None
                    and int(rendered.get("frames", 0)) > 0, "render=%r" % rendered)
-    recorder.check("a frozen session is NOT silent: the take played",
+    recorder.check("a frozen session is NOT silent with its source notes gone",
                    measured is not None and measured > SILENT_DBFS,
                    "frozen dBFS=%r reference dBFS=%r" % (measured, reference))
-    recorder.check("the frozen render is within %.1f dB of the unfrozen one" % TAKE_TOLERANCE_DB,
+    recorder.check("the frozen render is within %.1f dB of the unfrozen one"
+                   % TAKE_TOLERANCE_DB,
                    measured is not None and reference is not None
                    and abs(measured - reference) <= TAKE_TOLERANCE_DB,
                    "frozen=%r reference=%r" % (measured, reference))
+
+
+def restore_source_notes(session, fixture, recorder):
+    """Undo the two note removals and require the notes to be back."""
+    for _ in fixture["clips"]:
+        session.result("control.undo")
+    counts = [len(note_ids(session, clip)) for clip in fixture["clips"]]
+    recorder.check("the source notes come back off the journal", counts == [1, 1],
+                   "notes=%s" % counts)
 
 
 def check_survives_save_load(session, fixture, recorder, outdir):
@@ -287,9 +224,10 @@ def check_survives_save_load(session, fixture, recorder, outdir):
                    "file=%r" % saved.get("file"))
     with open(saved_path, errors="replace") as handle:
         text = handle.read()
-    recorder.check("the saved project carries the take in the track's own XML",
-                   "<frozen" in text and 'metadata="1"' in text,
-                   "frozen element present=%r" % ("<frozen" in text))
+    audio = str(fixture.get("take", "")).rsplit("/", 1)[-1]
+    recorder.check("the saved project carries the take on the track's own element",
+                   "frozenAudio=" in text and audio and audio in text,
+                   "frozenAudio present=%r file=%r" % ("frozenAudio=" in text, audio))
 
     reopened = session.result("project.open", {"path": saved_path})
     recorder.check("project.open reloads the frozen session",
@@ -299,10 +237,11 @@ def check_survives_save_load(session, fixture, recorder, outdir):
                    state.get("frozen") is True and state.get("frozen_audio_ready") is True,
                    "frozen=%r audio_ready=%r" % (state.get("frozen"),
                                                  state.get("frozen_audio_ready")))
-    measured, rendered = render_dbfs(session, os.path.join(outdir, "reloaded-session.wav"))
+    measured, frames, rendered = render_measure(
+        session, os.path.join(outdir, "reloaded-session.wav"))
     recorder.check("the reloaded session still plays the take",
                    rendered.get("path") is not None and measured is not None
-                   and measured > SILENT_DBFS, "dBFS=%r" % measured)
+                   and measured > SILENT_DBFS, "frames=%r dBFS=%r" % (frames, measured))
 
 
 def check_unfreeze_restores(session, fixture, recorder, outdir, reference):
@@ -314,7 +253,8 @@ def check_unfreeze_restores(session, fixture, recorder, outdir, reference):
                    "frozen=%r audio=%r muted_clips=%r" % (unfrozen.get("frozen"),
                                                           unfrozen.get("audio"),
                                                           unfrozen.get("muted_clips")))
-    measured, rendered = render_dbfs(session, os.path.join(outdir, "unfrozen-again.wav"))
+    measured, frames, rendered = render_measure(
+        session, os.path.join(outdir, "unfrozen-again.wav"))
     recorder.check("the source is audible again after unfreeze",
                    rendered.get("path") is not None and measured is not None
                    and reference is not None and abs(measured - reference) <= TAKE_TOLERANCE_DB,
@@ -332,14 +272,14 @@ def check_undo(session, fixture, recorder, outdir):
     recorder.check("one control.undo takes the freeze off",
                    undone.get("undone") is True and after.get("frozen") is False,
                    "undone=%r frozen=%r" % (undone.get("undone"), after.get("frozen")))
-    measured, rendered = render_dbfs(session, os.path.join(outdir, "undone.wav"))
+    measured, frames, rendered = render_measure(session, os.path.join(outdir, "undone.wav"))
     recorder.check("the undone session renders its source again",
                    rendered.get("path") is not None and measured is not None
                    and measured > SILENT_DBFS, "dBFS=%r" % measured)
 
 
-def check_region_freeze(session, fixture, recorder):
-    """freeze.region mutes exactly the clips inside it and no others."""
+def check_region_freeze(session, fixture, recorder, outdir):
+    """freeze.region mutes exactly the clips inside it, and its take still sounds."""
     frozen = session.result("freeze.region", {"track": fixture["track"],
                                               "start": REGION_START, "end": REGION_END})
     recorder.check("freeze.region reports the range it covered",
@@ -358,6 +298,16 @@ def check_region_freeze(session, fixture, recorder):
     mutes = clip_mutes(session, fixture["track"], recorder, "freeze.region")
     recorder.check("the clip inside the region is the muted one", mutes == [False, True],
                    "mutes=%s" % mutes)
+
+    # The region's own source clip is muted, so only the take can make the
+    # region's bar of this render audible.
+    region_db, frames, rendered = render_measure(
+        session, os.path.join(outdir, "region-frozen.wav"),
+        bars=RENDER_BARS, first_bar=1, last_bar=2)
+    recorder.check("the frozen region's bar still sounds with its source muted",
+                   rendered.get("path") is not None and region_db is not None
+                   and region_db > SILENT_DBFS,
+                   "bar2=%r frames=%r" % (region_db, frames))
 
     unfrozen = session.result("freeze.unfreeze", {"track": fixture["track"]})
     restored = clip_mutes(session, fixture["track"], recorder, "unfreeze-region")
@@ -391,18 +341,18 @@ def check_refusals(session, fixture, recorder):
     half = session.typed_error("bounce.in_place", {"track": fixture["track"], "start": 0})
     recorder.check("a range missing its end is invalid_args", half.get("kind") == "invalid_args",
                    "kind=%r message=%r" % (half.get("kind"), half.get("message")))
-    for command in ("bounce.in_place", "freeze.track", "freeze.region", "freeze.unfreeze"):
-        unknown = session.typed_error(command, {"track": "trk-999999", "start": 0, "end": 1})
+    for command in ("bounce.in_place", "freeze.track", "freeze.unfreeze"):
+        unknown = session.typed_error(command, {"track": "trk-999999"})
         recorder.check("%s: an unknown track id is not_found" % command,
                        unknown.get("kind") == "not_found",
                        "kind=%r message=%r" % (unknown.get("kind"), unknown.get("message")))
+    unknown = session.typed_error("freeze.region", {"track": "trk-999999", "start": 0, "end": 1})
+    recorder.check("freeze.region: an unknown track id is not_found",
+                   unknown.get("kind") == "not_found",
+                   "kind=%r message=%r" % (unknown.get("kind"), unknown.get("message")))
     state = session.result("track.get_state", {"track": fixture["track"]})
     recorder.check("a refused freeze left the track unfrozen", state.get("frozen") is False,
                    "frozen=%r" % state.get("frozen"))
-
-
-def inverse_ops(records):
-    return [((r.get("inverse") or {}).get("op")) for r in records]
 
 
 def check_transactions(session, recorder):
@@ -411,13 +361,13 @@ def check_transactions(session, recorder):
     records = [r for r in (report.get("transactions") or [])
                if str(r.get("command", "")).startswith("freeze.")]
     classes = [r.get("class") for r in records]
+    ops = [((r.get("inverse") or {}).get("op")) for r in records]
     recorder.check("every freeze.* call left an A16 record", len(records) >= 4,
                    "%d records" % len(records))
     recorder.check("every freeze.* record is true_inverse and reversible",
                    bool(records) and classes == ["true_inverse"] * len(classes)
                    and all(r.get("reversible") is True for r in records),
                    "classes=%s" % classes)
-    ops = inverse_ops(records)
     recorder.check("a freeze record's inverse names freeze.unfreeze or freeze.track",
                    "freeze.unfreeze" in ops or "freeze.track" in ops, "ops=%s" % ops)
 
@@ -433,33 +383,26 @@ def check_quit(session, instance, recorder):
                    "exited=%r code=%r after %.1fs" % (exited, code, waited))
 
 
-def report_results(recorder):
-    print("")
-    print("==== checks ====")
-    for name, passed, evidence in recorder.results:
-        print("  %-58s %s" % (name, "ok" if passed else "FAILED"))
-        if not passed:
-            print("      %s" % evidence)
-            recorder.problems.add("%s (%s)" % (name, evidence))
-
-
 def run_checks(session, instance, recorder, transcript):
     """Every check, in the order the docstring lists them."""
     fixture = build_fixture(session, instance, transcript)
     if fixture is None:
         return None
     outdir = instance.tmp
-    reference, _ = render_dbfs(session, os.path.join(outdir, "reference.wav"))
-    print("reference render: %s dBFS" % reference)
+    reference, frames, rendered = render_measure(session, os.path.join(outdir, "reference.wav"))
+    print("reference render: %s frames, %s dBFS (from %r)" % (frames, reference,
+                                                              rendered.get("path")))
     whole = check_bounce(session, fixture, recorder, outdir)
     check_bounce_region(session, fixture, recorder, outdir, whole)
     check_bounce_is_not_mutating(session, recorder)
-    check_freeze_track(session, fixture, recorder)
+    fixture["take"] = check_freeze_track(session, fixture, recorder).get("audio")
+    remove_source_notes(session, fixture, recorder)
     check_the_take_plays(session, recorder, outdir, reference)
+    restore_source_notes(session, fixture, recorder)
     check_survives_save_load(session, fixture, recorder, outdir)
     check_unfreeze_restores(session, fixture, recorder, outdir, reference)
     check_undo(session, fixture, recorder, outdir)
-    check_region_freeze(session, fixture, recorder)
+    check_region_freeze(session, fixture, recorder, outdir)
     check_refusals(session, fixture, recorder)
     check_transactions(session, recorder)
     check_quit(session, instance, recorder)
@@ -472,6 +415,7 @@ def main(argv):
         return 2
     recorder = Recorder()
     transcript = H.Transcript()
+    fixture = None
     with H.start_instance(argv[1]) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)
@@ -485,7 +429,7 @@ def main(argv):
     report_results(recorder)
     transcript.dump()
     if fixture is None:
-        H.ok("no loadable instrument in this build: Skipped, never Passed")
+        H.ok("no audible instrument in this build: Skipped, never Passed")
         return 77
     if recorder.problems:
         print("")

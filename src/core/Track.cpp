@@ -76,6 +76,37 @@ Clip* clipAt(Track::clipVector& clips, tick_t startTicks, tick_t lengthTicks)
 	return nullptr;
 }
 
+/*! The clips a region freeze muted, as one attribute: "start:length" pairs,
+ *  comma-separated (ticks). A grammar rather than a child element, because the
+ *  take has to live in attributes - see Track::saveTrack's comment. */
+QString mutedClipsAttribute(const std::vector<Track::FrozenTake::MutedClip>& muted)
+{
+	QStringList parts;
+	parts.reserve(static_cast<int>(muted.size()));
+	for (const Track::FrozenTake::MutedClip& clip : muted)
+	{
+		parts.append(QStringLiteral("%1:%2")
+			.arg(static_cast<qint64>(clip.startTicks))
+			.arg(static_cast<qint64>(clip.lengthTicks)));
+	}
+	return parts.join(QLatin1Char(','));
+}
+
+std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString& text)
+{
+	std::vector<Track::FrozenTake::MutedClip> muted;
+	for (const QString& part : text.split(QLatin1Char(','), Qt::SkipEmptyParts))
+	{
+		const QStringList pair = part.split(QLatin1Char(':'));
+		if (pair.size() != 2) { continue; }
+		Track::FrozenTake::MutedClip clip;
+		clip.startTicks = static_cast<tick_t>(pair.at(0).toLongLong());
+		clip.lengthTicks = static_cast<tick_t>(pair.at(1).toLongLong());
+		muted.push_back(clip);
+	}
+	return muted;
+}
+
 } // namespace
 
 /*! \brief Create a new (empty) track object
@@ -329,31 +360,28 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 		element.appendChild(lanesElement);
 	}
 
-	// The frozen take (freeze / bounce-in-place). ONE element, written ONLY when
-	// a take is installed, so a track that was never frozen serialises exactly
-	// the bytes it always did. `metadata="1"` is load-bearing for the reason the
-	// take-lane element's comment gives: Track::loadTrack turns an unrecognised
-	// child element of <track> into a REAL Clip, and so would an older build
-	// reading this file.
+	// The frozen take (freeze / bounce-in-place), as ATTRIBUTES on the track's
+	// own element - never a child element, for the reason SPEC-stable-ids.md
+	// §3.1 gives for the track id: Track::loadTrack turns an unrecognised child
+	// element of <track> into a REAL Clip, and so would an older build reading
+	// this file. Written ONLY when a take is installed, so a track that was never
+	// frozen serialises exactly the bytes it always did.
+	//
+	// A child element marked metadata="1" - the pattern the take lanes use -
+	// cannot be used here: DataFile::write calls cleanMetaNodes(), which REMOVES
+	// every element carrying that attribute from a saved project, so a marked
+	// take would not survive a save at all (measured on this tree, 2026-09-13:
+	// a <frozen metadata="1"> child and a <takelanes metadata="1"> child are both
+	// absent from the file project.save writes).
 	if (m_frozen.isFrozen())
 	{
-		QDomElement frozenElement = doc.createElement(QStringLiteral("frozen"));
-		frozenElement.setAttribute(QStringLiteral("metadata"), 1);
-		frozenElement.setAttribute(QStringLiteral("audio"), m_frozen.path);
-		frozenElement.setAttribute(QStringLiteral("start"),
+		element.setAttribute(QStringLiteral("frozenAudio"), m_frozen.path);
+		element.setAttribute(QStringLiteral("frozenStart"),
 			QString::number(static_cast<qint64>(m_frozen.startTicks)));
-		frozenElement.setAttribute(QStringLiteral("end"),
+		element.setAttribute(QStringLiteral("frozenEnd"),
 			QString::number(static_cast<qint64>(m_frozen.endTicks)));
-		for (const FrozenTake::MutedClip& muted : m_frozen.mutedClips)
-		{
-			QDomElement mutedElement = doc.createElement(QStringLiteral("mutedclip"));
-			mutedElement.setAttribute(QStringLiteral("start"),
-				QString::number(static_cast<qint64>(muted.startTicks)));
-			mutedElement.setAttribute(QStringLiteral("length"),
-				QString::number(static_cast<qint64>(muted.lengthTicks)));
-			frozenElement.appendChild(mutedElement);
-		}
-		element.appendChild(frozenElement);
+		element.setAttribute(QStringLiteral("frozenMuted"),
+			mutedClipsAttribute(m_frozen.mutedClips));
 	}
 
 	// now save settings of all Clip's
@@ -394,11 +422,12 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	m_mutedBeforeSolo = QVariant( element.attribute( "mutedBeforeSolo", "0" ) ).toBool();
 
 	// Reset the frozen take before reading the element (freeze / bounce-in-place):
-	// a track element with no <frozen> child is NOT frozen, whatever this object
-	// held before the call. A journal checkpoint restores by re-loading, so state
-	// that survived its own absence could never be undone - the same rule
+	// a track element with no frozenAudio attribute is NOT frozen, whatever this
+	// object held before the call. A journal checkpoint restores by re-loading, so
+	// state that survived its own absence could never be undone - the same rule
 	// m_takeLanes follows below. A preset never carries a take either.
 	clearFrozenTake();
+	loadFrozenTake(element);
 
 	if (element.hasAttribute("color"))
 	{
@@ -467,16 +496,6 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 				// a marked element so that neither this loader nor an older
 				// build's turns it into a phantom Clip.
 				m_takeLanes.loadSettings( node.toElement() );
-			}
-			else if( node.nodeName() == "frozen" )
-			{
-				// The frozen take (freeze / bounce-in-place), a marked element
-				// for the same reason. The audio is opened here, on the loading
-				// thread: a take whose file has moved is still frozen state -
-				// freezing it is what the user asked for and the file is
-				// reported as unloaded by track.get_state - but it cannot sound,
-				// and nothing pretends otherwise.
-				loadFrozenTake(node.toElement());
 			}
 			else if( node.nodeName() != "muted"
 			&& node.nodeName() != "solo"
@@ -854,25 +873,19 @@ void Track::clearFrozenTake()
 void Track::loadFrozenTake(const QDomElement& element)
 {
 	// Track::loadTrack has already cleared the take (reset on absence), so this
-	// only fills in what the file carries.
-	m_frozen.path = element.attribute(QStringLiteral("audio"));
+	// only fills in what the file carries. The audio is opened HERE, on the
+	// loading thread - never on the audio thread - and a take whose file has
+	// moved is still frozen state (the file is what the user asked for): it is
+	// reported as unloaded by track.get_state rather than silently dropped.
+	m_frozen.path = element.attribute(QStringLiteral("frozenAudio"));
 	if (m_frozen.path.isEmpty()) { return; }
 
 	m_frozen.startTicks = static_cast<tick_t>(
-		element.attribute(QStringLiteral("start")).toLongLong());
+		element.attribute(QStringLiteral("frozenStart")).toLongLong());
 	m_frozen.endTicks = static_cast<tick_t>(
-		element.attribute(QStringLiteral("end")).toLongLong());
-	for (QDomNode node = element.firstChild(); !node.isNull(); node = node.nextSibling())
-	{
-		if (!node.isElement() || node.nodeName() != QLatin1String("mutedclip")) { continue; }
-		const QDomElement mutedElement = node.toElement();
-		FrozenTake::MutedClip muted;
-		muted.startTicks = static_cast<tick_t>(
-			mutedElement.attribute(QStringLiteral("start")).toLongLong());
-		muted.lengthTicks = static_cast<tick_t>(
-			mutedElement.attribute(QStringLiteral("length")).toLongLong());
-		m_frozen.mutedClips.push_back(muted);
-	}
+		element.attribute(QStringLiteral("frozenEnd")).toLongLong());
+	m_frozen.mutedClips = parseMutedClipsAttribute(
+		element.attribute(QStringLiteral("frozenMuted")));
 
 	// The clips the file carries are already muted (the freeze saved them that
 	// way), so the record is NOT replayed here: a load must not write to the

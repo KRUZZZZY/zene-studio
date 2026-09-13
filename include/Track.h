@@ -162,11 +162,11 @@ public:
 	 *  concrete Track::play() overloads return the take for a pass inside the
 	 *  take's window and never schedule the source's own playback.
 	 *
-	 *  The state is per-track project state: it is serialised with the track
-	 *  (`<frozen>` inside the track element, written only when frozen, and reset
-	 *  on absence by Track::loadTrack - the rule every journal checkpoint
-	 *  restore depends on), so a frozen track survives save/load and one
-	 *  `control.undo` can take the freeze off. */
+	 *  The state is per-track project state: it is serialised as ATTRIBUTES on the
+	 *  track's own element (frozenAudio / frozenStart / frozenEnd / frozenMuted),
+	 *  written only when frozen and reset on absence by Track::loadTrack - the
+	 *  rule every journal checkpoint restore depends on - so a frozen track
+	 *  survives save/load and one `control.undo` can take the freeze off. */
 	struct FrozenTake
 	{
 		QString path;           //!< the rendered audio file
@@ -299,8 +299,9 @@ public slots:
 private:
 	void saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode);
 	void loadTrack(const QDomElement& element, bool presetMode);
-	//! Reads the <frozen> child a project file carries (freeze / bounce-in-place)
-	//! and opens its audio. A no-op on an element with no audio attribute.
+	//! Reads the frozen-take attributes a project file carries (freeze /
+	//! bounce-in-place) and opens the take's audio. A no-op on an element that
+	//! carries no frozenAudio attribute.
 	void loadFrozenTake(const QDomElement& element);
 	//! Connects (once) the transport signals that end a pass through a take: a
 	//! stop, a seek or loop, and a mute change. Called when a take is installed.

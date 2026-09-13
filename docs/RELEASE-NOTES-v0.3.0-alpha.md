@@ -434,11 +434,14 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   `SampleTrack::play` return the take for every pass inside its window and schedule none of the track's own
   playback, which is what "the source is disabled" means. The take carries the track's devices, fader, pan and
   sends, so it is summed at the mix level and NOT through the track's chain a second time.
-- **The frozen state is project state and survives save/load.** A frozen track serialises a `<frozen>` element
-  (marked `metadata="1"`, because `Track::loadTrack` turns an unrecognised child element of `<track>` into a
-  real clip — the trap `SPEC-stable-ids.md` §3.1 records for the track id), carrying the render's path and the
-  window it covers; a track element with no such child is NOT frozen, and that reset-on-absence is what makes
-  one `control.undo` take a freeze off. The audio is opened on the loading (control) thread, never on the
+- **The frozen state is project state and survives save/load.** A frozen track serialises the render's path and
+  the window it covers as four attributes on the track's own element (`frozenAudio`, `frozenStart`,
+  `frozenEnd`, `frozenMuted`) — attributes and not a child element, for the reason `SPEC-stable-ids.md` §3.1
+  records for the track id: `Track::loadTrack` turns an unrecognised child element of `<track>` into a real
+  clip. (A child marked `metadata="1"`, the pattern the take lanes use, cannot carry state at all:
+  `DataFile::write` calls `cleanMetaNodes()`, which removes every marked element from a saved project — measured
+  on this tree.) A track element with no `frozenAudio` attribute is NOT frozen, and that reset-on-absence is
+  what makes one `control.undo` take a freeze off. The audio is opened on the loading (control) thread, never on the
   audio thread, and a take whose file has moved is still frozen state — reported as `frozen: true` with
   `frozen_audio_ready: false` by `track.get_state` rather than silently dropped.
 - **`freeze.region` freezes one tick range.** The region is rendered and the take plays inside it, the source
@@ -459,12 +462,16 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   `docs/KNOWN-LIMITATIONS.md` carries the same sentence, plus the stated limits (region overlap, the 44.1 kHz
   re-sample, the take bypassing the track's chain, and a moved take reporting itself as not ready).
 - **Proof:** the registered ctest `ControlFreezeCommandsTranscript` (`tests/control-freeze-commands-transcript.py`)
-  drives a real instance over `--control-socket`: it bounces a track and checks the returned file's frames and
-  sha256 against the file on disk, freezes it and requires `track.get_state` to report the take with the audio
-  loaded, **renders the frozen session and requires it to be non-silent with the same order of energy as the
-  unfrozen render** (which is what proves the take actually plays and the source actually stopped), saves and
-  reopens the project to require the freeze to survive the round trip, then takes it back off with both
-  `freeze.unfreeze` and `control.undo` and requires the clip mutes and the state to return.
+  drives a real instance over `--control-socket`: it bounces a track and a region and checks each returned file's
+  frames and sha256 against the bytes on disk, freezes the track and requires `track.get_state` to report the
+  take with its audio loaded, then **DELETES the source notes and requires the frozen session to still render
+  audio within 6 dB of the unfrozen reference** — with the notes gone the source cannot make a sound, so silence
+  there would mean the take never played. It then saves and reopens the project (requiring `frozenAudio` in the
+  written file, and audio again after the reload), takes the freeze back off with `freeze.unfreeze` and with one
+  `control.undo`, freezes a REGION and requires it to mute exactly the clip inside it **and that region's bar to
+  still sound in a render** (its source is muted, so only the take can make it), and drives every typed refusal.
+  Its socket wrapper, recorder and WAV measurements live in `tests/freeze_bounce_evidence.py` (the split
+  `tests/link_sync_evidence.py` made, for the same Gate 7 reason).
 
 ## Not in this draft yet
 
