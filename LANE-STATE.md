@@ -20,10 +20,15 @@ Base: `501d2cd3e` (release/0.3.0). Item: OWNER-31 item 2, "plugin chains as reus
 - [x] UI-absence lines in BOTH docs (release notes section + `docs/KNOWN-LIMITATIONS.md` bullet).
 
 ## Left
-- [ ] tests: `tests/src/core/ControlChainPresetTest.cpp` (in-process: contract rows, document
-      identity/name rules) + `tests/control-chain-presets.py` (the registered socket ctest:
-      apply to a second track, parameter values off the wire, project.save→open round trip,
-      every inverse through control.undo); register both in `tests/CMakeLists.txt`.
+- [x] tests written and registered in `tests/CMakeLists.txt`: `ControlChainPresetTest`
+      (in-process: the six ids/schemas, the six contract rows, the name rule, the store's
+      location, the document's identity round trip, and an apply whose device order and
+      parameter values are read back through dsp.get_state) and `ControlChainPresets`
+      (`tests/control-chain-presets.py`, the socket proof: apply to a second track, parameter
+      values off the wire, a real project.save→open round trip, the store surviving it, and
+      every inverse through control.undo).
+- [ ] BUILD: configure (`-DWANT_QT6=ON -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_WASM=OFF`),
+      then `cmake --build build -j2`; fix any compile error.
 - [ ] regenerate `tests/fork-sources.txt` and `tests/all-sources.txt` with their own recipes
       and require `REPRODUCES`; re-run gates 4/7/8.
 - [ ] regenerate `tools/mcp-zene-control/zene_control/commands_snapshot.json` from a live
