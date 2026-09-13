@@ -454,6 +454,17 @@ LMMS_EXPORT void registerRackCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerRackMacroCommands(ControlRegistry& registry);
 //! rack.zone_add / zone_remove / zone_resolve - the key/velocity zone half.
 LMMS_EXPORT void registerRackZoneCommands(ControlRegistry& registry);
+/*! chain.list / chain.get_state / chain.save - the READ and CAPTURE half of the
+ * chain-preset group (the 0.3.0 ladder's "plugin-chain presets", OWNER-31
+ * item 2). A chain preset is a named copy of a chain's devices WITH each
+ * device's own state, kept in the user preset tree (chainpresets/) so it is
+ * usable across projects; it is not a rack chain (rack.add_chain). The engine
+ * half is include/ControlChainPresetSupport.h.
+ */
+LMMS_EXPORT void registerChainReadCommands(ControlRegistry& registry);
+//! chain.apply / chain.rename / chain.remove - the EDIT half, in its own
+//! translation unit (the automation and warp groups' split).
+LMMS_EXPORT void registerChainEditCommands(ControlRegistry& registry);
 //! The command-group registration points the 0.3.0-alpha wave's last merges
 //! appended - comp.*, the guard-compiled wasm.*, browser.*, modulator.* and
 //! note.expression_*, and link.* - are declared in

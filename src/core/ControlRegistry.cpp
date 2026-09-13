@@ -457,6 +457,10 @@ void registerControlCommands(ControlRegistry& registry)
 #endif
 	registerExportCommands(registry);
 	registerRackCommands(registry);
+	// The chain-preset group: the store and its read/capture half, then the
+	// edit half (chain.apply / rename / remove), each its own translation unit.
+	registerChainReadCommands(registry);
+	registerChainEditCommands(registry);
 	// The browser group carries no compile-time switch: it reads directories and
 	// a JSON file in the config directory, both of which exist in every
 	// configuration, so its ids are always honest.
