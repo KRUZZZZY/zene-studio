@@ -694,6 +694,35 @@ if(WANT_WASM)
 		WASM_WAT_SOURCE_DIR="${CMAKE_SOURCE_DIR}/modules/wasm"
 	)
 	add_dependencies(WasmSandboxTest wasm-modules)
+
+	# #614: the conformance suite for docs/WASM-EFFECT-ABI.md. It asserts each documented
+	# ABI property (and its documented limit) against modules assembled at run time from
+	# .wat source with WasmSandbox::assembleWat, so it depends on no built fixture except
+	# the example effect, tests/data/wasm-effect-abi/softclip.wat, which was itself
+	# written from that document. Registered here, under the same WANT_WASM guard as
+	# WasmSandboxTest, because it needs the wasmtime C API to link and run.
+	#
+	# IT HAS NOT BEEN EXECUTED. On a build without the wasmtime C API (WANT_WASM degrades
+	# to OFF at CMakeLists.txt:957-963) neither this target nor WasmSandboxTest exists,
+	# which is the case on the reference box; docs/KNOWN-LIMITATIONS.md records that.
+	add_executable(WasmAbiConformanceTest
+		src/wasm/WasmAbiConformanceTest.cpp
+	)
+	add_test(NAME WasmAbiConformanceTest COMMAND WasmAbiConformanceTest)
+	target_include_directories(WasmAbiConformanceTest PRIVATE
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${CMAKE_SOURCE_DIR}/src/wasm
+	)
+	target_static_libraries(WasmAbiConformanceTest PRIVATE lmmsobjs)
+	target_link_libraries(WasmAbiConformanceTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+	)
+	target_compile_features(WasmAbiConformanceTest PRIVATE cxx_std_20)
+	target_compile_definitions(WasmAbiConformanceTest PRIVATE
+		LMMS_TESTING
+		WASM_ABI_EXAMPLE_WAT="${CMAKE_SOURCE_DIR}/tests/data/wasm-effect-abi/softclip.wat"
+	)
 endif()
 
 # Native CLAP hosting tests. They only exist when the MIT licensed CLAP headers

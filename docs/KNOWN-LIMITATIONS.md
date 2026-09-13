@@ -240,6 +240,30 @@ that is this page's fault — report it and it gets added.
   **Changed in 0.3.0-alpha:** the `session-view` row is no longer one of them — the option defaults ON and the
   row now requires ON (see the Session View bullet above for what that does and does not include).
 
+- **The WASM DSP sandbox is compiled out, its ABI is documented, and none of it has run — added 2026-09-13
+  (`#614`).** `WANT_WASM` defaults ON (`CMakeLists.txt:140`) but degrades to OFF when the wasmtime C API is
+  absent from the find path (`CMakeLists.txt:957-963`), and no build on the reference box has it, so the
+  sandbox, the `wasm_effect` plugin, `wasm-wat2wasm` and both of their test targets are absent from every
+  binary this page describes. `docs/WASM-EFFECT-ABI.md` now states the ABI a module must implement against
+  the host — the exports and their signatures, the imports, the planar memory layout and how buffers are
+  passed, how parameters, the sample rate and the block size reach a module, and the error/return conventions
+  — derived statement-by-statement from `src/wasm/WasmSandbox.cpp`, `src/wasm/WasmWorker.cpp` and
+  `src/wasm/WasmAbi.h`, with everything not determinable from that source marked **UNKNOWN** rather than
+  guessed. A conformance suite (`WasmAbiConformanceTest`, registered in `tests/CMakeLists.txt` under the same
+  `if(WANT_WASM)` guard as `WasmSandboxTest`) and one example effect written from that document alone
+  (`tests/data/wasm-effect-abi/softclip.wat`) are committed as **source**. **Neither the suite nor the example
+  has been executed**, because no build here compiles them: they are what a build that has wasmtime can run,
+  not evidence that the ABI works. There is also **no control-surface command group** for the sandbox, so
+  nothing about it is drivable through `--control-socket` even in principle today — the release's "everything
+  is operable through the socket" promise does not reach this feature. **What would close it**, and the point
+  `docs/INDEPENDENT-NOTES-READ.md` §B5 left open — that the manifest's required-OFF `wasm-sandbox` row holds
+  only because the dependency is absent, not because a build chose OFF — is **the wasmtime C API in the build
+  environment**: `scripts/fetch-wasmtime.sh` fetches and checksums the pinned prebuilt C API (v48.0.1) into
+  `third_party/wasmtime`, and `cmake -DWANT_WASM=ON -DWASMTIME_ROOT=<prefix>` then compiles the sandbox in.
+  At that point the row stops being an absence-by-dependency and becomes a choice, and
+  `tests/release-honesty-gate.sh` is the check that would have to be reconciled with
+  `tests/advertised-features.tsv` in the same commit.
+
 - **There is no undo-history UI — added 2026-09-13.** The undo stack is now bounded and its drags are
   grouped: `control.undo_depth` reports the depth, the count cap and the byte budget it is kept within,
   the bytes it retains and how many steps a bound has evicted, `control.set_undo_depth` sets the two

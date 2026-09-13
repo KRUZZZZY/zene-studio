@@ -1370,6 +1370,7 @@ tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tools/mmpz-git/scratch/qtesc.cpp
 tools/mmpz-git/scratch/qtroundtrip.cpp

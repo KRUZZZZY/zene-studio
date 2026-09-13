@@ -217,7 +217,15 @@ not rounded up.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON but **degrades to OFF** when the wasmtime C API is absent
   (`CMakeLists.txt`), and CI provisions none, so it is compiled out in practice. The `advertised-features.tsv`
   "required OFF" row holds by dependency absence, not by choice; `docs/INDEPENDENT-NOTES-READ.md` B5 raises this and
-  it is not closed.
+  it is not closed. **Added 2026-09-13 (`#614`):** the ABI is now documented from the host source
+  (`docs/WASM-EFFECT-ABI.md`) and a conformance suite plus one example effect are committed as **source**
+  (`tests/src/wasm/WasmAbiConformanceTest.cpp`, `tests/data/wasm-effect-abi/softclip.wat`), registered under the
+  same `if(WANT_WASM)` guard as `WasmSandboxTest` — **and neither has been executed**, because no build here
+  compiles them. That is documentation and conformance material, not a capability. **B5 stays open until the
+  wasmtime C API is in the build environment** (`scripts/fetch-wasmtime.sh` installs the pinned v48.0.1 prebuilt,
+  `cmake -DWANT_WASM=ON -DWASMTIME_ROOT=<prefix>` picks it up), which would turn the required-OFF row from an
+  absence-by-dependency into a choice and force `tests/advertised-features.tsv` and the honesty gate to be
+  reconciled in the same commit.
 - **VST3 instrument regression tests** — `WANT_VST3_TEST_INSTRUMENT` defaults **OFF** (`tests/CMakeLists.txt`); the
   host module ships, and since 2026-09-13 the `linux-x86_64` job passes the option `ON`, so its three suites run
   there on every push. The other six jobs do not run them.

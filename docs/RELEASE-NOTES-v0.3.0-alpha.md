@@ -313,6 +313,51 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   matching the pre-existing engine, which divides by `DefaultTicksPerBar` and never by the metre. There are no
   tempo *curves*: events are steps.
 
+## The WASM effect ABI — documented, not compiled in (`#614`) — added 2026-09-13
+
+**Read this section as a statement of what is not in the release, and of the material that makes it buildable
+later.** The WASM DSP sandbox is compiled out of every build here and this lane did not change that: `WANT_WASM`
+defaults ON (`CMakeLists.txt:140`) and degrades to OFF when the wasmtime C API is absent from the find path
+(`CMakeLists.txt:957-963`). What the lane adds is the material a module author and a future build need, and the
+honest record of its state.
+
+- **The ABI is documented from the host source.** `docs/WASM-EFFECT-ABI.md` states what a module must export
+  (`process(in_offset, out_offset, frames, sample_rate) -> i32` and a linear memory named `memory`), what it may
+  export (`channels` and `latency`, as `i32` **globals**), what the host provides as imports from the `env`
+  module (a parameter read, a bounded log call and a transport-state read), the planar float32 memory layout
+  and the fact that the host passes **byte offsets, never pointers**, how parameters, the sample rate and the
+  block size reach a module, and the error and return conventions. Every statement names the file and symbol it
+  was read from in `src/wasm/WasmSandbox.cpp`, `src/wasm/WasmWorker.cpp` and `src/wasm/WasmAbi.h`; the things
+  that could not be determined from that source are listed as **UNKNOWN** rather than filled in from what a wasm
+  ABI usually looks like. Two facts there are worth a module author's attention because the opposite is the
+  common assumption: `process()` is entered **once per channel plane**, with the same frame count and rate and a
+  different offset pair each call; and the `i32` it returns is **recorded but never acted on** — a module cannot
+  signal an error by returning a non-zero value. The document also records that the `abi` version export the
+  header declares is **read by nothing** in this tree.
+- **A conformance suite and an example effect are committed as source.**
+  `tests/src/wasm/WasmAbiConformanceTest.cpp` asserts each documented property, positive and negative, against
+  modules assembled at run time from `.wat` source, and is registered in `tests/CMakeLists.txt` under the same
+  `if(WANT_WASM)` guard as `WasmSandboxTest`. `tests/data/wasm-effect-abi/softclip.wat` is one example effect
+  written from the document alone, as its header states.
+- **Neither has been executed, and this is the limit.** No build on the reference box has the wasmtime C API, so
+  the conformance test is not compiled, the plugin target does not exist, and the example has never been
+  assembled. The suite is *source a build with wasmtime can run*; it is not evidence that the ABI works, and
+  nothing in this section is a capability claim about the binaries you can download.
+- **No command group, so not drivable and not in the release's promise.** There is no `wasm.*` control-surface
+  command group in this tree and none is added here, so the sandbox is **not operable through
+  `--control-socket`** even in principle today — and under the four-part contract that is why this item is not a
+  capability of 0.3.0. Parameters are reachable only from the effect's own controls and the project file.
+- **UI absence — one line:** there is no interface for the sandbox at all in these builds, because neither the
+  plugin nor the sandbox is compiled in, and even with `WANT_WASM=ON` the effect's only surface is a module
+  picker, eight anonymous parameter sliders and a status line. `docs/KNOWN-LIMITATIONS.md` carries the same
+  sentence.
+- **What would close it:** the wasmtime C API in the build environment. `scripts/fetch-wasmtime.sh` fetches and
+  checksums the pinned prebuilt C API (v48.0.1), and `cmake -DWANT_WASM=ON -DWASMTIME_ROOT=<prefix>` compiles
+  the sandbox, the plugin and both test targets in. That also closes the point
+  `docs/INDEPENDENT-NOTES-READ.md` §B5 raised — that the manifest's required-OFF `wasm-sandbox` row currently
+  holds only because the dependency is absent, not because a build chose OFF — at which point
+  `tests/advertised-features.tsv` and `tests/release-honesty-gate.sh` have to be reconciled in the same commit.
+
 ## Not in this draft yet
 
 Written per lane as it lands, so this list is state as of **2026-09-13**; W12 owns turning this
@@ -324,6 +369,7 @@ process items, whose sections W12 adds.
 **Still absent from 0.3.0's scope:** the `#602` modulation layer, Ableton Link sync,
 sample-accurate automation, freeze/bounce-in-place, groove pool and quantise, punch in/out, tempo
 automation and time signatures, recording crash recovery, the two verification programmes
-(real-time-safety and golden-audio), `#614` (doc-only; wasmtime is absent here) and `ARCH-2`. Each
-gets a section here and a line in `docs/KNOWN-LIMITATIONS.md` when it lands. This file grows as
-those land; it is not a summary of 0.3.0 and must not be read as one.
+(real-time-safety and golden-audio), `#614` — the sandbox itself, which is compiled out because wasmtime is
+absent here; only its ABI document and conformance material are in this draft, and the section above says so —
+and `ARCH-2`. Each gets a section here and a line in `docs/KNOWN-LIMITATIONS.md` when it lands; this file grows
+as those land and is not a summary of 0.3.0.
