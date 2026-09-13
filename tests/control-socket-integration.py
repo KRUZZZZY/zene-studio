@@ -1395,6 +1395,80 @@ def render_to_file(flow, out, process, log_path):
     return None
 
 
+def big_reply_over_a_small_receive_buffer(path, schema, process, log_path):
+    """A burst of big replies over a connection nobody is draining.
+
+    A reply larger than the peer's socket buffer is NORMAL - macOS gives an AF_UNIX
+    socket 8 KiB and `control.commands_list` answers with ~46 KiB here - and the
+    server must deliver every reply whole, in order: a non-blocking write that
+    cannot take every byte is flow control, not a failure. The macOS job showed
+    what the old code did instead (it dropped the connection mid-line and the
+    client read EOF), and that is a defect a Linux box does not expose on its own:
+    the kernel gives a unix socket ~208 KiB of send buffer, so ONE 46 KiB reply
+    fits and the old code never saw an EAGAIN. PIPELINING is what makes the
+    condition reachable on every platform - the client asks for eight replies and
+    reads none of them, so the server has ~380 KiB to deliver into a socket that
+    will take ~208 KiB (4 KiB here: SO_RCVBUF is shrunk as well) and must queue
+    the rest whole. A single reply is checked too, so a reply truncated on a
+    boundary that still parses cannot pass.
+    """
+    pipelined = 8
+    first_id = 41
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    sock.settimeout(RESPONSE_TIMEOUT)
+    buffered = b""
+    answers = {}
+    received = 0
+    try:
+        sock.connect(path)
+        for offset in range(pipelined):
+            request = {"id": first_id + offset, "cmd": "control.commands_list",
+                       "args": {}, "proto": 1}
+            sock.sendall(json.dumps(request, separators=(",", ":")).encode("utf-8") + b"\n")
+        # Read NOTHING for a moment: this is the peer the defect needs - the server
+        # has to hand over more than a socket buffer's worth with nobody draining it.
+        time.sleep(0.5)
+        while len(answers) < pipelined:
+            chunk = sock.recv(65536)
+            if not chunk:
+                fail("the server closed the connection after %d of %d pipelined replies "
+                     "(%d bytes): a reply larger than the peer's socket buffer must be "
+                     "queued and delivered whole, not truncated"
+                     % (len(answers), pipelined, received), process, log_path)
+            received += len(chunk)
+            buffered += chunk
+            while b"\n" in buffered:
+                line, buffered = buffered.split(b"\n", 1)
+                try:
+                    reply = json.loads(line.decode("utf-8", "replace"))
+                except ValueError:
+                    fail("a reply line arrived TRUNCATED (%d bytes, no closing brace): a reply "
+                         "larger than the socket buffer must be delivered whole"
+                         % len(line), process, log_path)
+                answers[reply.get("id")] = reply
+    finally:
+        sock.close()
+    expected_ids = {first_id + offset for offset in range(pipelined)}
+    if set(answers) != expected_ids:
+        fail("the pipelined burst was answered %r, expected %r (one reply per request, in order)"
+             % (sorted(answers), sorted(expected_ids)), process, log_path)
+    over_large = {entry.get("id") for entry in schema.get("commands", [])}
+    for request_id in sorted(answers):
+        reply = answers[request_id]
+        if reply.get("ok") is not True:
+            fail("control.commands_list answered %r over a 4 KiB receive buffer" % reply,
+                 process, log_path)
+        over_small = {entry.get("id") for entry in (reply.get("result") or {}).get("commands", [])}
+        if not over_small or over_small != over_large:
+            fail("reply id %d is not the same answer (%d vs %d commands): a line truncated on a "
+                 "boundary would still parse" % (request_id, len(over_small), len(over_large)),
+                 process, log_path)
+    print("PASS: %d pipelined %d-command replies arrive whole over a 4 KiB receive buffer "
+          "(%.0f KiB through a socket nobody was draining)" % (pipelined, len(over_large),
+                                                               received / 1024.0))
+
+
 def wait_for_socket(path, process, log_path):
     deadline = time.time() + CONNECT_TIMEOUT
     while time.time() < deadline:
@@ -1523,6 +1597,14 @@ def main():
                 continue
             if not entry.get("args_schema") or not entry.get("result_schema"):
                 fail("%s declares no schemas: %r" % (entry.get("id"), entry), process, log_path)
+
+        # The largest reply on this surface, over a connection whose receive buffer
+        # is small enough that the server cannot write it in one go. macOS AF_UNIX
+        # gives a socket 8 KiB, so the macOS job found this against the real product:
+        # the server closed the connection on this one command and the client read
+        # EOF instead of its answer (ControlSocketIntegration AND agent_surface).
+        # Shrinking OUR buffer reproduces the same condition on every platform.
+        big_reply_over_a_small_receive_buffer(socket_path, schema, process, log_path)
 
         # --- typed error paths --------------------------------------------
         typed_error(client.call(4, "control.no_such_command"), 4, "not_found")

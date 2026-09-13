@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """THE shared socket harness for every control-surface test in this directory.
 
-ONE harness, not two. Before 2026-09-12 there were two - `control_harness.py`
-(task #626: shutdown/readiness) and `headless_load_harness.py` (task #625:
-headless load) - and they had drifted: two `Instance` classes with different
-signatures, two `Client` classes with different `call()` signatures, and two
-predicates for "did this run block". Both are merged here into the single module
-every test imports, so a fix to the launch recipe or a bound lands in one place.
+ONE harness, not two: `control_harness.py` (#626) and `headless_load_harness.py`
+(#625) had drifted into two `Instance`s, two `Client`s and two predicates for "did
+this run block", so a fix to the launch recipe or a bound landed twice. This is
+the single module every test imports.
 
 Every test here starts the REAL `lmms` binary with `--control-socket <path>`
 under `QT_QPA_PLATFORM=offscreen` and drives it from an EXTERNAL client over the
@@ -14,28 +12,23 @@ AF_UNIX socket. The one rule that matters:
 
     a HANG IS A FAILURE.
 
-So every wait in this module is BOUNDED. A bound that expires raises `Blocked`
-(the task #625 signature: the instance is parked inside a modal dialog's nested
-event loop, so Qt keeps dispatching socket events and `control.ping` answers
-`pong:true engine_ready:false` forever) or `Timeout` (the task #626 signature for
-a bounded wait inside a test). Both are always a test failure, never a skip.
+So every wait in this module is BOUNDED, and a bound that expires raises `Blocked`
+(#625: parked in a modal's nested event loop) or `Timeout` (#626: a bounded wait
+inside a test). Both are always a failure, never a skip.
 
 The headless start recipe (AGENT-TOOLING.md section 4) is reproduced exactly:
 `QT_QPA_PLATFORM=offscreen`, a `--config` whose
 `<audioengine audiodev="Dummy (no sound output)"/>` matches AudioDummy::name()
 by character, `HOME`/`XDG_*` in a temp directory, cwd in the temp directory.
 
-This module is the CORE: constants and bounds, `Instance`, `Client`, the readiness
-poll, the assertion helpers (`ok_result`, `typed_error`, `Problems`, `fail`, `ok`)
-and the reporting helpers (`dump`, `finish`). The per-case payloads - the pure
-`check_*` "evidence -> problems" checkers and the multi-instance flow helpers
-(`healthy_control`, `diagnose_block`, `parse_args`, `report_pre_fix`) - live in
-`control_socket_flows.py`, which imports their plumbing from here. The split is
-mechanical (Gate 7, the 500-line per-file ratchet); no behaviour moved with it.
+This module is the CORE: bounds, `Instance`, `Client`, the readiness poll, the
+assertion helpers (`ok_result`, `typed_error`, `Problems`, `fail`, `ok`) and the
+reporting helpers (`dump`, `finish`). The per-case payloads - the pure `check_*`
+"evidence -> problems" checkers and the multi-instance flow helpers - live in
+`control_socket_flows.py`, which imports their plumbing from here (Gate 7 split).
 
-Usage (each test script owns its own argv):
-    QT_QPA_PLATFORM=offscreen python3 <test>.py <lmms> [...]
-Exit code 0 only when every assertion passed.
+Usage: QT_QPA_PLATFORM=offscreen python3 <test>.py <lmms> [...] - exit 0 only when
+every assertion passed.
 """
 
 import json
@@ -64,6 +57,15 @@ READY_TIMEOUT = 120.0
 OPEN_TIMEOUT = 20.0
 QUIT_TIMEOUT = 30.0
 
+# The bound for a request issued BEFORE readiness: the declared readiness budget,
+# never one socket read. The engine initialises on the thread that serves this
+# socket, so while it starts the socket answers nothing - CI measured a ping
+# answered at 0.006s (engine_missing) and then silence for the whole engine start,
+# which on the linux-arm64 job is ~34s of one core inside Engine::init. A request
+# sent in that window is ANSWERED, just later; bounding it by SOCKET_TIMEOUT
+# reports a slow platform as a hang.
+STARTUP_BOUND = READY_TIMEOUT
+
 # The device AudioDummy::name() matches by character: the app compares the
 # configured value against that string, so it must be exact.
 DUMMY_DEVICE = "Dummy (no sound output)"
@@ -73,20 +75,19 @@ DEFAULT_DEVICE = DUMMY_DEVICE
 # is AudioSdl::name() exactly (so "SDL" is NOT a valid device name - an invalid
 # name makes the engine try every backend instead, which is how the first attempt
 # at this test fooled itself), and SDL_AUDIODRIVER names a driver that cannot
-# exist, so SDL_Init fails on any machine. That reproduces the SDL/ALSA
-# "Playback open error: Host is down" situation without depending on the box
-# having no sound card.
+# exist, so SDL_Init fails on any machine: the SDL/ALSA "Playback open error: Host
+# is down" situation reproduced without depending on the box having no sound card.
+# Without it the scenario passes where SDL has a working driver (macOS: CoreAudio
+# opens, nothing fails, and the no-audio test then fails for the wrong reason).
 BROKEN_DEVICE = "SDL (Simple DirectMedia Layer)"
 BROKEN_DEVICE_ENV = {"SDL_AUDIODRIVER": "zene-no-such-audio-driver"}
 
 SOCKET_MODE = 0o600
 
-# The pre-fix workaround line (task #626 reproductions (a) and (b) both printed
-# it). Kept verbatim so the negative control can prove the shutdown checker
-# rejects it.
+# The pre-fix workaround line (task #626 reproductions (a) and (b) both printed it),
+# kept verbatim so the negative control can prove the shutdown checker rejects it.
 LEGACY_WATCHDOG_LINE = "control.quit: the event loop did not stop"
-# The last-resort guard this lane added. It must NEVER fire on a normal
-# shutdown: if it does, the shutdown path is broken again.
+# The last-resort guard this lane added: it must NEVER fire on a normal shutdown.
 FATAL_GUARD_MARKER = "FATAL: the normal shutdown did not finish"
 
 
@@ -103,16 +104,13 @@ class Blocked(Timeout):
     """The instance did not become usable inside the bound (task #625).
 
     A SUBCLASS of Timeout on purpose: the two harnesses this module replaces used
-    two names for the same fact - "bounded wait expired" (#626, `Timeout`) and
-    "the run is parked in a modal dialog" (#625, `Blocked`). A caller that only
-    cares that it did not answer catches Timeout; a caller that wants to name the
-    task #625 signature catches Blocked. Neither had to be rewritten.
+    two names for one fact - "bounded wait expired" (#626, `Timeout`) and "the run
+    is parked in a modal dialog" (#625, `Blocked`) - so a caller can catch whichever
+    name it means.
 
-    `QMessageBox::exec()` and `QDialog::exec()` run a NESTED event loop: Qt keeps
-    dispatching events, so the control socket is still serviced while the box is
-    up and `control.ping` keeps answering `pong:true, engine_ready:false` for as
-    long as nobody clicks. A block is "never usable inside the bound", not "no
-    bytes on the socket".
+    `QMessageBox::exec()`/`QDialog::exec()` run a NESTED event loop, so the socket
+    is still serviced while the box is up and ping answers `pong:true,
+    engine_ready:false` forever. A block is "never usable inside the bound".
     """
 
 
@@ -180,12 +178,7 @@ class Transcript:
 
 
 def config_xml(workingdir, audiodev=DUMMY_DEVICE, configured=1, autosave=False, extra_xml=""):
-    """The minimal headless config.
-
-    `workingdir` need not exist (task #625: a missing working directory used to
-    park the run in the setup dialog). `autosave` adds the `ui enableautosave`
-    element the normal-shutdown autosave cleanup checks.
-    """
+    """The minimal headless config. `workingdir` need not exist (task #625)."""
     settings = [
         '  <app configured="%d"/>' % configured,
         '  <audioengine audiodev="%s"/>' % audiodev,
@@ -225,9 +218,8 @@ class Instance:
         self.config_path = os.path.join(self.tmp, "lmmsrc.xml")
         self.stderr_path = os.path.join(self.tmp, "stderr.log")
         self.stdout_path = os.path.join(self.tmp, "stdout.log")
-        # The app's diagnostics (qWarning, the typed refusals repeated on stderr,
-        # the audio-failure sentence) go to stderr, so that is "the app log" the
-        # tests look in.  read_log() returns stderr + stdout, a superset.
+        # The app's diagnostics (qWarning, the typed refusals, the audio-failure
+        # sentence) go to stderr; read_log() returns stderr + stdout, a superset.
         self.log_path = self.stderr_path
         self.process = None
         self._stderr = None
@@ -283,8 +275,8 @@ class Instance:
         """Poll for the socket file AND a connectable listener.
 
         The listener is created before the GUI and the engine (main.cpp), so this
-        succeeds even on an instance that is about to hang in a modal dialog: the
-        accept() backlog takes the connection with nobody reading it.
+        succeeds even on an instance about to hang in a modal dialog: the accept()
+        backlog takes the connection with nobody reading it.
         """
         deadline = time.time() + timeout_s
         while time.time() < deadline:
@@ -337,9 +329,10 @@ class Instance:
         return False
 
 
-def start_instance(binary, workingdir=None, audiodev=DUMMY_DEVICE, configured=1):
+def start_instance(binary, workingdir=None, audiodev=DUMMY_DEVICE, configured=1, extra_env=None):
     """Construct and spawn an Instance. The socket may not be up yet."""
-    instance = Instance(binary, audiodev=audiodev, configured=configured, workingdir=workingdir)
+    instance = Instance(binary, audiodev=audiodev, configured=configured, workingdir=workingdir,
+                        extra_env=extra_env)
     instance.spawn()
     return instance
 
@@ -365,17 +358,30 @@ class Client:
             self.sock.sendall(raw.encode("utf-8") + b"\n")
         except OSError as exc:
             raise Timeout("could not send %s: %s" % (cmd, exc)) from exc
+        budget = self.timeout if timeout is None else timeout
+        deadline = time.time() + budget
+        while True:
+            reply = self._read_bounded(deadline, budget, transcript)
+            text = reply.decode("utf-8", "replace")
+            self.transcript.append("<- %s" % text)
+            if transcript is not None:
+                transcript.add("<-", text)
+            answer = json.loads(text)
+            if answer.get("id") == request_id:
+                return answer
+            # A LATE reply to an EARLIER request (a readiness ping that timed out while
+            # the engine was starting) must be discarded, never returned: the stream
+            # would shift and answer request N with N-1's result (`reply id 0 != 1`).
+            print("note: discarded a stale reply to an earlier request: %s" % text[:160])
+
+    def _read_bounded(self, deadline, budget, transcript):
+        """One reply line, bounded by the REQUEST's deadline, not one socket read."""
         try:
-            reply = self._read_line(self.timeout if timeout is None else timeout)
+            return self._read_line(max(deadline - time.time(), 0.05))
         except (Blocked, OSError) as error:
             if transcript is not None:
-                transcript.add("<-", "NO REPLY inside %.0fs (%s)" % (self.timeout, error))
+                transcript.add("<-", "NO REPLY inside %.0fs (%s)" % (budget, error))
             raise
-        text = reply.decode("utf-8", "replace")
-        self.transcript.append("<- %s" % text)
-        if transcript is not None:
-            transcript.add("<-", text)
-        return json.loads(text)
 
     def _read_line(self, timeout):
         # socket timeouts arrive as the builtin TimeoutError (socket.timeout is an
@@ -422,13 +428,12 @@ def connect(instance, seconds=SOCKET_TIMEOUT):
 def wait_ready(instance, client, transcript, seconds=READY_TIMEOUT, ping_timeout=PING_TIMEOUT):
     """Poll control.ping until engine_ready is true. Blocked when it never answers.
 
-    A ping that does not answer is NOT the end of the budget: the engine initialises on
-    this socket's own thread, so while it starts a ping is answered late or not at all -
-    measured on CI, an instance answered control.ping at 0.006s (engine_missing) and then
-    went silent for its whole engine start, which silently made one ping_timeout the real
-    readiness bound where this signature declares `seconds`. The budget that ends the poll
-    is therefore `seconds`, and its expiry carries the last error beside the instance's own
-    diagnosis (control_instance_diagnosis.py), so a real hang fails exactly as before.
+    A ping that does not answer is NOT the end of the budget: while the engine starts a
+    ping is answered late or not at all (measured on CI: answered at 0.006s, then silence
+    for the whole engine start), which silently made one ping_timeout the real readiness
+    bound where this signature declares `seconds`. The poll is bounded by `seconds`, and
+    its expiry carries the last error beside the instance's own diagnosis
+    (control_instance_diagnosis.py), so a real hang fails exactly as before.
     """
     deadline = time.time() + seconds
     last = None

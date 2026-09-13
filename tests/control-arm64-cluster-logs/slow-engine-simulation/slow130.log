@@ -1,0 +1,56 @@
+UpdateCTestConfiguration  from :/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests/DartConfiguration.tcl
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 83
+    Start 83: ControlReadiness
+
+83: Test command: /usr/bin/python3 "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/control-readiness.py" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/zene" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/data/agent-control-fixture.mmp"
+83: Working Directory: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests
+83: Environment variables: 
+83:  QT_QPA_PLATFORM=offscreen
+83: Test timeout computed to be: 420
+83: not ready 0.034s after connect: {'audio': {'device': '', 'requested': '', 'sound_output': False, 'start_failed': False, 'state': 'engine_missing'}, 'engine_ready': False, 'pong': True, 'proto': 1, 'reason': {'code': 'engine_starting', 'message': 'the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands'}, 'version': '0.2.1-alpha.1+4874122'}
+83: ---- readiness stderr ----
+83: QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+83: 
+83: ---- end readiness stderr ----
+83: 
+83: === FAIL ===
+83:   readiness: connect early, poll, then command   FAILED (1)
+83:       no response line inside 120.0s (socket timed out)
+83: diagnosis: the instance is STILL RUNNING (pid 1039932) - a HANG, not a crash
+83: kernel wait channel: hrtimer_nanosleep
+83: State:	S (sleeping)
+83: Threads:	1
+83: threads: 1 live
+83:   thread 1039932: state=S wchan=hrtimer_nanosleep
+83: cpu: burned 0% of one core over 1.0s (4 -> 4 ticks)
+83: --- gdb ---
+83: attach attempt 1:
+83: Could not attach to process.  If your uid matches the uid of the target
+83: process, check the setting of /proc/sys/kernel/yama/ptrace_scope, or try
+83: again as the root user.  For more details, see /etc/sysctl.d/10-ptrace.conf
+83: --- end gdb ---
+83: ---- stdout_path tail ----
+83: control socket listening on /tmp/zctl-run-uk93292s/zene.sock
+83: ---- end stdout_path ----
+83: ---- stderr_path tail ----
+83: QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+83: ---- end stderr_path ----
+1/1 Test #83: ControlReadiness .................***Failed  121.34 sec
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) = 121.34 sec
+
+The following tests FAILED:
+	 83 - ControlReadiness (Failed)
+Errors while running CTest
+Output from these tests are in: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests/Testing/Temporary/LastTest.log
+Use "--rerun-failed --output-on-failure" to re-run the failed cases verbosely.

@@ -119,6 +119,14 @@ ControlServer::~ControlServer()
 	close();
 }
 
+void ControlServer::Client::retire() const
+{
+	// Both notifiers belong to the ControlServer (their parent), so they outlive this
+	// struct's copies; deleteLater keeps the deletion off the current activation.
+	if (writeNotifier) { writeNotifier->setEnabled(false); writeNotifier->deleteLater(); }
+	if (notifier) { notifier->setEnabled(false); notifier->deleteLater(); }
+}
+
 void ControlServer::onNewConnection()
 {
 #if !defined(Q_OS_UNIX)
@@ -137,6 +145,13 @@ void ControlServer::onNewConnection()
 		client.fd = fd;
 		client.notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
 		connect(client.notifier, &QSocketNotifier::activated, this, [this, fd]() { onClientReadable(fd); });
+		// A reply larger than the peer's socket buffer cannot be written in one
+		// go on a non-blocking fd. The write notifier exists for exactly that
+		// tail; it stays disabled until a reply leaves one.
+		client.writeNotifier = new QSocketNotifier(fd, QSocketNotifier::Write, this);
+		client.writeNotifier->setEnabled(false);
+		connect(client.writeNotifier, &QSocketNotifier::activated,
+			this, [this, fd]() { onClientWritable(fd); });
 		m_clients.insert(fd, client);
 	}
 #endif
@@ -180,6 +195,39 @@ bool readChunk(int fd, QByteArray& buffer, bool* closed)
 	}
 	if (got == 0) { *closed = true; }
 	return false;
+}
+
+//! What one non-blocking write attempt achieved.
+enum class WriteOutcome
+{
+	Complete, //!< the peer took every byte
+	Full,     //!< the socket buffer filled up (EAGAIN): the caller keeps the tail
+	Gone,     //!< a REAL error (EPIPE/ECONNRESET): the peer is no longer there
+};
+
+//! Write as much of data[0, size) as the socket accepts right now, reporting how
+//! many bytes went out. EAGAIN is the socket buffer being full - the peer is
+//! reading, just not as fast as this loop writes - and must never be reported as
+//! a failure: on macOS an AF_UNIX socket buffer is 8 KiB, which is smaller than
+//! several replies this surface produces (control.commands_list answers with a
+//! few hundred kilobytes; measured: the macOS job saw the server close the
+//! connection on that one command, because the old code truncated and dropped).
+WriteOutcome writeWhatFits(int fd, const char* data, int size, int* written)
+{
+	*written = 0;
+	while (*written < size)
+	{
+		const ssize_t n = ::write(fd, data + *written, static_cast<size_t>(size - *written));
+		if (n > 0)
+		{
+			*written += static_cast<int>(n);
+			continue;
+		}
+		if (n < 0 && errno == EINTR) { continue; }
+		if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) { return WriteOutcome::Full; }
+		return WriteOutcome::Gone;
+	}
+	return WriteOutcome::Complete;
 }
 
 } // namespace
@@ -230,12 +278,11 @@ bool ControlServer::dispatchPendingLines(int fd, QByteArray& buffer)
 		const QByteArray line = buffer.left(newline);
 		buffer.remove(0, newline + 1);
 		const QByteArray reply = dispatchLine(line);
-		if (!reply.isEmpty() && !writeAll(fd, reply + '\n'))
+		if (!reply.isEmpty() && !sendBytes(fd, reply + '\n'))
 		{
-			// A failed write leaves a TRUNCATED line on the wire: this socket is
-			// non-blocking, so it can take part of a line and then EAGAIN. Write
-			// nothing else on this connection and drop it, so the peer reads EOF
-			// after a partial line instead of the next reply's bytes glued to it.
+			// A REAL write error (the peer is gone, ECONNRESET): nothing this
+			// connection could still carry. A full socket buffer is NOT that -
+			// sendBytes queues the tail instead and returns true.
 			dropClient(fd);
 			return false;
 		}
@@ -253,7 +300,7 @@ void ControlServer::refuseOverCapLine(int fd, bool closed)
 			.arg(MaxRequestLineBytes));
 	// The refusal goes out BEFORE the drain, and the drain is why it arrives:
 	// see Client::draining.
-	writeAll(fd, refusal + '\n');
+	sendBytes(fd, refusal + '\n');
 	it->draining = true;
 	it->buffer.clear();
 	it->buffer.squeeze();
@@ -272,37 +319,68 @@ void ControlServer::dropClient(int fd)
 #else
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
-	if (it->notifier)
-	{
-		it->notifier->setEnabled(false);
-		it->notifier->deleteLater();
-	}
+	it->retire();
 	::close(it->fd);
 	m_clients.erase(it);
 #endif
 }
 
-bool ControlServer::writeAll(int fd, const QByteArray& bytes)
+bool ControlServer::sendBytes(int fd, const QByteArray& bytes)
 {
 #if !defined(Q_OS_UNIX)
 	Q_UNUSED(fd);
 	Q_UNUSED(bytes);
 	return false;
 #else
-	ssize_t written = 0;
-	while (written < bytes.size())
+	const auto it = m_clients.find(fd);
+	if (it == m_clients.end()) { return false; }
+	if (!it->pending.isEmpty())
 	{
-		const ssize_t n = ::write(fd, bytes.constData() + written,
-			static_cast<size_t>(bytes.size() - written));
-		if (n > 0)
-		{
-			written += n;
-			continue;
-		}
-		if (n < 0 && errno == EINTR) { continue; }
-		return false;
+		// A line written earlier is still on its way to the peer: it must stay
+		// first on the wire, so this reply waits behind it. The lines are whole,
+		// so the peer still reads one reply per line.
+		if (it->pending.size() + bytes.size() > MaxQueuedReplyBytes) { return false; }
+		it->pending.append(bytes);
+		return true;
+	}
+
+	int written = 0;
+	const WriteOutcome outcome = writeWhatFits(fd, bytes.constData(), bytes.size(), &written);
+	if (outcome == WriteOutcome::Gone) { return false; } // the peer is gone
+	if (outcome == WriteOutcome::Full)
+	{
+		// The peer's buffer is full: normal flow control, not a failure. Keep
+		// the tail - whole bytes, so the line stays intact - and finish it when
+		// the socket says it can take more.
+		it->pending = bytes.mid(written);
+		it->writeNotifier->setEnabled(true);
 	}
 	return true;
+#endif
+}
+
+void ControlServer::onClientWritable(int fd)
+{
+#if !defined(Q_OS_UNIX)
+	Q_UNUSED(fd);
+#else
+	const auto it = m_clients.find(fd);
+	if (it == m_clients.end()) { return; }
+	int written = 0;
+	const WriteOutcome outcome = writeWhatFits(fd, it->pending.constData(), it->pending.size(),
+		&written);
+	if (written > 0) { it->pending.remove(0, written); }
+	if (outcome == WriteOutcome::Gone)
+	{
+		// The peer went away while a tail was still queued (EPIPE/ECONNRESET). A
+		// socket whose peer is gone reports WRITABLE forever, so a notifier left
+		// armed here fires on every loop pass and spins a core at 100% without
+		// ever draining the tail. Retire the connection instead - the same thing
+		// a real write error does on the dispatch path.
+		dropClient(fd);
+		return;
+	}
+	if (it->pending.isEmpty()) { it->writeNotifier->setEnabled(false); }
 #endif
 }
 

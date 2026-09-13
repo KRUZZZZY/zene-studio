@@ -440,7 +440,7 @@ void ControlServer::close()
 #else
 	for (const Client& client : m_clients)
 	{
-		if (client.notifier) { client.notifier->deleteLater(); }
+		client.retire();
 		if (client.fd >= 0) { ::close(client.fd); }
 	}
 	m_clients.clear();

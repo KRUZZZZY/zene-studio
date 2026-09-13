@@ -36,8 +36,8 @@ from control_socket_flows import (  # noqa: E402
     check_audio_fallback, check_ping_shape, check_requires_device_refusal,
 )
 from control_socket_harness import (  # noqa: E402
-    BROKEN_DEVICE, BROKEN_DEVICE_ENV, Client, Instance, Problems, Timeout, dump,
-    finish,
+    BROKEN_DEVICE, BROKEN_DEVICE_ENV, STARTUP_BOUND, Blocked, Client, Instance, Problems,
+    Timeout, dump, finish,
 )
 
 CONNECT_TIMEOUT = 60.0
@@ -46,12 +46,22 @@ STDERR_DUMP_LIMIT = 4000
 
 
 def wait_for_ready(client, problems):
-    """Poll ping until ready. Returns (ready, last_reply, elapsed_s)."""
+    """Poll ping until ready. Returns (ready, last_reply, elapsed_s).
+
+    Each ping is bounded by the readiness budget, not by one socket read: while the
+    engine starts the socket answers nothing (CI: ~34s of Engine::init on the
+    linux-arm64 job), and a bound smaller than the engine start reports a slow
+    platform as the "never became ready" defect this test exists to catch.
+    """
     started = time.time()
     deadline = started + READY_TIMEOUT
     ping = None
     while time.time() < deadline:
-        ping = client.call(1, "control.ping")
+        try:
+            ping = client.call(1, "control.ping", timeout=STARTUP_BOUND)
+        except Blocked as error:
+            problems.add("no answer to control.ping inside %.0fs: %s" % (STARTUP_BOUND, error))
+            return False, ping, time.time() - started
         problems.extend(check_ping_shape(ping, 1))
         if (ping.get("result") or {}).get("engine_ready") is True:
             return True, ping, time.time() - started

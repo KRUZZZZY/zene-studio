@@ -66,6 +66,14 @@ public:
 	//! `invalid_args` and the connection is dropped.
 	static constexpr int MaxRequestLineBytes = 1024 * 1024;
 
+	//! Largest reply tail held for one client while its socket buffer is full
+	//! (Client::pending). A peer that stops reading must not be able to make the
+	//! instance buffer replies without limit; past this the client is retired the
+	//! way an over-cap request line is (partial line, then EOF - never a spliced
+	//! line). The bound is far above any legitimate answer: the largest reply on
+	//! this surface (control.commands_list) is a few hundred kilobytes.
+	static constexpr int MaxQueuedReplyBytes = 8 * 1024 * 1024;
+
 	explicit ControlServer(ControlRegistry* registry, QObject* parent = nullptr);
 	~ControlServer() override;
 
@@ -98,7 +106,20 @@ private:
 	{
 		int fd = -1;
 		QSocketNotifier* notifier = nullptr;
+		//! Armed only while `pending` holds the tail of a reply the socket would
+		//! not take in one go (see sendBytes): a NON-BLOCKING write of a reply
+		//! larger than the socket buffer is not an error, and treating it as one
+		//! loses the answer to a legitimate request.
+		QSocketNotifier* writeNotifier = nullptr;
+		//! The bytes of a reply not accepted by the socket yet, in wire order.
+		//! A line already partially written stays FIRST here, so the peer reads
+		//! each line whole and in order.
+		QByteArray pending;
 		QByteArray buffer;
+
+		//! Retire this connection's notifiers (either may never have been armed).
+		//! Defined in ControlServer.cpp, where QSocketNotifier is complete.
+		void retire() const;
 		//! True after an over-cap request line was refused: the rest of what the
 		//! peer sends is read and DISCARDED (bounded, per chunk) until EOF, so the
 		//! connection closes with nothing queued. Closing while unread bytes sit on
@@ -109,19 +130,24 @@ private:
 
 	void onNewConnection();
 	void onClientReadable(int fd);
+	//! The socket is writable again: flush the tail of a reply that did not fit
+	//! earlier (Client::pending). Defined in ControlServer.cpp beside sendBytes.
+	void onClientWritable(int fd);
 	//! Dispatch every complete line already in \p buffer. Returns false when a
-	//! reply could not be written in full and the client was dropped (see
-	//! writeAll's contract).
+	//! reply hit a REAL write error and the client was dropped (see sendBytes's
+	//! contract).
 	bool dispatchPendingLines(int fd, QByteArray& buffer);
 	//! Refuse the ONE request line left in the buffer that passed
 	//! MaxRequestLineBytes without ending, then retire the connection: \p closed
 	//! says EOF is already in hand, so the client can be dropped at once.
 	void refuseOverCapLine(int fd, bool closed);
 	void dropClient(int fd);
-	//! Write every byte of \p bytes or fail. A caller MUST drop the client when
-	//! this returns false: the bytes already written are a TRUNCATED line, and
-	//! writing the next reply after them would make the two read as one line.
-	bool writeAll(int fd, const QByteArray& bytes);
+	//! Hand one whole reply line to \p fd: write what the socket takes now and
+	//! queue the tail for onClientWritable. Returns false ONLY when the peer is
+	//! gone (a real write error) - a full socket buffer is not an error, and a
+	//! reply must never be truncated because the peer's buffer was small (macOS
+	//! AF_UNIX buffers are 8 KiB; control.commands_list answers with far more).
+	bool sendBytes(int fd, const QByteArray& bytes);
 
 	//! Take ownership of a fd that is bound, pinned to mode 0600 and listening:
 	//! record the inode this instance bound (so close() unlinks only that one),
