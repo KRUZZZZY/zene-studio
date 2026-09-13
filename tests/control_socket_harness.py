@@ -360,15 +360,8 @@ class Client:
             raise Timeout("could not send %s: %s" % (cmd, exc)) from exc
         budget = self.timeout if timeout is None else timeout
         deadline = time.time() + budget
-        first = True
         while True:
-            try:
-                reply = self._read_line(budget if first else max(deadline - time.time(), 0.05))
-            except (Blocked, OSError) as error:
-                if transcript is not None:
-                    transcript.add("<-", "NO REPLY inside %.0fs (%s)" % (budget, error))
-                raise
-            first = False
+            reply = self._read_bounded(deadline, budget, transcript)
             text = reply.decode("utf-8", "replace")
             self.transcript.append("<- %s" % text)
             if transcript is not None:
@@ -376,11 +369,19 @@ class Client:
             answer = json.loads(text)
             if answer.get("id") == request_id:
                 return answer
-            # A LATE reply to an EARLIER request (a readiness ping that timed out
-            # while the engine was starting) must be discarded, NEVER returned: the
-            # stream would shift by one and answer request N with request N-1's
-            # result - CI measured exactly that as `reply id 0 != 1`.
+            # A LATE reply to an EARLIER request (a readiness ping that timed out while
+            # the engine was starting) must be discarded, never returned: the stream
+            # would shift and answer request N with N-1's result (`reply id 0 != 1`).
             print("note: discarded a stale reply to an earlier request: %s" % text[:160])
+
+    def _read_bounded(self, deadline, budget, transcript):
+        """One reply line, bounded by the REQUEST's deadline, not one socket read."""
+        try:
+            return self._read_line(max(deadline - time.time(), 0.05))
+        except (Blocked, OSError) as error:
+            if transcript is not None:
+                transcript.add("<-", "NO REPLY inside %.0fs (%s)" % (budget, error))
+            raise
 
     def _read_line(self, timeout):
         # socket timeouts arrive as the builtin TimeoutError (socket.timeout is an

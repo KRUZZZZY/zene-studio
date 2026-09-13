@@ -367,9 +367,20 @@ void ControlServer::onClientWritable(int fd)
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
 	int written = 0;
-	writeWhatFits(fd, it->pending.constData(), it->pending.size(), &written);
+	const WriteOutcome outcome = writeWhatFits(fd, it->pending.constData(), it->pending.size(),
+		&written);
 	if (written > 0) { it->pending.remove(0, written); }
-	if (it->pending.isEmpty()) { it->writeNotifier->setEnabled(false); } // else: still armed
+	if (outcome == WriteOutcome::Gone)
+	{
+		// The peer went away while a tail was still queued (EPIPE/ECONNRESET). A
+		// socket whose peer is gone reports WRITABLE forever, so a notifier left
+		// armed here fires on every loop pass and spins a core at 100% without
+		// ever draining the tail. Retire the connection instead - the same thing
+		// a real write error does on the dispatch path.
+		dropClient(fd);
+		return;
+	}
+	if (it->pending.isEmpty()) { it->writeNotifier->setEnabled(false); }
 #endif
 }
 

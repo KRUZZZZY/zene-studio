@@ -326,6 +326,41 @@ def case_symlink(binary):
     return outcome(name, problems)
 
 
+def prime_over_cap_probe(instance, client, problems):
+    """Get this connection to where the over-cap write means something, or say why not.
+
+    The 2 MiB write needs a server DRAINING the socket: the socket is serviced only while
+    the event loop runs (CI's linux-arm64 start blocks it ~34s, and a sendall against a
+    non-reading server fills the kernel buffer and blocks). wait_ready runs on THIS
+    connection where replies are read in order, one per ping, so it leaves none in flight.
+    """
+    try:
+        wait_ready(instance, client, Transcript(), seconds=READY_TIMEOUT)
+    except (Blocked, Timeout) as error:
+        problems.add("the instance never became ready, so the cap could not be exercised: %s" % error)
+        return False
+    try:
+        client.sock.sendall(b"x" * (REQUEST_LINE_CAP * 2))
+    except (Blocked, OSError) as error:
+        problems.add("the server did not drain the over-cap request line: %s" % error)
+        return False
+    return True
+
+
+def assert_retired_not_buffered(client, problems):
+    """Retired, not buffered: after the cap a well-formed request gets no reply.
+
+    Pre-cap the junk was spliced into the next line and answered, so this discriminates.
+    """
+    try:
+        quiet = client.call(7, "control.ping", timeout=5.0)
+    except Timeout as no_reply:
+        print("no reply to a request sent after the over-cap line (expected): %s" % no_reply)
+    else:
+        problems.add("the connection is still serving requests after an over-cap line: it "
+                     "answered %r, so the line was buffered rather than capped" % quiet)
+
+
 def case_request_line_cap(binary):
     """One line, no newline, twice the cap: refused typed, then the connection is retired."""
     name = "an over-cap request line is refused typed and the connection is retired"
@@ -333,30 +368,10 @@ def case_request_line_cap(binary):
     instance = start_instance(binary)
     try:
         client = connect(instance)
-        # The 2 MiB write needs a server that is DRAINING this socket, and the socket
-        # is serviced only while the app's event loop runs: on a slow platform the
-        # engine start blocks it (~34s on CI's linux-arm64), and a sendall against a
-        # server that is not reading fills the kernel buffer and blocks. Poll
-        # readiness on its OWN connection, so the poll's replies (one can still be in
-        # flight when the poll gives up) cannot be read as this case's refusal.
-        poll = connect(instance)
-        try:
-            wait_ready(instance, poll, Transcript(), seconds=READY_TIMEOUT)
-        except (Blocked, Timeout) as error:
-            problems.add("the instance never became ready, so the cap could not be exercised: %s"
-                         % error)
+        if not prime_over_cap_probe(instance, client, problems):
             client.close()
             return outcome(name, problems)
-        finally:
-            poll.close()
-        try:
-            client.sock.sendall(b"x" * (REQUEST_LINE_CAP * 2))
-        except (Blocked, OSError) as error:
-            problems.add("the server did not drain the over-cap request line: %s" % error)
-            client.close()
-            return outcome(name, problems)
-        # The harness's own reader, not a request: call() would have to SEND on a
-        # connection the server is retiring, which is the thing being tested.
+        # The harness's own reader: call() would SEND on the connection being retired.
         try:
             line = client._read_line(PING_TIMEOUT)  # noqa: SLF001 (harness reader)
         except Timeout as nothing:
@@ -375,17 +390,7 @@ def case_request_line_cap(binary):
         if reply.get("id") != -1:
             problems.add("the refusal carries id %r: an over-cap line must not be dispatched as "
                          "a request" % reply.get("id"))
-        # Retired, not silently buffered: a well-formed request sent now gets no
-        # reply inside the bound. (Before the cap existed the junk was buffered,
-        # spliced into the next line and answered as a malformed request - which is
-        # why this check discriminates rather than merely waiting.)
-        try:
-            quiet = client.call(7, "control.ping", timeout=5.0)
-        except Timeout as no_reply:
-            print("no reply to a request sent after the over-cap line (expected): %s" % no_reply)
-        else:
-            problems.add("the connection is still serving requests after an over-cap line: it "
-                         "answered %r, so the line was buffered rather than capped" % quiet)
+        assert_retired_not_buffered(client, problems)
         client.close()
     finally:
         instance.close()
