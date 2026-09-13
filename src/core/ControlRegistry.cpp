@@ -491,11 +491,8 @@ void registerControlCommands(ControlRegistry& registry)
 	// switch: the render is the product's own CLI render path and the take is a
 	// plain value on Track, so its ids are honest in every configuration.
 	registerFreezeCommands(registry);
-	// MIDI clock / MTC (0.3.0): the DAW as a clock master and as a clock slave.
-	// No compile-time switch: the generator and the tracker need no audio device
-	// and no hardware - a headless instance produces, records and reports its
-	// clock, and the emission reaches a device only where a real MIDI backend is
-	// configured (docs/KNOWN-LIMITATIONS.md states that bound).
+	// MIDI clock (0.3.0): the DAW as a clock master and as a clock slave. No
+	// compile-time switch; the bound it states is in docs/KNOWN-LIMITATIONS.md.
 	registerClockCommands(registry);
 }
 

@@ -345,6 +345,9 @@ private:
 	MidiPort* outputPort();
 	void record(MidiClockMessage message, qint64 positionTicks) noexcept;
 	void trackTransport(bool transportRunning, qint64 playPosTicks, qint64 expectedAdvance) noexcept;
+	//! The transport's own edges: STOP on the fall, and a Song Position Pointer
+	//! (only off the top) plus CONTINUE or a START on the rise.
+	void transportEdge(bool running, qint64 playPosTicks) noexcept;
 	void emitPulses(int frames) noexcept;
 
 	MidiClient* client() const;

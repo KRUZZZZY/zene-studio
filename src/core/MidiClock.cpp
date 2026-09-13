@@ -342,6 +342,30 @@ void MidiClock::emitMessage(MidiClockMessage message, qint64 positionTicks, quin
 	midi->processOutEvent(event, TimePos(), port);
 }
 
+void MidiClock::transportEdge(bool running, qint64 playPosTicks) noexcept
+{
+	// Either edge ends the partial pulse the previous transport had accumulated:
+	// a clock that kept its carry across a STOP would emit a stray pulse when the
+	// transport started again.
+	m_tickRemainder.store(0.0);
+	if (!running)
+	{
+		emitMessage(MidiClockMessage::Stop, playPosTicks);
+		return;
+	}
+	// A START begins at the top of the song and a CONTINUE resumes where the
+	// pointer says. The pointer is sent FIRST, and only when the transport is not
+	// at the top, so a master never claims a position the slave would not have
+	// arrived at anyway.
+	if (playPosTicks != 0)
+	{
+		emitMessage(MidiClockMessage::SongPosition, playPosTicks, songPositionOf(playPosTicks));
+		emitMessage(MidiClockMessage::Continue, playPosTicks);
+		return;
+	}
+	emitMessage(MidiClockMessage::Start, playPosTicks);
+}
+
 void MidiClock::trackTransport(bool transportRunning, qint64 playPosTicks, qint64 expectedAdvance) noexcept
 {
 	const bool wasRunning = m_transportWasRunning.load();
@@ -350,35 +374,14 @@ void MidiClock::trackTransport(bool transportRunning, qint64 playPosTicks, qint6
 	m_transportWasRunning.store(transportRunning);
 	m_positionKnown.store(true);
 	m_lastPlayPosTicks.store(playPosTicks);
-	if (transportRunning == wasRunning && !known) { return; }
-	if (transportRunning && !wasRunning)
-	{
-		// The rising edge: a START begins at the top of the song and a CONTINUE
-		// resumes where the pointer says. The pointer is sent FIRST, and only
-		// when the transport is not at the top, so a master never claims a
-		// position the slave would not have arrived at anyway.
-		m_tickRemainder.store(0.0);
-		if (playPosTicks != 0)
-		{
-			emitMessage(MidiClockMessage::SongPosition, playPosTicks, songPositionOf(playPosTicks));
-			emitMessage(MidiClockMessage::Continue, playPosTicks);
-			return;
-		}
-		emitMessage(MidiClockMessage::Start, playPosTicks);
-		return;
-	}
-	if (!transportRunning && wasRunning)
-	{
-		m_tickRemainder.store(0.0);
-		emitMessage(MidiClockMessage::Stop, playPosTicks);
-		return;
-	}
-	// Running on both periods: a position that did not move by the amount the
-	// period advances is a SEEK, and a slave cannot know about it. The engine's
-	// own advance is not exactly `expectedAdvance` every period (it carries a
-	// fractional tick), so one tick either side is the same advance and only a
-	// bigger difference is reported. A sub-pulse seek is not reportable at all:
-	// an SPP has twelve-tick resolution.
+	if (transportRunning != wasRunning) { transportEdge(transportRunning, playPosTicks); return; }
+	// Running on both periods, with a position to compare against: a position
+	// that did not move by the amount the period advances is a SEEK, and a slave
+	// cannot know about it. The engine's own advance is not exactly
+	// `expectedAdvance` every period (it carries a fractional tick), so one tick
+	// either side is the same advance and only a bigger difference is reported. A
+	// sub-pulse seek is not reportable at all: an SPP has twelve-tick resolution.
+	if (!known || !transportRunning) { return; }
 	const qint64 delta = playPosTicks - previous;
 	if (delta == 0) { return; }
 	if (delta >= expectedAdvance - 1 && delta <= expectedAdvance + 1) { return; }

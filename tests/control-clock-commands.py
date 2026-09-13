@@ -47,11 +47,10 @@ The checks, in order:
  10. `control.transactions`         the A16 records: master_set is true_inverse,
                                     slave_set is snapshot, and the slave's record
                                     NAMES the trajectory it cannot restore;
- 11. `control.undo`                 the master's flag and port come back off a
+ 11. `control.undo`                 the master's flag and port come back off one
                                     recorded action step, and so does the slave's
-                                    configuration - while the report says, in the
-                                    record itself, that the tempo a follower wrote
-                                    is not part of that inverse.
+                                    configuration - while the record itself says
+                                    the tempo a follower wrote is not part of it.
 
 Started through the shared harness (tests/control_socket_harness.py), so this
 file adds no second launch path.
@@ -73,10 +72,9 @@ GRID_PULSES_PER_QUARTER = 24
 DRIFT_BOUND_MS = 8
 
 # Long enough for several audio periods AND three of the follower's 250 ms polls,
-# so "the slave did nothing" is a measurement and not a race.
+# so "the slave did nothing" is a measurement and not a race; and long enough for
+# the transport to advance and the master to emit a few hundred pulses.
 SLAVE_OBSERVATION_S = 1.5
-# Long enough for the transport to advance and the master to emit a few hundred
-# pulses at the dummy device's own rate.
 PLAY_OBSERVATION_S = 0.7
 
 
@@ -118,7 +116,6 @@ class Recorder:
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-
 def clock_state(session):
     state = session.result("clock.get_state")
     return state
@@ -196,9 +193,7 @@ def check_slave_with_no_clock_does_nothing(session, recorder):
                    enabled.get("locked") is False and enabled.get("tempo_bpm") == 0,
                    "locked=%r tempo=%r" % (enabled.get("locked"), enabled.get("tempo_bpm")))
 
-    # Wait out several audio periods AND three follower polls, then look again:
-    # an implementation that invented a tempo or nudged the transport would have
-    # done it by now.
+    # Wait out several audio periods AND three follower polls, then look again.
     pause(SLAVE_OBSERVATION_S)
     after = slave_state(session)
     after_transport = transport_state(session)
@@ -246,9 +241,9 @@ def check_master_emits_the_expected_messages(session, recorder):
     played = session.result("transport.play")
     recorder.check("the transport started on the engine's own device",
                    played.get("playing") is True, "state=%r" % played)
-    # Read the monitor while it can still hold the FIRST message of the run: a
-    # 32-slot monitor is overrun in ~150 ms at this tempo and audio rate, so an
-    # "oldest is start" claim is only worth making inside that window.
+    # Read the monitor while it can still hold the FIRST message: a 32-slot
+    # monitor is overrun in ~150 ms at this tempo, so "oldest is start" is only
+    # worth claiming inside that window.
     pause(0.05)
     early = monitor_names(session)
     recorder.check("the FIRST message of the run was the START of the rising edge",
@@ -394,38 +389,50 @@ def check_transactions(session, recorder):
                    "before=%r" % slave.get("before"))
 
 
-def check_undo(session, recorder):
-    """SPEC A16: the configuration comes back, the trajectory does not."""
-    session.result("clock.slave_set", {"enabled": False})
+def check_undo_reverses_the_master(session, recorder):
+    """SPEC A16: the master's configuration comes back off one recorded step."""
     session.result("clock.master_set", {"enabled": True})
-    armed = clock_state(session)
-    recorder.check("the master and the slave are in the state the undo must reverse",
-                   (armed.get("master") or {}).get("enabled") is True
-                   and (armed.get("slave") or {}).get("enabled") is False,
-                   "master=%r slave=%r" % ((armed.get("master") or {}).get("enabled"),
-                                           (armed.get("slave") or {}).get("enabled")))
-    first = session.result("control.undo")
-    afterMaster = clock_state(session)
+    armed = master_state(session)
+    recorder.check("the master is on, as the undo must reverse",
+                   armed.get("enabled") is True, "master=%r" % armed)
+    undone = session.result("control.undo")
+    after = master_state(session)
     recorder.check("one control.undo takes clock.master_set back off",
-                   first.get("undone") is True
-                   and (afterMaster.get("master") or {}).get("enabled") is False,
-                   "undone=%r master=%r" % (first.get("undone"),
-                                            (afterMaster.get("master") or {}).get("enabled")))
-    second = session.result("control.undo")
-    afterSlave = clock_state(session)
-    recorder.check("the next control.undo restores clock.slave_set's CONFIGURATION",
-                   second.get("undone") is True
-                   and (afterSlave.get("slave") or {}).get("enabled") is True,
-                   "undone=%r slave=%r" % (second.get("undone"), afterSlave.get("slave")))
-    # The honest half: the class is snapshot and the record says the tempo a
-    # follower wrote is not part of the inverse. Nothing here claims otherwise.
-    records = [r for r in clock_records(session) if r.get("command") == "clock.slave_set"]
-    recorder.check("the undone slave record is still classified snapshot",
-                   records and records[-1].get("class") == "snapshot",
-                   "records=%r" % [r.get("class") for r in records])
-    recorder.check("the tempo in the session is still the transport's own, untouched",
-                   transport_state(session).get("tempo") is not None,
-                   "tempo=%r" % transport_state(session).get("tempo"))
+                   undone.get("undone") is True and after.get("enabled") is False,
+                   "undone=%r message=%r master=%r"
+                   % (undone.get("undone"), undone.get("undone_command"), after))
+    recorder.check("the undo names the command it reversed",
+                   undone.get("undone_command") == "clock.master_set",
+                   "undone_command=%r" % undone.get("undone_command"))
+
+
+def slave_records(session):
+    """The clock.slave_set A16 records, oldest first."""
+    return [r for r in clock_records(session) if r.get("command") == "clock.slave_set"]
+
+
+def check_undo_restores_the_slave_configuration(session, recorder):
+    """The configuration returns; the trajectory is named and does NOT."""
+    session.result("clock.master_set", {"enabled": True})
+    # Pushed LAST, so this is the step the next undo pops - the point of this
+    # half is that the SLAVE's step is the one being unwound.
+    session.result("clock.slave_set", {"enabled": False})
+    undone = session.result("control.undo")
+    after = slave_state(session)
+    recorder.check("the next control.undo restores clock.slave_set's step",
+                   undone.get("undone") is True and undone.get("undone_command")
+                   == "clock.slave_set",
+                   "undone=%r message=%r" % (undone.get("undone"),
+                                             undone.get("undone_command")))
+    recorder.check("the slave is following again after the undo",
+                   after.get("enabled") is True, "slave=%r" % after)
+    newest = (slave_records(session) or [{}])[-1]
+    recorder.check("the undone record is still classified snapshot",
+                   newest.get("class") == "snapshot",
+                   "classes=%r" % [r.get("class") for r in slave_records(session)])
+    recorder.check("the record still reports the tempo a follower could have moved",
+                   "tempo" in (newest.get("before") or {}),
+                   "before=%r" % newest.get("before"))
 
 
 def check_quit(session, instance, recorder):
