@@ -301,6 +301,9 @@ LMMS_EXPORT ControlResult openTelemetryConsentScreen();
 LMMS_EXPORT void registerArrangementCommands(ControlRegistry& registry);
 //! clip.add/move/resize/split/delete/duplicate/select
 LMMS_EXPORT void registerClipCommands(ControlRegistry& registry);
+//! clip.set_fade/set_gain/crossfade - the same group's fade, crossfade and
+//! clip-gain commands (the fade/crossfade/clip-gain wave).
+LMMS_EXPORT void registerClipEditsCommands(ControlRegistry& registry);
 //! note.add/remove/move/resize/velocity_set/select and roll.get_state
 LMMS_EXPORT void registerNoteCommands(ControlRegistry& registry);
 //! plugin.* and dsp.get_state - the device catalogue, load/unload/bypass,

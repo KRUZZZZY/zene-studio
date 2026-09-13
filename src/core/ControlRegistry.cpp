@@ -461,6 +461,7 @@ void registerControlCommands(ControlRegistry& registry)
 
 	registerArrangementCommands(registry);
 	registerClipCommands(registry);
+	registerClipEditsCommands(registry);
 	registerNoteCommands(registry);
 	registerPluginCommands(registry);
 	registerDspCommands(registry);

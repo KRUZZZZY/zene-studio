@@ -24,7 +24,10 @@
 
 #include "Clip.h"
 
+#include <algorithm>
+
 #include <QDomDocument>
+#include <QDomElement>
 
 #include "AutomationEditor.h"
 #include "AutomationClip.h"
@@ -79,7 +82,8 @@ Clip::Clip(const Clip& other):
 	m_mutedModel(other.m_mutedModel.value(), this, tr( "Mute" )),
 	m_autoResize(other.m_autoResize),
 	m_selectViewOnCreate{other.m_selectViewOnCreate},
-	m_color(other.m_color)
+	m_color(other.m_color),
+	m_edits(other.m_edits)
 {
 	if (getTrack())
 	{
@@ -222,6 +226,85 @@ TimePos Clip::startTimeOffset() const
 void Clip::setStartTimeOffset( const TimePos &startTimeOffset )
 {
 	m_startTimeOffset = startTimeOffset;
+}
+
+
+
+
+/*! \brief Write the clip's fades and its gain onto its own element.
+ *
+ *  Additive by construction (docs/CLIP-CAPTURE-DESIGN.md §2.6, invariant I9):
+ *  every new attribute is written ONLY for a value that differs from the neutral
+ *  default, so a clip nobody has edited serialises exactly as it did before
+ *  these values existed. That is the same rule this file's callers already
+ *  follow for `srcin`/`srcout` and for the `<warp>` child element, and it is
+ *  what makes "an old project with no fade element loads byte-identically" a
+ *  property rather than a hope.
+ *
+ *  The gain is stored in dB (the design's file format) and the fades in ticks,
+ *  because ticks are the unit of the timeline they ramp over.
+ */
+void Clip::saveClipEdits(QDomElement& element) const
+{
+	if (m_edits.gain != 1.0f)
+	{
+		element.setAttribute("gain", QString::number(gainLinearToDb(m_edits.gain), 'f', 6));
+	}
+	if (m_edits.fadeInTicks != 0)
+	{
+		element.setAttribute("fadein", m_edits.fadeInTicks);
+	}
+	if (m_edits.fadeOutTicks != 0)
+	{
+		element.setAttribute("fadeout", m_edits.fadeOutTicks);
+	}
+	if (m_edits.fadeInShape != FadeShape::Linear)
+	{
+		element.setAttribute("fadeinshape", static_cast<int>(m_edits.fadeInShape));
+	}
+	if (m_edits.fadeOutShape != FadeShape::Linear)
+	{
+		element.setAttribute("fadeoutshape", static_cast<int>(m_edits.fadeOutShape));
+	}
+}
+
+
+
+
+/*! \brief Read the clip's fades and its gain back off its own element.
+ *
+ *  A file that carries none of these attributes - every project written before
+ *  this change - leaves the edits at their neutral defaults, which is what makes
+ *  the load side of I9 hold without a migration entry: an unknown attribute is
+ *  ignored by an old build, and an absent attribute is neutral in a new one.
+ *
+ *  A negative length or an out-of-range shape index is a malformed file rather
+ *  than a user edit, so it is clamped to the nearest legal value instead of
+ *  being carried into the render (the render path must never see a fade that
+ *  runs backwards).
+ */
+void Clip::loadClipEdits(const QDomElement& element)
+{
+	ClipEdits edits;
+	if (element.hasAttribute("gain"))
+	{
+		edits.gain = gainDbToLinear(element.attribute("gain").toFloat());
+	}
+	edits.fadeInTicks = std::max(0, element.attribute("fadein", "0").toInt());
+	edits.fadeOutTicks = std::max(0, element.attribute("fadeout", "0").toInt());
+
+	const auto shapeFromIndex = [](int index) {
+		switch (index)
+		{
+		case static_cast<int>(FadeShape::Exponential): return FadeShape::Exponential;
+		case static_cast<int>(FadeShape::EqualPower): return FadeShape::EqualPower;
+		default: return FadeShape::Linear;
+		}
+	};
+	edits.fadeInShape = shapeFromIndex(element.attribute("fadeinshape", "0").toInt());
+	edits.fadeOutShape = shapeFromIndex(element.attribute("fadeoutshape", "0").toInt());
+
+	m_edits = edits;
 }
 
 void Clip::setColor(const std::optional<QColor>& color)

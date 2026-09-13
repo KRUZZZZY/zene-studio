@@ -82,6 +82,8 @@ set(LMMS_SRCS
 	core/CrashReporter.cpp
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
+	core/ControlCommandsClipEdits.cpp
+	core/ClipEdits.cpp
 	core/ControlAutomationSupport.cpp
 	core/ControlCommandsAutomation.cpp
 	core/ControlCommandsAutomationEdit.cpp

@@ -151,6 +151,24 @@ const ReversibilityRow kRows[] = {
 		"the split rewrites the clip list of one Track",
 		"ProjectJournal (Track checkpoint)",
 		""),
+	R("clip.set_fade", RC::TrueInverse, true,
+		"the two fade ramps are part of the Clip's own serialized state "
+		"(Clip::saveClipEdits writes them onto the clip's element), so the Clip "
+		"checkpoint the command takes is a live inverse of both",
+		"ProjectJournal (Clip checkpoint)",
+		""),
+	R("clip.set_gain", RC::TrueInverse, true,
+		"the clip gain is part of the same Clip serialized state as the fades",
+		"ProjectJournal (Clip checkpoint)",
+		""),
+	R("clip.crossfade", RC::TrueInverse, true,
+		"the command writes TWO clips, and it refuses unless both are on the same "
+		"track - which is what lets one Track checkpoint cover the pair. Its "
+		"recorded inverse op is named as the manual one (no single command "
+		"restores two clips' fades) and control.undo's default 'journal' "
+		"mechanism unwinds the checkpoint instead, exactly as clip.split does",
+		"ProjectJournal (Track checkpoint)",
+		""),
 	R("note.add", RC::TrueInverse, true,
 		"the note list belongs to the MidiClip, which is a JournallingObject",
 		"ProjectJournal (Clip checkpoint)",

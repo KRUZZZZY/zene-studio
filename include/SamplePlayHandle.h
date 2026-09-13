@@ -27,6 +27,7 @@
 #define LMMS_SAMPLE_PLAY_HANDLE_H
 
 #include "Sample.h"
+#include "ClipEdits.h"
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
 #include "PlayHandle.h"
@@ -102,6 +103,21 @@ private:
 	 *  is neither, so an unwarped project's arithmetic is unchanged. */
 	f_cnt_t m_timelineFrames = 0;
 	bool m_rendersLinearly = true;
+	/*! The clip's fades and its gain, snapshotted at construction exactly as the
+	 *  window and the warp are (invariant I1): a live handle renders the envelope
+	 *  it was created with, and nothing the control thread does to the clip
+	 *  afterwards can move it. A POD value copy - no allocation, no lock (I8). */
+	ClipEdits m_edits;
+	//! The clip's whole rendered span in output frames, and where this pass
+	//! starts inside it. The envelope is measured against these, not against
+	//! `m_frame`, because a pass that begins in the middle of a clip has to
+	//! continue the ramp it interrupted rather than restart it.
+	f_cnt_t m_clipFrames = 0;
+	f_cnt_t m_envelopeStart = 0;
+	//! The two fade lengths in output frames, derived once from their tick
+	//! lengths so the audio path never divides by a clip length.
+	f_cnt_t m_fadeInFrames = 0;
+	f_cnt_t m_fadeOutFrames = 0;
 	f_cnt_t m_frame = 0;
 	Sample* m_sample = nullptr;
 	Track* m_track = nullptr;
@@ -113,6 +129,14 @@ private:
 	//! warp rate at the source frame this period starts on, over the natural
 	//! rate. Exactly 1.0 for every clip with no markers and no source tempo.
 	float warpRatio() const;
+
+	/*! Multiplies the clip's fade-and-gain envelope into the frames this period
+	 *  just rendered. Never called for a neutral clip, so the default path pays
+	 *  nothing at all for this feature - not a branch, not a multiply. */
+	void applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const;
+	//! Derives m_clipFrames / m_envelopeStart / the two fade lengths from the
+	//! clip and the window this handle renders (construction time only).
+	void snapshotClipEdits(const SampleClip* clip, const SampleWindow& window);
 } ;
 
 

@@ -25,6 +25,7 @@
 #include "SamplePlayHandle.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
@@ -101,6 +102,105 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 		m_timelineFrames = static_cast<f_cnt_t>(clip->windowTicksFor(window)
 			* Engine::framesPerTick(Engine::audioEngine()->outputSampleRate()));
 	}
+
+	// The clip's fades and its gain (the fade/crossfade/clip-gain wave), taken
+	// here for exactly the reason the window and the warp are: a live handle
+	// renders the envelope it was created with. A neutral clip leaves m_edits
+	// neutral, and play() then skips the envelope entirely.
+	snapshotClipEdits(clip, window);
+}
+
+
+/*! \brief Author-side to render-side conversion for the envelope.
+ *
+ *  The fade lengths the model stores are TICKS; the envelope this handle applies
+ *  is indexed by OUTPUT FRAMES. The conversion is one multiply by
+ *  `Engine::framesPerTick(outputRate)` and it happens once, here, rather than
+ *  once per frame on the audio thread. That is also what makes the tick a real
+ *  unit rather than a proportion: a fade-out of N ticks is N ticks of the
+ *  timeline however long the clip is, which is what the design promises ("a
+ *  fade-out of N ticks produces a monotonic envelope over exactly N ticks").
+ *
+ *  The span the ramps are measured against is therefore the CLIP's own timeline
+ *  length in output frames - not the handle's `totalFrames()`, which is bounded
+ *  by the SOURCE and can be shorter than the clip when a clip is longer than the
+ *  audio it references. `m_envelopeStart` is the same span measured from the
+ *  clip's start to this pass's start, so a pass that begins mid-clip continues
+ *  the ramp it interrupted instead of restarting it.
+ *
+ *  The last step clamps the pair so the two ramps can never overlap inside one
+ *  clip. `clip.set_fade` already refuses that pair through the socket, so this
+ *  only covers a project file that was hand-edited; the fade-in wins the meeting
+ *  point and the fade-out is shortened to it, which keeps the envelope monotonic.
+ *  (A pair that overlaps BY DESIGN - a crossfade across two clips - never reaches
+ *  this clamp: each clip's ramp is bounded by ITS OWN length.)
+ */
+void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWindow& window)
+{
+	m_edits = clip->clipEdits();
+	if (m_edits.isNeutral()) { return; }
+
+	const auto outputRate = Engine::audioEngine()->outputSampleRate();
+	const double outputFramesPerTick = Engine::framesPerTick(outputRate);
+	const int clipTicks = clip->length().getTicks();
+	if (clipTicks <= 0 || outputFramesPerTick <= 0.0) { return; }
+
+	const auto framesFor = [outputFramesPerTick](int ticks) {
+		if (ticks <= 0) { return f_cnt_t(0); }
+		return static_cast<f_cnt_t>(std::llround(static_cast<double>(ticks) * outputFramesPerTick));
+	};
+	m_clipFrames = framesFor(clipTicks);
+	m_fadeInFrames = framesFor(m_edits.fadeInTicks);
+	m_fadeOutFrames = framesFor(m_edits.fadeOutTicks);
+
+	// Where this pass starts inside the clip's span. For a linear clip the source
+	// frame offset scales by the output/source rate, which is exactly
+	// framesPerTick(output)/framesPerTick(source); a warped or tempo-leading clip
+	// has to ask the mapping, because its source frames are not evenly spaced in
+	// timeline ticks.
+	const auto clipWindow = clip->sampleWindow();
+	if (m_rendersLinearly)
+	{
+		const double ratio = static_cast<double>(outputRate)
+			/ static_cast<double>(m_sample->sampleRate());
+		const auto offsetFrames = window.sourceIn >= clipWindow.sourceIn
+			? window.sourceIn - clipWindow.sourceIn : 0;
+		m_envelopeStart = static_cast<f_cnt_t>(
+			std::llround(static_cast<double>(offsetFrames) * ratio));
+	}
+	else
+	{
+		const SampleWindow head{ clipWindow.sourceIn,
+			window.sourceIn > clipWindow.sourceIn ? window.sourceIn : clipWindow.sourceIn };
+		m_envelopeStart = framesFor(clip->windowTicksFor(head));
+	}
+
+	if (m_fadeInFrames > m_clipFrames) { m_fadeInFrames = m_clipFrames; }
+	if (m_fadeInFrames + m_fadeOutFrames > m_clipFrames)
+	{
+		m_fadeOutFrames = m_clipFrames - m_fadeInFrames;
+	}
+}
+
+
+/*! \brief The envelope, applied to the frames this period rendered.
+ *
+ *  `m_envelopeStart + m_frame` is the position of this period's first frame
+ *  inside the clip's rendered span; the period's frames are contiguous after it.
+ *  The multiply is skipped wholesale for the neutral case by play()'s own guard,
+ *  so this function is never entered for a clip nobody has edited.
+ */
+void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
+{
+	const f_cnt_t base = m_envelopeStart + m_frame;
+	for (f_cnt_t f = 0; f < frames; ++f)
+	{
+		const float envelope = clipFadeGainAt(base + f, m_clipFrames,
+			m_fadeInFrames, m_fadeOutFrames, m_edits.fadeInShape, m_edits.fadeOutShape);
+		const float gain = m_edits.gain * envelope;
+		buffer[f][0] *= gain;
+		buffer[f][1] *= gain;
+	}
 }
 
 
@@ -154,6 +254,21 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, warpRatio()))
 		{
 			zeroSampleFrames(workingBuffer, frames);
+		}
+
+		/*! The clip's fade-and-gain envelope (the fade/crossfade/clip-gain wave).
+		 *
+		 *  Applied HERE, on the frames this handle just rendered, and deliberately
+		 *  NOT in `Sample::render`: that function is shared with the browser
+		 *  preview and the metronome (the `Sample*` constructors above), and a fade
+		 *  there would fade the metronome click (docs/CLIP-CAPTURE-DESIGN.md §3
+		 *  row 3, OQ-2). A clip nobody has edited is neutral, so this costs the
+		 *  default render nothing at all and leaves its output bit for bit what it
+		 *  was before the feature existed.
+		 */
+		if (!m_edits.isNeutral())
+		{
+			applyClipEdits(workingBuffer, frames);
 		}
 	}
 

@@ -14,6 +14,8 @@ set(LMMS_TESTS
 	src/core/AudioResamplerRatioTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/AutomationModesTest.cpp
+	src/core/ClipEditsTest.cpp
+	src/core/ClipFadesRenderTest.cpp
 	src/core/ClipSerialisationTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp

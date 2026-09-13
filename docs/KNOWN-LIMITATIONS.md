@@ -173,14 +173,29 @@ that is this page's fault — report it and it gets added.
   input, so no note path consults a zone in this build — `rack.zone_resolve` answers which zone a note would
   fall into, and nothing acts on that answer. `docs/RACK-MACROS.md` §4 states the same limit and what is
   needed to close it.
-- **No clip editing gestures.** The clip model is in (an authored window that survives playback and is saved
-  with the project) but there are **no trim, slip, fade, crossfade or clip-gain tools** in the UI yet.
+- **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
+  playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
+  **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain
+  are drivable through the socket, not from the interface**.
   *Corrected 2026-09-13: "trim" here means the **source window**, and the same word names a feature that does
   exist — a clip's **length** is changed today by dragging its edge and by the agent command `clip.resize`
   (`STATUS-CORRECTION-2026-09-13.md` §3, "Clip-length resize"; the source-window trim/slip has a model —
   `include/SampleWindow.h`, `srcin`/`srcout` — and registered tests but no authoring gesture, §3 "Clip
-  source-window trim / slip"). What this bullet still means, and what is still absent, is fades, crossfades,
-  clip gain and a slip tool.*
+  source-window trim / slip"). Second correction, same day: fades, crossfades and clip gain have an ENGINE and
+  an agent surface now — `include/ClipEdits.h` and `src/core/ClipEdits.cpp` hold a per-clip gain and
+  fade-in/fade-out ramp (`gain`/`fadein`/`fadeout`/`fadeinshape`/`fadeoutshape` on the `<sampleclip>` element,
+  each written only when it differs from the neutral default), `src/core/SamplePlayHandle.cpp` multiplies the
+  envelope into the frames the play handle renders (never in `Sample::render`, which the browser preview and
+  the metronome share), and `clip.set_gain`, `clip.set_fade` and `clip.crossfade` are registered commands
+  (`src/core/ControlCommandsClipEdits.cpp`, reversibility rows in `src/core/ControlReversibilityTable.cpp`),
+  proved by `tests/src/core/ClipEditsTest.cpp` and `tests/src/core/ClipFadesRenderTest.cpp`. What this bullet
+  still means, and what is still absent, is a slip tool, every authoring gesture for those three edits, a
+  linked crossfade object, and any fade or gain drawn on the waveform.*
+  *The same correction states this feature's own limits, so they are not read as bugs: fades and clip gain are
+  applied to **audio clips only** — a MIDI clip can carry the fields but nothing renders them, so
+  `clip.set_fade` / `clip.set_gain` refuse a MIDI clip with a typed error rather than writing state that would
+  do nothing — and a crossfade is a pair of independent fades rather than a linked object, so moving or
+  resizing one clip afterwards breaks the pairing silently.*
 - **No take lanes and no comping.** Verified as an absence in this tree:
   `grep -rniI "takelane\|take lane\|comping" src/ include/` returns 0 hits.
 - **No plugin-scanning interface worth the name.** A scan cache and a quarantine list exist; the user-facing

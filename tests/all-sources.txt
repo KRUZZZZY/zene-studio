@@ -100,6 +100,7 @@ include/BufferManager.h
 include/CPULoadWidget.h
 include/CaptionMenu.h
 include/Clip.h
+include/ClipEdits.h
 include/ClipView.h
 include/Clipboard.h
 include/ColorChooser.h
@@ -881,6 +882,7 @@ src/core/AutomationNode.cpp
 src/core/BandLimitedWave.cpp
 src/core/BufferManager.cpp
 src/core/Clip.cpp
+src/core/ClipEdits.cpp
 src/core/Clipboard.cpp
 src/core/ComboBoxModel.cpp
 src/core/ConfigManager.cpp
@@ -890,6 +892,7 @@ src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsClip.cpp
+src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -1235,6 +1238,8 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
+tests/src/core/ClipEditsTest.cpp
+tests/src/core/ClipFadesRenderTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/ConfigMigrationTest.cpp
