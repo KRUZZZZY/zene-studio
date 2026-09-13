@@ -35,6 +35,7 @@
 #include <QStringList>
 #include <QVector>
 
+#include "ControlRegistryGroups.h"
 #include "ControlUndoCoalescing.h"
 #include "ControlVocabulary.h"
 #include "lmms_export.h"
@@ -418,73 +419,16 @@ LMMS_EXPORT void registerRackCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerRackMacroCommands(ControlRegistry& registry);
 //! rack.zone_add / zone_remove / zone_resolve - the key/velocity zone half.
 LMMS_EXPORT void registerRackZoneCommands(ControlRegistry& registry);
-/*! comp.lane_add / lane_remove / lane_list / assign - take lanes and the
- *  assignment of takes to them (task #600). The engine half is include/TakeLane.h
- *  and `Track::takeLanes()`; docs/COMPING.md holds the element shape and what is
- *  deliberately not wired yet. */
-LMMS_EXPORT void registerCompCommands(ControlRegistry& registry);
-//! comp.select / comp.rebuild / comp.get_state - the composite half, in its own
-//! translation unit (the clip, warp and rack groups' split).
-LMMS_EXPORT void registerCompEditCommands(ControlRegistry& registry);
-
-/*! wasm.list / get_state / process - what the sandbox can host, what it is
- *  hosting and what a block through it does - plus the mutating half.
- *
- *  GUARDED BY #ifdef LMMS_HAVE_WASM, in both the declaration and the definition,
- *  because the sandbox IS a compile-time feature: the wasmtime C API is an
- *  optional dependency (cmake/modules/FindWasmtime.cmake), and WANT_WASM
- *  degrades to OFF without it (CMakeLists.txt:957-963). A build without wasmtime
- *  compiles src/wasm out entirely, so the registry must not carry ids whose
- *  handler could not exist - the rule the session.* and telemetry.* groups
- *  follow. src/core/ControlRegistry.cpp guards its call with the same #ifdef and
- *  the A16 table guards its six rows with it too, so all three stay consistent in
- *  both directions. */
-#ifdef LMMS_HAVE_WASM
-LMMS_EXPORT void registerWasmCommands(ControlRegistry& registry);
-//! wasm.load / unload / set_param - the mutating half, in its own translation
-//! unit (the automation, warp, rack and comp groups' read/edit split). Called by
-//! registerWasmCommands; the registry has exactly one wasm.* registration point.
-LMMS_EXPORT void registerWasmEditCommands(ControlRegistry& registry);
-#endif
-
-//! The browser.* group (W8 tag/metadata search plus the waveform peak cache):
-//! browser.roots, browser.query, browser.tags and browser.peaks. The engine half
-//! is include/BrowserCatalog.h (the roots the browser tabs read, the metadata an
-//! audio file can be probed for, the persisted tag store) and
-//! include/BrowserPeakCache.h; this group is the ONLY way to reach any of it -
-//! there is no UI for tags, no UI for a query and no UI for the peak cache.
-LMMS_EXPORT void registerBrowserCommands(ControlRegistry& registry);
-//! browser.tag.add / browser.tag.remove - the mutating half, in its own
-//! translation unit (the automation and warp groups' read/edit split). Both
-//! record a snapshot-class transaction whose inverse is the paired command.
-LMMS_EXPORT void registerBrowserTagCommands(ControlRegistry& registry);
-
-/*! The modulation layer (#602): modulator.get_state / create / remove /
- *  rate_set - the layer itself and a modulator's own LFO. The engine half is
- *  include/ModulationLayer.h (a song-level, timeline-locked LFO per modulator,
- *  driving a set of parameters by a relative amount); docs/MODULATION.md holds
- *  the design decisions and the honest limits. Split from the route half for
- *  the same reason the automation, warp, rack and comp groups are. */
-LMMS_EXPORT void registerModulatorCommands(ControlRegistry& registry);
-//! modulator.target_set / depth_set / target_remove - the route half, in its
-//! own translation unit: which parameters a modulator drives, and by how much.
-LMMS_EXPORT void registerModulatorRouteCommands(ControlRegistry& registry);
-
-/*! note.expression_set / get / clear - #602's per-note half, and the control
- *  surface #601's per-note MPE expression never had. These commands drive the
- *  Note fields and the optional mpepitch/mpepressure/mpetimbre attributes #601
- *  already stores (docs/MPE.md); they are NOT a second expression store. */
-LMMS_EXPORT void registerNoteExpressionCommands(ControlRegistry& registry);
-/*! link.get_state / set_enabled / set_quantum / set_start_stop_sync /
- *  set_session_tempo - session tempo and beat-phase sync (D11 "Ableton Link
- *  sync"). The engine half is include/LinkSync.h and
- *  include/LinkPeerTransport.h (the seam a real Ableton Link transport would
- *  implement); this group is what makes any of it drivable, and it is the ONLY
- *  way to reach it - there is no interface for session sync in this release.
- *  The model is this project's own ("zene-link-style": Link's semantics, not
- *  Link's library, which is not vendored - the licence finding that vendoring
- *  it is permitted is docs/LINK-SYNC.md section 1). */
-LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
+//! The command-group registration points the 0.3.0-alpha wave's last merges
+//! appended - comp.*, the guard-compiled wasm.*, browser.*, modulator.* and
+//! note.expression_*, and link.* - are declared in
+//! include/ControlRegistryGroups.h, which this header includes. Same namespace
+//! and the same signatures: a caller includes this header exactly as before.
+//!
+//! They are split out because this header is new-ish product surface that
+//! Gate 7's 500-line ratchet measures, and the thirty group merges had pushed
+//! it to 506 lines. The seam is the block those merges appended, taken
+//! verbatim - no declaration was rewritten, renamed or moved by area.
 
 //! Shared helpers for the command groups.
 namespace control

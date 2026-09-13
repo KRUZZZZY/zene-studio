@@ -113,6 +113,7 @@ include/ControlLayout.h
 include/ControlModulationSupport.h
 include/ControlRackSupport.h
 include/ControlRegistry.h
+include/ControlRegistryGroups.h
 include/ControlReversibility.h
 include/ControlServer.h
 include/ControlUndoCoalescing.h
