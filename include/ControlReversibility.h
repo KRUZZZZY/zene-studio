@@ -86,16 +86,21 @@ struct ReversibilityRow
 	bool reversible;      //!< the class's default verdict for a call that succeeds
 };
 
-/*! The rows of THE classification table. It is TWO literal blocks -
- *  ControlReversibilityTable.cpp holds the rows that have an inverse
- *  (true_inverse and snapshot) and ControlReversibilityTablePassive.cpp the rows
- *  that have none (irreversible and not_mutating) - and the two are assembled
- *  into the one table by ReversibilityTable's constructor, so the contract is
- *  still read, and tested, as a whole. The split exists because this fork's
- *  file-length ratchet measures a file as a unit.
+/*! The rows of THE classification table. It is THREE literal blocks, in the
+ *  order ReversibilityTable's constructor inserts them:
+ *  ControlReversibilityTableTrueInverse.cpp holds the true_inverse rows,
+ *  ControlReversibilityTable.cpp the snapshot rows together with the rows for
+ *  the commands that write nothing, and ControlReversibilityTablePassive.cpp
+ *  the irreversible and the remaining not_mutating rows. reversibilityRowTable()
+ *  hands out the first two blocks joined into one contiguous array (the rows
+ *  that have an inverse); the blocks are assembled into the one table by the
+ *  constructor, so the contract is still read, and tested, as a whole. The split
+ *  exists because this fork's file-length ratchet measures a file as a unit.
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityRowTable(int* rowCount);
-//! The second block: the irreversible and the not_mutating rows.
+//! The first block: the true_inverse rows.
+LMMS_EXPORT const ReversibilityRow* reversibilityTrueInverseRowTable(int* rowCount);
+//! The last block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 
 //! One row of the contract table: what the command is, why, and what the
