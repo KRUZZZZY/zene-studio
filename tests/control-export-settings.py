@@ -10,23 +10,53 @@ Every call is bounded; a hang is a failure.
 """
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 BINARY = sys.argv[1]
 PROJECT = sys.argv[2]
-SOCKET = "/tmp/w7-export-socket.sock"
-LOG = "/tmp/w7-export-transcript.log"
+# A PRIVATE run directory per invocation, not two fixed /tmp names. This file is
+# a registered ctest (ControlExportSettings) since the 2026-09-13 coverage
+# audit, and two ctest runs on one box - this lane's build beside a sibling
+# lane's - must not share a socket path or clobber each other's log; the rule
+# WAVE-1-BRIEFS.md records after a shared /tmp name cost a lane a false gate
+# result. Every assertion below is unchanged.
+RUN_DIR = tempfile.mkdtemp(prefix="zctl-export-")
+SOCKET = os.path.join(RUN_DIR, "zene.sock")
+LOG = os.path.join(RUN_DIR, "app.log")
+WORKSPACE = os.path.join(RUN_DIR, "workspace")
+CONFIG = os.path.join(RUN_DIR, "lmmsrc.xml")
+os.makedirs(WORKSPACE, exist_ok=True)
 
-if os.path.exists(SOCKET):
-    os.unlink(SOCKET)
+# The headless start recipe the other registered transcripts use
+# (tests/control_socket_harness.py): `audiodev` must be exactly
+# AudioDummy::name(), because on a machine with no sound card the engine
+# otherwise answers the startup with a modal "Audio device setup failed" dialog
+# and never becomes ready - and a transcript that cannot reach the engine is a
+# failure of the test, not of the product.
+with open(CONFIG, "w") as handle:
+    handle.write(
+        '<?xml version="1.0"?>\n'
+        '<!DOCTYPE lmms-config-file>\n'
+        '<lmmsconfig version="0.2.0-alpha" configversion="3">\n'
+        '  <app configured="1"/>\n'
+        '  <audioengine audiodev="Dummy (no sound output)"/>\n'
+        '  <paths workingdir="%s"/>\n'
+        '</lmmsconfig>\n' % WORKSPACE)
 
 env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+env["HOME"] = RUN_DIR
+env["XDG_CONFIG_HOME"] = os.path.join(RUN_DIR, "config")
+env["XDG_DATA_HOME"] = os.path.join(RUN_DIR, "data")
+os.makedirs(env["XDG_CONFIG_HOME"], exist_ok=True)
+os.makedirs(env["XDG_DATA_HOME"], exist_ok=True)
 proc = subprocess.Popen(
-    [BINARY, PROJECT, "--control-socket", SOCKET],
-    stdout=open(LOG, "w"), stderr=subprocess.STDOUT, env=env)
+    [BINARY, PROJECT, "--config", CONFIG, "--control-socket", SOCKET],
+    stdout=open(LOG, "w"), stderr=subprocess.STDOUT, env=env, cwd=RUN_DIR)
 
 deadline = time.time() + 90
 while not os.path.exists(SOCKET) and time.time() < deadline:
@@ -38,6 +68,9 @@ while not os.path.exists(SOCKET) and time.time() < deadline:
 if not os.path.exists(SOCKET):
     proc.kill()
     print("FAIL: the socket never appeared")
+    print("app log tail:")
+    print(open(LOG).read()[-2000:])
+    print("the run directory is kept for inspection: %s" % RUN_DIR)
     sys.exit(1)
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -149,6 +182,9 @@ if failures:
     print("FAIL:")
     for f in failures:
         print("  -", f)
+    # Kept on failure: the app log in it is the evidence of what happened.
+    print("the run directory is kept for inspection: %s" % RUN_DIR)
     sys.exit(1)
 print("PASS: export.* is registered, answers, reverses through control.undo, and refuses typed")
+shutil.rmtree(RUN_DIR, ignore_errors=True)
 sys.exit(0)
