@@ -135,6 +135,21 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Crash evidence (a signal death must name its cause)
+        # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
+        # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
+        # 34731085749 showed QtTest printing an EMPTY stack ("dumping stack" then "End of stack trace",
+        # nothing between), which names the symptom and not the cause. This collects whatever the
+        # product wrote, wherever it wrote it. Harmless when a job has no test step.
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== zene crash reports (a signal death writes one) ==="
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
         # out. The list of documented features has ONE home --
@@ -266,6 +281,21 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Crash evidence (a signal death must name its cause)
+        # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
+        # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
+        # 34731085749 showed QtTest printing an EMPTY stack ("dumping stack" then "End of stack trace",
+        # nothing between), which names the symptom and not the cause. This collects whatever the
+        # product wrote, wherever it wrote it. Harmless when a job has no test step.
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== zene crash reports (a signal death writes one) ==="
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
         # out. The list of documented features has ONE home --
@@ -408,6 +438,21 @@ jobs:
             ctest --rerun-failed -V
             exit 1
           }
+      - name: Crash evidence (a signal death must name its cause)
+        # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
+        # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
+        # 34731085749 showed QtTest printing an EMPTY stack ("dumping stack" then "End of stack trace",
+        # nothing between), which names the symptom and not the cause. This collects whatever the
+        # product wrote, wherever it wrote it. Harmless when a job has no test step.
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== zene crash reports (a signal death writes one) ==="
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
         # out. The list of documented features has ONE home --
@@ -539,6 +584,21 @@ jobs:
             ${{ steps.cache-deps.outputs.cache-hit == 'true' && 'NO' || 'YES' }}
       - name: Build
         run: cmake --build build
+      - name: Crash evidence (a signal death must name its cause)
+        # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
+        # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
+        # 34731085749 showed QtTest printing an EMPTY stack ("dumping stack" then "End of stack trace",
+        # nothing between), which names the symptom and not the cause. This collects whatever the
+        # product wrote, wherever it wrote it. Harmless when a job has no test step.
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== zene crash reports (a signal death writes one) ==="
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
         # out. The list of documented features has ONE home --
@@ -709,6 +769,21 @@ jobs:
           # The step runs on failure() and ctest may not have written the log, so a
           # missing file must not fail the job (that would hide the real failure).
           if-no-files-found: warn
+      - name: Crash evidence (a signal death must name its cause)
+        # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
+        # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
+        # 34731085749 showed QtTest printing an EMPTY stack ("dumping stack" then "End of stack trace",
+        # nothing between), which names the symptom and not the cause. This collects whatever the
+        # product wrote, wherever it wrote it. Harmless when a job has no test step.
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== zene crash reports (a signal death writes one) ==="
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
         # out. The list of documented features has ONE home --
@@ -826,6 +901,21 @@ jobs:
           cmake -B build $CMAKE_OPTS
       - name: Build
         run: cmake --build build
+      - name: Crash evidence (a signal death must name its cause)
+        # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
+        # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
+        # 34731085749 showed QtTest printing an EMPTY stack ("dumping stack" then "End of stack trace",
+        # nothing between), which names the symptom and not the cause. This collects whatever the
+        # product wrote, wherever it wrote it. Harmless when a job has no test step.
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== zene crash reports (a signal death writes one) ==="
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
         # out. The list of documented features has ONE home --
