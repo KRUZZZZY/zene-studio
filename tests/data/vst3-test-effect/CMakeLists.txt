@@ -44,23 +44,34 @@
 #            the executable its Info.plist NAMES under Contents/MacOS - the layout
 #            SMTG_Bundle.cmake's own `BUNDLE TRUE` + `BUNDLE_EXTENSION vst3`
 #            produce for the SDK's samples.
-#            Two macOS failures in this tree, in order: laying the fixture out in
-#            the -linux location made both macOS jobs report "The bundle ...
-#            couldn't be loaded because its executable couldn't be located"; the
-#            layout was fixed and BOTH jobs then reported "Bundle does not export
-#            the required 'bundleEntry' function" (jobs 103724228405 and
-#            103724228370, run 34757467632) - because linuxmain.cpp was still the
-#            only entry point compiled, so the symbol CoreFoundation was asked for
-#            was never there. The symbol is the second half of the contract.
+#            The layout AND the symbol are the contract, and the two failures are
+#            distinguishable: a wrong layout fails inside CFBundle, while a
+#            present-but-symbol-less Mach-O gets past the load and then reports
+#               FAIL! : Vst3HostTest::initTestCase() ... returned FALSE.
+#                 (Bundle does not export the required 'bundleEntry' function)
+#            That is what both macOS jobs reported for Vst3HostTest and
+#            Vst3EffectIntegrationTest (jobs 103724228405 macos-arm64 and
+#            103724228370 macos-x86_64, run 34757467632): the layout was already
+#            Contents/MacOS + Info.plist, so CFBundleCreate and
+#            CFBundleLoadExecutableAndReturnError both succeeded - and the build
+#            log for 103724228405 shows the entry point compiled was still
+#            public.sdk/source/main/linuxmain.cpp.o, so the symbol the loader
+#            asks for next was never in the Mach-O. The symbol is the second
+#            half of the contract.
 #   Windows  <name>.vst3/Contents/<arch>-win/<name>.vst3  (a PE DLL with a .vst3
 #            extension; no Info.plist)
 #            entry point: public.sdk/source/main/dllmain.cpp - provides DllMain
 #            and exports InitDll/ExitDll. The arch directory and the file name
-#            are the loader's own: module_win32.cpp:150-167 appends
-#            "Contents"/<architectureString>/<bundle directory name>, where
-#            architectureString is one of x86_64-win, arm64-win, arm64ec-win,
-#            arm64x-win or x86-win (:85-110). Laying this fixture out in the
-#            -linux location on Windows is why the msvc-x64 job reported
+#            are the loader's own: module_win32.cpp:152-166 appends
+#            "Contents"/<architectureString>/<bundle directory name> - the last
+#            component is p.filename() of the bundle path, so the file name is
+#            the bundle directory's own. architectureString is a compile-time
+#            constant of the HOST (:89-107): "x86_64-win" on every 64-bit x86
+#            Windows, "arm64-win" on a native ARM64 build and "arm64ec-win" on
+#            ARM64EC (which retries "arm64x-win" and then "x86_64-win", :89-98),
+#            and the 32-bit "arm-win"/"x86-win" otherwise. Laying this fixture
+#            out in the -linux location on Windows is why the msvc-x64 job
+#            reported
 #            "LoadLibraryW failed for path ...\vst3-test-effect.vst3\Contents\
 #            x86_64-win\vst3-test-effect.vst3: The specified module could not be
 #            found" for Vst3HostTest and Vst3EffectIntegrationTest (job
@@ -89,11 +100,14 @@ if(APPLE)
 		"${CMAKE_CURRENT_BINARY_DIR}/bundle-Info.plist" @ONLY)
 elseif(WIN32)
 	# The arch directory the SDK's Windows loader looks in, spelled the way IT
-	# spells it (module_win32.cpp:85-110): a name of our own invention here is a
+	# spells it (module_win32.cpp:89-107): a name of our own invention here is a
 	# bundle the loader never opens, which is exactly what the msvc-x64 job
-	# reported. CMAKE_SYSTEM_PROCESSOR is AMD64 on MSVC x64, ARM64 on MSVC/LLVM
-	# arm64; `uname -m` (Git Bash is on the runner's PATH) answers x86_64 on
-	# Windows too. Anything else is reported rather than guessed.
+	# reported. `uname -m` answers x86_64 on the Windows runners (Git Bash is on
+	# PATH); where it is absent or silent, CMAKE_SYSTEM_PROCESSOR is the
+	# generator's own architecture word - AMD64 on MSVC x64, ARM64 on MSVC/LLVM
+	# arm64 - and the fallback above takes it. Anything outside this mapping is
+	# reported rather than guessed, and the guessed name is the one the loader
+	# will not open:
 	if(LMMS_VST3_TEST_MACHINE MATCHES "^(x86_64|X86_64|amd64|AMD64)$")
 		set(LMMS_VST3_TEST_WIN_ARCH "x86_64-win")
 	elseif(LMMS_VST3_TEST_MACHINE MATCHES "^(arm64|ARM64|aarch64|AARCH64)$")
@@ -126,6 +140,36 @@ else()
 	set(LMMS_VST3_TEST_EFFECT_BUNDLE_FILE "${LMMS_VST3_TEST_EFFECT_NAME}.so")
 	set(LMMS_VST3_TEST_EFFECT_ENTRY_MAIN
 		"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/linuxmain.cpp")
+endif()
+
+# --- the contract, asserted where it can be asserted ------------------------
+# Neither the macOS nor the Windows half of this fixture can be exercised on a
+# Linux box, so the two parts of the loader's contract that are checkable at
+# CONFIGURE time are checked here: the entry-point translation unit has to be in
+# the pinned checkout, and on Windows the bundle file name has to be the bundle
+# directory's own name (module_win32.cpp:157-159 derives it that way). A wrong
+# path here is otherwise a module that builds, lays out, and then fails on a
+# platform only CI runs - see the Windows note above.
+if(NOT EXISTS "${LMMS_VST3_TEST_EFFECT_ENTRY_MAIN}")
+	message(FATAL_ERROR
+		"The VST3 test fixture needs the SDK's ${CMAKE_SYSTEM_NAME} entry point, "
+		"and ${LMMS_VST3_TEST_EFFECT_ENTRY_MAIN} is not in the pinned checkout at "
+		"LMMS_VST3_SDK_PATH (${LMMS_VST3_SDK_PATH}). Each loader resolves a "
+		"different symbol - ModuleEntry (Linux), bundleEntry/bundleExit (macOS), "
+		"GetPluginFactory/InitDll (Windows) - and the SDK selects the same three "
+		"files by platform in cmake/modules/SMTG_AddSMTGLibrary.cmake:186-206.")
+endif()
+
+if(WIN32)
+	get_filename_component(LMMS_VST3_TEST_EFFECT_BUNDLE_STEM
+		"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}" NAME)
+	if(NOT LMMS_VST3_TEST_EFFECT_BUNDLE_FILE STREQUAL LMMS_VST3_TEST_EFFECT_BUNDLE_STEM)
+		message(FATAL_ERROR
+			"The Windows VST3 loader opens <bundle>/Contents/<arch>/<bundle "
+			"directory name> (module_win32.cpp:152-166), so the fixture's file "
+			"name (${LMMS_VST3_TEST_EFFECT_BUNDLE_FILE}) has to be the bundle "
+			"directory's own (${LMMS_VST3_TEST_EFFECT_BUNDLE_STEM}).")
+	endif()
 endif()
 
 set(LMMS_VST3_TEST_EFFECT_BUNDLE_BIN

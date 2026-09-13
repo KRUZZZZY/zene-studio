@@ -386,6 +386,11 @@ private slots:
 			// "The cache stopped the second scan repeating the work" is the part
 			// of this half that holds whoever loaded the module: the rewritten
 			// cache answered for the file, so no candidate was opened again.
+			// That the answer is durable for a file that FAILS to load is the
+			// code's own rule, not a guess: the failed load is remembered as a
+			// LoadFailed record keyed by the same fingerprint
+			// (PluginFactory.cpp:556-561) and a matching record is planned as
+			// Skip, which leaves scanned alone (PluginFactory.cpp:223-239).
 			QCOMPARE(second.scanStats().scanned, 0);
 			// Whether that answer was a plugin (the module loaded) or a
 			// remembered load failure cannot be observed on this host, because

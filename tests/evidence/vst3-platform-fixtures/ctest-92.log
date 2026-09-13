@@ -1,0 +1,189 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-fix-vst3plat/build/tests
+      Start  1: ArrayVectorTest
+ 1/92 Test  #1: ArrayVectorTest ...................   Passed    0.04 sec
+      Start  2: AudioBufferTest
+ 2/92 Test  #2: AudioBufferTest ...................   Passed    0.03 sec
+      Start  3: AudioBusHandleTest
+ 3/92 Test  #3: AudioBusHandleTest ................   Passed    1.35 sec
+      Start  4: AudioBusTest
+ 4/92 Test  #4: AudioBusTest ......................   Passed    1.44 sec
+      Start  5: AudioEngineTeardownTest
+ 5/92 Test  #5: AudioEngineTeardownTest ...........   Passed    2.93 sec
+      Start  6: AudioPortsModelTest
+ 6/92 Test  #6: AudioPortsModelTest ...............   Passed    1.35 sec
+      Start  7: AudioPortsTest
+ 7/92 Test  #7: AudioPortsTest ....................   Passed    1.43 sec
+      Start  8: AutomatableModelTest
+ 8/92 Test  #8: AutomatableModelTest ..............   Passed    1.44 sec
+      Start  9: AutomationModesTest
+ 9/92 Test  #9: AutomationModesTest ...............   Passed    1.42 sec
+      Start 10: ClipSerialisationTest
+10/92 Test #10: ClipSerialisationTest .............   Passed    1.43 sec
+      Start 11: ClipWarpPersistenceTest
+11/92 Test #11: ClipWarpPersistenceTest ...........   Passed    1.72 sec
+      Start 12: ConfigMigrationTest
+12/92 Test #12: ConfigMigrationTest ...............   Passed    0.05 sec
+      Start 13: ControlAutomationScriptTest
+13/92 Test #13: ControlAutomationScriptTest .......   Passed    1.41 sec
+      Start 14: ControlDeviceCatalogueTest
+14/92 Test #14: ControlDeviceCatalogueTest ........   Passed    1.55 sec
+      Start 15: ControlEditCommandsTest
+15/92 Test #15: ControlEditCommandsTest ...........   Passed    1.47 sec
+      Start 16: ControlRegistryTest
+16/92 Test #16: ControlRegistryTest ...............   Passed    1.34 sec
+      Start 17: CrashReporterTest
+17/92 Test #17: CrashReporterTest .................   Passed    0.65 sec
+      Start 18: DataFileFormatTest
+18/92 Test #18: DataFileFormatTest ................   Passed    0.04 sec
+      Start 19: DataFileSaveIntegrityTest
+19/92 Test #19: DataFileSaveIntegrityTest .........   Passed    0.05 sec
+      Start 20: LoudnessReportTest
+20/92 Test #20: LoudnessReportTest ................   Passed    1.38 sec
+      Start 21: LufsMeterTest
+21/92 Test #21: LufsMeterTest .....................   Passed    2.00 sec
+      Start 22: MasteringTest
+22/92 Test #22: MasteringTest .....................   Passed    8.66 sec
+      Start 23: MathTest
+23/92 Test #23: MathTest ..........................   Passed    0.03 sec
+      Start 24: MidiLearnTest
+24/92 Test #24: MidiLearnTest .....................   Passed    1.67 sec
+      Start 25: MidiLearnThreadTest
+25/92 Test #25: MidiLearnThreadTest ...............   Passed    1.46 sec
+      Start 26: MidiProbabilityPersistenceTest
+26/92 Test #26: MidiProbabilityPersistenceTest ....   Passed    0.04 sec
+      Start 27: MixerAbRegressionTest
+27/92 Test #27: MixerAbRegressionTest .............   Passed    1.40 sec
+      Start 28: MixerConcurrencyTest
+28/92 Test #28: MixerConcurrencyTest ..............   Passed    4.08 sec
+      Start 29: MixerRoutingBackwardCompatTest
+29/92 Test #29: MixerRoutingBackwardCompatTest ....   Passed    1.44 sec
+      Start 30: MpeExpressionTest
+30/92 Test #30: MpeExpressionTest .................   Passed    0.04 sec
+      Start 31: MpeInputPathTest
+31/92 Test #31: MpeInputPathTest ..................   Passed    1.42 sec
+      Start 32: MpeNoteStorageTest
+32/92 Test #32: MpeNoteStorageTest ................   Passed    0.03 sec
+      Start 33: MultiTrackRecorderTest
+33/92 Test #33: MultiTrackRecorderTest ............   Passed    0.04 sec
+      Start 34: NoteRandomTest
+34/92 Test #34: NoteRandomTest ....................   Passed    0.04 sec
+      Start 35: NoteTransformTest
+35/92 Test #35: NoteTransformTest .................   Passed    0.04 sec
+      Start 36: PhaseDSidechainTest
+36/92 Test #36: PhaseDSidechainTest ...............   Passed    1.49 sec
+      Start 37: PhaseFChannelScaleTest
+37/92 Test #37: PhaseFChannelScaleTest ............   Passed    1.62 sec
+      Start 38: PluginLogoResourceTest
+38/92 Test #38: PluginLogoResourceTest ............   Passed    0.06 sec
+      Start 39: PluginAudioPortsTest
+39/92 Test #39: PluginAudioPortsTest ..............   Passed    1.50 sec
+      Start 40: PluginScanCacheTest
+40/92 Test #40: PluginScanCacheTest ...............   Passed    0.10 sec
+      Start 41: ProjectOpenIntegrityTest
+41/92 Test #41: ProjectOpenIntegrityTest ..........   Passed    1.43 sec
+      Start 42: ProjectRecoveryTest
+42/92 Test #42: ProjectRecoveryTest ...............   Passed    0.05 sec
+      Start 43: ProjectVersionTest
+43/92 Test #43: ProjectVersionTest ................   Passed    0.03 sec
+      Start 44: RackTest
+44/92 Test #44: RackTest ..........................   Passed    1.40 sec
+      Start 45: RecordClipTest
+45/92 Test #45: RecordClipTest ....................   Passed    0.05 sec
+      Start 46: RecordRingBufferTest
+46/92 Test #46: RecordRingBufferTest ..............   Passed    0.04 sec
+      Start 47: RecordingRealtimeTest
+47/92 Test #47: RecordingRealtimeTest .............   Passed    2.13 sec
+      Start 48: RelativePathsTest
+48/92 Test #48: RelativePathsTest .................   Passed    0.05 sec
+      Start 49: ReversibilityContractTest
+49/92 Test #49: ReversibilityContractTest .........   Passed    1.39 sec
+      Start 50: ReversibilityUndoTest
+50/92 Test #50: ReversibilityUndoTest .............   Passed    1.78 sec
+      Start 51: RemotePluginAudioPortsTest
+51/92 Test #51: RemotePluginAudioPortsTest ........   Passed    2.06 sec
+      Start 52: RemotePluginClientE2ETest
+52/92 Test #52: RemotePluginClientE2ETest .........   Passed    1.61 sec
+      Start 53: RenderJobQueueTest
+53/92 Test #53: RenderJobQueueTest ................   Passed    0.51 sec
+      Start 54: RoutingGraphLiveTest
+54/92 Test #54: RoutingGraphLiveTest ..............   Passed    1.54 sec
+      Start 55: RoutingGraphTest
+55/92 Test #55: RoutingGraphTest ..................   Passed    0.03 sec
+      Start 56: PdcMixerTest
+56/92 Test #56: PdcMixerTest ......................   Passed    1.48 sec
+      Start 57: VcaGroupTest
+57/92 Test #57: VcaGroupTest ......................   Passed    1.53 sec
+      Start 58: ScriptBindingsTest
+58/92 Test #58: ScriptBindingsTest ................   Passed    1.42 sec
+      Start 59: ScriptEngineTest
+59/92 Test #59: ScriptEngineTest ..................   Passed    1.65 sec
+      Start 60: ScriptStabilisationTest
+60/92 Test #60: ScriptStabilisationTest ...........   Passed    1.43 sec
+      Start 61: SlideNotesTest
+61/92 Test #61: SlideNotesTest ....................   Passed    0.04 sec
+      Start 62: StableTrackIdsTest
+62/92 Test #62: StableTrackIdsTest ................   Passed    1.63 sec
+      Start 63: StemExportTest
+63/92 Test #63: StemExportTest ....................   Passed    2.21 sec
+      Start 64: TelemetryTest
+64/92 Test #64: TelemetryTest .....................   Passed    0.03 sec
+      Start 65: TimelineTest
+65/92 Test #65: TimelineTest ......................   Passed    1.44 sec
+      Start 66: TwoTrackRecordingHarness
+66/92 Test #66: TwoTrackRecordingHarness ..........   Passed    2.05 sec
+      Start 67: WarpMarkersTest
+67/92 Test #67: WarpMarkersTest ...................   Passed    0.03 sec
+      Start 68: MidiLearnGuiTest
+68/92 Test #68: MidiLearnGuiTest ..................   Passed    1.43 sec
+      Start 69: AutomationTrackTest
+69/92 Test #69: AutomationTrackTest ...............   Passed    1.37 sec
+      Start 70: SampleClipWarpTest
+70/92 Test #70: SampleClipWarpTest ................   Passed    1.80 sec
+      Start 71: SampleClipWindowTest
+71/92 Test #71: SampleClipWindowTest ..............   Passed    1.83 sec
+      Start 72: PluginPortsMigrationTest
+72/92 Test #72: PluginPortsMigrationTest ..........   Passed    4.52 sec
+      Start 73: ClapBusMapTest
+73/92 Test #73: ClapBusMapTest ....................   Passed    0.01 sec
+      Start 74: ClapHostTest
+74/92 Test #74: ClapHostTest ......................   Passed    0.01 sec
+      Start 75: ClapEffectIntegrationTest
+75/92 Test #75: ClapEffectIntegrationTest .........   Passed    1.47 sec
+      Start 76: Vst3BusMapTest
+76/92 Test #76: Vst3BusMapTest ....................   Passed    0.01 sec
+      Start 77: Vst3HostTest
+77/92 Test #77: Vst3HostTest ......................   Passed    0.01 sec
+      Start 78: Vst3EffectIntegrationTest
+78/92 Test #78: Vst3EffectIntegrationTest .........   Passed    1.45 sec
+      Start 79: ZynSeparateProcessTest
+79/92 Test #79: ZynSeparateProcessTest ............   Passed    2.16 sec
+      Start 80: AudioPluginTest
+80/92 Test #80: AudioPluginTest ...................   Passed    1.44 sec
+      Start 81: ControlSocketIntegration
+81/92 Test #81: ControlSocketIntegration ..........   Passed    5.15 sec
+      Start 82: ControlShutdown
+82/92 Test #82: ControlShutdown ...................   Passed    4.13 sec
+      Start 83: ControlReadiness
+83/92 Test #83: ControlReadiness ..................   Passed    2.14 sec
+      Start 84: ControlNoAudioDevice
+84/92 Test #84: ControlNoAudioDevice ..............   Passed    2.05 sec
+      Start 85: ControlNegativeControl
+85/92 Test #85: ControlNegativeControl ............   Passed   12.27 sec
+      Start 86: agent_surface
+86/92 Test #86: agent_surface .....................   Passed    3.24 sec
+      Start 87: ControlHeadlessProjectOpen
+87/92 Test #87: ControlHeadlessProjectOpen ........   Passed    1.91 sec
+      Start 88: ControlHeadlessWorkingDirectory
+88/92 Test #88: ControlHeadlessWorkingDirectory ...   Passed    1.88 sec
+      Start 89: ControlHeadlessNoAudioDevice
+89/92 Test #89: ControlHeadlessNoAudioDevice ......   Passed    3.86 sec
+      Start 90: ControlSocketPathSafety
+90/92 Test #90: ControlSocketPathSafety ...........   Passed    9.33 sec
+      Start 91: ControlAbsentSocket
+91/92 Test #91: ControlAbsentSocket ...............   Passed   10.14 sec
+      Start 92: RenderSoftwareTag
+92/92 Test #92: RenderSoftwareTag .................   Passed    0.78 sec
+
+100% tests passed, 0 tests failed out of 92
+
+Total Test time (real) = 153.14 sec

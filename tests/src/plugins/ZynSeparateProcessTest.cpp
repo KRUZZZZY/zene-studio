@@ -58,6 +58,11 @@
  *     therefore tears down only what the test actually started (Engine::destroy()
  *     on an engine that was never initialised dereferences a null
  *     ProjectJournal - the msvc-x64 job segfaulted exactly there after the skip).
+ *     Nothing here is observable on Windows, and it is not a subset either: every
+ *     case below reaches the instrument through the module's own lmms_plugin_main
+ *     (initTestCase() resolves it after QLibrary::load, and instantiate() calls
+ *     it), so with no loadable module there is no subject to assert about. A
+ *     stated skip is the whole of what this platform can honestly produce.
  *   - Where the host can read no process table at all, the separate-PID half of
  *     the toggle is UNEXERCISED and the three cases that read one report
  *     *Skipped*, naming that: their hosting-state assertions still ran, and the
