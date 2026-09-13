@@ -196,6 +196,14 @@ both).
   (Defender scanning `D:\a\...`). Ordering the link bursts removes the in-build race; it does not
   by itself prove the holder was a sibling `z-applocal`.
 
+## Later cycles
+
+Cycle 8 (`msvc-x64` job `103706773250`, run `34750729517`) did **not** repeat this failure:
+`[851/2236] Linking CXX shared module tests\partc_ref_bassbooster.dll` succeeded there, no "another
+process" line appears in that job's log, and its only FAILED edge is a compile error in a different
+target (`error C2491` at `plugins\Vst3Effect\Vst3Effect.cpp(45)`, diagnosed and patched separately in
+`docs/MSVC-VST3-TEST-DLLIMPORT.md`). The two are independent causes; neither masks the other.
+
 ## Reproducing the evidence
 
 ```sh
