@@ -164,7 +164,7 @@ QByteArray controlChainPresetDocument(const QString& name,
 	QDomElement root = doc.createElement(chainPresetRootName());
 	root.setAttribute(QStringLiteral("version"), 1);
 	root.setAttribute(QStringLiteral("name"), name);
-	root.setAttribute(QStringLiteral("devices"), devices.size());
+	root.setAttribute(QStringLiteral("devices"), static_cast<int>(devices.size()));
 	doc.appendChild(root);
 
 	for (const ControlChainPresetDevice& device : devices)

@@ -182,7 +182,7 @@ QJsonObject storeWriteTransaction(const QJsonObject& snapshot, bool existed, con
 					"this revision")}},
 			true,
 			QStringLiteral("action checkpoint: the recorded step writes the revision this "
-				"command replaced (before.previous_sha256) back to the preset\'s own path, so "
+				"command replaced (before.previous_sha256) back to the preset's own path, so "
 				"one control.undo restores the store exactly"));
 	}
 	return transactionPayload(snapshot, QStringLiteral("chain.remove"),
