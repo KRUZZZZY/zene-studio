@@ -709,6 +709,14 @@ if(TARGET lmms_clap)
 	)
 	target_compile_definitions(ClapEffectIntegrationTest PRIVATE
 		LMMS_TESTING
+		# Same construct as the VST3 twin below - this target compiles the
+		# plug-in's own ClapEffect.cpp into the test executable, and that TU
+		# defines clapeffect_plugin_descriptor with PLUGIN_EXPORT, so the
+		# plug-in's generated plugin_export.h must not mark it dllimport. Latent
+		# on msvc-x64 today only because that job configures -DWANT_CLAP=OFF
+		# (build.yml); fixed here so the twins stay twins. The C2491 evidence is
+		# in the VST3 block.
+		PLUGIN_STATIC_DEFINE
 		PLUGIN_NAME=clapeffect
 		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>"
 	)
@@ -818,6 +826,19 @@ if(TARGET lmms_vst3_sdk)
 	)
 	target_compile_definitions(Vst3EffectIntegrationTest PRIVATE
 		LMMS_TESTING
+		# This target compiles the plug-in's own sources into the test executable,
+		# Vst3Effect.cpp included - and that TU *defines*
+		# vst3effect_plugin_descriptor with PLUGIN_EXPORT. For a consumer, the
+		# generated plugin_export.h of the vst3effect target resolves
+		# PLUGIN_EXPORT to __declspec(dllimport) (GENERATE_EXPORT_HEADER in
+		# cmake/modules/BuildPlugin.cmake), and defining a dllimport symbol is
+		# "error C2491: definition of dllimport data not allowed" - msvc-x64 job
+		# 103706773250 (run 34750729517) died at plugins\Vst3Effect\Vst3Effect.cpp(45)
+		# with exactly that. The static branch of that same header is the correct
+		# one here: this binary links the plug-in's code in, it does not import it.
+		# (LMMS_STATIC_DEFINE, which target_static_libraries already passes down to
+		# these targets, is the same idea for lmms' own export header.)
+		PLUGIN_STATIC_DEFINE
 		PLUGIN_NAME=vst3effect
 		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}"
 	)
