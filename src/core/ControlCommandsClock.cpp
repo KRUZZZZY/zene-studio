@@ -124,6 +124,24 @@ ControlResult masterSet(const QJsonObject& args)
 	return ControlResult::success(withTransaction(masterState(*clock), transaction));
 }
 
+//! Put the follower's configuration back: the recorded inverse of
+//! clock.slave_set, and the ONE place that knows a follow flag needs the poll
+//! started with it.
+void restoreSlaveState(bool enabled, bool follow, const QString& source, double bound)
+{
+	MidiClock* clock = MidiClock::instance();
+	clock->setSlaveDriftBoundMs(bound);
+	clock->setSlaveSourcePort(source);
+	clock->setSlaveEnabled(enabled);
+	clock->setSlaveFollowTempo(follow);
+	if (enabled && follow)
+	{
+		clock->startFollowTimer();
+		return;
+	}
+	clock->stopFollowTimer();
+}
+
 //! clock.slave_set: enable or disable following, choose whether the measured
 //! tempo is written to the Song, name the source port and set the drift bound.
 ControlResult slaveSet(const QJsonObject& args)
@@ -142,35 +160,18 @@ ControlResult slaveSet(const QJsonObject& args)
 	const QString wasSource = clock->slaveSourcePort();
 	const double wasBound = clock->slaveDriftBoundMs();
 
-	clock->setSlaveDriftBoundMs(bound);
-	if (!source.isEmpty()) { clock->setSlaveSourcePort(source); }
-	clock->setSlaveEnabled(enabled);
-	clock->setSlaveFollowTempo(enabled && follow);
-	if (enabled && follow) { clock->startFollowTimer(); }
-	else { clock->stopFollowTimer(); }
+	const QString wantedSource = source.isEmpty() ? wasSource : source;
+	restoreSlaveState(enabled, enabled && follow, wantedSource, bound);
 
-	const bool recordedEnabled = enabled;
-	const bool recordedFollow = enabled && follow;
-	const QString recordedSource = clock->slaveSourcePort();
-	const double recordedBound = bound;
+	// The recorded REDO re-applies exactly what this call applied, so a redo is
+	// faithful rather than a silently-dropped step.
+	const bool appliedFollow = clock->slaveFollowTempo();
 	control::addUndoStep(
 		[wasEnabled, wasFollow, wasSource, wasBound]() {
-			MidiClock* restore = MidiClock::instance();
-			restore->setSlaveDriftBoundMs(wasBound);
-			restore->setSlaveSourcePort(wasSource);
-			restore->setSlaveEnabled(wasEnabled);
-			restore->setSlaveFollowTempo(wasFollow);
-			if (wasEnabled && wasFollow) { restore->startFollowTimer(); }
-			else { restore->stopFollowTimer(); }
+			restoreSlaveState(wasEnabled, wasFollow, wasSource, wasBound);
 		},
-		[recordedEnabled, recordedFollow, recordedSource, recordedBound]() {
-			MidiClock* redo = MidiClock::instance();
-			redo->setSlaveDriftBoundMs(recordedBound);
-			redo->setSlaveSourcePort(recordedSource);
-			redo->setSlaveEnabled(recordedEnabled);
-			redo->setSlaveFollowTempo(recordedFollow);
-			if (recordedEnabled && recordedFollow) { redo->startFollowTimer(); }
-			else { redo->stopFollowTimer(); }
+		[enabled, appliedFollow, wantedSource, bound]() {
+			restoreSlaveState(enabled, appliedFollow, wantedSource, bound);
 		});
 
 	QJsonObject before;

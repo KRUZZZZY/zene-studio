@@ -915,6 +915,7 @@ src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
+src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
