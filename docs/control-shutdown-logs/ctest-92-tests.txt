@@ -1,0 +1,12 @@
+From build/tests, on the committed tree (Qt 6.4.2, RelWithDebInfo):
+
+  ctest --output-on-failure   [exit 0]
+
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-fix-shutdown/build/tests
+      Start  1: ArrayVectorTest
+...
+100% tests passed, 0 tests failed out of 92
+
+Total Test time (real) = 150.53 sec
+
+The unsliced log is in ctest-full.log.

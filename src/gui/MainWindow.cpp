@@ -231,6 +231,23 @@ MainWindow::MainWindow() :
 		// to save or it will run over recover.mmp if you hesitate at the
 		// recover messagebox for a minute. It is now started in main.
 		// See autoSaveTimerReset() in MainWindow.h
+
+		// ... and the recovery file must not SURVIVE a clean quit, whichever
+		// route the process leaves the event loop by. closeEvent does it for a
+		// window close, but a window close is not the only clean exit: Qt5's
+		// QCoreApplication::quit() is just exit(0) (Qt 5.15
+		// qcoreapplication.cpp), so the control-driven shutdown delivers no
+		// QCloseEvent at all and closeEvent - the only place this cleanup lived -
+		// never ran. Measured on CI: all three Qt5 jobs red ControlShutdown with
+		// "the autosave recovery file survived a clean quit", while a Qt6 box is
+		// green because Qt6's quit() sends a QEvent::Quit that makes
+		// QApplication::event() close every window. aboutToQuit is emitted by
+		// QCoreApplication::exec() itself (execCleanup), after the loop returns
+		// and before the deferred deletes that destroy the window, so it fires on
+		// both toolkits with the GUI still alive - and it does NOT fire on the
+		// last-resort shutdown guard, which leaves via std::_Exit: a forced exit
+		// is not a clean one and must keep the marker recoverable.
+		connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::sessionCleanup);
 	}
 
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),

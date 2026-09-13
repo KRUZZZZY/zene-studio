@@ -128,10 +128,15 @@ void ControlRegistry::scheduleQuit()
 	QCoreApplication* app = QCoreApplication::instance();
 	if (app == nullptr) { return; }
 
-	// The NORMAL application quit: QGuiApplication's termination closes the main
-	// window, MainWindow::closeEvent accepts (its prompt is answered from
-	// quitPromptAnswer(), not by a dialog), app->exec() returns and main()
-	// destroys the engine and unlinks the control socket. This is the whole fix
+	// The NORMAL application quit: QCoreApplication::quit(). What that does about
+	// the main window depends on the toolkit - Qt6 sends a QEvent::Quit, so
+	// QApplication::event() calls closeAllWindows() and MainWindow::closeEvent
+	// runs its prompt (answered from quitPromptAnswer(), not by a dialog); Qt5's
+	// quit() is only exit(0) (Qt 5.15 qcoreapplication.cpp), so the event loop
+	// returns with NO close event delivered and closeEvent never runs at all.
+	// Nothing a clean shutdown owes may therefore hang off a window close: the
+	// session cleanup is connected to QCoreApplication::aboutToQuit, which exec()
+	// emits on both toolkits (see MainWindow's constructor). This is the whole fix
 	// for the two #626 reproductions; both of their stacks are in the lane
 	// report.
 	QTimer::singleShot(0, app, &QCoreApplication::quit);

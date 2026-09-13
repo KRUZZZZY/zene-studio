@@ -1,0 +1,18 @@
+Readiness poll bounds: old poll vs new (control-shutdown.py),
+synthetic client, no binary involved. One ping bound = 0.4s, budget = 1.5s.
+The old poll is quoted from git HEAD:tests/control-shutdown.py.
+
+synthetic slow start, NEW poll                       returned
+    -> became ready after 0.60s, 4 ping(s)
+synthetic slow start, OLD poll                       RAISED after 0.20s: no response line inside 30.0s (socket timed out)
+real hang (alive, never answers), NEW poll           returned
+    -> spent the budget: 1.60s, 8 ping(s), and reported it
+real hang (alive, never answers), OLD poll           RAISED after 0.00s: no response line inside 30.0s (socket timed out)
+instance exits while polling, NEW poll               returned
+    -> problem recorded: the instance exited (code 3) while polling for readiness
+reply missing the audio report, NEW poll             returned
+    -> problem recorded: ping result has no audio report: {'pong': True, 'engine_ready': True, 'version': '0.2.1-alpha', 'proto': 1}
+
+'RAISED' is the pre-fix signature: ONE unanswered ping ended the poll, so the
+budget the file declares was never spent. The new poll spends it, and every
+failure is still bounded and still carries its reason.

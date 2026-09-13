@@ -1,0 +1,83 @@
+test #85 ControlShutdown, CI jobs on ec07dd3a0 (main / v0.2.1-alpha),
+read with: gh api repos/KRUZZZZY/zene-studio/actions/jobs/<id>/logs --allow-escape-sequences | sed -E 's/\x1b\[[0-9;]*[mGKHF]//g'
+
+==============================================================================
+linux-x86_64 (job 103724228380)
+==============================================================================
+85/95 Test #85: ControlShutdown ...................***Failed    3.40 sec
+[shutdown: undo/redo (dirty project)] exit=0 after 0.02s, socket exists=False
+[shutdown: no usable audio device] exit=0 after 0.02s, socket exists=False
+=== FAIL ===
+  shutdown: undo/redo (dirty project)            FAILED (1)
+      the autosave recovery file survived a clean quit (MainWindow::closeEvent -> sessionCleanup did not run)
+  shutdown: no usable audio device               FAILED (1)
+85: [shutdown: undo/redo (dirty project)] exit=0 after 0.02s, socket exists=False
+85: [shutdown: no usable audio device] exit=0 after 0.02s, socket exists=False
+85: === FAIL ===
+85:   shutdown: undo/redo (dirty project)            FAILED (1)
+85:       the autosave recovery file survived a clean quit (MainWindow::closeEvent -> sessionCleanup did not run)
+85:   shutdown: no usable audio device               FAILED (1)
+2/2 Test #85: ControlShutdown ..................***Failed    3.34 sec
+
+==============================================================================
+linux-arm64 (job 103724228374)
+==============================================================================
+[shutdown: undo/redo (dirty project)] exit=None after 0.00s, socket exists=True
+[shutdown: no usable audio device] exit=None after 0.00s, socket exists=True
+=== FAIL ===
+  shutdown: undo/redo (dirty project)            FAILED (3)
+      no response line inside 30.0s (socket timed out)
+diagnosis: the instance is STILL RUNNING (pid 37389) - a HANG, not a crash
+cpu: burned 100% of one core over 1.0s (3024 -> 3124 ticks)
+      the process did not exit within the bounded wait (0.0s); the shutdown is blocked
+      the control socket file was not unlinked on exit
+  shutdown: no usable audio device               FAILED (3)
+diagnosis: the instance is STILL RUNNING (pid 37406) - a HANG, not a crash
+diagnosis: the instance is STILL RUNNING (pid 37424) - a HANG, not a crash
+cpu: burned 100% of one core over 1.0s (3005 -> 3105 ticks)
+diagnosis: the instance is STILL RUNNING (pid 37435) - a HANG, not a crash
+84/92 Test #85: ControlNegativeControl ............   Passed   12.18 sec
+      method control: no response line inside 30.0s (socket timed out)
+diagnosis: the instance is STILL RUNNING (pid 37672) - a HANG, not a crash
+cpu: burned 100% of one core over 1.0s (3004 -> 3104 ticks)
+82: [shutdown: undo/redo (dirty project)] exit=None after 0.00s, socket exists=True
+82: [shutdown: no usable audio device] exit=None after 0.00s, socket exists=True
+82: === FAIL ===
+82:   shutdown: undo/redo (dirty project)            FAILED (3)
+82:       no response line inside 30.0s (socket timed out)
+82: diagnosis: the instance is STILL RUNNING (pid 37741) - a HANG, not a crash
+82: cpu: burned 100% of one core over 1.0s (3025 -> 3125 ticks)
+82:       the process did not exit within the bounded wait (0.0s); the shutdown is blocked
+82:       the control socket file was not unlinked on exit
+82:   shutdown: no usable audio device               FAILED (3)
+82: diagnosis: the instance is STILL RUNNING (pid 37754) - a HANG, not a crash
+83: === FAIL ===
+83:       no response line inside 30.0s (socket timed out)
+83: diagnosis: the instance is STILL RUNNING (pid 37764) - a HANG, not a crash
+83: cpu: burned 100% of one core over 1.0s (3005 -> 3105 ticks)
+84: === FAIL ===
+84:       no response line inside 30.0s (socket timed out)
+84: diagnosis: the instance is STILL RUNNING (pid 37775) - a HANG, not a crash
+84: cpu: burned 100% of one core over 1.0s (3025 -> 3125 ticks)
+91: === FAIL ===
+91:       method control: no response line inside 30.0s (socket timed out)
+91: diagnosis: the instance is STILL RUNNING (pid 37863) - a HANG, not a crash
+
+==============================================================================
+macos-arm64 (job 103724228405)
+==============================================================================
+[shutdown: undo/redo (dirty project)] exit=0 after 0.17s, socket exists=False
+[shutdown: no usable audio device] exit=0 after 0.09s, socket exists=False
+=== FAIL ===
+  shutdown: undo/redo (dirty project)            FAILED (1)
+      the autosave recovery file survived a clean quit (MainWindow::closeEvent -> sessionCleanup did not run)
+  shutdown: no usable audio device               FAILED (1)
+89/92 Test #85: ControlNegativeControl ............   Passed   15.50 sec
+82: [shutdown: undo/redo (dirty project)] exit=0 after 0.17s, socket exists=False
+82: [shutdown: no usable audio device] exit=0 after 0.07s, socket exists=False
+82: === FAIL ===
+82:   shutdown: undo/redo (dirty project)            FAILED (1)
+82:       the autosave recovery file survived a clean quit (MainWindow::closeEvent -> sessionCleanup did not run)
+82:   shutdown: no usable audio device               FAILED (1)
+91: === FAIL ===
+
