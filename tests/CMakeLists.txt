@@ -1293,6 +1293,11 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlRetroCapture PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
+		# 77 is "this host cannot supply a real MIDI source" (no alsa-utils, or
+		# the engine came up on the dummy MIDI client). CTest reports a test that
+		# exits 77 as Skipped, never Passed - the ControlFreezeCommandsTranscript
+		# and ControlCommandsSnapshot precedent.
+		SKIP_RETURN_CODE 77
 	)
 	# wasm.* (item #614): host the ABI example effect in the WASM DSP sandbox
 	# END TO END through --control-socket, and read back what the ABI does with it.

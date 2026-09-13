@@ -62,11 +62,20 @@ TO_CLIP = "midi.retro_capture_to_clip"
 SMALL_NOTES = ((0, 60, 100, 240), (240, 64, 64, 240))
 SMALL_WINDOW_END = 480
 CLIP_LENGTH = 960
-# The file played for the bound half: this many note on/off pairs, i.e. twice this
-# many events - comfortably more than the ring can retain.
-BIG_PAIRS = 9000
+# The bound half is played as BURST_RUNS repetitions of a BURST_PAIRS-pair file,
+# paced by BURST_GAP_SECONDS. The pacing is not tidiness: the engine's ALSA client
+# has a bounded INPUT POOL, so a single 20000-event burst overflows it IN THE
+# KERNEL and the capture never sees most of the events - measured on this box, one
+# 18000-event burst delivered 614 events and the rest were dropped before the ring,
+# which is a fact about the pool and not about the window under test. 200 events
+# per run is comfortably inside what one burst was measured to deliver, and pacing
+# lets the MIDI thread drain between runs so the accounting below is exact.
+# BURST_RUNS x BURST_PAIRS x 2 = 20000 events, 2.4x the window.
+BURST_PAIRS = 100
+BURST_RUNS = 100
+BURST_GAP_SECONDS = 0.15
 SETTLE_SECONDS = 2.0
-BOUND_SECONDS = 60.0
+BOUND_SECONDS = 180.0
 
 
 # ---------------------------------------------------------------------------
@@ -287,12 +296,21 @@ def check_undo(context, problems):
     undone = session.ok("control.undo")
     problems.require(undone["undone"] is True,
                      "control.undo reported undone=%r" % undone["undone"])
-    problems.require(undone["command"] == TO_CLIP,
-                     "control.undo reversed %r, not the capture" % undone["command"])
+    problems.require(undone.get("undone_command") == TO_CLIP,
+                     "control.undo unwound %r from the journal, not the capture"
+                     % undone.get("undone_command"))
     after = clip_ids(session)
     problems.require(after == before,
                      "after ONE control.undo the arrangement lists %r, expected the "
                      "pre-capture %r" % (sorted(after), sorted(before)))
+
+
+def play_bursts(aplaymidi, port, path, problems):
+    """Play the same file BURST_RUNS times, paced, so nothing is lost to the pool."""
+    for _ in range(BURST_RUNS):
+        if not play_notes(aplaymidi, port, path, problems):
+            return
+        time.sleep(BURST_GAP_SECONDS)
 
 
 def check_bound(context, problems):
@@ -311,8 +329,8 @@ def check_bound(context, problems):
                      "the build retains %r events, %s documents %r"
                      % (capacity, os.path.basename(BOUNDS_DOC), documented))
 
-    play_notes(context["aplaymidi"], context["port"], context["big_file"], problems)
-    played = context["played"] + 2 * BIG_PAIRS
+    play_bursts(context["aplaymidi"], context["port"], context["burst_file"], problems)
+    played = context["played"] + 2 * BURST_PAIRS * BURST_RUNS
     status = wait_buffered(session, capacity, BOUND_SECONDS)
     problems.require(status["events_buffered"] == capacity,
                      "the window holds %r events after %d were played; the documented "
@@ -381,7 +399,9 @@ def step(name, function, context):
           % (name, "ok" if not problems else "FAILED (%d)" % len(problems.items)))
     for item in problems.items:
         print("      %s" % item)
-    return (name, not problems, problems)
+    # control_socket_harness.finish() iterates the third element, so it is the
+    # list of problem strings, not the Problems object.
+    return (name, not problems, problems.items)
 
 
 def prepare(session, instance, aconnect):
@@ -427,13 +447,13 @@ def main():
         port, running = prepare(session, instance, aconnect)
 
         small_file = os.path.join(instance.tmp, "retro-small.mid")
-        big_file = os.path.join(instance.tmp, "retro-big.mid")
+        burst_file = os.path.join(instance.tmp, "retro-burst.mid")
         write_smf(small_file, SMALL_NOTES)
-        write_smf(big_file, tuple((0, 36 + (i % 84), 100, 0) for i in range(BIG_PAIRS)))
+        write_smf(burst_file, tuple((0, 36 + (i % 84), 100, 0) for i in range(BURST_PAIRS)))
 
         context = {"session": session, "instance": instance, "port": port,
                    "aplaymidi": aplaymidi, "small_file": small_file,
-                   "big_file": big_file, "played": 0}
+                   "burst_file": burst_file, "played": 0}
         print("")
         print("engine   : %r" % running["client"])
         print("source   : aplaymidi -> %d:%d (pid %d)"

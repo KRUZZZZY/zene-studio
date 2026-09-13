@@ -202,10 +202,19 @@ private slots:
 		// check below is deterministic (nothing is ever overlapped).
 		RetroMidiRing ring{1u << 18};
 
-		std::thread producer([&ring] {
+		std::atomic<std::uint64_t> pushed{0};
+		std::thread producer([&ring, &pushed] {
 			for (std::uint64_t i = 0; i < totalEvents; ++i)
 			{
-				Q_ASSERT(ring.push(testEvent(i)));
+				// The push must NOT sit inside Q_ASSERT: under -DNDEBUG - the
+				// release configuration ctest runs this suite in (RelWithDebInfo,
+				// unlike the Debug build this test was written in) - Q_ASSERT
+				// compiles its argument AWAY, so the producer pushed nothing and
+				// the loop below spun until its 300 s timeout instead of failing
+				// fast. Measured on 030/retro-capture: 8 slots passed and this one
+				// aborted with "Test function timed out". The assertion the author
+				// wanted is a QCOMPARE on the count, after the join.
+				if (ring.push(testEvent(i))) { pushed.fetch_add(1, std::memory_order_relaxed); }
 				if ((i & 0xFFu) == 0) { std::this_thread::yield(); }
 			}
 		});
@@ -231,6 +240,7 @@ private slots:
 		}
 		producer.join();
 
+		QCOMPARE(static_cast<qulonglong>(pushed.load()), static_cast<qulonglong>(totalEvents));
 		QVERIFY(sequenceOk);
 		QCOMPARE(static_cast<qulonglong>(received), static_cast<qulonglong>(totalEvents));
 		QCOMPARE(asNumber(ring.overwrittenCount()), asNumber(0));
