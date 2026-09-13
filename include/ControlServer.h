@@ -121,6 +121,10 @@ private:
 	//! Write every byte of \p bytes or fail. A caller MUST drop the client when
 	//! this returns false: the bytes already written are a TRUNCATED line, and
 	//! writing the next reply after them would make the two read as one line.
+	//! A non-blocking write that reports EAGAIN/EWOULDBLOCK is NOT a failure -
+	//! the connection is merely full - so this waits for it to drain, bounded by
+	//! WriteDrainTimeoutMs, and finishes the line. Only a write that cannot
+	//! progress within that bound fails.
 	bool writeAll(int fd, const QByteArray& bytes);
 
 	//! Take ownership of a fd that is bound, pinned to mode 0600 and listening:

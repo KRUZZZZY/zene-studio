@@ -61,6 +61,7 @@ import os
 import socket
 import stat
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -76,6 +77,10 @@ REFUSAL_TIMEOUT = 25.0
 
 # The cap in include/ControlServer.h (ControlServer::MaxRequestLineBytes).
 REQUEST_LINE_CAP = 1024 * 1024
+# A reply far larger than the shrunk receive buffer must still arrive. Generous,
+# because the server now waits (bounded, 2 s) for the buffer to drain before it
+# finishes the line, and this case reads exactly one line.
+LARGE_REPLY_TIMEOUT = 30.0
 # Big enough that a destroyed file is unmistakable, small enough to print.
 PAYLOAD = b"IMPORTANT PROJECT DATA\n" * 4
 # The one line the test parses; the process writes the typed object after it.
@@ -450,6 +455,77 @@ def case_exit_ownership(binary):
     return outcome(name, problems)
 
 
+def case_large_reply_to_a_slow_peer(binary):
+    """A reply larger than the connection can take at once arrives WHOLE, not retired.
+
+    THE Darwin defect this case exists for. The listener is non-blocking, so a reply
+    bigger than the free space in the connection's send buffer takes part of the line
+    and then EAGAIN; writeAll() called that a failed write and dropClient() retired
+    the connection, so the peer read EOF in the middle of a reply it had every right
+    to expect. On both macOS jobs of the v0.2.1-alpha tag run that is the whole of two
+    failures, each one caught with its transcript exactly one line short of the
+    answer:
+
+        -> {"id":3,"cmd":"control.commands_list","args":{},"proto":1}     <- EOF
+
+    control.commands_list is the reply that reaches it: every command with its
+    schemas, MEASURED at 47578 bytes on this tree. Linux's AF_UNIX send buffer is
+    212992 bytes (net.core.wmem_default), so one such reply fits with room to spare
+    and the same write never EAGAINs - which is why this suite was green here. macOS
+    keeps a far smaller AF_UNIX send buffer, so the SAME reply takes the EAGAIN path
+    there. Pipelining enough requests that the total exceeds the Linux bound
+    reproduces the Darwin path on any platform without tuning a socket buffer, and
+    that is what makes this case the local half of the proof.
+    """
+    name = "a reply larger than the connection can take at once arrives whole"
+    problems = Problems()
+    instance = start_instance(binary)
+    try:
+        client = connect(instance)
+        wait_ready(instance, client, Transcript(), seconds=READY_TIMEOUT)
+
+        # 8 x 47578 bytes is ~380 KiB, well past the 208 KiB Linux send buffer, so
+        # the server's writes MUST run out of room part way through. Pipelined, and
+        # not read for a moment, so the bytes stay queued.
+        pipelined = 8
+        base_id = 900
+        client.sock.sendall(b"".join(
+            (json.dumps({"id": base_id + i, "cmd": "control.commands_list", "args": {},
+                         "proto": 1}, separators=(",", ":")) + "\n").encode("utf-8")
+            for i in range(pipelined)))
+        time.sleep(0.5)  # let the server's writes fill the connection unread
+
+        received = 0
+        got = 0
+        try:
+            for i in range(pipelined):
+                line = client._read_line(LARGE_REPLY_TIMEOUT)  # noqa: SLF001 (harness reader)
+                received += len(line)
+                got += 1
+                reply = json.loads(line.decode("utf-8", "replace"))
+                if reply.get("id") != base_id + i or reply.get("ok") is not True:
+                    problems.add("reply %d was %r, expected the ok reply for id %d"
+                                 % (i, reply, base_id + i))
+                    break
+        except Timeout as failure:
+            problems.add("reply %d of %d never arrived (%d bytes in): %s (the connection "
+                         "was retired instead of being waited for)"
+                         % (got + 1, pipelined, received, failure))
+            return outcome(name, problems)
+
+        if received <= 262144:
+            # Self-guard: under the Linux send buffer the defect cannot be reached
+            # here at all, so a green from that run would mean nothing and must be
+            # reported as such rather than counted as proof.
+            problems.add("this case proves nothing here: only %d bytes were needed, "
+                         "under the ~208 KiB send buffer the EAGAIN path needs"
+                         % received)
+            return outcome(name, problems)
+        return outcome(name, problems)
+    finally:
+        instance.close()
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -467,6 +543,7 @@ def main():
         case_live_socket(binary),
         case_exit_ownership(binary),
         case_request_line_cap(binary),
+        case_large_reply_to_a_slow_peer(binary),
     ])
 
 

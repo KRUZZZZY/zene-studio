@@ -57,8 +57,8 @@ from control_socket_flows import (  # noqa: E402
     diagnose_block, healthy_control, parse_args, report_pre_fix,
 )
 from control_socket_harness import (  # noqa: E402
-    DUMMY_DEVICE, PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript, connect, fail,
-    ok, start_instance, wait_ready,
+    BROKEN_DEVICE_ENV, DUMMY_DEVICE, PING_TIMEOUT, READY_TIMEOUT, Blocked, Transcript,
+    connect, fail, ok, start_instance, wait_ready,
 )
 
 USAGE = __doc__
@@ -72,6 +72,28 @@ SCENARIOS = (
     ("configured backend that cannot open a device", SDL_BACKEND),
     ("backend name that is not a known backend", BOGUS_BACKEND),
 )
+
+
+def scenario_env(backend):
+    """The environment that makes THIS scenario deterministic on any host.
+
+    The SDL scenario needs the configured backend to FAIL TO OPEN, and on a host
+    with a working audio device it does not. macOS runners have CoreAudio, so SDL
+    opened, `device_start_failed` stayed false, the engine never fell back to the
+    dummy device, and the instance - correctly - printed no 'audio-device-setup'
+    line at all; on the Linux runner SDL/ALSA fails ("Host is down") because the
+    runner has no sound card, which is what this scenario was silently relying
+    on. Both macOS jobs of the v0.2.1-alpha tag run failed here for exactly that
+    reason, and the ping the test captured says so: audio.device="SDL (Simple
+    DirectMedia Layer)" with start_failed=false and no fallback.
+
+    The harness already owns the host-independent mechanism - BROKEN_DEVICE_ENV
+    points SDL at a driver name that cannot exist, so SDL_Init fails anywhere -
+    and control-shutdown.py's "no usable audio device" scenario already uses it.
+    The bogus-name scenario needs nothing: an unknown backend name is rejected
+    before any backend is opened.
+    """
+    return BROKEN_DEVICE_ENV if backend == SDL_BACKEND else None
 
 
 def audio_line(log):
@@ -106,7 +128,7 @@ def expect_blocked(binary):
     healthy = healthy_control(binary)
     print("control: the same binary with the dummy device became ready in %.1fs" % healthy)
     for label, backend in SCENARIOS:
-        instance = start_instance(binary, audiodev=backend)
+        instance = start_instance(binary, audiodev=backend, extra_env=scenario_env(backend))
         transcript = Transcript()
         try:
             client = connect(instance)
@@ -138,7 +160,7 @@ def expect_blocked(binary):
 
 def expect_fixed(binary):
     for label, backend in SCENARIOS:
-        instance = start_instance(binary, audiodev=backend)
+        instance = start_instance(binary, audiodev=backend, extra_env=scenario_env(backend))
         transcript = Transcript()
         try:
             try:

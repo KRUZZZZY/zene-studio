@@ -292,6 +292,52 @@ private slots:
 		expectAllRanOn(jobs, std::this_thread::get_id());
 	}
 
+	//! The same invariant, with the one thing the case above cannot control: WHEN the
+	//! pool would take the work. A pool worker is parked in a BOUNDED wait
+	//! (AudioEngineWorkerThread.cpp: kQuitRecheckMs = 100 ms) and re-drains the queue
+	//! on every wake, so with the export switch on it used to take anything queued
+	//! between addJob() and the caller's own drain - the case above races that window
+	//! and loses on a loaded runner, which is how it failed on both macOS jobs (three
+	//! concurrent ctest tests, three cores). Waiting for many ticks instead of racing
+	//! one turn makes the steal a fact rather than a schedule: with the switch on, NOT
+	//! one of these jobs may be gone from the queue when the caller drains it.
+	void inlineModeSurvivesWorkerTicksWhileJobsAreQueued()
+	{
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
+
+		auto poolWorker = std::make_unique<AudioEngineWorkerThread>(nullptr);
+		poolWorker->start();
+
+		std::atomic<int> total{0};
+		std::vector<ThreadableJob*> pointers;
+		const auto jobs = makeJobs(total, 8, std::chrono::milliseconds{0}, &pointers);
+
+		AudioEngineWorkerThread::resetJobQueue(
+			AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic);
+		AudioEngineWorkerThread::fillJobQueue(pointers);
+
+		// Six times the worker's own re-check bound: a worker that may drain in
+		// deterministic mode ticks five times or more inside this window and takes
+		// all eight. This is the assertion that fails before the guard exists.
+		QTest::qWait(600);
+
+		// Now drain the way a render does, so the join below (stopWorker switches the
+		// flag OFF, and its startAndWaitForJobs() would then drain for real) has
+		// nothing left to take - the assertion has to be about what the POOL did, not
+		// about what the teardown did afterwards.
+		AudioEngineWorkerThread::startAndWaitForJobs();
+
+		const bool joined = stopWorker(*poolWorker);
+		if (!joined)
+		{
+			poolWorker.release();
+		}
+
+		QVERIFY2(joined, "the test's own worker thread did not stop");
+		expectAllRanOn(jobs, std::this_thread::get_id());
+		QCOMPARE(total.load(), 8);
+	}
+
 	//! With the switch off the pool path is unchanged: a started worker may take jobs, and
 	//! every job still runs exactly once. This is the live-playback contract, and it must
 	//! hold with or without the export switch.

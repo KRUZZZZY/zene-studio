@@ -31,6 +31,7 @@
 
 #include <QString>
 #include <QHash>  // IWYU pragma: keep
+#include <QPointer>
 
 #include "AudioEngine.h"
 #include "Controller.h"
@@ -546,7 +547,15 @@ private:
 	std::shared_ptr<Scale> m_scales[MaxScaleCount];
 	std::shared_ptr<Keymap> m_keymaps[MaxKeymapCount];
 
-	AutomatedValueMap m_oldAutomatedValues;
+	//! The models the last rendered frame moved control away from, and the values
+	//! to put back. GUARDED keys on purpose: the set is written by the render thread
+	//! (processNextBuffer) and restored by stop() on another thread, and a model can
+	//! be destroyed in between (a track deleted, a plugin unloaded). A raw pointer
+	//! here is a use-after-free on the shutdown path - measured as
+	//! `AutomationModesTest` aborting with signal 11 at Song.cpp:778, dereferencing a
+	//! key whose model the test had already destroyed. QPointer nulls itself when the
+	//! model goes, so the restore skips exactly the models that are gone.
+	QMap<QPointer<AutomatableModel>, float> m_oldAutomatedValues;
 
 	Metronome m_metronome;
 

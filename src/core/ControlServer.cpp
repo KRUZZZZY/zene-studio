@@ -30,7 +30,9 @@
 #include "ControlServer.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
+#include <poll.h>
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -56,6 +58,34 @@ namespace
 //! The control protocol version this build speaks (AGENT-TOOLING.md #2: the
 //! protocol number moves independently of the product version).
 constexpr int ControlProtocolVersion = 1;
+
+//! How long writeAll() waits for a full send buffer to drain before it treats
+//! the connection as unwritable and retires it. Bounded because writeAll() runs
+//! on the event loop: see the comment at the EAGAIN branch.
+constexpr int WriteDrainTimeoutMs = 2000;
+
+#if defined(Q_OS_UNIX)
+//! True when \p errnoValue means "the send buffer is full, try again later"
+//! rather than "this write failed". Kept out of writeAll() on purpose: the
+//! complexity ratchet counts every branch a function carries, and this is a
+//! two-value question that reads better named anyway.
+bool wouldBlock(int errnoValue)
+{
+	return errnoValue == EAGAIN || errnoValue == EWOULDBLOCK;
+}
+
+//! Wait until \p fd can accept more bytes, or \p deadline passes. True when the
+//! connection is writable again. Split out of writeAll() for the same reason, and
+//! because "wait for the socket" is not part of "write this line".
+bool waitWritable(int fd, std::chrono::steady_clock::time_point deadline)
+{
+	const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+		deadline - std::chrono::steady_clock::now()).count();
+	if (left <= 0) { return false; }
+	struct pollfd writable{ fd, POLLOUT, 0 };
+	return ::poll(&writable, 1, static_cast<int>(left)) > 0;
+}
+#endif
 
 QByteArray responseLine(int id, const ControlResult& result)
 {
@@ -289,6 +319,10 @@ bool ControlServer::writeAll(int fd, const QByteArray& bytes)
 	Q_UNUSED(bytes);
 	return false;
 #else
+	// One deadline for the WHOLE line, so a peer that drains a few bytes at a
+	// time still cannot hold the event loop past the bound below.
+	const auto deadline = std::chrono::steady_clock::now()
+		+ std::chrono::milliseconds(WriteDrainTimeoutMs);
 	ssize_t written = 0;
 	while (written < bytes.size())
 	{
@@ -300,6 +334,28 @@ bool ControlServer::writeAll(int fd, const QByteArray& bytes)
 			continue;
 		}
 		if (n < 0 && errno == EINTR) { continue; }
+		if (n < 0 && wouldBlock(errno))
+		{
+			// NOT a failure, and not a truncated line either: this socket is
+			// non-blocking and a reply can be longer than the free space in the
+			// send buffer, so "partial write, then EAGAIN" is the normal shape of
+			// a large reply rather than an error. `control.commands_list` is the
+			// reply that reaches it - every command with its schemas, tens of
+			// kilobytes - and macOS's AF_UNIX send buffer is far smaller than
+			// Linux's, which is how a large reply used to retire a healthy
+			// connection there while the same reply fitted on Linux (both macOS
+			// jobs failed ControlSocketIntegration and agent_surface on exactly
+			// this command, with the transcript one line short of the answer).
+			//
+			// Wait for the connection to become writable again and carry on with
+			// the SAME line: the invariant above is per line, and the peer still
+			// sees either the whole line or a partial one followed by the EOF that
+			// a failed write produces. Bounded, because the caller is the event
+			// loop - a peer that has stopped reading costs this much and is then
+			// retired exactly as before.
+			if (!waitWritable(fd, deadline)) { return false; }
+			continue;
+		}
 		return false;
 	}
 	return true;

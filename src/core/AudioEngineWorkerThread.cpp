@@ -210,7 +210,21 @@ void AudioEngineWorkerThread::run()
 		// sleeps again 10 times a second; while it renders, wake-ups arrive every
 		// period and this timer never fires.
 		queueReadyWaitCond->wait( &m, kQuitRecheckMs );
-		globalJobQueue.run();
+		// The tick must not overtake deterministic rendering: with the switch on
+		// the CALLING thread takes every job (see startAndWaitForJobs()), and a
+		// worker that drained the queue here would run an offline render's jobs on
+		// this thread instead - the result would then depend on which worker
+		// happened to tick inside the render window, which is exactly the
+		// variability the switch exists to remove. Measured as a real failure, not
+		// a theoretical one: RenderJobQueueTest::inlineModeNeverLetsThePoolTakeAJob
+		// (a job ran on a thread other than the expected one) is what a worker
+		// tick landing between an addJob() and startAndWaitForJobs() produces, and
+		// on a loaded runner (3 cores, three concurrent ctest tests) that window
+		// is wide enough to hit reliably.
+		if( !deterministicProcessing() )
+		{
+			globalJobQueue.run();
+		}
 		m.unlock();
 	}
 }
