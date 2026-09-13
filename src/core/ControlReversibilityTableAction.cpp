@@ -204,6 +204,53 @@ const ReversibilityRow kActionRows[] = {
 		"SrcQuality through ExportRenderSettings::setSrcQuality, exactly as the "
 		"command sets the new one",
 		""),
+	// --- Session sync (link.*, D11 "Ableton Link sync") -------------------
+	// Four rows of the same shape as the two above: the session sync model
+	// (include/LinkSync.h) is process state the engine does not journal, and
+	// every one of these commands is a bounded scalar it owns - a flag, an
+	// integer in a closed range, or a tempo. The previous value is captured
+	// before the write and the recorded step puts it back through the model's
+	// own setter.
+	//
+	// The one that is NOT a plain scalar is worth the sentence: a declared
+	// session tempo is undone by DECLARING the previous one, which advances the
+	// revision and is announced to the session - i.e. control.undo on
+	// link.set_session_tempo sends the peers back to the tempo they had, rather
+	// than only putting a number back in this process. That is the honest
+	// inverse for a shared value, and it is why the row is true_inverse rather
+	// than a claim that a session tempo is local state.
+	R("link.set_enabled", RC::TrueInverse, true,
+		"the sync model is process state (include/LinkSync.h): it is not a "
+		"JournallingObject, so there is no object checkpoint - but joining or "
+		"leaving the session is one bounded flag, and its previous value is "
+		"captured before the write",
+		"action checkpoint: the recorded undo step calls LinkSyncEngine::setEnabled "
+		"with the value in before, exactly as the command sets the new one",
+		""),
+	R("link.set_quantum", RC::TrueInverse, true,
+		"same shape: the quantum is an integer in a closed range (1..64 beats) "
+		"owned by the sync model, with the previous value captured before the "
+		"write and the range checked before it, so a refused quantum records "
+		"nothing",
+		"action checkpoint: the recorded undo step calls LinkSyncEngine::setQuantum "
+		"with the value in before",
+		""),
+	R("link.set_start_stop_sync", RC::TrueInverse, true,
+		"same shape: one boolean the sync model owns and announces, with the "
+		"previous value captured before the write",
+		"action checkpoint: the recorded undo step calls "
+		"LinkSyncEngine::setStartStopSync with the value in before",
+		""),
+	R("link.set_session_tempo", RC::TrueInverse, true,
+		"the session tempo lives on the sync model's timeline (a double on the "
+		"wire, applied to the Song's integer tempo model), so the previous value "
+		"is captured before the declaration and the write itself is the inverse's "
+		"mechanism",
+		"action checkpoint: the recorded undo step DECLARES the previous tempo "
+		"through LinkSyncEngine::setSessionTempo, which re-anchors the shared beat "
+		"and advances the revision - so peers follow the undo exactly as they "
+		"followed the declaration",
+		""),
 	R("audio.device_set", RC::TrueInverse, true,
 		"the preference is a scalar in the config file, not in the project",
 		"action checkpoint: the recorded undo step writes the previous device "

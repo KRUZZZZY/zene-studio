@@ -1,0 +1,118 @@
+
+==============================================================================
+Zene Studio 0.3.0-alpha - session sync, two instances
+==============================================================================
+  claim                          two Zene instances join one session and one drives the other's tempo and phase, with no relay between them
+  model                          zene-link-style (Ableton Link SEMANTICS, not the Ableton Link library - see docs/LINK-SYNC.md section 1)
+
+==============================================================================
+0. two real instances, each with its own control socket
+==============================================================================
+  binary                         /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030-w19/build/zene
+  binary sha256                  6c426d01fb5de60da0b6997d81140f9ed94e350ed8f45dabbb71aa0dca4aab57
+  A-leader socket                /tmp/zctl-run-_bb7zoxi/zene.sock
+  A-leader peer id               zene-761587-29e194d7
+  A-leader model                 zene-link-style
+  B-follower socket              /tmp/zctl-run-whxgtrew/zene.sock
+  B-follower peer id             zene-761591-d3ec7f59
+  B-follower model               zene-link-style
+
+==============================================================================
+1. the model each instance speaks, before anything is enabled
+==============================================================================
+  A-leader transport             {"available": false, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": "not started (link.set_enabled starts it)"}
+  A-leader interop               {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}
+  B-follower transport           {"available": false, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": "not started (link.set_enabled starts it)"}
+  B-follower interop             {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}
+
+==============================================================================
+2. both instances join the session
+==============================================================================
+  A-leader set_enabled           enabled=True peer_count=0 endpoint=224.76.78.75:20808
+  B-follower set_enabled         enabled=True peer_count=0 endpoint=224.76.78.75:20808
+  A peers                        [{"age_ms": 5, "id": "zene-761591-d3ec7f59", "name": "kruzzzputer#761591", "playing": false, "quantum": 4, "revision": 1, "tempo": 140}]
+  B peers                        [{"id": "zene-761587-29e194d7", "tempo": 140, "revision": 1, "age_ms": 6}]
+
+==============================================================================
+2b. whether announcements can travel at all
+==============================================================================
+  A-leader transport             {"available": true, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": ""}
+  B-follower transport           {"available": true, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": ""}
+
+==============================================================================
+3. one session tempo, agreed by both, with no relay
+==============================================================================
+  A session tempo                140 (owner zene-761591-d3ec7f59, revision 1)
+  B session tempo                140 (owner zene-761591-d3ec7f59, revision 1)
+
+==============================================================================
+4. THE HEADLINE: A declares a session tempo; B follows
+==============================================================================
+  A declared                     session_tempo=145 revision=2 owner=zene-761587-29e194d7
+  B session tempo                145
+  B engine tempo                 145
+  B revision owner               "zene-761587-29e194d7"
+
+==============================================================================
+5. an ORDINARY tempo change reaches the session too
+==============================================================================
+  A transport.set_tempo          132
+  B session tempo                132
+  B engine tempo                 132
+
+==============================================================================
+6. the shared beat phase, measured against elapsed wall time
+==============================================================================
+  sample 1                       A beat 0.75411435, B beat 1.41484035, elapsed 0.300s at 132.0 BPM
+    phase agreement              B advanced 0.6607 beats, 0.6608 expected (drift 0.0001)
+  sample 2                       A beat 1.41554215, B beat 2.07637155, elapsed 0.300s at 132.0 BPM
+    phase agreement              B advanced 0.6608 beats, 0.6610 expected (drift 0.0002)
+
+==============================================================================
+7. both instances are announcing
+==============================================================================
+  A published                    9 -> 14
+  B published                    9 -> 14
+
+==============================================================================
+8. B leaves; A's session empties and the tempo does not move
+==============================================================================
+  A tempo before                 132
+  B after leaving                enabled=False peer_count=0
+  A peers after expiry           []
+  A tempo after                  132
+
+==============================================================================
+9. both instances shut down through their normal path
+==============================================================================
+  A-leader exit                  exited=True code=0 after 0.2s
+  B-follower exit                exited=True code=0 after 0.0s
+
+==============================================================================
+RAW TRANSCRIPT (every request, every reply)
+==============================================================================
+[A-leader] -> link.set_enabled {"enabled": true}
+[A-leader] <- {"id": 10, "ok": true, "result": {"beat": 7e-06, "enabled": true, "engine_phase_beats": 0, "engine_tempo": 140, "instance": "kruzzzputer#761587", "interop": {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}, "last_packet_age_ms": -1, "model": "zene-link-style", "peer_count": 0, "peer_id": "zene-761587-29e194d7", "peers": [], "phase_beats": 7e-06, "phase_error_beats": 7e-06, "previous": false, "published_count": 0, "quantum": 4, "quantum_choices": [1, 4, 64], "session_revision": 1, "session_revision_owner": "zene-761587-29e194d7", "session_tempo": 140, "start_stop_sync": false, "tempo_is_local": true, "transport": {"available": true, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": ""}}}
+[B-follower] -> link.set_enabled {"enabled": true}
+[B-follower] <- {"id": 11, "ok": true, "result": {"beat": 9.333333333333333e-06, "enabled": true, "engine_phase_beats": 0, "engine_tempo": 140, "instance": "kruzzzputer#761591", "interop": {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}, "last_packet_age_ms": -1, "model": "zene-link-style", "peer_count": 0, "peer_id": "zene-761591-d3ec7f59", "peers": [], "phase_beats": 9.333333333333333e-06, "phase_error_beats": 9.333333333333333e-06, "previous": false, "published_count": 0, "quantum": 4, "quantum_choices": [1, 4, 64], "session_revision": 1, "session_revision_owner": "zene-761591-d3ec7f59", "session_tempo": 140, "start_stop_sync": false, "tempo_is_local": true, "transport": {"available": true, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": ""}}}
+[A-leader] -> link.set_session_tempo {"bpm": 145.0}
+[A-leader] <- {"id": 40, "ok": true, "result": {"beat": 0.24132141666666668, "enabled": true, "engine_phase_beats": 0, "engine_tempo": 145, "instance": "kruzzzputer#761587", "interop": {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}, "last_packet_age_ms": 7, "model": "zene-link-style", "peer_count": 1, "peer_id": "zene-761587-29e194d7", "peers": [{"age_ms": 7, "id": "zene-761591-d3ec7f59", "name": "kruzzzputer#761591", "playing": false, "quantum": 4, "revision": 1, "tempo": 140}], "phase_beats": 0.24132141666666668, "phase_error_beats": 0.24132141666666668, "previous": 140, "published_count": 1, "quantum": 4, "quantum_choices": [1, 4, 64], "session_revision": 2, "session_revision_owner": "zene-761587-29e194d7", "session_tempo": 145, "start_stop_sync": false, "tempo_is_local": true, "transport": {"available": true, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": ""}}}
+[A-leader] -> transport.set_tempo {"bpm": 132}
+[A-leader] <- {"id": 50, "ok": true, "result": {"tempo": 132}}
+[B-follower] -> link.set_enabled {"enabled": false}
+[B-follower] <- {"id": 91, "ok": true, "result": {"beat": 3.18032495, "enabled": false, "engine_phase_beats": 0, "engine_tempo": 132, "instance": "kruzzzputer#761591", "interop": {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}, "last_packet_age_ms": -1, "model": "zene-link-style", "peer_count": 0, "peer_id": "zene-761591-d3ec7f59", "peers": [], "phase_beats": 3.18032495, "phase_error_beats": -0.8196750499999998, "previous": true, "published_count": 14, "quantum": 4, "quantum_choices": [1, 4, 64], "session_revision": 3, "session_revision_owner": "zene-761587-29e194d7", "session_tempo": 132, "start_stop_sync": false, "tempo_is_local": false, "transport": {"available": false, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": "not started (link.set_enabled starts it)"}}}
+[A-leader] -> link.set_enabled {"enabled": false}
+[A-leader] <- {"id": 100, "ok": true, "result": {"beat": 6.40758635, "enabled": false, "engine_phase_beats": 0, "engine_tempo": 132, "instance": "kruzzzputer#761587", "interop": {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}, "last_packet_age_ms": -1, "model": "zene-link-style", "peer_count": 0, "peer_id": "zene-761587-29e194d7", "peers": [], "phase_beats": 2.40758635, "phase_error_beats": -1.5924136500000001, "previous": true, "published_count": 29, "quantum": 4, "quantum_choices": [1, 4, 64], "session_revision": 3, "session_revision_owner": "zene-761587-29e194d7", "session_tempo": 132, "start_stop_sync": false, "tempo_is_local": true, "transport": {"available": false, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": "not started (link.set_enabled starts it)"}}}
+[A-leader] -> control.quit {}
+[A-leader] <- {"id": 110, "ok": true, "result": {"project_modified": true, "quitting": true, "save_requested": false, "unsaved_changes": "discarded"}}
+[B-follower] -> link.set_enabled {"enabled": false}
+[B-follower] <- {"id": 101, "ok": true, "result": {"beat": 6.408798549999999, "enabled": false, "engine_phase_beats": 0, "engine_tempo": 132, "instance": "kruzzzputer#761591", "interop": {"ableton_link": false, "clock": "peers are assumed to share a monotone clock; true for instances on one host - docs/LINK-SYNC.md section 4", "reason": "the Ableton Link reference library is not vendored in this build; vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a follow-up lane - docs/LINK-SYNC.md section 1"}, "last_packet_age_ms": -1, "model": "zene-link-style", "peer_count": 0, "peer_id": "zene-761591-d3ec7f59", "peers": [], "phase_beats": 2.4087985499999993, "phase_error_beats": -1.5912014500000007, "previous": false, "published_count": 14, "quantum": 4, "quantum_choices": [1, 4, 64], "session_revision": 3, "session_revision_owner": "zene-761587-29e194d7", "session_tempo": 132, "start_stop_sync": false, "tempo_is_local": false, "transport": {"available": false, "endpoint": "224.76.78.75:20808", "peer_timeout_ms": 1500, "publish_interval_ms": 100, "reason": "not started (link.set_enabled starts it)"}}}
+[B-follower] -> control.quit {}
+[B-follower] <- {"id": 111, "ok": true, "result": {"project_modified": true, "quitting": true, "save_requested": false, "unsaved_changes": "discarded"}}
+
+==============================================================================
+RESULT
+==============================================================================
+  PASS: two instances, one session, A drives B's tempo and phase through the socket
+
+VERDICT: PASS

@@ -5,20 +5,24 @@
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #       | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#       | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|BrowserCatalogTest|ClipSerialisationTest|ControlAutomationScriptTest|ControlBrowserCommandsTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|DataFileSaveIntegrityTest|ExportDitherTest|ExportWavDitherTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|SessionModelTest|StableTrackIdsTest|StemExportTest|UndoBoundsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(BrowserTestSupport|RackTestSupport|ReversibilityTestSupport|StemExportTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#       | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|BrowserCatalogTest|ClipSerialisationTest|ControlAutomationScriptTest|ControlBrowserCommandsTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlLinkCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|DataFileSaveIntegrityTest|ExportDitherTest|ExportWavDitherTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|SessionModelTest|StableTrackIdsTest|StemExportTest|UndoBoundsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(BrowserTestSupport|RackTestSupport|ReversibilityTestSupport|StemExportTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py tests/control-commands-snapshot.py tests/control-wasm-sandbox.py ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-link-sync.py tests/link_sync_evidence.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py ; \
+#     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-link-sync.py tests/link_sync_evidence.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py tests/control-commands-snapshot.py ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
 #        <({ git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #            | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
 #            | grep -vE '^(src/3rdparty/|plugins/NeuralAmp/rtneural/|plugins/NeuralAmp/nam/|plugins/NeuralAmp/tests/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#            | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|BrowserCatalogTest|ClipSerialisationTest|ControlAutomationScriptTest|ControlBrowserCommandsTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|DataFileSaveIntegrityTest|ExportDitherTest|ExportWavDitherTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|SessionModelTest|StableTrackIdsTest|StemExportTest|UndoBoundsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(BrowserTestSupport|RackTestSupport|ReversibilityTestSupport|StemExportTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
+#            | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|BrowserCatalogTest|ClipSerialisationTest|ControlAutomationScriptTest|ControlBrowserCommandsTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlLinkCommandsTest|ControlRegistryTest|ControlWarpCommandsTest|DataFileSaveIntegrityTest|ExportDitherTest|ExportWavDitherTest|LufsMeterTest|MidiLearnTest|MixerConcurrencyTest|ProjectOpenIntegrityTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|SessionModelTest|StableTrackIdsTest|StemExportTest|UndoBoundsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(BrowserTestSupport|RackTestSupport|ReversibilityTestSupport|StemExportTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/Vst3Instrument/logo.png tools/local-ci.sh tools/ncpu-shim.c ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py tests/control-commands-snapshot.py tests/control-wasm-sandbox.py ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-link-sync.py tests/link_sync_evidence.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-link-sync.py tests/link_sync_evidence.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py tests/control-commands-snapshot.py ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # The final `sort -u` is deliberate, not tidiness: the two python pathspec lines above OVERLAP -
 # they share eighteen names (the ten control-*.py harnesses, agent-surface-gate.py,
@@ -266,6 +270,8 @@ include/DpiHelper.h
 include/ExportDither.h
 include/ExportRenderSettings.h
 include/LatencyCompensation.h
+include/LinkPeerTransport.h
+include/LinkSync.h
 include/LmmsPolyfill.h
 include/LoudnessReport.h
 include/LufsMeter.h
@@ -402,6 +408,7 @@ src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
+src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
@@ -457,6 +464,9 @@ src/core/ExportDither.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/LatencyCompensation.cpp
+src/core/LinkSync.cpp
+src/core/LinkSyncWire.cpp
+src/core/LinkUdpTransport.cpp
 src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
 src/core/MasteringChain.cpp
@@ -521,6 +531,7 @@ tests/control-export-settings.py
 tests/control-headless-no-audio-device.py
 tests/control-headless-project-open.py
 tests/control-headless-working-directory.py
+tests/control-link-sync.py
 tests/control-negative-control.py
 tests/control-no-audio-device.py
 tests/control-readiness.py
@@ -534,6 +545,7 @@ tests/control-wasm-sandbox.py
 tests/control_instance_diagnosis.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
+tests/link_sync_evidence.py
 tests/render-software-tag.py
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
@@ -543,6 +555,7 @@ tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp

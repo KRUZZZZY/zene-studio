@@ -31,6 +31,11 @@ set(LMMS_TESTS
 	src/core/ControlBrowserCommandsTest.cpp
 	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlEditCommandsTest.cpp
+	# The session-sync surface (D11 "Ableton Link sync"): the five link.*
+	# commands, the typed refusals, the A16 inverses through control.undo, and
+	# the model's own arithmetic - the revision total order and the phase a
+	# peer's announcement implies. docs/LINK-SYNC.md.
+	src/core/ControlLinkCommandsTest.cpp
 	src/core/ControlRegistryTest.cpp
 	src/core/ControlTempoMapCommandsTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
@@ -1196,6 +1201,31 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 		)
 	endif()
+	# Session sync, two real instances (D11 "Ableton Link sync", the
+	# two-instance proof the brief names): both join one session and one drives
+	# the other's tempo and beat phase with no relay between them, through
+	# --control-socket. It starts TWO binaries because the claim is about two
+	# instances - one process cannot prove a wire.
+	#
+	# RUN_SERIAL is not tidiness: the session travels over UDP multicast on
+	# 224.76.78.75:20808 and the peer set is "whoever is on the segment", so a
+	# test running beside this one is a legitimate peer and would make the
+	# assertions about "the other instance" ambiguous. ctest is told not to run
+	# anything at the same time as this test.
+	#
+	# SKIP_RETURN_CODE 77: a host whose multicast cannot start reports ctest
+	# "Skipped" with the reason printed, NEVER "Passed". The model and the
+	# surface are still covered there by ControlLinkCommandsTest.
+	add_test(NAME ControlLinkSync
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-link-sync.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlLinkSync PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+		RUN_SERIAL TRUE
+		SKIP_RETURN_CODE 77
+	)
 else()
 	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
 endif()
@@ -1303,6 +1333,11 @@ set_tests_properties(ControlEditCommandsTest PROPERTIES
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlWarpCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The link.* group drives the process-wide session model (and the Song's tempo,
+# for an adopted one) and starts the UI-thread service timer, so it wants a real
+# Qt platform plugin even though nothing opens a window.
+set_tests_properties(ControlLinkCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full

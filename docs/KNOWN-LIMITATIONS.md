@@ -449,6 +449,19 @@ that is this page's fault — report it and it gets added.
   `tempo_map_set_active`), but **nothing in `src/gui/` draws, edits or reads a tempo map**: drivable through
   the socket, not from the interface. With an empty or inactive map the tempo is the single project value it
   has always been, so a project that never used one renders byte-for-byte what it did.
+- **Session sync has no interface, and it is not Ableton Link — added 2026-09-13.** Two Zene instances on
+  one machine (or one network segment, over UDP multicast on `224.76.78.75:20808`) can join one session and
+  agree on a tempo and a shared beat phase — drivable through `--control-socket`
+  (`link.get_state`, `link.set_enabled`, `link.set_quantum`, `link.set_start_stop_sync`,
+  `link.set_session_tempo`), with one instance's tempo reaching an ordinary `transport.set_tempo` too — but
+  **nothing in `src/gui/` draws, edits or reads a session tempo, a peer list or a beat phase**: drivable
+  through the socket, not from the interface. The model is this project's own (`zene-link-style`, the
+  semantics of Ableton Link without its library, which this build does not vendor — the licence finding that
+  says vendoring it is *permitted* is `docs/LINK-SYNC.md` §1), so a Link-enabled third-party application
+  cannot join this session. Also, a peer's newer tempo sets this instance's tempo, but nothing here starts or
+  stops another instance's transport (`link.set_start_stop_sync` is announced and reported, never acted on),
+  and the play head is not moved onto the session grid — the shared phase and this engine's phase are
+  reported together, with the error between them, and `docs/LINK-SYNC.md` §5 lists every stated limit.
 
 ## Telemetry and privacy
 

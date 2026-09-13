@@ -459,6 +459,7 @@ LMMS_EXPORT void registerBrowserCommands(ControlRegistry& registry);
 //! record a snapshot-class transaction whose inverse is the paired command.
 LMMS_EXPORT void registerBrowserTagCommands(ControlRegistry& registry);
 
+<<<<<<< HEAD
 /*! The modulation layer (#602): modulator.get_state / create / remove /
  *  rate_set - the layer itself and a modulator's own LFO. The engine half is
  *  include/ModulationLayer.h (a song-level, timeline-locked LFO per modulator,
@@ -475,6 +476,18 @@ LMMS_EXPORT void registerModulatorRouteCommands(ControlRegistry& registry);
  *  Note fields and the optional mpepitch/mpepressure/mpetimbre attributes #601
  *  already stores (docs/MPE.md); they are NOT a second expression store. */
 LMMS_EXPORT void registerNoteExpressionCommands(ControlRegistry& registry);
+=======
+/*! link.get_state / set_enabled / set_quantum / set_start_stop_sync /
+ *  set_session_tempo - session tempo and beat-phase sync (D11 "Ableton Link
+ *  sync"). The engine half is include/LinkSync.h and
+ *  include/LinkPeerTransport.h (the seam a real Ableton Link transport would
+ *  implement); this group is what makes any of it drivable, and it is the ONLY
+ *  way to reach it - there is no interface for session sync in this release.
+ *  The model is this project's own ("zene-link-style": Link's semantics, not
+ *  Link's library, which is not vendored - the licence finding that vendoring
+ *  it is permitted is docs/LINK-SYNC.md section 1). */
+LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
+>>>>>>> 030/w19-link
 
 //! Shared helpers for the command groups.
 namespace control

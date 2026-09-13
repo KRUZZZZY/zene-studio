@@ -115,6 +115,15 @@ const ReversibilityRow kPassiveRows[] = {
 		"nothing to inverse. export.set_dither and export.set_src_quality are "
 		"the writers, and both carry an action checkpoint",
 		""),
+	R("link.get_state", RC::NotMutating, false,
+		"a read of the session-sync state (whether sync is on, the peers, the "
+		"session tempo and revision owner, the shared beat and its phase, this "
+		"engine's tempo and phase, and whether announcements can travel at "
+		"all): it writes nothing, so there is no transaction",
+		"nothing to inverse. The four writers are link.set_enabled, "
+		"link.set_quantum, link.set_start_stop_sync and link.set_session_tempo, "
+		"and each carries an action checkpoint",
+		""),
 
 	R("clip.select", RC::NotMutating, false,
 		"selection is control-surface view state: it is not serialized, the "

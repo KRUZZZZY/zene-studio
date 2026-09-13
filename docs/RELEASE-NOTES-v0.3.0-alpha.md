@@ -372,6 +372,49 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   own control is taken over — the value you see is the base, and the modulator's offset is on top of
   it until the modulator is deactivated, removed or `control.undo` takes the edit back.
 
+## Session sync: two instances on one tempo and one beat (`link.*`) — added 2026-09-13
+
+- **New: a session. Two Zene instances on one machine (or on one network segment) agree on a tempo and a
+  shared beat phase, and either one can drive the other.** Instance A declares a tempo - deliberately, with
+  `link.set_session_tempo`, or simply by changing its tempo with `transport.set_tempo` - and instance B,
+  driven by nothing but its own socket, plays that tempo. No client relays between them: the instances
+  announce themselves to each other every 100 ms over UDP multicast on `224.76.78.75:20808`, the group
+  Ableton Link itself uses.
+- **Control surface:** `link.get_state` (whether sync is on, the peers and their ids, the session tempo and
+  who declared it, the shared beat and its phase inside the quantum, this engine's own tempo and phase and
+  the error between the two, and whether announcements can travel at all), `link.set_enabled` (join or leave
+  the session), `link.set_quantum` (1..64 beats, 4 by default), `link.set_start_stop_sync`, and
+  `link.set_session_tempo`. Every mutating call records its SPEC A16 class (`true_inverse` — an action
+  checkpoint on the engine's own journal stack restores the previous value) and every refusal is typed.
+- **The engine's own tempo is what makes an ordinary tempo change reach the session.** The model compares
+  the Song's tempo with the value it last applied; anything else is a local edit, and it is announced. So a
+  tool that only knows about `transport.set_tempo` drives the session without learning a new command.
+- **The shared beat is continuous across a tempo change.** The timeline is re-anchored *before* the new tempo
+  takes effect, so no peer's phase jumps; and a packet carries the sender's beat at its send time, which the
+  receiver advances by the datagram's actual transit time on the shared monotone clock rather than guessing a
+  round trip.
+- **What this is NOT, in the code and not only in this file.** The model is `zene-link-style`: Ableton Link's
+  *semantics* without the Ableton Link *library*, which this build does not vendor. `link.get_state` carries
+  an `interop` block that says so, with the reason. The licence question was settled before the code was
+  written and the finding is recorded in `docs/LINK-SYNC.md` §1: Ableton Link's own `LICENSE.md` is
+  **GPL-2.0-or-later** (its final paragraph offers a *separate* commercial licence; it does not qualify the
+  GPL grant), so **vendoring it is permitted for this GPL-2.0-or-later product and real Link
+  interoperability is a follow-up lane rather than a licence-blocked one**. That is a deliberate scope
+  decision, and it is the reason a Link-enabled third-party application cannot join this session today.
+- **UI absence — one line: session sync is drivable through the socket, not from the interface.** Nothing in
+  `src/gui/` draws, edits or reads a session tempo, a peer list or a beat phase. `docs/KNOWN-LIMITATIONS.md`
+  carries the same sentence.
+- **Stated limits.** `start_stop_sync` is announced and reported but never acted on; the play head is *not*
+  repositioned onto the session grid (the phase and its error are measured and reported, and the tempo is
+  applied); Windows reports the transport unavailable with the reason; and the shared clock assumption holds
+  for instances on one host or on hosts whose clocks agree (`docs/LINK-SYNC.md` §5 lists all six).
+- **Proof:** the registered ctests `ControlLinkCommandsTest` (the five commands, the typed refusals, the A16
+  inverses through `control.undo`, and the revision/phase arithmetic computed independently) and
+  `ControlLinkSync` — **two real binaries, one session, one driving the other's tempo and phase through
+  `--control-socket`**, with the phase compared against elapsed wall time. `ControlLinkSync` is registered
+  `RUN_SERIAL` (the multicast group is shared state by design) and reports ctest *Skipped*, never *Passed*,
+  when the host cannot carry announcements.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
