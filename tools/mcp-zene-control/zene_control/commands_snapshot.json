@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T13:44:48Z",
+  "captured_at": "2026-09-13T15:59:39Z",
   "commands": [
     {
       "args_schema": {
@@ -2154,6 +2154,249 @@
           },
           "src_quality_choices": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The session-sync state this instance sees: whether sync is on, how many peers are in the session and who they are, the session tempo and who declared it, the shared beat and its phase inside the quantum, this engine's own tempo and phase and the error between the two, and whether announcements can travel at all (transport.available / transport.reason). The model is 'zene-link-style' - Ableton Link's semantics (a shared tempo, a shared beat phase, a quantum, a peer set) without Ableton Link's protocol - and the `interop` block says so plainly rather than leaving a reader to infer it. Read-only: no transaction is recorded. There is no interface for any of it; drive it through link.set_* (docs/KNOWN-LIMITATIONS.md).",
+      "group": "link",
+      "id": "link.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "beat": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "engine_phase_beats": {
+            "type": "number"
+          },
+          "engine_tempo": {
+            "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "interop": {
+            "type": "object"
+          },
+          "last_packet_age_ms": {
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "peer_count": {
+            "type": "integer"
+          },
+          "peer_id": {
+            "type": "string"
+          },
+          "peers": {
+            "type": "array"
+          },
+          "phase_beats": {
+            "type": "number"
+          },
+          "phase_error_beats": {
+            "type": "number"
+          },
+          "published_count": {
+            "type": "number"
+          },
+          "quantum": {
+            "type": "integer"
+          },
+          "quantum_choices": {
+            "type": "array"
+          },
+          "session_revision": {
+            "type": "integer"
+          },
+          "session_revision_owner": {
+            "type": "string"
+          },
+          "session_tempo": {
+            "type": "number"
+          },
+          "start_stop_sync": {
+            "type": "boolean"
+          },
+          "tempo_is_local": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Join or leave the session: on starts the transport, joins the multicast group and begins announcing this instance's tempo and beat every 100 ms; off stops both and forgets every peer. While sync is on, a tempo change made here - by any means, including transport.set_tempo - is announced to the session, and a peer's newer announcement sets this engine's tempo, so two instances stay on one tempo without anyone relaying between them. Joining also declares this instance's current tempo, so a session that was already running is adopted from its own newest announcement. The quantum and the kernel's tempo bounds are reported by link.get_state. Transport is UDP multicast on 224.76.78.75:20808, the group Ableton Link itself uses for discovery.",
+      "group": "link",
+      "id": "link.set_enabled",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "interop": {
+            "type": "object"
+          },
+          "peer_count": {
+            "type": "integer"
+          },
+          "previous": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "quantum": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "quantum"
+        ],
+        "type": "object"
+      },
+      "description": "Set the quantum, in beats: the length of the cycle the shared beat phase is measured against and the grid a phase-aligned action would be placed on. 4 (one 4/4 bar) is the default; 1 to 64 is accepted. The quantum is THIS instance's own setting and is not part of what peers agree on - a peer that reports a different one is reported with it (link.get_state peers[].quantum) and is not corrected.",
+      "group": "link",
+      "id": "link.set_quantum",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "phase_beats": {
+            "type": "number"
+          },
+          "previous": {
+            "type": "integer"
+          },
+          "quantum": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bpm": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "bpm"
+        ],
+        "type": "object"
+      },
+      "description": "Declare a session tempo, in BPM, to every peer: the timeline is re-anchored at the declaration so the shared beat does not jump, the revision goes to one above the highest this instance has seen, and the announcement that carries it is newer than every declaration already in the session - so peers follow this one rather than the other way round. This is the explicit form of a tempo change; a plain transport.set_tempo reaches the session too, on the next announcement, because the model watches the engine's own tempo for a change it did not make itself. A session tempo is a double on the wire and an integer in this engine, so what is applied is the rounded value and the engine's own bounds win.",
+      "group": "link",
+      "id": "link.set_session_tempo",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "engine_tempo": {
+            "type": "integer"
+          },
+          "previous": {
+            "type": "number"
+          },
+          "session_revision": {
+            "type": "integer"
+          },
+          "session_tempo": {
+            "type": "number"
+          },
+          "tempo_is_local": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "start_stop_sync": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "start_stop_sync"
+        ],
+        "type": "object"
+      },
+      "description": "Turn transport-start/stop sharing on or off: the flag that says a session's members share not only the tempo and the beat phase but the decision to be playing. It is announced to peers (peers report their own through link.get_state) and it is reported back, but this release does NOT act on it: nothing here starts or stops another instance's transport, because doing so would write the audio thread's play state from a network announcement. The flag is the contract's declaration half; the acting half is a stated limitation (docs/LINK-SYNC.md section 5).",
+      "group": "link",
+      "id": "link.set_start_stop_sync",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "boolean"
+          },
+          "start_stop_sync": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -6434,16 +6677,16 @@
       }
     }
   ],
-  "count": 139,
+  "count": 144,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030-w18/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/w18-zene.sock",
-    "version": "0.2.0-alpha.112+5e83358"
+    "source_socket": "/tmp/zn-split.sock",
+    "version": "0.2.0-alpha.126+12fc4ef"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
