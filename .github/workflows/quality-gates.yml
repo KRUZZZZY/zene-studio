@@ -3,7 +3,10 @@ name: quality-gates
 # Ported from the LMMS standards fork (2026-09-09).
 #
 # Trigger policy (2026-09-11): the static gates run on every push and pull request;
-# the two build-backed jobs stay workflow_dispatch-only.
+# the build-backed jobs stay workflow_dispatch-only - unit-tests and coverage, plus the
+# two suite jobs added 2026-09-12 (mcp-bridge-e2e-tests, vst3-instrument-fixture).
+# Jobs that need no build run on push and pull request: static-gates and
+# mcp-bridge-python-tests (the MCP bridge's Python suites; see that job's comment).
 #
 # "Dispatch only - Actions minutes are metered" did not survive the cost check:
 # build.yml already runs a 7-job matrix on every push (~29-47 min per job,
@@ -160,3 +163,206 @@ jobs:
           name: coverage-html
           path: build-coverage/coverage/html
           if-no-files-found: warn
+
+  # The MCP bridge's Python suites (tools/mcp-zene-control/tests) - the ones the
+  # programme's handoff lists as "run by nothing in the pipeline". NEEDS NO BUILD:
+  # this is Python only (no cmake, no Qt, no compiler), so like static-gates it runs
+  # on every push and pull request.
+  #
+  # Scope, stated honestly: 53 of the bridge's 64 tests run here. test_units (39:
+  # naming, generation, configuration, taxonomy, offline surfaces) and test_wire_client
+  # (14: real AF_UNIX sockets against harness.StubDaw, no DAW). The other 11 -
+  # test_mcp_e2e (6) and test_mcp_errors (5) - start a real headless Zene Studio
+  # binary, so they need a build: mcp-bridge-e2e-tests below, dispatch-only.
+  mcp-bridge-python-tests:
+    name: MCP bridge Python tests (no build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install the MCP SDK the bridge imports
+        # tools/mcp-zene-control ships no requirements file; 2.0.0 is the version the
+        # suites were verified against (README, "Runtime").
+        run: pip install "mcp==2.0.0"
+      - name: Run the two suites that need no DAW binary
+        # 0 tests is an error, never a pass: each module's "Ran N tests" is read back
+        # and a zero fails the job (a crashed import still exits non-zero, but the
+        # count check is what catches a suite that silently collected nothing).
+        run: |
+          cd tools/mcp-zene-control || exit 1
+          status=0
+          total=0
+          for module in test_units test_wire_client; do
+            log="/tmp/mcp-bridge-${module}.log"
+            code=0
+            python3 -m unittest "tests.${module}" > "$log" 2>&1 || code=$?
+            ran=$(sed -n 's/^Ran \([0-9][0-9]*\) tests\?.*/\1/p' "$log" | tail -1)
+            echo "::group::python3 -m unittest tests.${module}"
+            cat "$log"
+            echo "::endgroup::"
+            echo "tests.${module}: ran ${ran:-0} test(s), exit ${code}"
+            if [ "${ran:-0}" -eq 0 ]; then
+              echo "::error::tests.${module} ran 0 tests - 0 tests is an error, not a pass"
+              status=1
+            fi
+            [ "$code" -eq 0 ] || status=1
+            total=$((total + ${ran:-0}))
+          done
+          echo "MCP bridge Python tests (no build): ${total} test(s) run"
+          if [ "$total" -eq 0 ]; then
+            echo "::error::no tests ran at all"
+            status=1
+          fi
+          exit "$status"
+
+  # The bridge's end-to-end suites: the 11 tests the no-build job above cannot reach.
+  # test_mcp_e2e and test_mcp_errors start the built `zene` binary with --control-socket
+  # through tests/harness.py (Dummy audio, offscreen Qt) and drive it over a real
+  # AF_UNIX socket, so this job needs a build - and is therefore dispatch-only, like
+  # unit-tests and coverage.
+  #
+  # UNVERIFIED FROM THE AUTHORING BOX: nothing may be pushed from there, so this job
+  # has never been triggered and no build was run to prove it. Dispatch it once and
+  # read the log before trusting it. Expected risk in that log: the bridge README
+  # records test_mcp_e2e's test_11 (control.undo) failing against a merged-tree build
+  # because the DAW SEGFAULTs inside ProjectJournal::undo - a DAW-side defect the
+  # bridge reports honestly as the typed `disconnected`.
+  mcp-bridge-e2e-tests:
+    name: MCP bridge end-to-end tests (needs a build)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies (Qt6, mirrors the locally verified build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
+            libsamplerate0-dev libxml2-dev \
+            liblist-moreutils-perl libxml-parser-perl
+      - name: Install the MCP SDK the bridge imports
+        run: pip install "mcp==2.0.0"
+      - name: Configure (Debug, Qt6)
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+      - name: Build
+        run: cmake --build build -j4
+      - name: Run all four bridge suites against the built binary
+        # tests/harness.py's default binary is <repo>/tools/zene-pa-agentctl/build/lmms,
+        # a lane path that does not exist in this tree, so the binary is passed
+        # explicitly - located, not assumed.
+        run: |
+          cd tools/mcp-zene-control || exit 1
+          bin=$(find "$GITHUB_WORKSPACE/build" -maxdepth 3 -type f -name zene -perm -u+x | head -1)
+          if [ -z "$bin" ]; then
+            echo "::error::no built 'zene' binary under build/ - the end-to-end suites need one"
+            exit 1
+          fi
+          echo "ZENE_CONTROL_BINARY=$bin"
+          export ZENE_CONTROL_BINARY="$bin"
+          py=$(command -v python3)
+          export ZENE_CONTROL_PYTHON="$py"
+          status=0
+          pairs=("tests.test_units tests.test_wire_client" "tests.test_mcp_e2e tests.test_mcp_errors")
+          for pair in "${pairs[@]}"; do
+            read -r -a modules <<< "$pair"
+            log="/tmp/mcp-bridge-$(echo "$pair" | tr ' .' '__').log"
+            code=0
+            python3 -m unittest "${modules[@]}" > "$log" 2>&1 || code=$?
+            ran=$(sed -n 's/^Ran \([0-9][0-9]*\) tests\?.*/\1/p' "$log" | tail -1)
+            echo "::group::python3 -m unittest $pair"
+            cat "$log"
+            echo "::endgroup::"
+            echo "$pair: ran ${ran:-0} test(s), exit ${code}"
+            if [ "${ran:-0}" -eq 0 ]; then
+              echo "::error::$pair ran 0 tests - 0 tests is an error, not a pass"
+              status=1
+            fi
+            [ "$code" -eq 0 ] || status=1
+          done
+          exit "$status"
+
+  # The CMake fixture-gated VST3 instrument suites. tests/CMakeLists.txt gates three
+  # ctest targets behind `if(TARGET lmms_vst3_sdk)` + WANT_VST3_TEST_INSTRUMENT
+  # (default OFF; docs/VST3-INSTRUMENT-FIXTURE.md): Vst3InstrumentFixtureProbe,
+  # Vst3InstrumentTest and Vst3InstrumentIntegrationTest. Nothing in CI has ever passed
+  # that option - build.yml configures every release job without it (only -DWANT_VST3=ON)
+  # - so these three execute nowhere automated today.
+  #
+  # They need the pinned VST3 SDK, which is what makes a job viable at all:
+  # .github/workflows/provision-plugin-hosting-deps.sh fetches it at the pin (MIT,
+  # verified from the SDK's own LICENSE.txt) into build/vst3sdk, exactly where
+  # plugins/Vst3Effect/CMakeLists.txt's default LMMS_VST3_SDK_PATH looks - no extra -D.
+  # The two cache keys are build.yml's, so a pin bump invalidates them.
+  #
+  # A build is required (the probe links lmms_vst3_sdk, the integration test links
+  # lmmsobjs), so like unit-tests and coverage this job is dispatch-only. It is not
+  # wired into the release matrix and build.yml is untouched.
+  #
+  # UNVERIFIED FROM THE AUTHORING BOX: nothing may be pushed from there and no build
+  # was run (a sibling session holds the box's one build slot), so this job has never
+  # been triggered. Dispatch it once and read the log before trusting it. The
+  # configuration is the one docs/VST3-INSTRUMENT-FIXTURE.md records passing locally
+  # (section 6.1: ctest 26/26, the probe as test 26), and the -DUSE_WERROR=ON failure that
+  # doc records is fixed in this tree (cmake/modules/Vst3Sdk.cmake marks
+  # lmms_vst3_sdk SYSTEM).
+  vst3-instrument-fixture:
+    name: VST3 instrument fixture suites (needs a build + the pinned SDK)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cache the pinned VST3 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/vst3sdk
+          key: "vst3sdk-${{ runner.os }}-${{ hashFiles('cmake/modules/Vst3Sdk.cmake') }}"
+      - name: Cache the pinned CLAP headers
+        uses: actions/cache@v4
+        with:
+          path: build/clap
+          key: "clap-${{ runner.os }}-${{ hashFiles('cmake/modules/ClapHeaders.cmake') }}"
+      - name: Provision the pinned VST3 SDK and CLAP headers
+        # The same step build.yml runs before Configure on every release job.
+        run: bash .github/workflows/provision-plugin-hosting-deps.sh build
+      - name: Install build dependencies (Qt6, mirrors the locally verified build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
+            libsamplerate0-dev libxml2-dev \
+            liblist-moreutils-perl libxml-parser-perl
+      - name: Configure (Debug, Qt6, fixture ON)
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DWANT_QT6=ON \
+            -DWANT_VST3=ON \
+            -DWANT_VST3_TEST_INSTRUMENT=ON
+      - name: Build the three fixture targets
+        # Named explicitly, not "build everything": with no SDK the option is never
+        # declared (it sits inside if(TARGET lmms_vst3_sdk)), so these targets do not
+        # exist and this step fails loudly instead of quietly running nothing.
+        run: |
+          cmake --build build -j4 --target \
+            Vst3InstrumentFixtureProbe \
+            Vst3InstrumentTest \
+            Vst3InstrumentIntegrationTest
+      - name: Run the three fixture suites (ctest must run from build/tests)
+        run: |
+          set -o pipefail
+          cd build/tests || exit 1
+          ctest -R '^Vst3Instrument' --output-on-failure --no-tests=error | tee /tmp/vst3-fixture-ctest.log
+          # 0 tests must never read as green: assert all three suites ran.
+          grep -q 'out of 3' /tmp/vst3-fixture-ctest.log
