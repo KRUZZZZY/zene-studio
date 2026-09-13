@@ -115,6 +115,13 @@ set(LMMS_SRCS
 	core/ControlCommandsRackZones.cpp
 	core/ControlCommandsScript.cpp
 	core/ControlCommandsExport.cpp
+	# The session tempo/phase sync model and its wire (D11 "Ableton Link sync"):
+	# the model, the transport seam, the UDP multicast transport, and the
+	# link.* commands that make the whole of it drivable. See docs/LINK-SYNC.md.
+	core/ControlCommandsLink.cpp
+	core/LinkSync.cpp
+	core/LinkSyncWire.cpp
+	core/LinkUdpTransport.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}

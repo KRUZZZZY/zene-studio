@@ -268,12 +268,14 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **129 rows**, measured from the table itself:
-**63 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 54 `not_mutating`**. With the telemetry
+The SPEC A16 classification table holds **134 rows**, measured from the table itself:
+**67 `true_inverse`, 9 `snapshot`, 3 `irreversible`, 55 `not_mutating`**. With the telemetry
 client compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their
-commands, giving **127 rows / 52 `not_mutating`**. `ReversibilityContractTest` asserts both
+commands, giving **132 rows / 53 `not_mutating`**. `ReversibilityContractTest` asserts both
 sets, so a row added or moved between classes cannot ship with this page quoting the old
-split. (The 117-row figure this page carried before the comping and tempo-map lanes landed was
+split. (The five rows the session-sync lane added are its four recorded-action `true_inverse`
+rows - `link.set_enabled`, `link.set_quantum`, `link.set_start_stop_sync`,
+`link.set_session_tempo` - and `link.get_state`'s `not_mutating` row.) (The 117-row figure this page carried before the comping and tempo-map lanes landed was
 their twelve rows short - five `comp.*` `true_inverse`, two `comp.*` `not_mutating`,
 `transport.tempo_map_get` and the four `transport.tempo_map_*` edit rows that the merge which
 took the w11 table split dropped (they were written into the retired
@@ -313,15 +315,59 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   matching the pre-existing engine, which divides by `DefaultTicksPerBar` and never by the metre. There are no
   tempo *curves*: events are steps.
 
+## Session sync: two instances on one tempo and one beat (`link.*`) — added 2026-09-13
+
+- **New: a session. Two Zene instances on one machine (or on one network segment) agree on a tempo and a
+  shared beat phase, and either one can drive the other.** Instance A declares a tempo - deliberately, with
+  `link.set_session_tempo`, or simply by changing its tempo with `transport.set_tempo` - and instance B,
+  driven by nothing but its own socket, plays that tempo. No client relays between them: the instances
+  announce themselves to each other every 100 ms over UDP multicast on `224.76.78.75:20808`, the group
+  Ableton Link itself uses.
+- **Control surface:** `link.get_state` (whether sync is on, the peers and their ids, the session tempo and
+  who declared it, the shared beat and its phase inside the quantum, this engine's own tempo and phase and
+  the error between the two, and whether announcements can travel at all), `link.set_enabled` (join or leave
+  the session), `link.set_quantum` (1..64 beats, 4 by default), `link.set_start_stop_sync`, and
+  `link.set_session_tempo`. Every mutating call records its SPEC A16 class (`true_inverse` — an action
+  checkpoint on the engine's own journal stack restores the previous value) and every refusal is typed.
+- **The engine's own tempo is what makes an ordinary tempo change reach the session.** The model compares
+  the Song's tempo with the value it last applied; anything else is a local edit, and it is announced. So a
+  tool that only knows about `transport.set_tempo` drives the session without learning a new command.
+- **The shared beat is continuous across a tempo change.** The timeline is re-anchored *before* the new tempo
+  takes effect, so no peer's phase jumps; and a packet carries the sender's beat at its send time, which the
+  receiver advances by the datagram's actual transit time on the shared monotone clock rather than guessing a
+  round trip.
+- **What this is NOT, in the code and not only in this file.** The model is `zene-link-style`: Ableton Link's
+  *semantics* without the Ableton Link *library*, which this build does not vendor. `link.get_state` carries
+  an `interop` block that says so, with the reason. The licence question was settled before the code was
+  written and the finding is recorded in `docs/LINK-SYNC.md` §1: Ableton Link's own `LICENSE.md` is
+  **GPL-2.0-or-later** (its final paragraph offers a *separate* commercial licence; it does not qualify the
+  GPL grant), so **vendoring it is permitted for this GPL-2.0-or-later product and real Link
+  interoperability is a follow-up lane rather than a licence-blocked one**. That is a deliberate scope
+  decision, and it is the reason a Link-enabled third-party application cannot join this session today.
+- **UI absence — one line: session sync is drivable through the socket, not from the interface.** Nothing in
+  `src/gui/` draws, edits or reads a session tempo, a peer list or a beat phase. `docs/KNOWN-LIMITATIONS.md`
+  carries the same sentence.
+- **Stated limits.** `start_stop_sync` is announced and reported but never acted on; the play head is *not*
+  repositioned onto the session grid (the phase and its error are measured and reported, and the tempo is
+  applied); Windows reports the transport unavailable with the reason; and the shared clock assumption holds
+  for instances on one host or on hosts whose clocks agree (`docs/LINK-SYNC.md` §5 lists all six).
+- **Proof:** the registered ctests `ControlLinkCommandsTest` (the five commands, the typed refusals, the A16
+  inverses through `control.undo`, and the revision/phase arithmetic computed independently) and
+  `ControlLinkSync` — **two real binaries, one session, one driving the other's tempo and phase through
+  `--control-socket`**, with the phase compared against elapsed wall time. `ControlLinkSync` is registered
+  `RUN_SERIAL` (the multicast group is shared state by design) and reports ctest *Skipped*, never *Passed*,
+  when the host cannot carry announcements.
+
 ## Not in this draft yet
 
 Written per lane as it lands, so this list is state as of **2026-09-13**; W12 owns turning this
 file into the user-first notes. **In and described above:** warp marker editing, export dither and
 SRC quality, rack macros and key/velocity zones, clip fades/crossfades/gain, browser tag/metadata
-search with its peak cache, bounded coalescing undo, and comping - plus the Session View and the
+search with its peak cache, bounded coalescing undo, comping, session sync (`link.*`), and the
+tempo map - plus the Session View and the
 process items, whose sections W12 adds.
 
-**Still absent from 0.3.0's scope:** the `#602` modulation layer, Ableton Link sync,
+**Still absent from 0.3.0's scope:** the `#602` modulation layer,
 sample-accurate automation, freeze/bounce-in-place, groove pool and quantise, punch in/out, tempo
 automation and time signatures, recording crash recovery, the two verification programmes
 (real-time-safety and golden-audio), `#614` (doc-only; wasmtime is absent here) and `ARCH-2`. Each

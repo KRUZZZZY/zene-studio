@@ -457,6 +457,12 @@ void registerControlCommands(ControlRegistry& registry)
 	// composite half, each its own translation unit.
 	registerCompCommands(registry);
 	registerCompEditCommands(registry);
+	// Session tempo/phase sync (D11 "Ableton Link sync"): the model in
+	// include/LinkSync.h, its UDP multicast transport, and the link.* commands.
+	// No compile-time switch: the model needs no audio device, no project and no
+	// display, and reports its own transport's availability, so its ids are
+	// honest in every configuration (docs/LINK-SYNC.md).
+	registerLinkCommands(registry);
 }
 
 } // namespace lmms
