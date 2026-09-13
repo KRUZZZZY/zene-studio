@@ -513,6 +513,30 @@ that is this page's fault — report it and it gets added.
   audio that never reached a file. `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
   it per take, and `docs/RELEASE-NOTES-v0.3.0-alpha.md` records the test that measures it. Drivable through the
   socket, not from the interface.
+- **MIDI clock is the engine and the socket, and there is no interface for it — added 2026-09-13.** The DAW runs
+  as a MIDI clock **master** (24 pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on
+  the transport's own edges, emitted from the audio thread through the engine's existing MIDI output) and as a
+  clock **slave** (it follows an incoming clock, measures its tempo over one quarter note of pulses, and writes
+  that tempo to the song when told to follow) — drivable through `--control-socket` (`clock.get_state`,
+  `clock.master_set`, `clock.slave_set`), with a registered ctest driving the real binary over the socket and a
+  registered QTest proving the rate arithmetic — but **nothing in `src/gui/` offers a clock port selector, an
+  external-sync toggle or a lock indicator**: `grep -rniI 'MidiClock' src/gui/` returns **0** hits against
+  **36** for `MidiLearn` in the same directory, so the clock is drivable through the socket and not from the
+  interface. The bound is stated rather than implied:
+  **the bytes reach a MIDI device only where a real backend is open** — a headless run reports what the engine
+  PRODUCED (the message counters and the bounded monitor `clock.get_state` returns, asserted by
+  `tests/control-clock-commands.py`), NOT what an external instrument received, which no test on a box with no
+  instrument can measure. **MIDI time code (MTC) is not generated at all**: a full-frame timecode master needs a
+  frame rate, a drop-frame flag and a SMPTE start offset, and this engine's time model is ticks-per-bar with
+  neither, so `clock.get_state` reports `mtc: "absent"` rather than a timecode it cannot produce (quarter-frame
+  `0xF1` and song-position `0xF2` are decoded and counted on the INPUT side, and the note is what a slave can
+  report without acting on it). Two further bounds: real-time messages are decoded and counted by the slave but
+  **an incoming START/STOP/CONTINUE/SONG POSITION does not move the transport** in this release (the transport is
+  the user's, and a MIDI thread moving it is a behavioural change this lane did not take), and the follower's
+  measured tempo is accurate to **at most `tempo × 2 × 5 ms / window`** — the engine reports that number as
+  `slave.tempo_error_bound_bpm` — because a pulse is timestamped when the MIDI client's reader thread observes it,
+  and the tree's ALSA Raw reader polls after a 5 ms sleep (`src/core/midi/MidiAlsaRaw.cpp`). Drivable through the
+  socket, not from the interface.
 
 ## Telemetry and privacy
 

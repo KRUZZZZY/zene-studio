@@ -345,11 +345,11 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **164 rows**, measured from the table itself:
-**86 `true_inverse`, 13 `snapshot`, 4 `irreversible`, 61 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **167 rows**, measured from the table itself:
+**87 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 62 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**162 rows / 59 `not_mutating`** - which is the base
+**165 rows / 87 / 14 / 4 / 60** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
@@ -376,6 +376,18 @@ own journal checkpoint) and `groove.extract` / `groove.set` / `groove.remove` / 
 (recorded-action `true_inverse` rows: the pool is project state the Song's journal checkpoint does not
 carry, so the recorded step writes the captured `<groove-pool>` element back). `docs/GROOVE-POOL.md`
 section 5 is the argument for each.
+
+The three rows the 0.3.0 MIDI clock lane added are the group's whole surface, and only one of them is
+`true_inverse`: `clock.get_state` is a `not_mutating` inspector; `clock.master_set` is a
+recorded-action `true_inverse` row (the enabled flag and the port subscription are a bounded pair a
+recorded undo step restores exactly); and `clock.slave_set` is a **`snapshot`** row - the
+configuration it sets (mode, tempo-follow flag, source port, drift bound) is restored exactly, but
+turning tempo-follow ON makes the slave write `Song::setTempo` every time the measurement leaves the
+dead band, and a *trajectory* of project-state writes is not one state any bounded record can restore.
+The row says exactly that, the transaction reports the tempo the command found, and the fallback is
+`transport.set_tempo`. Claiming `true_inverse` here would be claiming that one Ctrl+Z puts the tempo
+back, which it does not - see the row's own text in
+`src/core/ControlReversibilityTableSnapshot.cpp`.
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 
@@ -625,6 +637,56 @@ section 5 is the argument for each.
   offer to be gone, a discard to remove the journal while keeping the audio, one `control.undo` to take a
   `record.journal_begin` back off by dispatching the paired command, and `control.undo` to refuse, typed,
   after an irreversible discard.
+
+## MIDI clock / MTC: the DAW as a clock master and as a clock slave (`clock.*`) — added 2026-09-13
+
+- **New: the engine is a MIDI clock master and a MIDI clock slave.** As a **master** it emits 24 clock pulses to
+  the quarter note (one every `TicksPerMidiClockPulse` = 2 engine ticks, derived from
+  `DefaultTicksPerBar`/`DefaultStepsPerBar` — the grid, not a tunable), START from the top of the song,
+  CONTINUE and a Song Position Pointer from any other position, a Song Position Pointer for a seek while
+  running, and STOP on the falling edge. It runs on the audio thread from `Song::processNextBuffer`, **before
+  that function's transport gate**, because STOP is an *edge* and a stopped transport is exactly when it has to
+  be sent (the Session View scheduler's precedent). The messages go through the engine's **existing** MIDI output
+  path — `MidiClient::processOutEvent` through a `MidiPort` the clock owns — which is the path a track's MIDI
+  output already uses; no second output path was invented. As a **slave** it follows an incoming clock, measures
+  the tempo over a window of one quarter note (24 pulses) rather than the last interval, reports `locked` and the
+  drift of the last interval from the window's mean, drops the lock when the pulses stop or a STOP arrives, and
+  writes the measured tempo to the song when told to follow. Decoding had to be built too: `0xF8/0xFA/0xFB/0xFC`
+  and the `0xF1`/`0xF2` payloads were previously **discarded** by the raw MIDI parser, and the clock family was an
+  "unhandled output event" warning in both output switches.
+- **Control surface:** three ids. `clock.get_state` writes nothing; `clock.master_set` is a recorded-action
+  `true_inverse` (the enabled flag **and** the port subscription come back off one `control.undo`);
+  `clock.slave_set` is a **`snapshot`** row, and the reason is the honest one: the configuration it sets is
+  restored exactly, but turning tempo-follow ON makes the slave write `Song::setTempo` every time the measurement
+  leaves the dead band — a **trajectory** of project-state writes, which is not one state any bounded recorded
+  state restores. The row says so, the mechanism records it, the fallback names `transport.set_tempo`, and the
+  transaction's `before.tempo` reports the value a caller restores it with. The three rows move the A16 histogram
+  to the figure in the section above.
+- **THE BOUND, stated rather than implied.** The counters and the bounded monitor `clock.get_state` returns are
+  what the engine **produced and handed to its MIDI client**, asserted by the registered ctest below; they are
+  **not** evidence that an external instrument received the bytes, which nothing on a box with no instrument can
+  measure. **MIDI time code is not generated**: a full-frame MTC master needs a frame rate, a drop-frame flag and
+  a SMPTE start offset, and this engine's time model is ticks-per-bar with neither, so `clock.get_state` reports
+  `mtc: "absent"` instead of a timecode it cannot produce. Real-time and song-position messages **are** decoded
+  and counted on the input side, but **an incoming START/STOP/CONTINUE/SONG POSITION does not move the transport**
+  in this release. The follower's tempo is accurate to **at most `tempo × 2 × 5 ms / window`** — reported as
+  `slave.tempo_error_bound_bpm` — because a pulse is timestamped when the MIDI client's reader thread observes it,
+  and the tree's ALSA Raw reader polls after a 5 ms sleep. The master's own granularity is one audio period,
+  reported as `master.period_ms`.
+- **UI absence — one line: MIDI clock is drivable through the socket, not from the interface.** `grep -rniI
+  'MidiClock' src/gui/` returns **0** hits, so there is no port selector, no external-sync toggle and no lock
+  indicator; `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds above.
+- **Proof:** the registered QTest `MidiClockTest` (`tests/src/core/MidiClockTest.cpp`) drives the tracker with
+  synthetic timestamps and asserts a pulse stream at 120 BPM measures 120 and one that moves to 140 BPM measures
+  140 (following, not averaging), that two pulses or none never lock, that a lock drops past the timeout and
+  immediately on a STOP, that a Song Position Pointer is in MIDI beats, that the master's message set for a known
+  transport script is exactly START + the pulses the advanced ticks imply + a pointer for a seek + STOP **in that
+  order**, and that the group carries the A16 classes the table states. The registered ctest
+  `ControlClockCommands` (`tests/control-clock-commands.py`) drives the **real binary** over `--control-socket`:
+  the master over a live transport (counters, monitor order, STOP last, silence once stopped, silence while
+  disabled), the slave enabled with **no clock arriving** — unlocked, no tempo written, transport not moved, and
+  the same again after several audio periods and three follower polls — every typed refusal, the A16 records, and
+  both `control.undo` inverses including the slave's honest one.
 
 ## Not in this draft yet
 

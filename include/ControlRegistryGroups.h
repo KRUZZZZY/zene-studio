@@ -115,6 +115,15 @@ LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
  *  reach it - there is no interface for freeze in this release. */
 LMMS_EXPORT void registerFreezeCommands(ControlRegistry& registry);
 
+/*! clock.get_state / clock.master_set / clock.slave_set - MIDI clock, the DAW
+ *  as a clock master and as a clock slave. The engine half is include/MidiClock.h
+ *  and its sources (the pulse generator, the tempo tracker, the widened MIDI
+ *  input and output switches and the per-audio-period hook in
+ *  Song::processNextBuffer); this group is what makes any of it drivable, and it
+ *  is the ONLY way to reach it - there is no interface for a MIDI clock in this
+ *  release. MTC is not generated: the engine has no frame rate or SMPTE offset
+ *  to build one from, and clock.get_state reports that as `mtc: "absent"`. */
+
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

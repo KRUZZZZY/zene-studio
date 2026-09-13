@@ -104,6 +104,10 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsClipEdits.cpp
+	# MIDI clock / MTC (0.3.0): the DAW as a clock master and as a clock slave.
+	# The engine half is the MidiClock* sources below; this is the command group
+	# that drives it. See docs/KNOWN-LIMITATIONS.md for the bound it states.
+	core/ControlCommandsClock.cpp
 	# Take lanes and the non-destructive composite (task #600): the take half,
 	# the composite half, and the helpers the two share. See docs/COMPING.md.
 	core/ControlCommandsComp.cpp

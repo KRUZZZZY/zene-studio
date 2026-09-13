@@ -400,6 +400,12 @@ const ReversibilityRow kPassiveRows[] = {
 		"bounds, and with 'name' one groove's steps",
 		"no write: groove.extract/set/remove/rename are the pool's writers and "
 		"each carries a recorded action checkpoint", ""),
+	R("clock.get_state", RC::NotMutating, false,
+		"reads the clock's master and slave state, the message counters it has "
+		"emitted and the tracker's measurement",
+		"no write: clock.master_set and clock.slave_set are the group's writers "
+		"and each carries a recorded action checkpoint", ""),
+
 };
 
 constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));
