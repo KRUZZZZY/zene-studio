@@ -28,6 +28,8 @@
 #include <QString>
 #include <QObject>
 
+#include <atomic>
+
 #include "lmmsconfig.h"
 #include "lmms_export.h"
 #include "LmmsTypes.h"
@@ -95,12 +97,19 @@ public:
 
 	static float framesPerTick()
 	{
-		return s_framesPerTick;
+		return s_framesPerTick.load(std::memory_order_relaxed);
 	}
 
 	static float framesPerTick(sample_rate_t sample_rate);
 
 	static void updateFramesPerTick();
+
+	/*! Recompute the frame/tick scalar for \a bpm instead of the global tempo.
+	 *  The tempo map's follower (Song::followTempoMap) is the only caller, and
+	 *  it calls from the AUDIO thread - which is why s_framesPerTick is an
+	 *  atomic: this is the one writer that is not the control thread, and the
+	 *  readers are on the timing path (docs/TEMPO-MAP.md section 4). */
+	static void updateFramesPerTickForTempo(int bpm);
 
 	static inline Engine * inst()
 	{
@@ -129,7 +138,7 @@ private:
 		delete tmp;
 	}
 
-	static float s_framesPerTick;
+	static std::atomic<float> s_framesPerTick;
 
 	// core
 	static AudioEngine *s_audioEngine;

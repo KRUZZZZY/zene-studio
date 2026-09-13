@@ -77,6 +77,35 @@ const ReversibilityRow kTrueInverseRows[] = {
 		"one scalar on the Song, which is a JournallingObject",
 		"ProjectJournal (Song checkpoint): Song::saveState carries the tempo",
 		""),
+	// The tempo map (D11) is NOT a JournallingObject and is NOT inside the Song's
+	// own checkpoint - a Song checkpoint captures TrackContainer::saveSettings,
+	// i.e. the track container, and the map lives beside the tempo model. So
+	// these four record an ACTION checkpoint: the captured TempoMap is written
+	// back through TempoMapPublisher::edit when the stack unwinds, which is the
+	// same mechanism transport.seek uses for engine state the journal cannot
+	// reach.
+	R("transport.tempo_map_add", RC::TrueInverse, true,
+		"the tempo map is a value type on the Song, not a JournallingObject, so "
+		"no object checkpoint covers it",
+		"action checkpoint: the recorded undo step writes the map captured before "
+		"the edit back through TempoMapPublisher::edit",
+		""),
+	R("transport.tempo_map_remove", RC::TrueInverse, true,
+		"the same value type, one event removed",
+		"action checkpoint: the recorded undo step restores the map captured "
+		"before the removal, event for event",
+		""),
+	R("transport.tempo_map_clear", RC::TrueInverse, true,
+		"it removes every event AND switches the map off in one command, so a "
+		"per-event inverse would not be one step",
+		"action checkpoint: the recorded undo step restores the whole captured "
+		"map, events and active flag together, as ONE Ctrl+Z",
+		""),
+	R("transport.tempo_map_set_active", RC::TrueInverse, true,
+		"the flag is engine-read project state with no model of its own",
+		"action checkpoint: the recorded undo step restores the map captured "
+		"before the switch, so the flag comes back with the events",
+		""),
 	R("transport.seek", RC::TrueInverse, true,
 		"the play head is engine state, not project state, and is not a "
 		"JournallingObject - so no object checkpoint exists for it",

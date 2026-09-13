@@ -489,8 +489,8 @@ private slots:
 		// 84 is the product surface a running instance reports in this
 		// configuration (86 with the telemetry.* pair); this binary adds the
 		// five synthetic commands its slots above declare. The 12 rack.* ids
-		// (#599's macros and key/velocity zones) are part of the 84.
-		QCOMPARE(registry->commandCount(), 84 + 5);
+		// (#599) are in the 84 and the five transport.tempo_map_* ids (D11) are new.
+		QCOMPARE(registry->commandCount(), 84 + 5 + 5);
 	}
 #endif
 };

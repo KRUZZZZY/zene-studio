@@ -388,6 +388,7 @@ include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
 include/TemplatesMenu.h
+include/TempoMap.h
 include/TempoSyncBarModelEditor.h
 include/TempoSyncKnob.h
 include/TempoSyncKnobModel.h
@@ -912,6 +913,7 @@ src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTransport.cpp
+src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlDeviceCatalogue.cpp
@@ -1031,6 +1033,7 @@ src/core/StemTrackBuilder.cpp
 src/core/StepRecorder.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
+src/core/TempoMap.cpp
 src/core/TempoSyncKnobModel.cpp
 src/core/ThreadPool.cpp
 src/core/TimePos.cpp
@@ -1248,6 +1251,7 @@ tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
@@ -1313,6 +1317,8 @@ tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/TelemetryTest.cpp
+tests/src/core/TempoMapPersistenceTest.cpp
+tests/src/core/TempoMapTest.cpp
 tests/src/core/TimelineTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp

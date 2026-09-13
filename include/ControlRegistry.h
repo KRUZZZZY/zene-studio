@@ -271,6 +271,11 @@ LMMS_EXPORT void registerControlCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerControlGroupCommands(ControlRegistry& registry);
 //! transport.* and track.*
 LMMS_EXPORT void registerTransportCommands(ControlRegistry& registry);
+/*! transport.tempo_map_get / add / remove / clear / set_active - the tempo
+ *  map's half of the transport group (D11, docs/TEMPO-MAP.md). It is a separate
+ *  translation unit, NOT a separate group: every id keeps the `transport.`
+ *  prefix, so an agent finds the map where it finds the tempo. */
+LMMS_EXPORT void registerTransportTempoMapCommands(ControlRegistry& registry);
 //! mixer.*
 LMMS_EXPORT void registerMixerCommands(ControlRegistry& registry);
 //! project.open and render.render

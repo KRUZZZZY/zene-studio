@@ -40,7 +40,7 @@
 namespace lmms
 {
 
-float Engine::s_framesPerTick;
+std::atomic<float> Engine::s_framesPerTick;
 AudioEngine* Engine::s_audioEngine = nullptr;
 Mixer * Engine::s_mixer = nullptr;
 PatternStore * Engine::s_patternStore = nullptr;
@@ -137,7 +137,23 @@ float Engine::framesPerTick(sample_rate_t sampleRate)
 
 void Engine::updateFramesPerTick()
 {
-	s_framesPerTick = s_audioEngine->outputSampleRate() * 60.0f * 4 / DefaultTicksPerBar / s_song->getTempo();
+	s_framesPerTick.store(s_audioEngine->outputSampleRate() * 60.0f * 4 / DefaultTicksPerBar / s_song->getTempo(),
+		std::memory_order_relaxed);
+}
+
+
+
+
+void Engine::updateFramesPerTickForTempo(int bpm)
+{
+	// The tempo map's follower (include/TempoMap.h, docs/TEMPO-MAP.md). The
+	// expression is updateFramesPerTick()'s with the map's tempo substituted for
+	// the global one, and TempoMap::framesPerTickAtTick() is the same expression
+	// again, so a mapped tempo equal to the global one is bit-identical to the
+	// unmapped scalar - which is what TempoMapTest pins. bpm reaches here only
+	// from an event that passed TempoMap::validEvent(), so it is >= MinTempo.
+	s_framesPerTick.store(s_audioEngine->outputSampleRate() * 60.0f * 4 / DefaultTicksPerBar / bpm,
+		std::memory_order_relaxed);
 }
 
 

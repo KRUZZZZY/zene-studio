@@ -274,6 +274,8 @@ const ReversibilityRow kRows[] = {
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
+	R("transport.tempo_map_get", RC::NotMutating, false,
+		"reads the tempo map and what its queries answer at the play head", "no write", ""),
 	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// The session.* launch requests write NO project state - they queue into

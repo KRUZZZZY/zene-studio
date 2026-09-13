@@ -150,6 +150,36 @@ that marker is published as-is, and no unverified claim is published without one
   a warning. There is no fade curve editor, and no fade at all is drawn.
 >>>>>>> 030/w9-clip-fades
 
+## Tempo map: tempo and time-signature changes on the timeline (`transport.tempo_map_*`) — added 2026-09-13
+
+- **New: the timeline can carry tempo and time-signature events.** A tempo map is an ordered set of events,
+  each with a tempo and/or a time signature, saved with the project (a `<tempo-map>` element inside `<song>`),
+  and the ticks-to-time conversion reads it. Before the map's first event the global tempo is still in force,
+  and past the last event the last event holds — so an event added at bar 16 cannot retime bars 1-15
+  (`docs/TEMPO-MAP.md` §2 has both decisions and why).
+- **The engine reaches the timing path.** The transport follows the map once per audio block, so a mapped
+  project really plays at the mapped tempo; the change takes effect at the start of the block that contains it
+  (sample-accurate tempo automation is a separate, still-open item).
+- **Control surface:** `transport.tempo_map_get` (every event, the active flag, and the tempo, time signature
+  and elapsed seconds the map answers at the play head), `transport.tempo_map_add`, `transport.tempo_map_remove`,
+  `transport.tempo_map_clear` and `transport.tempo_map_set_active`. Each mutating call records its SPEC A16
+  reversibility class (`true_inverse` — an action checkpoint that writes the captured map back, because a
+  tempo map is not a `JournallingObject` and no `Song` checkpoint carries it), its mechanism and its
+  before-state, so one `control.undo` takes the edit back.
+- **The empty path is unchanged, and that is measured.** A project that has no tempo map gains no element in
+  the file: `TempoMapTest` loads a real project, saves it, and requires the bytes to be identical, then
+  requires the engine's frame/tick scalar and the play head's advance to be exactly what they were with the
+  map inactive — with the same map switched on moving both, so the equality cannot pass vacuously.
+- **UI absence — one line: tempo and time-signature changes are drivable through the socket, not from the
+  interface.** Nothing in `src/gui/` draws, edits or reads a tempo map. `docs/KNOWN-LIMITATIONS.md` carries the
+  same sentence.
+- **Proof:** the registered ctests `TempoMapTest` (the map's arithmetic at and around every event, the
+  verbatim empty-map path, the play head retiming, the byte-identical round trip) and
+  `ControlTempoMapCommandsTest` (the schemas, the typed refusals and the inverse of every mutating command).
+- **Stated limits.** Time-signature events change the bar/beat arithmetic, not the tick-to-frame rate —
+  matching the pre-existing engine, which divides by `DefaultTicksPerBar` and never by the metre. There are no
+  tempo *curves*: events are steps.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the

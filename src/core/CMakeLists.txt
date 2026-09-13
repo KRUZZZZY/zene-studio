@@ -107,6 +107,7 @@ set(LMMS_SRCS
 	core/ControlCommandsSurface.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
+	core/ControlCommandsTransportMap.cpp
 	core/ControlCommandsWarp.cpp
 	core/ControlCommandsWarpEdit.cpp
 	core/ControlDeviceCatalogue.cpp
@@ -219,6 +220,7 @@ set(LMMS_SRCS
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp
 	core/Song.cpp
+	core/TempoMap.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp
 	core/Timeline.cpp

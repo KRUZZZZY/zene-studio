@@ -23,6 +23,7 @@ set(LMMS_TESTS
 	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	src/core/ControlRegistryTest.cpp
+	src/core/ControlTempoMapCommandsTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/DataFileFormatTest.cpp
@@ -79,6 +80,8 @@ set(LMMS_TESTS
 	src/core/StableTrackIdsTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
+	src/core/TempoMapPersistenceTest.cpp
+	src/core/TempoMapTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/core/WarpMarkersTest.cpp
@@ -1082,6 +1085,13 @@ set_tests_properties(ControlEditCommandsTest PROPERTIES
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlWarpCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The transport.tempo_map_* group constructs a full Engine and drives the map
+# through the registry (and the engine's undo stack), so it needs a Qt platform
+# plugin even though nothing opens a window - the same reason as the two groups
+# above. TempoMapTest additionally drives Song::processNextBuffer() itself, so it
+# needs the same headless platform.
+set_tests_properties(ControlTempoMapCommandsTest TempoMapPersistenceTest TempoMapTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The stable-id tests construct a full Engine and drive project.open/save through
 # the control registry, so they need a Qt platform plugin even though nothing
