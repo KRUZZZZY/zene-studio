@@ -314,7 +314,8 @@ Different numbering, and not a problem: the 0.2.0-alpha release-gate items **are
 - `doc/STEM-SPLIT.md` — **in this tree too** (tracked, beside `docs/phase-f/`): historical program artifacts from
   the pre-product branch stack, kept for provenance, not product documentation.
 - `docs/KNOWN-LIMITATIONS.md` — in this tree; there is **no** version-suffixed 0.2.1 limitations file.
-- `DOCS-NAMING.md` — the naming decision and the remaining wave-R rename checklist.
+- `docs/DOCS-NAMING.md` — the naming decision and the remaining wave-R rename checklist. Moved out of the
+  repository root by REPO-4 (2026-09-13).
 - Program workspace, **outside this repository**: `STATUS-CORRECTION-2026-09-13.md`,
   `PLANNED-WORK-MASTER-LIST-2026-09-13.md`, `ITEM-NUMBERING-CROSSWALK-2026-09-13.md` and the sources they name
   (`V0.2-ALPHA-PLAN.md`, `POST-ALPHA-PLAN.md`, `ableton-gap/`, `verification/`, `ui-research/`). A reader of this

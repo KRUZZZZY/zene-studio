@@ -1,5 +1,12 @@
 # Lane report — `post-alpha/cmd-notes`: the notes / clips / tracks command group
 
+> **Location (2026-09-13).** Moved from the repository root to `docs/reports/CMDN-REPORT.md`
+> by REPO-4 ("move lane reports and transcripts out of the repository root") — the report and
+> its transcript were the two lane artefacts that had stayed in the root since the
+> `post-alpha/cmd-notes` merge. Documents that cite it by bare name still resolve; a document
+> that says it is "in the repository root" was true when written (see
+> `docs/INDEPENDENT-NOTES-READ.md` finding F27, date-stamped in the same change).
+
 Lane worktree: `$W/zene-pa-cmdnotes` (`$W = .../projects/lmms-fl-research`), branch
 `post-alpha/cmd-notes`, base `post-alpha/agent-control-surface` @ **6b01b98eb** (verified with
 `git rev-parse HEAD` before any edit).

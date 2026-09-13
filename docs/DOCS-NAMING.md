@@ -1,5 +1,11 @@
 # Naming decision — Zene Studio
 
+> **Location (2026-09-13).** Moved from the repository root to `docs/DOCS-NAMING.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"). The decision text
+> is unchanged, and `docs/RENAME-COMPLETE.md` §(d) still classifies it as a historical
+> document whose own spelling must stay as written. Documents that cite it by bare name still
+> resolve to this file; `README.md` and `docs/STATUS.md` carry the new path.
+
 **Status:** repo rename DONE 2026-09-09 · **Owner decision date:** 2026-09-09
 
 ## Decision

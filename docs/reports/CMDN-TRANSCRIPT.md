@@ -1,5 +1,10 @@
 # Raw transcript — notes/clips/tracks command group (external client, offscreen)
 
+> **Location (2026-09-13).** Moved from the repository root to
+> `docs/reports/CMDN-TRANSCRIPT.md` by REPO-4 ("move lane reports and transcripts out of the
+> repository root"). The transcript's own text is unchanged: it is a record of commands that
+> were run, and editing a record would falsify it.
+
 Produced by running the test script directly against `build/lmms`:
 
 ```
