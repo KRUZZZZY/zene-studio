@@ -287,6 +287,18 @@ bool writeSlot(GrooveTemplate* out, int slot, const SlotSums& sums, tick_t stepT
 	return out->setStep(slot, GrooveStep());
 }
 
+/*! The velocity \a amount of the way from \a velocity towards \a velocityTarget,
+ *  clamped to the engine's own bounds. A slot that carries NO velocity opinion
+ *  leaves the note exactly as it is: a slot the source clip never played must not
+ *  silence the note that lands there. Split out of applyGroove() so that function
+ *  stays inside the CCN target. */
+int groovedVelocity(int velocity, int velocityTarget, float amount) noexcept
+{
+	if (velocityTarget == GrooveStep::NoVelocityOpinion) { return velocity; }
+	return clampNoteVelocity(velocity + static_cast<int>(std::lround(
+		amount * static_cast<double>(velocityTarget - velocity))));
+}
+
 } // namespace
 
 
@@ -334,12 +346,7 @@ int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float str
 		const tick_t moved = pos + static_cast<tick_t>(std::lround(amount
 			* static_cast<double>(target - pos)));
 		const int velocity = static_cast<int>(note->getVolume());
-		const int velocityTarget = groove.targetVelocityFor(pos);
-		// "No opinion" leaves the velocity exactly as it is: a slot the source
-		// clip never played must not silence the note that lands there.
-		const int newVelocity = velocityTarget == GrooveStep::NoVelocityOpinion ? velocity
-			: clampNoteVelocity(velocity + static_cast<int>(std::lround(
-				amount * static_cast<double>(velocityTarget - velocity))));
+		const int newVelocity = groovedVelocity(velocity, groove.targetVelocityFor(pos), amount);
 
 		if (moved != pos) { note->setPos(TimePos(moved)); }
 		if (newVelocity != velocity) { note->setVolume(static_cast<volume_t>(newVelocity)); }

@@ -355,18 +355,28 @@ def check_refusals(session, fixture, recorder):
                    "frozen=%r" % state.get("frozen"))
 
 
+def freeze_records(session):
+    """The freeze.* records control.transactions reports, in the order it gives them."""
+    report = session.result("control.transactions")
+    return [r for r in (report.get("transactions") or [])
+            if str(r.get("command", "")).startswith("freeze.")]
+
+
+def everyRecordIsReversible(records):
+    """True when every record both classifies itself reversibly and says so."""
+    return all(r.get("reversible") is True for r in records)
+
+
 def check_transactions(session, recorder):
     """The freeze verbs are true_inverse records; the bounce is not a record."""
-    report = session.result("control.transactions")
-    records = [r for r in (report.get("transactions") or [])
-               if str(r.get("command", "")).startswith("freeze.")]
+    records = freeze_records(session)
     classes = [r.get("class") for r in records]
     ops = [((r.get("inverse") or {}).get("op")) for r in records]
     recorder.check("every freeze.* call left an A16 record", len(records) >= 4,
                    "%d records" % len(records))
     recorder.check("every freeze.* record is true_inverse and reversible",
                    bool(records) and classes == ["true_inverse"] * len(classes)
-                   and all(r.get("reversible") is True for r in records),
+                   and everyRecordIsReversible(records),
                    "classes=%s" % classes)
     recorder.check("a freeze record's inverse names freeze.unfreeze or freeze.track",
                    "freeze.unfreeze" in ops or "freeze.track" in ops, "ops=%s" % ops)
