@@ -156,8 +156,23 @@ that is this page's fault — report it and it gets added.
   Verified in the tree: a rack is saved as the `rack` element inside a `<mixerchannel>`
   (`src/core/Rack.cpp:48`, `RACK_ELEMENT`; the chains and the selector are built in `Rack.cpp` /
   `RackNodes.cpp`), `docs/RACKS.md` §0 is the implementing lane's report, and the lane is an ancestor of this
-  tip. The user-facing half is unchanged and is the point of the bullet: no UI and no scripting binding, so a
-  rack can only be reached through a project file.
+  tip. *Corrected 2026-09-13: the UI half of this bullet is still exactly true — nothing in `src/gui/` creates
+  a rack, adds a chain or moves the selector — but the reachability half is no longer: the `rack.*` control
+  group (`rack.get_state`, `rack.add_chain`, `rack.remove_chain`, `rack.set_selected`) makes the whole rack
+  drivable through `--control-socket` and the MCP bridge, which is `docs/RACK-MACROS.md` §1. There is still no
+  Lua binding for it.*
+- **Macros and key/velocity zones are socket-only, and the zones do not route yet — added 2026-09-13.** A rack
+  macro is a named, persisted scalar that drives existing parameters through range windows
+  (`rack.macro_add` / `rack.macro_target_add` / `rack.macro_set`, `docs/RACK-MACROS.md` §2) and a key/velocity
+  zone is a persisted, validated key-and-velocity range mapped to one of the rack's chains
+  (`rack.zone_add` / `rack.zone_remove` / `rack.zone_resolve`, §3), both saved as children of the channel's
+  existing `<rack>` element. **Rack macros and key/velocity zones are drivable through the socket, not from
+  the interface**: there is no macro knob, no zone editor and no key map to draw, so a user cannot create,
+  see or move either one — `rack.get_state` reports them and nothing in `src/gui/` draws them. **And the zone
+  half is a model plus a lookup, not note routing:** the rack renders one stereo block and has no per-note
+  input, so no note path consults a zone in this build — `rack.zone_resolve` answers which zone a note would
+  fall into, and nothing acts on that answer. `docs/RACK-MACROS.md` §4 states the same limit and what is
+  needed to close it.
 - **No clip editing gestures.** The clip model is in (an authored window that survives playback and is saved
   with the project) but there are **no trim, slip, fade, crossfade or clip-gain tools** in the UI yet.
   *Corrected 2026-09-13: "trim" here means the **source window**, and the same word names a feature that does

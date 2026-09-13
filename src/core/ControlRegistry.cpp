@@ -479,6 +479,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSessionLaunchCommands(registry);
 #endif
 	registerExportCommands(registry);
+	registerRackCommands(registry);
 }
 
 } // namespace lmms

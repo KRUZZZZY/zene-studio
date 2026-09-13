@@ -63,11 +63,14 @@ ReversibilityTable& ReversibilityTable::instance()
 	return table;
 }
 
-ReversibilityTable::ReversibilityTable() :
-	m_entries()
+namespace
 {
-	int rowCount = 0;
-	const ReversibilityRow* rows = reversibilityRowTable(&rowCount);
+
+//! Inserts one literal block of the contract table (see the constructor).
+void insertRows(QHash<QString, ReversibilityEntry>* entries, const ReversibilityRow* rows,
+	int rowCount)
+{
+	if (entries == nullptr || rows == nullptr) { return; }
 	for (int i = 0; i < rowCount; ++i)
 	{
 		const ReversibilityRow& row = rows[i];
@@ -78,8 +81,24 @@ ReversibilityTable::ReversibilityTable() :
 		entry.mechanism = QString::fromUtf8(row.mechanism);
 		entry.fallback = QString::fromUtf8(row.fallback);
 		entry.reversible = row.reversible;
-		m_entries.insert(entry.command, entry);
+		entries->insert(entry.command, entry);
 	}
+}
+
+} // namespace
+
+ReversibilityTable::ReversibilityTable() :
+	m_entries()
+{
+	// ONE table, assembled from its two literal blocks (see the header): the rows
+	// that have an inverse, and the rows that have none. Both are captured here,
+	// so every consumer still reads one contract.
+	int rowCount = 0;
+	const ReversibilityRow* rows = reversibilityRowTable(&rowCount);
+	int passiveCount = 0;
+	const ReversibilityRow* passive = reversibilityPassiveRowTable(&passiveCount);
+	insertRows(&m_entries, rows, rowCount);
+	insertRows(&m_entries, passive, passiveCount);
 }
 
 const ReversibilityEntry* ReversibilityTable::lookup(const QString& command) const

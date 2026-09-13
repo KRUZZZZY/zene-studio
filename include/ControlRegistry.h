@@ -344,6 +344,18 @@ LMMS_EXPORT void registerSessionLaunchCommands(ControlRegistry& registry);
 //! export.get_settings / export.set_dither / export.set_src_quality - the
 //! render settings that outlive one OutputSettings (dither, SRC quality).
 LMMS_EXPORT void registerExportCommands(ControlRegistry& registry);
+//! rack.get_state/add_chain/remove_chain/set_selected, plus the macro and zone
+//! halves (#599's macros and key/velocity zones). The engine half is
+//! include/Rack.h, include/RackMacros.h and include/RackZones.h; this group is
+//! what makes any of it drivable, and it is the ONLY way to reach a rack (the
+//! engine lane's report, docs/RACKS.md section 5).
+LMMS_EXPORT void registerRackCommands(ControlRegistry& registry);
+//! rack.macro_add / macro_remove / macro_target_add / macro_target_remove /
+//! macro_set - the macro half, in its own translation unit (the automation and
+//! warp groups' split).
+LMMS_EXPORT void registerRackMacroCommands(ControlRegistry& registry);
+//! rack.zone_add / zone_remove / zone_resolve - the key/velocity zone half.
+LMMS_EXPORT void registerRackZoneCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

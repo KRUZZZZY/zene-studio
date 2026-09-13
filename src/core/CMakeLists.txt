@@ -96,6 +96,9 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
+	core/ControlCommandsRack.cpp
+	core/ControlCommandsRackMacros.cpp
+	core/ControlCommandsRackZones.cpp
 	core/ControlCommandsScript.cpp
 	core/ControlCommandsExport.cpp
 	core/ControlCommandsSettings.cpp
@@ -109,9 +112,11 @@ set(LMMS_SRCS
 	core/ControlDeviceState.cpp
 	core/ControlDeviceSupport.cpp
 	core/ControlEditSupport.cpp
+	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
 	core/ControlReversibility.cpp
 	core/ControlReversibilityTable.cpp
+	core/ControlReversibilityTablePassive.cpp
 	core/ControlSchema.cpp
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
@@ -186,7 +191,9 @@ set(LMMS_SRCS
 	core/ProjectVersion.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
+	core/RackMacros.cpp
 	core/RackNodes.cpp
+	core/RackZones.cpp
 	core/RenderManager.cpp
 	core/RingBuffer.cpp
 	core/RoutingChainNodes.cpp

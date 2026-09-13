@@ -46,7 +46,11 @@ namespace
 
 //! The element a rack is saved as inside a <mixerchannel>
 constexpr auto RACK_ELEMENT = "rack";
-constexpr auto RACK_VERSION = 1;
+//! 2 since macros and key/velocity zones became children of this element
+//! (0.3.0). The format is ADDITIVE: a reader of version 1 ignores the <macro>
+//! and <zone> children exactly as this reader ignores a version it does not
+//! know, and a channel with no rack still writes no element at all.
+constexpr auto RACK_VERSION = 2;
 
 } // namespace
 
@@ -304,7 +308,11 @@ void Rack::saveSettings(QDomDocument& doc, QDomElement& parent) const
 {
 	// A channel with no rack writes no element, so an unracked project is
 	// byte-for-byte the project this build would have written without racks.
-	if (m_parallelChains.empty()) { return; }
+	// "No rack" now includes no macros and no zones: either one alone is a
+	// rack, and dropping it here would silently lose it on the next save.
+	const bool empty = m_parallelChains.empty() && m_macros.macroCount() == 0
+		&& m_zones.zoneCount() == 0;
+	if (empty) { return; }
 
 	QDomElement rack = doc.createElement(QString::fromLatin1(RACK_ELEMENT));
 	rack.setAttribute(QStringLiteral("version"), RACK_VERSION);
@@ -320,6 +328,11 @@ void Rack::saveSettings(QDomDocument& doc, QDomElement& parent) const
 		m_parallelChains[i]->saveState(doc, chainElement);
 		rack.appendChild(chainElement);
 	}
+
+	// The macros and the zones are children of THIS element - there is no
+	// second container for either of them.
+	m_macros.saveSettings(doc, rack);
+	m_zones.saveSettings(doc, rack);
 
 	parent.appendChild(rack);
 }
@@ -343,6 +356,11 @@ void Rack::loadSettings(const QDomElement& element)
 	}
 
 	m_selectedChain = rack.attribute(QStringLiteral("selected"), QString::number(Parallel)).toInt();
+	// Additive since 0.3.0: a version-1 element has no <macro> or <zone>
+	// children and both load empty, which is what a rack with neither already
+	// is. Both clear themselves first, so a reload never accumulates.
+	m_macros.loadSettings(rack);
+	m_zones.loadSettings(rack);
 	rebuildRoutingGraph();
 }
 

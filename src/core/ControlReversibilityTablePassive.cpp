@@ -1,0 +1,244 @@
+/*
+ * ControlReversibilityTable.cpp - THE SPEC A16 classification table: one row
+ *                                  for every command the control surface
+ *                                  registers, and the reason for its class.
+ *
+ * This file is data. It is deliberately separate from
+ * ControlReversibility.cpp (the machinery) so that the whole contract can be
+ * read and reviewed as a table in one place, and so the anti-drift test has
+ * exactly one thing to compare against the registry.
+ *
+ * Reconciled against ableton-gap/A16-STATUS-MEASURED.md (the parent's measured
+ * baseline of 36 exercised mutating commands, 17 reversible:true). The rows
+ * where this table DISAGREES with that measurement are marked "DISAGREEMENT"
+ * and the doc that ships beside this code (docs/A16-REVERSIBILITY.md) records
+ * the argument for each.
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ */
+
+#include "ControlReversibility.h"
+
+// lmmsconfig.h carries the ZENE_TELEMETRY_ENABLED packager-kill-switch define.
+// The telemetry.* rows are guarded by that switch, so it has to be included
+// explicitly here too - without it the #ifdef below reads "off" even in a
+// telemetry-enabled build and silently drops the rows the registry declares.
+#include "lmmsconfig.h"
+
+/*!
+ * The second literal block of THE classification table (see
+ * ControlReversibilityTable.cpp for the first): the rows for the commands that
+ * have no inverse - irreversible (an undo attempt must FAIL, typed, and name
+ * the fallback) and not_mutating (nothing is written, so there is nothing to
+ * reverse). The two files are ONE table assembled by ReversibilityTable's
+ * constructor; the split exists because this fork's file-length ratchet reads a
+ * file as a unit, and a table that has to be read as a whole is still printed
+ * as a whole by control.transactions and by tests/…/ReversibilityContractTest.
+ */
+
+namespace lmms
+{
+namespace control
+{
+
+namespace
+{
+
+using RC = ReversibilityClass;
+
+//! A literal row: R(id, class, reversible, reason, mechanism, fallback).
+#define R(id, cls, rev, reason, mechanism, fallback) \
+	{ id, cls, reason, mechanism, fallback, rev }
+
+const ReversibilityRow kPassiveRows[] = {
+
+	// =====================================================================
+	// irreversible - no inverse exists in this engine, by nature of the
+	// command. An undo attempt must FAIL with the typed 'irreversible' error
+	// and name the fallback. Nothing here pretends.
+	// =====================================================================
+	R("project.open", RC::Irreversible, false,
+		"loading a project replaces the whole session, and the engine keeps no "
+		"pre-load snapshot: the previous document, including any UNSAVED "
+		"edits, is gone",
+		"none. The transaction records the previous file path and its sha256 so "
+		"the caller can see what was displaced",
+		"reopen the file named in before.previous_file; unsaved changes to the "
+		"displaced session are LOST - save first (project.save keeps a "
+		"revision) if they matter"),
+	R("script.run", RC::Irreversible, false,
+		"a Lua script mutates the engine through its own bindings; the "
+		"registry sees one command and cannot know what the script wrote",
+		"none. A script that wants to be undoable must take its own checkpoint "
+		"(Lua addCheckPoint()), which ProjectJournal::undo DOES replay - so "
+		"the record is honest about what it can and cannot cover",
+		"run a script that takes its own checkpoint (Lua addCheckPoint()) "
+		"before it edits; control.undo then replays that checkpoint"),
+	R("plugin.unload", RC::Irreversible, false,
+		"the removed Effect's state XML is captured, but recreating the "
+		"instance would need plugin.load by catalogue id plus a state restore, "
+		"and the instance id (fx-<n>) is position-derived - the inverse is not "
+		"one operation the registry can run",
+		"none. before holds the device's full state XML (bounded at 64 KiB) "
+		"plus its plugin name and chain index",
+		"write before.state_xml to a file, plugin.load the same dev-<n> onto "
+		"the same target, then plugin.state_load that file. The chain ORDER "
+		"is not restored"),
+
+	// =====================================================================
+	// writes nothing (or refuses every call) - there is no transaction, and
+	// therefore nothing for control.undo to reverse or to be blocked by.
+	// =====================================================================
+	R("clip.select", RC::NotMutating, false,
+		"selection is control-surface view state: it is not serialized, the "
+		"GUI keeps its own copy in QGraphicsItem state, and no engine "
+		"checkpoint can hold it",
+		"nothing to inverse in the project. The registry records NO transaction "
+		"for this command (mutating is false), so a select cannot block or "
+		"shadow the undo of a real edit; the previous selection is reported in "
+		"the result so a client can restore the view itself",
+		""),
+	R("note.select", RC::NotMutating, false,
+		"same view state, per note",
+		"same: no transaction, the previous selection is reported in the result",
+		""),
+	R("mixer.set_pan", RC::NotMutating, false,
+		"declared mutating, but the handler REFUSES every call: this tree has "
+		"no pan on a MixerChannel, and inventing one would change the mixer's "
+		"serialization format",
+		"no write happens, so no transaction is recorded and control.undo is "
+		"not blocked by it",
+		"none needed: the command is a typed refusal, use track panning "
+		"(InstrumentTrack/SampleTrack panningModel) or per-note panning"),
+	R("track.set_arm", RC::NotMutating, false,
+		"declared mutating, but the handler REFUSES every call: arm state "
+		"lives on the prototype MultiTrackRecorder, not on lmms::Track",
+		"no write happens, so no transaction is recorded",
+		"none needed: the command is a typed refusal"),
+	R("automation.mode_set", RC::NotMutating, false,
+		"declared mutating, but the handler REFUSES every call: this build has "
+		"automation modes in the engine but no way to select or persist one "
+		"(docs/KNOWN-LIMITATIONS.md)",
+		"no write happens, so no transaction is recorded",
+		"use automation.add_point to write a curve instead"),
+	R("control.undo", RC::NotMutating, false,
+		"it IS the inverse applier: it is the thing that reverses another "
+		"command, so classifying it as a command to be reversed would recurse",
+		"the engine's ProjectJournal",
+		""),
+	R("control.redo", RC::NotMutating, false,
+		"the inverse of the undo; it re-applies a step, it is not project state",
+		"the engine's ProjectJournal",
+		""),
+	R("control.quit", RC::NotMutating, false,
+		"process lifecycle, not a project edit; the response reports whether "
+		"unsaved changes were discarded so the caller is not surprised",
+		"no project state is written",
+		""),
+	R("transport.play", RC::NotMutating, false,
+		"the transport run state is engine state, not project state, and the "
+		"registry has never recorded a transaction for it",
+		"nothing to reverse: transport.stop is the operation a client calls, "
+		"and it is available directly",
+		""),
+	R("transport.stop", RC::NotMutating, false,
+		"same engine run state",
+		"nothing to reverse: transport.play is the operation",
+		""),
+	R("midi.learn_toggle", RC::NotMutating, false,
+		"the armed flag is GUI/engine mode state (MidiLearn's own enabled flag), "
+		"not project state: no model, no serialized field and no journal checkpoint "
+		"is written, so the registry records no transaction",
+		"nothing to reverse: calling midi.learn_toggle again is the operation a "
+		"client calls, and setArmed() keeps the Edit menu tick in step",
+		""),
+#ifdef ZENE_TELEMETRY_ENABLED
+	// The two telemetry.* rows travel with the client: with the packager kill
+	// switch off the commands are absent from the registry, and this table must
+	// hold a row for every registered command and no row for a command that is
+	// not registered (ReversibilityContractTest asserts both directions).
+	R("telemetry.consent", RC::NotMutating, false,
+		"it OPENS A SCREEN, it does not edit the project: the Help menu's "
+		"\"Telemetry - what we send...\" action declares it and the menu slot and "
+		"the registry handler are one function (openTelemetryConsentScreen), and "
+		"the consent record is written by the screen through "
+		"Telemetry::saveConsent() when - and only when - the human there clicks "
+		"Save, which is the human's act and not a project edit",
+		"nothing to reverse, and nothing an agent could reverse: the command "
+		"declares `requires: display, human`, so the registry refuses it before "
+		"the handler runs and no automated caller can reach it or change the "
+		"consent record at all",
+		""),
+#endif // ZENE_TELEMETRY_ENABLED
+	R("render.render", RC::NotMutating, false,
+		"it writes an OUTPUT ARTEFACT; the session it renders is not modified "
+		"(it serialises to a temp file and removes it)",
+		"the project is unchanged; the rendered file is an output, not project "
+		"state, and overwriting it is the caller's decision",
+		""),
+
+	// ---------- read-only inspectors ----------
+	R("app.version", RC::NotMutating, false, "reads the build identity", "no write", ""),
+	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
+	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
+	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
+	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
+	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
+	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),
+	R("control.transactions", RC::NotMutating, false, "reads the transaction record", "no write", ""),
+	R("control.version", RC::NotMutating, false, "reads the version strings", "no write", ""),
+	R("dsp.get_state", RC::NotMutating, false, "reads the device chains", "no write", ""),
+	R("midi.device_list", RC::NotMutating, false, "reads the MIDI client", "no write", ""),
+	R("mixer.get_state", RC::NotMutating, false, "reads the mixer", "no write", ""),
+	R("plugin.list", RC::NotMutating, false, "reads the device catalogue", "no write", ""),
+	R("plugin.param_get", RC::NotMutating, false, "reads a parameter", "no write", ""),
+	R("plugin.preset_list", RC::NotMutating, false, "reads a preset directory", "no write", ""),
+	R("project.get_state", RC::NotMutating, false, "reads the project state", "no write", ""),
+	R("rack.get_state", RC::NotMutating, false, "reads the rack", "no write", ""),
+	R("rack.zone_resolve", RC::NotMutating, false,
+		"reads the zone list and matches a note against it; it routes nothing, "
+		"because the rack renders one stereo block and no note path consults a "
+		"zone in this build (docs/KNOWN-LIMITATIONS.md)",
+		"no write",
+		""),
+	R("roll.get_state", RC::NotMutating, false, "reads the note list", "no write", ""),
+	R("script.list", RC::NotMutating, false, "reads the scripts directory", "no write", ""),
+	R("settings.get", RC::NotMutating, false, "reads one config value", "no write", ""),
+#ifdef ZENE_TELEMETRY_ENABLED
+	R("telemetry.status", RC::NotMutating, false,
+		"reads the consent record and the payload builder", "no write", ""),
+#endif // ZENE_TELEMETRY_ENABLED
+	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
+	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
+	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
+};
+
+constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));
+
+} // namespace
+
+const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount)
+{
+	if (rowCount != nullptr) { *rowCount = kPassiveRowCount; }
+	return kPassiveRows;
+}
+
+} // namespace control
+} // namespace lmms

@@ -31,6 +31,8 @@
 #include <QDomElement>
 #include <QString>
 
+#include "RackMacros.h"
+#include "RackZones.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -80,11 +82,21 @@ class RoutingGraph;
  *
  * ## Threading
  *
- * Configuration (chain list, selection, persistence) is control thread only
- * and is not safe against a running process() - the same contract
+ * Configuration (chain list, selection, macros, zones, persistence) is control
+ * thread only and is not safe against a running process() - the same contract
  * RoutingGraph.h and EffectChain document. The audio thread only reads what
  * the control thread built: canProcessThroughRack(), processAudioBuffer() and
  * routingGraph() are allocation-free and lock-free.
+ *
+ * ## Macros and key/velocity zones
+ *
+ * A macro is a named scalar (0..1) that drives a set of existing model
+ * parameters through their own range windows; a key/velocity zone maps an
+ * inclusive MIDI key range and velocity range to one of the chains. Both live
+ * on this object, both persist as children of the channel's own <rack>
+ * element, and NEITHER is read by processAudioBuffer(): a macro writes model
+ * values when it is set, and a zone is data plus a lookup (@see RackMacros,
+ * RackZones).
  */
 class LMMS_EXPORT Rack
 {
@@ -146,9 +158,21 @@ public:
 	 */
 	auto processAudioBuffer(AudioBus& bus, const AudioBuffer* sidechainBuffer = nullptr) -> bool;
 
+	// --- macros and zones (control thread only) ---
+
+	//! The rack's macros: named scalars driving existing model parameters.
+	//! Persisted as <macro> children of this rack's own <rack> element.
+	auto macros() -> RackMacros& { return m_macros; }
+	auto macros() const -> const RackMacros& { return m_macros; }
+	//! The rack's key/velocity zones: persisted as <zone> children of the same
+	//! element. @see RackZones for what a zone does and does not do.
+	auto zones() -> RackZones& { return m_zones; }
+	auto zones() const -> const RackZones& { return m_zones; }
+
 	// --- persistence ---
 
-	//! Writes a <rack> element, or nothing when the channel has no rack
+	//! Writes a <rack> element - the chains, the selector, the macros and the
+	//! zones - or nothing when the channel has none of them
 	void saveSettings(QDomDocument& doc, QDomElement& parent) const;
 	//! Reads a <rack> element; a missing element leaves an empty rack
 	void loadSettings(const QDomElement& element);
@@ -187,6 +211,13 @@ private:
 	int m_selectedChain = Parallel;
 	//! Set by rebuildRoutingGraph() when the graph is on the signal path
 	bool m_graphActive = false;
+
+	//! The macros and the key/velocity zones. Neither is on the audio path:
+	//! a macro writes model values when it is set, and a zone is data plus a
+	//! lookup, so processAudioBuffer() never reads either (@see RackMacros,
+	//! RackZones).
+	RackMacros m_macros;
+	RackZones m_zones;
 
 	//! Audio thread: the channel's sidechain input for the current block
 	const AudioBuffer* m_sidechainBuffer = nullptr;
