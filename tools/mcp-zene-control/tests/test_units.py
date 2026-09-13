@@ -381,5 +381,91 @@ class TestOfflineSurfaces(unittest.TestCase):
                              entry["annotations"]["title"])
 
 
+class TestOfflineFreshness(unittest.TestCase):
+    """Which offline copy wins, and why a fixed order was the wrong answer.
+
+    The cache is written by the last *live* fetch, so it can be arbitrarily old
+    (the 0.1.0-alpha cache in the registered copy is). Serving it before the
+    committed snapshot - the order the bridge used - let a 70-id cache make 74
+    ids of the current surface unreachable. These tests pin the rule that
+    replaced that order, in BOTH directions.
+    """
+
+    def plant_cache(self, state_dir: str, ids: list[str], captured_at: str | None) -> str:
+        bundle = {"kind": R.BUNDLE_KIND, "schema": R.BUNDLE_SCHEMA,
+                  "proto": 1, "count": len(ids),
+                  "instance": {"version": "planted"},
+                  "commands": [{"id": item, "group": item.split(".")[0]} for item in ids]}
+        if captured_at is not None:
+            bundle["captured_at"] = captured_at
+        path = os.path.join(state_dir, "commands.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(bundle, handle)
+        return path
+
+    def committed_snapshot_ids(self) -> list[str]:
+        bundle = R.load_bundle(str(T.Bridge(config_for()).snapshot_path()))
+        assert bundle is not None
+        return sorted(str(entry["id"]) for entry in bundle["commands"])
+
+    def test_a_stale_cache_does_not_shadow_the_committed_snapshot(self):
+        state = tempfile.mkdtemp(prefix="zene-unit-stale-", dir="/tmp")
+        self.plant_cache(state, ["mixer.set_volume", "clip.add", "transport.play"],
+                         "2001-01-01T00:00:00Z")
+        source = T.Bridge(config_for(state_dir=state)).resolve(prefer_live=False)
+        self.assertEqual(source.source, "snapshot")
+        self.assertEqual(sorted(spec.id for spec in source.specs), self.committed_snapshot_ids())
+        self.assertEqual([item["source"] for item in source.skipped], ["cache"])
+
+    def test_a_newer_cache_still_wins(self):
+        state = tempfile.mkdtemp(prefix="zene-unit-new-", dir="/tmp")
+        planted = ["mixer.set_volume", "clip.add", "transport.play"]
+        self.plant_cache(state, planted, "2099-01-01T00:00:00Z")
+        source = T.Bridge(config_for(state_dir=state)).resolve(prefer_live=False)
+        self.assertEqual(source.source, "cache")
+        self.assertEqual(sorted(spec.id for spec in source.specs), sorted(planted))
+        self.assertEqual([item["source"] for item in source.skipped], ["snapshot"])
+
+    def test_an_undated_cache_ranks_below_a_dated_snapshot(self):
+        state = tempfile.mkdtemp(prefix="zene-unit-undated-", dir="/tmp")
+        self.plant_cache(state, ["mixer.set_volume"], None)
+        source = T.Bridge(config_for(state_dir=state)).resolve(prefer_live=False)
+        self.assertEqual(source.source, "snapshot")
+        self.assertEqual(len(source.specs), len(self.committed_snapshot_ids()))
+
+    def test_equal_stamps_resolve_by_size_then_caller_order(self):
+        committed = self.committed_snapshot_ids()
+        bundle = R.load_bundle(str(T.Bridge(config_for()).snapshot_path()))
+        assert bundle is not None
+        stamp = bundle["captured_at"]
+        self.assertTrue(stamp)
+        # Same stamp, MORE commands -> the cache is the fuller record and wins.
+        bigger = tempfile.mkdtemp(prefix="zene-unit-bigger-", dir="/tmp")
+        self.plant_cache(bigger, committed + ["zz.extra"], stamp)
+        self.assertEqual(T.Bridge(config_for(state_dir=bigger)).resolve(prefer_live=False).source,
+                         "cache")
+        # Same stamp, FEWER commands -> the snapshot wins.
+        lesser = tempfile.mkdtemp(prefix="zene-unit-lesser-", dir="/tmp")
+        self.plant_cache(lesser, committed[:2], stamp)
+        self.assertEqual(T.Bridge(config_for(state_dir=lesser)).resolve(prefer_live=False).source,
+                         "snapshot")
+
+    def test_the_payload_says_which_copy_it_passed_over(self):
+        state = tempfile.mkdtemp(prefix="zene-unit-report-", dir="/tmp")
+        self.plant_cache(state, ["mixer.set_volume"], "2001-01-01T00:00:00Z")
+        payload = T.Bridge(config_for(state_dir=state)).commands_payload({})
+        self.assertEqual(payload["source"], "snapshot")
+        self.assertEqual([item["source"] for item in payload["skipped_offline"]], ["cache"])
+        self.assertEqual(payload["skipped_offline"][0]["count"], 1)
+        self.assertIn("passed over", payload["summary"])
+
+    def test_no_offline_copy_at_all_still_answers_none(self):
+        state = tempfile.mkdtemp(prefix="zene-unit-none-", dir="/tmp")
+        cfg = config_for(state_dir=state, snapshot_path="/tmp/none/absent.json")
+        source = T.Bridge(cfg).resolve(prefer_live=False)
+        self.assertEqual(source.source, "none")
+        self.assertEqual(source.count, 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

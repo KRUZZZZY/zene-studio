@@ -228,6 +228,52 @@ def save_bundle(path: str, bundle: dict) -> str | None:
         return None
 
 
+# -- choosing between the offline copies -----------------------------------
+
+def _ranking_key(bundle: dict) -> tuple:
+    """How fresh one offline bundle is: (has a stamp, the stamp, its size).
+
+    `captured_at` is written by :func:`bundle_from_result` with ``time.gmtime``
+    as a fixed-width ``%Y-%m-%dT%H:%M:%SZ`` string, so two stamps compare
+    chronologically as strings. A bundle with no usable stamp ranks below every
+    stamped one rather than above it: an undated copy cannot be shown to be
+    current, and the committed snapshot always carries one.
+    """
+    stamp = bundle.get("captured_at")
+    dated = isinstance(stamp, str) and bool(stamp)
+    commands = bundle.get("commands")
+    return (dated, stamp if dated else "", len(commands) if isinstance(commands, list) else 0)
+
+
+def rank_offline_bundles(candidates: list[tuple[str, str]]) -> list[tuple[str, str, dict]]:
+    """The readable offline bundles, freshest first.
+
+    ``candidates`` is an ordered list of ``(path, source_label)``. The order the
+    caller gives is the tie-break, so equal stamps keep the caller's preference.
+
+    WHY THIS EXISTS (and why the order the caller gives is not the answer on its
+    own): the bridge used to serve whichever offline copy happened to exist, in
+    the caller's order - cache first. A cache is written by the last *live* fetch,
+    so a cache captured from an older instance shadowed the committed snapshot
+    forever, with no comparison between them. Measured on this tree: a 70-id cache
+    from 0.1.0-alpha made 74 command ids the current snapshot carries unreachable
+    (tools/mcp-zene-control/README.md, COVERAGE-MATRIX-2026-09-13.md §4). Freshest
+    wins makes regenerating the snapshot - the documented fix - actually take
+    effect, and leaves a *newer* cache (a newer instance's list) in charge, which
+    is correct.
+
+    Returns [] when nothing is readable, so a caller can tell "no offline copy"
+    from "an offline copy of unknown freshness".
+    """
+    readable: list[tuple[str, str, dict]] = []
+    for path, source in candidates:
+        bundle = load_bundle(path)
+        if bundle is not None:
+            readable.append((path, source, bundle))
+    # `sorted` is stable, so equal ranking keys keep the caller's order.
+    return sorted(readable, key=lambda entry: _ranking_key(entry[2]), reverse=True)
+
+
 @dataclass
 class CommandSource:
     """The command list the bridge is currently serving, and where it came from."""
@@ -237,6 +283,7 @@ class CommandSource:
     source: str                # "live" | "cache" | "snapshot" | "none"
     path: str | None = None
     error: ZeneControlError | None = None
+    skipped: tuple[dict, ...] = ()
 
     @property
     def count(self) -> int:
@@ -251,8 +298,12 @@ class CommandSource:
             stale = ""
             if self.error is not None:
                 stale = f" — no live instance ({self.error.kind}: {self.error.message})"
+            passed_over = ""
+            if self.skipped:
+                passed_over = (f"; {len(self.skipped)} staler offline copy(ies) passed over "
+                               f"({', '.join(str(item.get('source')) for item in self.skipped)})")
             return (f"{self.count} commands from the {self.source} "
-                    f"(captured {self.bundle.get('captured_at')}){stale}")
+                    f"(captured {self.bundle.get('captured_at')}){passed_over}{stale}")
         return "no command list available: no live instance and no cached or snapshot copy"
 
     def payload(self, **extra: Any) -> dict:
@@ -268,6 +319,8 @@ class CommandSource:
         }
         if self.path:
             out["path"] = self.path
+        if self.skipped:
+            out["skipped_offline"] = list(self.skipped)
         if self.error is not None:
             out["instance_error"] = self.error.to_payload()["error"]
         out.update(extra)

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T15:59:39Z",
+  "captured_at": "2026-09-13T18:20:21Z",
   "commands": [
     {
       "args_schema": {
@@ -362,6 +362,62 @@
           },
           "track": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "integer"
+          },
+          "out": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Render one track's own output - its devices, fader, pan and sends, which is what a stem is - to a WAV file and return the file, its frame count and its sha256. With 'start' and 'end' (ticks) the file covers that region instead of the whole track. The session is NOT modified: the render runs in a child process against a serialised copy with every other track muted, so nothing in this instance changes and nothing is journalled. There is no interface for this (docs/KNOWN-LIMITATIONS.md).",
+      "group": "bounce",
+      "id": "bounce.in_place",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "end_ticks": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -2153,6 +2209,896 @@
             "type": "string"
           },
           "src_quality_choices": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "integer"
+          },
+          "out": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "start",
+          "end"
+        ],
+        "type": "object"
+      },
+      "description": "Freeze one tick range of a track: the region is rendered and the take plays inside it, while the source keeps playing outside it. The clips that START inside the region are muted (and recorded, so freeze.unfreeze unmutes exactly those and nothing else); a clip that starts before the region and runs into it is left alone and named in 'overlapping_clips', because muting it would silence audio outside the region - that clip sounds twice inside the region (docs/KNOWN-LIMITATIONS.md). Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "freeze",
+      "id": "freeze.region",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "end_ticks": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "frozen": {
+            "type": "boolean"
+          },
+          "muted_clips": {
+            "type": "integer"
+          },
+          "overlapping_clips": {
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "out": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Bounce a track and make it PLAY THE RENDER instead of its clips: the engine queues the take for every pass inside its window and schedules none of the track's own playback, so the source is disabled for as long as this holds. The take carries the track's devices, fader, pan and sends, so it is summed at the mix level and not through the track's chain a second time, and the track's volume and effects controls are inert until freeze.unfreeze. The state is saved with the project and one control.undo takes it off (Track checkpoint). Reversible through the ProjectJournal.",
+      "group": "freeze",
+      "id": "freeze.track",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_ready": {
+            "type": "boolean"
+          },
+          "end_ticks": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "frozen": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a track's frozen take: the track plays its own clips again, and the clips the freeze muted (freeze.region) are unmuted - exactly those, so a clip the user had muted themselves stays muted. The rendered file is left on disk: this is not a delete. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "freeze",
+      "id": "freeze.unfreeze",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "frozen": {
+            "type": "boolean"
+          },
+          "muted_clips": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "strength": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Apply a named groove to a MIDI clip's notes: each note is snapped to the slot it is nearest to and given that slot's tick and that slot's velocity. 'strength' (0..1, default 1) is how far each note travels toward both, so 0.5 is half the feel and 1 is the groove exactly - at which point a second apply has nothing left to do. Reversible through the ProjectJournal (MidiClip checkpoint): one control.undo restores every position and velocity.",
+      "group": "groove",
+      "id": "groove.apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_grooves": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_name_length": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note_count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_moved": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "positions_moved": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strength": {
+            "type": "number"
+          },
+          "templates": {
+            "type": "array"
+          },
+          "track": {
+            "type": "string"
+          },
+          "velocities_moved": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "grid": {
+            "maximum": 192,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "name",
+          "grid"
+        ],
+        "type": "object"
+      },
+      "description": "Capture the feel of a MIDI clip's notes into a NAMED groove: each slot's step becomes the mean timing deviation of the notes that fell in it and their mean velocity. The name is the key - extracting over an existing name replaces that groove. One undoable step (a recorded action checkpoint: the pool is project state the Song's journal checkpoint does not carry).",
+      "group": "groove",
+      "id": "groove.extract",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groove": {
+            "additionalProperties": false,
+            "properties": {
+              "length_ticks": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "neutral": {
+                "type": "boolean"
+              },
+              "slot_count": {
+                "maximum": 64,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "step_ticks": {
+                "maximum": 192,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "steps": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "max_grooves": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_name_length": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_read": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "templates": {
+            "type": "array"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The project's groove pool: every named groove with its cycle length, slot width and slot count, and - with 'name' - one groove's own steps (the tick and the velocity each slot applies, both absolute). Read-only. A groove is the timing and velocity feel of a note pattern, captured from a clip by groove.extract and written back by groove.apply.",
+      "group": "groove",
+      "id": "groove.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groove": {
+            "additionalProperties": false,
+            "properties": {
+              "length_ticks": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "neutral": {
+                "type": "boolean"
+              },
+              "slot_count": {
+                "maximum": 64,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "step_ticks": {
+                "maximum": 192,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "steps": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "max_grooves": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_name_length": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "templates": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "grid": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "humanise_ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "humanise_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "nearest",
+              "floor",
+              "ceil"
+            ],
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strength": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip",
+          "grid"
+        ],
+        "type": "object"
+      },
+      "description": "Quantise a MIDI clip's notes onto a grid of 'grid' ticks, with 'strength' (0..1, default 1) for how far each note travels and a 'humanise_ticks' / 'humanise_velocity' amount added afterwards. 'mode' is 'nearest' (default), 'floor' or 'ceil'. The jitter is a pure function of 'seed' (default 0) and each note's own identity, so the SAME call on the same notes reproduces the same take; and it is a jitter, so applying it again on top of itself rolls again rather than being a no-op. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "groove",
+      "id": "groove.quantize",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "grid": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "humanise_ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "humanise_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_grooves": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_name_length": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note_count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_moved": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "positions_moved": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strength": {
+            "type": "number"
+          },
+          "templates": {
+            "type": "array"
+          },
+          "track": {
+            "type": "string"
+          },
+          "velocities_moved": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a named groove from the project's pool, leaving the rest in place. Removing the last groove leaves the pool empty, which is the state a project that never captured one saves in (no <groove-pool> element at all). Reversible through a recorded action checkpoint.",
+      "group": "groove",
+      "id": "groove.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groove": {
+            "additionalProperties": false,
+            "properties": {
+              "length_ticks": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "neutral": {
+                "type": "boolean"
+              },
+              "slot_count": {
+                "maximum": 64,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "step_ticks": {
+                "maximum": 192,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "steps": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "max_grooves": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_name_length": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "templates": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Rename a groove, keeping its steps and its position in the pool. A rename onto another groove's name is refused, typed, and changes nothing - the name is the key, so it would destroy that groove. Reversible through a recorded action checkpoint.",
+      "group": "groove",
+      "id": "groove.rename",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groove": {
+            "additionalProperties": false,
+            "properties": {
+              "length_ticks": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "neutral": {
+                "type": "boolean"
+              },
+              "slot_count": {
+                "maximum": 64,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "step_ticks": {
+                "maximum": 192,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "steps": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "max_grooves": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_name_length": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "renamed": {
+            "type": "string"
+          },
+          "renamed_to": {
+            "type": "string"
+          },
+          "templates": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "length_ticks": {
+            "maximum": 12288,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "step_ticks": {
+            "maximum": 192,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "length_ticks",
+          "step_ticks"
+        ],
+        "type": "object"
+      },
+      "description": "Write a groove VERBATIM: its name, its cycle length and slot width in ticks, and (optionally) each slot's timing offset and velocity - so a groove can be authored by hand as well as captured by groove.extract, and so an extract that replaced a groove has a real inverse to record. The name is the key: an existing groove of that name is replaced. One undoable step (a recorded action checkpoint that writes the captured pool back).",
+      "group": "groove",
+      "id": "groove.set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groove": {
+            "additionalProperties": false,
+            "properties": {
+              "length_ticks": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "neutral": {
+                "type": "boolean"
+              },
+              "slot_count": {
+                "maximum": 64,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "step_ticks": {
+                "maximum": 192,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "steps": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "max_grooves": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_name_length": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "templates": {
             "type": "array"
           }
         },
@@ -5763,6 +6709,24 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "frozen": {
+            "type": "boolean"
+          },
+          "frozen_audio": {
+            "type": "string"
+          },
+          "frozen_audio_ready": {
+            "type": "boolean"
+          },
+          "frozen_end_ticks": {
+            "type": "integer"
+          },
+          "frozen_muted_clips": {
+            "type": "integer"
+          },
+          "frozen_start_ticks": {
+            "type": "integer"
+          },
           "id": {
             "type": "string"
           },
@@ -6677,7 +7641,7 @@
       }
     }
   ],
-  "count": 144,
+  "count": 155,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -6685,8 +7649,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zn-split.sock",
-    "version": "0.2.0-alpha.126+12fc4ef"
+    "source_socket": "/tmp/zctl-run-thlce1mo/zene.sock",
+    "version": "0.2.0-alpha.136+a7cb5aa"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
