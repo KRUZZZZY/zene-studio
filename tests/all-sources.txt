@@ -253,6 +253,7 @@ include/MidiCCRackView.h
 include/MidiClient.h
 include/MidiClip.h
 include/MidiClipView.h
+include/MidiClock.h
 include/MidiController.h
 include/MidiDummy.h
 include/MidiEvent.h
@@ -1020,6 +1021,9 @@ src/core/MeterModel.cpp
 src/core/Metronome.cpp
 src/core/MicroTimer.cpp
 src/core/Microtuner.cpp
+src/core/MidiClock.cpp
+src/core/MidiClockState.cpp
+src/core/MidiClockTracker.cpp
 src/core/MidiLearn.cpp
 src/core/MixHelpers.cpp
 src/core/Mixer.cpp
@@ -1330,6 +1334,7 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
+tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp

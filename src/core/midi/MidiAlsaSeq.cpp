@@ -26,6 +26,7 @@
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "Song.h"
+#include "MidiClock.h"
 #include "MidiLearn.h"
 #include "MidiPort.h"
 
@@ -181,8 +182,23 @@ void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, 
 	snd_seq_ev_set_source( &ev, ( m_portIDs[p][1] != -1 ) ?
 					m_portIDs[p][1] : m_portIDs[p][0] );
 	snd_seq_ev_set_subs( &ev );
-	snd_seq_ev_schedule_tick( &ev, m_queueID, 1, static_cast<int>( time ) );
-	ev.queue =  m_queueID;
+	/* The MIDI-clock family is delivered DIRECT and not on the tick queue
+	 * (0.3.0, the `clock.*` group's master half): a clock that waited behind
+	 * the note events this client has already scheduled would arrive late by
+	 * however far ahead the queue runs, which is the one thing a clock cannot
+	 * do, and a system real-time message has no tick position to be scheduled
+	 * AT. Everything else keeps the scheduling it has always had. */
+	const MidiClockMessage clockMessage =
+		midiClockMessageOfByte( static_cast<unsigned char>( event.type() ) );
+	if( clockMessage != MidiClockMessage::None )
+	{
+		snd_seq_ev_set_direct( &ev );
+	}
+	else
+	{
+		snd_seq_ev_schedule_tick( &ev, m_queueID, 1, static_cast<int>( time ) );
+		ev.queue =  m_queueID;
+	}
 	switch( event.type() )
 	{
 		case MidiNoteOn:
@@ -229,6 +245,38 @@ void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, 
 			snd_seq_ev_set_pitchbend( &ev,
 						event.channel(),
 						event.param( 0 ) - 8192 );
+			break;
+
+		/* The MIDI-clock family (0.3.0, the `clock.*` group's master half).
+		 * These were "unhandled output event" warnings until this change. The
+		 * sequencer's own event types carry them; none of these has a channel,
+		 * and the two with a payload are the assembled 14-bit position and the
+		 * quarter-frame nibble. */
+		case MidiSync:
+			ev.type = SND_SEQ_EVENT_CLOCK;
+			break;
+
+		case MidiStart:
+			ev.type = SND_SEQ_EVENT_START;
+			break;
+
+		case MidiContinue:
+			ev.type = SND_SEQ_EVENT_CONTINUE;
+			break;
+
+		case MidiStop:
+			ev.type = SND_SEQ_EVENT_STOP;
+			break;
+
+		case MidiTimeCode:
+			ev.type = SND_SEQ_EVENT_QFRAME;
+			ev.data.control.value = event.param( 0 ) & 0x7F;
+			break;
+
+		case MidiSongPosition:
+			ev.type = SND_SEQ_EVENT_SONGPOS;
+			ev.data.control.value = ( event.param( 0 ) & 0x7F )
+				| ( ( event.param( 1 ) & 0x7F ) << 7 );
 			break;
 
 		default:
@@ -466,6 +514,34 @@ void MidiAlsaSeq::subscribeWritablePort( MidiPort * _port,
 
 
 
+/*! The clock-family message an incoming sequencer event carries, or None for
+ *  every event outside the family (0.3.0, the `clock.*` group's slave half). */
+static MidiClockMessage sequencerClockMessage( const snd_seq_event_t* ev )
+{
+	switch( ev->type )
+	{
+		case SND_SEQ_EVENT_CLOCK:    return MidiClockMessage::Clock;
+		case SND_SEQ_EVENT_START:    return MidiClockMessage::Start;
+		case SND_SEQ_EVENT_CONTINUE: return MidiClockMessage::Continue;
+		case SND_SEQ_EVENT_STOP:     return MidiClockMessage::Stop;
+		case SND_SEQ_EVENT_SONGPOS:  return MidiClockMessage::SongPosition;
+		case SND_SEQ_EVENT_QFRAME:   return MidiClockMessage::TimeCode;
+		default:                     return MidiClockMessage::None;
+	}
+}
+
+/*! The payload the two events that have one carry: a position in MIDI beats, or
+ *  a time-code quarter-frame nibble. The one-byte messages have none. */
+static quint32 sequencerClockValue( const snd_seq_event_t* ev, MidiClockMessage message )
+{
+	if( message == MidiClockMessage::SongPosition || message == MidiClockMessage::TimeCode )
+	{
+		return static_cast<quint32>( ev->data.control.value ) & 0x3FFF;
+	}
+	return 0;
+}
+
+
 void MidiAlsaSeq::run()
 {
 	// watch the pipe and sequencer input events
@@ -515,6 +591,22 @@ void MidiAlsaSeq::run()
 				break;
 			}
 			m_seqMutex.unlock();
+
+			/* The clock family is SYSTEM-wide - a pulse names no port of ours -
+			 * so it is dispatched before the destination lookup (0.3.0,
+			 * `clock.*`). A slave follows a clock from wherever it arrives,
+			 * whether or not one of this client's own ports happens to be
+			 * subscribed to the sender. Every other event keeps the routing
+			 * below, including the `continue` when no destination matched. */
+			{
+				const MidiClockMessage clockMessage = sequencerClockMessage( ev );
+				if( clockMessage != MidiClockMessage::None )
+				{
+					MidiClock::instance()->handleInputMessage( clockMessage,
+						sequencerClockValue( ev, clockMessage ), MidiClock::nowNs() );
+					continue;
+				}
+			}
 
 			snd_seq_addr_t * source = nullptr;
 			MidiPort * dest = nullptr;

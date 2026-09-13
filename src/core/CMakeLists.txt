@@ -239,6 +239,9 @@ set(LMMS_SRCS
 	core/MicroTimer.cpp
 	core/Microtuner.cpp
 	core/MidiLearn.cpp
+	core/MidiClock.cpp
+	core/MidiClockState.cpp
+	core/MidiClockTracker.cpp
 	core/MixHelpers.cpp
 	core/Model.cpp
 	core/ModelVisitor.cpp

@@ -167,7 +167,28 @@ private:
 		uint32_t m_buffer[RAW_MIDI_PARSE_BUF_SIZE];
 					// buffer for incoming data
 		MidiEvent m_midiEvent;	// midi-event
+		/* System-common assembly (0.3.0, the `clock.*` group's slave half).
+		 * A TIME CODE (0xF1) carries one 7-bit payload byte and a SONG
+		 * POSITION (0xF2) carries two, and both must be reassembled before
+		 * they mean anything: before this, the parser cancelled running status
+		 * and dropped them, so a position pointer could not reach the engine.
+		 * m_commonStatus is 0 when no common message is pending, and it is
+		 * CANCELLED by any status byte - which is what the MIDI spec says to do
+		 * with a message that is interrupted. Initialised here rather than
+		 * trusted: this struct has no constructor and the pre-existing fields
+		 * are not zeroed anywhere. */
+		uint8_t m_commonStatus = 0;
+		uint8_t m_commonBytes = 0;	// payload bytes still expected
+		uint8_t m_commonBuffer[2] = {0, 0};
 	} m_midiParseData;
+
+	//! Begin (or abandon) a system-common message for \a status. A status other
+	//! than TimeCode/SongPosition, or any message this parser has no consumer
+	//! for, is discarded with no state left behind.
+	void beginSystemCommon( unsigned char status );
+	//! Feed one payload byte to the pending system-common message and dispatch
+	//! it once its payload is complete.
+	void consumeSystemCommon( unsigned char data );
 
 } ;
 
