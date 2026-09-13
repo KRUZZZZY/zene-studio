@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T10:07:21Z",
+  "captured_at": "2026-09-13T12:30:49Z",
   "commands": [
     {
       "args_schema": {
@@ -362,6 +362,416 @@
           },
           "track": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "buckets": {
+            "maximum": 2048,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "The waveform peaks of an audio file: 'buckets' min/max pairs over the interleaved samples, the frames each bucket covers, the file's rate, channels and length, and whether the answer came out of the cache ('cached') or off the disk. The cache is bounded (capacity entries, base_buckets per file) and its hit and miss counts are reported. Read-only: it writes no project state and nothing at all on disk.",
+      "group": "browser",
+      "id": "browser.peaks",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket_frames": {
+            "type": "number"
+          },
+          "buckets": {
+            "maximum": 2048,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "cache": {
+            "type": "object"
+          },
+          "cached": {
+            "type": "boolean"
+          },
+          "channels": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "type": "number"
+          },
+          "frames": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          },
+          "peaks": {
+            "type": "array"
+          },
+          "sample_rate": {
+            "maximum": 4294967,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "probe": {
+            "type": "boolean"
+          },
+          "root": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Find files in the browser by name, by tag, or - with 'probe' - by what the audio file itself says it is (sample rate, channels, length, and the embedded title/artist/album/comment/genre tags). Every 'tags' entry must be present (AND). Sorted by path, so paging with offset is stable. The walk is bounded by scan_limit entries and the probe by probe_limit files, and a result that hit either bound says truncated: true. Read-only.",
+      "group": "browser",
+      "id": "browser.query",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "channels": {
+                      "maximum": 1024,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "duration_seconds": {
+                      "type": "number"
+                    },
+                    "encoding": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "format": {
+                      "type": "string"
+                    },
+                    "frames": {
+                      "type": "number"
+                    },
+                    "sample_rate": {
+                      "maximum": 4294967,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "tags": {
+                      "type": "object"
+                    },
+                    "valid": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "modified_ms": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "type": "number"
+                },
+                "tags": {
+                  "type": "array"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "matched": {
+            "maximum": 5000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probe": {
+            "type": "boolean"
+          },
+          "probe_limit": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probed": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "returned": {
+            "maximum": 500,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "roots": {
+            "type": "array"
+          },
+          "scan_limit": {
+            "maximum": 5000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scanned": {
+            "maximum": 5000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The directories the file browser reads - the same tabs the sidebar has: the user's samples, the factory samples, the user and factory presets and projects - with a stable id per root, whether each exists on this machine, and the path of the tag store. Read-only.",
+      "group": "browser",
+      "id": "browser.roots",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ids": {
+            "type": "array"
+          },
+          "roots": {
+            "type": "array"
+          },
+          "store_error": {
+            "type": "string"
+          },
+          "store_loaded": {
+            "type": "boolean"
+          },
+          "store_path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "tag"
+        ],
+        "type": "object"
+      },
+      "description": "Tag a file in the browser's library. The tag is filed against the file's canonical path in a JSON store in the user's config directory, and the write is reported: a tag that cannot be persisted is a refusal, not a silent success. Refused when the file already carries the tag. Reversible: the recorded inverse is browser.tag.remove, which control.undo dispatches.",
+      "group": "browser",
+      "id": "browser.tag.add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_path": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "tag"
+        ],
+        "type": "object"
+      },
+      "description": "Remove a tag from a file in the browser's library, persisting the store. Not-found when the file does not carry the tag: a removal that removes nothing is a refusal. Reversible: the recorded inverse is browser.tag.add, which control.undo dispatches.",
+      "group": "browser",
+      "id": "browser.tag.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_path": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The tag vocabulary of the library: every distinct tag with the number of files carrying it, how many files carry at least one tag, the store's own path, and whether the store could be read. Read-only.",
+      "group": "browser",
+      "id": "browser.tags",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "distinct": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "entries": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limit": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "read_ok": {
+            "type": "boolean"
+          },
+          "store_error": {
+            "type": "string"
+          },
+          "store_loaded": {
+            "type": "boolean"
+          },
+          "store_path": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array"
           }
         },
         "required": [],
@@ -830,6 +1240,371 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Assign an audio clip to a take lane of its own track: the lane tag is a field on the clip, so the take is the clip and its audio is never copied or moved. A lane the clip's track does not have is refused, as is a MIDI clip (take lanes carry audio takes in this release; docs/COMPING.md). Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "comp",
+      "id": "comp.assign",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lane_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lanes": {
+            "type": "array"
+          },
+          "previous_lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "One track's comping state: its take lanes (with the ids of their takes), the composite's ordered segments, and what each segment resolves to - the take clip and the source frame its first tick reads. A segment whose lane has no take covering it is reported as 'unresolved', never guessed at. Reads only.",
+      "group": "comp",
+      "id": "comp.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "composite": {
+            "type": "object"
+          },
+          "lane_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lanes": {
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "take_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Add a take lane to a track and return its index. The index is the lowest one the track does not use; a lane is never renumbered by a removal (docs/COMPING.md). The lane holds no audio of its own: the takes are the clips tagged with that index, assigned with comp.assign. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "comp",
+      "id": "comp.lane_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lane_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lanes": {
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "List take lanes: the named track's, or every track's in song order when no track is given. Each lane reports its index, its name and the ids of the takes assigned to it (comp.assign). Reads only.",
+      "group": "comp",
+      "id": "comp.lane_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Remove a take lane from a track. Any composite segment that named the lane falls back to the track's base lane, because a composite stays gapless over its span; removing the last lane clears the composite. A lane the track does not have is refused, typed, naming the lanes it does have. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "comp",
+      "id": "comp.lane_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "composite": {
+            "type": "object"
+          },
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lane_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lanes": {
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "begin": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "end": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Rebuild the composite: sort it, merge neighbouring segments that are the same lane at a continuous offset, and - when a span is given - clamp the composite to exactly [begin, end) and fill every gap in it with the track's base lane. With no span it normalises what is already there (idempotent on a well-formed composite). The take audio is not touched. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "comp",
+      "id": "comp.rebuild",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "composite": {
+            "type": "object"
+          },
+          "segments_after": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "segments_before": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "begin": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "end": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "srcpos": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "begin",
+          "end",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Choose which take lane supplies the composite over [begin, end) ticks, slipped 'srcpos' ticks into that lane's take (default 0 = the take's own start). A selection paints over what was there: the range is cut out of every existing segment and the new choice is inserted, so the composite stays ordered and gapless over its span. The take audio is not touched, and nothing is copied. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "comp",
+      "id": "comp.select",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "begin": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "composite": {
+            "type": "object"
+          },
+          "end": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "srcpos": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -959,6 +1734,101 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "window_ms": {
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_ms"
+        ],
+        "type": "object"
+      },
+      "description": "Set the window (milliseconds) inside which a run of the same command on the same target is ONE undo step, so a 200-call drag costs one Ctrl+Z. 0 disables grouping entirely, which is the pre-0.3.0 behaviour. Changing the window ends the gesture in flight, so it can never group two gestures retroactively. Does not touch the project.",
+      "group": "control",
+      "id": "control.set_undo_coalescing",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "coalescing": {
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "window_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "maximum": 536870912,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Set the undo stack's two caps: `steps` (how many undo steps are kept) and/or `bytes` (the serialised size they may occupy). Lowering a cap EVICTS the oldest steps immediately and the result reports how many (`dropped`); the caps themselves are reversible (one control.undo restores them), the evicted steps are not. Refuses a value outside the declared ceilings rather than clamping it.",
+      "group": "control",
+      "id": "control.set_undo_depth",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounded": {
+            "type": "boolean"
+          },
+          "cap_bytes": {
+            "type": "integer"
+          },
+          "cap_steps": {
+            "type": "integer"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "dropped": {
+            "type": "integer"
+          },
+          "evicted": {
+            "type": "integer"
+          },
+          "previous_bytes": {
+            "type": "integer"
+          },
+          "previous_steps": {
+            "type": "integer"
+          },
+          "retained_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -1067,6 +1937,59 @@
           },
           "undone_command": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read the engine's own undo stack: its depth and redo depth, the TWO bounds it is kept within (a count cap and a byte budget), the serialised bytes it retains, how many steps a bound has evicted, and the coalescing rule in force (the window, and which commands it groups). Writes nothing.",
+      "group": "control",
+      "id": "control.undo_depth",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounded": {
+            "type": "boolean"
+          },
+          "can_redo": {
+            "type": "boolean"
+          },
+          "can_undo": {
+            "type": "boolean"
+          },
+          "cap_bytes": {
+            "type": "integer"
+          },
+          "cap_steps": {
+            "type": "integer"
+          },
+          "coalesced_steps": {
+            "type": "integer"
+          },
+          "coalescing": {
+            "type": "object"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "evicted": {
+            "type": "integer"
+          },
+          "redo_depth": {
+            "type": "integer"
+          },
+          "retained_bytes": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -4367,6 +5290,229 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "bpm": {
+            "maximum": 999,
+            "minimum": 10,
+            "type": "integer"
+          },
+          "denominator": {
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "numerator": {
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tick": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tick"
+        ],
+        "type": "object"
+      },
+      "description": "Add a tempo and/or time-signature event to the map, or replace the half it names at that tick (the other half is kept). Adding an event brings the map into force unless `active` is passed false: an event no timeline read would obey is a trap. Refused, typed, when the event fails the engine's own bounds or carries neither half, and a refusal writes nothing.",
+      "group": "transport",
+      "id": "transport.tempo_map_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "bpm": {
+            "type": "integer"
+          },
+          "denominator": {
+            "type": "integer"
+          },
+          "event_count": {
+            "type": "integer"
+          },
+          "has_tempo": {
+            "type": "boolean"
+          },
+          "has_time_signature": {
+            "type": "boolean"
+          },
+          "numerator": {
+            "type": "integer"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "tick": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Remove every event AND switch the map off, in one step (one undo). Rejects an already empty, inactive map with invalid_args: an edit that changes nothing is not an edit. The inverse is the whole captured map, so this command names no single inverse command - the transaction records the map itself.",
+      "group": "transport",
+      "id": "transport.tempo_map_clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "event_count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The tempo map: every tempo and time-signature event, whether the map is in force, and what its queries answer AT THE PLAY HEAD - the tempo, the time signature and the elapsed seconds, read through the map's own ticks-to-time conversion. An empty or inactive map reports the global tempo at every position, and before the first event the global tempo is what is in force (docs/TEMPO-MAP.md).",
+      "group": "transport",
+      "id": "transport.tempo_map_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "event_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "global_tempo": {
+            "type": "integer"
+          },
+          "max_events": {
+            "type": "integer"
+          },
+          "position_ticks": {
+            "type": "integer"
+          },
+          "seconds_at_position": {
+            "type": "number"
+          },
+          "tempo_at_position": {
+            "type": "integer"
+          },
+          "timesig_at_position": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "tick": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tick"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the tempo map event at an exact tick. A tick carrying no event is typed not_found. Removing the LAST event leaves an empty map, which is the pre-tempo-map engine: every tick answers the global tempo again.",
+      "group": "transport",
+      "id": "transport.tempo_map_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "bpm": {
+            "type": "integer"
+          },
+          "event_count": {
+            "type": "integer"
+          },
+          "tick": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "type": "object"
+      },
+      "description": "Switch the tempo map's authority on or off WITHOUT editing its events: off, every tick answers the global tempo again and the stored events are still saved with the project; on, the timeline obeys them. A call that sets the state it already has is invalid_args.",
+      "group": "transport",
+      "id": "transport.tempo_map_set_active",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "event_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "clip": {
             "type": "string"
           },
@@ -4692,16 +5838,16 @@
       }
     }
   ],
-  "count": 108,
+  "count": 129,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030-w17/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/snap.sock",
-    "version": "0.2.0-alpha.81+dfef084"
+    "source_socket": "/tmp/zctl-run-q8wfslbe/zene.sock",
+    "version": "0.2.1-alpha.59+635bf6f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
