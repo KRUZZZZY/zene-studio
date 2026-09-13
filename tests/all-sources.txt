@@ -951,6 +951,7 @@ src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
+src/core/ControlCommandsTrackFolderShared.h
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
@@ -974,6 +975,7 @@ src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
+src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
