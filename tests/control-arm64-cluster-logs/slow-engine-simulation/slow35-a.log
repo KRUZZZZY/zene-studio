@@ -1,0 +1,184 @@
+UpdateCTestConfiguration  from :/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests/DartConfiguration.tcl
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 83
+    Start 83: ControlReadiness
+
+83: Test command: /usr/bin/python3 "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/control-readiness.py" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/zene" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/data/agent-control-fixture.mmp"
+83: Working Directory: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests
+83: Environment variables: 
+83:  QT_QPA_PLATFORM=offscreen
+83: Test timeout computed to be: 420
+83: not ready 0.037s after connect: {'audio': {'device': '', 'requested': '', 'sound_output': False, 'start_failed': False, 'state': 'engine_missing'}, 'engine_ready': False, 'pong': True, 'proto': 1, 'reason': {'code': 'engine_starting', 'message': 'the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands'}, 'version': '0.2.1-alpha.1+4874122'}
+83: engine command before ready: {'error': {'kind': 'busy', 'message': 'the engine is not addressable yet [engine_starting]: the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands'}, 'id': 2, 'ok': False}
+83: ready after 36.84s
+83: 
+83: === PASS ===
+83:   readiness: connect early, poll, then command   ok
+1/2 Test #83: ControlReadiness .................   Passed   37.18 sec
+test 87
+    Start 87: ControlHeadlessProjectOpen
+
+87: Test command: /usr/bin/python3 "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/control-headless-project-open.py" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/zene" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/data/projects/tutorials/editing_note_volumes.mmp" "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/data/error-carrying-project.mmp"
+87: Working Directory: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/build/tests
+87: Environment variables: 
+87:  QT_QPA_PLATFORM=offscreen
+87: Test timeout computed to be: 300
+87: note: discarded a stale reply to an earlier request: {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"
+87: note: discarded a stale reply to an earlier request: {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"
+87: note: discarded a stale reply to an earlier request: {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"
+87: tutorial project: 1 load error item(s): ['Sample not found: samples/shapes/smooth_inv_saw.ogg']
+87: fixture project: 2 distinct load error item(s): ['Sample not found: nosuchdir/missing_sample_625.wav', 'Sample not found: samples/shapes/nosuch_wave_625.ogg']
+87: 
+87: ---- raw request/response transcript ----
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"","requested":"","sound_output":false,"start_failed":false,"state":"engine_missing"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- NO REPLY inside 10s (no response line inside 10.0s (socket timed out)
+87: diagnosis: the instance is STILL RUNNING (pid 1032008) - a HANG, not a crash
+87: kernel wait channel: hrtimer_nanosleep
+87: State:	S (sleeping)
+87: Threads:	1
+87: threads: 1 live
+87:   thread 1032008: state=S wchan=hrtimer_nanosleep
+87: cpu: burned 0% of one core over 1.0s (6 -> 6 ticks)
+87: --- gdb ---
+87: attach attempt 1:
+87: Could not attach to process.  If your uid matches the uid of the target
+87: process, check the setting of /proc/sys/kernel/yama/ptrace_scope, or try
+87: again as the root user.  For more details, see /etc/sysctl.d/10-ptrace.conf
+87: --- end gdb ---
+87: ---- stdout_path tail ----
+87: control socket listening on /tmp/zctl-run-vw7lqauz/zene.sock
+87: ---- end stdout_path ----
+87: ---- stderr_path tail ----
+87: QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+87: ---- end stderr_path ----)
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- NO REPLY inside 10s (no response line inside 10.0s (socket timed out)
+87: diagnosis: the instance is STILL RUNNING (pid 1032008) - a HANG, not a crash
+87: kernel wait channel: hrtimer_nanosleep
+87: State:	S (sleeping)
+87: Threads:	1
+87: threads: 1 live
+87:   thread 1032008: state=S wchan=hrtimer_nanosleep
+87: cpu: burned 0% of one core over 1.0s (6 -> 6 ticks)
+87: --- gdb ---
+87: attach attempt 1:
+87: Could not attach to process.  If your uid matches the uid of the target
+87: process, check the setting of /proc/sys/kernel/yama/ptrace_scope, or try
+87: again as the root user.  For more details, see /etc/sysctl.d/10-ptrace.conf
+87: --- end gdb ---
+87: ---- stdout_path tail ----
+87: control socket listening on /tmp/zctl-run-vw7lqauz/zene.sock
+87: ---- end stdout_path ----
+87: ---- stderr_path tail ----
+87: QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+87: ---- end stderr_path ----)
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- NO REPLY inside 10s (no response line inside 10.0s (socket timed out)
+87: diagnosis: the instance is STILL RUNNING (pid 1032008) - a HANG, not a crash
+87: kernel wait channel: hrtimer_nanosleep
+87: State:	S (sleeping)
+87: Threads:	1
+87: threads: 1 live
+87:   thread 1032008: state=S wchan=hrtimer_nanosleep
+87: cpu: burned 0% of one core over 1.0s (6 -> 6 ticks)
+87: --- gdb ---
+87: attach attempt 1:
+87: Could not attach to process.  If your uid matches the uid of the target
+87: process, check the setting of /proc/sys/kernel/yama/ptrace_scope, or try
+87: again as the root user.  For more details, see /etc/sysctl.d/10-ptrace.conf
+87: --- end gdb ---
+87: ---- stdout_path tail ----
+87: control socket listening on /tmp/zctl-run-vw7lqauz/zene.sock
+87: ---- end stdout_path ----
+87: ---- stderr_path tail ----
+87: QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+87: ---- end stderr_path ----)
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"","requested":"","sound_output":false,"start_failed":false,"state":"engine_missing"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"","requested":"","sound_output":false,"start_failed":false,"state":"engine_missing"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"","requested":"","sound_output":false,"start_failed":false,"state":"engine_missing"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"","requested":"","sound_output":false,"start_failed":false,"state":"engine_missing"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"","requested":"","sound_output":false,"start_failed":false,"state":"engine_missing"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"","requested":"","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":false,"pong":true,"proto":1,"reason":{"code":"engine_starting","message":"the engine is still starting up; poll control.ping until engine_ready is true before issuing engine commands"},"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":0,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":true,"pong":true,"proto":1,"version":"0.2.1-alpha.1+4874122"}}
+87: -> {"id":1,"cmd":"project.open","args":{"path":"/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/data/projects/tutorials/editing_note_volumes.mmp"},"proto":1}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":true,"pong":true,"proto":1,"version":"0.2.1-alpha.1+4874122"}}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":true,"pong":true,"proto":1,"version":"0.2.1-alpha.1+4874122"}}
+87: <- {"id":0,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":true,"pong":true,"proto":1,"version":"0.2.1-alpha.1+4874122"}}
+87: <- {"id":1,"ok":true,"result":{"error_count":1,"errors":[{"count":1,"message":"Sample not found: samples/shapes/smooth_inv_saw.ogg"}],"file":"/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/data/projects/tutorials/editing_note_volumes.mmp","format_upgraded":true,"ids_assigned":2,"loaded_with_errors":true,"tempo":140,"track_count":1}}
+87: -> {"id":2,"cmd":"project.open","args":{"path":"/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/data/error-carrying-project.mmp"},"proto":1}
+87: <- {"id":2,"ok":true,"result":{"error_count":2,"errors":[{"count":1,"message":"Sample not found: nosuchdir/missing_sample_625.wav"},{"count":1,"message":"Sample not found: samples/shapes/nosuch_wave_625.ogg"}],"file":"/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/data/error-carrying-project.mmp","format_upgraded":true,"ids_assigned":2,"loaded_with_errors":true,"tempo":140,"track_count":1}}
+87: -> {"id":3,"cmd":"project.get_state","args":{},"proto":1}
+87: <- {"id":3,"ok":true,"result":{"file":"/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/data/error-carrying-project.mmp","modified":false,"playing":false,"revisions":{"count":0,"file":"/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-021-arm64/tests/data/error-carrying-project.mmp","max_revision_bytes":8388608,"max_total_bytes":25165824,"policy":"keep-3","retained_bytes":0,"revisions":[]},"tempo":140,"track_count":1,"tracks":["trk-0"]}}
+87: -> {"id":4,"cmd":"control.ping","args":{},"proto":1}
+87: <- {"id":4,"ok":true,"result":{"audio":{"device":"Dummy (no sound output)","requested":"Dummy (no sound output)","sound_output":true,"start_failed":false,"state":"ok"},"engine_ready":true,"pong":true,"proto":1,"version":"0.2.1-alpha.1+4874122"}}
+87: 
+87: ---- app log tail ----
+87: QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-kruzzzzy'
+87: Lv2 plugin SUMMARY: 73 of 87  loaded in 206 msecs.
+87: For details about not loaded plugins, please set
+87:   environment variable "LMMS_LV2_DEBUG" to nonempty.
+87: Blocked Lv2 Plugins: 10 of 87 
+87:   If you want to enable them (dangerous!), please set
+87:   environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+87: This plugin does not support propagateSizeHints()
+87: This plugin does not support propagateSizeHints()
+87: This plugin does not support raise()
+87: plugin-scan: 64 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 64 scanned, 59 plugin(s)
+87: This plugin does not support setParent!
+87: This plugin does not support setParent!
+87: This plugin does not support setParent!
+87: This plugin does not support propagateSizeHints()
+87: This plugin does not support raise()
+87: The following errors occurred while loading: 
+87: 
+87: Sample not found: samples/shapes/smooth_inv_saw.ogg
+87: 
+87: This plugin does not support setParent!
+87: This plugin does not support propagateSizeHints()
+87: This plugin does not support raise()
+87: The following errors occurred while loading: 
+87: 
+87: Sample not found: nosuchdir/missing_sample_625.wav
+87: Sample not found: samples/shapes/nosuch_wave_625.ogg
+87: 
+87: This plugin does not support setParent!
+87: control socket listening on /tmp/zctl-run-vw7lqauz/zene.sock
+87: 
+87: PASS: this test passed (default mode): project.open returned a typed per-item error list inside the 20s bound
+2/2 Test #87: ControlHeadlessProjectOpen .......   Passed   37.67 sec
+
+The following tests passed:
+	ControlReadiness
+	ControlHeadlessProjectOpen
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =  74.85 sec

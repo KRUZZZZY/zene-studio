@@ -1,0 +1,1 @@
+3:FAIL: the server closed the connection after 4 of 8 pipelined replies (226864 bytes): a reply larger than the peer's socket buffer must be queued and delivered whole, not truncated
