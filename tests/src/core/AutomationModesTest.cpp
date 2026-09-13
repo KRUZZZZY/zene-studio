@@ -45,7 +45,9 @@
 #include <atomic>
 #include <bit>
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <new>
 #include <utility>
 #include <vector>
 
@@ -296,6 +298,62 @@ private slots:
 		rig.volume.noteAutomationTouchEnd();
 		QVERIFY(!rig.volume.automationWantsWrite(
 			AutomatableModel::automationTransportRun(), AutomatableModel::automationClockNs()));
+	}
+
+	//! A control that dies while the song still holds it for automation must not
+	//! be dereferenced afterwards. The song caches the models it automated on the
+	//! last frame as raw pointers (`Song::m_oldAutomatedValues`) and walks that
+	//! map in two places - the next `Song::processAutomations()` and
+	//! `Song::stop()`, which every `init()` in this file performs. A model
+	//! destroyed in between (an instrument or an automation track deleted
+	//! mid-playback, and this file's own `Rig`, which dies when its test returns)
+	//! used to be `am->setUseControllerValue(true)` on freed memory - signal 11
+	//! inside Qt's signal activation, in `Song::stop()` at Song.cpp:778, reached
+	//! from `AutomationModesTest::init()`, which is what CI reported for this
+	//! file on all seven platforms.
+	//!
+	//! The control below is destroyed by hand and its storage poisoned, so a
+	//! stale reference to it is a deterministic fault rather than an accident of
+	//! what the freed memory happens to hold. That is the whole difference
+	//! between this test and the crash it pins: the same programme passed on a
+	//! many-core dev box and failed on every runner, and reproduced here only
+	//! under `MALLOC_PERTURB_=17`.
+	void testDestroyedControlIsNotDereferenced()
+	{
+		auto* song = Engine::getSong();
+		AutomationTrack track(song);
+		AutomationClip clip(&track);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(0, 0.5f, false);
+		clip.putValue(96, 0.25f, false);
+		clip.putValue(192, 1.0f, false);
+		clip.changeLength(192);
+
+		// The control lives in a buffer rather than as a named local so that this
+		// test can end its life and poison what it leaves behind, on purpose.
+		alignas(FloatModel) unsigned char storage[sizeof(FloatModel)];
+		auto* volume = new (storage) FloatModel(1.0f, 0.0f, 2.0f, 0.001f);
+		clip.addObject(volume);
+		volume->setAutomationMode(AutomationMode::Touch);
+
+		playFromZero(song, 8);
+		QVERIFY(clip.hasAutomation());
+		QVERIFY(volume->isAutomated());
+
+		// The transport is still running when the control goes away: the song has
+		// to have dropped it from its cache by the time either walk below (the
+		// render path's, which reaches the cache on the first frame of a tick,
+		// and the stop's) runs.
+		volume->~FloatModel();
+		std::memset(storage, 0xFF, sizeof(storage));
+
+		// Several periods, so the render path's walk is certainly reached...
+		for (int i = 0; i < 8; ++i)
+		{
+			song->processNextBuffer();
+		}
+		// ...and the stop that every init() in this file performs.
+		song->stop();
 	}
 
 	//! The touch timeout bounds the write window, so a lost mouse-up cannot

@@ -102,6 +102,12 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	// A model being destroyed reports itself here, before anything in this
+	// object is torn down (see Song::forgetAutomatedModel and
+	// s_automationCacheSong): the automation cache holds the models automated on
+	// the last frame as raw pointers, and the hook needs a song it can reach.
+	s_automationCacheSong = this;
+
 	connect( &m_tempoModel, SIGNAL(dataChanged()),
 			this, SLOT(setTempo()), Qt::DirectConnection );
 	connect( &m_tempoModel, SIGNAL(dataUnchanged()),
@@ -146,8 +152,28 @@ Song::Song() :
 
 Song::~Song()
 {
+	// From this line on, a model that is destroyed cannot report into the
+	// automation cache any more. It has to happen here, in the destructor body,
+	// because the song's own models (m_tempoModel and friends, the metronome's)
+	// are declared before `m_oldAutomatedValues` and are therefore destroyed
+	// after it - their destructors would otherwise reach for a map that is
+	// already gone. See `s_automationCacheSong`.
+	s_automationCacheSong = nullptr;
+
 	m_playing = false;
 	delete m_globalAutomationTrack;
+}
+
+
+Song* Song::s_automationCacheSong = nullptr;
+
+
+void Song::forgetAutomatedModel( AutomatableModel* model )
+{
+	if( s_automationCacheSong != nullptr )
+	{
+		s_automationCacheSong->m_oldAutomatedValues.remove( model );
+	}
 }
 
 
@@ -484,7 +510,10 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	}
 
 	// Checks if an automated model stopped being automated by automation clip
-	// so we can move the control back to any connected controller again
+	// so we can move the control back to any connected controller again. A model
+	// destroyed while it was cached has already dropped itself out of this map
+	// (AutomatableModel's destructor calls Song::forgetAutomatedModel), so no key
+	// here is a stale pointer.
 	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
 	{
 		AutomatableModel * am = it.key();
@@ -771,7 +800,10 @@ void Song::stop()
 	Engine::audioEngine()->clear();
 
 	// Moves the control of the models that were processed on the last frame
-	// back to their controllers.
+	// back to their controllers. Every key in the map is still a live model: one
+	// that is destroyed while it is cached removes itself from it (the model's
+	// destructor calls Song::forgetAutomatedModel), so nothing here can be a
+	// stale pointer.
 	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
 	{
 		AutomatableModel * am = it.key();

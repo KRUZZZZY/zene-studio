@@ -74,6 +74,18 @@ AutomatableModel::AutomatableModel(
 
 AutomatableModel::~AutomatableModel()
 {
+	// The song caches the models it automated on the last frame as RAW pointers
+	// (Song::m_oldAutomatedValues) and walks that cache in two places -
+	// Song::processAutomations(), on the first frame of every tick, and
+	// Song::stop() - dereferencing every entry. The song does not own the
+	// models, so it has to be told when one goes away: without this call a
+	// control destroyed while the transport runs (an instrument or an automation
+	// track deleted mid-playback, a project container whose tracks go away, and
+	// the rigs in tests/src/core/AutomationModesTest.cpp) is setUseControllerValue()
+	// on freed memory, which is a SIGSEGV inside Qt's signal activation -
+	// AutomationModesTest reported exactly that on all seven CI platforms.
+	Song::forgetAutomatedModel( this );
+
 	unlink();
 
 	if (m_controllerConnection)
