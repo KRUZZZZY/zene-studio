@@ -1383,30 +1383,14 @@ void Song::loadProject( const QString & fileName )
 			{
 				restoreKeymapStates(node.toElement());
 			}
-			// The tempo map (D11, docs/TEMPO-MAP.md). A project that has no
-			// block loads into an EMPTY map, which is the state the engine was
-			// in before this element existed - so the reader is a no-op for
-			// every project that predates the feature.
-			else if (node.nodeName() == "tempo-map")
+			// The two song-state elements that live behind a lock-free
+			// publisher: the tempo map (D11, docs/TEMPO-MAP.md) and the
+			// modulation layer (#602, docs/MODULATION.md). Each restores
+			// itself from its own <element>; the pair shares ONE helper so
+			// this walk carries one test for both instead of one each.
+			else if ( restorePublisherBackedSection( node ) )
 			{
-				const QDomElement mapElement = node.toElement();
-				m_tempoMap.edit([&mapElement](TempoMap& map) { return map.loadSettings(mapElement); });
-				m_tempoMapAppliedTempo = -1;
-			}
-			// The modulation layer (#602). A project with no block loads into an
-			// EMPTY layer, and the write targets are re-resolved here rather
-			// than carried across a load: the devices a route names are the
-			// NEW project's, and a pointer from the old one must never survive
-			// (docs/MODULATION.md section 4).
-			else if (node.nodeName() == "modulation-layer")
-			{
-				const QDomElement layerElement = node.toElement();
-				m_modulationLayer.edit([&layerElement](ModulationLayer& layer,
-					ModulationRuntime& runtime) {
-					layer.loadSettings(layerElement);
-					rebuildModulationRuntime(layer, &runtime);
-					return true;
-				});
+				// Handled: the node was a tempo-map or a modulation-layer.
 			}
 #ifdef LMMS_HAVE_SESSION_VIEW
 			else if( node.nodeName() == "session" )
@@ -1770,6 +1754,46 @@ void Song::restoreKeymapStates(const QDomElement &element)
 		node = node.nextSibling();
 	}
 	emit keymapListChanged(-1);
+}
+
+/*! The song-state elements that live behind a lock-free publisher and carry no
+ *  GUI state: the tempo map (D11, docs/TEMPO-MAP.md) and the modulation layer
+ *  (#602, docs/MODULATION.md). Each restores itself from its own <element> -
+ *  exactly as loadProject() used to inline it. The pair was extracted from that
+ *  walk when the modulation lane's branch put loadProject one over its recorded
+ *  CCN target, and the fix is the extraction rather than a re-anchor (Gate 4,
+ *  tests/complexity-gate.sh). Returns true when \a node was one of them, so the
+ *  walk carries one test for both elements instead of one each. */
+bool Song::restorePublisherBackedSection(const QDomNode &node)
+{
+	// The tempo map (D11, docs/TEMPO-MAP.md). A project that has no
+	// block loads into an EMPTY map, which is the state the engine was
+	// in before this element existed - so the reader is a no-op for
+	// every project that predates the feature.
+	if (node.nodeName() == "tempo-map")
+	{
+		const QDomElement mapElement = node.toElement();
+		m_tempoMap.edit([&mapElement](TempoMap& map) { return map.loadSettings(mapElement); });
+		m_tempoMapAppliedTempo = -1;
+		return true;
+	}
+	// The modulation layer (#602). A project with no block loads into an
+	// EMPTY layer, and the write targets are re-resolved here rather
+	// than carried across a load: the devices a route names are the
+	// NEW project's, and a pointer from the old one must never survive
+	// (docs/MODULATION.md section 4).
+	if (node.nodeName() == "modulation-layer")
+	{
+		const QDomElement layerElement = node.toElement();
+		m_modulationLayer.edit([&layerElement](ModulationLayer& layer,
+			ModulationRuntime& runtime) {
+			layer.loadSettings(layerElement);
+			rebuildModulationRuntime(layer, &runtime);
+			return true;
+		});
+		return true;
+	}
+	return false;
 }
 
 

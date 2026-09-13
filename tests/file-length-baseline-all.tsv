@@ -7,8 +7,8 @@ plugins/VstBase/RemoteVstPlugin.cpp	2645
 src/core/DataFile.cpp	2349
 src/gui/editors/AutomationEditor.cpp	2328
 src/core/Mixer.cpp	2116
+src/core/Song.cpp	1962
 src/gui/MainWindow.cpp	1928
-src/core/Song.cpp	1867
 plugins/Monstro/Monstro.cpp	1856
 src/gui/modals/SetupDialog.cpp	1513
 src/gui/clips/ClipView.cpp	1474
@@ -77,6 +77,7 @@ tests/src/core/PluginScanCacheTest.cpp	670
 tests/src/core/RemotePluginAudioPortsTest.cpp	665
 plugins/LadspaEffect/caps/dsp/tonestack/ks_tab.h	663
 src/gui/SubWindow.cpp	659
+include/Song.h	657
 src/core/audio/AudioJack.cpp	657
 src/gui/MicrotunerConfig.cpp	654
 tests/src/core/AutomationModesTest.cpp	652
@@ -88,7 +89,6 @@ src/core/SampleClip.cpp	636
 src/core/midi/MidiApple.cpp	635
 plugins/LadspaEffect/caps/Amp.cc	634
 tests/src/core/AudioBusTest.cpp	633
-include/Song.h	629
 tests/src/core/ScriptEngineTest.cpp	627
 include/AudioBufferView.h	626
 include/AutomatableModel.h	623

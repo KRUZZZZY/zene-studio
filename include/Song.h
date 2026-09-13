@@ -504,6 +504,12 @@ private:
 	void saveKeymapStates(QDomDocument &doc, QDomElement &element);
 	void restoreKeymapStates(const QDomElement &element);
 
+	/*! The song-state elements behind a lock-free publisher: the tempo map
+	 *  (D11) and the modulation layer (#602). Restores whichever \a node is
+	 *  and answers false when it is neither, so loadProject()'s element walk
+	 *  carries one test for the pair rather than one per element (Gate 4). */
+	bool restorePublisherBackedSection(const QDomNode &node);
+
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
 	void processMetronome(size_t bufferOffset);
 
