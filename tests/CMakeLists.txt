@@ -919,7 +919,20 @@ endif()
 # framing and the command groups are exercised end to end.
 # ---------------------------------------------------------------------------
 find_program(PYTHON3_EXECUTABLE NAMES python3)
-if(PYTHON3_EXECUTABLE)
+# The control surface is POSIX-only: the server itself refuses with a typed error on Windows
+# (ControlServer::listen's !Q_OS_UNIX branch), so its suite has no socket to drive there. The
+# tests were registered on every platform and failed on Windows in 0.07 s each - run #34731085749
+# (msvc-x64: 10 control-surface failures out of 14) - which reads as a defect and is a platform
+# fact. Registered on UNIX only; the Windows refusal path is covered by the unit tests that need
+# no socket. The suite stays ACTIVE everywhere it can run, including the hardware-less CI runners,
+# where its failure mode is the real thing it exists to catch.
+IF(WIN32)
+	SET(CONTROL_SUITE_AVAILABLE FALSE)
+ELSE()
+	SET(CONTROL_SUITE_AVAILABLE TRUE)
+ENDIF()
+
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketIntegration
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-integration.py
@@ -953,7 +966,7 @@ endif()
 # All four are bounded by ctest's TIMEOUT and by deadlines inside each script: a
 # hang counts as a failure, never as a wait.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlShutdown
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-shutdown.py
@@ -1000,7 +1013,7 @@ endif()
 # --check is passed explicitly: this gate must never rewrite its own baseline
 # during a test run; only a deliberate --reanchor "reason" does that.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# -DZENE_TELEMETRY=OFF: the telemetry.* group is compiled out with the
 	# client, so this binary has no telemetry.consent for the allowlist entry to
 	# name. The gate is told which ids the configuration removed instead of
@@ -1049,7 +1062,7 @@ set_tests_properties(StableTrackIdsTest PROPERTIES
 # tests cannot pass by accident. Reproductions against the base commit
 # 6b01b98eb are recorded in the lane's evidence.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	foreach(HEADLESS_TEST
 			"ControlHeadlessProjectOpen|control-headless-project-open.py|${CMAKE_SOURCE_DIR}/data/projects/tutorials/editing_note_volumes.mmp ${CMAKE_CURRENT_SOURCE_DIR}/data/error-carrying-project.mmp"
 			"ControlHeadlessWorkingDirectory|control-headless-working-directory.py|"
@@ -1085,7 +1098,7 @@ endif()
 # refused instead of buffering without bound.
 # See docs/CONTROL-SOCKET-PATH-SAFETY.md.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketPathSafety
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-socket-path-safety.py

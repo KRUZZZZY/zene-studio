@@ -40,6 +40,7 @@ Exit code 0 only when every assertion passed.
 
 import json
 import os
+import pathlib
 import shutil
 import socket
 import stat  # noqa: F401  (kept: tests import it through this module historically)
@@ -357,8 +358,21 @@ def instance_diagnosis() -> str:
         return "diagnosis: no instance was launched by this process"
     proc = instance.process
     if proc.poll() is not None:
-        return ("diagnosis: the instance EXITED with %s - a crash or a refusal, not a hang "
-                "(its stdout/stderr are the transcript above)" % proc.returncode)
+        lines = ["diagnosis: the instance EXITED with %s - a crash or a refusal, not a hang "
+                 "(its stdout/stderr are the transcript above)" % proc.returncode]
+        # A signal death is a CRASH, and this product installs a crash reporter that writes a
+        # local report with the signal, the faulting pc and a backtrace. The instance's
+        # XDG_DATA_HOME is a temp dir the harness owns, so the report is right there - print it,
+        # because on the runners a crash is the one thing that cannot be reproduced off-runner.
+        for root in (instance.tmp,):
+            for found in sorted(pathlib.Path(root).rglob("zene-crash-report*")) + \
+                         sorted(pathlib.Path(root).rglob("*crash*report*")):
+                try:
+                    lines.append("--- crash report %s ---" % found.name)
+                    lines.extend(found.read_text(errors="replace").splitlines()[:80])
+                except OSError:
+                    pass
+        return "\n".join(lines)
     pid = proc.pid
     lines = ["diagnosis: the instance is STILL RUNNING (pid %d) - a HANG, not a crash" % pid]
     for path, label in (("/proc/%d/wchan" % pid, "kernel wait channel"),
