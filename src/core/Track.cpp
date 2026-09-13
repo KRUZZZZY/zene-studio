@@ -47,6 +47,8 @@
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "TrackContainer.h"
+#include "TrackFolder.h"
 
 
 namespace lmms
@@ -195,6 +197,16 @@ void Track::setId(int id)
 Track::~Track()
 {
 	lock();
+	// Unlink from the folder FIRST, before the signal: TrackView closes itself
+	// from destroyedTrack(), so a slot that runs there must not be able to reach
+	// a half-destroyed track through its folder's child list - the same
+	// ordering rule the 0.2.0 line's use-after-free fix established for the
+	// destroyedTrack() signal itself (docs/CONTROL-UNDO-CONNECTION-DROP.md).
+	if (m_parentFolder != nullptr)
+	{
+		m_parentFolder->childUnlinked(this);
+		m_parentFolder = nullptr;
+	}
 	emit destroyedTrack();
 
 	while (!m_clips.empty())
@@ -204,6 +216,23 @@ Track::~Track()
 
 	m_trackContainer->removeTrack( this );
 	unlock();
+}
+
+/*! \brief Put this track into \a folder (nullptr = the container root).
+ *
+ *  Reference-only in both directions: the container stays the single owner, so
+ *  this never deletes anything. The folder is told, because routing mode's
+ *  invariant is that every child of a routing folder points at the folder's own
+ *  mixer channel - a child that joins later must be routed too.
+ */
+void Track::setParentFolder( TrackFolder* folder )
+{
+	if (m_parentFolder == folder) { return; }
+	TrackFolder* previous = m_parentFolder;
+	m_parentFolder = nullptr;
+	if (previous != nullptr) { previous->childUnlinked(this); }
+	m_parentFolder = folder;
+	if (folder != nullptr) { folder->childLinked(this); }
 }
 
 
@@ -229,7 +258,12 @@ Track * Track::create( Type tt, TrackContainer * tc )
 //		case Type::Video:
 		case Type::Automation: t = new class AutomationTrack( tc ); break;
 		case Type::HiddenAutomation:
-						t = new class AutomationTrack( tc, true ); break;
+							t = new class AutomationTrack( tc, true ); break;
+		// A folder track (docs/TRACK-FOLDER-DESIGN.md): one more row of the
+		// SAME flat track list. An older build reading type=7 hits
+		// `default: break` below and drops the row - the forward-compatibility
+		// cost TRACK-FOLDER-DESIGN.md section 4.4 states rather than hides.
+		case Type::Folder: t = new class TrackFolder( tc ); break;
 		default: break;
 	}
 
@@ -330,6 +364,21 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	if (m_color.has_value())
 	{
 		element.setAttribute("color", m_color->name());
+	}
+
+	// The folder relation and the visibility flag (docs/TRACK-FOLDER-DESIGN.md
+	// section 4.1; owner items 3+20+21): ATTRIBUTES on the track's own element,
+	// never child elements - Track::loadTrack turns an unrecognised child
+	// element into a REAL Clip, which is the trap SPEC-stable-ids.md section
+	// 3.1 records for the track id. Both are written ONLY when they are not the
+	// default, so a project that uses neither re-saves the bytes it always had.
+	if (!presetMode && m_parentFolder != nullptr)
+	{
+		element.setAttribute("folder", m_parentFolder->id());
+	}
+	if (!presetMode && !m_visible)
+	{
+		element.setAttribute("visible", 0);
 	}
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
@@ -513,6 +562,33 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	if( storedHeight >= MINIMAL_TRACK_HEIGHT )
 	{
 		m_height = storedHeight;
+	}
+
+	// The folder relation and the visibility flag, both RESET ON ABSENCE
+	// (docs/TRACK-FOLDER-DESIGN.md sections 4.3/4.4; owner items 3+20+21). A
+	// track element with no `folder` attribute is not in a folder, whatever this
+	// object held before the call, and a missing `visible` means visible: a
+	// journal checkpoint restores by RE-LOADING, so state that survived its own
+	// absence could never be taken back off - the rule m_takeLanes and the
+	// frozen take follow above.
+	//
+	// It is done HERE, at the END of the walk, and not before it: the child's
+	// own `mixch` is loaded by its own loadTrackSpecificSettings above, and
+	// linking a child earlier would make a routing-mode folder record a binding
+	// for a channel the child has not read out of the file yet.
+	//
+	// The link is finished here when the folder already exists - a checkpoint
+	// restore re-loads ONE track and no post-load walk runs then - and after the
+	// walk by TrackContainer::resolveTrackFolders when it does not, because a
+	// file may name a folder that is constructed later in the same walk (a
+	// folder created after the tracks it holds sits after them in the file).
+	m_pendingFolderId = element.hasAttribute( "folder" )
+		? element.attribute( "folder" ).toInt() : -1;
+	m_visible = element.attribute( "visible", QStringLiteral("1") ).toInt() != 0;
+	{
+		TrackFolder* resolved = m_pendingFolderId >= 0
+			? m_trackContainer->findTrackFolderById( m_pendingFolderId ) : nullptr;
+		if( resolved != m_parentFolder ) { setParentFolder( resolved ); }
 	}
 }
 

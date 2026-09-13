@@ -149,6 +149,9 @@ set(LMMS_SRCS
 	core/ControlCommandsSurface.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
+	core/ControlCommandsTrackFolder.cpp
+	core/ControlCommandsTrackFolderSets.cpp
+	core/TrackContainerFolders.cpp
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
 	# commands that expose them (SPEC A16, task #623).
 	core/ControlCommandsUndo.cpp

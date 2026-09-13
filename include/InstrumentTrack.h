@@ -236,7 +236,7 @@ public:
 		return &m_pitchRangeModel;
 	}
 
-	IntModel * mixerChannelModel()
+	IntModel * mixerChannelModel() override
 	{
 		return &m_mixerChannelModel;
 	}

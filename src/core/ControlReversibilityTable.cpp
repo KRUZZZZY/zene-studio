@@ -124,6 +124,21 @@ const ReversibilityRow kRows[] = {
 		"the muted flag is a BoolModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (Track mute BoolModel checkpoint)",
 		""),
+	R("track.folder_set_collapsed", RC::TrueInverse, true,
+		"the collapse flag is part of the folder's own serialized state: the "
+		"<trackfolder> child element carries `collapsed`, and "
+		"TrackFolder::loadTrackSpecificSettings RESETS it on absence, which is "
+		"what lets a checkpoint taken before the first collapse take it back off",
+		"ProjectJournal (Track checkpoint on the folder; the restore re-loads the "
+		"folder's own element)",
+		""),
+	R("track.set_pinned", RC::TrueInverse, true,
+		"the pin flag is part of the folder's own serialized state (`pinned` on "
+		"the <trackfolder> element), reset on absence by the same loader, so the "
+		"checkpoint is a real inverse and not a state that survives its own "
+		"absence",
+		"ProjectJournal (Track checkpoint on the folder)",
+		""),
 	R("track.set_solo", RC::TrueInverse, true,
 		"the action is NOT one object: the solo flag rides the solo BoolModel "
 		"and Track::toggleSolo (driven from the solo model's dataChanged) "

@@ -175,6 +175,28 @@ that is this page's fault — report it and it gets added.
   input, so no note path consults a zone in this build — `rack.zone_resolve` answers which zone a note would
   fall into, and nothing acts on that answer. `docs/RACK-MACROS.md` §4 states the same limit and what is
   needed to close it.
+- **Folder tracks are in the engine and on the socket, and there is no interface for them —
+  added 2026-09-13.** A folder is a **real container**: a track of its own type (`track.add`
+  `type=folder`) that holds other tracks, in two modes — `group` (organisation only, every child
+  keeping its own mixer channel, the default) and `routing` (the folder takes one regular mixer
+  channel of its own and every child's output is summed through it) — plus a persisted `collapsed`
+  flag, a persisted `pinned` flag and named, project-saved **visibility sets**. The engine half is
+  `include/TrackFolder.h` / `src/tracks/TrackFolder.cpp` and the container's visibility-set store;
+  the decisions, the ownership rule (a folder **references** its children and never owns them, so it
+  can never double-free one) and the latency-compensation answer are in
+  **`docs/TRACK-FOLDER-DESIGN.md`**; the proofs are `tests/src/core/TrackFolderTest.cpp` and the
+  registered socket transcript `tests/control-track-folder.py`.
+  **Folder tracks, their two modes, pinning and the named visibility sets are drivable through the
+  socket, not from the interface**: nothing in `src/gui/` creates a folder, indents a child, collapses
+  a row, draws the relation, shows a pin or offers a set switcher — a folder's row is an ordinary
+  `TrackView`, so a user without a socket client cannot make one and the collapsed/pinned flags this
+  release persists have **no affordance reading them yet**. Two further limits belong to this bullet
+  rather than in a bug report: a child's mixer-channel **index** can change across a
+  routing-off/routing-on cycle (`Mixer::deleteChannel` renumbers channels) while the routing relation
+  itself is preserved; and an **older build** reading the folder's `type` hits `Track::create`'s
+  `default: break` and **drops the row** — a dropped track rather than a degrading one, which
+  `docs/TRACK-FOLDER-DESIGN.md` §4.4 states as the forward-compatibility cost of the enumerator
+  approach.
 - **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
   playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
   **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain

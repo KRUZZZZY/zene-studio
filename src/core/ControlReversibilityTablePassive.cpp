@@ -279,6 +279,12 @@ const ReversibilityRow kPassiveRows[] = {
 #endif // ZENE_TELEMETRY_ENABLED
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
+	R("track.folder_get_state", RC::NotMutating, false,
+		"reads one folder: its mode, its two flags, the channel it owns and every "
+		"child with the channel that child is on", "no write", ""),
+	R("track.visibility_set_list", RC::NotMutating, false,
+		"reads the container's named visibility sets and the active one",
+		"no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
 
 #ifdef LMMS_HAVE_SESSION_VIEW

@@ -31,7 +31,9 @@
 
 #include "AutomationClip.h"
 #include "embed.h"
+#include "Engine.h"
 #include "TrackContainer.h"
+#include "TrackFolder.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -77,6 +79,15 @@ void TrackContainer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		track->saveState(_doc, _this);
 	}
 	m_tracksMutex.unlock();
+
+	// The named visibility sets (owner items 3+20+21), after the tracks and only
+	// when there is at least one - a project that never made one re-saves the
+	// bytes it always had (docs/TRACK-FOLDER-DESIGN.md section 4.4's
+	// forward-compatibility rule).
+	if (!m_visibilitySets.isEmpty())
+	{
+		saveVisibilitySets(_doc, _this);
+	}
 }
 
 
@@ -168,6 +179,21 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 			pd = nullptr;
 		}
 	}
+
+	// The named visibility sets (owner items 3+20+21). RESET ON ABSENCE, like
+	// every other field a checkpoint can restore: a container element with no
+	// <visibilitysets> child holds no sets, whatever this object carried before
+	// the call. The element is read here rather than in the walk above because
+	// the walk constructs a TRACK from every element child it is not told to
+	// skip, which is why the element is written with metadata="1".
+	m_visibilitySets.clear();
+	m_activeVisibilitySet.clear();
+	const QDomElement setsElement =
+		_this.firstChildElement(QStringLiteral("visibilitysets"));
+	if (!setsElement.isNull() && setsElement.attribute(QStringLiteral("metadata")).toInt())
+	{
+		loadVisibilitySets(setsElement);
+	}
 }
 
 
@@ -256,7 +282,11 @@ void TrackContainer::clearAllTracks()
 		delete m_tracks.front();
 	}
 	//m_tracksMutex.unlock();
+	// The visibility sets belong to the project the tracks belonged to, so they
+	// go with them (owner items 3+20+21).
+	clearVisibilitySets();
 }
+
 
 
 

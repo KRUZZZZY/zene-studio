@@ -59,6 +59,11 @@ Track::Type trackTypeForName(const QString& typeName)
 	if (typeName == QLatin1String("pattern")) { return Track::Type::Pattern; }
 	if (typeName == QLatin1String("sample")) { return Track::Type::Sample; }
 	if (typeName == QLatin1String("automation")) { return Track::Type::Automation; }
+	// A folder track (owner items 3+20+21): one more row of the same flat track
+	// list, and the type track.add's own enum declares. The undo step's redo
+	// path goes through createTrackOfType with this same value, so the two
+	// cannot disagree about what "folder" created.
+	if (typeName == QLatin1String("folder")) { return Track::Type::Folder; }
 	return Track::Type::Instrument;
 }
 
@@ -111,7 +116,7 @@ void registerTrackAdd(ControlRegistry& registry)
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("type"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("instrument"), QStringLiteral("pattern"),
-				QStringLiteral("sample"), QStringLiteral("automation")}}}},
+				QStringLiteral("sample"), QStringLiteral("automation"), QStringLiteral("folder")}}}},
 		{QStringLiteral("name"), control::stringProperty()},
 	});
 	cmd.resultSchema = control::objectSchema({

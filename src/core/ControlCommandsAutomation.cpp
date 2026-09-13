@@ -57,6 +57,8 @@ QString trackTypeName(Track::Type type)
 		case Track::Type::Video: return QStringLiteral("video");
 		case Track::Type::Automation: return QStringLiteral("automation");
 		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
+		// A folder track (owner items 3+20+21).
+		case Track::Type::Folder: return QStringLiteral("folder");
 		case Track::Type::Count: break;
 	}
 	return QStringLiteral("unknown");

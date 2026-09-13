@@ -1491,6 +1491,19 @@ void Song::loadProject( const QString & fileName )
 	// now that everything is loaded
 	ControllerConnection::finalizeConnections();
 
+	// Finish the folder relation (docs/TRACK-FOLDER-DESIGN.md section 4.3; owner
+	// items 3+20+21) in the same after-the-walk pass, for the same reason: a
+	// child's `folder` attribute names a track by id, and a folder created after
+	// the tracks it holds is constructed after them. The count is the children
+	// whose folder is gone - reported, not hidden, the way the id pass above
+	// reports every id it re-assigned.
+	const int danglingFolders = tracks().empty() ? 0 : resolveTrackFolders();
+	if (danglingFolders > 0)
+	{
+		qWarning("project load: %d track(s) named a folder that is not in the project; "
+			"they are at the container root", danglingFolders);
+	}
+
 	// Remove dummy controllers that was added for correct connections
 	m_controllers.erase(std::remove_if(m_controllers.begin(), m_controllers.end(),
 		[](Controller* c){return c->type() == Controller::ControllerType::Dummy;}),

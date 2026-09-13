@@ -735,6 +735,9 @@ QString LuaTrack::type() const
 	case Track::Type::Video: return QStringLiteral("video");
 	case Track::Type::Automation: return QStringLiteral("automation");
 	case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
+	// A folder track (owner items 3+20+21): the type this build can create
+	// through track.add and now reports through the Lua surface too.
+	case Track::Type::Folder: return QStringLiteral("folder");
 	case Track::Type::Count: break;
 	}
 	return QStringLiteral("unknown");
