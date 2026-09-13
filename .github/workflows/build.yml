@@ -172,10 +172,12 @@ jobs:
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -318,10 +320,12 @@ jobs:
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -475,10 +479,12 @@ jobs:
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -621,10 +627,12 @@ jobs:
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -806,10 +814,12 @@ jobs:
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
@@ -938,10 +948,12 @@ jobs:
         shell: bash
         run: |
           echo "=== zene crash reports (a signal death writes one) ==="
-          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 -name 'zene-crash-report*' 2>/dev/null | head -20 | while read -r f; do
+          find "$HOME" "${GITHUB_WORKSPACE:-.}" /tmp -maxdepth 6 \
+            -name 'zene-crash-report*' 2>/dev/null | head -20 > /tmp/crash-list.txt
+          while read -r f; do
             echo "--- $f ---"
             cat "$f"
-          done
+          done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
         # Fails when a feature the release documents as present has been compiled
