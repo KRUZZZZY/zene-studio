@@ -6,8 +6,9 @@ plugins/ClapEffect/ClapHost.cpp	953
 src/core/ScriptEngine.cpp	880
 plugins/Vst3Effect/Vst3Host.cpp	800
 src/wasm/WasmSandbox.cpp	597
+tests/control-socket-path-safety.py	574
 src/core/CrashReporter.cpp	564
-tests/control-socket-path-safety.py	551
 src/core/AudioPortsModel.cpp	549
 src/gui/PinConnector.cpp	529
+tests/control_socket_harness.py	511
 tests/src/tracks/SampleClipWindowTest.cpp	511

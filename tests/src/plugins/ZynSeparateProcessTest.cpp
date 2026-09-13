@@ -169,6 +169,39 @@ auto processNameMatches(const QString& reported, const QString& wanted) -> bool
 	return wanted.size() >= 8 && name.startsWith(wanted);
 }
 
+//! True when a /proc entry name is a pid - the kernel's own directories are the only
+//! numeric ones. Split out of the scan below so that scan carries the loop and not the
+//! three-way character test (the complexity ratchet counts every `&&`).
+auto isProcEntryName(const QByteArray& name) -> bool
+{
+	return !name.isEmpty() && name.at(0) >= '0' && name.at(0) <= '9';
+}
+
+//! Append the pid of ONE /proc entry when it is a child of `self` whose executable's
+//! basename is `name`. Split out of procFsClientPids() for the same reason as above:
+//! this is the per-entry rule, the loop is the walk.
+void appendIfProcFsClientChild(const QByteArray& entryName, long self, const QString& name,
+							   QList<long>* pids)
+{
+	if (!isProcEntryName(entryName)) { return; }
+
+	char target[4096];
+	const QByteArray exe = "/proc/" + entryName + "/exe";
+	const auto length = ::readlink(exe.constData(), target, sizeof(target) - 1);
+	if (length <= 0) { return; }
+	target[length] = '\0';
+	if (QFileInfo{QString::fromLocal8Bit(target)}.fileName() != name) { return; }
+
+	QFile status{"/proc/" + entryName + "/status"};
+	if (!status.open(QIODevice::ReadOnly)) { return; }
+	const QByteArray text = status.readAll();
+	const auto marker = text.indexOf("PPid:");
+	if (marker < 0) { return; }
+	// "PPid:	<pid>\nName:..." - the value up to the end of the line
+	const auto ppid = text.mid(marker + 5, 32).split('\n').first().trimmed().toLong();
+	if (ppid == self) { pids->append(entryName.toLong()); }
+}
+
 //! Children of this process whose executable is `name`, out of /proc: exact, and what this test
 //! was written on - see psClientPids() for the hosts that have no procfs. Empty when nothing
 //! matches, and equally empty when /proc cannot be read at all (control: the file header).
@@ -182,27 +215,31 @@ auto procFsClientPids(const QString& name) -> QList<long>
 	const auto self = static_cast<long>(getpid());
 	while (auto* entry = readdir(proc))
 	{
-		const QByteArray pid{entry->d_name};
-		if (pid.isEmpty() || pid.at(0) < '0' || pid.at(0) > '9') { continue; }
-
-		char target[4096];
-		const QByteArray exe = "/proc/" + pid + "/exe";
-		const auto length = ::readlink(exe.constData(), target, sizeof(target) - 1);
-		if (length <= 0) { continue; }
-		target[length] = '\0';
-		if (QFileInfo{QString::fromLocal8Bit(target)}.fileName() != name) { continue; }
-
-		QFile status{"/proc/" + pid + "/status"};
-		if (!status.open(QIODevice::ReadOnly)) { continue; }
-		const QByteArray text = status.readAll();
-		const auto marker = text.indexOf("PPid:");
-		if (marker < 0) { continue; }
-		// "PPid:	<pid>\nName:..." - the value up to the end of the line
-		const auto ppid = text.mid(marker + 5, 32).split('\n').first().trimmed().toLong();
-		if (ppid == self) { pids.append(pid.toLong()); }
+		appendIfProcFsClientChild(QByteArray{entry->d_name}, self, name, &pids);
 	}
 	closedir(proc);
 	return pids;
+}
+
+//! Whether `ps` produced a table this test can trust: it started, it finished inside its
+//! budget, and it exited 0. Split out of psClientPids() because the three-way `||` is the
+//! only thing that made that function's count interesting.
+auto psTableIsReadable(QProcess& ps) -> bool
+{
+	return ps.waitForStarted(5000) && ps.waitForFinished(5000) && ps.exitCode() == 0;
+}
+
+//! Append the pid of ONE `ps` line when it names a child of `self` whose executable matches
+//! `name`. Positional parse: pid, parent, then the rest of the line as the executable.
+void appendIfPsClientChild(const QString& line, long self, const QString& name, QList<long>* pids)
+{
+	const auto fields = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+	bool pidOk = false;
+	bool parentOk = false;
+	const long pid = fields.value(0).toLong(&pidOk);
+	const long parent = fields.value(1).toLong(&parentOk);
+	if (fields.size() < 3 || !pidOk || !parentOk || parent != self) { return; }
+	if (processNameMatches(fields.mid(2).join(QLatin1Char(' ')), name)) { pids->append(pid); }
 }
 
 //! The same, from `ps -A -o pid=,ppid=,comm=`: `-A` is every process on macOS and Linux alike and
@@ -216,19 +253,13 @@ auto psClientPids(const QString& name) -> QList<long>
 	QProcess ps;
 	ps.start(QStringLiteral("/bin/ps"), {QStringLiteral("-A"), QStringLiteral("-o"),
 		QStringLiteral("pid=,ppid=,comm=")});
-	if (!ps.waitForStarted(5000) || !ps.waitForFinished(5000) || ps.exitCode() != 0) { return pids; }
+	if (!psTableIsReadable(ps)) { return pids; }
 
 	const auto self = QCoreApplication::applicationPid();
 	for (const auto& line : QString::fromLocal8Bit(ps.readAllStandardOutput())
 								.split(QLatin1Char('\n'), Qt::SkipEmptyParts))
 	{
-		const auto fields = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-		bool pidOk = false;
-		bool parentOk = false;
-		const long pid = fields.value(0).toLong(&pidOk);
-		const long parent = fields.value(1).toLong(&parentOk);
-		if (fields.size() < 3 || !pidOk || !parentOk || parent != self) { continue; }
-		if (processNameMatches(fields.mid(2).join(QLatin1Char(' ')), name)) { pids.append(pid); }
+		appendIfPsClientChild(line, self, name, &pids);
 	}
 	return pids;
 }
