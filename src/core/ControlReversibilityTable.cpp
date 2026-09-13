@@ -603,7 +603,6 @@ const ReversibilityRow kRows[] = {
 	R("session.get_state", RC::NotMutating, false,
 		"reads the model and the launch engine's atomics", "no write", ""),
 #endif // LMMS_HAVE_SESSION_VIEW
-=======
 };
 
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
