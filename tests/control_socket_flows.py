@@ -118,6 +118,21 @@ def check_clean_shutdown(exited, exit_code, socket_exists, stderr_text, elapsed_
     return problems
 
 
+def check_recovery_cleaned(exited, recovery_exists):
+    """A clean quit removes the autosave recovery file.
+
+    `MainWindow::closeEvent` calls `sessionCleanup()` on an accepted close when
+    autosave is on, and that removes `recover.mmp`. A shutdown that leaves it
+    behind is a failure: the file is the crash marker the next launch offers to
+    recover, so a clean quit that keeps it makes the next launch lie.
+    """
+    problems = []
+    if exited and recovery_exists:
+        problems.append("the autosave recovery file survived a clean quit "
+                        "(MainWindow::closeEvent -> sessionCleanup did not run)")
+    return problems
+
+
 def check_ping_shape(reply, request_id=1):
     """control.ping carries liveness, readiness and the audio report, always."""
     problems = []

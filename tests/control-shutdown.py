@@ -24,7 +24,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from control_socket_flows import check_clean_shutdown, check_ping_shape  # noqa: E402
+from control_socket_flows import (  # noqa: E402
+    check_clean_shutdown, check_ping_shape, check_recovery_cleaned,
+)
 from control_socket_harness import (  # noqa: E402
     BROKEN_DEVICE, BROKEN_DEVICE_ENV, DEFAULT_DEVICE, Client, Instance, Problems,
     Timeout, dump, finish,
@@ -83,9 +85,7 @@ def quit_and_observe(inst, problems):
     exited, exit_code, elapsed = inst.wait_for_exit(QUIT_TIMEOUT)
     socket_exists = inst.socket_exists()
     stderr_text = inst.stderr_text()
-    if exited and os.path.exists(inst.recovery_file):
-        problems.add("the autosave recovery file survived a clean quit "
-                     "(MainWindow::closeEvent -> sessionCleanup did not run)")
+    problems.extend(check_recovery_cleaned(exited, os.path.exists(inst.recovery_file)))
     return exited, exit_code, socket_exists, stderr_text, elapsed
 
 
