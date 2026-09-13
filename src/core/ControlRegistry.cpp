@@ -481,6 +481,10 @@ void registerControlCommands(ControlRegistry& registry)
 #endif
 	registerExportCommands(registry);
 	registerRackCommands(registry);
+	// Take lanes and the composite (comping, task #600): the take half and the
+	// composite half, each its own translation unit.
+	registerCompCommands(registry);
+	registerCompEditCommands(registry);
 }
 
 } // namespace lmms

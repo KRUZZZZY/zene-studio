@@ -131,6 +131,17 @@ public:
 	const ClipEdits& clipEdits() const { return m_edits; }
 	void setClipEdits(const ClipEdits& edits) { m_edits = edits; }
 
+	/*! The take lane this clip belongs to (comping; docs/COMPING.md and
+	 *  docs/CLIP-CAPTURE-DESIGN.md §2.2), 0 by default.
+	 *
+	 *  The tag lives on the base `Clip` for the design's reason: a lane is a
+	 *  child relationship of the track, not a track type, and the tag is
+	 *  type-agnostic. It is written with the clip's other non-default attributes
+	 *  (Clip::saveClipEdits) and resets to 0 when the attribute is absent, so a
+	 *  clip with no lane writes nothing at all. */
+	int laneIndex() const { return m_laneIndex; }
+	void setLaneIndex(int laneIndex) { m_laneIndex = laneIndex < 0 ? 0 : laneIndex; }
+
 	virtual void movePosition( const TimePos & pos );
 	virtual void changeLength( const TimePos & length );
 	virtual void updateLength() {};
@@ -220,6 +231,9 @@ private:
 
 	//! The clip's fades and its gain. Neutral by default (see clipEdits()).
 	ClipEdits m_edits;
+
+	//! The take lane this clip is a take of (comping; docs/COMPING.md).
+	int m_laneIndex = 0;
 
 	friend class ClipView;
 

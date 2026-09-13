@@ -359,6 +359,14 @@ LMMS_EXPORT void registerRackCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerRackMacroCommands(ControlRegistry& registry);
 //! rack.zone_add / zone_remove / zone_resolve - the key/velocity zone half.
 LMMS_EXPORT void registerRackZoneCommands(ControlRegistry& registry);
+/*! comp.lane_add / lane_remove / lane_list / assign - take lanes and the
+ *  assignment of takes to them (task #600). The engine half is include/TakeLane.h
+ *  and `Track::takeLanes()`; docs/COMPING.md holds the element shape and what is
+ *  deliberately not wired yet. */
+LMMS_EXPORT void registerCompCommands(ControlRegistry& registry);
+//! comp.select / comp.rebuild / comp.get_state - the composite half, in its own
+//! translation unit (the clip, warp and rack groups' split).
+LMMS_EXPORT void registerCompEditCommands(ControlRegistry& registry);
 
 //! Shared helpers for the command groups.
 namespace control

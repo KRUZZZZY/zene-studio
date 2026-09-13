@@ -384,6 +384,64 @@ const ReversibilityRow kTrueInverseRows[] = {
 		"reads - comes back exactly",
 		""),
 
+	// =====================================================================
+	// comping: take lanes and the non-destructive composite (task #600).
+	//
+	// Both the lane list and the composite are fields of the TRACK's own
+	// serialized state, because Track::saveTrack writes them as one
+	// <takelanes> child element and Track::loadTrack re-reads it - which is
+	// what makes a Track checkpoint a live inverse of every one of these
+	// commands, and makes one control.undo restore the lane list, the
+	// composite and every segment the removal re-pointed in a single step.
+	// The engine half is include/TakeLane.h; docs/COMPING.md states why the
+	// composite is a view and not a merged buffer.
+	// =====================================================================
+	R("comp.lane_add", RC::TrueInverse, true,
+		"the lane list is part of the Track's serialized state (the <takelanes> "
+		"element), so the checkpoint taken before the add restores a track "
+		"whose lane list does not carry the new lane",
+		"ProjectJournal (Track checkpoint). The recorded inverse op is a REAL "
+		"command this surface implements: comp.lane_remove, with the lane "
+		"comp.lane_add just handed out",
+		""),
+	R("comp.lane_remove", RC::TrueInverse, true,
+		"the removal rewrites the lane list AND re-points every composite "
+		"segment that named the lane to the track's base lane, and both lists "
+		"are the Track's own serialized state",
+		"ProjectJournal (Track checkpoint): one undo restores the lane, its "
+		"name and every segment that had been re-pointed",
+		""),
+	R("comp.assign", RC::TrueInverse, true,
+		"the lane tag is a field of the CLIP's own serialized state - "
+		"Clip::saveClipEdits writes the `lane` attribute onto the clip's "
+		"element and Clip::loadClipEdits re-reads it, resetting to 0 when the "
+		"attribute is absent - so the Clip checkpoint the command takes is a "
+		"live inverse of the assignment",
+		"ProjectJournal (Clip checkpoint). The recorded inverse op is a REAL "
+		"command: comp.assign with the clip's previous lane, which the "
+		"transaction's before-state names",
+		""),
+	R("comp.select", RC::TrueInverse, true,
+		"a selection splits and rewrites the composite, which is part of the "
+		"Track's serialized state; the transaction's before-state holds the "
+		"whole previous segment list, because no single command re-creates it "
+		"(there is no un-select: a composite is total over its span)",
+		"ProjectJournal (Track checkpoint): one control.undo restores the "
+		"segment list the selection painted over, byte for byte through the "
+		"same <takelanes> element the project file carries",
+		""),
+	R("comp.rebuild", RC::TrueInverse, true,
+		"it can WRITE: given a span it clamps the composite to it and fills "
+		"every gap with the base lane, and it re-sorts and merges neighbouring "
+		"segments that are the same lane at a continuous offset. Both the "
+		"composite and the lane list it reads are the Track's serialized state",
+		"ProjectJournal (Track checkpoint): the segment list before the rebuild "
+		"is in the transaction's before-state and the checkpoint restores it. "
+		"On an already well-formed composite the command is idempotent and the "
+		"restored state is the same state, which the test asserts rather than "
+		"assumes",
+		""),
+
 };
 
 constexpr int kTrueInverseRowCount = static_cast<int>(sizeof(kTrueInverseRows) / sizeof(kTrueInverseRows[0]));

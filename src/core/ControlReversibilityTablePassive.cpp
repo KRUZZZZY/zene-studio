@@ -199,6 +199,13 @@ const ReversibilityRow kPassiveRows[] = {
 	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
 	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
+	R("comp.get_state", RC::NotMutating, false,
+		"reads the take lanes and the composite of one track, plus what each "
+		"segment resolves to (the take clip and its source frame); it writes "
+		"nothing and the audio of no take is opened",
+		"no write",
+		""),
+	R("comp.lane_list", RC::NotMutating, false, "reads the take lanes and their takes", "no write", ""),
 	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
 	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
 	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),

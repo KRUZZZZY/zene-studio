@@ -119,7 +119,6 @@ that marker is published as-is, and no unverified claim is published without one
   zone a note *would* fall into and nothing acts on that answer. What shipped is the persisted, validated,
   queryable zone model and its resolver. Closing the gap needs a per-note data path at the rack, not a control
   on this one — `docs/RACK-MACROS.md` §4.
-=======
 ## Clip fades, crossfades and clip gain (`clip.*`) — added 2026-09-13
 
 - **New: a clip carries a gain and a fade-in/fade-out ramp, and the engine applies them.**
@@ -148,14 +147,51 @@ that marker is published as-is, and no unverified claim is published without one
   refuse a MIDI clip with a typed error rather than writing state that does nothing. A crossfade is a *pair of
   independent fades*, not a linked object, so moving or resizing one clip afterwards breaks the pairing without
   a warning. There is no fade curve editor, and no fade at all is drawn.
->>>>>>> 030/w9-clip-fades
+
+## Comping: take lanes and a non-destructive composite (`comp.*`) — added 2026-09-13
+
+- **New: a track has take lanes, and a composite assembles them without touching a single byte of take audio.**
+  A lane is a child relationship of the track (not a second track type): the takes stay in the track's own clip
+  list and carry a lane tag (`lane` on the clip's element, default 0). Seven registered commands drive the
+  feature — `comp.lane_add`, `comp.lane_remove`, `comp.lane_list` (the lanes and the takes on each),
+  `comp.assign` (an audio clip becomes a take of a lane), `comp.select` (choose which lane supplies the
+  composite over a tick range, slipped `srcpos` ticks into that take), `comp.rebuild` (sort, merge and — given
+  a span — clamp to it and fill every gap with the base lane) and `comp.get_state` (lanes, composite, and what
+  each segment resolves to: the take clip and the source frame its first tick reads, `bound` or `unresolved`).
+- **A composite is a VIEW, and that is the whole design.** It is an ordered, gapless list of
+  `{begin, end, lane, srcpos}` choices over `include/TakeLane.h`; resolution maps a tick back onto the take clip
+  through the clip's own `sourceFrameAt()` mapping, so the comp reads the take where it already lies. Nothing is
+  copied, merged, normalised or rewritten, and no playback path reads the composite yet. The proof is a
+  byte-identity pair: after every `comp.*` command and after a save/reload, the take **files** and the take
+  **buffers** are sha256-identical, while what a tick resolves to changes when the selection changes.
+- **Engine:** `include/TakeLane.h` + `src/core/TakeLane.cpp` (the lanes, the composite, resolve/takeAt) and
+  `Track::takeLanes()`, serialised by `Track::saveTrack` as ONE `<takelanes>` element written only when the model
+  is non-empty — so a project that never comped serialises byte for byte as before. The decisions, the element
+  shape and the `metadata="1"` trap (`Track::loadTrack` turns an unrecognised child of `<track>` into a real Clip)
+  are recorded in **`docs/COMPING.md`**.
+- **Control surface:** the new `comp.*` group, split across `src/core/ControlCommandsComp.cpp` (the take half) and
+  `src/core/ControlCommandsCompEdits.cpp` (the composite half), with argument/result schemas and A16
+  reversibility rows for all seven ids (`src/core/ControlReversibilityTableTrueInverse.cpp` and
+  `...Passive.cpp`). Every mutating call takes the object's own ProjectJournal checkpoint before it writes, and
+  every refusal is typed and happens BEFORE the checkpoint, so a refused call leaves no undo step behind.
+- **Proof:** the registered ctest `TakeLaneCompTest` (`tests/src/core/TakeLaneCompTest.cpp`) — the ten claims
+  listed in `docs/COMPING.md` §6, including the byte-identity proof, the round trip, the reset-on-absence
+  behaviour on both levels, the seven typed refusals and `control.undo` unwinding a `comp.select`.
+- **UI absence — one line: take lanes and comping are drivable through the socket, not from the interface.**
+  There is no lane row, no lane header, no comping gesture, no audition and no waveform drawing of the composite;
+  nothing in `src/gui/` creates, shows or edits a lane or a comp. `docs/KNOWN-LIMITATIONS.md` carries the same
+  sentence.
+- **Stated limits, not to be read as bugs: a comp does not sound different from the track's clips in this
+  release.** No playback path consumes the composite, so the per-segment `srcpos` slip is recorded and reported
+  but not applied; MIDI comping is out (`comp.assign` refuses a MIDI clip with a typed error); and `comp.audition`
+  / `comp.flatten` from the design's sketch are not implemented — flatten is the destructive bounce, and it is
+  deliberately absent while nothing renders a composite.
 
 ## Not in this draft yet
 
-The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
+The Session View, racks, MPE modulation, Link sync, browser search and the engine-gap items of the
 0.3.0 scope, plus the release-bar statements, are the responsibility of their own lanes and wave W12. This
 file grows as those land; it is not a summary of 0.3.0 and must not be read as one.
-<<<<<<< HEAD
 
 Zene Studio 0.3.0-alpha
 
@@ -170,5 +206,3 @@ has no interface, that page says so rather than leaving you to find out.
 > cut. Each capability claim below names the engine change, the control-surface command group and the
 > test that proves it — the rule this project holds every release to. Anything not yet verifiable is
 > marked, not asserted.
-=======
->>>>>>> 030/w9-clip-fades

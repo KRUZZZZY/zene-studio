@@ -65,6 +65,7 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp
 	src/core/ReversibilityUndoTest.cpp
+	src/core/TakeLaneCompTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
@@ -212,6 +213,13 @@ set_tests_properties(RecordingRealtimeTest PROPERTIES
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
 set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# TakeLaneCompTest (comping: take lanes + the non-destructive composite, task
+# #600) constructs real SampleTracks with real SampleClips over real WAVs and
+# drives the comp.* group through the registry, so it needs the same headless Qt
+# platform as the tests above - the developer box has no display.
+set_tests_properties(TakeLaneCompTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

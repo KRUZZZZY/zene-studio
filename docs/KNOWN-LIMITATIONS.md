@@ -196,8 +196,22 @@ that is this page's fault — report it and it gets added.
   `clip.set_fade` / `clip.set_gain` refuse a MIDI clip with a typed error rather than writing state that would
   do nothing — and a crossfade is a pair of independent fades rather than a linked object, so moving or
   resizing one clip afterwards breaks the pairing silently.*
-- **No take lanes and no comping.** Verified as an absence in this tree:
-  `grep -rniI "takelane\|take lane\|comping" src/ include/` returns 0 hits.
+- **Take lanes and comping are in the engine and on the socket, and there is no interface and no playback of a
+  composite.** *This bullet used to read: "No take lanes and no comping. Verified as an absence in this tree:
+  `grep -rniI "takelane\|take lane\|comping" src/ include/` returns 0 hits." That claim is now FALSE and the bullet
+  is amended rather than deleted, because a reader who meets the old sentence in an older copy of this page has to
+  be able to see what replaced it.* What is in the tree: take lanes on a track (`comp.lane_add`, `comp.lane_remove`,
+  `comp.lane_list`) with a lane tag on each take clip (`clip`'s `lane` attribute), the assignment of an audio take to
+  a lane (`comp.assign`), and the non-destructive composite — per-segment selection, rebuild and a state query
+  (`comp.select`, `comp.rebuild`, `comp.get_state`) — over `include/TakeLane.h` / `src/core/TakeLane.cpp`, with A16
+  rows in `src/core/ControlReversibilityTable{TrueInverse,Passive}.cpp` and the proof in
+  `tests/src/core/TakeLaneCompTest.cpp`; the decisions are recorded in **`docs/COMPING.md`**.
+  *What this bullet still means, and what is still absent: **nothing renders a composite** — no playback path reads
+  it, so a comp sounds exactly like the track's clips as they lie and the per-segment `srcpos` slip is recorded but
+  not applied; there is **no lane geometry, no lane handle, no comping gesture and no waveform drawing** anywhere in
+  `src/gui/`; there is **no audition and no flatten** (the destructive bounce a comp can end in); and **MIDI
+  comping is out** — `comp.assign` refuses a MIDI clip with a typed error, because the lane tag rides the clip
+  attribute helper only `SampleClip` calls in this release.*
 - **No plugin-scanning interface worth the name.** A scan cache and a quarantine list exist; the user-facing
   surface is thin or absent. Verified against this tree: the cache is JSON on disk and the documented way to
   quarantine a plugin is a `{"path": …, "reason": …}` entry in that file; `docs/PLUGIN-SCAN-CACHE.md` §5
