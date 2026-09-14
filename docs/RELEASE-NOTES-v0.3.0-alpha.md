@@ -581,21 +581,81 @@ export blocks the dispatch thread on `waitForFinished(600000)`, so the control s
 answer — `control.ping` included — until it finishes. `docs/RENDER-CHILD-WAIT.md` records that defect
 and designs the deferred-reply fix; **this release does not build it**, and `render.stems` states the
 bound in its own description and contract row instead of pretending to a timeout knob it lacks.
+### The plugin scan cache, the quarantine list and the crash reporter (rows 46 and 54)
+
+- **The scan cache and its quarantine list are drivable, and the quarantine no longer needs a hand-edited
+  file.** `plugin.scan_cache_get_state` reports the cache file and whether it is persistent and dirty, how
+  many records it holds, the quarantine entries with their reasons (and whether each file is still there), and
+  the last scan's own report — files found, quarantined, served from cache, known-bad skipped, scanned,
+  descriptors, and the one-line `scan_report` text the log carries. `plugin.scan_cache_list` reports the
+  cache's **contents**: every record sorted by path, with its fingerprint (path, size, mtime), its status
+  (`has-descriptor` / `not-a-plugin` / `load-failed`) and, for a plugin, the descriptor metadata the scan
+  resolved. `plugin.scan_cache_lookup` answers about one file — `cached` (the record would still be served: the
+  file's size and mtime both still match), `stale` (a record exists and no longer matches, which is why a scan
+  repeats work) and whether the quarantine list hides it. `plugin.scan_cache_quarantine_add` /
+  `plugin.scan_cache_quarantine_remove` write the list through `PluginScanCache`'s own API **and the cache
+  file**, and `plugin.rescan` runs the scan the factory already has (`PluginFactory::discoverPlugins`, a public
+  slot nothing in the shipped GUI re-invokes) — which is what **applies** a quarantine edit.
+- **Proof.** `tests/control-plugin-scan-commands.py` (`ControlPluginScanCommands`) starts the real binary under
+  `QT_QPA_PLATFORM=offscreen` and drives it over `--control-socket` through the shared `control_socket_harness`:
+  it quarantines a path, reads the entry back off the wire **and reads the cache file off disk** to prove the
+  entry is really stored, removes it, and undoes the removal to get it back with its reason.
+  `tests/src/core/PluginScanCacheTest.cpp` still proves the engine layer and grew two cases for the enumeration
+  this group needed (`records()`, `record()`), including the fingerprint distinction `stale` reports.
+- **A16, and the trap this group has its own version of.** The two quarantine verbs are `snapshot`: a
+  `PluginScanCache` is a JSON file outside the project and is not a `JournallingObject`, so there is no
+  checkpoint to take and the inverse is the **paired command** (`applies: command`) — the class and mechanism
+  `browser.tag.add` / `browser.tag.remove` already carry. The trap is the **reason**: the cache stores one reason
+  per path and nothing else reconstructs it, so `plugin.scan_cache_quarantine_remove` captures it **before** the
+  write and carries it in the inverse's args — and the transcript measures the difference, by driving the
+  path-only re-add a naive inverse would make (the reason comes back **empty**) and then the recorded inverse
+  (the reason comes back exactly). `plugin.rescan` is `irreversible` and says so with its fallback: a scan
+  re-measures the files and refreshes the cache, and no command puts a file's previous fingerprint record back.
+  All three mutating ids record a transaction, so `control.undo` on the rescan fails, typed, rather than
+  unwinding an older step.
+- **The crash reporter is drivable, and its absences are answerable.** `crash.list_reports` reports whether the
+  reporter is installed, its report directory, every report it holds with its size and last-written time,
+  whether a report is still pending an offer (`hasPendingReport`, the module's own predicate), the `offered`
+  sentinel, whether a session marker says the previous run exited uncleanly, the module's two hard bounds and
+  the upload policy. `crash.acknowledge_report` writes the `offered` sentinel and **keeps** the report, so it can
+  still be attached; `crash.discard_report` clears the report and the sentinel through
+  `crashreporter::discardPendingReport()`. `crash.upload_report` is **registered and refuses** every call, by
+  name: this build has no upload and no network code of any kind in the reporter — a design property
+  `include/CrashReporter.h` states in as many words — so the refusal names the file to attach by hand instead of
+  faking a send. There is no `crash.enable` / `crash.disable`: `main()` installs the reporter before this socket
+  is reachable, and the module has no uninstall.
+- **Proof.** `tests/control-crash-reporter.py` (`ControlCrashReporter`) plants a report exactly where the
+  reporter looks for one and then measures the state machine over the socket: `pending` before, `pending: false`
+  and `offered: true` after an acknowledge (with the sentinel verified on disk), the discard removing both
+  files, and `control.undo` failing typed and naming the fallback for both writers.
+  `tests/src/core/CrashReporterTest.cpp` stays registered and unchanged — the engine did not change, so the proof
+  of the **surface** is the transcript.
+- **Stated bounds.** Both crash writers are `irreversible` and each names its fallback: nothing in the module
+  removes the `offered` sentinel (delete the file and the report is pending again; the report itself is
+  untouched), and nothing writes a report from a caller's bytes (re-run the action that crashed; the discarded
+  report's content is not recoverable). The read answers in every configuration — an instance with no reporter
+  reports no directory and no report rather than refusing — and the writers refuse, typed, when the reporter is
+  not installed (on Windows the module is a documented no-op).
+- **UI absence — two lines, one per row:** the plugin scan cache and its quarantine list are drivable through
+  the socket and nothing in the interface shows a scan record, a cache hit or a quarantine entry, nor offers to
+  add one; the crash reporter is drivable through the socket and nothing in the interface shows a report, its
+  state or its directory, and there is no way to send one. `docs/KNOWN-LIMITATIONS.md` carries the same two
+  sentences.
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **210 rows**, measured from the table itself:
-**116 `true_inverse`, 16 `snapshot`, 4 `irreversible`, 74 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **220 rows**, measured from the table itself:
+**116 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 79 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**208 rows / 72 `not_mutating`** - which is the base
+**218 rows / 77 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **These are the merged tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the merge tip and reports 210 rows over the four
-classes named above (116 + 16 + 4 + 74), and its constant is the telemetry-off/wasm-off base of
-208 / 116 / 16 / 4 / 72. The figures this page carried before this train were lane-local and
+what left one of them stale before. **These are the branch's own measurement, not arithmetic:**
+`ReversibilityContractTest` was run against a build of this tip and reports 220 rows over the four
+classes named above (116 + 18 + 7 + 79), and its constant is the telemetry-off/wasm-off base of
+218 / 116 / 18 / 7 / 77. The figures this page carried before this train were lane-local and
 incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
 tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
 internally impossible, which is the reason the number on this page is now the merged measurement and
@@ -692,6 +752,21 @@ for the same reason: nothing creates a channel WITH state) and `port.set_pin` is
 value and `control.undo` dispatches it through `applies: command`) - `+5 true_inverse / +2 snapshot /
 +4 not_mutating`. `src/core/ControlReversibilityTableRouting.cpp` holds the rows as one group, whatever their
 class, and `reversibilityRowTable()` joins them exactly as it joins the folder-tracks group's.
+
+The ten rows the scan-cache + crash-reporter lane added are the `plugin.*` scan group (feature row 46) and the
+`crash.*` group (row 54): `plugin.scan_cache_get_state`, `plugin.scan_cache_list`, `plugin.scan_cache_lookup`,
+`crash.list_reports` and `crash.upload_report` are `not_mutating` (`crash.upload_report` is the
+`automation.mode_set` shape - declared mutating, refused by name, so no write and no transaction);
+`plugin.scan_cache_quarantine_add` and `plugin.scan_cache_quarantine_remove` are `snapshot` rows whose inverse
+**is** a command (the scan cache is a JSON file outside the project and is not a `JournallingObject`, so the
+recorded inverse is the paired verb with `applies: command`, exactly as `browser.tag.add` /
+`browser.tag.remove` are - and the removal carries the entry's REASON, captured before the write, because no
+other state reconstructs it); and `plugin.rescan`, `crash.acknowledge_report` and `crash.discard_report` are
+`irreversible` with a named fallback (a scan replaces a file's fingerprint record and nothing puts the previous
+one back; nothing removes the reporter's `offered` sentinel; nothing writes a report from a caller's bytes) -
+`+2 snapshot / +5 not_mutating / +3 irreversible`. `src/core/ControlReversibilityTableScanAndCrash.cpp` holds
+the rows as one group, whatever their class, and `reversibilityRowTable()` joins them for the same reason it
+joins the routing surface's: the passive block and the live block are both at the file-length cap.
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 

@@ -24,6 +24,9 @@
 
 #include "PluginScanCache.h"
 
+// std::sort, for records()' deterministic path order.
+#include <algorithm>
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -283,6 +286,27 @@ void PluginScanCache::store(const PluginScanRecord& record)
 
 	m_files.insert(record.filePath, record);
 	m_dirty = true;
+}
+
+
+const PluginScanRecord* PluginScanCache::record(const QString& path) const
+{
+	const auto it = m_files.constFind(path);
+	if (it == m_files.constEnd()) { return nullptr; }
+	return &*it;
+}
+
+
+QList<PluginScanRecord> PluginScanCache::records() const
+{
+	QList<PluginScanRecord> out = m_files.values();
+	// Sorted by path: the hash's order is unspecified, so a caller that reports
+	// this list twice would otherwise see it move for no reason.
+	std::sort(out.begin(), out.end(),
+		[](const PluginScanRecord& left, const PluginScanRecord& right) {
+			return left.filePath < right.filePath;
+		});
+	return out;
 }
 
 

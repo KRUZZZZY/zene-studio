@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{208, 116, 16, 4, 72};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{218, 116, 18, 7, 77};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
@@ -222,7 +222,7 @@ private slots:
 	}
 
 	//! DIRECTION 2: every row names a registered command, and the only mutating
-	//! commands the table calls "writes nothing" are the three the handlers
+	//! commands the table calls "writes nothing" are the four the handlers
 	//! refuse on every call. Anything else would be a command whose class and
 	//! behaviour disagree.
 	void theOnlyUnclassedMutatingCommandsAreTheRefusals()
@@ -233,6 +233,10 @@ private slots:
 			QStringLiteral("mixer.set_pan"),
 			QStringLiteral("track.set_arm"),
 			QStringLiteral("automation.mode_set"),
+			// Declared mutating and refused on every call: this build has no
+			// upload and no network code of any kind in the crash reporter
+			// (include/CrashReporter.h), so no send is faked.
+			QStringLiteral("crash.upload_report"),
 		};
 		for (const control::ReversibilityEntry& entry : table.entries())
 		{

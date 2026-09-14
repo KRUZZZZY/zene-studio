@@ -677,6 +677,40 @@ that is this page's fault — report it and it gets added.
   not be measured** because this build has no device with an audio-ports model — a test that cannot make its
   measurement must not report that it did. The pin write's engine half is proven in process by the registered
   `tests/src/core/AudioPortsModelTest.cpp`.
+- **The plugin scan cache and its quarantine list are drivable, and there is no interface for either —
+  added 2026-09-14.** The cache the plugin scan fills (one record per candidate file: its path, the size and
+  mtime it had, its status and, for a plugin, the descriptor metadata the scan resolved) and the quarantine
+  list that hides files from discovery are both readable through `--control-socket` with
+  `plugin.scan_cache_get_state` / `plugin.scan_cache_list` / `plugin.scan_cache_lookup`, and the quarantine is
+  **operable** with `plugin.scan_cache_quarantine_add` / `plugin.scan_cache_quarantine_remove` — with
+  `plugin.rescan` to apply an edit — but **nothing in `src/gui/` shows a scan record, a cache hit or a
+  quarantine entry, and no view offers to add one**: before this group the only route to un-quarantining a
+  plugin was hand-editing `plugin-scan-cache.json`, which is the defect the audit's row 46 names and the
+  reason the group exists. Two bounds are stated rather than implied: the cache's CONTENTS became reachable
+  only with this group (`PluginScanCache::records()` / `record(path)` were added for it, since the class could
+  previously answer a count and a fingerprinted `lookup()` and nothing else), and **the enumeration is derived
+  state, not project state** — nothing here is saved with the project, and a missing, corrupt or
+  wrongly-versioned cache file degrades to a full scan by the engine's own contract (`include/PluginScanCache.h`).
+  The engine layer keeps its proof (`tests/src/core/PluginScanCacheTest.cpp`, extended with the two enumeration
+  cases) and the **surface** is proven by `tests/control-plugin-scan-commands.py`, which reads the cache file
+  off disk as well as off the wire.
+- **The crash reporter is drivable, and there is no way to see or send a report from the interface — added
+  2026-09-14.** The reporter's state (whether it is installed, its report directory, every report it holds with
+  its size and last-written time, whether one is still pending an offer, the `offered` sentinel, whether a
+  session marker says the previous run exited uncleanly, its two hard bounds) is readable through
+  `--control-socket` with `crash.list_reports`, and its two operations are `crash.acknowledge_report` (writes
+  the sentinel, keeps the report) and `crash.discard_report` (deletes the report and the sentinel) — but
+  **nothing in `src/gui/` shows a report, its state or its directory**, and **there is no way to send one**:
+  `crash.upload_report` is registered and REFUSES every call by name, because this build has no upload and no
+  network code of any kind in the reporter — a design property `include/CrashReporter.h` states in as many
+  words, and a product decision that would have to be taken deliberately rather than assumed. Both writers are
+  `irreversible` and name their fallback: nothing in the module removes the `offered` sentinel (delete the file
+  and the report is pending again; the report itself is untouched), and nothing writes a report from a caller's
+  bytes (`re-run the action that crashed`; the discarded report's content is not recoverable). There is also no
+  `crash.enable` / `crash.disable` — `main()` installs the reporter before the control socket exists and the
+  module has no uninstall — and the module is a documented no-op on Windows, where the read reports no
+  directory and the writers refuse, typed. The engine keeps its proof (`tests/src/core/CrashReporterTest.cpp`)
+  and the **surface** is proven by `tests/control-crash-reporter.py`.
 
 ## Telemetry and privacy
 

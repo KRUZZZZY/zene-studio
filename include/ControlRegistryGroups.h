@@ -236,6 +236,32 @@ LMMS_EXPORT void registerPortCommands(ControlRegistry& registry);
  * there.
  */
 LMMS_EXPORT void registerRoutingSurfaceCommands(ControlRegistry& registry);
+/*! The plugin scan cache and its quarantine list (feature row 46): the READ half
+ * (plugin.scan_cache_get_state / scan_cache_list / scan_cache_lookup, in
+ * src/core/ControlCommandsPluginScan.cpp) and the EDIT half
+ * (plugin.scan_cache_quarantine_add / scan_cache_quarantine_remove and
+ * plugin.rescan, in src/core/ControlCommandsPluginScanEdit.cpp), its own two
+ * translation units along the seam ControlCommandsAutomation.cpp /
+ * ...AutomationEdit.cpp established. The engine half is
+ * include/PluginScanCache.h; this group is what makes it drivable, and it is
+ * what retires the "hand-editing a JSON file" route the audit's row names.
+ * A quarantined file is hidden from discovery, and plugin.rescan (the id
+ * ableton-gap/AGENT-TOOLING.md:269 boards) is the scan the factory already has.
+ */
+LMMS_EXPORT void registerPluginScanCommands(ControlRegistry& registry);
+//! plugin.scan_cache_quarantine_add / plugin.scan_cache_quarantine_remove /
+//! plugin.rescan - the mutating half of the scan-cache group, in its own
+//! translation unit (the automation and warp groups' split).
+LMMS_EXPORT void registerPluginScanEditCommands(ControlRegistry& registry);
+/*! crash.list_reports / crash.acknowledge_report / crash.discard_report /
+ * crash.upload_report - the crash reporter's agent surface (feature row 54).
+ * The engine half is include/CrashReporter.h, installed from main() before this
+ * socket exists; crash.list_reports is the read ableton-gap/AGENT-TOOLING.md:194
+ * names, the two writers are the module's acknowledge/discard operations, and
+ * crash.upload_report is registered and REFUSES because this build has no
+ * network code at all (the automation.mode_set shape).
+ */
+LMMS_EXPORT void registerCrashReporterCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
