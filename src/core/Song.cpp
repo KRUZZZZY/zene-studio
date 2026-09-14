@@ -1632,6 +1632,30 @@ void Song::loadProject( const QString & fileName )
 
 
 // only save current song as filename and do nothing else
+namespace
+{
+#ifndef LMMS_HAVE_SESSION_VIEW
+//! Write back a `<session>` block this build cannot parse. Extracted from
+//! Song::saveProjectFile, whose three branches for this one concern - is there a
+//! preserved block, did it parse, did it have a root element - measured it at
+//! CCN 11 against the all-scope ratchet's target of 10. Behaviour is identical:
+//! an empty block appends nothing, an unparseable one is left alone, a parsed
+//! one is appended verbatim, so a build without the Session View cannot drop a
+//! feature's data by opening and saving a project. Guarded like its only caller:
+//! in a session-view build the block is never written back, and an unguarded
+//! helper is an unused function, which -Werror refuses.
+void appendPreservedSessionXml( const QString & xml, DataFile & dataFile )
+{
+	if( xml.isEmpty() ) { return; }
+	QDomDocument preserved;
+	if( !preserved.setContent( xml, false ) ) { return; }
+	const QDomElement root = preserved.documentElement();
+	if( root.isNull() ) { return; }
+	dataFile.content().appendChild( dataFile.importNode( root, true ) );
+}
+#endif // !LMMS_HAVE_SESSION_VIEW
+} // namespace
+
 bool Song::saveProjectFile(const QString & filename, bool withResources)
 {
 	using gui::getGUI;
@@ -1713,19 +1737,7 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	// feature's data by opening and saving a project. Nothing is appended when
 	// the loaded project had no block, which is why project I/O stays
 	// byte-identical for every project that never used the session view.
-	if( !m_preservedSessionXml.isEmpty() )
-	{
-		QDomDocument preserved;
-		if( preserved.setContent( m_preservedSessionXml, false ) )
-		{
-			const QDomElement preservedRoot = preserved.documentElement();
-			if( !preservedRoot.isNull() )
-			{
-				dataFile.content().appendChild(
-					dataFile.importNode( preservedRoot, true ) );
-			}
-		}
-	}
+	appendPreservedSessionXml( m_preservedSessionXml, dataFile );
 #endif
 
 	m_savingProject = false;
