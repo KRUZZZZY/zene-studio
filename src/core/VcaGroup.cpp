@@ -172,4 +172,44 @@ void VcaGroup::channelsSwapped(mix_ch_t a, mix_ch_t b)
 	std::sort(m_members.begin(), m_members.end());
 }
 
+
+
+bool VcaGroup::hasEditTrack(int trackId) const
+{
+	return std::find(m_editTracks.begin(), m_editTracks.end(), trackId) != m_editTracks.end();
+}
+
+
+
+bool VcaGroup::addEditTrack(int trackId)
+{
+	// A negative id names no track: Track::id() comes from the project's own
+	// counter (ProjectIds), so there is no such thing as a negative one, and an
+	// id that could not have come from a live track is not recorded. A duplicate
+	// is a no-op, and the list stays ascending so `vca.get_state` and the saved
+	// element are stable between runs (the same reason members() is sorted).
+	if (trackId < 0 || hasEditTrack(trackId))
+	{
+		return false;
+	}
+
+	m_editTracks.push_back(trackId);
+	std::sort(m_editTracks.begin(), m_editTracks.end());
+	return true;
+}
+
+
+
+bool VcaGroup::removeEditTrack(int trackId)
+{
+	const auto it = std::find(m_editTracks.begin(), m_editTracks.end(), trackId);
+	if (it == m_editTracks.end())
+	{
+		return false;
+	}
+
+	m_editTracks.erase(it);
+	return true;
+}
+
 } // namespace lmms

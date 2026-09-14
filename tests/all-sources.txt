@@ -966,6 +966,11 @@ src/core/ControlCommandsTrackFolderShared.h
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
+src/core/ControlCommandsVca.cpp
+src/core/ControlCommandsVcaEdit.cpp
+src/core/ControlCommandsVcaEditSet.cpp
+src/core/ControlCommandsVcaMix.cpp
+src/core/ControlCommandsVcaShared.h
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlCommandsWasm.cpp
@@ -988,6 +993,7 @@ src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
+src/core/ControlReversibilityTableVca.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
@@ -1343,6 +1349,9 @@ tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
+tests/src/core/ControlVcaCommandsTest.cpp
+tests/src/core/ControlVcaEditGroupsTest.cpp
+tests/src/core/ControlVcaTestSupport.h
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp

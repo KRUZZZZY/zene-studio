@@ -156,6 +156,14 @@ set(LMMS_SRCS
 	core/ControlCommandsTransport.cpp
 	core/ControlCommandsTrackFolder.cpp
 	core/ControlCommandsTrackFolderSets.cpp
+	# VCA / mix-and-edit groups (OWNER-31 item 11): the group+entity half, the
+	# mix half (fader/mute/solo/membership) and the phase-locked edit half, each
+	# its own translation unit (the folder-track, session, warp, rack, comp and
+	# automation groups' split, for the file-length ratchet).
+	core/ControlCommandsVca.cpp
+	core/ControlCommandsVcaMix.cpp
+	core/ControlCommandsVcaEdit.cpp
+	core/ControlCommandsVcaEditSet.cpp
 	core/TrackContainerFolders.cpp
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
 	# commands that expose them (SPEC A16, task #623).
@@ -206,6 +214,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTablePassive.cpp
 	core/ControlReversibilityTableSnapshot.cpp
 	core/ControlReversibilityTableTrackFolder.cpp
+	core/ControlReversibilityTableVca.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

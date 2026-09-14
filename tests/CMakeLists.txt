@@ -164,6 +164,21 @@ set(LMMS_TESTS
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
 	src/core/VcaGroupTest.cpp
+	# The `vca.*` command group's own suite (OWNER-31 item 11, phase-locked
+	# multitrack edit groups): the fourteen ids and their schemas, the typed
+	# refusals junk arguments must produce, the measured effect of the fader and
+	# of membership read back through vca.get_state, and the A16 inverses
+	# through control.undo - including a phase-locked move across several
+	# tracks, which must be ONE undo step. VcaGroupTest above stays the engine
+	# half's suite (#622) and this lane extends it for the edit set; the socket
+	# proof of the same claims is the registered ctest ControlVcaCommands below.
+	src/core/ControlVcaCommandsTest.cpp
+	# The other half of the same proof (the two were one file at 613 lines and
+	# Gate 7 refuses a NEW file over 500): the phase-locked move across several
+	# tracks, the unlocked/skipped reporting, the lock's three refusals and the
+	# entity's own edit set + lock in the mixer element. The helpers both halves
+	# use are in src/core/ControlVcaTestSupport.h.
+	src/core/ControlVcaEditGroupsTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
 	src/core/ScriptStabilisationTest.cpp
@@ -365,6 +380,14 @@ target_compile_definitions(RoutingGraphLiveTest PRIVATE
 # VcaGroupTest (#622) constructs a full Engine and drives Mixer::masterMix()
 # synchronously, the same shape as the Phase D harnesses.
 set_tests_properties(VcaGroupTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# ControlVcaCommandsTest drives the `vca.*` command group through the registry
+# and needs an Engine (the mix and the song container); guiless, so it needs a
+# Qt platform plugin for the same reason the two above do. So does its sibling,
+# ControlVcaEditGroupsTest - the same group's edit half, split out for the
+# 500-line file ratchet.
+set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
@@ -1414,6 +1437,28 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
 		SKIP_RETURN_CODE 77
+	)
+	# VCA / mix-and-edit groups (0.3.0, OWNER-31 item 11): the phase-locked
+	# multitrack edit group, driven END TO END through --control-socket. It
+	# asserts the fourteen registered ids and their schemas, that a group can be
+	# CREATED from the socket (before this lane the only way was to edit the
+	# project file), that the fader scales its members without writing any
+	# member's own fader or being undoable in more than one step, and - the
+	# feature itself - that ONE `vca.edit_move` moves the anchor clip and every
+	# other member's overlapping clip by the same delta and that ONE
+	# `control.undo` returns all of them. It also proves the edit set through a
+	# REAL save/open round trip (the in-memory model is moved elsewhere first,
+	# so what comes back can only have come from the file) and drives the junk /
+	# refusal surface the agent-surface sweep depends on. It takes no fixture
+	# and no compile-time switch, so it has no skip path and reports Passed only
+	# when every check held.
+	add_test(NAME ControlVcaCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-vca-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlVcaCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
 	)
 	# clock.* (0.3.0, MIDI clock): the DAW as a clock master and as a clock slave,
 	# driven END TO END through --control-socket. It asserts the master's OWN

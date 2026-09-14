@@ -466,10 +466,11 @@ constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
 
 } // namespace
 
-/*! The true_inverse block, in its THREE files JOINED: this file's
+/*! The true_inverse block, in its FOUR files JOINED: this file's
  *  live-checkpoint rows first, then the recorded-ACTION rows
  *  (ControlReversibilityTableAction.cpp), then the folder group's
- *  (ControlReversibilityTableTrackFolder.cpp). The block is split across three
+ *  (ControlReversibilityTableTrackFolder.cpp, ControlReversibilityTableVca.cpp). The
+ *  block is split across four
  *  translation units (see the header), but every caller - ReversibilityTable's
  *  constructor, and through it control.transactions and
  *  tests/…/ReversibilityContractTest - still reads ONE block with ONE row count.
@@ -482,9 +483,12 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		const ReversibilityRow* actionRows = reversibilityActionRowTable(&actionCount);
 		int folderCount = 0;
 		const ReversibilityRow* folderRows = reversibilityTrackFolderRowTable(&folderCount);
+		int vcaCount = 0;
+		const ReversibilityRow* vcaRows = reversibilityVcaRowTable(&vcaCount);
 		std::vector<ReversibilityRow> all(kRows, kRows + kRowCount);
 		all.insert(all.end(), actionRows, actionRows + actionCount);
 		all.insert(all.end(), folderRows, folderRows + folderCount);
+		all.insert(all.end(), vcaRows, vcaRows + vcaCount);
 		return all;
 	}();
 	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }

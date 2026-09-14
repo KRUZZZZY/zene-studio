@@ -131,6 +131,37 @@ LMMS_EXPORT void registerTrackFolderCommands(ControlRegistry& registry);
 //! registerTrackFolderCommands; the registry has exactly one track-folder
 //! registration point.
 LMMS_EXPORT void registerTrackFolderSetCommands(ControlRegistry& registry);
+
+/*! The `vca.*` group (OWNER-31 item 11, "phase-locked multitrack edit groups";
+ *  the mix half is task #622's entity). It drives include/VcaGroup.h and, for
+ *  the group's own container, src/core/Mixer.cpp (`<vcagroup>` elements beside
+ *  the channels, each carrying one `<member channel="n"/>` per member mixer
+ *  channel and one `<edittrack track="n"/>` per edit-set track). Three halves
+ *  in three translation units (the folder-track, session, warp, rack, comp and
+ *  automation groups' split, for the file-length ratchet):
+ *  ControlCommandsVca.cpp (create / remove / list / get_state / rename - and
+ *  the group's ONLY registration point), ControlCommandsVcaMix.cpp (set_gain /
+ *  set_mute / set_solo / assign / unassign) and ControlCommandsVcaEdit.cpp
+ *  (set_phase_lock / track_add / track_remove / edit_move). No compile-time
+ *  switch: a group is a plain entity on the Mixer and its edit set is a list of
+ *  stable track ids, so its fourteen ids are honest in every configuration.
+ *  This group is the ONLY way to reach any of it in 0.3.0 - there is no VCA
+ *  strip, no group menu and no phase-lock toggle in the interface, and before
+ *  it the only way to get a group at all was to hand-edit the project file. */
+LMMS_EXPORT void registerVcaCommands(ControlRegistry& registry);
+//! vca.set_gain / set_mute / set_solo / assign / unassign - the mix half, in
+//! its own translation unit. Called by registerVcaCommands.
+LMMS_EXPORT void registerVcaMixCommands(ControlRegistry& registry);
+//! vca.set_phase_lock / track_add / track_remove - the edit SET and the lock
+//! switch, in their own translation unit (the split that kept the group under
+//! the 500-line file ratchet: those three and vca.edit_move were one file until
+//! it reached 521 lines). Called by registerVcaCommands through
+//! registerVcaEditCommands.
+LMMS_EXPORT void registerVcaEditSetCommands(ControlRegistry& registry);
+//! vca.edit_move - the phase-locked move itself, in its own translation unit.
+//! Called by registerVcaEditCommands; the registry has exactly one vca.*
+//! registration point.
+LMMS_EXPORT void registerVcaEditCommands(ControlRegistry& registry);
 /*! clock.get_state / clock.master_set / clock.slave_set - MIDI clock, the DAW
  *  as a clock master and as a clock slave. The engine half is include/MidiClock.h
  *  and its sources (the pulse generator, the tempo tracker, the widened MIDI

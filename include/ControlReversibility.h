@@ -126,6 +126,16 @@ LMMS_EXPORT const ReversibilityRow* reversibilityActionRowTable(int* rowCount);
 //! and five recorded-action rows. Joined into reversibilityRowTable() as well,
 //! so the block's class still comes from each row and not from its file.
 LMMS_EXPORT const ReversibilityRow* reversibilityTrackFolderRowTable(int* rowCount);
+//! The `vca.*` GROUP's twelve mutating rows (OWNER-31 item 11, phase-locked
+//! multitrack edit groups): six live-checkpoint rows - the group's fader, mute
+//! and solo models, the composite solo step, and the clip checkpoints a locked
+//! edit takes - and six recorded-action rows for the state that is not a model
+//! (a name, a membership list, a lock flag, a group's existence). Joined into
+//! reversibilityRowTable() for the same reason the folder rows are: the block's
+//! class comes from each row, not from its file. The group's two reads are
+//! `not_mutating` and live with the other passive rows, because the table's
+//! blocks are split by what the inverse IS and not by command group.
+LMMS_EXPORT const ReversibilityRow* reversibilityVcaRowTable(int* rowCount);
 //! The chain-preset GROUP's four recorded-action rows (OWNER-31 item 2: the
 //! preset store is a file tree outside the project, so each command records the
 //! undo step for its own file operation). Joined into the action half by

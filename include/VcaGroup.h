@@ -50,18 +50,42 @@ class Mixer;
 //! not absolute, offset -- the semantics a VCA has and the one that is easy to
 //! get wrong).
 //!
+//! The EDIT half (OWNER-31 item 11, "phase-locked multitrack edit groups").
+//! A group that carries *tracks* (`editTracks()`) is also an edit group: a
+//! media edit made on one member is applied to every member at the same source
+//! position. That is what "phase-locked" means here -- the members are locked
+//! to ONE timeline, so a take recorded across eight inputs is slid as one
+//! object and stays sample-aligned. `isPhaseLocked()` is the group's own
+//! switch: a group can hold its edit membership with the lock OFF, so the takes
+//! can be edited independently again without losing the set.
+//!
+//! Edit membership is stored by STABLE TRACK ID (`Track::id()`, the number the
+//! project file writes as the track element's own `id` attribute and the number
+//! `trk-<n>` resolves) and never by pointer or position. Ids rather than
+//! pointers because the mixer element is loaded BEFORE the track container
+//! (`Song::loadState` restores the mixer first, "to be able to set the correct
+//! range for mixer channels"), so at load time the tracks a group names do not
+//! exist yet. One consequence, stated in `docs/VCA-EDIT-GROUPS.md` and in the
+//! limits lines rather than hidden: an id whose track has since been deleted
+//! stays in the list and resolves to nothing, and `vca.get_state` reports it as
+//! `missing` instead of quietly dropping it -- a group that rewrote its own
+//! membership behind the caller's back would be the harder bug.
+//!
 //! Threading. Everything in this class is control-thread state: the models,
-//! the member list, and every mutator. The single piece of state the audio
-//! thread reads is the gain `Mixer::refreshGroups()` publishes into each member
-//! channel's relaxed atomic -- no allocation, no locking, no growth on the
-//! audio path. Nothing here is called from `MixerChannel::doProcessing()`.
+//! the member list, the edit-track list, and every mutator. The single piece of
+//! state the audio thread reads is the gain `Mixer::refreshGroups()` publishes
+//! into each member channel's relaxed atomic -- no allocation, no locking, no
+//! growth on the audio path. Nothing here is called from
+//! `MixerChannel::doProcessing()`.
 //!
 //! Persistence. `Mixer::saveSettings()` writes one `<vcagroup>` element per
-//! group inside `<mixer>` (id, name, `vca`/`muted`/`soloed` attributes and one
-//! `<member channel="N"/>` child each); `Mixer::loadSettings()` recreates them,
-//! so grouping and the fader value survive a round trip through the project
-//! file. A project without `<vcagroup>` elements loads with no groups at all,
-//! in which case every channel publishes unity gain.
+//! group inside `<mixer>` (id, name, `vca`/`muted`/`soloed`/`locked`
+//! attributes, one `<member channel="N"/>` child per member channel and one
+//! `<edittrack track="N"/>` child per edit track); `Mixer::loadSettings()`
+//! recreates them, so grouping, the fader value and the edit set survive a
+//! round trip through the project file. A project without `<vcagroup>` elements
+//! loads with no groups at all, in which case every channel publishes unity
+//! gain.
 class LMMS_EXPORT VcaGroup : public QObject
 {
 	Q_OBJECT
@@ -101,6 +125,26 @@ public:
 	//! Mixer::moveChannelLeft() bookkeeping: two channels swapped places.
 	void channelsSwapped(mix_ch_t a, mix_ch_t b);
 
+	//! The edit set: the stable ids of the tracks whose media edits this group
+	//! locks together, ascending. Control thread only.
+	const std::vector<int>& editTracks() const { return m_editTracks; }
+
+	//! Whether `trackId` is in the edit set.
+	bool hasEditTrack(int trackId) const;
+
+	//! Add a track to the edit set. Refuses a duplicate and a negative id
+	//! (no live track ever carries one); the caller resolves `trk-<n>` to a
+	//! live Track first, so an id that names nothing never enters the set.
+	//! Returns true when the membership changed.
+	bool addEditTrack(int trackId);
+
+	//! Remove a track from the edit set; false when it was not a member.
+	bool removeEditTrack(int trackId);
+
+	//! Whether a media edit on one member is applied to every member.
+	bool isPhaseLocked() const { return m_phaseLocked; }
+	void setPhaseLocked(bool locked) { m_phaseLocked = locked; }
+
 	//! The gain this group publishes to its members right now: the fader value,
 	//! or 0 when the group is muted. Mute is folded into the same factor as the
 	//! fader (a VCA at zero gain *is* a mute), so muting never writes a member's
@@ -121,6 +165,11 @@ private:
 	BoolModel m_soloModel;
 	//! Member channel indices, ascending; control thread only.
 	std::vector<mix_ch_t> m_members;
+	//! Edit-set track ids, ascending; control thread only.
+	std::vector<int> m_editTracks;
+	//! The phase lock. ON by default: the feature IS the lock, and a group with
+	//! no edit tracks never reads it.
+	bool m_phaseLocked = true;
 };
 
 } // namespace lmms

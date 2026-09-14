@@ -489,6 +489,11 @@ void registerControlCommands(ControlRegistry& registry)
 	// MIDI clock (0.3.0): the DAW as a clock master and as a clock slave. No
 	// compile-time switch; the bound it states is in docs/KNOWN-LIMITATIONS.md.
 	registerClockCommands(registry);
+	// VCA / mix-and-edit groups (OWNER-31 item 11): one fader over member mixer
+	// channels, plus the phase-locked multitrack edit set. No compile-time
+	// switch - a group is a plain entity on the Mixer and its edit set is a list
+	// of stable track ids, so its ids are honest in every configuration.
+	registerVcaCommands(registry);
 }
 
 } // namespace lmms

@@ -1,348 +1,175 @@
-# LANE-STATE — `030/folder-tracks` in `zene-030/wft`
+# LANE-STATE — 030/vca-editgroups (feature row #4, phase-locked multitrack edit groups)
 
-Owner items **3+20+21** (folder tracks; the layout/workspace-presets half is 0.5.0 and is NOT built).
-Base: `334790219` (the tip of `release/0.3.0` this lane branched from). **Nothing is merged anywhere** —
-the integration branch was mid-CI for the whole session, and this lane only commits on its own branch.
+* **Worktree:** `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wvca`
+* **Branch:** `030/vca-editgroups` (created from `3956ef589`, the `release/0.3.0` tip; never moved)
+* **Tip sha:** _recorded at the end of this file, updated at every commit_
+* **Build dir:** `build/` (one worktree, one build dir; deleted at the end and its size reported)
+* **Log dir:** `/home/kruzzzzy/zene-030-wvca-3956ef589/` (private per-run; nothing written to `/tmp`)
+* **Not done, on purpose:** no merge, no push, no `commands_snapshot.json` regeneration
+  (that is a merge-time step; the drift ctest is run and its result recorded below).
 
-Commits on this branch, in order (the SHA to report is the last one):
+## 1. What is done
 
-| SHA | what |
-|---|---|
-| `c7c78a8b4` | the lane's own feature commit (engine + command group + proofs + docs) |
-| `32046034f` | the visibility sets reach the file; a dying folder releases its children |
-| `5515f8d5e` | the shutdown SIGSEGV, pinned and fixed; the five ratchet breaches it left, fixed by moving code |
-| `9d6bd6ffb` | both manifests regenerated from their own recipes (both print REPRODUCES) |
+* **Engine (the edit half, on the existing entity)** — `include/VcaGroup.h`,
+  `src/core/VcaGroup.cpp`, `src/core/Mixer.cpp`: `editTracks()` /
+  `hasEditTrack` / `addEditTrack` / `removeEditTrack` (stable track ids, ascending)
+  and `isPhaseLocked()` / `setPhaseLocked()` (default ON); persistence as the
+  `locked` attribute plus one `<edittrack track="N"/>` child per set member on
+  the group's own `<vcagroup>` element, read by id with `locked` defaulting to 1.
+* **The `vca.*` command group, 14 ids** — `src/core/ControlCommandsVca.cpp`
+  (create/remove/list/get_state/rename), `ControlCommandsVcaMix.cpp`
+  (set_gain/set_mute/set_solo/assign/unassign), `ControlCommandsVcaEditSet.cpp`
+  (set_phase_lock/track_add/track_remove) and `ControlCommandsVcaEdit.cpp`
+  (edit_move — the phase-locked move itself), with the shared resolver, the
+  `vca-<n>` id formatter and the phase-lock helpers in
+  `ControlCommandsVcaShared.h`. Registered by `registerVcaCommands` in
+  `src/core/ControlRegistry.cpp`; declared in `include/ControlRegistryGroups.h`.
+  Four translation units, not three: `ControlCommandsVcaEdit.cpp` reached 521
+  lines once the move and the edit set were written together and Gate 7 refused
+  it on the first measured run, so the file was split along the seam that
+  already existed (a MOVE — every handler is byte-identical).
+* **A16 rows** — 12 `true_inverse` rows in `src/core/ControlReversibilityTableVca.cpp`
+  (joined into `reversibilityRowTable()`; declaration in
+  `include/ControlReversibility.h`) and the 2 `not_mutating` rows in
+  `src/core/ControlReversibilityTablePassive.cpp`.
+* **Proof** — `tests/src/core/ControlVcaCommandsTest.cpp` (registered QTest,
+  `LMMS_TESTS` + `QT_QPA_PLATFORM=offscreen`) and `tests/control-vca-commands.py`
+  (registered ctest `ControlVcaCommands` over a live `--control-socket`).
+* **Docs** — `docs/VCA-EDIT-GROUPS.md` (the lane's report: naming decision,
+  correspondence rule, per-row A16 argument, limits), the `vca.*` feature section
+  and the updated A16 histogram in `docs/RELEASE-NOTES-v0.3.0-alpha.md`, and the
+  updated (never deleted) absence line in `docs/KNOWN-LIMITATIONS.md`.
+* **Manifests** — the 5 new `src/core` files in both `tests/fork-sources.txt`
+  and `tests/all-sources.txt`; the new test in `tests/all-sources.txt` only
+  (the same place the other recent fork tests live, e.g. `VcaGroupTest.cpp`), and
+  `tests/control-vca-commands.py` added to all 8 python pathspec lines of
+  `tests/fork-sources.txt`. `bash tests/fork-sources-gate.sh` → exit 0, and
+  the `all-sources.txt` REPRODUCES diff → exit 0, empty.
+* **Histogram** — `tests/src/core/ReversibilityContractTest.cpp` constant moved
+  from `183/99/14/4/66` to `197/111/14/4/68` (telemetry-off/wasm-off base) and
+  the release-notes figure from `185` to `199` rows (`111/14/4/70`), which is
+  +14 rows / +12 `true_inverse` / +2 `not_mutating`.
 
-## The four-part scope contract — status
+## 2. What is red, with the exact command and exit code
 
-| part | state |
-|---|---|
-| 1. engine work | **in**; `TrackFolderTest` 11/11 |
-| 2. control-surface command group | **in**; 9 new ids + `track.add type=folder`; A16 rows in the table (now its own TU) |
-| 3. a registered proof | **in**; ctest `TrackFolderTest` and ctest `ControlTrackFolderTranscript` (both pass) |
-| 4. UI-absence lines | **in**; `docs/RELEASE-NOTES-v0.3.0-alpha.md` + `docs/KNOWN-LIMITATIONS.md` |
+Only ONE thing is red, and it is the collected red this lane was told to expect:
 
-## The five open items the previous lane left — all closed
+```bash
+cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R ControlCommandsSnapshot --output-on-failure
+# 1/1 Test #143: ControlCommandsSnapshot ..........***Failed    2.88 sec
+# FAIL: the committed snapshot and the built binary do not agree (1 finding(s),
+#       14 drifted command id(s)).
+# exit 8
+```
 
-1. **The named visibility sets never reached the file.** They were written as one `metadata="1"`
-   child of `<trackcontainer>`, and `DataFile::write`'s `cleanMetaNodes()` STRIPS every element
-   carrying that marker — the marker that told the loader to skip the element is the one the writer
-   deletes. The store moved OUT of the metadata-stripped region: `Song::saveProjectFile` writes it
-   into the project's own content element beside `<tempo-map>`, `Song::loadProject`'s walk reads it
-   back with the reset-on-absence, and one name (`TrackContainer::visibilitySetsNodeName()`) is
-   shared by both so they cannot disagree.
-   *Proof*: `TrackFolderTest::visibilitySetsSurviveASaveAndReopen` passes (it returned `set != nullptr`
-   FALSE before), and the transcript reads the set back through a real `project.open` with its active
-   name and its members.
-2. **The shutdown SIGSEGV.** Found and fixed at the seam that caused it — see below.
-3. **The MCP command snapshot** was regenerated from a live instance of this build (164 → 173 ids) and
-   `ControlCommandsSnapshot` passes in all three of its modes (live, empty state dir, planted stale cache).
-4. **Both manifests** were regenerated by their own recipes; both `Verify it` blocks print REPRODUCES.
-5. **The histogram** was re-measured from the table's own rows in this build.
+The 14 drifted ids ARE this group (`vca.create` … `vca.edit_move`). The committed
+offline snapshot is regenerated **once, at merge time, from a live instance of
+the merge tip** — this lane is explicitly forbidden to regenerate or hand-edit
+`tools/mcp-zene-control/zene_control/commands_snapshot.json`, so this red is
+expected and is collected, not fixed. It is the only red in the whole suite:
 
-## The SIGSEGV: the defect, the pin, the fix
+```bash
+cd build/tests && QT_QPA_PLATFORM=offscreen ctest -j2
+# ctest totals: 99% tests passed, 1 tests failed out of 143
+# The following tests FAILED: 143 - ControlCommandsSnapshot
+# exit 8
+```
 
-**Measured backtrace** (gdb, on the lane's own transcript): `QObject::disconnectImpl` ←
-`MixerView::disconnectFromSoloAndMute` (MixerView.cpp:321) ← `MixerView::deleteChannel` ←
-`MixerView::clear` ← `Song::clearProject` ← `Engine::destroy` ← `~MainWindow` ← `main`.
+`bash tools/local-ci.sh --build-dir build --jobs 2` therefore reports
+`build EXIT=0` and `local-ci: overall exit=1` (its ctest step is the run above).
 
-**Cause**: `MixerView` keeps one view per mixer channel and indexes THE MIXER with a VIEW index,
-while `Mixer::mixerChannel()` (include/Mixer.h) does not bounds-check. The ENGINE deletes mixer
-channels without telling the view (`TrackFolder::releaseRouting()`, `mixer.remove_channel`,
-`Mixer::clear()` on a project load), so the view list can be one entry LONGER than the mixer and the
-lookup reads past `m_mixerChannels` — a wild `MixerChannel*` that `disconnectImpl` then walks.
+## 3. The next exact command
 
-**The pin** (fresh instance each, exit code unpiped; see `/tmp/wft-mine-verify/probe-pin.py`):
+```bash
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wvca/build/tests
+QT_QPA_PLATFORM=offscreen ctest -R 'ControlVcaCommands|ControlVcaEditGroups' --output-on-failure
+```
 
-| scenario | before | after |
+then, for the merge itself (the parent's step, not this lane's):
+regenerate `commands_snapshot.json` from a live instance of the merge tip and
+re-run `ControlCommandsSnapshot`.
+
+## 4. The remaining acceptance list (unpiped exit codes, logged in the run dir)
+
+| # | command | result |
 |---|---|---|
-| folder + child, routing ON, `project.save`, `project.open`, routing OFF, `control.quit` | **-11** | 0 |
-| the same without the save/open | 0 | 0 |
-| no folder at all: `mixer.add_channel`, `project.save`, `project.open`, `mixer.remove_channel`, quit | **-11** | 0 |
+| 1 | `bash tools/local-ci.sh --build-dir build --jobs 2` | configure **EXIT 0**, build **EXIT 0**, ctest **99% / 1 failed** (snapshot drift only) → overall exit 1 |
+| 2 | `ctest -R 'ControlVcaCommands\|ControlVcaEditGroups\|VcaGroupTest\|ReversibilityContract\|ReversibilityUndo\|ControlRegistryTest'` | **EXIT 0** — all six PASS (the transcript among them, 48 checks) |
+| 3 | `ctest -R ControlCommandsSnapshot` | **EXIT 8** — 14 drifted ids, expected while unmerged (§2) |
+| 4 | `bash tests/run-all-gates.sh` | **EXIT 1** — gates 3/4/5/6/7/8/9/10/11 **PASS**, gate 2 (coverage) SKIP (not run without `--with-coverage`), and gate 1 (ctest) FAIL on the ONE expected red: `99% tests passed, 1 tests failed out of 143` → `143 - ControlCommandsSnapshot`. So the exit 1 is entirely the merge-time snapshot drift of §2 and nothing else; it is NOT pre-existing (it is this group's 14 ids) and it is not fixable in this lane by design |
+| 5 | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | **EXIT 0** — "RESULT: PASS — all 6 documented feature(s) match this build on linux" |
+| 6 | `bash tests/complexity-gate.sh --check` | **EXIT 0** — PASS (after the `check_ids` split; CCN 12 → under target) |
+| 7 | `bash tests/file-length-gate.sh --check` | **EXIT 0** — PASS (after the `ControlCommandsVcaEdit.cpp` and test-file splits) |
+| 8 | `bash tests/duplication-gate.sh` | **EXIT 0** — PASS, duplicated lines 2.00% (budget 5%) |
+| 9 | `bash tests/fork-sources-gate.sh` | **EXIT 0** — PASS (398 fork-NEW / 1060 inherited / 34 tooling; 0 stale) |
+| 10 | `bash tests/no-upstream-regression-gate.sh` | **EXIT 0** — PASS (409 changed paths declared) |
+| 11 | `bash tests/unregistered-tests-gate.sh` | **EXIT 0** — PASS (127 sources: 125 registered, 2 declared-not-built) |
+| 12 | `bash tests/evidence-gate.sh` | **EXIT 0** — PASS (6264 files scanned, 0 refused) |
+| 13 | `diff <(grep -vE '^[[:space:]]*(#\|$)' tests/all-sources.txt) <(git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \| grep -vE '^(src/3rdparty/\|tests/reference/\|plugins/NeuralAmp/(rtneural\|nam\|tests)/\|plugins/RnnoiseDenoiser/rnnoise/)' \| LC_ALL=C sort)` | **EXIT 0**, empty — REPRODUCES |
+| 14 | `tests/fork-sources.txt`'s own "Verify it" command | **REPRODUCES** (extracted from the file and run by `fork_verify.py`) |
 
-So the crash is NOT folder-specific — the folder's routing release is one of the engine-side
-deletions that leave the view stale, and the released `mixer.*` commands are another. The lane's
-earlier 11-scenario probe matrix exited 0 because no scenario both refreshed the view list AND then
-deleted a channel through the engine: the save/open is what makes the view list current first.
+## 5. The exact replacement text for row 4 of `docs/FEATURE-LIST-0.3.0.md`
 
-**The fix**: every index that crosses from the view list to the mixer is now bounded by the MIXER's
-own channel count — four one-line bounds in `src/gui/MixerView.cpp` (`refreshDisplay`'s disconnect
-walk, `deleteUnusedChannels`' `isChannelInUse` walk, `updateFaders`' peak walk, `deleteChannel`'s own
-guard) plus a note at the top of the file stating the rule. A view list SHORTER than the mixer needs
-nothing (every view-side lookup is already `i < views`). The file is declared in
-`tests/upstream-modifications.txt` and ends at exactly its recorded 592-line baseline.
+**DO NOT EDIT THAT FILE FROM THIS LANE** — the `030/audit` lane owns it this
+fire. The parent applies the row below once these ids are merged into the tip.
+Supporting evidence per part is in §1 and §6.
 
-## The ratchet breaches the lane left red — fixed by MOVING code, never by re-anchoring
+Current text at `030/audit` (`docs/FEATURE-LIST-0.3.0.md:79`):
 
-| file | was | now | how |
-|---|---|---|---|
-| `src/core/ScriptBindings.cpp` | 1177 (baseline 1174) | 1174 | `LuaTrack::type()`'s switch became a table (CCN 11 → 4) |
-| `src/core/ControlRegistry.cpp` | 501 | 486 | `controlErrorKindName()` → `ControlVocabulary.cpp` |
-| `src/core/ControlReversibilityTable.cpp` | 510 | 499 | the folder group's rows → their own TU (row multiset verified byte-exact: 99 rows before, 99 after) |
-| `src/core/ControlReversibilityTableAction.cpp` | 508 | 457 | same move |
-| `src/core/ControlCommandsTrackFolder.cpp` | 505 | 432 | the group's helpers → `ControlCommandsTrackFolderShared.h` |
-
-## What is verified (commands, unpiped exit codes)
-
-* `bash tools/local-ci.sh --build-dir build --jobs 4` → configure 0, build 0, ctest **100%** (see the report's table)
-* `bash tests/run-all-gates.sh` → see the report
-* gates 4/7/8 `--check` (fork scope, widened by the manifest regeneration) → see the report
-* `TrackFolderTest` 11/11 · `ControlTrackFolderTranscript` exit 0 · `agent_surface` exit 0 ·
-  `ControlCommandsSnapshot` exit 0 · `ReversibilityContractTest` exit 0
-* the A16 histogram, measured from the table's own rows in this build: **173 rows / 93 true_inverse /
-  13 snapshot / 4 irreversible / 63 not_mutating** (telemetry client in, no wasmtime). The test's
-  constant is `{171, 93, 13, 4, 61}` with the guards ADDING the two `telemetry.*` rows, and
-  `docs/RELEASE-NOTES-v0.3.0-alpha.md` states 173 / 93 / 13 / 4 / 63 — all three agree.
-  `WANT_WASM` degrades to OFF on this box (no wasmtime C API), so the six `wasm.*` rows are NOT added.
-
-## What is NOT verified, or is a known residual
-
-* **The whole-tree scope was not run.** The bar names `--check` (fork scope) and `run-all-gates.sh`
-  (fork + tools). The two new sources are under 500 lines and have no function over CCN 10, but
-  `run-all-gates.sh --whole-tree` is the gate that would say so with a number.
-* **The registered MCP bridge on this box is a scratch copy outside the repository**
-  (`projects/lmms-fl-research/mcp-zene-control`), so the regenerated in-tree snapshot is what the
-  ctest and a correctly-pointed bridge serve; the live session's offline list is still the old one
-  until that entry is re-pointed. `docs/KNOWN-LIMITATIONS.md` already records this and now carries the
-  measured 173 instead of the stale 144.
-* `tests/src/core/TrackFolderTest.cpp` is deliberately NOT admitted to `fork-sources.txt`'s awk
-  allow-list (the recipe's own comment records that admitting a test source widens the fork ratchets
-  and needs a measured reason); it is measured by the whole-tree scope via `tests/all-sources.txt`.
-
-## The second crash the first fix attempt introduced — and how it was caught
-
-The first version of the fix bounded `refreshDisplay()`'s loop over the view list. That loop does TWO
-things — disconnect from the channel's models, then DELETE the view — so bounding it orphaned a
-still-visible view whose MixerChannel the engine had already deleted, and the next paint of that view
-walked a dead model: `SIGSEGV in Fader::calculateKnobPosYFromModel <- Fader::paintEvent`.
-
-The acceptance bar caught it: `ctest ControlSocketIntegration` failed (deterministically, 2/2 runs)
-with that backtrace, and the lane's own `reopen_smaller_project` probe went from 0 to -11. Rebuilding
-with the bounds reverted (everything else identical) made both pass again — so the bounds, not the
-rebuild, were the cause.
-
-The corrected rule, now in the file's own note: **the LOOKUP into the mixer is bounded by the mixer's
-channel count; the TEARDOWN is not.** Every surplus view is still deleted (the loop is unbounded), and
-the out-of-range check lives inside `disconnectFromSoloAndMute`, where the mixer is actually indexed.
-`tests/control-shutdown.py` grew scenario (c) so the shrink is pinned by a REGISTERED test: the fixture
-project has one mixer channel, so `mixer.add_channel` then `project.open` of it is that shrink.
-
-<!-- TWO LANE STATUS PAGES, ONE FILE. Both lanes committed a file at this
-     path, so git had an add/add conflict; neither page is a revision of the
-     other (030/folder-tracks and 030/retro-capture record different work), so
-     the merge keeps both, ours first, rather than deleting one lane's record.
-     Nothing below is edited. -->
-
-# LANE-STATE — 030/retro-capture (owner's-31 item 14, retrospective MIDI capture)
-
-**Worktree:** `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wret`
-**Base:** `release/0.3.0` tip `334790219`. **Branch:** `030/retro-capture` @ `0bb7de86c`. **Build dir:** `build`
-(local-ci configuration: `RelWithDebInfo -DUSE_WERROR=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DWANT_QT6=ON`,
-wasmtime absent, telemetry ON). ~21 GB — **delete `build/` when the lane is done** (disk is the binding
-constraint).
-
-## Done and committed (10 commits on the base)
-
-| commit | what |
-|---|---|
-| `dc666ad5e`, `73e7a1542` | `docs/MIDI-RETRO-CAPTURE.md` — the design + the audit corrections (from `next/midi-retro` @ `2858b77df`) |
-| `5805c2617` | slice 1 — the ring, the two receive seams, the off-by-default arm (from `next/midi-retro-impl` @ `3abae78fb`) |
-| `5c01a263e` | slice 2 — the three `midi.retro_capture_*` commands, the persisted arm switch, the note matcher, the menu (from `0496af26d`) |
-| `6e9cb4a06` | **the missing half**: the registered socket proof, `docs/MIDI-RETRO-CAPTURE-BOUNDS.md`, the two UI-absence lines, the A16 histogram → 167/87/13/4/63, item 15's deferral |
-| `6b6e4d517` | gate 7: `include/ControlRegistry.h` 503→490, `src/core/ControlReversibilityTable.cpp` 506→490 |
-| `90f5eab6c` | the release configuration's two suite failures: `RetroMidiRingTest`'s push inside `Q_ASSERT`, and `ControlRetroCapture`'s own three defects |
-| `81ee2fda3` | this handover file |
-| `41017d639` | the proof PASSES; the paced-file measurement and the input-pool probe |
-| `0bb7de86c` | `commands_snapshot.json` regenerated from a live instance (164 → 167 commands, +3 ids, 0 lost) |
-
-## Green (every code unpiped, logs in `/tmp/rc-030-retro-capture-verify/`)
-
-- `bash tools/local-ci.sh --build-dir build --jobs 2` — configure `/build` **EXIT=0**
-- `ctest -R '^ControlRetroCapture$'` — **EXIT=0, Passed 31.80 s**; run directly it prints
-  `window [0, 480] of 4 event(s) -> clip clip-2 with 2 note(s): [(0, 240, 60, 100), (240, 240, 64, 64)]`
-  and `played 20004 event(s) into a 8192-event window: retained 8192, overwritten 11812, paused 0, refused 0`
-- `ctest -R '^RetroMidiRingTest$'` — **EXIT=0, 0.13 s** (was a 300 s abort)
-- `ctest -R '^ControlCommandsSnapshot$'` — **EXIT=0, 3.54 s**
-- gates 4/6/7/8/9, evidence, unregistered-tests — **all EXIT=0**; both manifest recipes print **REPRODUCES**
-- `MasteringTest` and `PluginPortsMigrationTest` — **EXIT=0 each when run alone**; they only failed inside
-  the full `ctest -j2` run, so their reds read as parallel-load flakes, not code. Re-check in the final run.
-
-## The final acceptance run — `bash /tmp/rc-030-retro-capture-verify/accept.sh 334790219`
-
-Every code unpiped, each gate's own log in `/tmp/rc-030-retro-capture-verify/a-*.log`:
-
-| command | exit |
-|---|---|
-| `bash tools/local-ci.sh --build-dir build --jobs 2` (configure + build + ctest) | **0** — ctest `100% tests passed, 0 tests failed out of 131`, `ControlRetroCapture` Passed 31.92 s, `RetroMidiRingTest` Passed 0.05 s |
-| `bash tests/run-all-gates.sh` | **3** — PASS-WITH-SKIPS: all 11 gates PASS (ctest, no-tautology, complexity, mutation, upstream-regression, file-length, duplication, fork-sources, unregistered-tests, evidence); gate 2 (coverage) SKIPs without `--with-coverage`. 3 is the accepted outcome; 1 never appeared |
-| `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | **0** |
-| `bash tests/complexity-gate.sh --check` | **0** |
-| `bash tests/file-length-gate.sh --check` | **0** |
-| `bash tests/duplication-gate.sh` | **0** |
-| `bash tests/fork-sources-gate.sh` | **0** |
-| `bash tests/no-upstream-regression-gate.sh` | **0** |
-| `bash tests/unregistered-tests-gate.sh` | **0** |
-| `bash tests/evidence-gate.sh` | **0** |
-| both manifest recipes (`tests/all-sources.txt`, `tests/fork-sources.txt` "Verify it") | **0** — each prints `REPRODUCES` |
-
-`run-all-gates.sh` states in its own summary that the WHOLE-TREE scope (gates 4/7/8 `--scope all`) was NOT
-measured by it; only the enforced fork+tools scope was. That is the scope `WAVE-1-BRIEFS.md` asks for.
-
-### The two load-flake reds, resolved
-
-`MasteringTest` (34) and `PluginPortsMigrationTest` (101) failed only in the first `ctest -j2` sweep, which
-ran under a heavily loaded box (that sweep took 342 s against 134 s for the final one, and the SAME window
-produced a `/usr/bin/ld: final link failed: file truncated` on an unrelated target). Re-run alone they both
-pass (`ctest -R '^(MasteringTest|PluginPortsMigrationTest)$'` → EXIT=0, 2/2), and in the final full sweep
-they are green: 131/131. They are not this lane's code — neither file is touched by the branch.
-
-## Left to do
-
-1. **The parent merges `030/retro-capture` and re-runs the build, suite and gates on the merged tip.** That
-   re-run is the verification; this lane's green is a hypothesis until then.
-2. **`build/` has been deleted** (disk is the binding constraint, ~21 GB). Rebuild with
-   `bash tools/local-ci.sh --build-dir build --jobs 2` if the suite has to be run again.
-
-## Not verified by this lane (say so in the report)
-
-Real USB/PCI MIDI hardware delivery (the ctest's MIDI source is `aplaymidi`, a real external ALSA client, but
-not a keyboard's driver); the sequencer-tick vs transport-tick agreement for the raw clients; the MIDI
-thread's end-to-end allocation profile; `Ctrl+Shift+M`'s availability across the whole shortcut table (which is
-why no shortcut is taken). Owner's-31 item 15 (retrospective AUDIO capture) is deliberately NOT built, and is
-declared in `docs/KNOWN-LIMITATIONS.md` and `docs/RELEASE-NOTES-v0.3.0-alpha.md` in the same line as the UI
-absence.
-
-<!-- A THIRD lane status page, kept for the same reason as the two above:
-     030/midi-clock committed a file at this path too, and its page is not a
-     revision of either of the others. Nothing below is edited. -->
-
-# LANE 030/midi-clock — MIDI clock / MTC (engine half + `clock.*` group + proof + UI-absence)
-
-**Branch:** `030/midi-clock`
-**Worktree:** `lmms/zene-030/wpc` (base = `501d2cd3e`, the `release/0.3.0` tip at lane start)
-**Build dir:** `wpc/build` (RelWithDebInfo, USE_WERROR=ON, WANT_VST3=OFF, WANT_CLAP=OFF, WANT_QT6=ON)
-**Lane private log dir:** `/tmp/wpc-030-*` — never a generic name.
-
-## Item, as posed
-MIDI clock / MTC. The largest genuine gap in the 0.3.0 scope: engine work with no
-architectural gate, so D12 puts it in 0.3.0, and NO 0.3.0 document places it
-(`PLANNED-WORK-MASTER-LIST-2026-09-13.md` ~line 164, unboarded Bar-2 gap; agent-surface
-inventory Group 11).
-
-## Findings that shaped the design (measured in the tree, not assumed)
-- `grep -rniI 'midi clock|mtc|midi time code' src include` finds **no engine code** — the only
-  hits are vendored `src/3rdparty/jack2` and an unrelated `readFmtChunk` in
-  `ControlCommandsProject.cpp` (`fmt ` vs `mtc ` substring). The feature was genuinely absent.
-- The MIDI **event vocabulary already existed**: `include/Midi.h` declares `MidiTimeCode=0xF1`,
-  `MidiSongPosition=0xF2`, `MidiSync=0xF8`, `MidiStart=0xFA`, `MidiContinue=0xFB`, `MidiStop=0xFC`.
-- The MIDI **output path existed but was narrow**: `MidiClient::processOutEvent` was the only
-  write path and every implementation warned "unhandled" for the clock family
-  (`MidiClientRaw::processOutEvent`, `MidiAlsaSeq::processOutEvent` default cases).
-- The MIDI **input parser dropped the clock**: `MidiClientRaw::parseData` returned early for
-  every byte `>= 0xF8` except a system reset, and cancelled-and-dropped system-common bytes.
-- The transport's own seam for per-audio-period engine readers is `Song::processNextBuffer()`
-  (`src/core/Song.cpp:245`); its Session View block runs **before** the `if (!m_playing) return;`
-  gate for the same reason a clock master needs — STOP is an *edge*.
-- Resolution: `DefaultTicksPerBar = 192`, `DefaultStepsPerBar = 16` ⇒ a step (a MIDI beat = a
-  16th note) is 12 ticks, a quarter is 48, so **1 clock pulse = 2 ticks**, **1 SPP unit = 12 ticks**.
-- The A16 row count is an **assertion**: `ReversibilityContractTest::documentedHistogram()`
-  carries `{162, 86, 13, 4, 59}` and `docs/RELEASE-NOTES-v0.3.0-alpha.md` quotes the release
-  configuration's `164 / 86 / 13 / 4 / 61`. Both move with a new group.
-- Ninth touch-point: `tools/mcp-zene-control/zene_control/commands_snapshot.json` (164 ids).
-
-## Files this lane adds / changes
-NEW: `include/MidiClock.h` · `src/core/MidiClock.cpp` · `src/core/MidiClockState.cpp` ·
-`src/core/MidiClockTracker.cpp` · `src/core/ControlCommandsClock.cpp` ·
-`tests/src/core/MidiClockTest.cpp` · `tests/control-clock-commands.py`
-MODIFIED (upstream, divergence ledger): `src/core/Song.cpp` · `src/core/midi/MidiClient.cpp` ·
-`include/MidiClient.h` · `src/core/midi/MidiAlsaSeq.cpp`
-MODIFIED (fork): `src/core/CMakeLists.txt` · `include/ControlRegistryGroups.h` ·
-`src/core/ControlRegistry.cpp` · `src/core/ControlReversibilityTable*.cpp` ·
-`tests/src/core/ReversibilityContractTest.cpp` · `tests/CMakeLists.txt` ·
-`tests/fork-sources.txt` · `tests/all-sources.txt` · `tests/upstream-modifications.txt` ·
-`docs/RELEASE-NOTES-v0.3.0-alpha.md` · `docs/KNOWN-LIMITATIONS.md` · the bridge snapshot
-
-## The BOUND, stated not implied
-The master's bytes reach a MIDI **device** only through a real backend. The headless proof
-asserts the engine's own emission (the message sequence + counters it publishes) and the
-slave's timing math, NOT that an external synth received them. MTC is **not generated**: a
-full-frame timecode master needs a frame rate, a drop-frame flag and a SMPTE offset the engine
-has no model for, so `clock.get_state` reports `mtc: "absent"` and KNOWN-LIMITATIONS says why.
-
-## State
-- [x] worktree + branch + build dir at `501d2cd3e`; configure EXIT=0
-- [x] engine half written (master generator, slave tracker, parser + output switches, Song hook)
-- [ ] engine half COMPILES + committed
-- [ ] command group + A16 rows + histogram + notes figure
-- [ ] MidiClockTest + ControlClockCommands
-- [ ] docs one-liners + manifests + snapshot
-- [ ] acceptance: local-ci, run-all-gates, release-honesty, gates 4/7/8/9/6/10/11
-
-## Next command
 ```
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wpc/build
-cmake . > /tmp/wpc-030-cfg2.log 2>&1; echo CFG=$?
-cmake --build . -j4 > /tmp/wpc-030-build2.log 2>&1; echo BUILD=$?
+| 4 | Phase-locked multitrack edit groups | none yet | **partial** — the group *entity* landed (`include/VcaGroup.h`, `Mixer::createVcaGroup`, `VcaGroupTest`) but there is no `vca.*` group to drive it and the edit-group half is to build; a group can only be created by editing the project file | ladder row for OWNER-31 item 11; audit Table B #4 |
 ```
 
-<!-- A FOURTH lane status page, kept for the same reason as the three
-     above: 030/chain-presets committed a file at this path too. Nothing
-     below is edited. -->
+Replacement:
 
-# LANE STATE — 030-chain-presets (worktree zene-030/wch, branch 030-chain-presets)
+```
+| 4 | Phase-locked multitrack edit groups | `vca.*`, 14 ids: `vca.create`, `vca.remove`, `vca.list`, `vca.get_state`, `vca.rename`, `vca.set_gain`, `vca.set_mute`, `vca.set_solo`, `vca.assign`, `vca.unassign`, `vca.set_phase_lock`, `vca.track_add`, `vca.track_remove`, `vca.edit_move` | **in the tree** — the group entity (`include/VcaGroup.h`, `Mixer::createVcaGroup`, `VcaGroupTest`, task #622) is now driven by a registered group that also carries the EDIT half the row owed: an edit set of tracks by stable `trk-<n>` id and a phase lock (ON by default) under which `vca.edit_move` moves a named clip and every other member's clips that overlap its pre-command span by the SAME delta, so a multitrack take slides as one object and stays sample-aligned (one `control.undo` returns every moved clip). Proof `ControlVcaCommandsTest` + the registered ctest `ControlVcaCommands` (`tests/control-vca-commands.py`), which proves the edit set through a real save/open round trip; the entity half is exercised on a scratch `Mixer` in the same test (`tests/src/core/VcaGroupTest.cpp` is grandfathered at 1022 lines with `FILE_LINE_TOLERANCE=0`, so extending it would regress Gate 7 in the whole-tree scope). Stated limits: **one** media edit is propagated (a clip move — trim, slip, split and fades are not); a track deleted while it is in an edit set stays in it and is reported as `missing_tracks`/`skipped_tracks` until `vca.track_remove`; a clip id is index-derived, so `vca.edit_move`'s inverse is the checkpoint and not a replayed `clip-<n>`; `vca.set_solo`'s undo does not restore the transient `MixerChannel::m_muteBeforeSolo`. UI-absent: no strip, no group menu, no member list, no lock toggle, no Lua binding — the socket and the MCP bridge are the only way in | ladder row for OWNER-31 item 11; audit Table B #4; `docs/VCA-EDIT-GROUPS.md` |
+```
 
-Base: `501d2cd3e` (release/0.3.0). Item: OWNER-31 item 2, "plugin chains as reusable presets".
-HEAD at sign-off: `6a2ec5bc6` (7 commits above the base; all of them committed, tree clean).
+## 6. Files added and modified
 
-## The feature
-An effect chain can be captured as a NAMED preset (the ordered device list plus each device's own
-state document, which is `plugin.state_save`'s document - no second serialiser) and applied to
-another track. The store is the product's user preset tree,
-`<userPresets>/chainpresets/<name>.zcp`, i.e. OUTSIDE the project: that is what makes a preset usable
-in another project, and what makes it survive `project.save` / `project.open` by construction. The
-store is per-user, not per-project, and `docs/KNOWN-LIMITATIONS.md` says so.
+**Added (11)**
 
-Ids (all six headless-safe, no `requires`): `chain.list` · `chain.get_state` · `chain.save` ·
-`chain.apply` · `chain.rename` · `chain.remove`.
-A16: `chain.save` / `chain.apply` / `chain.rename` / `chain.remove` are `true_inverse` (recorded
-ACTION checkpoints; `chain.apply`'s writes the chain's own `<fxchain>` XML back through
-`EffectChain::loadSettings`, the project loader's path, and REFUSES a chain too large for the bounded
-snapshot rather than replacing it without an inverse). `chain.list` / `chain.get_state` are
-`not_mutating`. Table histogram now 170 rows / 90 / 13 / 4 / 63.
-
-## Verified (every number unpiped; logs in /tmp/wch-030-verify/)
-| command | exit |
+| file | what |
 |---|---|
-| `cmake --build build -j2` (reduced config: `-DWANT_QT6=ON -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_WASM=OFF -DWANT_STEM_SPLIT=OFF`) | **0** |
-| `ctest -j2` in `build/tests` (the whole suite, reduced config) | **0** — 123/123 passed |
-| `ctest -R ControlChainPresetTest` | **0** |
-| `ctest -R ControlChainPresets` (the socket proof; by hand too: 28/28 checks) | **0** |
-| `ctest -R ReversibilityContractTest` / `ReversibilityUndoTest` / `ControlRegistryTest` | **0** |
-| `ctest -R ControlCommandsSnapshot` (after regenerating the snapshot) | **0** |
-| `ctest -R agent_surface` (the junk-argument sweep over every registered id) | **0** |
-| `bash tools/local-ci.sh --build-dir build-ci --jobs 2` (CI config: `-DUSE_WERROR=ON -DWANT_VST3=ON -DWANT_CLAP=ON`) | **0** — configure OK, build OK, ctest 100% (0 failed of 129) |
-| the lane's four ctests in `build-ci` (CI config) | **0** each |
-| `bash tests/release-honesty-gate.sh --header build-ci/lmmsversion.h --artifacts build-ci` | **0** (all 6 documented features match) |
-| `bash tests/complexity-gate.sh --check` (gate 4) | **0** |
-| `bash tests/duplication-gate.sh --check` (gate 8) | **0** |
-| `bash tests/fork-sources-gate.sh` (gate 9) | **0** — 366 entries, 0 stale |
-| `bash tests/no-upstream-regression-gate.sh` (gate 6) | **0** |
-| `bash tests/unregistered-tests-gate.sh` | **0** |
-| `bash tests/run-all-gates.sh --no-mutation` | **1** — gates 1/3/4/6/8/9/10 PASS, gates 7 + 11 FAIL, both pre-existing (below); 2 and 5 SKIP |
-| `bash tests/file-length-gate.sh --check` (gate 7) | **1** — `tests/control_socket_harness.py` (511) and `tests/control-socket-path-safety.py` (551→574); both byte-identical to `501d2cd3e` |
-| `bash tests/evidence-gate.sh` | **1** — 27 refused run-logs under `tests/evidence*` / `tests/control-*-logs`; all unchanged since `501d2cd3e`, none in this lane's commits |
-| `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` (REDUCED config) | **1** — the 3 FAILs are `WANT_VST3`/`WANT_CLAP` OFF, i.e. the smallest-tree configuration the brief asks for; the same gate is exit 0 against `build-ci` |
-| `tests/fork-sources.txt` and `tests/all-sources.txt`, each run through its own "Verify it" | prints `REPRODUCES` |
+| `src/core/ControlCommandsVca.cpp` | create/remove/list/get_state/rename + the registration point |
+| `src/core/ControlCommandsVcaMix.cpp` | set_gain/set_mute/set_solo/assign/unassign |
+| `src/core/ControlCommandsVcaEdit.cpp` | edit_move — the phase-locked move |
+| `src/core/ControlCommandsVcaEditSet.cpp` | set_phase_lock/track_add/track_remove — the edit set and the lock switch |
+| `src/core/ControlCommandsVcaShared.h` | the `vca-<n>` rule, `resolveGroup`, `groupState`, the lock's correspondence helpers |
+| `src/core/ControlReversibilityTableVca.cpp` | the group's 12 `true_inverse` rows |
+| `tests/src/core/ControlVcaCommandsTest.cpp` | the registered surface + entity proof |
+| `tests/control-vca-commands.py` | the socket transcript (ctest `ControlVcaCommands`) |
+| `docs/VCA-EDIT-GROUPS.md` | the lane's report |
+| `LANE-STATE.md` | this file |
 
-## What could not be verified here
-- The two pre-existing gate reds (7, 11) are not this lane's to re-anchor; the parent decides.
-- Gate 5 (mutation) was not run (`--no-mutation`); gate 2 (coverage) was not run.
-- The MCP offline snapshot is regenerated for THIS tip (170 ids); the parent must regenerate it once
-  more after the last command-group merge of the wave, from a live instance of the merge tip.
+**Modified (14)**
 
-## Cleanup
-Both build trees (`build/`, `build-ci/`) are deleted, as the brief asks. To rebuild:
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWANT_QT6=ON \
-      -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_WASM=OFF -DWANT_STEM_SPLIT=OFF && cmake --build build -j2
-    # then, for the socket proof by hand:
-    cd build/tests && QT_QPA_PLATFORM=offscreen python3 ../../tests/control-chain-presets.py ../zene
+`include/VcaGroup.h`, `src/core/VcaGroup.cpp`, `src/core/Mixer.cpp`,
+`include/ControlRegistryGroups.h`, `src/core/ControlRegistry.cpp`,
+`include/ControlReversibility.h`, `src/core/ControlReversibilityTable.cpp`,
+`src/core/ControlReversibilityTablePassive.cpp`, `src/core/CMakeLists.txt`,
+`tests/CMakeLists.txt`, `tests/src/core/ReversibilityContractTest.cpp`,
+`tests/fork-sources.txt`, `tests/all-sources.txt`,
+`docs/KNOWN-LIMITATIONS.md`, `docs/RELEASE-NOTES-v0.3.0-alpha.md`.
+
+**Not touched (deliberately):** `tests/src/core/VcaGroupTest.cpp` (§5),
+`tools/mcp-zene-control/zene_control/commands_snapshot.json`,
+`docs/FEATURE-LIST-0.3.0.md`.
+
+## 7. Limits lines written (verbatim, for the parent's cross-check)
+
+`docs/KNOWN-LIMITATIONS.md` — the bullet is still headed "**No VCA groups in the
+interface.**" and now reads "... and since 2026-09-14 the **whole group is
+drivable through `--control-socket`, which is still the only way to reach one:
+nothing in the interface creates a group, names one, assigns a member, locks it
+or edits through it.**" followed by the `vca.*` id list, the edit-half
+description and the three limits (one edit propagated; a deleted track's id
+stays and is reported missing; `m_muteBeforeSolo` not restored), and ends
+"There is still no Lua binding for any of it, and a group's audibility is proved
+by `VcaGroupTest`'s rendered dB delta, not by the socket transcript."
+
+`docs/RELEASE-NOTES-v0.3.0-alpha.md` — the new section "Phase-locked multitrack
+edit groups (`vca.*`, OWNER-31 item 11) — added 2026-09-14" with a "**UI absence
+— one line:**" bullet and a "**Stated limits**" bullet carrying the same four
+limits as `docs/VCA-EDIT-GROUPS.md` §4.
