@@ -109,9 +109,10 @@ QString candidateSetNote()
 		"objectively distinguishable. Every number is a measurement against a NAMED target: EBU "
 		"R 128's published -23 LUFS-I +/- 0.5 LU and -1 dBTP, and a -14 LUFS-I streaming "
 		"CONVENTION with the +/- 1.0 LU tolerance this project chose and states (no service "
-		"publishes one). NOTHING RANKS THESE CANDIDATES and nothing calls one best: no validated "
-		"preference scorer exists for master variants of one song (docs/AUTO-MASTERING.md "
-		"section 8), so the choice is the user's. Mastering them writes files: see mastering.run");
+		"publishes one). NOTHING RANKS THESE CANDIDATES: no candidate is preferred, none is "
+		"called best and no score is attached to any of them - no validated preference scorer "
+		"exists for master variants of one song (docs/AUTO-MASTERING.md section 8), so the "
+		"choice is the user's. Mastering them writes files: see mastering.run");
 }
 
 //! Every output path the last run reported, source render first.

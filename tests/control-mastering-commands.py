@@ -335,12 +335,15 @@ def check_the_capture_bound(session, recorder, outdir):
     os.makedirs(outdir, exist_ok=True)
     with open(held, "wb") as handle:
         handle.truncate(CAPTURE_LIMIT + 4096)
+    planted = wav_names(outdir)
     error = session.typed_error("mastering.run", {"out_dir": outdir})
+    message = error.get("message") or ""
     recorder.check("a directory holding more than the capture bound is REFUSED, typed",
-                   error.get("kind") == "refused" and "64" in (error.get("message") or ""),
+                   error.get("kind") == "refused" and str(CAPTURE_LIMIT) in message,
                    "%r" % error)
     recorder.check("the refusal wrote nothing",
-                   wav_names(outdir) == ("held.wav",), "files=%r" % (wav_names(outdir),))
+                   wav_names(outdir) == planted and "held.wav" in planted,
+                   "before=%r after=%r" % (planted, wav_names(outdir)))
     os.remove(held)
 
 

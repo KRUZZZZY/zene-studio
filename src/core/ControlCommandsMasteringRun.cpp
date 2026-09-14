@@ -280,12 +280,13 @@ ControlResult handleMasteringRun(const QJsonObject& args)
 			"copy of the session; the running instance's audio engine is not touched)"));
 	result.insert(QStringLiteral("render_sample_rate"), MasteringRenderSampleRate);
 	result.insert(QStringLiteral("note"),
-		QStringLiteral("candidate_count files were written into out_dir by ONE project render, and "
-			"every one was measured against its own named target. No candidate is ranked and none "
-			"is called best - see mastering.list_candidates' note. The session is NOT modified: the "
-			"child renders a serialised copy. UNDO takes the files back (the created ones are "
-			"removed, replaced revisions are restored); `mastering.get_state` reads the same report "
-			"back, and its `files` field is hashed live, so an edit made after the run is visible"));
+		QStringLiteral("%1 candidate files were written into out_dir by ONE project render, and "
+			"every one was measured against its own named target. No candidate is preferred and "
+			"none is ranked or called best - see mastering.list_candidates' note. The session is "
+			"NOT modified: the child renders a serialised copy. UNDO takes the files back (the "
+			"created ones are removed, replaced revisions are restored); `mastering.get_state` "
+			"reads the same report back, and its `files` field is hashed live, so an edit made "
+			"after the run is visible").arg(result.value(QStringLiteral("candidate_count")).toInt()));
 	result.insert(QStringLiteral("__transaction"), runInverse(outDir, created, before));
 	return ControlResult::success(result);
 }
