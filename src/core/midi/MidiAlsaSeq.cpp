@@ -858,6 +858,14 @@ void MidiAlsaSeq::updatePortList()
 		m_writablePorts = writablePorts;
 		emit writablePortsChanged();
 	}
+
+	// A controller assignment whose device went away and has come back is
+	// re-established HERE, after the signals above have let every MidiPort drop
+	// or re-select what the changed list no longer holds (0.3.0 feature-list
+	// row 18, OWNER-31 item 7). It runs on every poll, not only on a change, so
+	// the engine's own record of a loss is never older than one second; with no
+	// assignment remembered - or with the mode off - it touches nothing.
+	m_reconnect.reconcile( m_readablePorts, m_writablePorts );
 }
 
 

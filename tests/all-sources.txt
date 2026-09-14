@@ -266,6 +266,7 @@ include/MidiLearnGui.h
 include/MidiOss.h
 include/MidiPort.h
 include/MidiPortMenu.h
+include/MidiReconnect.h
 include/MidiSetupWidget.h
 include/MidiSndio.h
 include/MidiWinMM.h
@@ -936,6 +937,9 @@ src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMidi.cpp
+src/core/ControlCommandsMidiReconnect.cpp
+src/core/ControlCommandsMidiReconnectEdit.cpp
+src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
@@ -985,6 +989,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableMidiReconnect.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
@@ -1168,6 +1173,7 @@ src/core/midi/MidiEventToByteSeq.cpp
 src/core/midi/MidiJack.cpp
 src/core/midi/MidiOss.cpp
 src/core/midi/MidiPort.cpp
+src/core/midi/MidiReconnect.cpp
 src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
@@ -1360,6 +1366,7 @@ tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
+tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp

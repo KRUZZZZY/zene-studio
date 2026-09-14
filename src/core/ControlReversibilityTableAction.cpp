@@ -472,19 +472,22 @@ constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kA
 
 const ReversibilityRow* reversibilityActionRowTable(int* rowCount)
 {
-	// The action half is TWO translation units: this one's rows first, then the
-	// chain-preset group's (ControlReversibilityTableChain.cpp). The chain rows
-	// are recorded-ACTION rows - the class this half is defined by - and they were
-	// split out only because this file crossed the 500-line file-length ratchet
-	// when two lanes' recorded-action rows landed in it at once. The join is here
-	// rather than in reversibilityRowTable() so the ONE row count callers read is
-	// unchanged: ControlReversibilityTable.cpp joins THIS function's result with
-	// the live-checkpoint rows exactly as before.
+	// The action half is THREE translation units: this one's rows first, then the
+	// chain-preset group's (ControlReversibilityTableChain.cpp), then the MIDI
+	// controller auto-reconnection group's (ControlReversibilityTableMidiReconnect.cpp).
+	// Both of the others are recorded-ACTION rows - the class this half is defined
+	// by - and each was split out because this file crossed the 500-line
+	// file-length ratchet when several commands' recorded-action rows landed in it
+	// at once. The join is here rather than in reversibilityRowTable() so the ONE
+	// row count callers read is unchanged: ControlReversibilityTable.cpp joins THIS
+	// function's result with the live-checkpoint rows exactly as before.
 	static const std::vector<ReversibilityRow> joined = [] {
-		int chainCount = 0;
+		int chainCount = 0, midiCount = 0;
 		const ReversibilityRow* chainRows = reversibilityChainRowTable(&chainCount);
+		const ReversibilityRow* midiRows = reversibilityMidiReconnectRowTable(&midiCount);
 		std::vector<ReversibilityRow> all(kActionRows, kActionRows + kActionRowCount);
 		all.insert(all.end(), chainRows, chainRows + chainCount);
+		all.insert(all.end(), midiRows, midiRows + midiCount);
 		return all;
 	}();
 	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }

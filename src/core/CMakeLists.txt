@@ -129,6 +129,8 @@ set(LMMS_SRCS
 	core/ControlCommandsModulatorRoutes.cpp
 	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsMidi.cpp
+	core/ControlCommandsMidiReconnect.cpp
+	core/ControlCommandsMidiReconnectEdit.cpp
 	core/ControlCommandsNotes.cpp
 	core/ControlCommandsPlugin.cpp
 	core/ControlCommandsPluginParams.cpp
@@ -203,6 +205,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTable.cpp
 	core/ControlReversibilityTableAction.cpp
 	core/ControlReversibilityTableChain.cpp
+	core/ControlReversibilityTableMidiReconnect.cpp
 	core/ControlReversibilityTablePassive.cpp
 	core/ControlReversibilityTableSnapshot.cpp
 	core/ControlReversibilityTableTrackFolder.cpp
@@ -380,6 +383,7 @@ set(LMMS_SRCS
 	core/midi/MidiSndio.cpp
 	core/midi/MidiApple.cpp
 	core/midi/MidiPort.cpp
+	core/midi/MidiReconnect.cpp
 	core/midi/MpeExpression.cpp
 	core/midi/MidiWinMM.cpp
 

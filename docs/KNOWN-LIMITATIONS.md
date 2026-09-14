@@ -695,3 +695,22 @@ and a `<dc:rights>` stating they contain no third-party artwork, and all 34 gene
 **The upstream artwork sentence that used to sit here is deleted, not softened** — it read "the plugin logo's
 artwork is currently the upstream artwork, which is CC0-licensed and credited", which was true at the
 release-prep base and is false at this one.
+
+- **MIDI controller auto-reconnection has no interface, and its reach is the client poll — added
+  2026-09-14.** A controller assignment is remembered by IDENTITY (the MIDI client's NAME and the port's
+  NAME, "<client name>:<port name>") and re-established without user action when the device comes back
+  at a new sequencer address, drivable through `--control-socket` (`midi.reconnect_status`,
+  `midi.clients_list`, `midi.reconnect_arm`, `midi.reconnect_set`) with a registered ctest that kills a
+  real external ALSA-sequencer client and starts it again under the same name — but **nothing in
+  `src/gui/` shows, arms or reports a controller re-connection**: MIDI controller auto-reconnection is
+  drivable through the socket, not from the interface. There is no re-connection indicator, no binding
+  list and no mode switch. Three further bounds are stated rather than left to be discovered: the notice
+  is the ALSA-sequencer client's one-second port-inventory poll, so a re-connection is observed within
+  about a second and not at the instant the device returns, and **no other client class in this build
+  declares a notice**, so on the raw/OSS/sndio/dummy clients the loss is recorded and nothing can
+  re-attach automatically (the engine reports this itself, as `notice`: "polled" or "none" — no claim is
+  made here about the JACK/WinMM/CoreMIDI APIs, which this lane did not measure); an assignment is
+  remembered only while it is bound at least once with the device present, so a project naming a port
+  that is absent at load time has no subscription to remember and is not re-attached; and a controller
+  whose driver renames its sequencer client on every replug is a different identity, which is not
+  re-attached.

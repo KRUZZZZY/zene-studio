@@ -29,6 +29,7 @@
 #include "MidiClient.h"
 #include "MidiDummy.h"
 #include "MidiEventProcessor.h"
+#include "MidiReconnect.h"
 #include "Note.h"
 #include "Song.h"
 #include "MidiController.h"
@@ -101,6 +102,10 @@ MidiPort::~MidiPort()
 	// unsubscribe ports
 	m_readableModel.setValue( false );
 	m_writableModel.setValue( false );
+
+	// and forget every assignment this port holds: a destroyed port must not
+	// stay in the client's re-connection memory (0.3.0 row 18).
+	m_midiClient->reconnect().forgetPort( this );
 
 	// and finally unregister ourself
 	m_midiClient->removePort( this );
@@ -303,6 +308,23 @@ void MidiPort::subscribeReadablePort( const QString& port, bool subscribe )
 	}
 
 	m_midiClient->subscribeReadablePort( this, port, subscribe );
+
+	// Remember the assignment by IDENTITY, not by the volatile address the name
+	// carries (0.3.0 feature-list row 18, OWNER-31 item 7). This is the one call
+	// that establishes or removes a controller binding - the project's
+	// loadSettings, the GUI's port menu, and the re-connection itself all come
+	// through here - so it is the one place the memory can be kept in step with
+	// the subscription. An explicit unsubscribe is an explicit forget: a port a
+	// user detached must not be silently re-attached when its device returns.
+	MidiReconnect& memory = m_midiClient->reconnect();
+	if( subscribe )
+	{
+		memory.remember( this, true, port );
+	}
+	else
+	{
+		memory.forget( this, true, port );
+	}
 }
 
 
@@ -318,6 +340,18 @@ void MidiPort::subscribeWritablePort( const QString& port, bool subscribe )
 		m_writableModel.setValue( true );
 	}
 	m_midiClient->subscribeWritablePort( this, port, subscribe );
+
+	// The output direction keeps its own assignment record: the same identity
+	// reasoning applies to a re-plugged output port (0.3.0 row 18).
+	MidiReconnect& memory = m_midiClient->reconnect();
+	if( subscribe )
+	{
+		memory.remember( this, false, port );
+	}
+	else
+	{
+		memory.forget( this, false, port );
+	}
 }
 
 

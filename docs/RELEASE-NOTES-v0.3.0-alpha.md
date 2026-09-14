@@ -387,24 +387,89 @@ that marker is published as-is, and no unverified claim is published without one
  refused typed and the target's chain is left untouched; and the store is a per-user directory, so a
  preset is not carried inside a project file, not shared with one and not versioned with it.
 
+## MIDI controller auto-reconnection (feature-list row 18, OWNER-31 item 7)
+
+- **What it is.** The engine remembers each controller assignment as an **identity** — the MIDI client's
+  NAME and the port's NAME, `"<client name>:<port name>"` — and never as the address in front of them.
+  The address (`"<client>:<port>"`) is handed out when a client opens the ALSA sequencer and is a
+  **different number** when the same device comes back, which is why a project's saved
+  `<midiport inports="…">` names an address that no longer exists after an unplug/replug: the engine
+  used to keep only the selections still present in the client's current port list and dropped the
+  binding for good. With this feature, when the identity reappears at a new address the subscription is
+  re-established **without user action**, and the engine reports what happened.
+- **Where the memory lives, and why there.** The assignment memory is a member of the MIDI client
+  (`MidiReconnect`, `include/MidiReconnect.h`), because the client is the object that owns the port list
+  and is the one that can notice the outside world changing. `MidiPort::subscribeReadablePort` /
+  `subscribeWritablePort` are the **only** calls that establish or remove a binding — a project load, the
+  GUI's port menu and the re-attachment itself all come through them — so that is the one place the
+  memory is kept in step with the subscription, and an explicit unsubscribe is an explicit forget (a
+  port a user detached is never silently re-attached).
+- **The notice, stated per backend.** `MidiAlsaSeq` re-reads the sequencer's client and port inventory
+  once a second and publishes the difference, which is what drives a re-connection; it is the only client
+  class in this build that declares one (`MidiClient::noticesPortChanges()`, overridden only there). The
+  engine reports the running client's own answer as `notice` — `"polled"` for the ALSA-sequencer client,
+  `"none"` for every client class whose changes this build does not consume into the re-connection, in
+  which case the loss is still recorded and **nothing can re-attach automatically**. No claim is made
+  here about the JACK/WinMM/CoreMIDI APIs: what ships is that this build consumes port-list changes from
+  the ALSA-sequencer client and from **no other**, and the command says so itself.
+- **Control surface:** the `midi.*` re-connection group — `midi.reconnect_status`, `midi.clients_list`,
+  `midi.reconnect_arm`, `midi.reconnect_set` — with argument/result schemas and A16 reversibility
+  metadata. Two inspectors, one mode switch (engine state, persisted to the config file's
+  `midi/reconnect` key, nothing for `control.undo` to reverse), and one writer: `midi.reconnect_set`
+  binds (or with `detach: true` removes) one engine MIDI port to one live controller port, by exact
+  `name` or by `identity`, and is `true_inverse` through a **recorded action** — the recorded step goes
+  through the same `MidiPort::subscribeReadablePort` the write uses, so one `control.undo` restores the
+  live subscription **and** the `inports` attribute the project serializes.
+- **Proof:** the registered ctest `MidiReconnectTest` (the engine half: identity parsing ignores the
+  volatile address, a loss is counted once, a re-appearance at a new address re-attaches, a disabled mode
+  records without re-attaching, an explicitly unsubscribed port is not re-attached, two clients sharing a
+  name are reported as ambiguous) and the registered ctest `ControlMidiReconnect`
+  (`tests/control-midi-reconnect.py`), which starts the real binary over `--control-socket` and drives
+  **real MIDI through an external ALSA-sequencer client**: it creates the client, asserts the engine
+  attached to it, **kills it**, creates it again under the same name at a new address, and asserts the
+  engine re-attached and the controller's binding is live again — with the kernel's own subscription
+  table (`aconnect -l`), the engine's report and events delivered **through the restored subscription**
+  as the readings, and a negative control (a second client nothing is bound to) proving the delivery is
+  gated on the binding. Aplaymidi cannot be used for this: it requires `--port` and therefore addresses
+  its destination directly, bypassing subscriptions (measured: exit 1, "Please specify at least one port
+  with --port"), so the external client is the lane's own probe process.
+- **UI absence — one line: MIDI controller auto-reconnection is drivable through the socket, not from the
+  interface.** There is no re-connection indicator, no binding list and no mode switch; nothing in
+  `src/gui/` shows, arms or reports a controller re-connection.
+  `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
+- **Stated limits.** The identity is the client NAME and the port NAME, so a controller whose driver
+  renames its client on every replug is a different identity and is not re-attached; an assignment is
+  remembered only while it is bound at least once while the device is present (a project naming a port
+  that is not there at load time has no subscription to remember); with several live ports sharing one
+  identity the name last matched wins and the ambiguity is reported (`identity_matches`), never guessed
+  silently; and the whole mechanism is bounded by the client's poll, so a re-connection is observed
+  within about a second rather than at the instant the device returns.
+
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **185 rows**, measured from the table itself:
-**99 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 68 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **189 rows**, measured from the table itself:
+**100 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 71 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**183 rows / 66 `not_mutating`** - which is the base
+**187 rows / 69 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the merged tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the merge tip and reports 185 rows over the four
-classes named above (99 + 14 + 4 + 68), and its constant is the telemetry-off/wasm-off base of
-183 / 99 / 14 / 4 / 66. The figures this page carried before this train were lane-local and
+`ReversibilityContractTest` was run against a build of the merge tip and reports 189 rows over the four
+classes named above (100 + 14 + 4 + 71), and its constant is the telemetry-off/wasm-off base of
+187 / 100 / 14 / 4 / 69. The figures this page carried before this train were lane-local and
 incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
 tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
 internally impossible, which is the reason the number on this page is now the merged measurement and
 never a sum of anybody's report.
+The four rows the MIDI controller auto-reconnection merge added (0.3.0 feature-list row 18, OWNER-31
+item 7) are `midi.reconnect_set` as `true_inverse` - a recorded-action step, because the binding set
+is a property of the engine's MIDI port and `MidiPort::loadSettings` only ever SUBSCRIBES the ports a
+restored element names and never detaches one it does not, so a checkpoint of the surrounding Track
+could restore the serialized `inports` attribute without restoring the live subscription - and
+`midi.reconnect_status` / `midi.clients_list` / `midi.reconnect_arm` as `not_mutating` (two
+inspectors and a mode flag) - `+1 true_inverse / +3 not_mutating`.
 The nine rows the folder-tracks merge added are:
 `track.folder_set_collapsed` and `track.set_pinned` are `true_inverse` on a live Track checkpoint (both
 flags are part of the folder's own `<trackfolder>` element and are reset on absence, so the checkpoint

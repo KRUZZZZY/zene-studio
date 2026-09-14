@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{183, 99, 14, 4, 66};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{187, 100, 14, 4, 69};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
@@ -156,7 +156,9 @@ private slots:
 	//! (ZENE_TELEMETRY_ENABLED) and the six `wasm.*` rows - three snapshot, three
 	//! not_mutating - which are present exactly when the wasmtime C API is
 	//! (LMMS_HAVE_WASM, item #614). The release configuration has the client in and
-	//! no wasmtime, so the notes' own figures are its 185 / 99 / 14 / 4 / 68.
+	//! no wasmtime, so the notes' own figures are its 189 / 100 / 14 / 4 / 71 (the
+	//! MIDI controller auto-reconnection group, 0.3.0 feature-list row 18, added
+	//! +1 true_inverse - midi.reconnect_set - and +3 not_mutating).
 	//! The two tests above hold the table to account for COVERAGE (every registered command
 	//! has a row, every row names a registered command) and for behaviour; a row
 	//! added or moved between classes could therefore ship with the notes still
