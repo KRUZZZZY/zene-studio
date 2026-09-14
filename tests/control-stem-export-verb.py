@@ -160,6 +160,45 @@ def check_refusals(session, recorder, outdir):
                    "escaped=%r exists=%r" % (escaped, os.path.exists(escaped)))
 
 
+def has_stem_named(names, name):
+    """Whether the reply lists a stem for the track called \p name."""
+    return any(entry.endswith("_" + name + ".wav") for entry in names)
+
+
+def check_the_selection(recorder, names, tracks, names_wanted):
+    """The export covered the tracks this fixture added.
+
+    The expectation is DERIVED, not assumed: a fresh instance already holds the
+    demo project's tracks, so the export selects more than the two added here.
+    """
+    recorder.check("the export selected the two tracks just added, not a fixed list",
+                   len(names) >= len(tracks),
+                   "listed=%r tracks=%r" % (names, tracks))
+    for name in names_wanted:
+        recorder.check("a stem for the track named %s is among them" % name,
+                       has_stem_named(names, name), "names=%r" % (names,))
+
+
+def check_names_follow_the_contract(recorder, names):
+    recorder.check("every reported name follows the documented contract",
+                   bool(names) and all(STEM_NAME.match(name) for name in names),
+                   "names=%r" % (names,))
+
+
+def file_size(path):
+    return os.path.getsize(path) if os.path.isfile(path) else -1
+
+
+def check_the_files(recorder, wanted, names):
+    recorder.check("the files the reply named are on disk",
+                   all(os.path.isfile(os.path.join(wanted, name)) for name in names),
+                   "dir=%r" % (files_in(wanted),))
+    sizes = [file_size(os.path.join(wanted, name)) for name in names]
+    recorder.check("every stem is a non-empty RIFF/WAVE file, not a stub",
+                   bool(sizes) and all(size > WAV_HEADER_BYTES for size in sizes),
+                   "sizes=%r" % (sizes,))
+
+
 def check_the_export(session, recorder, outdir, tracks, names_wanted):
     wanted = os.path.join(outdir, "stems")
     result, seconds = session.timed("render.stems", {"out": wanted, "format": "wav"})
@@ -168,26 +207,9 @@ def check_the_export(session, recorder, outdir, tracks, names_wanted):
     if "error" in result:
         return wanted, []
     names = result.get("stems") or []
-    # The expectation is DERIVED, not assumed: a fresh instance holds the demo
-    # project's tracks too, so the export selects more than the two added here.
-    # What must hold is that it covered the two just added as well.
-    recorder.check("the export selected the two tracks just added, not a fixed list",
-                   len(names) >= len(tracks),
-                   "listed=%r tracks=%r" % (names, tracks))
-    for name in names_wanted:
-        recorder.check("a stem for the track named %s is among them" % name,
-                       any(entry.endswith("_" + name + ".wav") for entry in names),
-                       "names=%r" % (names,))
-    recorder.check("every reported name follows the documented contract",
-                   bool(names) and all(STEM_NAME.match(name) for name in names),
-                   "names=%r" % (names,))
-    recorder.check("the files the reply named are on disk",
-                   all(os.path.isfile(os.path.join(wanted, name)) for name in names),
-                   "dir=%r" % (files_in(wanted),))
-    sizes = [os.path.getsize(os.path.join(wanted, name)) for name in names]
-    recorder.check("every stem is a non-empty RIFF/WAVE file, not a stub",
-                   bool(sizes) and all(size > WAV_HEADER_BYTES for size in sizes),
-                   "sizes=%r" % (sizes,))
+    check_the_selection(recorder, names, tracks, names_wanted)
+    check_names_follow_the_contract(recorder, names)
+    check_the_files(recorder, wanted, names)
     recorder.check("the reported count and sample rate are the ones measured",
                    result.get("count") == len(names) and result.get("sample_rate") == 44100,
                    "count=%r sample_rate=%r" % (result.get("count"), result.get("sample_rate")))
