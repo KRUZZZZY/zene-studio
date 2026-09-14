@@ -538,9 +538,11 @@ compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with thei
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the merged tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the merge tip and reports 210 rows over the four
-classes named above (116 + 16 + 4 + 74), and its constant is the telemetry-off/wasm-off base of
-208 / 116 / 16 / 4 / 72. The three rows the auto-mastering group added (feature rows 25 and 72,
+`ReversibilityContractTest` was run against a build of the merge tip (`ZENE_TELEMETRY_ENABLED`
+defined, no wasmtime) and reports **213 rows** over the four classes named above (117 + 16 + 4 + 76),
+and its constant is the telemetry-off/wasm-off base of
+211 / 117 / 16 / 4 / 74 (208 / 116 / 16 / 4 / 72 before this group's three rows). The three rows the
+auto-mastering group added (feature rows 25 and 72,
 `mastering.run` / `mastering.list_candidates` / `mastering.get_state`) are `+1 true_inverse /
 +2 not_mutating`, which is the 213 / 117 / 16 / 4 / 76 above and the 211-row base the test carries.
 The figures this page carried before this train were lane-local and
