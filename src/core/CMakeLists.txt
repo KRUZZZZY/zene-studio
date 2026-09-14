@@ -214,6 +214,10 @@ set(LMMS_SRCS
 	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
+	# The registry's COMPOSITION - which command groups exist and in what order -
+	# split out of ControlRegistry.cpp when the vca group and the routing surface
+	# were merged into the same train and pushed it over the file-length ratchet.
+	core/ControlRegistryRegistrations.cpp
 	core/ControlReversibility.cpp
 	# The contract table's three blocks, split by what the inverse IS (a live
 	# checkpoint / a bounded recorded state / nothing): see
