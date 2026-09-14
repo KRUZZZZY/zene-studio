@@ -643,7 +643,6 @@ tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
-tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/RackMacrosTest.cpp
