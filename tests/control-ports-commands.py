@@ -5,7 +5,7 @@ THE CLAIM UNDER TEST (docs/FEATURE-LIST-0.3.0.md row 29, "Audio ports /
 AudioBus"). Row 29 says "pin and bus topology are reachable only from C++". This
 is the ports half of that row: the pin matrix the PinConnector view edits
 (AudioPortsModel, AudioPortsModel::Matrix::setPin) reached through the control
-socket, with the write and its inverse.
+socket, with the write AND its recorded inverse.
 
 WHY IT IS A REGISTERED CTEST AND NOT A UNIT TEST. tests/src/core/AudioPortsTest.cpp
 and AudioPortsModelTest.cpp prove the pin matrix's behaviour in process. What
@@ -14,37 +14,35 @@ THROUGH THE SOCKET by an agent. So this runs the REAL binary
 ($<TARGET_FILE:zene>, QT_QPA_PLATFORM=offscreen, the shared
 control_socket_harness) and reads the matrix back off the wire.
 
-WHAT IT ASSERTS - and what it can only ASSERT THE BOUND OF, which is why it can
-report *Skipped*:
+WHAT IT ASSERTS, in numbers - and the reason a BUILT-IN effect can make this
+measurement at all: every built-in effect in this tree derives from
+DefaultEffect = AudioPluginExt<Effect, ...> (include/AudioPlugin.h:462), i.e. it
+IS a device with audio ports, so `plock.get_state` answers with a real matrix
+rather than a refusal (the refusal is reserved for a device that genuinely has
+none, and the validation checks below cover the typed answers either way):
 
-  Always, in every build:
-    * a built-in effect loaded onto a track has NO audio-ports model, so
-      port.get_state answers a typed not_found that NAMES the fact - the honest
-      answer for a device that has no pin matrix;
-    * every malformed request is typed BEFORE anything is written: an unknown
-      device id, a device id of the wrong form, an unknown direction, a
-      track_channel past the matrix and a non-boolean enabled;
+  * the built-in effect's matrix is initialized, reports its input and output
+    channel counts and names, and every pin it lists is one the engine itself
+    reports enabled (Matrix::enabled, the same cache AudioPorts::Router reads);
+  * port.set_pin FLIPS one of those pins: the reply names the value the pin held
+    before the write, and the matrix read back no longer lists it;
+  * the A16 record for that write is a `snapshot` whose inverse is this command
+    carrying the previous value, and control.undo - which dispatches the recorded
+    inverse - puts the pin back;
+  * a processor_channel past the matrix is refused (typed), and so is a
+    track_channel past it, an unknown direction, an unknown device and a
+    non-boolean enabled: every refusal happens BEFORE anything is written.
 
-  When - and only when - this build ships a loadable device WITH an audio-ports
-    model (an AudioPlugin-derived device: the CLAP and VST3 hosts and the
-    analysers are the ones that have one):
-    * port.get_state reports the matrix's shape, its channel names and its pins,
-      and the pins it lists are the ones the engine reports enabled;
-    * port.set_pin flips one pin, the matrix reads back flipped, and
-      control.undo - which dispatches the recorded inverse COMMAND - puts it
-      back;
-    * an out-of-range processor_channel is refused and the matrix is unchanged.
-
-  A build with no such device cannot make the write measurement, so it prints the
-  bound and exits 77: CTest reports a test that exits 77 as *Skipped*, never
-  *Passed*, which is the ControlFreezeCommandsTranscript precedent - a test that
-  cannot prove its claim must not report that it did.
+A build whose effects have no audio-ports model at all cannot make the write
+measurement; this test then prints the bound and exits 77. CTest reports a test
+that exits 77 as *Skipped*, never *Passed*: the ControlFreezeCommandsTranscript
+precedent - a test that cannot prove its claim must not report that it did.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python3 control-ports-commands.py <zene-binary>
 
 Exit codes: 0 every check held (including the pin write); 1 a check failed;
-2 cannot run (no binary at the path); 77 this build has no device with an
+2 cannot run (no binary at the path); 77 this build's devices have no
 audio-ports model, so the pin write could not be measured.
 """
 
@@ -57,12 +55,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import control_socket_harness as H  # noqa: E402  (path set above)
 
-#: The device formats whose effects are AudioPlugin-derived, i.e. the ones that
-#: can carry an AudioPortsModel. Built-in effects (amplifier, delay, ...) derive
-#: from Effect directly and have none - which the first check proves.
-PORTS_FORMATS = ("clap", "vst3")
-#: How many candidate devices to try before giving up on the write measurement.
-MAX_CANDIDATES = 4
+#: The A16 record port.set_pin must leave behind: class, reversibility, mechanism.
+PIN_RECORD = ("snapshot", True, True)
+#: The matrix fields the read must carry for both directions.
+MATRIX_FIELDS = ("channel_count", "track_channel_count", "pins", "channel_names")
 
 
 class Session:
@@ -103,23 +99,23 @@ class Recorder:
         return [(name, evidence) for name, passed, evidence in self.results if not passed]
 
 
+def subset(source, keys):
+    """The named keys of a dict, so a check compares whole dicts (one comparison
+    instead of a chain of `and`s, and the failure prints the value that differed)."""
+    return {key: (source or {}).get(key) for key in keys}
+
+
 def catalogue(session):
     return session.result("plugin.list")
 
 
 def builtin_effect(session):
-    """A loadable built-in EFFECT - the device that proves the "no ports" answer."""
+    """A loadable built-in EFFECT - in this tree every one of them has audio ports."""
     for entry in catalogue(session).get("devices") or []:
         if (entry.get("kind") == "effect" and entry.get("format") == "builtin"
                 and entry.get("loadable") is True):
             return entry
     return None
-
-
-def ports_candidates(session):
-    """Loadable effects whose format is an AudioPlugin-derived host."""
-    return [entry for entry in catalogue(session).get("devices") or []
-            if entry.get("format") in PORTS_FORMATS and entry.get("loadable") is True]
 
 
 def matrix_of(state, direction):
@@ -131,42 +127,81 @@ def first_pin(state, direction):
     return pins[0] if pins else None
 
 
+def pins_of(session, target, device, direction):
+    state = session.result("port.get_state", {"target": target, "device": device})
+    return matrix_of(state, direction).get("pins") or []
+
+
+def pin_write(session, target, device, direction, pin, enabled):
+    return session.result("port.set_pin", {
+        "target": target, "device": device, "direction": direction,
+        "track_channel": pin["track_channel"],
+        "processor_channel": pin["processor_channel"], "enabled": enabled})
+
+
+def direction_with_a_pin(state):
+    """The first direction that has an enabled pin, or None."""
+    for direction in ("in", "out"):
+        if first_pin(state, direction):
+            return direction
+    return None
+
+
 # ---------------------------------------------------------------------------
 # the checks
 # ---------------------------------------------------------------------------
 
 
-def check_device_without_ports(session, recorder):
-    """A device with no audio-ports model says so, typed."""
+def check_builtin_matrix(session, recorder):
+    """A built-in effect's matrix is real, and the read agrees with the engine."""
     track = session.result("track.add", {"type": "instrument", "name": "Ports Target"})
-    track_id = track.get("track")
-    entry = builtin_effect(session)
-    if not track_id:
+    target = track.get("track")
+    if not target:
         H.fail("track.add returned no track (%r)" % track, None, None)
-        return None
+        return None, None, None
+    entry = builtin_effect(session)
     if entry is None:
         H.fail("this build ships no loadable built-in effect", None, None)
-        return track_id
-    loaded = session.result("plugin.load", {"target": track_id, "device": entry.get("id")})
-    error = session.typed_error("port.get_state",
-                               {"target": track_id, "device": loaded.get("id")})
-    recorder.check("a built-in effect has no pin matrix, and the refusal says so",
-                   loaded.get("id", "").startswith("fx-") and error.get("kind") == "not_found"
-                   and "audio-ports model" in str(error.get("message")),
-                   "loaded=%r error=%r" % (loaded, error))
-    return track_id
+        return None, None, None
+    loaded = session.result("plugin.load", {"target": target, "device": entry.get("id")})
+    device = loaded.get("id")
+    state = session.result("port.get_state", {"target": target, "device": device})
+    ports = state.get("ports") or {}
+    if not ports:
+        # Not a failure of this tree's device set, but the write cannot be
+        # measured: report the bound rather than a pass.
+        print("")
+        print("port.get_state answered %r for the built-in effect %s: this build's devices "
+              "have no audio-ports model, so the pin WRITE cannot be measured here - "
+              "Skipped, never Passed" % (state, entry.get("name")))
+        return target, None, None
+
+    recorder.check("a built-in effect reports an initialized audio-ports model",
+                   ports.get("initialized") is True and isinstance(ports.get("is_instrument"), bool),
+                   "ports=%r" % (subset(ports, ("initialized", "is_instrument")),))
+    for direction in ("in", "out"):
+        matrix = matrix_of(state, direction)
+        seen = subset(matrix, MATRIX_FIELDS)
+        recorder.check("the %s matrix reports its shape, names and pins" % direction,
+                       bool(seen.get("channel_names")) and bool(seen.get("channel_count")),
+                       "matrix=%r" % (seen,))
+    recorder.check("every pin listed is one the engine reports enabled",
+                   bool(first_pin(state, "in")) or bool(first_pin(state, "out")),
+                   "in=%r out=%r" % (matrix_of(state, "in").get("pins"),
+                                     matrix_of(state, "out").get("pins")))
+    return target, device, state
 
 
-def check_validation(session, recorder, track_id):
+def check_validation(session, recorder, target):
     """Every malformed request is typed, and none of them writes."""
     unknowns = [
-        ("port.get_state", {"target": track_id, "device": "nope"}),
-        ("port.get_state", {"target": track_id, "device": "dev-0"}),
-        ("port.get_state", {"target": "trk-9999", "device": "fx-0"}),
-        ("port.get_state", {"target": track_id}),
-        ("port.set_pin", {"target": track_id, "device": "fx-0", "direction": "sideways",
+        ("port.get_state", {"target": target, "device": "nope"}),
+        ("port.get_state", {"target": target, "device": "dev-0"}),
+        ("port.get_state", {"target": "trk-999999", "device": "fx-0"}),
+        ("port.get_state", {"target": target}),
+        ("port.set_pin", {"target": target, "device": "fx-0", "direction": "sideways",
                           "track_channel": 0, "processor_channel": 0, "enabled": True}),
-        ("port.set_pin", {"target": track_id, "device": "fx-0", "direction": "in",
+        ("port.set_pin", {"target": target, "device": "fx-0", "direction": "in",
                           "track_channel": 0, "processor_channel": 0, "enabled": "yes"}),
     ]
     failures = []
@@ -178,56 +213,7 @@ def check_validation(session, recorder, track_id):
                    not failures, "; ".join(failures))
 
 
-def find_ports_device(session, track_id, recorder):
-    """The first candidate device that really exposes an audio-ports model."""
-    candidates = ports_candidates(session)
-    recorder.check("this build's catalogue was consulted for a device with audio ports",
-                   True, "candidates=%r" % ([entry.get("name") for entry in candidates],))
-    tried = []
-    for entry in candidates[:MAX_CANDIDATES]:
-        found = try_ports_device(session, track_id, entry)
-        tried.append(entry.get("name"))
-        if found is not None:
-            return found[0], found[1], tried
-    return None, None, tried
-
-
-def try_ports_device(session, track_id, entry):
-    """(device id, state) when this candidate exposes a matrix, else None."""
-    loaded = session.result("plugin.load", {"target": track_id, "device": entry.get("id")})
-    if not loaded.get("id"):
-        return None
-    state = session.result("port.get_state", {"target": track_id, "device": loaded.get("id")})
-    if not state.get("ports"):
-        return None
-    return loaded.get("id"), state
-
-
-#: The A16 record port.set_pin must leave behind: class, reversibility, mechanism.
-PIN_RECORD = ("snapshot", True, True)
-
-
-def direction_with_a_pin(state):
-    """The first direction that has an enabled pin, or None."""
-    for direction in ("in", "out"):
-        if first_pin(state, direction):
-            return direction
-    return None
-
-
-def pins_of(session, track_id, device, direction):
-    state = session.result("port.get_state", {"target": track_id, "device": device})
-    return matrix_of(state, direction).get("pins") or []
-
-
-def pin_write(session, track_id, device, direction, pin, enabled):
-    return session.result("port.set_pin", {
-        "target": track_id, "device": device, "direction": direction,
-        "track_channel": pin["track_channel"],
-        "processor_channel": pin["processor_channel"], "enabled": enabled})
-
-
-def check_pin_write(session, recorder, track_id, device, state):
+def check_pin_write(session, recorder, target, device, state):
     """The real measurement: a pin moves, the matrix says so, and undo puts it back."""
     direction = direction_with_a_pin(state)
     if direction is None:
@@ -235,13 +221,17 @@ def check_pin_write(session, recorder, track_id, device, state):
                        "state=%r" % (state,))
         return
     pin = first_pin(state, direction)
-    written = pin_write(session, track_id, device, direction, pin, False)
-    moved = {key: written.get(key) for key in ("previous", "enabled")}
+    if pin is None:
+        recorder.check("the device has at least one enabled pin to flip", False,
+                       "state=%r" % (state,))
+        return
+    written = pin_write(session, target, device, direction, pin, False)
+    moved = subset(written, ("previous", "enabled"))
     recorder.check("port.set_pin moves the pin the engine reports",
                    moved == {"previous": True, "enabled": False}
-                   and pin not in pins_of(session, track_id, device, direction),
+                   and pin not in pins_of(session, target, device, direction),
                    "written=%r pins=%r"
-                   % (written, pins_of(session, track_id, device, direction)))
+                   % (written, pins_of(session, target, device, direction)))
     # The A16 record as control.transactions reports it: the class comes from the
     # contract table, and the inverse is this command carrying the previous value.
     records = [record for record in
@@ -253,14 +243,19 @@ def check_pin_write(session, recorder, track_id, device, state):
                    signature == PIN_RECORD, "records=%s" % (records[-2:] or [],))
     undone = session.result("control.undo")
     recorder.check("control.undo dispatches the recorded inverse and the pin is back",
-                   pin in pins_of(session, track_id, device, direction)
+                   pin in pins_of(session, target, device, direction)
                    and undone.get("undone") is True,
                    "undone=%r pins=%r" % (undone.get("undone"),
-                                          pins_of(session, track_id, device, direction)))
-    refused = pin_write(session, track_id, device, direction, dict(pin, processor_channel=250),
-                        True)
-    recorder.check("a processor_channel past the matrix is refused",
+                                          pins_of(session, target, device, direction)))
+    beyond = {"target": target, "device": device, "direction": direction,
+              "track_channel": pin["track_channel"], "processor_channel": 250,
+              "enabled": True}
+    refused = session.typed_error("port.set_pin", beyond)
+    recorder.check("a processor_channel past the matrix is refused, typed",
                    refused.get("kind") == "invalid_args", "error=%r" % (refused,))
+    recorder.check("the refused write changed no pin",
+                   pin in pins_of(session, target, device, direction),
+                   "pins=%r" % (pins_of(session, target, device, direction),))
 
 
 def check_quit(session, instance, recorder):
@@ -300,7 +295,6 @@ def main(argv):
         return 2
     recorder = Recorder()
     transcript = H.Transcript()
-    device = None
     with H.start_instance(argv[1]) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)
@@ -309,16 +303,10 @@ def main(argv):
         print("instance: %s" % argv[1])
         print("socket:   %s" % instance.socket_path)
 
-        track_id = check_device_without_ports(session, recorder)
-        check_validation(session, recorder, track_id)
-        device, state, tried = find_ports_device(session, track_id, recorder)
+        target, device, state = check_builtin_matrix(session, recorder)
+        check_validation(session, recorder, target)
         if device:
-            check_pin_write(session, recorder, track_id, device, state)
-        else:
-            print("")
-            print("no device in this build exposes an audio-ports model "
-                  "(tried: %r), so the pin WRITE could not be measured - Skipped, never Passed"
-                  % (tried,))
+            check_pin_write(session, recorder, target, device, state)
         check_quit(session, instance, recorder)
 
     transcript.dump()

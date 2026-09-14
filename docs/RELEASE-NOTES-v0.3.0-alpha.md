@@ -411,15 +411,24 @@ that marker is published as-is, and no unverified claim is published without one
   sends alone is refused outright by `Mixer::createSidechainSend`.
 - **The routing graph is an inspector, and this is the honest half of row 28.** `routing.get_state` reports
   the graph a target's signal is actually processed through — the `RoutingGraph`'s nodes with the engine's own
-  type names (`chain_input`, `effect`, `constant`, `onepole_lowpass`, `gain`, `sink`), their arity, the
-  connections, the cached topological processing order the audio thread walks, the output node, whether the
-  chain renders through the graph at all (`EffectChain::routesThroughGraph`), and, for a mixer channel, its
-  rack's graph (`Rack::routingGraph`). **No command edits a graph**, and that is a recorded decision rather
-  than a gap left open: `include/RoutingGraph.h`'s threading contract says topology edits must not run
-  concurrently with `process()` and names the atomic plan swap it deliberately does not implement, and a
-  chain's graph is derived — `EffectChain::rebuildRoutingGraph()` re-wires it from the effect list on every
-  change, so a hand-wired edge would be discarded by the next `plugin.load`. The patcher GUI is out of scope
-  for this release, exactly as row 28 records.
+  type names (`chain_input`, `rack_chain`, `rack_sum`, `effect`, `constant`, `onepole_lowpass`, `gain`,
+  `sink`), their arity, the connections, the cached topological processing order the audio thread walks, the
+  output node, whether the chain renders through the graph at all (`EffectChain::routesThroughGraph`), and,
+  for a mixer channel, its rack's graph (`Rack::routingGraph`). **No command edits a graph**, and that is a
+  recorded decision rather than a gap left open: `include/RoutingGraph.h`'s threading contract says topology
+  edits must not run concurrently with `process()` and names the atomic plan swap it deliberately does not
+  implement, and a chain's graph is derived — `EffectChain::rebuildRoutingGraph()` re-wires it from the effect
+  list on every change, so a hand-wired edge would be discarded by the next `plugin.load`. **The measured
+  scope of the read, stated because it is narrower than "the routing graph" sounds:** a chain whose devices
+  HAVE audio-ports models keeps the plain effect loop — `EffectChain::rebuildRoutingGraph()` returns early
+  for exactly that (`src/core/EffectChain.cpp:89`) — and every built-in device in this tree is
+  `AudioPlugin`-derived (`DefaultEffect`, `include/AudioPlugin.h:462`), so a track's or a channel's **chain**
+  graph is normally empty with `routes_through_graph: false`. The graph with **live, prepared nodes** that
+  this release can measure is the **rack's**, and `tests/control-routing-commands.py` measures it: two added
+  chains are five nodes (input, sum, one per chain), six connections, output node 1, a prepared block of the
+  audio engine's own frame count, and a topological order that puts the sum node last; removing one chain
+  re-wires it to four nodes and removing the other (one chain left is not a rack) leaves it unwired. The
+  patcher GUI is out of scope for this release, exactly as row 28 records.
 - **Buses are topology state with the engine's own semantics.** `bus.create` makes a parallel bus
   (`Mixer::createBusChannel`), `bus.list` reports every bus with its fader, sends and PDC numbers, and
   `bus.remove` deletes one — refusing a channel that is not a bus and naming `mixer.remove_channel` for it. A

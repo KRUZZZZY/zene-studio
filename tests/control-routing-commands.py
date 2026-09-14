@@ -125,7 +125,13 @@ def send_to(channel, dest):
 
 
 def graph_of(state):
+    """The CHAIN's graph (a track's or a channel's own effect chain)."""
     return (state.get("chain") or {}).get("graph") or {}
+
+
+def rack_graph_of(state):
+    """The RACK's graph - a different graph, and the one with live nodes."""
+    return (state.get("rack") or {}).get("graph") or {}
 
 
 # ---------------------------------------------------------------------------
@@ -133,19 +139,16 @@ def graph_of(state):
 # ---------------------------------------------------------------------------
 
 
-#: The graph a chain of ONE effect must report: two nodes (the chain input and
-#: the effect), one connection 0 -> 1, and the order the audio thread walks.
-ONE_EFFECT_GRAPH = {
-    "node_count": 2,
-    "connection_count": 1,
-    "connections": [{"from": 0, "from_port": 0, "to": 1, "to_port": 0}],
-    "processing_order": [0, 1],
-    "output_node": 1,
-}
-#: ... and the chain-level answers that go with it.
-ONE_EFFECT_CHAIN = {"effect_count": 1, "routes_through_graph": True}
+#: The graph fields a comparison reads; the values are asserted per case below.
+GRAPH_FIELDS = ("node_count", "connection_count", "output_node", "processing_order")
 #: An empty chain: no nodes at all, and no output node (-1).
-EMPTY_CHAIN = {"kind": "track", "effect_count": 0, "node_count": 0, "output_node": -1}
+EMPTY_CHAIN = {"kind": "track", "rack": None, "effect_count": 0, "node_count": 0,
+               "output_node": -1}
+#: A rack after TWO `rack.add_chain` calls. Chain 0 is the rack's own base chain
+#: (Rack::chainCount() counts it), so three chains are routed in parallel: one
+#: input node, one sum node, one chain node each, and two connections per chain
+#: (input -> chain, chain -> sum). The sum node is id 1 and is the output node.
+TWO_ADDED_CHAINS_RACK = {"node_count": 5, "connection_count": 6, "output_node": 1}
 
 
 def subset(source, keys):
@@ -164,48 +167,76 @@ def load_effects(session, track_id, effects, count):
     return loaded
 
 
-def check_chain_graph(session, catalogue, recorder):
-    """The graph the chain renders through follows the effect list, measurably."""
+def check_empty_chain(session, recorder):
+    """A track target reports itself, and a chain with no effects has no graph."""
     track = session.result("track.add", {"type": "instrument", "name": "Routing Target"})
     track_id = track.get("track")
     if not track_id:
         H.fail("track.add returned no track id (%r)" % track, None, None)
-        return
-
+        return None
     empty = session.result("routing.get_state", {"target": track_id})
-    empty_seen = subset(empty, ("kind", "rack"))
-    empty_seen["effect_count"] = (empty.get("chain") or {}).get("effect_count")
-    empty_seen.update(subset(graph_of(empty), ("node_count", "output_node")))
+    seen = subset(empty, ("kind", "rack"))
+    seen["effect_count"] = (empty.get("chain") or {}).get("effect_count")
+    seen.update(subset(graph_of(empty), ("node_count", "output_node")))
     recorder.check("a track target reports itself and an empty chain graph",
-                   empty_seen == EMPTY_CHAIN, "empty_seen=%r" % (empty_seen,))
+                   seen == EMPTY_CHAIN, "seen=%r" % (seen,))
+    return track_id
 
+
+def check_chain_fallback(session, catalogue, recorder, track_id):
+    """The engine's own rule, measured: a chain whose devices HAVE audio ports
+    does not route through its graph (EffectChain::rebuildRoutingGraph returns
+    early for exactly that, src/core/EffectChain.cpp:89) - and every built-in
+    effect in this tree is AudioPlugin-derived (DefaultEffect, include/
+    AudioPlugin.h:462), so a chain of them keeps the plain effect loop."""
+    if track_id is None:
+        return
     effects = loadable_effects(catalogue)
-    recorder.check("this build offers a loadable built-in effect to route",
-                   bool(effects), "effects=%r" % (effects[:3],))
+    recorder.check("this build offers a loadable built-in effect", bool(effects),
+                   "effects=%r" % (effects[:3],))
     if not effects:
         return
-
-    recorder.check("the effects were loaded onto the track",
-                   len(load_effects(session, track_id, effects, 1)) == 1,
-                   "effects=%r" % (effects[:1],))
+    loaded = load_effects(session, track_id, effects, 1)
+    recorder.check("the effect was loaded onto the track", len(loaded) == 1,
+                   "loaded=%r" % (loaded,))
     one = session.result("routing.get_state", {"target": track_id})
+    chain = one.get("chain") or {}
     graph = graph_of(one)
-    recorder.check("one loaded effect is a two-node graph, wired input -> effect",
-                   subset(graph, ONE_EFFECT_GRAPH) == ONE_EFFECT_GRAPH
-                   and subset(one.get("chain"), ONE_EFFECT_CHAIN) == ONE_EFFECT_CHAIN,
-                   "graph=%r chain=%r" % (graph, one.get("chain")))
-    recorder.check("the loaded nodes carry the engine's own type names",
-                   [node.get("type") for node in graph.get("nodes") or []]
-                   == ["chain_input", "effect"],
-                   "nodes=%r" % (graph.get("nodes"),))
+    recorder.check("a chain of port-routing devices keeps the plain loop",
+                   subset(chain, ("effect_count", "routes_through_graph"))
+                   == {"effect_count": 1, "routes_through_graph": False}
+                   and graph.get("node_count") == 0,
+                   "chain=%r graph=%r" % (chain, graph))
+    recorder.check("the same device DOES have an audio-ports model (why the graph is empty)",
+                   bool(session.result("port.get_state",
+                                       {"target": track_id,
+                                        "device": loaded[0]}).get("ports")),
+                   "loaded=%r" % (loaded,))
+
+
+def check_rack_graph_nodes(graph, recorder):
+    """The rack graph's node set and its topological order, as measured."""
+    types = sorted(node.get("type") for node in graph.get("nodes") or [])
+    recorder.check("the rack graph holds its input, sum and per-chain nodes",
+                   types == ["chain_input", "rack_chain", "rack_chain", "rack_chain", "rack_sum"],
+                   "types=%r" % (types,))
+    order = graph.get("processing_order") or []
+    recorder.check("the cached order is a topological order over every node",
+                   sorted(order) == [0, 1, 2, 3, 4] and order[-1] == 1,
+                   "order=%r" % (order,))
+    recorder.check("the graph is prepared and reports the audio engine's block size",
+                   graph.get("prepared") is True and graph.get("frames") > 0,
+                   "prepared=%r frames=%r" % (graph.get("prepared"), graph.get("frames")))
 
 
 def check_rack_graph(session, recorder):
-    """A mixer channel has a rack object with its own graph; a track has none."""
+    """The rack's graph is the LIVE non-empty RoutingGraph in this tree, and it is
+    measured here: two chains make one node each, wired from the rack input into
+    one sum node that is the graph's output."""
     added = session.result("mixer.add_channel", {}).get("channel")
     if not added:
         recorder.check("a mixer channel was added", False, "mixer.add_channel returned no id")
-        return
+        return None
     state = session.result("routing.get_state", {"target": added})
     rack = state.get("rack") or {}
     recorder.check("a mixer channel reports its rack and that rack's graph",
@@ -216,7 +247,27 @@ def check_rack_graph(session, recorder):
     recorder.check("a channel's chain is the channel's own effect chain",
                    (state.get("chain") or {}).get("effect_count") == 0,
                    "chain=%r" % (state.get("chain"),))
-    session.result("mixer.remove_channel", {"channel": added})
+    recorder.check("a rack with one chain is not a rack: it wires no graph",
+                   rack_graph_of(state).get("node_count") == 0,
+                   "graph=%r" % (rack_graph_of(state),))
+
+    return check_two_added_chains(session, recorder, added)
+
+
+def check_two_added_chains(session, recorder, added):
+    """Two added chains, and what the rack's graph looks like afterwards."""
+    for _ in range(2):
+        session.result("rack.add_chain", {"channel": added})
+    state = session.result("routing.get_state", {"target": added})
+    rack = state.get("rack") or {}
+    graph = rack_graph_of(state)
+    recorder.check("two added rack chains build a real graph the audio thread walks",
+                   subset(graph, TWO_ADDED_CHAINS_RACK) == TWO_ADDED_CHAINS_RACK,
+                   "graph=%r" % (graph,))
+    recorder.check("every chain is routed in parallel mode",
+                   list(rack.get("routed_chains") or []) == [0, 1, 2], "rack=%r" % (rack,))
+    check_rack_graph_nodes(graph, recorder)
+    return added
 
 
 def check_route_and_send(session, recorder):
@@ -350,6 +401,23 @@ def check_feedback_refusal(session, recorder, ends):
     session.result("control.undo")
 
 
+def check_rack_graph_removal(session, recorder, added):
+    """Removing chains rewires the graph, and the last removal leaves no rack."""
+    if added is None:
+        return
+    session.result("rack.remove_chain", {"channel": added, "chain": 1})
+    rewired = rack_graph_of(session.result("routing.get_state", {"target": added}))
+    recorder.check("removing one chain takes its node off the graph",
+                   subset(rewired, ("node_count", "connection_count")) ==
+                   {"node_count": 4, "connection_count": 4},
+                   "graph=%r" % (subset(rewired, ("node_count", "connection_count")),))
+    session.result("rack.remove_chain", {"channel": added, "chain": 1})
+    empty = rack_graph_of(session.result("routing.get_state", {"target": added}))
+    recorder.check("one chain left is not a rack: the graph is unwired again",
+                   empty.get("node_count") == 0, "graph=%r" % (empty,))
+    session.result("mixer.remove_channel", {"channel": added})
+
+
 def load_catalogue(session):
     catalogues = session.result("plugin.list")
     if catalogues.get("devices"):
@@ -402,8 +470,10 @@ def main(argv):
         print("instance: %s" % argv[1])
         print("socket:   %s" % instance.socket_path)
 
-        check_chain_graph(session, load_catalogue(session), recorder)
-        check_rack_graph(session, recorder)
+        track_id = check_empty_chain(session, recorder)
+        check_chain_fallback(session, load_catalogue(session), recorder, track_id)
+        added = check_rack_graph(session, recorder)
+        check_rack_graph_removal(session, recorder, added)
         ends = check_route_and_send(session, recorder)
         check_bus_prefader_rule(session, recorder, ends)
         check_route_remove_and_undo(session, recorder, ends)

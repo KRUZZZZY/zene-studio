@@ -199,7 +199,12 @@ ControlResult handleRoutingGetState(const QJsonObject& args)
 			"same from the rack's chain list and its selection. No command edits either graph - the "
 			"engine's threading contract forbids live topology edits (include/RoutingGraph.h) - so "
 			"change the EFFECT LIST (plugin.load / plugin.unload / chain.set_selector) and read the "
-			"resulting route here"));
+			"resulting route here. MEASURED LIMIT: a chain whose devices HAVE audio-ports models "
+			"keeps the plain effect loop - EffectChain::rebuildRoutingGraph returns early for it "
+			"(src/core/EffectChain.cpp:89) - and every built-in device in this tree is "
+			"AudioPlugin-derived (DefaultEffect, include/AudioPlugin.h:462), so a chain's graph is "
+			"normally empty and routes_through_graph false; the graph with live nodes here is the "
+			"RACK's, and tests/control-routing-commands.py measures it"));
 	return ControlResult::success(result);
 }
 

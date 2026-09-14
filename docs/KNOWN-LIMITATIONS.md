@@ -626,7 +626,15 @@ that is this page's fault — report it and it gets added.
   concurrently with `process()`, and the atomic plan swap that would make live edits safe is deliberately not
   implemented (see `PATCHER-MVP.md`); on top of that a chain's graph is DERIVED — `EffectChain::
   rebuildRoutingGraph()` clears and re-wires it from the effect list on every change, so a hand-wired edge
-  would be discarded by the next `plugin.load` / `plugin.unload`. The patcher GUI is out of scope for this
+  would be discarded by the next `plugin.load` / `plugin.unload`. **The read is narrower than the name
+  sounds, and this is measured rather than estimated:** a chain whose devices HAVE audio-ports models keeps
+  the plain effect loop (`EffectChain::rebuildRoutingGraph` returns early for it,
+  `src/core/EffectChain.cpp:89`), and every built-in device in this tree is `AudioPlugin`-derived
+  (`DefaultEffect`, `include/AudioPlugin.h:462`), so a track's or a channel's chain graph is normally EMPTY
+  with `routes_through_graph: false`; the graph with live prepared nodes is the **rack's**, which
+  `routing.get_state` also reports and `tests/control-routing-commands.py` measures (two added chains = five
+  nodes, six connections, the sum node as the output node, prepared at the engine's own block size). The
+  patcher GUI is out of scope for this
   release, exactly as feature row 28 records.
 - **Buses are topology only, and `bus.remove` is not undoable — added 2026-09-14.** A parallel bus
   (`Mixer::createBusChannel`: a mixer channel that never receives instrument output and whose incoming sends
