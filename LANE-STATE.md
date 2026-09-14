@@ -18,11 +18,16 @@
   the group's own `<vcagroup>` element, read by id with `locked` defaulting to 1.
 * **The `vca.*` command group, 14 ids** — `src/core/ControlCommandsVca.cpp`
   (create/remove/list/get_state/rename), `ControlCommandsVcaMix.cpp`
-  (set_gain/set_mute/set_solo/assign/unassign), `ControlCommandsVcaEdit.cpp`
-  (set_phase_lock/track_add/track_remove/edit_move), with the shared resolver,
-  the `vca-<n>` id formatter and the phase-lock correspondence rule in
+  (set_gain/set_mute/set_solo/assign/unassign), `ControlCommandsVcaEditSet.cpp`
+  (set_phase_lock/track_add/track_remove) and `ControlCommandsVcaEdit.cpp`
+  (edit_move — the phase-locked move itself), with the shared resolver, the
+  `vca-<n>` id formatter and the phase-lock helpers in
   `ControlCommandsVcaShared.h`. Registered by `registerVcaCommands` in
   `src/core/ControlRegistry.cpp`; declared in `include/ControlRegistryGroups.h`.
+  Four translation units, not three: `ControlCommandsVcaEdit.cpp` reached 521
+  lines once the move and the edit set were written together and Gate 7 refused
+  it on the first measured run, so the file was split along the seam that
+  already existed (a MOVE — every handler is byte-identical).
 * **A16 rows** — 12 `true_inverse` rows in `src/core/ControlReversibilityTableVca.cpp`
   (joined into `reversibilityRowTable()`; declaration in
   `include/ControlReversibility.h`) and the 2 `not_mutating` rows in
@@ -47,31 +52,61 @@
 
 ## 2. What is red, with the exact command and exit code
 
-_To be filled in from the measured runs (see §4)._
+Only ONE thing is red, and it is the collected red this lane was told to expect:
+
+```bash
+cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R ControlCommandsSnapshot --output-on-failure
+# 1/1 Test #143: ControlCommandsSnapshot ..........***Failed    2.88 sec
+# FAIL: the committed snapshot and the built binary do not agree (1 finding(s),
+#       14 drifted command id(s)).
+# exit 8
+```
+
+The 14 drifted ids ARE this group (`vca.create` … `vca.edit_move`). The committed
+offline snapshot is regenerated **once, at merge time, from a live instance of
+the merge tip** — this lane is explicitly forbidden to regenerate or hand-edit
+`tools/mcp-zene-control/zene_control/commands_snapshot.json`, so this red is
+expected and is collected, not fixed. It is the only red in the whole suite:
+
+```bash
+cd build/tests && QT_QPA_PLATFORM=offscreen ctest -j2
+# ctest totals: 99% tests passed, 1 tests failed out of 143
+# The following tests FAILED: 143 - ControlCommandsSnapshot
+# exit 8
+```
+
+`bash tools/local-ci.sh --build-dir build --jobs 2` therefore reports
+`build EXIT=0` and `local-ci: overall exit=1` (its ctest step is the run above).
 
 ## 3. The next exact command
 
 ```bash
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wvca
-bash tools/local-ci.sh --build-dir build --jobs 2     # configure+build+ctest
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wvca/build/tests
+QT_QPA_PLATFORM=offscreen ctest -R 'ControlVcaCommands|ControlVcaEditGroups' --output-on-failure
 ```
+
+then, for the merge itself (the parent's step, not this lane's):
+regenerate `commands_snapshot.json` from a live instance of the merge tip and
+re-run `ControlCommandsSnapshot`.
 
 ## 4. The remaining acceptance list (unpiped exit codes, logged in the run dir)
 
 | # | command | result |
 |---|---|---|
-| 1 | `bash tools/local-ci.sh --build-dir build --jobs 2` | _pending_ |
-| 2 | `cd build/tests && ctest -R 'ControlVcaCommands\|VcaGroupTest\|ReversibilityContract'` | _pending_ |
-| 3 | `cd build/tests && ctest -R ControlCommandsSnapshot` (drift; red expected while unmerged) | _pending_ |
-| 4 | `bash tests/run-all-gates.sh` | _pending_ |
-| 5 | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | _pending_ |
-| 6 | `bash tests/complexity-gate.sh --check` | _pending_ |
-| 7 | `bash tests/file-length-gate.sh --check` | _pending_ |
-| 8 | `bash tests/duplication-gate.sh` | _pending_ |
-| 9 | `bash tests/fork-sources-gate.sh` | **exit 0** (PASS: 397 fork-NEW / 1058 inherited / 34 tooling) |
-| 10 | `bash tests/no-upstream-regression-gate.sh` | _pending_ |
-| 11 | `bash tests/unregistered-tests-gate.sh` | _pending_ |
-| 12 | `bash tests/evidence-gate.sh` | _pending_ |
+| 1 | `bash tools/local-ci.sh --build-dir build --jobs 2` | configure **EXIT 0**, build **EXIT 0**, ctest **99% / 1 failed** (snapshot drift only) → overall exit 1 |
+| 2 | `ctest -R 'ControlVcaCommands\|ControlVcaEditGroups\|VcaGroupTest\|ReversibilityContract\|ReversibilityUndo\|ControlRegistryTest'` | **EXIT 0** — all six PASS (the transcript among them, 48 checks) |
+| 3 | `ctest -R ControlCommandsSnapshot` | **EXIT 8** — 14 drifted ids, expected while unmerged (§2) |
+| 4 | `bash tests/run-all-gates.sh` | **EXIT 1** — gates 3/4/5/6/7/8/9/10/11 **PASS**, gate 2 (coverage) SKIP (not run without `--with-coverage`), and gate 1 (ctest) FAIL on the ONE expected red: `99% tests passed, 1 tests failed out of 143` → `143 - ControlCommandsSnapshot`. So the exit 1 is entirely the merge-time snapshot drift of §2 and nothing else; it is NOT pre-existing (it is this group's 14 ids) and it is not fixable in this lane by design |
+| 5 | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | **EXIT 0** — "RESULT: PASS — all 6 documented feature(s) match this build on linux" |
+| 6 | `bash tests/complexity-gate.sh --check` | **EXIT 0** — PASS (after the `check_ids` split; CCN 12 → under target) |
+| 7 | `bash tests/file-length-gate.sh --check` | **EXIT 0** — PASS (after the `ControlCommandsVcaEdit.cpp` and test-file splits) |
+| 8 | `bash tests/duplication-gate.sh` | **EXIT 0** — PASS, duplicated lines 2.00% (budget 5%) |
+| 9 | `bash tests/fork-sources-gate.sh` | **EXIT 0** — PASS (398 fork-NEW / 1060 inherited / 34 tooling; 0 stale) |
+| 10 | `bash tests/no-upstream-regression-gate.sh` | **EXIT 0** — PASS (409 changed paths declared) |
+| 11 | `bash tests/unregistered-tests-gate.sh` | **EXIT 0** — PASS (127 sources: 125 registered, 2 declared-not-built) |
+| 12 | `bash tests/evidence-gate.sh` | **EXIT 0** — PASS (6264 files scanned, 0 refused) |
+| 13 | `diff <(grep -vE '^[[:space:]]*(#\|$)' tests/all-sources.txt) <(git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \| grep -vE '^(src/3rdparty/\|tests/reference/\|plugins/NeuralAmp/(rtneural\|nam\|tests)/\|plugins/RnnoiseDenoiser/rnnoise/)' \| LC_ALL=C sort)` | **EXIT 0**, empty — REPRODUCES |
+| 14 | `tests/fork-sources.txt`'s own "Verify it" command | **REPRODUCES** (extracted from the file and run by `fork_verify.py`) |
 
 ## 5. The exact replacement text for row 4 of `docs/FEATURE-LIST-0.3.0.md`
 
@@ -99,7 +134,8 @@ Replacement:
 |---|---|
 | `src/core/ControlCommandsVca.cpp` | create/remove/list/get_state/rename + the registration point |
 | `src/core/ControlCommandsVcaMix.cpp` | set_gain/set_mute/set_solo/assign/unassign |
-| `src/core/ControlCommandsVcaEdit.cpp` | set_phase_lock/track_add/track_remove/edit_move |
+| `src/core/ControlCommandsVcaEdit.cpp` | edit_move — the phase-locked move |
+| `src/core/ControlCommandsVcaEditSet.cpp` | set_phase_lock/track_add/track_remove — the edit set and the lock switch |
 | `src/core/ControlCommandsVcaShared.h` | the `vca-<n>` rule, `resolveGroup`, `groupState`, the lock's correspondence helpers |
 | `src/core/ControlReversibilityTableVca.cpp` | the group's 12 `true_inverse` rows |
 | `tests/src/core/ControlVcaCommandsTest.cpp` | the registered surface + entity proof |
