@@ -113,6 +113,7 @@ include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlGrooveSupport.h
 include/ControlLayout.h
+include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlRackSupport.h
 include/ControlRecordingSupport.h
@@ -920,6 +921,7 @@ src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
+src/core/ControlCommandsBus.cpp
 src/core/ControlCommandsChain.cpp
 src/core/ControlCommandsChainEdit.cpp
 src/core/ControlCommandsClip.cpp
@@ -937,14 +939,17 @@ src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginParams.cpp
 src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginState.cpp
+src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectFiles.cpp
 src/core/ControlCommandsPunch.cpp
@@ -953,6 +958,7 @@ src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
+src/core/ControlCommandsRouting.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
@@ -982,6 +988,7 @@ src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
 src/core/ControlGrooveSupport.cpp
+src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
@@ -991,6 +998,7 @@ src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTablePassive.cpp
+src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp

@@ -123,6 +123,16 @@ set(LMMS_SRCS
 	core/ControlCompSupport.cpp
 	core/ControlCommandsDsp.cpp
 	core/ControlCommandsMixer.cpp
+	# The mixer group's routing verbs (mixer.route_to / send_to / sidechain_to /
+	# route_remove) and the PDC / routing / bus / port groups - feature rows
+	# 27-29 of docs/FEATURE-LIST-0.3.0.md. Separate translation units for the
+	# reason the automation and warp groups are split: gate 7 measures a file.
+	core/ControlMixerSupport.cpp
+	core/ControlCommandsMixerRoutes.cpp
+	core/ControlCommandsPdc.cpp
+	core/ControlCommandsRouting.cpp
+	core/ControlCommandsBus.cpp
+	core/ControlCommandsPorts.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp
@@ -215,6 +225,10 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableSnapshot.cpp
 	core/ControlReversibilityTableTrackFolder.cpp
 	core/ControlReversibilityTableVca.cpp
+	# The routing surface's rows (feature rows 27-29 and the mixer group's
+	# routing verbs): a GROUP's rows whatever their class, joined by
+	# reversibilityRowTable() exactly as the folder-tracks group's are.
+	core/ControlReversibilityTableRouting.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

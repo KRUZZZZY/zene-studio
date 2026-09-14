@@ -494,6 +494,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// switch - a group is a plain entity on the Mixer and its edit set is a list
 	// of stable track ids, so its ids are honest in every configuration.
 	registerVcaCommands(registry);
+	// The routing surface (feature rows 27-29) and the mixer's routing verbs; the
+	// rationale for each group is on its declaration in ControlRegistryGroups.h.
+	registerRoutingSurfaceCommands(registry);
 }
 
 } // namespace lmms

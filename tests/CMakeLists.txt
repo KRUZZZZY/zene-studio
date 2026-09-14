@@ -1483,6 +1483,71 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# pdc.* (0.3.0, plugin delay compensation - feature row 27 of
+	# docs/FEATURE-LIST-0.3.0.md): the mixer's own published PDC graph read off
+	# the wire - the total latency, every channel's alignment point and chain
+	# latency, the compensation at every send, and whether sidechain routing
+	# exists - and that the numbers follow the topology the routing verbs build.
+	# NO fixture and no compile-time switch: the mixer publishes its graph in
+	# every configuration. The bound it states is in its docstring and in
+	# docs/KNOWN-LIMITATIONS.md: a NONZERO graph needs a device that reports
+	# latency, and this release's built-ins report 0, so the arithmetic is proven
+	# by the registered PdcMixerTest and the SURFACE by this transcript.
+	add_test(NAME ControlPdcCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-pdc-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPdcCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# routing.* and the mixer group's routing verbs (0.3.0, feature rows 27-28):
+	# routing.get_state on a MEASURED graph - load effects and read the node set,
+	# the connections, the cached topological order and the output node back off
+	# the wire - plus mixer.route_to / mixer.send_to / mixer.sidechain_to /
+	# mixer.route_remove, which ableton-gap/AGENT-TOOLING.md:186 names and the
+	# 0.3.0 tip did not register. It asserts the engine's own pre-fader rule for a
+	# send into a bus, that the feedback rule is the refusal, and that each verb
+	# records a true_inverse transaction. No fixture and no compile-time switch.
+	add_test(NAME ControlRoutingCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-routing-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRoutingCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# bus.* (0.3.0, parallel buses - feature row 29 of
+	# docs/FEATURE-LIST-0.3.0.md): the bus topology driven end to end, with both
+	# A16 answers measured - bus.create is ONE undoable step and bus.remove is
+	# REFUSED, typed as 'irreversible', because nothing recreates a channel with
+	# state. No fixture and no compile-time switch.
+	add_test(NAME ControlBusCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-bus-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlBusCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# port.* (0.3.0, audio ports / pin matrix - feature row 29): the pin matrix
+	# the PinConnector view edits, reached through the socket, with the write and
+	# its recorded inverse. ALWAYS proves the typed answers a device without an
+	# audio-ports model gives and every malformed request's refusal; the pin WRITE
+	# needs a device that HAS a model (an AudioPlugin-derived one - the CLAP and
+	# VST3 hosts, the analysers) and this build may ship none. It reports ctest
+	# *Skipped* (exit 77) in that case, never *Passed*: the
+	# ControlFreezeCommandsTranscript precedent - a test that cannot make its
+	# measurement must not report that it did.
+	add_test(NAME ControlPortsCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-ports-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPortsCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
 	# record.* (0.3.0, recording crash recovery): journal a capture, kill the
 	# instance with SIGKILL (a REAL abnormal exit), then start a SECOND instance
 	# against the same working directory and assert the NEXT START finds the

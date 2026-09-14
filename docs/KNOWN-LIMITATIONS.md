@@ -616,6 +616,68 @@ that is this page's fault — report it and it gets added.
   bound stated for it could be measured by a registered test. Item 14's own recorded dependency is *none*;
   item 15's is the capture path itself.
 
+- **Plugin delay compensation is readable, not settable, and has no interface — added 2026-09-14.** The
+  mixer's own PDC graph (#605: the total latency from a source to the master output, every channel's
+  alignment point, the latency a channel's effect chain adds, and the compensation the mixer applies at every
+  send) is drivable through `--control-socket` with `pdc.report`, and the same report says whether **sidechain
+  routing** exists and lists every sidechain send with its tap point — but **nothing in `src/gui/` shows a
+  latency figure, a compensation value or a per-channel PDC table**, and no command SETS a compensation:
+  `Mixer::updateLatencyCompensation()` recomputes every edge's delay from the routing graph once per period and
+  publishes it, so a command that wrote one would be overwritten by the next period — the settable thing that
+  changes PDC is the topology (`mixer.route_to` / `mixer.send_to` / `mixer.sidechain_to` / `bus.create`).
+  **The number this build publishes is 0 unless a device reports latency**, because
+  `Effect::latencyFrames()` defaults to 0 and in this tree only the WASM effect overrides it (and only with a
+  module loaded) — so the arithmetic of a nonzero delay is proven in process by the registered
+  `tests/src/core/PdcMixerTest.cpp` (sample alignment, the `LatencyCompensation::MaxFrames` clamp, the
+  bit-identical zero-delay bypass) and the registered transcript `tests/control-pdc-commands.py` proves the
+  SURFACE: the numbers are on the wire and they follow the routing. Stated as the bound it is, not hidden.
+- **The routing graph is readable, not editable, and there is no patcher — added 2026-09-14.** The graph a
+  signal is actually processed through (the effect chain's `RoutingGraph`: its nodes, connections, cached
+  topological order and output node, plus a mixer channel's rack graph) is drivable through
+  `--control-socket` with `routing.get_state`, and the mixer's routing is settable through `mixer.route_to` /
+  `mixer.send_to` / `mixer.sidechain_to` / `mixer.route_remove` — but **nothing in `src/gui/` draws a patch
+  bay, a cable, a node or a port**, and **no command edits a `RoutingGraph`**: the class's own threading
+  contract (`include/RoutingGraph.h`) says topology edits are control-thread operations that must not run
+  concurrently with `process()`, and the atomic plan swap that would make live edits safe is deliberately not
+  implemented (see `PATCHER-MVP.md`); on top of that a chain's graph is DERIVED — `EffectChain::
+  rebuildRoutingGraph()` clears and re-wires it from the effect list on every change, so a hand-wired edge
+  would be discarded by the next `plugin.load` / `plugin.unload`. **The read is narrower than the name
+  sounds, and this is measured rather than estimated:** a chain whose devices HAVE audio-ports models keeps
+  the plain effect loop (`EffectChain::rebuildRoutingGraph` returns early for it,
+  `src/core/EffectChain.cpp:89`), and every built-in device in this tree is `AudioPlugin`-derived
+  (`DefaultEffect`, `include/AudioPlugin.h:462`), so a track's or a channel's chain graph is normally EMPTY
+  with `routes_through_graph: false`; the graph with live prepared nodes is the **rack's**, which
+  `routing.get_state` also reports and `tests/control-routing-commands.py` measures (two added chains = five
+  nodes, six connections, the sum node as the output node, prepared at the engine's own block size). The
+  patcher GUI is out of scope for this
+  release, exactly as feature row 28 records.
+- **Buses are topology only, and `bus.remove` is not undoable — added 2026-09-14.** A parallel bus
+  (`Mixer::createBusChannel`: a mixer channel that never receives instrument output and whose incoming sends
+  default to pre-fader) is drivable through `--control-socket` with `bus.list` / `bus.create` / `bus.remove`
+  — but **nothing in `src/gui/` offers "add bus" or draws a bus channel differently**, and there is no
+  `bus.set_*`: a bus IS a mixer channel, so its fader and its routing are reached through `mixer.set_volume`
+  and the routing verbs, deliberately rather than by a second set of commands. `bus.create` is ONE undoable
+  step (the recorded action deletes the bus it created); **`bus.remove` is not reversible** and says so — it
+  records the bus's full state but nothing in this engine recreates a channel WITH state, so `control.undo`
+  fails with the typed `irreversible` kind and names the fallback (`mixer.remove_channel` has the same class
+  for the same reason). A bus's audio behaviour (pre-fader send default, no instrument input) is proven in
+  process by the registered `tests/src/core/AudioBusTest.cpp`; the topology is proven by
+  `tests/control-bus-commands.py`.
+- **Audio ports: the pin matrix is drivable, but only a device that HAS one, and there is no pin connector —
+  added 2026-09-14.** A device's audio-ports model (its input/output pin matrices, their channel counts and
+  names, and the engine's own used-channel caches) is readable through `--control-socket` with
+  `port.get_state`, and one pin is writable with `port.set_pin` — the write is the PinConnector view's own
+  call (`AudioPortsModel::Matrix::setPin`) and `control.undo` re-dispatches the recorded inverse command —
+  but **nothing in `src/gui/` creates a `PinConnector` from the socket path, and the socket does not open a
+  device editor**: the pin matrix belongs to an **AudioPlugin-derived** device (the CLAP and VST3 hosts and
+  the analyser effects), and `Effect::audioPortsModel()` is `nullptr` for every built-in effect, so a build
+  that ships no such device answers `port.get_state` with a typed `not_found` NAMING that fact. The
+  registered transcript `tests/control-ports-commands.py` proves the typed answers and every malformed
+  request's refusal in every build, and **reports ctest *Skipped* (never *Passed*) when the pin WRITE could
+  not be measured** because this build has no device with an audio-ports model — a test that cannot make its
+  measurement must not report that it did. The pin write's engine half is proven in process by the registered
+  `tests/src/core/AudioPortsModelTest.cpp`.
+
 ## Telemetry and privacy
 
 - **Telemetry is off unless you turn it on**, and the consent screen shows you the exact payload before you
