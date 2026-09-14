@@ -3,7 +3,8 @@
 **Worktree** `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wverbs`
 **Branch** `030/clip-note-stem-verbs`
 **Base** `3956ef589` on `release/0.3.0` (the assigned base; NOT rebased onto the moving merge tip)
-**Tip** `b2f09b8e4` (`1c699a593` the feature commit, `b2f09b8e4` the gate-7 length fix)
+**Tip** `4660a1fcc` (`1c699a593` the feature commit, `b2f09b8e4` the gate-7 length fix, `e50a7a60c`
+LANE-STATE, `4660a1fcc` the two fixture fixes + the revert of the stale surface pin)
 **Not merged. Not pushed. `tools/mcp-zene-control/zene_control/commands_snapshot.json` NOT regenerated**
 (merge-time step, done by the merge lane after the last command-group merge — see the skill's touch-point 9).
 **Build dir** `zene-030/wverbs/build` (to be DELETED at hand-off; space freed reported at the end).
@@ -53,19 +54,60 @@ transaction, and its A16 row documents the declared render bound in the `mechani
   No baseline was moved (`--reanchor` was not used).
 - **`ControlCommandsSnapshot` is EXPECTED RED** while this branch is unmerged: the bridge's
   committed offline snapshot carries the pre-wave id set and the four new ids are unknown to it.
-  **This is a collected red, not a stop** — regenerating is a merge-time step this lane is
-  explicitly forbidden to perform. Run it and record the result:
-  `cd build/tests && ctest -R ControlCommandsSnapshot --output-on-failure`. Its failure text prints
-  the exact `python3 tools/mcp-zene-control/snapshot_commands.py --socket <sock>` command.
-- **Build/ctest results are appended below** once the build finished (§4). Until then the two new
-  registered proofs (`ControlVerbInverseTest`, `ControlStemExportVerb`) are **written but not yet
-  run**, and that is stated rather than claimed.
+  **MEASURED**: `cd build/tests && ctest -R ControlCommandsSnapshot --output-on-failure` → **EXIT=8**,
+  naming exactly `clip.slip`, `clip.trim`, `note.probability_set`, `render.stems`
+  (`live ids 187` vs `snapshot ids 185`). **This is a collected red, not a stop** — regenerating is a
+  merge-time step this lane is explicitly forbidden to perform.
+- **`ControlRegistryTest`'s telemetry-OFF surface pin is RED and is PRE-EXISTING.** Measured
+  `192` actual vs `98` expected; this lane's four ids are 4 of the 94-command gap, so the base
+  measured 188 vs 94 and the pin is stale by 94. My edit to it was reverted to the base text, so this
+  branch's diff does not touch that file at all. Detail in §4.
+- **`release-honesty-gate.sh` is RED because of the DECLARED build configuration, not the code.**
+  `WANT_VST3='OFF'` and `WANT_CLAP='OFF'` against documents that require both ON; the brief told this
+  lane to build the smallest configuration that still exercises its code. The gate is a
+  configuration-vs-docs check and needs a release-configured build to pass.
 
-## 4. Build + test results (appended)
+## 4. Build + test results (measured, unpiped)
 
-```
-(pending — see "next exact command")
-```
+| Command (run from the worktree unless noted) | Exit | Result |
+|---|---|---|
+| `cmake --build build -j 2` | **0** | 100%, **0 `error:`** in the log; all 5 new TUs and `ControlVerbInverseTest` compiled and linked |
+| `cd build/tests && ctest -R ControlVerbInverseTest --output-on-failure` | **0** | **Passed** 1.26 s (run 1 was EXIT=8 — see §3) |
+| `cd build/tests && ctest -R ReversibilityContractTest --output-on-failure` | **0** | **Passed** 1.28 s — the A16 anti-drift histogram `187/102/14/4/67` matches the table |
+| `cd build/tests && ctest -R ControlStemExportVerb --output-on-failure` | **0** | **Passed** 2.97 s |
+| `cd build/tests && QT_QPA_PLATFORM=offscreen python3 ../../tests/control-stem-export-verb.py ../zene` | **0** | **17/17 checks ok** (transcript log `stem-transcript.log`) |
+| `cd build/tests && ctest --output-on-failure -j 2` | **8** | **131 / 133 passed**; the 2 reds are named below and both are proven pre-existing / by-design |
+| `bash tests/file-length-gate.sh --check` | **0** | no regressions (was 1 — see §3) |
+| `bash tests/complexity-gate.sh --check` | **0** | PASS |
+| `bash tests/no-upstream-regression-gate.sh` | **0** | PASS, 409 changed paths declared / 424 ledger entries |
+| `bash tests/duplication-gate.sh --check` | **0** | PASS, 2.07% vs 5% budget |
+| `bash tests/fork-sources-gate.sh` | **0** | PASS, 397 fork-NEW / 1057 inherited / 34 tooling, 0 stale |
+| `bash tests/unregistered-tests-gate.sh` | **0** | PASS, 127 scanned / 125 registered / 2 declared |
+| `bash tests/evidence-gate.sh` | **0** | PASS, 6262 files, 0 refused |
+| `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | **1** | SEE §3 — caused by the DECLARED build configuration (VST3/CLAP OFF), not by any code in this branch |
+| `bash tests/run-all-gates.sh` | in flight | background PID 1894050; a previous attempt was killed by the 420 s tool cap and **left a mutant in `src/core/RoutingGraph.cpp`** (`std::greater` → `std::less`), which was found by `git status` and restored with `git checkout --`. The tree is clean at `4660a1fcc` |
+| `bash tools/local-ci.sh --build-dir build --jobs 2` | **not run** | it re-configures with the release options (`-DWANT_VST3=ON -DWANT_CLAP=ON`), which needs the vst3sdk/clap checkouts fetched; the lane was told to build the smallest configuration that exercises its code. Its ctest step was run directly instead (row 6 above) and `release-honesty-gate.sh` reports the same configuration gap |
+
+### The two reds, named
+
+1. **`ControlCommandsSnapshot` (by design, unmerged).** The failure text is the evidence for the
+   four rows: `MISSING from the snapshot 4 — the binary registers these; the offline list does not
+   offer them: clip.slip, clip.trim, note.probability_set, render.stems`, with
+   `live ids 187 command(s)` against `snapshot ids 185 command(s), captured 2026-09-14T02:36:15Z,
+   lane_head 9d9a1d1393aa`. All three bridge modes (live, empty state dir, planted stale cache)
+   report `0 missing, 0 extra` against the binary — only the committed snapshot FILE is stale, and
+   regenerating it is the merge lane's step after the last command-group merge. **This is a collected
+   red, not a stop.**
+2. **`ControlRegistryTest::telemetryCommandsAreAbsentWhenTheClientIsCompiledOut` (PRE-EXISTING).**
+   `Actual (registry->commandCount()): 192`, `Expected (88 + 5 + 5): 98`. This slot only compiles in a
+   **telemetry-OFF** build (it is inside the `#else` of `#ifdef ZENE_TELEMETRY_ENABLED`), which is why
+   the release configuration never sees it. Proof it is pre-existing, by measured count: this lane
+   registers exactly **four** unconditional ids and the four are in that 192, so the base measured
+   **188** against the pin's **94** — the pin is stale by **94** commands and this lane's four account
+   for 4 of them. My edit to the pin was therefore **reverted to the base text byte for byte**
+   (`git diff 3956ef589 HEAD -- tests/src/core/ControlRegistryTest.cpp` is empty), so this branch
+   neither moves nor is blamed for a stale number it does not own. The pin's own text ("84 is the
+   product surface a running instance reports in this configuration") is false at the base.
 
 ## 5. Next exact command
 
@@ -94,14 +136,16 @@ cd build/tests && ctest -R ControlCommandsSnapshot --output-on-failure   # expec
 - [x] `render.stems` registered + schemas + A16 row + UI-absence lines + declared bound
 - [x] engine named by file/symbol for all four (see the commit message and the section headers)
 - [x] a registered proof authored for each row (`ControlVerbInverseTest`, `ControlStemExportVerb`)
-- [ ] `cmake --build build -j 2` → EXIT=0 (in flight)
-- [ ] `ctest` from `build/tests` → the two new proofs GREEN
-- [ ] `bash tools/local-ci.sh --build-dir build --jobs 2`
-- [ ] `bash tests/run-all-gates.sh` (exit 0 or 3)
-- [ ] `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build`
-- [ ] the NEGATIVE CONTROL, recorded (see §8)
+- [x] `cmake --build build -j 2` → **EXIT=0**, 0 errors
+- [x] `ctest` from `build/tests` → the two new proofs **GREEN**; both real inverses exercised through `control.undo`
+- [x] `ctest --output-on-failure -j 2` (whole suite) → **131/133**, both reds named and accounted for
+- [x] gates 4 / 6 / 7 / 8 / 9 + unregistered-tests + evidence → **all EXIT=0**
+- [x] `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` → EXIT=1, explained by the declared build configuration
+- [~] `bash tests/run-all-gates.sh` → started in the background (PID 1894050); a killed attempt left a mutant in `src/core/RoutingGraph.cpp`, found and restored. Instruction to the parent: **re-check `git status` before merging this branch**
+- [ ] `bash tools/local-ci.sh --build-dir build --jobs 2` — NOT run (re-configures to the release options; needs the vst3sdk/clap checkouts). Its ctest step was run directly.
+- [ ] the NEGATIVE CONTROL, recorded (see §8) — procedure written, NOT executed (it needs a rebuilt engine)
 - [ ] `rm -rf build` and report the space freed
-- [ ] commit LANE-STATE.md; STOP (do not merge, do not push)
+- [x] commit; STOP (do not merge, do not push)
 
 ## 7. Verbatim replacement row text for `docs/FEATURE-LIST-0.3.0.md`
 
