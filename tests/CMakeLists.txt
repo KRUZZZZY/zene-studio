@@ -1857,11 +1857,21 @@ endif()
 # freshest readable offline copy must win (`registry.rank_offline_bundles`), and
 # the stale-cache mode is the guard on that rule.
 #
-# Registered whenever python3 exists - the same gate as every other Python
-# control-surface test here - and SKIPPED (exit 77 -> ctest "Skipped", never
-# "Passed") when the bridge package itself cannot be imported, so it can never
-# pass by doing nothing. There is no WANT_* option that gates the bridge: it is
-# Python under tools/, not a build target.
+# Registered on the same gate as every other Python control-surface test here:
+# python3 AND CONTROL_SUITE_AVAILABLE (POSIX only). Its live half starts a real
+# `zene` and drives it over the AF_UNIX control socket, which the server does not
+# carry on Windows - ControlServer::listen's !Q_OS_UNIX branches refuse, and
+# Client::onNewConnection returns before accept() - so on Windows there is no
+# socket for this test to compare against. It was the one test of the family left
+# out of that gate, and run #34802239065 showed the cost: msvc-x64 failed it in
+# 2.58 s with FileNotFoundError [WinError 3] from the harness's POSIX temp path
+# (control_socket_harness.py: tempfile.mkdtemp(prefix="zctl-run-", dir="/tmp")),
+# which names a harness path and not the platform fact this comment records. The
+# Windows refusal path stays covered by the unit tests that need no socket, and
+# POSIX coverage is unchanged. It is still SKIPPED (exit 77 -> ctest "Skipped",
+# never "Passed") when the bridge package itself cannot be imported, so it can
+# never pass by doing nothing. There is no WANT_* option that gates the bridge: it
+# is Python under tools/, not a build target.
 #
 # The three options that move a whole command group at compile time are passed in
 # as prefixes, so a non-release configuration is compared against the ids it could
@@ -1880,7 +1890,7 @@ endif()
 # API, which is every CI job, so on a default build the sandbox's ids are absent
 # on both sides and this test compares the release surface in full.
 # ---------------------------------------------------------------------------
-if(PYTHON3_EXECUTABLE)
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set(ZENE_SNAPSHOT_COMPILED_OUT "")
 	if(NOT LMMS_HAVE_SESSION_VIEW)
 		list(APPEND ZENE_SNAPSHOT_COMPILED_OUT --compiled-out session.)
