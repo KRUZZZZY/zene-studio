@@ -487,11 +487,9 @@ private slots:
 			QVERIFY2(!id.startsWith(QStringLiteral("telemetry.")), qPrintable(id));
 		}
 		// 88 is the product surface a running instance reports in this
-		// configuration (90 with the telemetry.* pair); this binary adds the
-		// five synthetic commands its slots above declare. The 12 rack.* ids
-		// (#599) are in the 84 and the five transport.tempo_map_* ids (D11) are new.
-		// The four 0.3.0 verb-wave ids (clip.trim, clip.slip,
-		// note.probability_set, render.stems) are what took the 84 to 88.
+		// configuration (90 with telemetry.*; clip.trim, clip.slip,
+		// note.probability_set and render.stems took it from 84). This binary adds
+		// five synthetic commands; the five transport.tempo_map_* ids (D11) are new.
 		QCOMPARE(registry->commandCount(), 88 + 5 + 5);
 	}
 #endif

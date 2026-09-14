@@ -612,6 +612,7 @@ tests/control-session-m1.py
 tests/control-shutdown.py
 tests/control-socket-path-safety.py
 tests/control-stable-ids.py
+tests/control-stem-export-verb.py
 tests/control-track-folder.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py
