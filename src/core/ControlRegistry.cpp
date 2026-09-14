@@ -48,21 +48,6 @@ bool ControlRegistry::s_ready = false;
 
 constexpr int ControlProtocolVersion = 1;
 
-QString controlErrorKindName(ControlErrorKind kind)
-{
-	switch (kind)
-	{
-		case ControlErrorKind::None: return QString();
-		case ControlErrorKind::NotFound: return QStringLiteral("not_found");
-		case ControlErrorKind::Requires: return QStringLiteral("requires");
-		case ControlErrorKind::InvalidArgs: return QStringLiteral("invalid_args");
-		case ControlErrorKind::Busy: return QStringLiteral("busy");
-		case ControlErrorKind::Refused: return QStringLiteral("refused");
-		case ControlErrorKind::Irreversible: return QStringLiteral("irreversible");
-	}
-	return QString();
-}
-
 ControlResult ControlResult::success(QJsonObject result)
 {
 	ControlResult r;
@@ -491,6 +476,11 @@ void registerControlCommands(ControlRegistry& registry)
 	// switch: the render is the product's own CLI render path and the take is a
 	// plain value on Track, so its ids are honest in every configuration.
 	registerFreezeCommands(registry);
+	// Folder tracks (owner items 3+20+21): a Track subclass that references its
+	// children, its two modes and the named visibility sets. No compile-time
+	// switch - a folder is a plain Track type and the sets are container state,
+	// so its ids are honest in every configuration.
+	registerTrackFolderCommands(registry);
 }
 
 } // namespace lmms

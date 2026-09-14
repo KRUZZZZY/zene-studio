@@ -41,6 +41,7 @@
 #include "Song.h"
 #include "SongEditor.h"
 #include "TrackContainer.h"
+#include "TrackFolder.h"
 #include "TrackView.h"
 
 namespace lmms
@@ -70,6 +71,9 @@ QString trackTypeNameOf(Track::Type type)
 		case Track::Type::Video: return QStringLiteral("video");
 		case Track::Type::Automation: return QStringLiteral("automation");
 		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
+		// A folder track (owner items 3+20+21): the type track.add takes as
+		// "folder" and every read reports.
+		case Track::Type::Folder: return QStringLiteral("folder");
 		case Track::Type::Count: break;
 	}
 	return QStringLiteral("unknown");
@@ -341,6 +345,14 @@ QJsonObject rollState(const ClipRef& ref)
 
 QJsonObject trackEditState(Track* track, int index)
 {
+	// The folder relation (owner items 3+20+21; docs/TRACK-FOLDER-DESIGN.md
+	// section 8.3 decision 1): the parent's trk-<n> as a FIELD on a FLAT entry,
+	// never a nested array - every existing consumer of the flat `tracks` array
+	// (and of ClipRef::trackIndex) keeps working, and the parent is named by id,
+	// which is how this surface already prefers to address things.
+	const TrackFolder* folder = track->type() == Track::Type::Folder
+		? static_cast<const TrackFolder*>(track) : nullptr;
+
 	QJsonObject entry;
 	entry.insert(QStringLiteral("id"), control::trackIdOf(track));
 	entry.insert(QStringLiteral("index"), index);
@@ -349,6 +361,20 @@ QJsonObject trackEditState(Track* track, int index)
 	entry.insert(QStringLiteral("muted"), track->isMuted());
 	entry.insert(QStringLiteral("soloed"), track->isSolo());
 	entry.insert(QStringLiteral("clip_count"), track->numOfClips());
+	entry.insert(QStringLiteral("folder"), track->parentFolder() != nullptr
+		? control::trackIdOf(track->parentFolder()) : QString());
+	entry.insert(QStringLiteral("visible"), track->isVisible());
+	if (folder != nullptr)
+	{
+		// A folder's own state. `folder_mode` is empty for a track that is not a
+		// folder, so a client can tell "not a folder" from "a folder in group
+		// mode" (whose value is "group").
+		entry.insert(QStringLiteral("folder_mode"), folder->isRouting()
+			? QStringLiteral("routing") : QStringLiteral("group"));
+		entry.insert(QStringLiteral("child_count"), folder->childCount());
+		entry.insert(QStringLiteral("collapsed"), folder->isCollapsed());
+		entry.insert(QStringLiteral("pinned"), folder->isPinned());
+	}
 	return entry;
 }
 

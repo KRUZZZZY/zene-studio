@@ -43,8 +43,10 @@ namespace lmms
 
 class TimePos;
 class TrackContainer;
+class TrackFolder;
 class Clip;
 class SampleBuffer;
+class IntModel;
 
 
 namespace gui
@@ -85,6 +87,23 @@ public:
 		Video,
 		Automation,
 		HiddenAutomation,
+		/*! A FOLDER TRACK: a real container that holds other tracks
+		 *  (docs/TRACK-FOLDER-DESIGN.md; owner items 3+20+21).
+		 *
+		 *  It sits IMMEDIATELY BEFORE Count for one reason that is checkable:
+		 *  `type` is persisted as this enum's integer (saveTrack's `type`
+		 *  attribute) and read back the same way, so every arm above keeps the
+		 *  number it has always had. Only Count's own value moves, and Count
+		 *  is used in-process only (TrackContainer::countTracks's "all types"
+		 *  default).
+		 *
+		 *  A folder is a row of the SAME flat track list as every other track,
+		 *  not a second container: iteration, document order, the save/load walk
+		 *  and the trk-<n> addressing model all keep working unchanged. The
+		 *  parent relation is an ATTRIBUTE (`folder`) on the child's own <track>
+		 *  element, resolved after the load walk (Song::resolveTrackFolders).
+		 */
+		Folder,
 		Count
 	} ;
 
@@ -221,6 +240,79 @@ public:
 		return m_trackContainer;
 	}
 
+	/*! The FOLDER this track sits in, or nullptr when it is in none
+	 *  (docs/TRACK-FOLDER-DESIGN.md section 1.2; owner items 3+20+21).
+	 *
+	 *  The relation is REFERENCE-ONLY in both directions and has exactly ONE
+	 *  source of truth: this pointer. A TrackFolder never owns its children -
+	 *  TrackContainer is the only owner (removeTrack erases without deleting,
+	 *  ~TrackContainer's clearAllTracks deletes) - so a folder that deleted a
+	 *  child would double-free it. A folder's child list is DERIVED by walking
+	 *  the container for this pointer, which is what keeps a checkpoint restore
+	 *  from having two states to keep in step.
+	 */
+	TrackFolder* parentFolder() const
+	{
+		return m_parentFolder;
+	}
+	//! Links this track into \a folder (nullptr = the container root) and keeps
+	//! the folder's routing mode coherent. Defined in Track.cpp, which is where
+	//! the folder's own invariants live.
+	void setParentFolder( TrackFolder* folder );
+
+	/*! The id a project file named as this track's folder, or -1 when the file
+	 *  named none.
+	 *
+	 *  A file may name a folder that is constructed LATER in the same walk (a
+	 *  folder created after the tracks it holds sits after them in the
+	 *  container, and therefore after them in the file), so the link is
+	 *  finished after the walk by TrackContainer::resolveTrackFolders - the
+	 *  same shape ControllerConnection::finalizeConnections and
+	 *  AutomationClip::resolveAllIDs already use.
+	 */
+	int pendingFolderId() const
+	{
+		return m_pendingFolderId;
+	}
+	void setPendingFolderId( int id )
+	{
+		m_pendingFolderId = id;
+	}
+
+	/*! Whether this track is part of the VISIBLE set - the state a named
+	 *  visibility set applies (TrackContainer::applyVisibilitySet).
+	 *
+	 *  A persisted per-track flag with no audio meaning: hiding a track in
+	 *  0.3.0 does NOT mute it and does not change a render (proved by the
+	 *  registered transcript's negative control). It is written to the file
+	 *  only when it is false, so a project that never hid a track re-saves the
+	 *  bytes it always had, and Track::loadTrack RESETS it on absence - the
+	 *  rule every reset-on-absence follows, without which a checkpoint restore
+	 *  could not take a hide back off.
+	 */
+	bool isVisible() const
+	{
+		return m_visible;
+	}
+	void setVisible( bool visible )
+	{
+		m_visible = visible;
+	}
+
+	/*! The mixer channel this track's own output is bound to, or nullptr for a
+	 *  track type that has no channel of its own (a folder, an automation
+	 *  track).
+	 *
+	 *  A folder in ROUTING mode points each child's this-way at the folder's
+	 *  own channel - the model side of "its children's output summed through
+	 *  it" - so the rewire is one virtual call rather than a dynamic_cast to
+	 *  the two types that happen to have a channel today.
+	 */
+	virtual IntModel* mixerChannelModel()
+	{
+		return nullptr;
+	}
+
 	// name-stuff
 	virtual const QString & name() const
 	{
@@ -353,7 +445,20 @@ private:
 	
 	std::optional<QColor> m_color;
 
+	//! The folder relation (docs/TRACK-FOLDER-DESIGN.md section 1.2): the ONLY
+	//! source of truth for membership, in the child. A folder derives its child
+	//! list from these pointers, so a checkpoint restore that re-reads this
+	//! track's XML cannot leave a folder holding a stale list.
+	TrackFolder* m_parentFolder{nullptr};
+	//! The folder id the last load named, -1 when it named none; cleared by the
+	//! post-walk resolution.
+	int m_pendingFolderId{-1};
+	//! The visibility flag a named visibility set writes; true unless the file
+	//! says otherwise (reset on absence in loadTrack).
+	bool m_visible{true};
+
 	friend class gui::TrackView;
+	friend class TrackFolder;
 
 
 signals:

@@ -1402,6 +1402,12 @@ void Song::loadProject( const QString & fileName )
 		}
 	}
 
+	// RESET ON ABSENCE for the named visibility sets (owner items 3+20+21): a
+	// project with no <visibilitysets> element holds none, whatever the object
+	// carried before the load. This is the ONE place that decides it - the
+	// container's own walk cannot, because the element is not its child.
+	clearVisibilitySets();
+
 	while( !node.isNull() && !isCancelled() )
 	{
 		if( node.isElement() )
@@ -1409,6 +1415,14 @@ void Song::loadProject( const QString & fileName )
 			if( node.nodeName() == "trackcontainer" )
 			{
 				( (JournallingObject *)( this ) )->restoreState( node.toElement() );
+			}
+			else if( node.nodeName() == TrackContainer::visibilitySetsNodeName() )
+			{
+				// The named visibility sets (owner items 3+20+21; the same
+				// project-state shape the tempo map and the modulation layer
+				// use). A build without this feature leaves the element alone
+				// and re-emits it, exactly as it does for an unknown section.
+				loadVisibilitySetState( node.toElement() );
 			}
 			else if( node.nodeName() == "controllers" )
 			{
@@ -1523,6 +1537,19 @@ void Song::loadProject( const QString & fileName )
 	// now that everything is loaded
 	ControllerConnection::finalizeConnections();
 
+	// Finish the folder relation (docs/TRACK-FOLDER-DESIGN.md section 4.3; owner
+	// items 3+20+21) in the same after-the-walk pass, for the same reason: a
+	// child's `folder` attribute names a track by id, and a folder created after
+	// the tracks it holds is constructed after them. The count is the children
+	// whose folder is gone - reported, not hidden, the way the id pass above
+	// reports every id it re-assigned.
+	const int danglingFolders = tracks().empty() ? 0 : resolveTrackFolders();
+	if (danglingFolders > 0)
+	{
+		qWarning("project load: %d track(s) named a folder that is not in the project; "
+			"they are at the container root", danglingFolders);
+	}
+
 	// Remove dummy controllers that was added for correct connections
 	m_controllers.erase(std::remove_if(m_controllers.begin(), m_controllers.end(),
 		[](Controller* c){return c->type() == Controller::ControllerType::Dummy;}),
@@ -1628,6 +1655,17 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	if( m_groovePool.shouldPersist() )
 	{
 		m_groovePool.saveSettings( dataFile, dataFile.content() );
+	}
+
+	// The named visibility sets (owner items 3+20+21): project state beside the
+	// tempo map and the modulation layer, and written only when there is at
+	// least one, so a project that never made one re-saves the bytes it always
+	// had. It is NOT an element inside <trackcontainer>: that loader builds a
+	// Track from every child it is not told to skip, and the marker that would
+	// say "skip me" is the one DataFile::write deletes.
+	if( !visibilitySets().isEmpty() )
+	{
+		saveVisibilitySetState( dataFile, dataFile.content() );
 	}
 
 #ifdef LMMS_HAVE_SESSION_VIEW

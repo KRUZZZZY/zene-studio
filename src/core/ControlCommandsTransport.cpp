@@ -32,6 +32,7 @@
 #include "Engine.h"
 #include "Song.h"
 #include "Track.h"
+#include "TrackFolder.h"
 
 namespace lmms
 {
@@ -52,6 +53,8 @@ QString trackTypeName(Track::Type type)
 		case Track::Type::Video: return QStringLiteral("video");
 		case Track::Type::Automation: return QStringLiteral("automation");
 		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
+		// A folder track (owner items 3+20+21).
+		case Track::Type::Folder: return QStringLiteral("folder");
 		case Track::Type::Count: break;
 	}
 	return QStringLiteral("unknown");
@@ -80,6 +83,24 @@ QJsonObject trackState(Track* track, int index)
 		static_cast<qint64>(track->frozenTake().endTicks));
 	entry.insert(QStringLiteral("frozen_muted_clips"),
 		static_cast<int>(track->frozenTake().mutedClips.size()));
+	// The folder relation and the visibility flag (owner items 3+20+21): the
+	// parent folder's trk-<n>, empty at the container root, and whether this
+	// track is part of the visible set. A folder reports its own mode, child
+	// count and the two flags; folder_mode is empty for a track that is not a
+	// folder.
+	const TrackFolder* folder = track->type() == Track::Type::Folder
+		? static_cast<const TrackFolder*>(track) : nullptr;
+	entry.insert(QStringLiteral("folder"), track->parentFolder() != nullptr
+		? control::trackIdOf(track->parentFolder()) : QString());
+	entry.insert(QStringLiteral("visible"), track->isVisible());
+	if (folder != nullptr)
+	{
+		entry.insert(QStringLiteral("folder_mode"), folder->isRouting()
+			? QStringLiteral("routing") : QStringLiteral("group"));
+		entry.insert(QStringLiteral("child_count"), folder->childCount());
+		entry.insert(QStringLiteral("collapsed"), folder->isCollapsed());
+		entry.insert(QStringLiteral("pinned"), folder->isPinned());
+	}
 	return entry;
 }
 

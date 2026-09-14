@@ -726,17 +726,17 @@ void LuaTrack::setName(const QString& name)
 QString LuaTrack::type() const
 {
 	if (!m_track) { return QStringLiteral("invalid"); }
-	switch (m_track->type())
-	{
-	case Track::Type::Instrument: return QStringLiteral("instrument");
-	case Track::Type::Pattern: return QStringLiteral("pattern");
-	case Track::Type::Sample: return QStringLiteral("sample");
-	case Track::Type::Event: return QStringLiteral("event");
-	case Track::Type::Video: return QStringLiteral("video");
-	case Track::Type::Automation: return QStringLiteral("automation");
-	case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
-	case Track::Type::Count: break;
-	}
+	// A TABLE, not a switch. The complexity ratchet counts every `case` as a
+	// decision, so giving folder tracks a name (owner items 3+20+21) is what
+	// pushed this switch over the target - and a name per type is data.
+	static const QString names[] = {
+		QStringLiteral("instrument"), QStringLiteral("pattern"),
+		QStringLiteral("sample"), QStringLiteral("event"), QStringLiteral("video"),
+		QStringLiteral("automation"), QStringLiteral("hidden_automation"),
+		QStringLiteral("folder"),
+	};
+	const int index = static_cast<int>(m_track->type());
+	if (index >= 0 && index < static_cast<int>(Track::Type::Count)) { return names[index]; }
 	return QStringLiteral("unknown");
 }
 

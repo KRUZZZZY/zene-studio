@@ -345,24 +345,23 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **164 rows**, measured from the table itself:
-**86 `true_inverse`, 13 `snapshot`, 4 `irreversible`, 61 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **173 rows**, measured from the table itself:
+**93 `true_inverse`, 13 `snapshot`, 4 `irreversible`, 63 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**162 rows / 59 `not_mutating`** - which is the base
+**171 rows / 61 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. The nine rows the punch in/out and recording crash-recovery lane
-added are the last of these: `transport.punch_set` and `transport.punch_clear` are `true_inverse` (a
-live `Timeline` checkpoint), the three journal verbs and `record.recovery_restore` are `snapshot` (the
-inverse is the paired command - a side file beside a take is not project state),
-`record.recovery_discard` is `irreversible` (removing the offer has no inverse; the take's WAV is the
-documented fallback), and `transport.punch_get_state` / `record.recovery_get_state` are `not_mutating`
-inspectors. The four rows the freeze/bounce lane's fix batch carries are `bounce.in_place`
-(`not_mutating`: it writes an output artefact, like `render.render`) and `freeze.track`,
-`freeze.region`, `freeze.unfreeze` (live Track checkpoints, because the take and the muted flags it
-records are both part of the track's own serialized state). `ReversibilityContractTest` asserts both
+what left one of them stale before. The nine rows the folder-tracks lane added are the last of these:
+`track.folder_set_collapsed` and `track.set_pinned` are `true_inverse` on a live Track checkpoint (both
+flags are part of the folder's own `<trackfolder>` element and are reset on absence, so the checkpoint
+is a real inverse), `track.set_folder` / `track.set_routing` / `track.visibility_set_save` /
+`track.visibility_set_apply` / `track.visibility_set_remove` are `true_inverse` **recorded actions**
+(the parent relation lives on the child's element and `track.set_routing` writes every child's own
+mixer channel, so no single live checkpoint covers either; a named visibility set is not a
+`JournallingObject` at all), and `track.folder_get_state` / `track.visibility_set_list` are
+`not_mutating` inspectors. `ReversibilityContractTest` asserts both
 sets, so a row added or moved between classes cannot ship with this page quoting the old split. The
 155-row figure this page carried before this merge was the pre-punch table's, and the 157 the
 incoming lane's own page quoted was measured on that lane's base, which does not carry the groove
@@ -625,6 +624,69 @@ section 5 is the argument for each.
   offer to be gone, a discard to remove the journal while keeping the audio, one `control.undo` to take a
   `record.journal_begin` back off by dispatching the paired command, and `control.undo` to refuse, typed,
   after an irreversible discard.
+
+## Folder tracks: a real container with two modes, plus pinning and named visibility sets (`track.*`) — added 2026-09-13
+
+- **New: a track that HOLDS other tracks.** `track.add` takes `type=folder`, and the folder is a
+  **real engine container**, not a UI grouping: it is one row of the same flat track list (so
+  iteration, document order, the save/load walk and the whole `trk-<n>` addressing model keep
+  working unchanged), it **references** its children and never owns them (`TrackContainer` is the one
+  owner, so a folder that deleted a child would be a double free), and the relation is **one
+  attribute on the child's own `<track>` element** (`folder="<id>"`), written only when the child is
+  in a folder. Five folder verbs: `track.set_folder` (into a folder, or out with an empty `folder`),
+  `track.folder_set_collapsed`, `track.set_routing`, `track.set_pinned` and `track.folder_get_state`,
+  plus **four named-visibility-set verbs** — `track.visibility_set_save` / `_apply` / `_remove` /
+  `_list`. `track.list`, `track.get_state` and `arrangement.get_state` gained a `folder` field and a
+  `visible` flag per track, and the three read commands stay **flat**: the parent is a FIELD naming a
+  `trk-<n>`, never a nested array, so no existing client of the flat list breaks.
+- **TWO MODES, and the organisational one is the default** (the owner's recorded decision,
+  2026-09-12). `group` is organisation only: every child keeps its own mixer channel and no audio
+  path changes. `routing` gives the folder **one regular mixer channel of its own** and points every
+  child's mixer-channel binding at it, so the folder's channel receives the children's output through
+  `Mixer::mixToChannel`, runs its own effect chain on the sum and sends to master like any other
+  channel. It is `Mixer::createChannel()` and **not** `createBusChannel()`: a parallel bus refuses
+  instrument output outright (Mixer.cpp: "a parallel bus never receives instrument output directly"),
+  so a bus could not be the summing point this mode is. Routing mode refuses an empty folder, typed,
+  because a routing group with nothing to sum is not a routing group. No new
+  delay-compensation code: a child's own `AudioBusHandle` aligns itself to
+  `Mixer::channelInputLatency(nextMixerChannel)`, so the sum lands in the folder's buffer **before**
+  that channel's FX chain and before every compensation point downstream of it — the structural
+  answer to the VCA lane's "which side of the compensation point" question
+  (`docs/TRACK-FOLDER-DESIGN.md` §5.3). Turning the mode off restores each child to the channel it
+  was on — the bindings are recorded in the folder's `prevch` attribute, so a folder **saved** in
+  routing mode can be switched back in a later session — and releases the folder's channel **last**,
+  after the children have stopped pointing at it.
+- **Pinning and named visibility sets.** `track.set_pinned` and `track.folder_set_collapsed` write two
+  persisted booleans on the folder's own `<trackfolder>` element. A **named visibility set** is a
+  named, id-based list of tracks saved **in the project**: `track.visibility_set_apply` makes exactly
+  its members visible and hides every other track. The flag is a **view flag** — it mutes nothing and
+  changes no render, and the registered transcript proves that with a negative control.
+- **UI absence — one line: folder tracks, their two modes, pinning and the named visibility sets are
+  drivable through the socket, not from the interface.** Nothing in `src/gui/` creates a folder,
+  draws the relation, indents a child, collapses a row, shows a pin or offers a set switcher: the
+  folder's row is an ordinary `TrackView`, so the flags this release persists have no affordance
+  reading them yet. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
+- **Proof:** two registered ctests. `TrackFolderTest` (`tests/src/core/TrackFolderTest.cpp`, the
+  engine half: membership derived from one source of truth, the cycle and self-parent refusals, the
+  reset-on-absence of every field, routing mode really re-binding every child's channel to the
+  folder's — non-bus — channel and putting them back, the visibility set round trip, a legacy project
+  that grows **no** `folder=` / `visible=` attribute and **no** `<trackfolder>` or `<visibilitysets>`
+  element, and a dangling `folder` attribute repaired at the container root) and
+  `ControlTrackFolderTranscript` (`tests/control-track-folder.py`, the socket half: it drives a real
+  instance, **saves the session, moves the in-memory model elsewhere, reopens the FILE** and requires
+  the membership, the mode, both flags and the set to come back, then **measures the sum** — with
+  routing on, the folder's own fader at 0 silences the render and at unity it sounds again within
+  3 dB, while in group mode the folder owns no channel at all, so the silence can only have come from
+  the routing).
+- **Stated limits, in the same place as the claims.** The collapsed and pinned flags drive **no**
+  interface in 0.3.0 (§ above). A child's mixer-channel **index** can change across a
+  routing-off/routing-on cycle (`Mixer::deleteChannel` renumbers) while the routing relation is
+  preserved — the same class of limit `track.add`'s re-add taking a fresh `trk-<n>` records. An
+  **older build** reading `type="7"` hits `Track::create`'s `default: break` and **drops the folder
+  row** — a dropped track, not a degrading one — which is stated in
+  `docs/TRACK-FOLDER-DESIGN.md` §4.4 and is the strongest argument for a folder being organisational
+  state that a legacy build degrades on. Nested containers are still out of the addressing model: a
+  folder's children are addressed by their own `trk-<n>` and the song's flat list, exactly as before.
 
 ## Not in this draft yet
 

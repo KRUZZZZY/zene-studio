@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{162, 86, 13, 4, 59};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{171, 93, 13, 4, 61};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

@@ -31,7 +31,9 @@
 
 #include "AutomationClip.h"
 #include "embed.h"
+#include "Engine.h"
 #include "TrackContainer.h"
+#include "TrackFolder.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -77,6 +79,9 @@ void TrackContainer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		track->saveState(_doc, _this);
 	}
 	m_tracksMutex.unlock();
+
+	// The named visibility sets are written by Song::saveProjectFile into the
+	// project's own content element, not here: see visibilitySetsNodeName().
 }
 
 
@@ -168,6 +173,11 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 			pd = nullptr;
 		}
 	}
+
+	// The named visibility sets are read by Song::loadProject from the project's
+	// content element (visibilitySetsNodeName()), which is also where the
+	// reset-on-absence lives - this walk builds a TRACK from every child it is
+	// not told to skip, so a set element must not be a child of it at all.
 }
 
 
@@ -256,7 +266,11 @@ void TrackContainer::clearAllTracks()
 		delete m_tracks.front();
 	}
 	//m_tracksMutex.unlock();
+	// The visibility sets belong to the project the tracks belonged to, so they
+	// go with them (owner items 3+20+21).
+	clearVisibilitySets();
 }
+
 
 
 

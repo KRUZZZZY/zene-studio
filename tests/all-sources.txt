@@ -418,6 +418,7 @@ include/Track.h
 include/TrackContainer.h
 include/TrackContainerView.h
 include/TrackContentWidget.h
+include/TrackFolder.h
 include/TrackGrip.h
 include/TrackLabelButton.h
 include/TrackOperationsWidget.h
@@ -948,6 +949,9 @@ src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
+src/core/ControlCommandsTrackFolder.cpp
+src/core/ControlCommandsTrackFolderSets.cpp
+src/core/ControlCommandsTrackFolderShared.h
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
@@ -971,6 +975,7 @@ src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
+src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
@@ -1097,6 +1102,7 @@ src/core/Timeline.cpp
 src/core/ToolPlugin.cpp
 src/core/Track.cpp
 src/core/TrackContainer.cpp
+src/core/TrackContainerFolders.cpp
 src/core/UnattendedRun.cpp
 src/core/UpgradeExtendedNoteRange.cpp
 src/core/UpgradeExtendedNoteRange.h
@@ -1278,6 +1284,7 @@ src/tracks/InstrumentTrack.cpp
 src/tracks/MidiClip.cpp
 src/tracks/PatternTrack.cpp
 src/tracks/SampleTrack.cpp
+src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
@@ -1393,6 +1400,7 @@ tests/src/core/TelemetryTest.cpp
 tests/src/core/TempoMapPersistenceTest.cpp
 tests/src/core/TempoMapTest.cpp
 tests/src/core/TimelineTest.cpp
+tests/src/core/TrackFolderTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
 tests/src/core/UndoBoundsTest.cpp

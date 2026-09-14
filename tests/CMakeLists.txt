@@ -156,6 +156,7 @@ set(LMMS_TESTS
 	src/core/TempoMapPersistenceTest.cpp
 	src/core/TempoMapTest.cpp
 	src/core/TimelineTest.cpp
+	src/core/TrackFolderTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/core/WarpMarkersTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
@@ -1374,6 +1375,26 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlPunchTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
+	)
+	# Folder tracks (0.3.0, owner items 3+20+21): a folder is a real container
+	# that holds other tracks, with an organisational mode and a routing mode
+	# plus pinning and named visibility sets. It builds an AUDIBLE fixture
+	# through the socket (two instrument tracks, each with a clip and notes),
+	# saves the session, moves the in-memory model elsewhere, reopens the file,
+	# and then MEASURES the sum: with the mode on, the FOLDER's own fader at 0
+	# silences the children's render and at unity it sounds again, while in group
+	# mode the folder owns no channel at all - so the silence can only have come
+	# from the routing. It reports ctest *Skipped* (exit 77) when the build
+	# offers no loadable instrument, because the audibility half could not run
+	# and a test that cannot prove its claim must not report Passed.
+	add_test(NAME ControlTrackFolderTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-track-folder.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlTrackFolderTranscript PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+		SKIP_RETURN_CODE 77
 	)
 	# record.* (0.3.0, recording crash recovery): journal a capture, kill the
 	# instance with SIGKILL (a REAL abnormal exit), then start a SECOND instance

@@ -470,22 +470,26 @@ constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
 
 } // namespace
 
-/*! The true_inverse block, in its TWO files JOINED: this file's
- *  live-checkpoint rows first, then ControlReversibilityTableAction.cpp's
- *  action rows. The block is split across two translation units (see the
- *  header), but every caller - ReversibilityTable's constructor, and through it
- *  control.transactions and tests/…/ReversibilityContractTest - still reads ONE
- *  block with ONE row count. The join is built once, on the first call; the
- *  rows themselves are static data.
+/*! The true_inverse block, in its THREE files JOINED: this file's
+ *  live-checkpoint rows first, then the recorded-ACTION rows
+ *  (ControlReversibilityTableAction.cpp), then the folder group's
+ *  (ControlReversibilityTableTrackFolder.cpp). The block is split across three
+ *  translation units (see the header), but every caller - ReversibilityTable's
+ *  constructor, and through it control.transactions and
+ *  tests/…/ReversibilityContractTest - still reads ONE block with ONE row count.
+ *  The join is built once, on the first call; the rows are static data.
  */
 const ReversibilityRow* reversibilityRowTable(int* rowCount)
 {
 	static const std::vector<ReversibilityRow> joined = [] {
 		int actionCount = 0;
 		const ReversibilityRow* actionRows = reversibilityActionRowTable(&actionCount);
-		std::vector<ReversibilityRow> both(kRows, kRows + kRowCount);
-		both.insert(both.end(), actionRows, actionRows + actionCount);
-		return both;
+		int folderCount = 0;
+		const ReversibilityRow* folderRows = reversibilityTrackFolderRowTable(&folderCount);
+		std::vector<ReversibilityRow> all(kRows, kRows + kRowCount);
+		all.insert(all.end(), actionRows, actionRows + actionCount);
+		all.insert(all.end(), folderRows, folderRows + folderCount);
+		return all;
 	}();
 	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }
 	return joined.data();

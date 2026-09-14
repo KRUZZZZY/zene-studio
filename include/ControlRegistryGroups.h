@@ -115,6 +115,23 @@ LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
  *  reach it - there is no interface for freeze in this release. */
 LMMS_EXPORT void registerFreezeCommands(ControlRegistry& registry);
 
+/*! The folder half of the track.* group (owner items 3+20+21): track.set_folder,
+ *  track.folder_set_collapsed, track.set_routing, track.set_pinned and
+ *  track.folder_get_state, plus the four named-visibility-set verbs in their own
+ *  translation unit (the read/edit split the warp, rack, comp and automation
+ *  groups follow). The engine half is include/TrackFolder.h (a Track subclass
+ *  that REFERENCES its children and never owns them, with a group mode and a
+ *  routing mode that sums them through one mixer channel of its own) and
+ *  TrackContainer's visibility-set store; this group is what makes any of it
+ *  drivable, and it is the ONLY way to reach it - there is no folder affordance,
+ *  no pin toggle and no set switcher in this release's interface. */
+LMMS_EXPORT void registerTrackFolderCommands(ControlRegistry& registry);
+//! track.visibility_set_save / _apply / _remove / _list - the named
+//! visibility sets, in their own translation unit. Called by
+//! registerTrackFolderCommands; the registry has exactly one track-folder
+//! registration point.
+LMMS_EXPORT void registerTrackFolderSetCommands(ControlRegistry& registry);
+
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
