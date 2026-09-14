@@ -1,348 +1,80 @@
-# LANE-STATE — `030/folder-tracks` in `zene-030/wft`
+# LANE-STATE — 030/midi-reconnect (0.3.0 feature-list row 18, OWNER-31 item 7)
 
-Owner items **3+20+21** (folder tracks; the layout/workspace-presets half is 0.5.0 and is NOT built).
-Base: `334790219` (the tip of `release/0.3.0` this lane branched from). **Nothing is merged anywhere** —
-the integration branch was mid-CI for the whole session, and this lane only commits on its own branch.
+**Lane:** MIDI controller auto-reconnection.
+**Worktree:** `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wmidi`
+**Branch:** `030/midi-reconnect` (base tip `6d077931c` = `release/0.3.0`).
+**Build dir:** `<worktree>/build` (this lane's own; ~18 GB, deleted or declared at the end).
 
-Commits on this branch, in order (the SHA to report is the last one):
+## Done (committed)
 
-| SHA | what |
+- `26b337186` `feat(midi): controller auto-reconnection …` — the engine, the
+  `midi.*` control group (4 ids), the two proofs, the A16 rows, the histogram
+  figures, the UI-absence lines, the upstream-modification declarations.
+- `409c2005f` `chore(manifests): fork-sources.txt from its own recipe` — the
+  entry I wrote by hand for `tests/src/core/MidiReconnectTest.cpp` is NOT
+  derived there (the recipe's awk keep-list is an INCLUDE list); the test is
+  whole-tree material and lives in `tests/all-sources.txt`. Both manifests now
+  reproduce: `diff <(grep -vE '^\s*(#|$)' <file>) <(recipe)` prints nothing.
+
+### What was built
+
+| Piece | Where |
 |---|---|
-| `c7c78a8b4` | the lane's own feature commit (engine + command group + proofs + docs) |
-| `32046034f` | the visibility sets reach the file; a dying folder releases its children |
-| `5515f8d5e` | the shutdown SIGSEGV, pinned and fixed; the five ratchet breaches it left, fixed by moving code |
-| `9d6bd6ffb` | both manifests regenerated from their own recipes (both print REPRODUCES) |
+| Identity helpers + the assignment memory (`MidiReconnect`) | `include/MidiReconnect.h`, `src/core/midi/MidiReconnect.cpp` |
+| The memory on the client + `noticesPortChanges()` | `include/MidiClient.h` |
+| The subscription records (or forgets) the identity | `src/core/midi/MidiPort.cpp` |
+| The poll that re-attaches | `src/core/midi/MidiAlsaSeq.cpp` (`updatePortList()` → `reconcile()`), `include/MidiAlsaSeq.h` |
+| The command group | `src/core/ControlCommandsMidiReconnect.cpp` (status, clients_list), `...Edit.cpp` (arm, set), `...Shared.h` |
+| A16 row (true_inverse, recorded action) | `src/core/ControlReversibilityTableMidiReconnect.cpp` + the join in `...Action.cpp` |
+| A16 rows (3 × not_mutating) | `src/core/ControlReversibilityTablePassive.cpp` |
+| Engine proof | `tests/src/core/MidiReconnectTest.cpp` (registered QTest, no device) |
+| Socket + real-device proof | `tests/control-midi-reconnect.py` (registered ctest `ControlMidiReconnect`), `tests/midi_reconnect_flows.py`, `tests/midi_reconnect_probe.py` (the external ALSA client) |
 
-## The four-part scope contract — status
+## Red / not yet verified
 
-| part | state |
-|---|---|
-| 1. engine work | **in**; `TrackFolderTest` 11/11 |
-| 2. control-surface command group | **in**; 9 new ids + `track.add type=folder`; A16 rows in the table (now its own TU) |
-| 3. a registered proof | **in**; ctest `TrackFolderTest` and ctest `ControlTrackFolderTranscript` (both pass) |
-| 4. UI-absence lines | **in**; `docs/RELEASE-NOTES-v0.3.0-alpha.md` + `docs/KNOWN-LIMITATIONS.md` |
+- **The build had not finished when this file was written.** Everything below
+  that needs the binary is UNVERIFIED until it does.
+- Every acceptance command in the brief is still to be run (see the list below).
+- The MCP command snapshot (`tools/mcp-zene-control/zene_control/commands_snapshot.json`)
+  has NOT been regenerated yet: it needs a live instance of THIS build
+  (`python3 tools/mcp-zene-control/snapshot_commands.py --socket <sock>`).
+  Until it is, `ControlCommandsSnapshot` is expected to be RED with the four new
+  ids missing, which is the ratchet working, not a defect to route around.
 
-## The five open items the previous lane left — all closed
+## The exact next command
 
-1. **The named visibility sets never reached the file.** They were written as one `metadata="1"`
-   child of `<trackcontainer>`, and `DataFile::write`'s `cleanMetaNodes()` STRIPS every element
-   carrying that marker — the marker that told the loader to skip the element is the one the writer
-   deletes. The store moved OUT of the metadata-stripped region: `Song::saveProjectFile` writes it
-   into the project's own content element beside `<tempo-map>`, `Song::loadProject`'s walk reads it
-   back with the reset-on-absence, and one name (`TrackContainer::visibilitySetsNodeName()`) is
-   shared by both so they cannot disagree.
-   *Proof*: `TrackFolderTest::visibilitySetsSurviveASaveAndReopen` passes (it returned `set != nullptr`
-   FALSE before), and the transcript reads the set back through a real `project.open` with its active
-   name and its members.
-2. **The shutdown SIGSEGV.** Found and fixed at the seam that caused it — see below.
-3. **The MCP command snapshot** was regenerated from a live instance of this build (164 → 173 ids) and
-   `ControlCommandsSnapshot` passes in all three of its modes (live, empty state dir, planted stale cache).
-4. **Both manifests** were regenerated by their own recipes; both `Verify it` blocks print REPRODUCES.
-5. **The histogram** was re-measured from the table's own rows in this build.
-
-## The SIGSEGV: the defect, the pin, the fix
-
-**Measured backtrace** (gdb, on the lane's own transcript): `QObject::disconnectImpl` ←
-`MixerView::disconnectFromSoloAndMute` (MixerView.cpp:321) ← `MixerView::deleteChannel` ←
-`MixerView::clear` ← `Song::clearProject` ← `Engine::destroy` ← `~MainWindow` ← `main`.
-
-**Cause**: `MixerView` keeps one view per mixer channel and indexes THE MIXER with a VIEW index,
-while `Mixer::mixerChannel()` (include/Mixer.h) does not bounds-check. The ENGINE deletes mixer
-channels without telling the view (`TrackFolder::releaseRouting()`, `mixer.remove_channel`,
-`Mixer::clear()` on a project load), so the view list can be one entry LONGER than the mixer and the
-lookup reads past `m_mixerChannels` — a wild `MixerChannel*` that `disconnectImpl` then walks.
-
-**The pin** (fresh instance each, exit code unpiped; see `/tmp/wft-mine-verify/probe-pin.py`):
-
-| scenario | before | after |
-|---|---|---|
-| folder + child, routing ON, `project.save`, `project.open`, routing OFF, `control.quit` | **-11** | 0 |
-| the same without the save/open | 0 | 0 |
-| no folder at all: `mixer.add_channel`, `project.save`, `project.open`, `mixer.remove_channel`, quit | **-11** | 0 |
-
-So the crash is NOT folder-specific — the folder's routing release is one of the engine-side
-deletions that leave the view stale, and the released `mixer.*` commands are another. The lane's
-earlier 11-scenario probe matrix exited 0 because no scenario both refreshed the view list AND then
-deleted a channel through the engine: the save/open is what makes the view list current first.
-
-**The fix**: every index that crosses from the view list to the mixer is now bounded by the MIXER's
-own channel count — four one-line bounds in `src/gui/MixerView.cpp` (`refreshDisplay`'s disconnect
-walk, `deleteUnusedChannels`' `isChannelInUse` walk, `updateFaders`' peak walk, `deleteChannel`'s own
-guard) plus a note at the top of the file stating the rule. A view list SHORTER than the mixer needs
-nothing (every view-side lookup is already `i < views`). The file is declared in
-`tests/upstream-modifications.txt` and ends at exactly its recorded 592-line baseline.
-
-## The ratchet breaches the lane left red — fixed by MOVING code, never by re-anchoring
-
-| file | was | now | how |
-|---|---|---|---|
-| `src/core/ScriptBindings.cpp` | 1177 (baseline 1174) | 1174 | `LuaTrack::type()`'s switch became a table (CCN 11 → 4) |
-| `src/core/ControlRegistry.cpp` | 501 | 486 | `controlErrorKindName()` → `ControlVocabulary.cpp` |
-| `src/core/ControlReversibilityTable.cpp` | 510 | 499 | the folder group's rows → their own TU (row multiset verified byte-exact: 99 rows before, 99 after) |
-| `src/core/ControlReversibilityTableAction.cpp` | 508 | 457 | same move |
-| `src/core/ControlCommandsTrackFolder.cpp` | 505 | 432 | the group's helpers → `ControlCommandsTrackFolderShared.h` |
-
-## What is verified (commands, unpiped exit codes)
-
-* `bash tools/local-ci.sh --build-dir build --jobs 4` → configure 0, build 0, ctest **100%** (see the report's table)
-* `bash tests/run-all-gates.sh` → see the report
-* gates 4/7/8 `--check` (fork scope, widened by the manifest regeneration) → see the report
-* `TrackFolderTest` 11/11 · `ControlTrackFolderTranscript` exit 0 · `agent_surface` exit 0 ·
-  `ControlCommandsSnapshot` exit 0 · `ReversibilityContractTest` exit 0
-* the A16 histogram, measured from the table's own rows in this build: **173 rows / 93 true_inverse /
-  13 snapshot / 4 irreversible / 63 not_mutating** (telemetry client in, no wasmtime). The test's
-  constant is `{171, 93, 13, 4, 61}` with the guards ADDING the two `telemetry.*` rows, and
-  `docs/RELEASE-NOTES-v0.3.0-alpha.md` states 173 / 93 / 13 / 4 / 63 — all three agree.
-  `WANT_WASM` degrades to OFF on this box (no wasmtime C API), so the six `wasm.*` rows are NOT added.
-
-## What is NOT verified, or is a known residual
-
-* **The whole-tree scope was not run.** The bar names `--check` (fork scope) and `run-all-gates.sh`
-  (fork + tools). The two new sources are under 500 lines and have no function over CCN 10, but
-  `run-all-gates.sh --whole-tree` is the gate that would say so with a number.
-* **The registered MCP bridge on this box is a scratch copy outside the repository**
-  (`projects/lmms-fl-research/mcp-zene-control`), so the regenerated in-tree snapshot is what the
-  ctest and a correctly-pointed bridge serve; the live session's offline list is still the old one
-  until that entry is re-pointed. `docs/KNOWN-LIMITATIONS.md` already records this and now carries the
-  measured 173 instead of the stale 144.
-* `tests/src/core/TrackFolderTest.cpp` is deliberately NOT admitted to `fork-sources.txt`'s awk
-  allow-list (the recipe's own comment records that admitting a test source widens the fork ratchets
-  and needs a measured reason); it is measured by the whole-tree scope via `tests/all-sources.txt`.
-
-## The second crash the first fix attempt introduced — and how it was caught
-
-The first version of the fix bounded `refreshDisplay()`'s loop over the view list. That loop does TWO
-things — disconnect from the channel's models, then DELETE the view — so bounding it orphaned a
-still-visible view whose MixerChannel the engine had already deleted, and the next paint of that view
-walked a dead model: `SIGSEGV in Fader::calculateKnobPosYFromModel <- Fader::paintEvent`.
-
-The acceptance bar caught it: `ctest ControlSocketIntegration` failed (deterministically, 2/2 runs)
-with that backtrace, and the lane's own `reopen_smaller_project` probe went from 0 to -11. Rebuilding
-with the bounds reverted (everything else identical) made both pass again — so the bounds, not the
-rebuild, were the cause.
-
-The corrected rule, now in the file's own note: **the LOOKUP into the mixer is bounded by the mixer's
-channel count; the TEARDOWN is not.** Every surplus view is still deleted (the loop is unbounded), and
-the out-of-range check lives inside `disconnectFromSoloAndMute`, where the mixer is actually indexed.
-`tests/control-shutdown.py` grew scenario (c) so the shrink is pinned by a REGISTERED test: the fixture
-project has one mixer channel, so `mixer.add_channel` then `project.open` of it is that shrink.
-
-<!-- TWO LANE STATUS PAGES, ONE FILE. Both lanes committed a file at this
-     path, so git had an add/add conflict; neither page is a revision of the
-     other (030/folder-tracks and 030/retro-capture record different work), so
-     the merge keeps both, ours first, rather than deleting one lane's record.
-     Nothing below is edited. -->
-
-# LANE-STATE — 030/retro-capture (owner's-31 item 14, retrospective MIDI capture)
-
-**Worktree:** `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wret`
-**Base:** `release/0.3.0` tip `334790219`. **Branch:** `030/retro-capture` @ `0bb7de86c`. **Build dir:** `build`
-(local-ci configuration: `RelWithDebInfo -DUSE_WERROR=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DWANT_QT6=ON`,
-wasmtime absent, telemetry ON). ~21 GB — **delete `build/` when the lane is done** (disk is the binding
-constraint).
-
-## Done and committed (10 commits on the base)
-
-| commit | what |
-|---|---|
-| `dc666ad5e`, `73e7a1542` | `docs/MIDI-RETRO-CAPTURE.md` — the design + the audit corrections (from `next/midi-retro` @ `2858b77df`) |
-| `5805c2617` | slice 1 — the ring, the two receive seams, the off-by-default arm (from `next/midi-retro-impl` @ `3abae78fb`) |
-| `5c01a263e` | slice 2 — the three `midi.retro_capture_*` commands, the persisted arm switch, the note matcher, the menu (from `0496af26d`) |
-| `6e9cb4a06` | **the missing half**: the registered socket proof, `docs/MIDI-RETRO-CAPTURE-BOUNDS.md`, the two UI-absence lines, the A16 histogram → 167/87/13/4/63, item 15's deferral |
-| `6b6e4d517` | gate 7: `include/ControlRegistry.h` 503→490, `src/core/ControlReversibilityTable.cpp` 506→490 |
-| `90f5eab6c` | the release configuration's two suite failures: `RetroMidiRingTest`'s push inside `Q_ASSERT`, and `ControlRetroCapture`'s own three defects |
-| `81ee2fda3` | this handover file |
-| `41017d639` | the proof PASSES; the paced-file measurement and the input-pool probe |
-| `0bb7de86c` | `commands_snapshot.json` regenerated from a live instance (164 → 167 commands, +3 ids, 0 lost) |
-
-## Green (every code unpiped, logs in `/tmp/rc-030-retro-capture-verify/`)
-
-- `bash tools/local-ci.sh --build-dir build --jobs 2` — configure `/build` **EXIT=0**
-- `ctest -R '^ControlRetroCapture$'` — **EXIT=0, Passed 31.80 s**; run directly it prints
-  `window [0, 480] of 4 event(s) -> clip clip-2 with 2 note(s): [(0, 240, 60, 100), (240, 240, 64, 64)]`
-  and `played 20004 event(s) into a 8192-event window: retained 8192, overwritten 11812, paused 0, refused 0`
-- `ctest -R '^RetroMidiRingTest$'` — **EXIT=0, 0.13 s** (was a 300 s abort)
-- `ctest -R '^ControlCommandsSnapshot$'` — **EXIT=0, 3.54 s**
-- gates 4/6/7/8/9, evidence, unregistered-tests — **all EXIT=0**; both manifest recipes print **REPRODUCES**
-- `MasteringTest` and `PluginPortsMigrationTest` — **EXIT=0 each when run alone**; they only failed inside
-  the full `ctest -j2` run, so their reds read as parallel-load flakes, not code. Re-check in the final run.
-
-## The final acceptance run — `bash /tmp/rc-030-retro-capture-verify/accept.sh 334790219`
-
-Every code unpiped, each gate's own log in `/tmp/rc-030-retro-capture-verify/a-*.log`:
-
-| command | exit |
-|---|---|
-| `bash tools/local-ci.sh --build-dir build --jobs 2` (configure + build + ctest) | **0** — ctest `100% tests passed, 0 tests failed out of 131`, `ControlRetroCapture` Passed 31.92 s, `RetroMidiRingTest` Passed 0.05 s |
-| `bash tests/run-all-gates.sh` | **3** — PASS-WITH-SKIPS: all 11 gates PASS (ctest, no-tautology, complexity, mutation, upstream-regression, file-length, duplication, fork-sources, unregistered-tests, evidence); gate 2 (coverage) SKIPs without `--with-coverage`. 3 is the accepted outcome; 1 never appeared |
-| `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | **0** |
-| `bash tests/complexity-gate.sh --check` | **0** |
-| `bash tests/file-length-gate.sh --check` | **0** |
-| `bash tests/duplication-gate.sh` | **0** |
-| `bash tests/fork-sources-gate.sh` | **0** |
-| `bash tests/no-upstream-regression-gate.sh` | **0** |
-| `bash tests/unregistered-tests-gate.sh` | **0** |
-| `bash tests/evidence-gate.sh` | **0** |
-| both manifest recipes (`tests/all-sources.txt`, `tests/fork-sources.txt` "Verify it") | **0** — each prints `REPRODUCES` |
-
-`run-all-gates.sh` states in its own summary that the WHOLE-TREE scope (gates 4/7/8 `--scope all`) was NOT
-measured by it; only the enforced fork+tools scope was. That is the scope `WAVE-1-BRIEFS.md` asks for.
-
-### The two load-flake reds, resolved
-
-`MasteringTest` (34) and `PluginPortsMigrationTest` (101) failed only in the first `ctest -j2` sweep, which
-ran under a heavily loaded box (that sweep took 342 s against 134 s for the final one, and the SAME window
-produced a `/usr/bin/ld: final link failed: file truncated` on an unrelated target). Re-run alone they both
-pass (`ctest -R '^(MasteringTest|PluginPortsMigrationTest)$'` → EXIT=0, 2/2), and in the final full sweep
-they are green: 131/131. They are not this lane's code — neither file is touched by the branch.
-
-## Left to do
-
-1. **The parent merges `030/retro-capture` and re-runs the build, suite and gates on the merged tip.** That
-   re-run is the verification; this lane's green is a hypothesis until then.
-2. **`build/` has been deleted** (disk is the binding constraint, ~21 GB). Rebuild with
-   `bash tools/local-ci.sh --build-dir build --jobs 2` if the suite has to be run again.
-
-## Not verified by this lane (say so in the report)
-
-Real USB/PCI MIDI hardware delivery (the ctest's MIDI source is `aplaymidi`, a real external ALSA client, but
-not a keyboard's driver); the sequencer-tick vs transport-tick agreement for the raw clients; the MIDI
-thread's end-to-end allocation profile; `Ctrl+Shift+M`'s availability across the whole shortcut table (which is
-why no shortcut is taken). Owner's-31 item 15 (retrospective AUDIO capture) is deliberately NOT built, and is
-declared in `docs/KNOWN-LIMITATIONS.md` and `docs/RELEASE-NOTES-v0.3.0-alpha.md` in the same line as the UI
-absence.
-
-<!-- A THIRD lane status page, kept for the same reason as the two above:
-     030/midi-clock committed a file at this path too, and its page is not a
-     revision of either of the others. Nothing below is edited. -->
-
-# LANE 030/midi-clock — MIDI clock / MTC (engine half + `clock.*` group + proof + UI-absence)
-
-**Branch:** `030/midi-clock`
-**Worktree:** `lmms/zene-030/wpc` (base = `501d2cd3e`, the `release/0.3.0` tip at lane start)
-**Build dir:** `wpc/build` (RelWithDebInfo, USE_WERROR=ON, WANT_VST3=OFF, WANT_CLAP=OFF, WANT_QT6=ON)
-**Lane private log dir:** `/tmp/wpc-030-*` — never a generic name.
-
-## Item, as posed
-MIDI clock / MTC. The largest genuine gap in the 0.3.0 scope: engine work with no
-architectural gate, so D12 puts it in 0.3.0, and NO 0.3.0 document places it
-(`PLANNED-WORK-MASTER-LIST-2026-09-13.md` ~line 164, unboarded Bar-2 gap; agent-surface
-inventory Group 11).
-
-## Findings that shaped the design (measured in the tree, not assumed)
-- `grep -rniI 'midi clock|mtc|midi time code' src include` finds **no engine code** — the only
-  hits are vendored `src/3rdparty/jack2` and an unrelated `readFmtChunk` in
-  `ControlCommandsProject.cpp` (`fmt ` vs `mtc ` substring). The feature was genuinely absent.
-- The MIDI **event vocabulary already existed**: `include/Midi.h` declares `MidiTimeCode=0xF1`,
-  `MidiSongPosition=0xF2`, `MidiSync=0xF8`, `MidiStart=0xFA`, `MidiContinue=0xFB`, `MidiStop=0xFC`.
-- The MIDI **output path existed but was narrow**: `MidiClient::processOutEvent` was the only
-  write path and every implementation warned "unhandled" for the clock family
-  (`MidiClientRaw::processOutEvent`, `MidiAlsaSeq::processOutEvent` default cases).
-- The MIDI **input parser dropped the clock**: `MidiClientRaw::parseData` returned early for
-  every byte `>= 0xF8` except a system reset, and cancelled-and-dropped system-common bytes.
-- The transport's own seam for per-audio-period engine readers is `Song::processNextBuffer()`
-  (`src/core/Song.cpp:245`); its Session View block runs **before** the `if (!m_playing) return;`
-  gate for the same reason a clock master needs — STOP is an *edge*.
-- Resolution: `DefaultTicksPerBar = 192`, `DefaultStepsPerBar = 16` ⇒ a step (a MIDI beat = a
-  16th note) is 12 ticks, a quarter is 48, so **1 clock pulse = 2 ticks**, **1 SPP unit = 12 ticks**.
-- The A16 row count is an **assertion**: `ReversibilityContractTest::documentedHistogram()`
-  carries `{162, 86, 13, 4, 59}` and `docs/RELEASE-NOTES-v0.3.0-alpha.md` quotes the release
-  configuration's `164 / 86 / 13 / 4 / 61`. Both move with a new group.
-- Ninth touch-point: `tools/mcp-zene-control/zene_control/commands_snapshot.json` (164 ids).
-
-## Files this lane adds / changes
-NEW: `include/MidiClock.h` · `src/core/MidiClock.cpp` · `src/core/MidiClockState.cpp` ·
-`src/core/MidiClockTracker.cpp` · `src/core/ControlCommandsClock.cpp` ·
-`tests/src/core/MidiClockTest.cpp` · `tests/control-clock-commands.py`
-MODIFIED (upstream, divergence ledger): `src/core/Song.cpp` · `src/core/midi/MidiClient.cpp` ·
-`include/MidiClient.h` · `src/core/midi/MidiAlsaSeq.cpp`
-MODIFIED (fork): `src/core/CMakeLists.txt` · `include/ControlRegistryGroups.h` ·
-`src/core/ControlRegistry.cpp` · `src/core/ControlReversibilityTable*.cpp` ·
-`tests/src/core/ReversibilityContractTest.cpp` · `tests/CMakeLists.txt` ·
-`tests/fork-sources.txt` · `tests/all-sources.txt` · `tests/upstream-modifications.txt` ·
-`docs/RELEASE-NOTES-v0.3.0-alpha.md` · `docs/KNOWN-LIMITATIONS.md` · the bridge snapshot
-
-## The BOUND, stated not implied
-The master's bytes reach a MIDI **device** only through a real backend. The headless proof
-asserts the engine's own emission (the message sequence + counters it publishes) and the
-slave's timing math, NOT that an external synth received them. MTC is **not generated**: a
-full-frame timecode master needs a frame rate, a drop-frame flag and a SMPTE offset the engine
-has no model for, so `clock.get_state` reports `mtc: "absent"` and KNOWN-LIMITATIONS says why.
-
-## State
-- [x] worktree + branch + build dir at `501d2cd3e`; configure EXIT=0
-- [x] engine half written (master generator, slave tracker, parser + output switches, Song hook)
-- [ ] engine half COMPILES + committed
-- [ ] command group + A16 rows + histogram + notes figure
-- [ ] MidiClockTest + ControlClockCommands
-- [ ] docs one-liners + manifests + snapshot
-- [ ] acceptance: local-ci, run-all-gates, release-honesty, gates 4/7/8/9/6/10/11
-
-## Next command
-```
-cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wpc/build
-cmake . > /tmp/wpc-030-cfg2.log 2>&1; echo CFG=$?
-cmake --build . -j4 > /tmp/wpc-030-build2.log 2>&1; echo BUILD=$?
+```bash
+cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wmidi
+tail -3 /tmp/wmidi-logs/wmidi-build2.log; grep -n "error:" /tmp/wmidi-logs/wmidi-build2.log | head
 ```
 
-<!-- A FOURTH lane status page, kept for the same reason as the three
-     above: 030/chain-presets committed a file at this path too. Nothing
-     below is edited. -->
+(If it says `BUILD EXIT=0` and prints no `error:` lines, run the acceptance
+block below in this order.)
 
-# LANE STATE — 030-chain-presets (worktree zene-030/wch, branch 030-chain-presets)
+## Remaining acceptance list
 
-Base: `501d2cd3e` (release/0.3.0). Item: OWNER-31 item 2, "plugin chains as reusable presets".
-HEAD at sign-off: `6a2ec5bc6` (7 commits above the base; all of them committed, tree clean).
+```bash
+bash tools/local-ci.sh --build-dir build --jobs 2                  # ctest MUST be 100%; 0 tests is an ERROR
+cd build/tests && ctest -R 'MidiReconnectTest|ControlMidiReconnect|ControlCommandsSnapshot|ReversibilityContractTest' --output-on-failure
+bash tests/run-all-gates.sh                                        # exit 3 or 0, NEVER 1
+bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build   # 6/6
+bash tests/complexity-gate.sh --check ; bash tests/file-length-gate.sh --check ; bash tests/duplication-gate.sh
+bash tests/fork-sources-gate.sh ; bash tests/no-upstream-regression-gate.sh
+bash tests/unregistered-tests-gate.sh ; bash tests/evidence-gate.sh ; bash tests/no-tautology-gate.sh
+bash tests/complexity-gate.sh --check --scope all ; bash tests/file-length-gate.sh --check --scope all
+# snapshot (needs the built binary):
+QT_QPA_PLATFORM=offscreen build/zene --control-socket /tmp/wmidi-logs/snap.sock &   # then:
+python3 tools/mcp-zene-control/snapshot_commands.py --socket /tmp/wmidi-logs/snap.sock
+git add tools/mcp-zene-control/zene_control/commands_snapshot.json
+```
 
-## The feature
-An effect chain can be captured as a NAMED preset (the ordered device list plus each device's own
-state document, which is `plugin.state_save`'s document - no second serialiser) and applied to
-another track. The store is the product's user preset tree,
-`<userPresets>/chainpresets/<name>.zcp`, i.e. OUTSIDE the project: that is what makes a preset usable
-in another project, and what makes it survive `project.save` / `project.open` by construction. The
-store is per-user, not per-project, and `docs/KNOWN-LIMITATIONS.md` says so.
+## Bounds this lane could not measure (stated, not hidden)
 
-Ids (all six headless-safe, no `requires`): `chain.list` · `chain.get_state` · `chain.save` ·
-`chain.apply` · `chain.rename` · `chain.remove`.
-A16: `chain.save` / `chain.apply` / `chain.rename` / `chain.remove` are `true_inverse` (recorded
-ACTION checkpoints; `chain.apply`'s writes the chain's own `<fxchain>` XML back through
-`EffectChain::loadSettings`, the project loader's path, and REFUSES a chain too large for the bounded
-snapshot rather than replacing it without an inverse). `chain.list` / `chain.get_state` are
-`not_mutating`. Table histogram now 170 rows / 90 / 13 / 4 / 63.
-
-## Verified (every number unpiped; logs in /tmp/wch-030-verify/)
-| command | exit |
-|---|---|
-| `cmake --build build -j2` (reduced config: `-DWANT_QT6=ON -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_WASM=OFF -DWANT_STEM_SPLIT=OFF`) | **0** |
-| `ctest -j2` in `build/tests` (the whole suite, reduced config) | **0** — 123/123 passed |
-| `ctest -R ControlChainPresetTest` | **0** |
-| `ctest -R ControlChainPresets` (the socket proof; by hand too: 28/28 checks) | **0** |
-| `ctest -R ReversibilityContractTest` / `ReversibilityUndoTest` / `ControlRegistryTest` | **0** |
-| `ctest -R ControlCommandsSnapshot` (after regenerating the snapshot) | **0** |
-| `ctest -R agent_surface` (the junk-argument sweep over every registered id) | **0** |
-| `bash tools/local-ci.sh --build-dir build-ci --jobs 2` (CI config: `-DUSE_WERROR=ON -DWANT_VST3=ON -DWANT_CLAP=ON`) | **0** — configure OK, build OK, ctest 100% (0 failed of 129) |
-| the lane's four ctests in `build-ci` (CI config) | **0** each |
-| `bash tests/release-honesty-gate.sh --header build-ci/lmmsversion.h --artifacts build-ci` | **0** (all 6 documented features match) |
-| `bash tests/complexity-gate.sh --check` (gate 4) | **0** |
-| `bash tests/duplication-gate.sh --check` (gate 8) | **0** |
-| `bash tests/fork-sources-gate.sh` (gate 9) | **0** — 366 entries, 0 stale |
-| `bash tests/no-upstream-regression-gate.sh` (gate 6) | **0** |
-| `bash tests/unregistered-tests-gate.sh` | **0** |
-| `bash tests/run-all-gates.sh --no-mutation` | **1** — gates 1/3/4/6/8/9/10 PASS, gates 7 + 11 FAIL, both pre-existing (below); 2 and 5 SKIP |
-| `bash tests/file-length-gate.sh --check` (gate 7) | **1** — `tests/control_socket_harness.py` (511) and `tests/control-socket-path-safety.py` (551→574); both byte-identical to `501d2cd3e` |
-| `bash tests/evidence-gate.sh` | **1** — 27 refused run-logs under `tests/evidence*` / `tests/control-*-logs`; all unchanged since `501d2cd3e`, none in this lane's commits |
-| `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` (REDUCED config) | **1** — the 3 FAILs are `WANT_VST3`/`WANT_CLAP` OFF, i.e. the smallest-tree configuration the brief asks for; the same gate is exit 0 against `build-ci` |
-| `tests/fork-sources.txt` and `tests/all-sources.txt`, each run through its own "Verify it" | prints `REPRODUCES` |
-
-## What could not be verified here
-- The two pre-existing gate reds (7, 11) are not this lane's to re-anchor; the parent decides.
-- Gate 5 (mutation) was not run (`--no-mutation`); gate 2 (coverage) was not run.
-- The MCP offline snapshot is regenerated for THIS tip (170 ids); the parent must regenerate it once
-  more after the last command-group merge of the wave, from a live instance of the merge tip.
-
-## Cleanup
-Both build trees (`build/`, `build-ci/`) are deleted, as the brief asks. To rebuild:
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWANT_QT6=ON \
-      -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_WASM=OFF -DWANT_STEM_SPLIT=OFF && cmake --build build -j2
-    # then, for the socket proof by hand:
-    cd build/tests && QT_QPA_PLATFORM=offscreen python3 ../../tests/control-chain-presets.py ../zene
+- Only the ALSA-sequencer client publishes port-list changes in this build
+  (`MidiAlsaSeq::noticesPortChanges()`); JACK/WinMM/CoreMIDI behaviour was NOT
+  measured and is NOT claimed — the engine reports `notice: "none"` for them and
+  `docs/KNOWN-LIMITATIONS.md` says so.
+- `aplaymidi` cannot supply the proof's external client (it requires `--port`,
+  i.e. direct addressing, which bypasses subscriptions — measured: exit 1,
+  "Please specify at least one port with --port"), so the lane's own probe
+  process is the external client.
