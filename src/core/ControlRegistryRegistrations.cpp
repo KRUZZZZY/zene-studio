@@ -74,7 +74,10 @@ void registerControlCommands(ControlRegistry& registry)
 	registerArrangementCommands(registry);
 	registerClipCommands(registry);
 	registerClipEditsCommands(registry);
+	registerClipTrimCommands(registry);
 	registerNoteCommands(registry);
+	registerNoteProbabilityCommands(registry);
+	registerRenderStemsCommands(registry);
 	registerPluginCommands(registry);
 	registerDspCommands(registry);
 	registerSettingsCommands(registry);

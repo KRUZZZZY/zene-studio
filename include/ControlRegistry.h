@@ -385,6 +385,16 @@ LMMS_EXPORT void registerClipCommands(ControlRegistry& registry);
 //! clip.set_fade/set_gain/crossfade - the same group's fade, crossfade and
 //! clip-gain commands (the fade/crossfade/clip-gain wave).
 LMMS_EXPORT void registerClipEditsCommands(ControlRegistry& registry);
+//! clip.trim / clip.slip - the same group's EDGE-editing verbs: a head trim that
+//! holds the audio still on the timeline, and a slip that moves the audio inside
+//! a fixed clip rectangle. Split out of registerClipCommands' file because the
+//! file ratchet is not moved for a new feature.
+LMMS_EXPORT void registerClipTrimCommands(ControlRegistry& registry);
+//! note.probability_set - the MIDI-depth probability verb (docs/MIDI-DEPTH.md).
+LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
+//! render.stems - per-track stem export through the shipped `exportstems` CLI
+//! (docs/STEM-EXPORT.md).
+LMMS_EXPORT void registerRenderStemsCommands(ControlRegistry& registry);
 //! note.add/remove/move/resize/velocity_set/select and roll.get_state
 LMMS_EXPORT void registerNoteCommands(ControlRegistry& registry);
 //! plugin.* and dsp.get_state - the device catalogue, load/unload/bypass,

@@ -772,3 +772,61 @@ and a `<dc:rights>` stating they contain no third-party artwork, and all 34 gene
 **The upstream artwork sentence that used to sit here is deleted, not softened** — it read "the plugin logo's
 artwork is currently the upstream artwork, which is CC0-licensed and credited", which was true at the
 release-prep base and is false at this one.
+
+## The 0.3.0 verb wave: `clip.trim`, `clip.slip`, `note.probability_set`, `render.stems`
+
+Four ids whose engines were already in the tree and whose command surface was not. All four
+are **drivable through the socket, not from the interface**, and this section is the honest half.
+
+- **UI absence — one line: `clip.trim` is drivable through the socket, not from the interface.**
+  The song editor does have the gesture the command implements — the left-edge drag in
+  `src/gui/clips/ClipView.cpp`, whose three-line rule (position, length and source offset move
+  together) `clip.trim` reproduces exactly — but no menu item, action or keybinding reaches the
+  *command*: the GUI path is the drag, an agent's path is the id. Nothing in `src/gui/` invokes
+  `clip.trim`.
+- **UI absence — one line: `clip.slip` is drivable through the socket, not from the interface.**
+  There is no slip gesture anywhere in the product: a case-insensitive grep for `slip` over `src/`
+  and `include/` returns seven hits and every one of them is a comment or a doc-string. The
+  nearest existing concept is the comp take's `srcpos`, which is recorded and reported but
+  deliberately **not applied** (`docs/COMPING.md`). `clip.slip` is the first implementation of the
+  verb and it is socket-only.
+- **UI absence — one line: `note.probability_set` is drivable through the socket, not from the
+  interface.** `docs/MIDI-DEPTH.md` already states it — "Probability/velocity jitter is not exposed
+  in the GUI editor (no drag handle, no right-click entry). The values are editable only by
+  file/API today, so the feature is reachable by the render path and by tests, not yet by mouse" —
+  and a grep for `probability` over `src/gui/` returns zero matches. This release adds the
+  control-surface id and **no** UI control.
+- **UI absence — one line: `render.stems` is drivable through the socket, not from the interface.**
+  Stem export exists as the CLI subcommand `lmms exportstems` and as
+  `RenderManager::exportStems()`. The File menu's **"Export Tracks..."** action is a *different,
+  pre-existing* code path (`renderTracks()`, which trims each stem to its own track's length and
+  does not align them); this id neither changes it nor is wired to it, and there is no
+  "export stems" menu entry, dialog or action that reaches `render.stems`.
+
+**Stated limits.**
+
+- **`clip.trim` and `clip.slip` do not author the sample window.** `SampleClip`'s authored window
+  (`srcin`/`srcout`) is written only when it is not the whole buffer, and is applied on load only
+  `if (_this.hasAttribute("srcin") || _this.hasAttribute("srcout"))` — there is **no
+  reset-on-absence** for it, so a Clip checkpoint captured before a *first* window edit could not
+  take that edit back. Both verbs therefore write only attributes their clip type serialises
+  **unconditionally** (`pos`, `len`, `off`, `autoresize`), and `setSampleWindow` is not reachable
+  from this surface in 0.3.0; an agent that wants to move which part of a source plays uses
+  `clip.slip`'s tick offset. A frame-domain trim is a later feature and is not claimed here.
+- **`clip.trim` does not reduce a pattern clip's offset modulo the pattern length.** The song
+  editor does that as a GUI overflow guard; the value this command sets is the value the model
+  holds, and the engine moduluses at use time.
+- **`render.stems` renders PER TRACK, post-fader, not per bus.** `docs/STEM-EXPORT.md`'s "No
+  bus-level stems" states it: a "bus" is a `MixerChannel`, not a `Track`, and the render path
+  isolates tracks by muting, so `exportStems` selects tracks. The tail is one bar past the project
+  end by default (`stemTailBars`, settable through `tail_bars`), which is the whole-project
+  render's own convention. Bus-level stems are not claimed.
+- **`render.stems` carries the DECLARED BOUND every render-running command carries.** The export
+  runs in a child process and blocks the dispatch thread on `waitForFinished(600000)` (worst case
+  630 s with the 30 s start bound), so the control surface does not answer — `control.ping`
+  included — until the export finishes. This is the **same** defect `docs/RENDER-CHILD-WAIT.md`
+  records for `render.render` and the three bounce/freeze commands, and the deferred-reply fix that
+  document designs is **not built in this release**. `render.stems` does not pretend to a timeout
+  knob it does not have: the bound is stated in the command's own description and in its A16
+  contract row, and the ctest that exercises it (`ControlStemExportVerb`) gives the call its own
+  declared per-command budget rather than raising a socket timeout to hide the wait.

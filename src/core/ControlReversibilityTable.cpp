@@ -482,8 +482,8 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		// The group files, in the order ReversibilityTable's map wants them: a
 		// repeated id is OVERWRITTEN, so the order is part of the contract.
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityActionRowTable,
-				reversibilityTrackFolderRowTable, reversibilityVcaRowTable,
-				reversibilityRoutingRowTable})
+				reversibilityTrackFolderRowTable, reversibilityVcaRowTable, reversibilityRoutingRowTable,
+				reversibilityVerbRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

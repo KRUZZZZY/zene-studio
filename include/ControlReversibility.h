@@ -136,6 +136,13 @@ LMMS_EXPORT const ReversibilityRow* reversibilityTrackFolderRowTable(int* rowCou
 //! `not_mutating` and live with the other passive rows, because the table's
 //! blocks are split by what the inverse IS and not by command group.
 LMMS_EXPORT const ReversibilityRow* reversibilityVcaRowTable(int* rowCount);
+//! The 0.3.0 verb wave's three LIVE-checkpoint rows (clip.trim, clip.slip,
+//! note.probability_set). Joined into reversibilityRowTable() for the same
+//! reason the folder rows are - the block's class comes from each row, not from
+//! its file - and because the true_inverse half's own file sits at the file
+//! ratchet. render.stems is NOT here: it is not_mutating and lives with the
+//! other not_mutating rows in ControlReversibilityTablePassive.cpp.
+LMMS_EXPORT const ReversibilityRow* reversibilityVerbRowTable(int* rowCount);
 //! The chain-preset GROUP's four recorded-action rows (OWNER-31 item 2: the
 //! preset store is a file tree outside the project, so each command records the
 //! undo step for its own file operation). Joined into the action half by

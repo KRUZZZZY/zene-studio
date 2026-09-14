@@ -104,6 +104,10 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsClipEdits.cpp
+	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.
+	# Split into its own TU because ControlCommandsClipEdits.cpp is at the file
+	# ratchet; see the header of the file for the design rule both verbs follow.
+	core/ControlCommandsClipTrim.cpp
 	# MIDI clock / MTC (0.3.0): the DAW as a clock master and as a clock slave.
 	# The engine half is the MidiClock* sources below; this is the command group
 	# that drives it. See docs/KNOWN-LIMITATIONS.md for the bound it states.
@@ -140,6 +144,9 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsMidi.cpp
 	core/ControlCommandsNotes.cpp
+	# note.probability_set (0.3.0 verb wave): the MIDI-depth probability verb the
+	# engine has carried since docs/MIDI-DEPTH.md and never got an id for.
+	core/ControlCommandsNoteProbability.cpp
 	core/ControlCommandsPlugin.cpp
 	core/ControlCommandsPluginParams.cpp
 	core/ControlCommandsPluginPreset.cpp
@@ -147,6 +154,10 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
+	# render.stems (0.3.0 verb wave): per-track stem export through the CLI path the
+	# product already ships (`lmms exportstems`), with the same declared bound every
+	# render-running command carries - see the file header and docs/RENDER-CHILD-WAIT.md.
+	core/ControlCommandsRenderStems.cpp
 	core/ControlCommandsRack.cpp
 	core/ControlCommandsRackMacros.cpp
 	core/ControlCommandsRackZones.cpp
@@ -233,6 +244,11 @@ set(LMMS_SRCS
 	# routing verbs): a GROUP's rows whatever their class, joined by
 	# reversibilityRowTable() exactly as the folder-tracks group's are.
 	core/ControlReversibilityTableRouting.cpp
+	# The 0.3.0 verb wave's three LIVE-checkpoint rows (clip.trim, clip.slip,
+	# note.probability_set). Its own TU because ControlReversibilityTable.cpp is at
+	# the file ratchet; reversibilityRowTable() joins it, so the block keeps ONE
+	# row count and each row's class still comes from the row.
+	core/ControlReversibilityTableVerbs.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp
