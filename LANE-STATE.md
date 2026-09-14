@@ -85,7 +85,7 @@ transaction, and its A16 row documents the declared render bound in the `mechani
 | `bash tests/unregistered-tests-gate.sh` | **0** | PASS, 127 scanned / 125 registered / 2 declared |
 | `bash tests/evidence-gate.sh` | **0** | PASS, 6262 files, 0 refused |
 | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | **1** | SEE §3 — caused by the DECLARED build configuration (VST3/CLAP OFF), not by any code in this branch |
-| `bash tests/run-all-gates.sh` | in flight | background PID 1894050; a previous attempt was killed by the 420 s tool cap and **left a mutant in `src/core/RoutingGraph.cpp`** (`std::greater` → `std::less`), which was found by `git status` and restored with `git checkout --`. The tree is clean at `4660a1fcc` |
+| `bash tests/run-all-gates.sh` | **1** | **FINAL RUN: only gate 1 (ctest) fails**, on the two reds below — gates 3–11 all PASS (`4 complexity PASS` after the CCN fix, `5 mutation PASS`, `6–11 PASS`). A first attempt was killed by the 420 s tool cap and **left a mutant in `src/core/RoutingGraph.cpp`** (`std::greater` → `std::less`), found by `git status` and restored. The completed run restores its own mutants; `git status` is clean at `ccdca1ccc` |
 | `bash tools/local-ci.sh --build-dir build --jobs 2` | **not run** | it re-configures with the release options (`-DWANT_VST3=ON -DWANT_CLAP=ON`), which needs the vst3sdk/clap checkouts fetched; the lane was told to build the smallest configuration that exercises its code. Its ctest step was run directly instead (row 6 above) and `release-honesty-gate.sh` reports the same configuration gap |
 
 ### The two reds, named
@@ -141,10 +141,10 @@ cd build/tests && ctest -R ControlCommandsSnapshot --output-on-failure   # expec
 - [x] `ctest --output-on-failure -j 2` (whole suite) → **131/133**, both reds named and accounted for
 - [x] gates 4 / 6 / 7 / 8 / 9 + unregistered-tests + evidence → **all EXIT=0**
 - [x] `bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` → EXIT=1, explained by the declared build configuration
-- [~] `bash tests/run-all-gates.sh` → started in the background (PID 1894050); a killed attempt left a mutant in `src/core/RoutingGraph.cpp`, found and restored. Instruction to the parent: **re-check `git status` before merging this branch**
-- [ ] `bash tools/local-ci.sh --build-dir build --jobs 2` — NOT run (re-configures to the release options; needs the vst3sdk/clap checkouts). Its ctest step was run directly.
+- [x] `bash tests/run-all-gates.sh` → **EXIT=1 with ONLY gate 1 red** (the two known reds below); gates 3–11 PASS. Gate 4 first went red (`check_the_export` CCN 12) and was fixed by splitting the function — a killed attempt also left a mutant in `src/core/RoutingGraph.cpp`, found by `git status` and restored
+- [ ] `bash tools/local-ci.sh --build-dir build --jobs 2` — NOT run (re-configures to the release options; needs the vst3sdk/clap checkouts). Its ctest step was run directly: `ctest --output-on-failure -j 2` → 131/133.
 - [ ] the NEGATIVE CONTROL, recorded (see §8) — procedure written, NOT executed (it needs a rebuilt engine)
-- [ ] `rm -rf build` and report the space freed
+- [x] `rm -rf build` — the directory measured **22 G** by `du` and is gone (`ls -d build` → *No such file or directory*). Whole-filesystem free space on `/` read 74 G before and after because sibling lanes are building concurrently in their own worktrees, so the reclaim is not visible in `df` at this granularity. No stray instance was left: `pgrep -a zene` returns nothing. `git status` is clean at the final commit.
 - [x] commit; STOP (do not merge, do not push)
 
 ## 7. Verbatim replacement row text for `docs/FEATURE-LIST-0.3.0.md`
