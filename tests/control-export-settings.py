@@ -19,6 +19,15 @@ import time
 
 BINARY = sys.argv[1]
 PROJECT = sys.argv[2]
+# The bounds are the shared harness's own (tests/control_socket_harness.py lines
+# 60-63), except CALL_TIMEOUT, which is this file's previous socket timeout -
+# every ordinary call keeps the bound it always had. A healthy instance answers a
+# ping in milliseconds, and the readiness budget is declared SEPARATELY from one
+# socket read. This file stays standalone so it can be read as the protocol's
+# shape, so the numbers are named here, not re-derived.
+CALL_TIMEOUT = 30.0
+PING_TIMEOUT = 10.0
+READY_TIMEOUT = 120.0
 # A PRIVATE run directory per invocation, not two fixed /tmp names. This file is
 # a registered ctest (ControlExportSettings) since the 2026-09-13 coverage
 # audit, and two ctest runs on one box - this lane's build beside a sibling
@@ -74,25 +83,67 @@ if not os.path.exists(SOCKET):
     sys.exit(1)
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.settimeout(30)
+sock.settimeout(CALL_TIMEOUT)
 sock.connect(SOCKET)
-stream = sock.makefile("rwb")
 next_id = 0
 failures = []
+pending = b""
 
 
-def call(method, params=None):
+class NoAnswer(Exception):
+    """One bounded read expired. NOT the end of the readiness budget."""
+
+
+def read_line(timeout):
+    """One reply line, read with recv over an explicit buffer.
+
+    NOT socket.makefile(): its own documentation warns that the file object's
+    internal buffer may end up in an inconsistent state if a timeout occurs -
+    and a timeout is exactly what this file has to survive while the engine
+    starts. tests/control_socket_harness.py's Client._read_line reads the same
+    way, for the same reason.
+    """
+    global pending
+    deadline = time.time() + timeout
+    while b"\n" not in pending:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            raise NoAnswer("no reply line inside %.1fs" % timeout)
+        sock.settimeout(remaining)
+        try:
+            chunk = sock.recv(65536)
+        except OSError as error:
+            raise NoAnswer("no reply line inside %.1fs (%s)" % (timeout, error)) from error
+        if not chunk:
+            raise NoAnswer("the server closed the connection without answering")
+        pending += chunk
+    line, pending = pending.split(b"\n", 1)
+    return line
+
+
+def call(method, params=None, timeout=CALL_TIMEOUT):
+    """Send one request, return its reply. Raises NoAnswer when none arrives.
+
+    A reply that answers an EARLIER request (a readiness ping the engine was
+    still starting to answer) is discarded with a note, never returned: the
+    stream would shift and answer request N with N-1's result. The shared
+    harness's Client.call applies the same rule.
+    """
     global next_id
     next_id += 1
     request = {"id": next_id, "cmd": method}
     if params is not None:
         request["args"] = params
-    stream.write((json.dumps(request) + "\n").encode())
-    stream.flush()
-    line = stream.readline()
-    if not line:
-        raise RuntimeError("no reply to %s" % method)
-    return json.loads(line.decode())
+    sock.sendall((json.dumps(request) + "\n").encode())
+    deadline = time.time() + timeout
+    while True:
+        remaining = deadline - time.time()
+        line = read_line(remaining if remaining > 0 else 0.05)
+        reply = json.loads(line.decode())
+        if reply.get("id") == next_id:
+            return reply
+        print("note: discarded a stale reply to an earlier request: %s"
+              % line.decode()[:160])
 
 
 def report(label, reply):
@@ -101,18 +152,49 @@ def report(label, reply):
 
 
 # 1. wait for readiness (the documented order: connect, poll, then command)
+#
+# The engine initialises on the thread that serves this socket, so while it
+# starts the socket answers NOTHING: CI measured a ping answered at 0.006s
+# (engine_missing) and then silence for the whole engine start, which on the
+# linux-arm64 job is ~34s of one core inside Engine::init
+# (tests/control_socket_harness.py, STARTUP_BOUND). A ping that does not answer
+# inside PING_TIMEOUT is therefore NOT the end of the readiness budget - one
+# socket read is not the budget this loop declares. MEASURED, job 103810839355
+# (linux-arm64, run 34789449244): this loop used to read through
+# socket.makefile() with a bare 30s socket timeout, the FIRST ping landed in
+# that ~34s stall, and the whole test died with an uncaught
+# "TimeoutError: timed out" 30.36s in, inside the readiness loop's own ping
+# (control-export-settings.py:108 in that run) - a 60s readiness budget that one
+# 30s read could kill, on a platform whose engine start is longer than the read.
+# The poll is now bounded by READY_TIMEOUT, the ping timeout is the harness's own
+# PING_TIMEOUT, and expiry reports what was measured rather than raising.
 ready = False
 reply = {}
-deadline = time.time() + 60
+last_error = None
+deadline = time.time() + READY_TIMEOUT
 while time.time() < deadline:
-    reply = call("control.ping")
+    if proc.poll() is not None:
+        print("FAIL: the instance exited (code %s) while waiting for the engine; log tail:"
+              % proc.returncode)
+        print(open(LOG).read()[-2000:])
+        sys.exit(1)
+    try:
+        reply = call("control.ping", timeout=PING_TIMEOUT)
+    except NoAnswer as error:
+        last_error = str(error)
+        continue
     if (reply.get("result") or {}).get("engine_ready") is True:
         ready = True
         break
     time.sleep(0.2)
 report("control.ping", reply)
 if not ready:
-    failures.append("control.ping never reported engine_ready")
+    print("FAIL: control.ping never reported engine_ready inside %.0fs (last error: %s)"
+          % (READY_TIMEOUT, last_error))
+    print("app log tail:")
+    print(open(LOG).read()[-2000:])
+    print("the run directory is kept for inspection: %s" % RUN_DIR)
+    sys.exit(1)
 
 # 2. the command group is registered
 ids = (report("control.commands_list", call("control.commands_list")).get("result") or {})

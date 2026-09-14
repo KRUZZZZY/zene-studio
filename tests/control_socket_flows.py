@@ -83,6 +83,56 @@ def read_cap_refusal(client, problems):
         print("note: discarded a reply to an earlier request while reading the cap refusal: %s"
               % line.decode("utf-8", "replace")[:160])
 
+
+def read_pipelined_reply(client, expected_id, timeout):
+    """(reply, byte-length) for `expected_id`, discarding earlier requests' replies.
+
+    The second raw reader, and it exists for the SAME measured reason `read_cap_refusal`
+    does: a raw reader that takes the first line is fooled by a late reply to an earlier
+    request). Its caller (tests/control-socket-path-safety.py, the large-reply case) has
+    SENT a BATCH of requests and then reads that batch, so `Client.call` is not usable -
+    there is no "the" reply to match - and the batch is large enough that the readiness
+    poll's own reply can still be ahead of it in the buffer.
+
+    MEASURED, job 103810839355 (linux-arm64, run 34789449244): `wait_ready`'s pings are
+    answered late there (one core inside Engine::init for ~34s, the same stall
+    control_socket_harness.STARTUP_BOUND documents), so a ping's reply - `{"id":0,…,
+    "pong":true,…}`, 244 bytes - was in the buffer AHEAD of the batch. The case's first
+    raw `_read_line` took it and the case reported two problems:
+
+        reply 0 was {'id': 0, 'ok': True, … 'pong': True …}, expected the ok reply for id 900
+        this case proves nothing here: only 244 bytes were needed …
+
+    Note what those two sentences together say: the case never read ONE batch reply, so
+    nothing about the server's large-reply behaviour was measured - and the replies were
+    not truncated, the reader was one line out of step. So the staleness rule is applied
+    exactly as the harness's `Client.call` applies it (a line answering a DISPATCHED
+    request that is not `expected_id` is a late reply to an earlier request and is
+    discarded with the same note); the batch's own ids are >= expected_id's, so only
+    EARLIER ids are discarded as stale, and any other id is RETURNED so the caller's own
+    "reply N was …" check reports it rather than silently dropping it.
+
+    Returns (reply, byte-length), and raises the harness's `Blocked`/`Timeout` when nothing
+    matching arrives inside `timeout` (across the discards), so the caller keeps its own
+    wording for a batch reply that never arrived.
+    """
+    deadline = time.time() + timeout
+    while True:
+        remaining = deadline - time.time()
+        line = client._read_line(remaining if remaining > 0 else 0.05)  # noqa: SLF001
+        try:
+            candidate = json.loads(line.decode("utf-8", "replace"))
+        except ValueError:
+            print("note: discarded a line that is not a JSON reply while reading the "
+                  "batch: %r" % line[:160])
+            continue
+        if candidate.get("id", expected_id) < expected_id:
+            print("note: discarded a reply to an earlier request while reading the batch: "
+                  "%s" % line.decode("utf-8", "replace")[:160])
+            continue
+        return candidate, len(line)
+
+
 # ---------------------------------------------------------------------------
 # flow helpers - a whole case, in one call
 # ---------------------------------------------------------------------------

@@ -69,7 +69,7 @@ from control_socket_harness import (  # noqa: E402
     PING_TIMEOUT, QUIT_TIMEOUT, READY_TIMEOUT, Blocked, Instance, Problems,
     Timeout, Transcript, connect, finish, ok, start_instance, wait_ready,
 )
-from control_socket_flows import read_cap_refusal  # noqa: E402
+from control_socket_flows import read_cap_refusal, read_pipelined_reply  # noqa: E402
 
 # A refusal is immediate (measured: exit 1 within a second); this bound is for the
 # PRE-FIX binary, which does not refuse at all and keeps running: the control run
@@ -522,15 +522,15 @@ def case_large_reply_to_a_slow_peer(binary):
         got = 0
         try:
             for i in range(pipelined):
-                line = client._read_line(LARGE_REPLY_TIMEOUT)  # noqa: SLF001 (harness reader)
-                received += len(line)
+                expected = base_id + i
+                reply, length = read_pipelined_reply(client, expected, LARGE_REPLY_TIMEOUT)
+                received += length
                 got += 1
-                reply = json.loads(line.decode("utf-8", "replace"))
-                if reply.get("id") != base_id + i or reply.get("ok") is not True:
+                if reply.get("id") != expected or reply.get("ok") is not True:
                     problems.add("reply %d was %r, expected the ok reply for id %d"
-                                 % (i, reply, base_id + i))
+                                 % (i, reply, expected))
                     break
-        except Timeout as failure:
+        except (Blocked, Timeout) as failure:
             problems.add("reply %d of %d never arrived (%d bytes in): %s (the connection "
                          "was retired instead of being waited for)"
                          % (got + 1, pipelined, received, failure))
