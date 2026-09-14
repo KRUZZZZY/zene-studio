@@ -154,6 +154,40 @@ record with `commands: 200`, and the record list still evicts at the same depth 
 
 ---
 
+## The id a re-load must give back (defect fix, `030/platform-defects`)
+
+**The rule this is the foundation of.** `one control.undo` unwinds ONE step. That is what the
+coalescing rule above buys (`"a 200-call drag is one Ctrl+Z"`), what the transaction records
+describe, and what a step's objects have to survive for. A step names its objects by the journal
+id they had when it was captured, so an object that is DELETED and RE-CREATED - every clip of a
+track, when a Track checkpoint is restored, because `Track::loadTrack` calls `deleteClips()` and
+builds each clip again from the saved XML - must get that id back or its step can never be applied
+again.
+
+**What was wrong, measured.** `JournallingObject::saveState` writes `<journallingObject id=N>` for
+every object it saves. `JournallingObject::restoreState` searched its children for a node named
+`"journal"` - a name **nothing in the tree writes** - so the id was never restored, on any path,
+since the fork. After the freeze's own undo the clips held brand-new ids, and every clip checkpoint
+recorded before it named a dead object.
+
+**What that cost, because it is not merely one lost edit.** `ProjectJournal::undo()` pops the NEXT
+step when a step's objects are all gone (the historical behaviour, documented as such in
+`include/ProjectJournal.h`). A dead step therefore made one `control.undo` consume SEVERAL steps and
+take back an edit nobody asked about. Measured on this defect, before the fix: the freeze
+transcript's own scenario reported `depth 6 -> 4` where one undo must drop it by 1, and the clip
+edit the call was asked to restore did not come back - the isolated scenario reported
+`notes=[1, 0]` with one clip destroyed. **`one command = one undo step` was false for every edit
+made before a freeze**, which is exactly the pretending Decision 2 exists to remove.
+
+**The fix.** Read the node the writer writes. `changeID()` stays the guard, so two objects still
+cannot share an id. Proof: `ControlFreezeCommandsTranscript`'s
+`check_freeze_undo_restores_clip_edits`, which fails before the change and passes after it.
+
+**What this does NOT change, said so nobody reads more into it.** The count cap, the byte budget,
+the eviction rule and the window are untouched. A step whose objects are GENUINELY gone is still
+skipped rather than refused: that remains `ProjectJournal::undo()`'s documented historical
+behaviour and is not what this fix addresses.
+
 ## Where a reader finds each decision
 
 | decision | written down in |
@@ -165,6 +199,7 @@ record with `commands: 200`, and the record list still evicts at the same depth 
 | the window's value and its meaning | `include/ControlReversibility.h` (`UndoCoalesceWindowMs`) |
 | the commands that expose and control all of it | `src/core/ControlCommandsUndo.cpp`, `docs/A16-REVERSIBILITY.md` §1 |
 | the proof | `tests/src/core/UndoBoundsTest.cpp` |
+| the id a re-load must give back (a Track checkpoint's undo re-creates every clip) | `src/core/JournallingObject.cpp` (`restoreState`'s comment), this file §"The id a re-load must give back" |
 
 ## Defects found while doing this (both measured, both fixed here)
 

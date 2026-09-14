@@ -93,11 +93,24 @@ void JournallingObject::restoreState( const QDomElement & _this )
 
 	saveJournallingState( false );
 
-	// search for journal-node
+	// THE ID THIS OBJECT WAS SAVED WITH (see this file's saveState): a
+	// re-created object - a clip Track::loadTrack deletes and re-creates, any
+	// object a project load builds from the file - must keep the journal id
+	// every undo step recorded against it names. The writer has always emitted
+	// it; this reader looked for a node called "journal", which NOTHING in the
+	// tree writes, so the id was dropped in silence and every checkpoint
+	// recorded before a Track re-load named a dead object. ProjectJournal::undo()
+	// then skipped that step and unwound an OLDER one, so ONE control.undo took
+	// back an edit the caller never asked for - measured while fixing the freeze
+	// defect in docs/UNDO-BOUNDS.md ("the id a re-load must give back").
+	//
+	// Defensive against a file that claims an id another live object holds:
+	// changeID() is the guard (it refuses and reports), so this cannot make two
+	// objects share one id.
 	QDomNode node = _this.firstChild();
 	while( !node.isNull() )
 	{
-		if( node.isElement() && node.nodeName() == "journal" )
+		if( node.isElement() && node.nodeName() == "journallingObject" )
 		{
 			const jo_id_t new_id = node.toElement().attribute( "id" ).toInt();
 			if( new_id )

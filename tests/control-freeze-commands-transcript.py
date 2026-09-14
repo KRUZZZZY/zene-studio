@@ -367,6 +367,45 @@ def everyRecordIsReversible(records):
     return all(r.get("reversible") is True for r in records)
 
 
+def check_freeze_undo_restores_clip_edits(session, fixture, recorder):
+    """ONE control.undo per edit, across the freeze's OWN undo.
+
+    Undoing a freeze re-loads the Track, and Track::loadTrack deletes every clip
+    and re-creates it from the saved XML. A re-created clip that does not get back
+    the journal id its checkpoint names leaves the next control.undo with nothing
+    to restore - and ProjectJournal::undo() then unwinds an OLDER step instead, so
+    ONE undo takes back an edit nobody asked about (measured before the fix: the
+    clip edit's undo cost a whole clip, depth 7 -> 4).
+    """
+    clip = fixture["clips"][0]
+    notes = note_ids(session, clip)
+    removed = session.result("note.remove", {"clip": clip, "note": notes[0]})
+    recorder.check("the freeze-undo fixture removed one clip's note",
+                   len(notes) == 1 and removed.get("note_count") == 0,
+                   "notes=%s note_count=%r" % (notes, removed.get("note_count")))
+    frozen = session.result("freeze.track", {"track": fixture["track"]})
+    recorder.check("the freeze-undo fixture froze the track", frozen.get("frozen") is True,
+                   "frozen=%r" % frozen.get("frozen"))
+    session.result("control.undo")                       # the freeze's own undo
+    state = session.result("track.get_state", {"track": fixture["track"]})
+    recorder.check("the freeze-undo fixture took the freeze off first",
+                   state.get("frozen") is False, "frozen=%r" % state.get("frozen"))
+    before = session.result("control.undo_depth").get("depth")
+    session.result("control.undo")                       # the clip edit's undo
+    counts = [len(note_ids(session, c)) for c in fixture["clips"]]
+    after = session.result("control.undo_depth").get("depth")
+    recorder.check("a freeze's own undo does not orphan the clip edits made before it",
+                   counts == [1, 1], "notes=%s depth %r -> %r" % (counts, before, after))
+    # The sharper half: `depth` was read with the clip edit on top of the stack, so
+    # a correct journal drops it by exactly one. Before the fix this call dropped it
+    # by two - it had skipped the orphaned clip step and unwound an OLDER edit.
+    recorder.check("ONE control.undo unwound ONE step, not several",
+                   isinstance(before, int) and isinstance(after, int) and before - after == 1,
+                   "notes=%s depth %r -> %r (one undo must drop the depth by one)"
+                   % (counts, before, after))
+    clip_mutes(session, fixture["track"], recorder, "freeze-undo")
+
+
 def check_transactions(session, recorder):
     """The freeze verbs are true_inverse records; the bounce is not a record."""
     records = freeze_records(session)
@@ -414,6 +453,7 @@ def run_checks(session, instance, recorder, transcript):
     check_undo(session, fixture, recorder, outdir)
     check_region_freeze(session, fixture, recorder, outdir)
     check_refusals(session, fixture, recorder)
+    check_freeze_undo_restores_clip_edits(session, fixture, recorder)
     check_transactions(session, recorder)
     check_quit(session, instance, recorder)
     return fixture
