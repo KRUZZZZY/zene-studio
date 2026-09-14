@@ -82,7 +82,7 @@ struct GroupSnapshot
 	std::vector<int> tracks;
 };
 
-GroupSnapshot snapshotGroup(const VcaGroup* group)
+GroupSnapshot snapshotGroup(VcaGroup* group)
 {
 	GroupSnapshot snap;
 	snap.id = group->id();

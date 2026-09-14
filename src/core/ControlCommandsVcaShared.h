@@ -66,6 +66,7 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "Clip.h"            // control::clipState()'s object, and a moved clip's own state
 #include "ControlEdit.h"       // control::resolveTrack()
 #include "ControlRegistry.h"   // ControlResult, ControlErrorKind
 #include "ControlVocabulary.h" // control::channelId(), control::trackId(), idToIndex()

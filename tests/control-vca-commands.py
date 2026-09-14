@@ -52,6 +52,7 @@ Exit code 0 only when every check held.
 """
 
 import os
+import re
 import sys
 
 import control_socket_harness as H
@@ -93,12 +94,22 @@ def clip_position(session, clip):
     return None
 
 
-def published_gain(session, channel):
-    """The gain the audio path is actually scaling a channel by, from mixer.*."""
+def channel_volume(session, channel):
+    """A mixer channel's own fader value, from mixer.* - not from vca.*."""
     for entry in session.result("mixer.get_state").get("channels", []):
         if entry.get("id") == channel:
-            return entry.get("gain_for_member", entry.get("vca_gain"))
+            return entry.get("volume")
     return None
+
+
+def ensure_channels(session, recorder, wanted):
+    """The group commands need channels to assign; a fresh instance has few."""
+    count = session.result("mixer.get_state").get("count", 0)
+    while count < wanted:
+        session.result("mixer.add_channel")
+        count = session.result("mixer.get_state").get("count", 0)
+    recorder.check("the mix has at least %d channels to group" % wanted, count >= wanted,
+                   "count=%r" % count)
 
 
 def member_gain(state, channel):
@@ -108,21 +119,36 @@ def member_gain(state, channel):
     return None
 
 
+def missing_ids(described):
+    return [i for i in VCA_IDS if i not in described]
+
+
+def wrong_group_ids(described):
+    return [i for i, entry in described.items()
+            if entry.get("group") != "vca" and i in VCA_IDS]
+
+
+def schema_less_ids(described):
+    return [i for i in VCA_IDS if i in described and not described[i].get("args_schema")]
+
+
+def read_ids(described):
+    return [i for i in VCA_IDS if i in described and not described[i].get("mutating", True)]
+
+
 def check_ids(session, recorder):
     """Every id is registered, in group vca, with both schemas declared."""
     described = described_commands(session)
-    missing = [i for i in VCA_IDS if i not in described]
-    recorder.check("all fourteen vca.* ids are registered", not missing, "missing=%r" % missing)
-    wrong_group = [i for i in VCA_IDS
-                   if i in described and described[i].get("group") != "vca"]
-    recorder.check("every vca.* id declares group vca", not wrong_group, "wrong=%r" % wrong_group)
-    schema_absent = [i for i in VCA_IDS if i in described
-                     and not described[i].get("args_schema")]
-    recorder.check("every vca.* id declares an argument schema", not schema_absent,
-                   "absent=%r" % schema_absent)
-    reads = [i for i in VCA_IDS if i in described and not described[i].get("mutating", True)]
+    absent = missing_ids(described)
+    recorder.check("all fourteen vca.* ids are registered", not absent, "missing=%r" % absent)
+    wrong = wrong_group_ids(described)
+    recorder.check("every vca.* id declares group vca", not wrong, "wrong=%r" % wrong)
+    schema_less = schema_less_ids(described)
+    recorder.check("every vca.* id declares an argument schema", not schema_less,
+                   "absent=%r" % schema_less)
+    reads = sorted(read_ids(described))
     recorder.check("vca.list and vca.get_state are the only reads",
-                   sorted(reads) == sorted(VCA_READS), "reads=%r" % reads)
+                   reads == sorted(VCA_READS), "reads=%r" % reads)
 
 
 def check_create(session, recorder):
@@ -150,7 +176,7 @@ def check_create(session, recorder):
 
 def check_fader(session, recorder, group):
     """The fader SCALES: members are never written, and the undo puts it back."""
-    before_volume = session.result("mixer.get_state").get("channels", [{}])[1].get("volume")
+    before_volume = channel_volume(session, "ch-1")
     for channel in ("ch-1", "ch-2"):
         assigned = session.result("vca.assign", {"group": group, "channel": channel})
         recorder.check("vca.assign puts %s in the group" % channel,
@@ -339,7 +365,8 @@ def check_save_and_reopen(session, recorder, fixture, outdir):
     state = group_state(session, fixture["group"])
     recorder.check("the membership, the fader, the mute and the lock survive the round trip",
                    state.get("name") == "Takes" and state.get("volume") == 0.5
-                   and state.get("muted") is True and state.get("phase_locked") is True,
+                   and state.get("muted") is True and state.get("phase_locked") is True
+                   and state.get("member_count") == 0 and state.get("track_count") == 2,
                    "state=%s" % state)
     tracks = state.get("tracks") or []
     recorder.check("the EDIT SET survives, by stable trk id",
@@ -347,6 +374,32 @@ def check_save_and_reopen(session, recorder, fixture, outdir):
                    "tracks=%r" % tracks)
     recorder.check("no edit-set member is reported missing",
                    state.get("missing_count") == 0, "state=%s" % state)
+    check_a_pre_edit_half_element_loads_locked(session, recorder, fixture, path)
+
+
+def check_a_pre_edit_half_element_loads_locked(session, recorder, fixture, path):
+    """A <vcagroup> with no `locked` attribute must load as the LOCKED group it was.
+
+    The file is the only place an edit set can live, so the honest way to make a
+    legacy element is to take a real one and strip the attribute this lane
+    added - which is exactly what a project saved before this lane contains.
+    """
+    with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
+    stripped = re.sub(r' locked="[01]"', "", text)
+    recorder.check("the saved file carries the locked attribute to strip",
+                   stripped != text, "no locked= attribute in the file")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(stripped)
+    reopened = session.result("project.open", {"path": path})
+    recorder.check("project.open accepts the pre-edit-half file",
+                   reopened.get("file") == path, "file=%r" % reopened.get("file"))
+    state = group_state(session, fixture["group"])
+    recorder.check("a group with no `locked` attribute loads LOCKED",
+                   state.get("phase_locked") is True, "state=%s" % state)
+    recorder.check("its edit set still comes from the file",
+                   (state.get("tracks") or []) == [fixture["first"], fixture["second"]],
+                   "tracks=%r" % state.get("tracks"))
 
 
 def check_quit(session, instance, recorder):
@@ -365,13 +418,16 @@ def check_quit(session, instance, recorder):
 
 def run_checks(session, instance, recorder, transcript, outdir):
     check_ids(session, recorder)
+    ensure_channels(session, recorder, 4)
     group = check_create(session, recorder)
     check_fader(session, recorder, group)
     check_mute_and_solo(session, recorder, group)
-    # The fader the round trip later asserts.
-    session.result("vca.set_gain", {"group": group, "gain": 0.5})
-    session.result("vca.set_mute", {"group": group, "muted": True})
     fixture = build_locked_fixture(session, recorder)
+    # The state the round trip later asserts is set on the group the round trip
+    # asserts, AFTER the fixture exists - the fader the group was created with is
+    # not a claim about this one.
+    session.result("vca.set_gain", {"group": fixture["group"], "gain": 0.5})
+    session.result("vca.set_mute", {"group": fixture["group"], "muted": True})
     check_phase_locked_move(session, recorder, fixture)
     check_lock_refusals(session, recorder, fixture)
     check_junk(session, recorder, group)

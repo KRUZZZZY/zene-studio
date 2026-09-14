@@ -968,6 +968,7 @@ src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
+src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaShared.h
 src/core/ControlCommandsWarp.cpp
@@ -1349,6 +1350,8 @@ tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp
+tests/src/core/ControlVcaEditGroupsTest.cpp
+tests/src/core/ControlVcaTestSupport.h
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp

@@ -163,6 +163,7 @@ set(LMMS_SRCS
 	core/ControlCommandsVca.cpp
 	core/ControlCommandsVcaMix.cpp
 	core/ControlCommandsVcaEdit.cpp
+	core/ControlCommandsVcaEditSet.cpp
 	core/TrackContainerFolders.cpp
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
 	# commands that expose them (SPEC A16, task #623).

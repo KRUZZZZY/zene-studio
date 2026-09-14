@@ -152,8 +152,15 @@ LMMS_EXPORT void registerVcaCommands(ControlRegistry& registry);
 //! vca.set_gain / set_mute / set_solo / assign / unassign - the mix half, in
 //! its own translation unit. Called by registerVcaCommands.
 LMMS_EXPORT void registerVcaMixCommands(ControlRegistry& registry);
-//! vca.set_phase_lock / track_add / track_remove / edit_move - the phase-locked
-//! edit half, in its own translation unit. Called by registerVcaCommands.
+//! vca.set_phase_lock / track_add / track_remove - the edit SET and the lock
+//! switch, in their own translation unit (the split that kept the group under
+//! the 500-line file ratchet: those three and vca.edit_move were one file until
+//! it reached 521 lines). Called by registerVcaCommands through
+//! registerVcaEditCommands.
+LMMS_EXPORT void registerVcaEditSetCommands(ControlRegistry& registry);
+//! vca.edit_move - the phase-locked move itself, in its own translation unit.
+//! Called by registerVcaEditCommands; the registry has exactly one vca.*
+//! registration point.
 LMMS_EXPORT void registerVcaEditCommands(ControlRegistry& registry);
 /*! clock.get_state / clock.master_set / clock.slave_set - MIDI clock, the DAW
  *  as a clock master and as a clock slave. The engine half is include/MidiClock.h

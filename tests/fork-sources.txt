@@ -481,6 +481,7 @@ src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
+src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaShared.h
 src/core/ControlCommandsWarp.cpp

@@ -161,7 +161,7 @@ QVector<JournallingObject*> soloStepObjects()
 	const int channels = static_cast<int>(Engine::mixer()->numChannels());
 	for (int ch = 0; ch < channels; ++ch)
 	{
-		step.append(Engine::mixer()->mixerChannel(ch)->m_muteModel);
+		step.append(&Engine::mixer()->mixerChannel(ch)->m_muteModel);
 	}
 	return step;
 }

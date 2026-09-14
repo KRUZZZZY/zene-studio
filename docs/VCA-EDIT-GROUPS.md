@@ -73,9 +73,10 @@ exactly as it skips the `<vcagroup>` itself, so the grouping still degrades to
 ## 3. The command group: fourteen ids
 
 Registered by `registerVcaCommands` (`src/core/ControlRegistry.cpp`), which is
-the group's only registration point; the three halves are separate translation
-units for the 500-line file ratchet, the split the folder-track, session, warp,
-rack, comp and automation groups follow.
+the group's only registration point; the halves are separate translation units
+for the 500-line file ratchet, the split the folder-track, session, warp, rack,
+comp and automation groups follow (this group needed FOUR: the phase-locked move
+and the edit set it acts on were one file until it reached 521 lines).
 
 | id | file | what it does |
 |---|---|---|
@@ -89,9 +90,9 @@ rack, comp and automation groups follow.
 | `vca.set_solo` | `ControlCommandsVcaMix.cpp` | the product's exclusive solo over the members |
 | `vca.assign` | `ControlCommandsVcaMix.cpp` | put a mixer channel in the group |
 | `vca.unassign` | `ControlCommandsVcaMix.cpp` | take a mixer channel out |
-| `vca.set_phase_lock` | `ControlCommandsVcaEdit.cpp` | switch the edit lock |
-| `vca.track_add` | `ControlCommandsVcaEdit.cpp` | add a track to the edit set |
-| `vca.track_remove` | `ControlCommandsVcaEdit.cpp` | remove a track from the edit set |
+| `vca.set_phase_lock` | `ControlCommandsVcaEditSet.cpp` | switch the edit lock |
+| `vca.track_add` | `ControlCommandsVcaEditSet.cpp` | add a track to the edit set |
+| `vca.track_remove` | `ControlCommandsVcaEditSet.cpp` | remove a track from the edit set |
 | `vca.edit_move` | `ControlCommandsVcaEdit.cpp` | THE feature: the phase-locked move |
 
 ### 3.1 The naming decision, and why
