@@ -1414,6 +1414,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
 		SKIP_RETURN_CODE 77
+	)
 	# clock.* (0.3.0, MIDI clock): the DAW as a clock master and as a clock slave,
 	# driven END TO END through --control-socket. It asserts the master's OWN
 	# emission over a real transport - the message set START/pulses/Song Position
