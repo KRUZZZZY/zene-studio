@@ -46,8 +46,9 @@ import os
 import sys
 
 import control_socket_harness as H
-from freeze_bounce_evidence import (SILENT_DBFS, Recorder, Session, load_audible_instrument,
-                                    note_ids, render_measure, report_results, wav_measure)
+from freeze_bounce_evidence import (SILENT_DBFS, NoteTrace, Recorder, Session,
+                                    load_audible_instrument, note_ids, render_measure,
+                                    report_on_abort, report_results, require_one_note, wav_measure)
 
 # The fixture is measured in ticks: 4/4, so 192 ticks to the bar.
 CLIP_TICKS = 192          # one bar per clip
@@ -69,6 +70,7 @@ def build_fixture(session, instance, transcript):
         print("kinds: %r" % session.result("plugin.list").get("counts_by_kind"))
         return None
     clips = []
+    session.watch = NoteTrace(session, track, clips)   # every step, this run (see NoteTrace)
     for position in (0, REGION_START):
         clip = session.result("clip.add", {"track": track, "position": position,
                                            "length": CLIP_TICKS})
@@ -378,7 +380,7 @@ def check_freeze_undo_restores_clip_edits(session, fixture, recorder):
     clip edit's undo cost a whole clip, depth 7 -> 4).
     """
     clip = fixture["clips"][0]
-    notes = note_ids(session, clip)
+    notes = require_one_note(session, clip)      # never notes[0] on a lost note
     removed = session.result("note.remove", {"clip": clip, "note": notes[0]})
     recorder.check("the freeze-undo fixture removed one clip's note",
                    len(notes) == 1 and removed.get("note_count") == 0,
@@ -474,7 +476,11 @@ def main(argv):
         print("instance: %s" % argv[1])
         print("socket:   %s" % instance.socket_path)
         session.result("control.version")
-        fixture = run_checks(session, instance, recorder, transcript)
+        try:
+            fixture = run_checks(session, instance, recorder, transcript)
+        except BaseException:
+            report_on_abort(recorder, transcript, instance)
+            raise
 
     report_results(recorder)
     transcript.dump()

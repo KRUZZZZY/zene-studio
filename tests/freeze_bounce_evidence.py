@@ -72,6 +72,10 @@ class Session:
     def __init__(self, client, transcript):
         self.client = client
         self.transcript = transcript
+        # The live-state trace (NoteTrace below), set by the runner once it
+        # knows which clips to follow. None means "print no trace".
+        self.watch = None
+        self.watching = False
 
     def call(self, command, args=None):
         """One request, bounded by the operation's own budget.
@@ -88,6 +92,19 @@ class Session:
         if command in RENDER_COMMANDS and elapsed >= SLOW_RENDER_REPORT_SECONDS:
             print("slow render: %s took %.1fs (one engine start + the audio; "
                   "RENDER_TIMEOUT is %.0fs)" % (command, elapsed, RENDER_TIMEOUT))
+        if self.watch is not None and not self.watching and command not in TRACE_END_COMMANDS:
+            # The trace READS the session back, and its own calls must not
+            # re-enter it: the flag covers the whole probe. A probe must also
+            # never be able to FAIL the run it diagnoses, so a probe that
+            # cannot be answered is reported and the run carries on.
+            self.watching = True
+            try:
+                self.watch(command)
+            except (H.Timeout, OSError) as error:
+                print("note trace: the probe after %s could not be answered (%s)"
+                      % (command, error))
+            finally:
+                self.watching = False
         return reply
 
     def result(self, command, args=None):
@@ -123,6 +140,25 @@ def report_results(recorder):
         if not passed:
             print("      %s" % evidence)
             recorder.problems.add("%s (%s)" % (name, evidence))
+
+
+def report_on_abort(recorder, transcript, instance):
+    """Everything a CI-only abort must leave behind, printed from the error path.
+
+    This is the gap that hid the freeze transcript's own defect: a PASSING run
+    reported its checks and the app log, an aborting one reported neither, so
+    eight local attempts and six matrices produced nothing to read. The three
+    are printed here, and the app log is the one that is only HERE: a
+    journalling complaint (`JO-ID <n> already in use by ...` - what
+    JournallingObject::changeID writes when a re-created object cannot take
+    back the id its checkpoint names) goes to the instance's stderr and nowhere
+    else, and Instance.close() deletes that file, so it cannot be read after
+    the run.
+    """
+    report_results(recorder)
+    transcript.dump()
+    if instance is not None:
+        instance.dump_log()
 
 
 def raw_dbfs(raw, width):
@@ -212,3 +248,101 @@ def note_ids(session, clip):
     """The ids of a clip's notes, from roll.get_state."""
     roll = session.result("roll.get_state", {"clip": clip})
     return [n.get("id") for n in (roll.get("notes") or []) if n.get("id")]
+
+
+# ---------------------------------------------------------------------------
+# the live-state trace
+# ---------------------------------------------------------------------------
+# The freeze transcript's own defect was invisible for eight local attempts and
+# six pytest matrices for ONE reason: the Recorder reported only at the end of a
+# PASSING run, so a CI-only abort printed nothing and no log could say which
+# earlier step emptied a clip's note list. The trace below prints the live
+# clip/note state after every step that can move or empty it - on the error path
+# as well as the passing one - so the next run localises the step instead of
+# costing another matrix.
+#
+# Why a clip id can stop naming what it named: `clip-<n>` is a POSITION in the
+# song's flat clip enumeration (ControlEditSupport.cpp's clipId()), and
+# Track::loadTrack DELETES every clip and re-creates it from the saved XML. A
+# re-load that adds, drops or reorders one clip moves every later id; a note
+# that does not survive re-serialisation is gone from the clip that comes back.
+# Those are different findings, and the trace prints them differently (MISSING
+# for an id that no longer resolves, notes=[] for a clip that came back empty).
+TRACED_COMMANDS = (
+    "clip.add", "clip.delete", "clip.duplicate",
+    "note.add", "note.remove",
+    "roll.get_state",
+    "project.save", "project.open",
+    "control.undo", "control.redo", "control.undo_depth",
+    "freeze.track", "freeze.region", "freeze.unfreeze",
+)
+
+# The commands that END the session, so there is nothing left to probe. Measured
+# rather than assumed: with a probe after control.quit, `roll.get_state` on the
+# quitting instance answers "Connection reset by peer" and the harness reports it
+# as a 30s block - a diagnostic turning a green run red, which is the one thing
+# it must never do. `Session.call` reads this list.
+TRACE_END_COMMANDS = ("control.quit",)
+
+
+class NoteTrace:
+    """Prints the fixture's live clip/note state after every traced step.
+
+    Printed WHERE IT IS MEASURED, so an abort still says what the session held.
+    A snapshot that differs from the previous one is marked CHANGED, and the
+    command named on that line is the operation that moved the ids or emptied
+    the note list - which is the whole question this trace exists to answer.
+    """
+
+    def __init__(self, session, track, clips):
+        self.session = session
+        self.track = track
+        self.clips = clips
+        self.step = 0
+        self.last = None
+
+    def __call__(self, command):
+        snapshot = self.snapshot()
+        if command in TRACED_COMMANDS or snapshot != self.last:
+            self.step += 1
+            print("note trace %2d: after %-16s %s%s"
+                  % (self.step, command, snapshot,
+                     "" if snapshot == self.last else "   <== CHANGED"))
+        self.last = snapshot
+
+    def snapshot(self):
+        """The fixture's clips, every clip in the song, and the undo depth.
+
+        `song_clips` is there to catch the other way this failure can look: a
+        clip that appeared on another track (or an extra clip on this one) moves
+        every `clip-<n>` id and changes the song's clip list first.
+        """
+        clips = []
+        for clip in self.clips:
+            roll = self.session.result("roll.get_state", {"clip": clip})
+            if roll.get("error"):
+                clips.append("%s MISSING(%s)" % (clip, roll["error"].get("message", "?")))
+                continue
+            notes = [n.get("id") for n in (roll.get("notes") or []) if n.get("id")]
+            clips.append("%s=%s@%s/%s" % (clip, notes, roll.get("position"), roll.get("track")))
+        song = [c.get("id") for c in (self.session.result("arrangement.get_state").get("clips")
+                                      or [])]
+        depth = self.session.result("control.undo_depth").get("depth")
+        return "%s | song_clips=%s depth=%s" % (" ".join(clips) or "(no clips yet)", song, depth)
+
+
+def require_one_note(session, clip):
+    """The clip's note ids - or a NAMED failure saying the fixture lost its note.
+
+    The transcript then indexes `notes[0]`, so an empty list there used to abort
+    as `IndexError: list index out of range`: a finding about some EARLIER
+    operation with no evidence of which one. The assertion this guards (the
+    freeze-journal check that follows) is unchanged; only the failure's shape is.
+    """
+    notes = note_ids(session, clip)
+    if len(notes) != 1:
+        raise AssertionError("the fixture's clip %s carries %d notes, not the one it was built "
+                             "with: %s" % (clip, len(notes),
+                                           session.watch.snapshot() if session.watch is not None
+                                           else "no note trace"))
+    return notes
