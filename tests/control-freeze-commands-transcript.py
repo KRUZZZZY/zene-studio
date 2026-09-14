@@ -59,7 +59,7 @@ RENDER_BARS = 3           # the song plus the bar Song::startExport appends
 TAKE_TOLERANCE_DB = 6.0   # the take is re-sampled and carries the render's tail
 
 
-def build_fixture(session, instance, transcript):
+def build_fixture(session, instance, recorder, transcript):
     """The audible fixture, built through the commands an agent has."""
     added = session.result("track.add", {"type": "instrument", "name": "Freeze Target"})
     track = added.get("track")
@@ -70,7 +70,7 @@ def build_fixture(session, instance, transcript):
         print("kinds: %r" % session.result("plugin.list").get("counts_by_kind"))
         return None
     clips = []
-    session.watch = NoteTrace(session, track, clips)   # every step, this run (see NoteTrace)
+    session.watch = NoteTrace(session, recorder, track, clips)  # every step, this run
     for position in (0, REGION_START):
         clip = session.result("clip.add", {"track": track, "position": position,
                                            "length": CLIP_TICKS})
@@ -436,7 +436,7 @@ def check_quit(session, instance, recorder):
 
 def run_checks(session, instance, recorder, transcript):
     """Every check, in the order the docstring lists them."""
-    fixture = build_fixture(session, instance, transcript)
+    fixture = build_fixture(session, instance, recorder, transcript)
     if fixture is None:
         return None
     outdir = instance.tmp

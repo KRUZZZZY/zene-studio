@@ -284,6 +284,20 @@ TRACED_COMMANDS = (
 # it must never do. `Session.call` reads this list.
 TRACE_END_COMMANDS = ("control.quit",)
 
+# The commands SPEC A16 declares not_mutating: they write an OUTPUT ARTEFACT or
+# a FILE, never session state, so they must leave the journal's undo depth
+# exactly where they found it. Measured, not assumed - on the GitHub Linux
+# runners every one of them moved the depth by one (run 34821159372:
+# `render.render` 9 -> 10, `bounce.in_place` 10 -> 11, `project.save` 14 -> 15),
+# while on this box none of them does. The offset is what this lane's defect
+# was made of: one extra undo step sat on top of the stack, so the transcript's
+# next two `control.undo` calls took back [that step] and [clip-1's note
+# removal] instead of [clip-1's] and [clip-0's], clip-0's note stayed deleted,
+# and check_freeze_undo_restores_clip_edits then indexed `notes[0]` on an empty
+# clip. The check below is what turns that silent offset into a NAMED failure at
+# the command that caused it.
+NOT_MUTATING_COMMANDS = ("render.render", "bounce.in_place")
+
 
 class NoteTrace:
     """Prints the fixture's live clip/note state after every traced step.
@@ -292,16 +306,24 @@ class NoteTrace:
     A snapshot that differs from the previous one is marked CHANGED, and the
     command named on that line is the operation that moved the ids or emptied
     the note list - which is the whole question this trace exists to answer.
+
+    It also holds the one assertion the trace can make about the journal: a
+    not_mutating command (NOT_MUTATING_COMMANDS) must leave the undo depth
+    alone. That is recorded through the Recorder, so a run that violates it
+    FAILS BY NAME instead of failing later on an empty clip.
     """
 
-    def __init__(self, session, track, clips):
+    def __init__(self, session, recorder, track, clips):
         self.session = session
+        self.recorder = recorder
         self.track = track
         self.clips = clips
         self.step = 0
         self.last = None
+        self.depth = None
 
     def __call__(self, command):
+        previous = self.depth
         snapshot = self.snapshot()
         if command in TRACED_COMMANDS or snapshot != self.last:
             self.step += 1
@@ -309,6 +331,10 @@ class NoteTrace:
                   % (self.step, command, snapshot,
                      "" if snapshot == self.last else "   <== CHANGED"))
         self.last = snapshot
+        if command in NOT_MUTATING_COMMANDS and previous is not None and self.depth != previous:
+            self.recorder.check("%s is not_mutating, so it leaves the undo depth alone" % command,
+                                False, "depth %r -> %r (the journal recorded a step for a "
+                                "command that writes no state)" % (previous, self.depth))
 
     def snapshot(self):
         """The fixture's clips, every clip in the song, and the undo depth.
@@ -327,8 +353,8 @@ class NoteTrace:
             clips.append("%s=%s@%s/%s" % (clip, notes, roll.get("position"), roll.get("track")))
         song = [c.get("id") for c in (self.session.result("arrangement.get_state").get("clips")
                                       or [])]
-        depth = self.session.result("control.undo_depth").get("depth")
-        return "%s | song_clips=%s depth=%s" % (" ".join(clips) or "(no clips yet)", song, depth)
+        self.depth = self.session.result("control.undo_depth").get("depth")
+        return "%s | song_clips=%s depth=%s" % (" ".join(clips) or "(no clips yet)", song, self.depth)
 
 
 def require_one_note(session, clip):
