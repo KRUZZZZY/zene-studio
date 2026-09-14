@@ -28,6 +28,7 @@
 #include <array>
 
 #include "MidiLearn.h"
+#include "MidiClock.h"
 #include "MidiPort.h"
 
 namespace lmms
@@ -118,7 +119,18 @@ void MidiClientRaw::parseData( const unsigned char c )
 			m_midiParseData.m_midiEvent.setType( MidiSystemReset );
 			m_midiParseData.m_status = 0;
 			processParsedEvent();
+			return;
 		}
+		/* SYSTEM REAL-TIME (0xF8..0xFF) - MIDI clock, transport control and
+		 * active sensing (0.3.0, the `clock.*` group's slave half). The spec
+		 * allows these to arrive BETWEEN the bytes of another message, so they
+		 * are dispatched here and the running status is left untouched. Until
+		 * this change the whole range was dropped (except a reset) and clock
+		 * could not reach the engine at all. A byte outside the clock family
+		 * maps to None and is counted nowhere, so 0xF9/0xFE keep behaving
+		 * exactly as they did. */
+		MidiClock::instance()->handleInputMessage(
+			midiClockMessageOfByte( c ), 0, MidiClock::nowNs() );
 		return;
 	}
 
@@ -135,6 +147,7 @@ void MidiClientRaw::parseData( const unsigned char c )
 	 * that is received without a valid status.
 	 * Note: system common cancels running status. */
 		m_midiParseData.m_status = 0;
+		beginSystemCommon( c );
 		return;
 	}
 
@@ -150,6 +163,10 @@ void MidiClientRaw::parseData( const unsigned char c )
 	 */
 	if( c & 0x80 )
 	{
+		// A status byte cancels a system-common message that was interrupted
+		// before its payload was complete, exactly as it cancels running status.
+		m_midiParseData.m_commonStatus = 0;
+		m_midiParseData.m_commonBytes = 0;
 		m_midiParseData.m_channel = c & 0x0F;
 		m_midiParseData.m_status = c & 0xF0;
 		/* The event consumes x bytes of data...
@@ -163,6 +180,15 @@ void MidiClientRaw::parseData( const unsigned char c )
 	/*********************************************************************/
 	/* Process data                                                      */
 	/*********************************************************************/
+	/* A pending TIME CODE / SONG POSITION takes its payload bytes before the
+	 * voice-event path can see them (0.3.0, `clock.*`): the message that owns
+	 * the byte is the one that was started, not the last voice event. */
+	if( m_midiParseData.m_commonBytes > 0 )
+	{
+		consumeSystemCommon( c );
+		return;
+	}
+
 	/* If we made it this far, then the received char belongs to the data
 	 * of the last event. */
 	if( m_midiParseData.m_status == 0 )
@@ -264,6 +290,55 @@ void MidiClientRaw::processParsedEvent()
 
 
 
+void MidiClientRaw::beginSystemCommon( const unsigned char status )
+{
+	/* Only the two system-common messages the engine has a consumer for are
+	 * assembled; every other one (a song select, a tune request, a sysex) is
+	 * discarded here exactly as the whole range was before (0.3.0, `clock.*`). */
+	m_midiParseData.m_commonStatus = 0;
+	m_midiParseData.m_commonBytes = 0;
+	if( status == MidiTimeCode )
+	{
+		m_midiParseData.m_commonStatus = status;
+		m_midiParseData.m_commonBytes = 1;
+	}
+	else if( status == MidiSongPosition )
+	{
+		m_midiParseData.m_commonStatus = status;
+		m_midiParseData.m_commonBytes = 2;
+	}
+}
+
+
+
+
+void MidiClientRaw::consumeSystemCommon( const unsigned char data )
+{
+	const uint8_t remaining = m_midiParseData.m_commonBytes;
+	m_midiParseData.m_commonBuffer[2 - remaining] = data & 0x7F;
+	m_midiParseData.m_commonBytes = static_cast<uint8_t>( remaining - 1 );
+	if( m_midiParseData.m_commonBytes > 0 )
+	{
+		return;
+	}
+	const uint8_t status = m_midiParseData.m_commonStatus;
+	m_midiParseData.m_commonStatus = 0;
+	/* 0xF2 carries its position LSB-first (MIDI 1.0); a time-code quarter frame
+	 * carries one nibble. Both are reported to the clock, which counts them and
+	 * exposes the last value - neither moves the transport in this release
+	 * (docs/KNOWN-LIMITATIONS.md states that bound). */
+	quint32 value = m_midiParseData.m_commonBuffer[0];
+	if( midiClockMessageOfByte( status ) == MidiClockMessage::SongPosition )
+	{
+		value |= static_cast<quint32>( m_midiParseData.m_commonBuffer[1] ) << 7;
+	}
+	MidiClock::instance()->handleInputMessage(
+		midiClockMessageOfByte( status ), value, MidiClock::nowNs() );
+}
+
+
+
+
 void MidiClientRaw::processOutEvent(const MidiEvent& event, const TimePos&, const MidiPort* port)
 {
 	// TODO: also evaluate _time and queue event if necessary
@@ -275,6 +350,31 @@ void MidiClientRaw::processOutEvent(const MidiEvent& event, const TimePos&, cons
 			sendByte(event.type() | event.channel());
 			sendByte(event.key());
 			sendByte(event.velocity());
+			break;
+
+		/* The MIDI-clock family (0.3.0, the `clock.*` group's master half).
+		 * These are the same raw byte path a note takes - sendByte() - because
+		 * that IS this client's output: a raw client writes to its one device.
+		 * They were "unhandled" (a qWarning per pulse, i.e. 24 warnings a
+		 * second at 120 BPM) until this change. Note the absence of a channel
+		 * here: a system real-time message has none, and OR-ing one in would
+		 * make it some other message entirely. */
+		case MidiSync:
+		case MidiStart:
+		case MidiContinue:
+		case MidiStop:
+			sendByte(static_cast<unsigned char>(event.type()));
+			break;
+
+		case MidiTimeCode:
+			sendByte(MidiTimeCode);
+			sendByte(static_cast<unsigned char>(event.param(0) & 0x7F));
+			break;
+
+		case MidiSongPosition:
+			sendByte(MidiSongPosition);
+			sendByte(static_cast<unsigned char>(event.param(0) & 0x7F));   // LSB first
+			sendByte(static_cast<unsigned char>(event.param(1) & 0x7F));   // then MSB
 			break;
 
 		default:

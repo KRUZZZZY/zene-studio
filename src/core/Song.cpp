@@ -49,6 +49,7 @@
 #include "NotePlayHandle.h"
 #include "NoteRandom.h"
 #include "MidiClip.h"
+#include "MidiClock.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -251,6 +252,27 @@ void Song::processNextBuffer()
 	// token published here; an offline render reports "not running", so an
 	// export can never write automation into a project.
 	AutomatableModel::observeAutomationTransport( m_playing && !m_exporting );
+
+	// MIDI clock (0.3.0, the `clock.*` group's engine half). The DAW as a clock
+	// MASTER emits 24 pulses to the quarter note, START/STOP/CONTINUE and a Song
+	// Position Pointer from the audio thread, and the SLAVE's measurement is
+	// aged here so a clock that stops arriving loses its lock. It runs once per
+	// audio period - BEFORE the transport gate below - because STOP is an EDGE
+	// and a stopped transport is exactly when it has to be sent; the Session
+	// View scheduler above runs before the same gate for the same reason. With
+	// no master and no slave enabled this is one relaxed atomic load and a
+	// return, so a session that does not use the clock runs the block it always
+	// ran. The clock's own output goes through the engine's existing MIDI path
+	// (MidiClient::processOutEvent through the clock's own MidiPort), which is
+	// the path a track's MIDI output already uses from this same thread.
+	if( AudioEngine* audioEngine = Engine::audioEngine() )
+	{
+		MidiClock::instance()->processAudioPeriod(
+			audioEngine->framesPerPeriod(),
+			m_playing && !m_exporting,
+			static_cast<qint64>( getPlayPos( PlayMode::Song ).getTicks() ),
+			MidiClock::nowNs() );
+	}
 
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// Session View launch scheduling (task #595, SPEC-zene-studio A2/A3). The

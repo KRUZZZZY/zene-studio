@@ -95,6 +95,14 @@ set(LMMS_TESTS
 	src/core/MasteringTest.cpp
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
+	# MIDI clock (0.3.0, the `clock.*` group's engine half): the master's
+	# emitted message set for a known transport script, and the follower's
+	# measurement - a rate it was told only by the pulses, a tempo CHANGE, no
+	# lock without a clock, and a lock that drops when the stream stops. The
+	# rate arithmetic lives here because an incoming clock cannot be injected
+	# into a running instance from outside; the socket half of the proof is the
+	# ControlClockCommands ctest below, which drives the real binary.
+	src/core/MidiClockTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp
@@ -1398,6 +1406,28 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
 		SKIP_RETURN_CODE 77
+	# clock.* (0.3.0, MIDI clock): the DAW as a clock master and as a clock slave,
+	# driven END TO END through --control-socket. It asserts the master's OWN
+	# emission over a real transport - the message set START/pulses/Song Position
+	# Pointer/STOP, read back in order, with the counters and a bounded monitor -
+	# and the slave's contract against the one direction a socket test can create:
+	# enabled with NO clock arriving, it must report itself unlocked, write no
+	# tempo and not move the transport (asserted again after several audio periods
+	# and three of the follower's polls, so "nothing" is measured, not raced).
+	# The rate arithmetic - a pulse stream at a known rate producing that tempo,
+	# following a tempo CHANGE, a lock that drops when the stream stops - cannot
+	# be driven from a socket (an incoming clock cannot be injected into a running
+	# instance), so it is proved by the registered MidiClockTest QTest above, and
+	# the bound that remains is stated in docs/KNOWN-LIMITATIONS.md: the counters
+	# this test reads are what the engine HANDED to its MIDI client, not bytes an
+	# external synth received. It takes no fixture and no compile-time switch.
+	add_test(NAME ControlClockCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-clock-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlClockCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
 	)
 	# record.* (0.3.0, recording crash recovery): journal a capture, kill the
 	# instance with SIGKILL (a REAL abnormal exit), then start a SECOND instance

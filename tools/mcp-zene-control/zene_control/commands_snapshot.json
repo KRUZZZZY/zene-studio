@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T20:19:22Z",
+  "captured_at": "2026-09-13T21:45:03Z",
   "commands": [
     {
       "args_schema": {
@@ -1287,6 +1287,162 @@
           },
           "right": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "What this engine's MIDI clock is doing: the master's enabled flag, the port it sends on and whether that port is subscribed to a client destination, the message counters it has emitted and a bounded monitor of the last messages in order; and the slave's enabled flag, its source port, whether it follows the measured tempo, whether it is LOCKED, the measured tempo, the drift of the last interval from the window's mean, the drift bound, the tempo error the pulse jitter can produce, the window it measures over, the pulse count and the last song position and time-code values received. Read-only. `mtc` reports \"absent\": this release generates no MIDI time code (see docs/KNOWN-LIMITATIONS.md).",
+      "group": "clock",
+      "id": "clock.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "last_pulse_age_ms": {
+            "type": "integer"
+          },
+          "lock_timeout_ms": {
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "master": {
+            "type": "object"
+          },
+          "mtc": {
+            "type": "string"
+          },
+          "pulses_per_quarter": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "slave": {
+            "type": "object"
+          },
+          "tempo": {
+            "maximum": 999,
+            "minimum": 10,
+            "type": "integer"
+          },
+          "ticks_per_beat": {
+            "maximum": 512,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ticks_per_pulse": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Enable or disable the DAW as a MIDI clock MASTER: 24 clock pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on the transport's own edges, emitted from the audio thread through this engine's MIDI output. `port` names the writable client destination to subscribe to (see midi.device_list for the names); an empty one keeps the current subscription. Enabling when the engine has no MIDI client to send through is refused, typed, rather than reported as a success that emits nothing. Reversible: the enabled flag AND the port subscription are restored by control.undo.",
+      "group": "clock",
+      "id": "clock.master_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "emitted": {
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": "string"
+          },
+          "port_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "drift_bound_ms": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "follow_tempo": {
+            "type": "boolean"
+          },
+          "source_port": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Enable or disable the DAW as a MIDI clock SLAVE: follow an incoming clock, measure its tempo over one quarter note of pulses and, when follow_tempo is on, write that tempo to the Song once it has left the dead band. A slave that is enabled with NO clock arriving never locks, writes nothing and does not move the transport - clock.get_state reports locked:false. `source_port` names the readable client port to follow (informational: the engine's MIDI readers deliver a clock from wherever it arrives). `drift_bound_ms` is how far one pulse interval may stray from the window's mean and still count as locked. Reversible for the CONFIGURATION: the tempo a following slave wrote is a trajectory of writes, not one state, and control.undo does not restore it (the transaction names the value). Receiving START/STOP/CONTINUE/SONG POSITION is counted and reported; moving the transport FROM the incoming clock is not in this release (see docs/KNOWN-LIMITATIONS.md).",
+      "group": "clock",
+      "id": "clock.slave_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "drift_bound_ms": {
+            "type": "number"
+          },
+          "drift_ms": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "follow_tempo": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "source_port": {
+            "type": "string"
+          },
+          "tempo_bpm": {
+            "type": "number"
           }
         },
         "required": [],
@@ -8347,8 +8503,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wret/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-yuvhz5zl/zene.sock",
-    "version": "0.2.0-alpha.146+01b9975"
+    "source_socket": "/tmp/wpc-030-snapshot/zene.sock",
+    "version": "0.2.1-alpha.102+b0a0eb7"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

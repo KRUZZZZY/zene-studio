@@ -445,6 +445,21 @@ const ReversibilityRow kActionRows[] = {
 		"action checkpoint: the recorded step writes the captured pool back, and "
 		"the descriptor re-issues groove.rename with the names swapped",
 		""),
+	// =====================================================================
+	// 0.3.0 `clock.*` - MIDI clock, the DAW as a clock master and slave.
+	// =====================================================================
+	R("clock.master_set", RC::TrueInverse, true,
+		"the clock's mode is engine state on a plain object, not project state, "
+		"and not a JournallingObject - so no object checkpoint covers it, and "
+		"recording the whole project for one flag would be a much larger act "
+		"than the one the command performs",
+		"action checkpoint: the recorded undo step calls MidiClock::restoreMaster "
+		"with the enabled flag and the port name the transaction's before-state "
+		"holds, and unsubscribes the destination port this call subscribed when "
+		"the before-state named none - so control.undo puts the subscription back "
+		"and not only the flag",
+		""),
+
 };
 
 constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kActionRows[0]));

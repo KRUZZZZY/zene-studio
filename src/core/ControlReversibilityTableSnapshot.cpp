@@ -251,6 +251,36 @@ const ReversibilityRow kSnapshotRows[] = {
 		"restored (`applies: command`), which puts the offer back so control.undo "
 		"reverses a mistake rather than leaving the take unreachable",
 		""),
+	// MIDI clock, the SLAVE half (0.3.0). The class is `snapshot` and not
+	// `true_inverse` on purpose, and the reason is the whole point of the row:
+	// the CONFIGURATION the command sets is a bounded scalar set that a recorded
+	// action restores exactly, but enabling tempo-follow makes the slave write
+	// `Song::setTempo` every time the measured tempo leaves the dead band - a
+	// TRAJECTORY of project-state writes spread over the follow, not one state.
+	// No bounded recorded state covers a trajectory, so this is the weakest
+	// class that tells the truth about the strongest write the command can cause,
+	// the tempo a caller gets back is named in the transaction's before-state,
+	// and the fallback says how to restore it. A row that claimed true_inverse
+	// here would be claiming that one undo puts the tempo back.
+	R("clock.slave_set", RC::Snapshot, true,
+		"two halves with two different verdicts, and the row is the weaker of "
+		"them: the mode / follow flag / source port / drift bound are a bounded "
+		"scalar set a recorded action restores exactly, but a FOLLOWING slave "
+		"writes the Song's tempo from the control thread as the measurement "
+		"changes - a write per poll, which is a trajectory and not one state, "
+		"and a trajectory is what no bounded recorded state covers",
+		"action checkpoint for the CONFIGURATION: the recorded undo step restores "
+		"the mode, the tempo-follow flag, the source port and the drift bound, and "
+		"stops the follower's poll. The tempo a following slave wrote is NOT part "
+		"of the inverse; what it was before the command is in the transaction's "
+		"before-state (`tempo`), because a follower cannot un-follow the music "
+		"that already played",
+		"the tempo itself: transport.set_tempo with the value the transaction's "
+		"before-state reports (`tempo`), AFTER the follow flag is off, or the "
+		"slave immediately overwrites it from the next measurement "
+		"(docs/UNDO-BOUNDS.md - a scalar outside the project's journal is restored "
+		"by the command that writes it)"),
+
 };
 
 constexpr int kSnapshotRowCount = static_cast<int>(sizeof(kSnapshotRows) / sizeof(kSnapshotRows[0]));
