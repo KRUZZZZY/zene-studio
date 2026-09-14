@@ -402,6 +402,11 @@ LMMS_EXPORT void registerPluginPresetCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDspCommands(ControlRegistry& registry);
 //! settings.*, audio.*, midi.* and app.version.
 LMMS_EXPORT void registerSettingsCommands(ControlRegistry& registry);
+//! midi.retro_capture_arm / midi.retro_capture_status / midi.retro_capture_to_clip
+//! - the retrospective MIDI capture surface (owner item 14,
+//! docs/MIDI-RETRO-CAPTURE.md). The arm switch is mode state (no transaction); the
+//! to-clip command is one journalled Track checkpoint over the clip it creates.
+LMMS_EXPORT void registerMidiRetroCaptureCommands(ControlRegistry& registry);
 //! automation.get_state and automation.mode_set.
 LMMS_EXPORT void registerAutomationCommands(ControlRegistry& registry);
 //! automation.add_point / automation.remove_point / automation.clear.

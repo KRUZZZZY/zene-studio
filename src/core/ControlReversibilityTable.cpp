@@ -144,6 +144,16 @@ const ReversibilityRow kRows[] = {
 		"same container: the clip list is part of the Track's serialized state",
 		"ProjectJournal (Track checkpoint)",
 		""),
+	R("midi.retro_capture_to_clip", RC::TrueInverse, true,
+		"the clip it materialises the captured window into is a NEW clip inside a "
+		"Track, and a Track checkpoint carries every clip it holds - the same "
+		"container argument as clip.add. One checkpoint covers the whole capture, "
+		"so ONE control.undo removes the clip and every note in it together",
+		"ProjectJournal (Track checkpoint): the checkpoint is taken before "
+		"Track::createClip() and the notes go through MidiClip::addNote() inside it, "
+		"so Track::restoreState re-loads the track without the new clip. The "
+		"transaction records clip.delete as its inverse operation",
+		""),
 	R("clip.duplicate", RC::TrueInverse, true,
 		"the duplicate is a second clip in the same Track",
 		"ProjectJournal (Track checkpoint)",
@@ -267,6 +277,7 @@ const ReversibilityRow kRows[] = {
 	R("control.version", RC::NotMutating, false, "reads the version strings", "no write", ""),
 	R("dsp.get_state", RC::NotMutating, false, "reads the device chains", "no write", ""),
 	R("midi.device_list", RC::NotMutating, false, "reads the MIDI client", "no write", ""),
+	R("midi.retro_capture_status", RC::NotMutating, false, "reads the capture ring and the MIDI client", "no write", ""),
 	R("mixer.get_state", RC::NotMutating, false, "reads the mixer", "no write", ""),
 	R("plugin.list", RC::NotMutating, false, "reads the device catalogue", "no write", ""),
 	R("plugin.param_get", RC::NotMutating, false, "reads a parameter", "no write", ""),
@@ -336,30 +347,15 @@ const ReversibilityRow kRows[] = {
 		"assumes",
 		""),
 
-	// The tempo map's true_inverse rows (030/w15-tempo-map): restored after a
-	// union took the other side wholesale and dropped them.
-	R("transport.tempo_map_add", RC::TrueInverse, true,
-		"the tempo map is a value type on the Song, not a JournallingObject, so "
-		"no object checkpoint covers it",
-		"action checkpoint: the recorded undo step writes the map captured before "
-		"the edit back through TempoMapPublisher::edit",
-		""),
-	R("transport.tempo_map_remove", RC::TrueInverse, true,
-		"the same value type, one event removed",
-		"action checkpoint: the recorded undo step restores the map captured "
-		"before the removal, event for event",
-		""),
-	R("transport.tempo_map_clear", RC::TrueInverse, true,
-		"it removes every event AND switches the map off in one command, so a "
-		"per-event inverse would not be one step",
-		"action checkpoint: the recorded undo step restores the whole captured "
-		"map, events and active flag together, as ONE Ctrl+Z",
-		""),
-	R("transport.tempo_map_set_active", RC::TrueInverse, true,
-		"the flag is engine-read project state with no model of its own",
-		"action checkpoint: the recorded undo step restores the map captured "
-		"before the switch, so the flag comes back with the events",
-		""),
+	// The four transport.tempo_map_* rows are NOT repeated here. Their mechanism
+	// is "action checkpoint", which is the action half's own definition, and
+	// ControlReversibilityTableAction.cpp carries all four: reversibilityRowTable()
+	// appends that file's rows to this one and insertRows() lets the LAST row for an
+	// id win, so the assembled table has always read action's copy and the copy that
+	// used to sit here was dead data. The duplicate was removed 2026-09-13 (lane
+	// 030/retro-capture) when this file crossed the 500-line cap - the ids, their
+	// class and their mechanism in the assembled table are unchanged, which is what
+	// ReversibilityContractTest's histogram (167 rows) re-checks.
 
 	// The per-note expression pair (#602's per-note half, driving #601's own
 	// fields). A Note is a SerializingObject, not a JournallingObject, so there

@@ -3413,6 +3413,197 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Arm or disarm retrospective MIDI capture - the mode the Edit > Arm MIDI Capture menu item drives (SPEC A11: the menu action declares this command id and its slot invokes this command, so the user and an agent arm the mode through one implementation). With no 'armed' argument the mode is ARMED; 'armed': false is its disarm. While armed, the MIDI input threads keep the most recent events in one bounded ring per open client, and midi.retro_capture_to_clip writes that window into a clip; nothing is recorded while disarmed. Mode/engine state, not project state, so no transaction is recorded and control.undo has nothing to reverse. The state is persisted to the config file's midi/retrocapture key (not the project file) and re-applied by the GUI startup path, not by the capture object's constructor, which runs before main(); 'persisted' reports what was stored.",
+      "group": "midi",
+      "id": "midi.retro_capture_arm",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "capacity_events": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "client": {
+            "type": "string"
+          },
+          "persisted": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read-only: whether retrospective MIDI capture is armed, which MIDI client the instance is running, how many events its ring retains out of its capacity, how many events fell out of the window (overwritten) and how long the window is in ticks and in seconds (derived from the tick span and the song tempo). 'refused_snapshots' and 'paused_dropped' are the ring's own loss counters - both 0 in practice - and 'quiesced' says whether the MIDI thread acknowledged this read. This is how an agent tells whether a capture is armed without a GUI.",
+      "group": "midi",
+      "id": "midi.retro_capture_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "capacity_events": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "client": {
+            "type": "string"
+          },
+          "events_buffered": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overwritten": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "paused_dropped": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "persisted": {
+            "type": "boolean"
+          },
+          "quiesced": {
+            "type": "boolean"
+          },
+          "refused_snapshots": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seconds_span": {
+            "type": "number"
+          },
+          "ticks_span": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Write the events retrospective MIDI capture has retained into a NEW MIDI clip on 'track', and return its clip-<n> id. Without 'track', the track of the clip selected in the control surface is used, and with nothing selected the song's first instrument track. The clip starts at the window's first tick and is 'length' ticks long, or - without it - the window rounded up to whole bars. The note matcher closes an unmatched note-on at the window's end and reports it in 'unmatched_ons': the capture never truncates silently. One journal checkpoint (the Track's, like clip.add) over the new clip, so ONE control.undo removes the whole capture; the inverse is clip.delete. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "midi",
+      "id": "midi.retro_capture_to_clip",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "events": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events_overwritten": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events_written": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "unmatched_offs": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unmatched_ons": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "window_end": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "window_start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -8148,12 +8339,12 @@
       }
     }
   ],
-  "count": 164,
+  "count": 167,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wret/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
     "source_socket": "/tmp/zctl-run-yuvhz5zl/zene.sock",

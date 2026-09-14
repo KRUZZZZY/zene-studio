@@ -96,6 +96,8 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/core/MidiLearnTest.cpp
 	src/core/MidiLearnThreadTest.cpp
+	src/core/MidiRetroCaptureTest.cpp
+	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
 	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerConcurrencyTest.cpp
@@ -127,6 +129,7 @@ set(LMMS_TESTS
 	src/core/RackZonesTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
+	src/core/RetroMidiRingTest.cpp
 	src/core/RecordingRealtimeTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp
@@ -1410,6 +1413,30 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# midi.retro_capture_* (0.3.0, retrospective MIDI capture - owner's-31 item
+	# 14): PLAY real MIDI into the running engine from the host's ALSA sequencer
+	# (`aplaymidi` is an external client, exactly like a keyboard) and recover it
+	# through --control-socket. It asserts the same file played DISARMED leaves
+	# the window empty, the armed window's notes come back through roll.get_state
+	# with the positions/lengths/keys/velocities they were played with, one
+	# control.undo removes the clip, and more events than the window holds is the
+	# DOCUMENTED drop-oldest behaviour rather than a crash. It reports ctest
+	# *Skipped* (exit 77) - never *Passed* - on a host with no ALSA-sequencer
+	# tooling or an engine that came up on the dummy MIDI client, because a test
+	# that cannot make its measurement must not report that it did.
+	add_test(NAME ControlRetroCapture
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-retro-capture.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRetroCapture PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		# 77 is "this host cannot supply a real MIDI source" (no alsa-utils, or
+		# the engine came up on the dummy MIDI client). CTest reports a test that
+		# exits 77 as Skipped, never Passed - the ControlFreezeCommandsTranscript
+		# and ControlCommandsSnapshot precedent.
+		SKIP_RETURN_CODE 77
+	)
 	# wasm.* (item #614): host the ABI example effect in the WASM DSP sandbox
 	# END TO END through --control-socket, and read back what the ABI does with it.
 	# Registered only when the sandbox is compiled in (WANT_WASM, which needs the
@@ -1596,6 +1623,11 @@ set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
 # above. TempoMapTest additionally drives Song::processNextBuffer() itself, so it
 # needs the same headless platform.
 set_tests_properties(ControlTempoMapCommandsTest TempoMapPersistenceTest TempoMapTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The retrospective MIDI capture surface (owner item 14) builds a real Engine,
+# a MIDI client and MidiClips and drives the registry commands, so it needs a
+# Qt platform plugin even though nothing opens a window.
+set_tests_properties(RetroMidiCaptureCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The stable-id tests construct a full Engine and drive project.open/save through
 # the control registry, so they need a Qt platform plugin even though nothing

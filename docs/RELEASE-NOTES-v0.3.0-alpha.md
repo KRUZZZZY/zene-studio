@@ -363,6 +363,11 @@ mixer channel, so no single live checkpoint covers either; a named visibility se
 `JournallingObject` at all), and `track.folder_get_state` / `track.visibility_set_list` are
 `not_mutating` inspectors. `ReversibilityContractTest` asserts both
 sets, so a row added or moved between classes cannot ship with this page quoting the old split. The
+three `midi.retro_capture_*` rows the retrospective MIDI capture lane added are the last of these:
+`midi.retro_capture_to_clip` is `true_inverse` (a live `Track` checkpoint, the `clip.add` shape),
+`midi.retro_capture_arm` and `midi.retro_capture_status` are `not_mutating` (a mode flag and a
+read-only inspector), which is the `+1 true_inverse / +2 not_mutating` this page's figures carry over
+the merge before it. The
 155-row figure this page carried before this merge was the pre-punch table's, and the 157 the
 incoming lane's own page quoted was measured on that lane's base, which does not carry the groove
 lane's seven rows - neither is the merged tree's, and this page now states the merged tree's own
@@ -687,6 +692,58 @@ section 5 is the argument for each.
   `docs/TRACK-FOLDER-DESIGN.md` §4.4 and is the strongest argument for a folder being organisational
   state that a legacy build degrades on. Nested containers are still out of the addressing model: a
   folder's children are addressed by their own `trk-<n>` and the song's flat list, exactly as before.
+## Retrospective MIDI capture (`midi.retro_capture_*`) — added 2026-09-13
+
+- **New: the engine keeps a rolling window of what you just played, so MIDI can be recovered AFTER the
+  fact** — the "I should have hit record" case. `midi.retro_capture_arm` arms or disarms the mode (the same
+  mode `Edit > Arm MIDI Capture` drives; the menu action declares this command id and its slot invokes it,
+  SPEC A11), `midi.retro_capture_status` reports whether it is armed, which MIDI client is running and what
+  the window holds, and `midi.retro_capture_to_clip` writes the retained window into a NEW MIDI clip and
+  returns its `clip-<n>` id. `midi.retro_capture_to_clip` is `true_inverse` (a live Track checkpoint, the
+  `clip.add` shape), so ONE `control.undo` — and one Ctrl+Z, which unwinds the same journal — removes the
+  clip and every note in it. `midi.retro_capture_arm` is `not_mutating` (mode state, the `midi.learn_toggle`
+  precedent; the config file's `midi/retrocapture` key is written only when the mode actually moves) and
+  `midi.retro_capture_status` writes nothing. **Off by default**: a fresh capture records nothing, and while
+  disarmed the whole cost on the MIDI input thread is one relaxed atomic load per event.
+- **THE BOUND, stated rather than implied.** **8192 events**, the most recent ones, per open MIDI client —
+  128 KiB, allocated once when the client is constructed. It is a **memory bound, not a time bound**: the
+  ring is written from the MIDI input thread and that path may not allocate, lock or call out, so the
+  storage is allocated once and never resized. In the case the feature exists for — a human playing, 10–20
+  events a second — that is **roughly 7–13 minutes**, and the release notes say *minutes, not hours*; a
+  dense controller stream fills the same window in under a minute. The policy is **drop-OLDEST** (the note
+  you just played is the one that stays) with the loss COUNTED: `overwritten` and `paused_dropped` are
+  reported by `midi.retro_capture_status` and the ctest requires
+  `retained + overwritten + paused_dropped == events played`. `docs/MIDI-RETRO-CAPTURE-BOUNDS.md` is the
+  decision record; the ctest asserts the capacity the build reports equals the figure that page states.
+- **The window is per CLIENT, and it is not project state.** One window per open MIDI client, every channel
+  and every source port in the same one; arming and disarming do not clear it; choosing a different MIDI
+  backend discards it; `project.save` writes none of it. It is not a recording (no audio), a SysEx is stored
+  as a flagged placeholder rather than its bytes, system clock/start/stop bytes are not stored at all, and a
+  window that starts mid-phrase is REPORTED as truncated (`unmatched_ons` / `unmatched_offs`) rather than
+  quietly tidied.
+- **UI absence — one line: retrospective MIDI capture is drivable through the socket, not from the
+  interface.** Two Edit-menu items (Arm MIDI Capture, Capture MIDI) invoke the same two commands and show
+  the armed state, but nothing draws the rolling window, its length, or what it holds — there is no
+  waveform view of it, no "you played something" prompt, and no keyboard shortcut (the one candidate,
+  `Ctrl+Shift+M`, is unverified across the whole shortcut table, and taking an unverified key is worse than
+  taking none). `docs/KNOWN-LIMITATIONS.md` carries the same sentence and the bound.
+- **Owner's-31 item 15 (retrospective AUDIO capture) is NOT in this release.** It needs the same rolling
+  window applied to audio frames, and this build has no capture path to apply it to (ALSA records nothing;
+  the two-track recorder prototype is fed by tests), so a window built now could not be filled and no bound
+  stated for it could be measured by a registered test. Item 14's own recorded dependency is *none*; item
+  15's is the capture path itself, which is separate engine work. `docs/KNOWN-LIMITATIONS.md` says the same
+  in one line.
+- **Proof:** the registered ctest `ControlRetroCapture` (`tests/control-retro-capture.py`) starts the real
+  binary headless with `--control-socket`, opens a project whose `<midiport>` is readable, and **plays real
+  MIDI into it with `aplaymidi`** — an external ALSA-sequencer client, exactly like a keyboard, whose events
+  carry the file's own tick timestamp. It requires the same file played BEFORE arming to leave the window
+  empty and played again ARMED to come back as the notes' own positions, lengths, keys and velocities (read
+  back out of the engine through `roll.get_state`: position 0 and 240, length 240, key 60 at velocity 100,
+  key 64 at velocity 64); exactly one `control.undo` to remove the clip; and, with 20000 further events
+  played into an 8192-event window, `events_buffered` to be exactly the documented capacity with
+  `retained + overwritten + paused_dropped` equal to everything played, the instance still answering
+  `control.ping` afterwards. It reports *Skipped* (exit 77), never *Passed*, on a host with no
+  ALSA-sequencer tooling.
 
 ## Not in this draft yet
 

@@ -536,6 +536,32 @@ that is this page's fault — report it and it gets added.
   it per take, and `docs/RELEASE-NOTES-v0.3.0-alpha.md` records the test that measures it. Drivable through the
   socket, not from the interface.
 
+- **Retrospective MIDI capture keeps the last 8192 events, not a recording, and has no interface — added
+  2026-09-13.** Arming the mode makes the engine keep a rolling window of the MIDI it receives, so what you
+  just played can be written into a new clip AFTER the fact — drivable through `--control-socket`
+  (`midi.retro_capture_arm`, `midi.retro_capture_status`, `midi.retro_capture_to_clip`), with a registered
+  ctest playing REAL MIDI into the running engine and recovering it — but **nothing in `src/gui/` shows the
+  window, how long it is or what it holds**: there is no view of it, no "you played something" prompt, and
+  no keyboard shortcut. Retrospective MIDI capture is drivable through the socket, not from the interface.
+  The bound is stated rather than implied: **8192 events (128 KiB), the most recent ones, per open MIDI
+  client** — a **memory bound, not a time bound**, because the ring is written from the MIDI input thread and
+  that path may not allocate, lock or call out, so its storage is allocated once and never resized. In the
+  case the feature exists for (a human playing, 10–20 events a second) that is **roughly 7–13 minutes** — the
+  release notes say *minutes, not hours* — and a dense controller stream fills the same window in under a
+  minute; nothing guarantees a length in minutes. The policy is drop-OLDEST with the loss counted
+  (`overwritten`, `paused_dropped`). The window is **per MIDI client, not per project or per track**: every
+  channel and source port share it, arming and disarming do not clear it, choosing another MIDI backend
+  discards it, and `project.save` writes none of it. It is not a recording, a SysEx is stored as a flagged
+  placeholder rather than its bytes, clock/start/stop bytes are not stored, and a window that starts
+  mid-phrase is reported as truncated (`unmatched_ons`/`unmatched_offs`) rather than tidied.
+  `docs/MIDI-RETRO-CAPTURE-BOUNDS.md` is the decision record, and the registered ctest
+  (`ControlRetroCapture`) asserts the capacity the build reports equals the figure that page states.
+  **Owner's-31 item 15, retrospective AUDIO capture, is NOT in this release** — it needs the same rolling
+  window applied to audio frames and this build has no capture path to apply it to (ALSA records nothing,
+  and the two-track recorder prototype is fed by tests), so a window built now could not be filled and no
+  bound stated for it could be measured by a registered test. Item 14's own recorded dependency is *none*;
+  item 15's is the capture path itself.
+
 ## Telemetry and privacy
 
 - **Telemetry is off unless you turn it on**, and the consent screen shows you the exact payload before you

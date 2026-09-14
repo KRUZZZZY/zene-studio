@@ -69,6 +69,49 @@ static QString portName( snd_seq_t * _seq, const snd_seq_addr_t * _addr )
 	return name;
 }
 
+//! The MidiEvent the retrospective MIDI capture records for one received
+//! sequencer event (owner item 14, docs/MIDI-RETRO-CAPTURE.md).
+/*!
+ * It exists because the capture hook sits above the destination-port lookup and
+ * above the event-type switch of run(), so an event addressed to a port this
+ * client does not know - the "I played it and nothing was armed" case - is still
+ * recorded. The switch below builds its own MidiEvent for the port, unchanged
+ * and with the per-type TimePos the capture does not need; only the event types
+ * the capture stores are mapped here, and anything else (clock, sensing, ...)
+ * arrives as MidiActiveSensing and is not recorded.
+ */
+static MidiEvent retroCaptureEvent( const snd_seq_event_t * _ev, const snd_seq_addr_t * _source )
+{
+	switch( _ev->type )
+	{
+		case SND_SEQ_EVENT_NOTEON:
+			return MidiEvent( MidiNoteOn, _ev->data.note.channel,
+					_ev->data.note.note, _ev->data.note.velocity, _source );
+		case SND_SEQ_EVENT_NOTEOFF:
+			return MidiEvent( MidiNoteOff, _ev->data.note.channel,
+					_ev->data.note.note, _ev->data.note.velocity, _source );
+		case SND_SEQ_EVENT_KEYPRESS:
+			return MidiEvent( MidiKeyPressure, _ev->data.note.channel,
+					_ev->data.note.note, _ev->data.note.velocity, _source );
+		case SND_SEQ_EVENT_CONTROLLER:
+			return MidiEvent( MidiControlChange, _ev->data.control.channel,
+					_ev->data.control.param, _ev->data.control.value, _source );
+		case SND_SEQ_EVENT_PGMCHANGE:
+			return MidiEvent( MidiProgramChange, _ev->data.control.channel,
+					_ev->data.control.value, 0, _source );
+		case SND_SEQ_EVENT_CHANPRESS:
+			return MidiEvent( MidiChannelPressure, _ev->data.control.channel,
+					_ev->data.control.param, _ev->data.control.value, _source );
+		case SND_SEQ_EVENT_PITCHBEND:
+			return MidiEvent( MidiPitchBend, _ev->data.control.channel,
+					_ev->data.control.value + 8192, 0, _source );
+		case SND_SEQ_EVENT_SYSEX:
+			return MidiEvent( MidiSysEx, "", 0 );
+		default:
+			return MidiEvent( MidiActiveSensing );
+	}
+}
+
 
 
 MidiAlsaSeq::MidiAlsaSeq() :
@@ -530,6 +573,20 @@ void MidiAlsaSeq::run()
 				{
 					source = &ev->source;
 				}
+			}
+
+			// Retrospective MIDI capture (owner item 14, docs/MIDI-RETRO-CAPTURE.md):
+			// every received event is recorded once, here - above the destination-port
+			// lookup's `continue` below and above the event-type switch - so an event
+			// addressed to a port this client does not know is captured too. The
+			// sequencer's own time stamp is the tick and the resolved source address is
+			// the source port. While nothing is armed this costs one relaxed atomic
+			// load per event: the guard is outside, so the mapping below is not even
+			// evaluated.
+			if( m_retroCapture.isArmed() )
+			{
+				m_retroCapture.capture( retroCaptureEvent( ev, source ),
+						ev->time.tick, ev->source.port );
 			}
 
 			if( dest == nullptr )

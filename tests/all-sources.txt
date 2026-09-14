@@ -337,6 +337,10 @@ include/RemotePluginBase.h
 include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
+include/RetroMidiCapture.h
+include/RetroMidiCaptureSettings.h
+include/RetroMidiClipWriter.h
+include/RetroMidiRing.h
 include/RingBuffer.h
 include/RmsHelper.h
 include/RoutingChainNodes.h
@@ -925,6 +929,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
+src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
@@ -1063,6 +1068,9 @@ src/core/RackZones.cpp
 src/core/RecordingJournal.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
+src/core/RetroMidiCapture.cpp
+src/core/RetroMidiCaptureSettings.cpp
+src/core/RetroMidiClipWriter.cpp
 src/core/RingBuffer.cpp
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
@@ -1340,6 +1348,7 @@ tests/src/core/MathTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
+tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
@@ -1375,6 +1384,8 @@ tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RenderJobQueueTest.cpp
+tests/src/core/RetroMidiCaptureCommandsTest.cpp
+tests/src/core/RetroMidiRingTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
@@ -1429,6 +1440,7 @@ tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tools/mmpz-git/scratch/qtesc.cpp
+
 tools/mmpz-git/scratch/qtroundtrip.cpp
 tools/mmpz-git/scratch/qtsave.cpp
 tools/mmpz-git/scratch/qtsave2.cpp
