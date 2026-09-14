@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-14T02:36:15Z",
+  "captured_at": "2026-09-14T12:10:49Z",
   "commands": [
     {
       "args_schema": {
@@ -828,6 +828,102 @@
           },
           "tags": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Create a parallel bus channel (Mixer::createBusChannel) and return its new ch-<n> id. A bus never receives instrument output; sends INTO it default to pre-fader. Reversible: one undo step deletes the bus this created.",
+      "group": "bus",
+      "id": "bus.create",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "is_bus": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every parallel bus channel with its stable ch-<n> id, fader, incoming sends and PDC numbers. Read-only.",
+      "group": "bus",
+      "id": "bus.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "buses": {
+            "type": "array"
+          },
+          "channel_count": {
+            "type": "integer"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a bus channel. Refused for a channel that is not a bus. NOT reversible: the command records the bus's full state but nothing recreates a channel with state, so control.undo refuses, typed, and names the fallback.",
+      "group": "bus",
+      "id": "bus.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
           }
         },
         "required": [],
@@ -4113,6 +4209,156 @@
           "channel": {
             "type": "string"
           },
+          "sidechain": {
+            "type": "boolean"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the send from one channel to another - a regular routing with sidechain false (the default), or a sidechain send with sidechain true. Reversible: one undo step re-creates it with the amount and tap it had.",
+      "group": "mixer",
+      "id": "mixer.route_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean"
+          },
+          "sidechain": {
+            "type": "boolean"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "pre_fader": {
+            "type": "boolean"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Make a channel's output go to another channel's input (the channel's routing), at unity. Validated against the mixer's own feedback rule before anything is written. Reversible: one undo step.",
+      "group": "mixer",
+      "id": "mixer.route_to",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "from": {
+            "type": "string"
+          },
+          "pre_fader": {
+            "type": "boolean"
+          },
+          "route": {
+            "type": "object"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "pre_fader": {
+            "type": "boolean"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Create or adjust an auxiliary send from one channel to another, with an amount. A send INTO a bus is pre-fader by default, which is the engine's own rule. Reversible: one undo step.",
+      "group": "mixer",
+      "id": "mixer.send_to",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "from": {
+            "type": "string"
+          },
+          "pre_fader": {
+            "type": "boolean"
+          },
+          "route": {
+            "type": "object"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
           "pan": {
             "maximum": 1,
             "minimum": -1,
@@ -4169,6 +4415,69 @@
           },
           "volume": {
             "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "tap_point": {
+            "enum": [
+              "post_fader",
+              "pre_fx",
+              "pre_fader",
+              "post_fader_no_gain"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Create or adjust a SIDECHAIN send: the sender's signal is tapped at the given point and delivered to the receiver's sidechain input instead of being mixed into its output. tap_point is one of post_fader, pre_fx, pre_fader, post_fader_no_gain. Reversible: one undo step.",
+      "group": "mixer",
+      "id": "mixer.sidechain_to",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "deferred": {
+            "type": "boolean"
+          },
+          "from": {
+            "type": "string"
+          },
+          "sidechain": {
+            "type": "object"
+          },
+          "tap_point": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
           }
         },
         "required": [],
@@ -5074,6 +5383,56 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Plugin delay compensation as the mixer publishes it: the total latency to the master output, every channel's alignment point and the latency its own chain adds, the compensation applied at every send, and whether sidechain routing exists. Read-only.",
+      "group": "pdc",
+      "id": "pdc.report",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel_count": {
+            "type": "integer"
+          },
+          "channels": {
+            "type": "array"
+          },
+          "delay_line_capacity_frames": {
+            "type": "integer"
+          },
+          "delay_line_clamped": {
+            "type": "boolean"
+          },
+          "route_count": {
+            "type": "integer"
+          },
+          "routes": {
+            "type": "array"
+          },
+          "sidechain": {
+            "type": "object"
+          },
+          "total_latency_frames": {
+            "type": "integer"
+          },
+          "track_input_count": {
+            "type": "integer"
+          },
+          "track_inputs": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "bypass": {
             "type": "boolean"
@@ -5618,6 +5977,123 @@
           },
           "target": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "device"
+        ],
+        "type": "object"
+      },
+      "description": "A device's audio-ports model: the input and output pin matrices, their channel counts and names, and the engine's own used-channel caches. Read-only.",
+      "group": "port",
+      "id": "port.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "object"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "in",
+              "out"
+            ],
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "processor_channel": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          },
+          "track_channel": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target",
+          "device",
+          "direction",
+          "track_channel",
+          "processor_channel",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Set one pin of a device's audio-ports matrix (the pin connector's own write, AudioPortsModel::Matrix::setPin). Reversible: control.undo re-dispatches this command with the value the pin held before the write.",
+      "group": "port",
+      "id": "port.set_pin",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "ports": {
+            "type": "object"
+          },
+          "previous": {
+            "type": "boolean"
+          },
+          "processor_channel": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          },
+          "track_channel": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -6844,6 +7320,47 @@
             "type": "array"
           },
           "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "The routing graph a target's signal is processed through: the nodes and their type names, the connections, the cached topological order the audio thread walks, the output node, and - for a mixer channel - its rack's graph. Read-only.",
+      "group": "routing",
+      "id": "routing.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "rack": {
+            "type": "object"
+          },
+          "target": {
+            "type": "string"
+          },
+          "target_type": {
             "type": "string"
           }
         },
@@ -8825,6 +9342,656 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Put a mixer channel into a group, so the group's fader scales it. Refused, typed, for ch-0 (master), for a channel already in this group, and for a channel that belongs to ANOTHER group - a channel is in at most one, which is what keeps 'soloing a member' single-valued; the refusal names the group holding it. Reversible through the ProjectJournal (a recorded undo step).",
+      "group": "vca",
+      "id": "vca.assign",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "assigned": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Create a VCA / mix-and-edit group and return its vca-<n> id. A group owns one fader that scales every member mixer channel RELATIVE to the channel's own fader (moving it never writes a member's fader, which is what makes it exactly reversible), a mute, a solo, and - once vca.track_add has named them - a set of tracks whose media edits it locks together. A group holds no members at birth; add mixer channels with vca.assign and tracks with vca.track_add. Reversible through the ProjectJournal (the recorded inverse removes the group it created).",
+      "group": "vca",
+      "id": "vca.create",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          },
+          "volume": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "clip",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Move a clip to an absolute tick position AND move every other member of the group's edit set by the SAME delta, so the members stay locked to one timeline (this is the phase-locked multitrack edit). The named clip is the anchor; a member track whose clips overlap the anchor's pre-command span is moved by the delta, a member with nothing there is reported in unlocked_tracks, and a member whose track is gone in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks. One control.undo returns every moved clip. Reversible through the ProjectJournal (a composite Clip checkpoint covering every clip the lock moved).",
+      "group": "vca",
+      "id": "vca.edit_move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "delta": {
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          },
+          "moved_count": {
+            "type": "integer"
+          },
+          "moves": {
+            "type": "array"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group"
+        ],
+        "type": "object"
+      },
+      "description": "One group addressed by its vca-<n> id: the name, the fader value, the gain actually published to the members (0 when the group is muted), the mute and solo flags, the phase lock, every member channel with the gain it is scaled by, and the edit set with the ids whose track no longer exists reported separately as missing_tracks. Writes nothing.",
+      "group": "vca",
+      "id": "vca.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          },
+          "volume": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every group of the mix with its whole state: the fader and the gain published from it, the mute and solo flags, the phase lock, the member mixer channels with the gain each one is being scaled by right now, and the edit set as trk-<n> ids (with the ids that no longer name a live track separated out). Writes nothing.",
+      "group": "vca",
+      "id": "vca.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "groups": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a group. Its member channels play at their own faders again (the published gain is reset), and the edit set goes with the group. The delete is EXACTLY reversible: one control.undo re-creates the group with its id, name, fader, mute, solo, phase-lock flag, member channels and edit tracks.",
+      "group": "vca",
+      "id": "vca.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group_count": {
+            "type": "integer"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Rename a group. The name is what a group is called in the project file's <vcagroup> element and what its fader, mute and solo display names are built from; it is not an address, so vca-<n> ids are unaffected. An empty name is refused, typed. Reversible through the ProjectJournal (a recorded undo step).",
+      "group": "vca",
+      "id": "vca.rename",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "previous_name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "gain"
+        ],
+        "type": "object"
+      },
+      "description": "Set a group's fader (0..2, 1.0 is unity and 2.0 is +6 dB). The fader SCALES every member channel relative to the channel's own fader - no member model is written - so moving it and moving it back leaves every member bit-identical, and a member keeps the value the user set for it. The result reports the gain actually published to the members, which is 0 while the group is muted. Reversible through the ProjectJournal (the group's fader model checkpoint).",
+      "group": "vca",
+      "id": "vca.set_gain",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array"
+          },
+          "previous_gain": {
+            "type": "number"
+          },
+          "volume": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "group",
+          "muted"
+        ],
+        "type": "object"
+      },
+      "description": "Mute or unmute a group. Mute is a gain of zero published from the group, NOT the members' own mute models - so muting a group silences every member, a soloed member of a muted group stays silent, and each member's own mute state survives the pair untouched. Reversible through the ProjectJournal (the group's mute model checkpoint).",
+      "group": "vca",
+      "id": "vca.set_mute",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "group",
+          "locked"
+        ],
+        "type": "object"
+      },
+      "description": "Switch a group's phase lock on or off. With the lock ON, a media edit made on one of the group's tracks is applied to every other member at the same source position (see vca.edit_move); with it OFF the membership is kept but the takes can be edited independently again. The default for a new group is ON. Reversible through the ProjectJournal (a recorded undo step).",
+      "group": "vca",
+      "id": "vca.set_phase_lock",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
+          "previous_phase_locked": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "soloed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "group",
+          "soloed"
+        ],
+        "type": "object"
+      },
+      "description": "Solo or unsolo a group. Soloing a group makes exactly its members audible (the same exclusive solo a channel has, so soloing a group clears any other group's), and clearing the flag restores the pre-solo mute state of every channel. Reversible: the whole action - the flag, every other group's flag and every channel's mute - is one recorded undo step.",
+      "group": "vca",
+      "id": "vca.set_solo",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array"
+          },
+          "previous_soloed": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Add a track to a group's edit set, so media edits on it are locked to every other member's. Membership is by the track's STABLE trk-<n> id and is recorded on the GROUP, not on the track; the group does not have to be a mixer group of anything (a group can be an edit group alone). Survives save/reload (the group's <vcagroup> element carries an <edittrack track=\"n\"/> child per member). Reversible through the ProjectJournal (a recorded undo step).",
+      "group": "vca",
+      "id": "vca.track_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Take a track out of a group's edit set. No clip moves: the track simply stops being locked to the others. A track that is not in the set is REFUSED rather than silently accepted. Reversible through the ProjectJournal (a recorded undo step).",
+      "group": "vca",
+      "id": "vca.track_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Take a mixer channel out of a group. The channel plays at its own fader again (its published gain returns to unity) and keeps that fader's value throughout. A channel that is not a member of this group is REFUSED rather than silently accepted, so a wrong id cannot look like a success. Reversible through the ProjectJournal (a recorded undo step).",
+      "group": "vca",
+      "id": "vca.unassign",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "unassigned": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "clip": {
             "type": "string"
           },
@@ -9150,16 +10317,16 @@
       }
     }
   ],
-  "count": 185,
+  "count": 210,
   "instance": {
     "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 192415728,
-    "binary_sha256": "8b3151f353f136fc9a73edf3bde1ebae01b219cd9141b0f1a56ecf92228d4364",
+    "binary_bytes": 199087296,
+    "binary_sha256": "e30b163c13f9ac5b7bd7f68658b250effe63534590e59ee35a7c9428a0f351bf",
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "9d9a1d1393aa6f712a61db045a912794e85cc80b",
+    "lane_head": "d03dfe035656761abc9bcc20b043e89fd756722d",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-6u8m8xff/zene.sock",
-    "version": "0.2.1-alpha.150+9d9a1d1"
+    "source_socket": "/home/kruzzzzy/zene-030-merge/zene-merge.sock",
+    "version": "0.2.1-alpha.170+d03dfe0"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
