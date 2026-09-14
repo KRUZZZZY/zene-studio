@@ -57,11 +57,37 @@ public:
 	//! microseconds at the moment it was read.
 	using Receiver = std::function<void(const QByteArray&, quint64)>;
 
+	/*! What this host MEASURED about the half a socket option cannot promise:
+	 *  whether a datagram sent to the session's group is actually RECEIVED by
+	 *  another socket on this host that joined it.
+	 *
+	 *  Why a measurement and not a flag. A socket that binds the port and joins
+	 *  the group can still be on a host that never delivers a multicast datagram
+	 *  anywhere - in which case two instances on one box can never see each
+	 *  other, and `available()` returning true is a claim the host does not
+	 *  honour. That is a question about the PLATFORM, so the transport answers it
+	 *  by measuring (docs/LINK-SYNC.md section 3) and reports the measurement
+	 *  here, so a client can check the claim rather than believe it.
+	 *
+	 *  `attempted == false` is the answer for a transport that does not probe
+	 *  (the unavailable Windows stub), never a silent "it worked".
+	 */
+	struct LoopbackProbe
+	{
+		bool attempted = false;
+		bool delivered = false;
+		int elapsedMs = -1;   //!< -1 when nothing arrived inside the bound
+		int boundMs = 0;
+	};
+
 	virtual ~LinkPeerTransport() = default;
 
-	/*! Open the socket and join the group. False means announcements cannot
-	 *  travel; `reason()` then says why and the model reports it verbatim
-	 *  instead of pretending a silent session is a working one. */
+	/*! Open the socket and join the group, then MEASURE that announcements can
+	 *  be received on this host. False means announcements cannot travel - to a
+	 *  peer, or in the case of a failed loopback probe, not even to a second
+	 *  socket in this host - and `reason()` then says which of the two it was
+	 *  and what was measured, so the model reports it verbatim instead of
+	 *  pretending a silent session is a working one. */
 	virtual bool start() = 0;
 	virtual void stop() = 0;
 	virtual bool available() const = 0;
@@ -71,6 +97,10 @@ public:
 	//! Send one announcement. Best-effort: a datagram is not a guarantee.
 	virtual void send(const QByteArray& payload) = 0;
 	virtual void setReceiver(Receiver receiver) = 0;
+	//! The loopback measurement `available()` is derived from. Not pure: a
+	//! transport that cannot answer says so with `attempted == false` rather
+	//! than having to invent a probe.
+	virtual LoopbackProbe loopbackProbe() const { return LoopbackProbe{}; }
 };
 
 } // namespace lmms

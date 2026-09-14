@@ -198,6 +198,16 @@ LinkSessionReport LinkSyncEngine::report() const
 	report.transportReason = m_transport != nullptr ? m_transport->reason()
 		: QStringLiteral("no transport");
 	report.transportEndpoint = m_transport != nullptr ? m_transport->endpoint() : QString();
+	// The receipt for the line above: what start() actually RECEIVED, so
+	// "available" can be checked rather than believed.
+	if (m_transport != nullptr)
+	{
+		const LinkPeerTransport::LoopbackProbe probe = m_transport->loopbackProbe();
+		report.transportProbeAttempted = probe.attempted;
+		report.transportProbeDelivered = probe.delivered;
+		report.transportProbeElapsedMs = probe.elapsedMs;
+		report.transportProbeBoundMs = probe.boundMs;
+	}
 	report.publishedCount = m_publishedCount;
 	report.lastPacketAgeMs = (m_lastPacketUs > 0 && now > m_lastPacketUs)
 		? static_cast<qint64>((now - m_lastPacketUs) / 1000) : -1;
