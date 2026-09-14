@@ -22,9 +22,9 @@
  * ControlReversibilityTableSnapshot.cpp and the irreversible / not_mutating
  * rows in ControlReversibilityTablePassive.cpp.
  *
- * ReversibilityTable's constructor reads all five files through
+ * ReversibilityTable's constructor reads all six files through
  * reversibilityRowTable(), which JOINS this file's rows with the action block's
- * and the three group files': the block is still ONE table with ONE row count,
+ * and the four group files': the block is still ONE table with ONE row count,
  * and the anti-drift test still compares the registry against every row. The
  * files are separate because the file-length ratchet measures a file as a unit,
  * not because the contract is five contracts.
@@ -469,7 +469,7 @@ constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
 /*! The true_inverse block, in its FIVE files JOINED: this file's
  *  live-checkpoint rows first, then the recorded-ACTION rows
  *  (ControlReversibilityTableAction.cpp), then the three GROUP files
- *  (ControlReversibilityTable{TrackFolder,Vca,Routing}.cpp). The block is split
+ *  (ControlReversibilityTable{TrackFolder,Vca,Routing,ScanAndCrash}.cpp). The block is split
  *  across five translation units (see the header), but every caller -
  *  ReversibilityTable's constructor, and through it control.transactions and
  *  tests/…/ReversibilityContractTest - still reads ONE block with ONE row count.
@@ -483,7 +483,7 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		// repeated id is OVERWRITTEN, so the order is part of the contract.
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityActionRowTable,
 				reversibilityTrackFolderRowTable, reversibilityVcaRowTable,
-				reversibilityRoutingRowTable})
+				reversibilityRoutingRowTable, reversibilityScanAndCrashRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

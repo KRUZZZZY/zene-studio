@@ -144,6 +144,13 @@ set(LMMS_SRCS
 	core/ControlCommandsPluginParams.cpp
 	core/ControlCommandsPluginPreset.cpp
 	core/ControlCommandsPluginState.cpp
+	# The crash reporter's agent surface (feature row 54) and the plugin scan
+	# cache + quarantine group (feature row 46: the read half, then the edit
+	# half). Separate translation units for the reason the automation and warp
+	# groups are split - gate 7 measures a file, not a group.
+	core/ControlCommandsCrash.cpp
+	core/ControlCommandsPluginScan.cpp
+	core/ControlCommandsPluginScanEdit.cpp
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
@@ -233,6 +240,10 @@ set(LMMS_SRCS
 	# routing verbs): a GROUP's rows whatever their class, joined by
 	# reversibilityRowTable() exactly as the folder-tracks group's are.
 	core/ControlReversibilityTableRouting.cpp
+	# The plugin scan-cache and crash-reporter groups' rows (feature rows 46
+	# and 54), in their own file for the reason the routing surface's rows are:
+	# the passive block and the live block are both at the file-length cap.
+	core/ControlReversibilityTableScanAndCrash.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

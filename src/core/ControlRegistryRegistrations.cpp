@@ -153,6 +153,15 @@ void registerControlCommands(ControlRegistry& registry)
 	// The routing surface (feature rows 27-29) and the mixer's routing verbs; the
 	// rationale for each group is on its declaration in ControlRegistryGroups.h.
 	registerRoutingSurfaceCommands(registry);
+	// The plugin scan cache and its quarantine list (feature row 46): the read
+	// half, then the edit half, each its own translation unit.
+	registerPluginScanCommands(registry);
+	registerPluginScanEditCommands(registry);
+	// The crash reporter (feature row 54). No compile-time switch: the module is
+	// a no-op on Windows rather than compiled out, and its read answers in every
+	// configuration (reporting no directory there), so the ids are honest either
+	// way and the two writers refuse, typed, when the reporter is not installed.
+	registerCrashReporterCommands(registry);
 }
 
 } // namespace lmms

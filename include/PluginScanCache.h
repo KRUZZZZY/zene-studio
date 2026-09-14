@@ -137,6 +137,25 @@ public:
 	/*! Remember (or refresh) one file's scan outcome. */
 	void store(const PluginScanRecord& record);
 
+	/*! The remembered record for \a path, IGNORING the file's fingerprint.
+	 *
+	 * lookup() is the fingerprinted read the scanner itself uses (path, size
+	 * and mtime must all still match); this is the raw stored record, which is
+	 * what tells "never scanned" apart from "scanned, and the file has changed
+	 * since" - the question an operator asks when a plugin is re-scanned.
+	 * Added 2026-09-14 for the control surface's `plugin.scan_cache_lookup`.
+	 */
+	const PluginScanRecord* record(const QString& path) const;
+
+	/*! Every remembered record, in path order.
+	 *
+	 * The hash's iteration order is unspecified, and a report whose order moved
+	 * between two reads would make an agent's diff meaningless. Added 2026-09-14
+	 * for `plugin.scan_cache_list`, which is how the cache's CONTENTS become
+	 * visible (before it, only a count was reachable).
+	 */
+	QList<PluginScanRecord> records() const;
+
 	// --- quarantine / skip list --------------------------------------------
 	bool isQuarantined(const QString& path) const;
 	QString quarantineReason(const QString& path) const;

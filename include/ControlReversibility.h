@@ -151,6 +151,14 @@ LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount)
  * reversibilityTrackFolderRowTable's do. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityRoutingRowTable(int* rowCount);
+/*! The plugin scan-cache group's and the crash-reporter group's rows (feature
+ * rows 46 and 54). A GROUP's rows, whatever their class - the class comes from
+ * each row, not from the file, exactly as reversibilityRoutingRowTable's do.
+ * Joined into reversibilityRowTable(): the passive block is at 477 of the 500
+ * lines the file-length ratchet allows and the live block at 499, so the rows
+ * land here rather than in either.
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

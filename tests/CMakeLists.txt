@@ -1548,6 +1548,40 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77
 	)
+	# plugin.scan_cache_* / plugin.rescan (0.3.0, feature row 46 "Plugin scan
+	# cache and quarantine"): the cache and the quarantine list driven over
+	# --control-socket, with the cache FILE read off disk as well as off the
+	# wire (the audit's row names hand-editing that file as the only route
+	# before this group). It asserts the recorded inverse restores a
+	# quarantined entry WITH its reason, measures the negative control (a
+	# path-only re-add loses it), and - when the build has plugin modules, which
+	# it points LMMS_PLUGIN_DIR at - that a quarantined plugin really leaves
+	# plugin.list and comes back. No compile-time switch; the module-dependent
+	# checks are reported as SKIPPED inside the transcript when this build has
+	# no plugin files, never as passed.
+	add_test(NAME ControlPluginScanCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-plugin-scan-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPluginScanCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# crash.* (0.3.0, feature row 54 "Crash reporter"): the reporter's state and
+	# its two real operations over --control-socket, with the `offered` sentinel
+	# and the report file checked ON DISK, both writers' typed `irreversible`
+	# undo refusal, and crash.upload_report's by-name refusal (this build has no
+	# upload). The report is PLANTED at the path the module names, because a real
+	# crash kills the process that would have to ask about it; the transcript
+	# says so. No compile-time switch.
+	add_test(NAME ControlCrashReporter
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-crash-reporter.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlCrashReporter PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
 	# record.* (0.3.0, recording crash recovery): journal a capture, kill the
 	# instance with SIGKILL (a REAL abnormal exit), then start a SECOND instance
 	# against the same working directory and assert the NEXT START finds the

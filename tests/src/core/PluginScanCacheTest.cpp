@@ -329,6 +329,77 @@ private slots:
 		QVERIFY(empty.load());
 		QCOMPARE(empty.quarantineCount(), 0);
 	}
+	/*! The enumeration the control surface's `plugin.scan_cache_list` needs
+	    (2026-09-14): every record the cache holds, in PATH ORDER. The order is
+	    part of the answer - the hash's iteration order is unspecified, so a
+	    report that moved between two reads would make an agent's diff
+	    meaningless. */
+	void testRecordsAreListedInPathOrder()
+	{
+		using namespace lmms;
+
+		PluginScanCache cache(cachePath("list"));
+		cache.store(recordFor(m_cacheDir->filePath("libzeta.so"), PluginScanRecord::Status::NotAPlugin));
+		cache.store(recordFor(m_cacheDir->filePath("libalpha.so"), PluginScanRecord::Status::LoadFailed));
+		cache.store(recordFor(m_cacheDir->filePath("libbeta.so"), PluginScanRecord::Status::NotAPlugin));
+
+		QCOMPARE(cache.fileCount(), 3);
+		const QList<PluginScanRecord> first = cache.records();
+		QCOMPARE(first.size(), 3);
+		QStringList paths;
+		for (const PluginScanRecord& record : first) { paths << QFileInfo(record.filePath).fileName(); }
+		QCOMPARE(paths, QStringList{QStringLiteral("libalpha.so"), QStringLiteral("libbeta.so"),
+			QStringLiteral("libzeta.so")});
+
+		// A second read of the same cache reports the same order.
+		const QList<PluginScanRecord> second = cache.records();
+		QStringList again;
+		for (const PluginScanRecord& record : second) { again << QFileInfo(record.filePath).fileName(); }
+		QCOMPARE(again, paths);
+	}
+
+	/*! record() is the UNFINGERPRINTED read and lookup() is the fingerprinted
+	    one. The scanner serves from lookup(), so a changed file is not served;
+	    record() is what tells that file apart from one that was never scanned,
+	    which is the distinction `plugin.scan_cache_lookup` reports as `cached`
+	    vs `stale` (2026-09-14). */
+	void testRecordKeepsTheFingerprintLookupRejects()
+	{
+		using namespace lmms;
+
+		const QString path = m_cacheDir->filePath("libchanged.so");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			file.write("one");
+		}
+
+		PluginScanCache cache(cachePath("fingerprint"));
+		PluginScanRecord record = recordFor(path, PluginScanRecord::Status::NotAPlugin);
+		record.size = QFileInfo(path).size();
+		record.mtimeMs = QFileInfo(path).lastModified().toMSecsSinceEpoch();
+		cache.store(record);
+
+		QVERIFY2(cache.lookup(QFileInfo(path)) != nullptr,
+			"an unchanged file must be served from the record it was stored with");
+		QVERIFY(cache.record(path) != nullptr);
+
+		// Replace the file with a longer one: the fingerprint no longer matches,
+		// so lookup() refuses it while the record it was stored with is intact.
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			file.write("a considerably longer body");
+		}
+		QVERIFY2(cache.lookup(QFileInfo(path)) == nullptr,
+			"a changed file must not be served from a record that describes the old one");
+		const PluginScanRecord* stored = cache.record(path);
+		QVERIFY2(stored != nullptr, "the record itself is still remembered");
+		QCOMPARE(stored->size, record.size);
+		QVERIFY2(cache.record(m_cacheDir->filePath("libnever-scanned.so")) == nullptr,
+			"a path that was never scanned has no record at all");
+	}
+
 	void testCorruptCacheDegradesToFullScan()
 	{
 		using namespace lmms;
@@ -713,6 +784,19 @@ private:
 	QString cachePath(const QString& name) const { return m_cacheDir->filePath(name + ".json"); }
 	QString pluginPath() const { return m_pluginDir->filePath(QLatin1String(moduleFileName())); }
 	bool pluginModuleCopied() const { return QFileInfo::exists(pluginPath()); }
+
+	/*! A minimal record for a path that need not exist. The enumeration tests
+	 *  are about the records a cache HOLDS and the order they come back in, so
+	 *  they need the fingerprint fields and a non-empty path (store() ignores a
+	 *  record without one) and nothing else. */
+	lmms::PluginScanRecord recordFor(const QString& path,
+		lmms::PluginScanRecord::Status status) const
+	{
+		lmms::PluginScanRecord record;
+		record.filePath = path;
+		record.status = status;
+		return record;
+	}
 
 	/*!
 	 * Pin the plugin search path to the fixture directory and re-run the scan.
