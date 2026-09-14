@@ -114,8 +114,11 @@ verb**: wave 1's candidate generation IS the engine's set.
 ```
 bash tools/local-ci.sh --build-dir build --jobs 2       configure EXIT=0  build EXIT=0
                                                         ctest: 147/148 passed, 1 failed (see RED §4)
-bash tests/run-all-gates.sh                             EXIT=1  (gate 1 ctest: the expected snapshot
-                                                        drift; gate 5 mutation: see §4 note)
+bash tests/run-all-gates.sh                             EXIT=1  (gate 1 ctest: the ONLY failing test is
+                                                        ControlCommandsSnapshot - the expected snapshot
+                                                        drift; gate 5 mutation PASS, 88.5% kill score
+                                                        (23/26, threshold 80%); gates 3,4,6,7,8,9,10,11
+                                                        PASS; gate 2 coverage SKIP, no --with-coverage)
 bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build   EXIT=0  PASS (6/6)
 bash tests/complexity-gate.sh --check                   EXIT=0  PASS (no baseline entry)
 bash tests/file-length-gate.sh --check                  EXIT=0  PASS (fork scope)
@@ -202,16 +205,21 @@ serialised copy, so no attribute, element or model of the running project is tou
    `src/gui/MainWindow.cpp` 1945→2062, `tests/src/core/RetroMidiCaptureCommandsTest.cpp` 558 (new).
    The `scope all` baseline is stale relative to the tip; the fork scope (the acceptance bar's
    default) is **green**. My largest new file is 493 lines.
-3. **`run-all-gates.sh` gate 5 (mutation testing) — first attempt FAILED on a leftover mutant.**
-   My first, timeout-interrupted run of that gate left the Gate 5 mutant
+3. **`run-all-gates.sh` gate 5 (mutation testing) — first attempt FAILED on a leftover mutant; the
+   re-run PASSED.** My first, timeout-interrupted run of that gate left the Gate 5 mutant
    (`src/core/RoutingGraph.cpp:205`, `std::min` → `std::max`) in the tree, and the next run **refused
    to start**: `mutation-gate: src/core/RoutingGraph.cpp has uncommitted changes — commit or stash
    first`. I restored the file with `git checkout HEAD -- src/core/RoutingGraph.cpp` and verified
    `sha256 = 1fc2d8fb3fe015e94468cd77e8fb285805198f6074258e0c7ced217c8632f163`, identical to `HEAD`
-   (**no mutant left**). The gate was then re-run to completion — see the row below.
+   (**no mutant left**). The gate then ran to completion on a clean tree:
 
 ```
-bash tests/run-all-gates.sh   (final run, clean tree)
+bash tests/run-all-gates.sh   (final run, clean tree)     EXIT=1
+  gate 1  ctest                FAIL   (147/148; the only failure is ControlCommandsSnapshot - §4.1)
+  gate 2  coverage             SKIP   (--with-coverage not passed)
+  gate 5  mutation             PASS   (kill score 23/26 = 88.5%, threshold 80%; 4 invalid, 3 survived)
+  gates 3,4,6,7,8,9,10,11      PASS
+  src/core/RoutingGraph.cpp back to 1fc2d8fb…, `git status` clean (verified after the run)
 ```
 
 Everything else in the acceptance bar is green (§3).
@@ -289,7 +297,7 @@ git add tools/mcp-zene-control/zene_control/commands_snapshot.json   # +3 ids: m
 | item | state |
 |---|---|
 | `tools/local-ci.sh --build-dir build --jobs 2` | configure 0, build 0, ctest 147/148 (snapshot drift red) |
-| `tests/run-all-gates.sh` | EXIT=1 — gate 1 (the same snapshot drift) and gate 5; see §4 |
+| `tests/run-all-gates.sh` | EXIT=1 — the only failing gate is gate 1 (ctest), and the only failing test is `ControlCommandsSnapshot` (the merge-time snapshot drift, §4.1). Gate 5 PASS 88.5%; gates 3/4/6–11 PASS; gate 2 SKIP (no `--with-coverage`) |
 | `tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build` | EXIT=0 |
 | `tests/complexity-gate.sh --check` | EXIT=0 |
 | `tests/file-length-gate.sh --check` | EXIT=0 (fork); `--scope all` red, pre-existing |
