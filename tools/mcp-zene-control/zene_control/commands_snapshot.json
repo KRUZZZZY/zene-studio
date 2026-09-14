@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-14T12:10:49Z",
+  "captured_at": "2026-09-14T15:30:39Z",
   "commands": [
     {
       "args_schema": {
@@ -1623,6 +1623,56 @@
           "clip": {
             "type": "string"
           },
+          "offset": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "offset"
+        ],
+        "type": "object"
+      },
+      "description": "Slip a clip's content inside its own rectangle: the clip's position and its length do not move, and the part of the source that plays at the clip's start becomes 'offset' ticks into it. Slip is the only verb that moves the audio without moving the clip. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.slip",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "position": {
             "maximum": 1919808,
             "minimum": 1,
@@ -1648,6 +1698,66 @@
           },
           "right": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "end": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "start"
+        ],
+        "type": "object"
+      },
+      "description": "Move a clip's start edge to an absolute tick, holding the audio the clip already carried at the same song position: the start, the length and the source offset move together, which is what the song editor's own left-edge drag does. An optional 'end' trims the tail in the same step. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.trim",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "end": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [],
@@ -2589,6 +2699,170 @@
           },
           "version": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Acknowledge the pending crash report: write the reporter's `offered` sentinel so the report is not offered again on the next start, and KEEP the file so it can still be attached. Refuses when there is no report. Not reversible - no function in this engine removes the sentinel; control.undo names the sentinel to delete by hand.",
+      "group": "crash",
+      "id": "crash.acknowledge_report",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "offered": {
+            "type": "boolean"
+          },
+          "offered_marker_path": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "report": {
+            "type": "object"
+          },
+          "report_path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Clear the crash reporter's report: delete the report file and the offered sentinel beside it (crashreporter::discardPendingReport). Refuses when there is neither, so a call that would change nothing writes nothing. Not reversible - the report's bytes are gone and nothing writes a report from a caller's bytes; control.undo names the fallback.",
+      "group": "crash",
+      "id": "crash.discard_report",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "discarded": {
+            "type": "boolean"
+          },
+          "offered": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "removed": {
+            "type": "array"
+          },
+          "removed_count": {
+            "type": "integer"
+          },
+          "report": {
+            "type": "object"
+          },
+          "report_path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The crash reporter's state: whether it is installed, where its report directory is, every report it holds (path, existence, size, last-written time), whether a report is still pending an offer, whether the offered sentinel is present, whether a session marker says the previous run exited uncleanly, its two hard bounds, and the upload policy. Read-only, and it answers in every configuration.",
+      "group": "crash",
+      "id": "crash.list_reports",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "type": "object"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "offered": {
+            "type": "boolean"
+          },
+          "offered_marker_path": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "previous_run_exited_cleanly": {
+            "type": "boolean"
+          },
+          "report_count": {
+            "type": "integer"
+          },
+          "report_directory": {
+            "type": "string"
+          },
+          "report_path": {
+            "type": "string"
+          },
+          "reports": {
+            "type": "array"
+          },
+          "session_marker_path": {
+            "type": "string"
+          },
+          "session_marker_present": {
+            "type": "boolean"
+          },
+          "upload": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Send a crash report somewhere. Refused, always: this build has no upload and no network code of any kind in the reporter (include/CrashReporter.h states it as a design property), so no send is faked. The refusal names the file to attach by hand.",
+      "group": "crash",
+      "id": "crash.upload_report",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "sent": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -3860,6 +4134,144 @@
           },
           "start_stop_sync": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The last auto-mastering run this instance performed: the report the run itself produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. Read-only.",
+      "group": "mastering",
+      "id": "mastering.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "type": "array"
+          },
+          "files_present": {
+            "type": "integer"
+          },
+          "has_run": {
+            "type": "boolean"
+          },
+          "last_run": {
+            "type": "object"
+          },
+          "note": {
+            "type": "string"
+          },
+          "session_empty": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The mastering candidate set wave 1 generates: each candidate's name, the delivery target it is graded against (its integrated loudness, tolerance and true-peak ceiling, plus the published document the numbers come from), the dynamics stage's five numbers and the chain settings they imply. The set is the engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling and dynamics so the candidates are objectively distinguishable. This command writes nothing and starts no render: mastering.run is what masters and measures.",
+      "group": "mastering",
+      "id": "mastering.list_candidates",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "out_dir": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "out_dir"
+        ],
+        "type": "object"
+      },
+      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). Names no best candidate: there is no validated preference scorer, so the choice is the user's.",
+      "group": "mastering",
+      "id": "mastering.run",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_count": {
+            "type": "integer"
+          },
+          "candidates": {
+            "type": "array"
+          },
+          "created": {
+            "type": "array"
+          },
+          "created_count": {
+            "type": "integer"
+          },
+          "files": {
+            "type": "array"
+          },
+          "format": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "out_dir": {
+            "type": "string"
+          },
+          "render_count": {
+            "type": "integer"
+          },
+          "render_sample_rate": {
+            "type": "integer"
+          },
+          "renderer": {
+            "type": "string"
+          },
+          "replaced_count": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "object"
+          },
+          "source_render_file": {
+            "type": "string"
           }
         },
         "required": [],
@@ -5209,6 +5621,64 @@
           },
           "note": {
             "type": "string"
+          },
+          "probability": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip",
+          "note",
+          "probability"
+        ],
+        "type": "object"
+      },
+      "description": "Set the chance, in [0, 1], that a note is played at all in a take (1 is the default and means \"always\"; 0 means never). The value is per note, so one clip can hold some 100% notes and some 50% notes, and it is rolled against the project's own MIDI seed once per note trigger. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.probability_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probability": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
           }
         },
         "required": [
@@ -5845,6 +6315,312 @@
             "type": "string"
           },
           "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Run the plugin scan the factory already has (PluginFactory::discoverPlugins, the slot the GUI never re-invokes): re-read the cache, drop quarantined files, serve what the cache can still be trusted for, load what changed, and rewrite the cache. This is what APPLIES a quarantine edit. Reports the scan's own numbers before and after. Not reversible: the previous fingerprint record of a file the scan replaced is not restorable by any command.",
+      "group": "plugin",
+      "id": "plugin.rescan",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_dirty": {
+            "type": "boolean"
+          },
+          "cache_entry_count": {
+            "type": "integer"
+          },
+          "cache_file": {
+            "type": "string"
+          },
+          "cache_quarantine_count": {
+            "type": "integer"
+          },
+          "candidate_files": {
+            "type": "integer"
+          },
+          "descriptors": {
+            "type": "integer"
+          },
+          "negative_from_cache": {
+            "type": "integer"
+          },
+          "previous": {
+            "type": "object"
+          },
+          "quarantined": {
+            "type": "integer"
+          },
+          "quarantined_entries": {
+            "type": "array"
+          },
+          "quarantined_paths": {
+            "type": "array"
+          },
+          "quarantined_reasons": {
+            "type": "array"
+          },
+          "report": {
+            "type": "string"
+          },
+          "scanned": {
+            "type": "integer"
+          },
+          "served_from_cache": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The plugin scan cache and its quarantine list: the cache file and whether it is persistent and dirty, how many records it holds, the quarantine entries with their reasons and whether the files are still there, and the last scan's own report (files found, quarantined, served from cache, known-bad skipped, scanned, descriptors). Read-only.",
+      "group": "plugin",
+      "id": "plugin.scan_cache_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_file": {
+            "type": "string"
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "entry_count": {
+            "type": "integer"
+          },
+          "format_version": {
+            "type": "integer"
+          },
+          "last_scan": {
+            "type": "object"
+          },
+          "note": {
+            "type": "string"
+          },
+          "persistent": {
+            "type": "boolean"
+          },
+          "quarantine": {
+            "type": "array"
+          },
+          "quarantine_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every record the scan cache remembers, sorted by path: the file's fingerprint (path, size, mtime), its status (has-descriptor / not-a-plugin / load-failed) and, for a plugin, the descriptor metadata the scan resolved. Read-only; this is the cache's contents, where scan_cache_get_state only reports how many there are.",
+      "group": "plugin",
+      "id": "plugin.scan_cache_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_file": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "entries": {
+            "type": "array"
+          },
+          "has_descriptor_count": {
+            "type": "integer"
+          },
+          "load_failed_count": {
+            "type": "integer"
+          },
+          "not_a_plugin_count": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "What the scan cache remembers about one plugin file: whether a record exists for it, whether that record would still be SERVED (the file's size and mtime must both still match - `cached`), whether it is stale (a record exists and no longer matches - `stale`), and whether the quarantine list hides it. Read-only.",
+      "group": "plugin",
+      "id": "plugin.scan_cache_lookup",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_file": {
+            "type": "string"
+          },
+          "cached": {
+            "type": "boolean"
+          },
+          "file_exists": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "quarantine_reason": {
+            "type": "string"
+          },
+          "quarantined": {
+            "type": "boolean"
+          },
+          "record": {
+            "type": "object"
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Quarantine a plugin file: add it to the scan cache's skip list, with a reason, and write the cache file. A quarantined file is not loaded and not offered to the device catalogue on the next scan (plugin.rescan applies it). ONE entry per path: adding a path that is already listed is refused rather than silently ignored. Reversible - control.undo dispatches the recorded plugin.scan_cache_quarantine_remove.",
+      "group": "plugin",
+      "id": "plugin.scan_cache_quarantine_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "cache_file": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "quarantine": {
+            "type": "array"
+          },
+          "quarantine_count": {
+            "type": "integer"
+          },
+          "quarantined": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Un-quarantine a plugin file: drop it from the scan cache's skip list, write the cache file, and report the reason the entry carried. The next scan loads the file again. Reversible - control.undo dispatches the recorded plugin.scan_cache_quarantine_add WITH the reason captured before the removal (a path-only re-add would lose it).",
+      "group": "plugin",
+      "id": "plugin.scan_cache_quarantine_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "cache_file": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "quarantine": {
+            "type": "array"
+          },
+          "quarantine_count": {
+            "type": "integer"
+          },
+          "quarantined": {
+            "type": "boolean"
+          },
+          "reason": {
             "type": "string"
           }
         },
@@ -7283,6 +8059,66 @@
           },
           "sha256": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "wav",
+              "flac",
+              "ogg",
+              "mp3"
+            ],
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          },
+          "tail_bars": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Export every unmuted track to its own file in an absolute directory: one stem per track, post-fader and post-effects, including that track's own sends and their tails, each rendered to the project's length plus 'tail_bars' bars (default 1, the whole-project render's own convention). Returns the new file names. NOTE the declared bound: the render runs in a child process and this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "group": "render",
+      "id": "render.stems",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "stems": {
+            "type": "array"
+          },
+          "tail_bars": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [],
@@ -10317,16 +11153,16 @@
       }
     }
   ],
-  "count": 210,
+  "count": 227,
   "instance": {
     "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 199087296,
-    "binary_sha256": "e30b163c13f9ac5b7bd7f68658b250effe63534590e59ee35a7c9428a0f351bf",
+    "binary_bytes": 205380680,
+    "binary_sha256": "a0a84b3dfac4e6cf20981d69c2e2b088d607898a6f11863f49f1e8333809c6a0",
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "d03dfe035656761abc9bcc20b043e89fd756722d",
+    "lane_head": "89a5e79429edb00b99f6d6f3a275fa9cd6e8bd08",
     "proto": 1,
-    "source_socket": "/home/kruzzzzy/zene-030-merge/zene-merge.sock",
-    "version": "0.2.1-alpha.170+d03dfe0"
+    "source_socket": "/home/kruzzzzy/zene-030-merge2-598d4f5c1/zene-merge2.sock",
+    "version": "0.2.1-alpha.191+6c55700"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
