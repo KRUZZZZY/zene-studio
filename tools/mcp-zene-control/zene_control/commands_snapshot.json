@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-13T21:45:03Z",
+  "captured_at": "2026-09-14T02:36:15Z",
   "commands": [
     {
       "args_schema": {
@@ -7645,7 +7645,8 @@
               "instrument",
               "pattern",
               "sample",
-              "automation"
+              "automation",
+              "folder"
             ],
             "type": "string"
           }
@@ -7673,6 +7674,102 @@
             "type": "string"
           },
           "type": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "One folder addressed by its trk-<n> id: its mode (group or routing), the pinned and collapsed flags, the mixer channel it owns in routing mode, and every child with the channel that child is on. track.list, track.get_state and arrangement.get_state also carry each track's `folder`, so the relation is readable from the arrangement view of the song as well. Writes nothing.",
+      "group": "track",
+      "id": "track.folder_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "child_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "children": {
+            "type": "array"
+          },
+          "collapsed": {
+            "type": "boolean"
+          },
+          "mixer_channel": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "routing": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "collapsed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "collapsed"
+        ],
+        "type": "object"
+      },
+      "description": "Collapse or expand a folder. This is the flag the track list's collapse would read; 0.3.0 persists it and drives it from here only (no chevron is drawn). Reversible through the ProjectJournal (the folder's own Track checkpoint).",
+      "group": "track",
+      "id": "track.folder_set_collapsed",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "child_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "collapsed": {
+            "type": "boolean"
+          },
+          "track": {
             "type": "string"
           }
         },
@@ -7868,6 +7965,51 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "folder": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Put a track into a folder, or take it out of one with an empty 'folder' (the container root). The folder relation is an attribute on the child's own <track> element and the child keeps its row in the flat track list, so this changes membership only. A folder is a track of type folder (track.add type=folder); a target that is not one is refused, typed, and a relation that would close a cycle is refused too.",
+      "group": "track",
+      "id": "track.set_folder",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "child_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "children": {
+            "type": "array"
+          },
+          "index": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "muted": {
             "type": "boolean"
           },
@@ -7890,6 +8032,95 @@
         "additionalProperties": false,
         "properties": {
           "muted": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "pinned": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "pinned"
+        ],
+        "type": "object"
+      },
+      "description": "Pin or unpin a folder. This is the flag a non-scrolling pinned strip would read; 0.3.0 persists it and drives it from here only. Reversible through the ProjectJournal (the folder's own Track checkpoint).",
+      "group": "track",
+      "id": "track.set_pinned",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "child_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "routing": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "routing"
+        ],
+        "type": "object"
+      },
+      "description": "Switch a folder between its two modes: false is GROUP - the organisational mode and the default - where each child keeps its own mixer channel, and true is ROUTING, where the folder takes a mixer channel of its own and every child's output is summed through it. Refused, typed, when the track is not a folder or when a routing folder has no children to sum.",
+      "group": "track",
+      "id": "track.set_routing",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "children": {
+            "type": "array"
+          },
+          "mixer_channel": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "previous_routing": {
+            "type": "boolean"
+          },
+          "routing": {
             "type": "boolean"
           },
           "track": {
@@ -7930,6 +8161,165 @@
           },
           "track": {
             "type": "string"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Make exactly the members of a named visibility set visible and hide every other track of the song. A visibility flag is a VIEW flag: it mutes nothing and changes no render (the registered transcript proves that with a negative control). An unknown name is not_found, typed.",
+      "group": "track",
+      "id": "track.visibility_set_apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "string"
+          },
+          "hidden": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "previous_active": {
+            "type": "string"
+          },
+          "shown": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every named visibility set this project holds, with its members and which one is active. Writes nothing. Each track's own `visible` flag is reported by track.list, track.get_state and arrangement.get_state.",
+      "group": "track",
+      "id": "track.visibility_set_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sets": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Delete a named visibility set. The tracks' own visible flags are NOT changed: a set is a saved selection over them, and the flags are the project's own state. An unknown name is not_found, typed.",
+      "group": "track",
+      "id": "track.visibility_set_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Create or replace a named visibility set: a named, id-based list of tracks that track.visibility_set_apply makes visible. Every named track must be live (a well-formed id naming none is not_found). Saved with the project, so a set survives project.save / project.open.",
+      "group": "track",
+      "id": "track.visibility_set_save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
           },
           "tracks": {
             "type": "array"
@@ -8760,16 +9150,16 @@
       }
     }
   ],
-  "count": 167,
+  "count": 185,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wret/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
+    "binary_bytes": 192415728,
+    "binary_sha256": "8b3151f353f136fc9a73edf3bde1ebae01b219cd9141b0f1a56ecf92228d4364",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
+    "lane_head": "9d9a1d1393aa6f712a61db045a912794e85cc80b",
     "proto": 1,
-    "source_socket": "/tmp/wpc-030-snapshot/zene.sock",
-    "version": "0.2.1-alpha.102+b0a0eb7"
+    "source_socket": "/tmp/zctl-run-6u8m8xff/zene.sock",
+    "version": "0.2.1-alpha.150+9d9a1d1"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

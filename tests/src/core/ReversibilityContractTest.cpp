@@ -60,9 +60,9 @@ namespace
  * on/off x sandbox on/off), and a full set per configuration is how one of them
  * gets left stale.
  *
- * The release notes quote the RELEASE configuration's figures - 167 rows /
- * 87 / 14 / 4 / 62 with the telemetry client compiled out and no wasmtime,
- * 169 / 87 / 14 / 4 / 64 with the client in - which these reduce to. The six
+ * The release notes quote the RELEASE configuration's figures - 183 rows /
+ * 99 / 14 / 4 / 66 with the telemetry client compiled out and no wasmtime,
+ * 185 / 99 / 14 / 4 / 68 with the client in - which these reduce to. The six
  * `wasm.*` rows (item #614: three snapshot, three not_mutating) are present
  * exactly when the wasmtime C API is: without it WANT_WASM degrades to OFF, the
  * group's sources are not compiled, ControlRegistry.cpp's #ifdef removes its
@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{171, 93, 13, 4, 61};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{183, 99, 14, 4, 66};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
@@ -156,7 +156,7 @@ private slots:
 	//! (ZENE_TELEMETRY_ENABLED) and the six `wasm.*` rows - three snapshot, three
 	//! not_mutating - which are present exactly when the wasmtime C API is
 	//! (LMMS_HAVE_WASM, item #614). The release configuration has the client in and
-	//! no wasmtime, so the notes' own figures are its 167 / 87 / 14 / 4 / 62.
+	//! no wasmtime, so the notes' own figures are its 185 / 99 / 14 / 4 / 68.
 	//! The two tests above hold the table to account for COVERAGE (every registered command
 	//! has a row, every row names a registered command) and for behaviour; a row
 	//! added or moved between classes could therefore ship with the notes still

@@ -389,15 +389,23 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **173 rows**, measured from the table itself:
-**93 `true_inverse`, 13 `snapshot`, 4 `irreversible`, 63 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **185 rows**, measured from the table itself:
+**99 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 68 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**171 rows / 61 `not_mutating`** - which is the base
+**183 rows / 66 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. The nine rows the folder-tracks lane added are the last of these:
+what left one of them stale before. **These are the merged tree's own measurement, not arithmetic:**
+`ReversibilityContractTest` was run against a build of the merge tip and reports 185 rows over the four
+classes named above (99 + 14 + 4 + 68), and its constant is the telemetry-off/wasm-off base of
+183 / 99 / 14 / 4 / 66. The figures this page carried before this train were lane-local and
+incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
+tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
+internally impossible, which is the reason the number on this page is now the merged measurement and
+never a sum of anybody's report.
+The nine rows the folder-tracks merge added are:
 `track.folder_set_collapsed` and `track.set_pinned` are `true_inverse` on a live Track checkpoint (both
 flags are part of the folder's own `<trackfolder>` element and are reset on absence, so the checkpoint
 is a real inverse), `track.set_folder` / `track.set_routing` / `track.visibility_set_save` /
@@ -405,17 +413,24 @@ is a real inverse), `track.set_folder` / `track.set_routing` / `track.visibility
 (the parent relation lives on the child's element and `track.set_routing` writes every child's own
 mixer channel, so no single live checkpoint covers either; a named visibility set is not a
 `JournallingObject` at all), and `track.folder_get_state` / `track.visibility_set_list` are
-`not_mutating` inspectors. `ReversibilityContractTest` asserts both
+`not_mutating` inspectors - `+7 true_inverse / +2 not_mutating`. `ReversibilityContractTest` asserts both
 sets, so a row added or moved between classes cannot ship with this page quoting the old split. The
-three `midi.retro_capture_*` rows the retrospective MIDI capture lane added are the last of these:
-`midi.retro_capture_to_clip` is `true_inverse` (a live `Track` checkpoint, the `clip.add` shape),
-`midi.retro_capture_arm` and `midi.retro_capture_status` are `not_mutating` (a mode flag and a
-read-only inspector), which is the `+1 true_inverse / +2 not_mutating` this page's figures carry over
-the merge before it. The
-155-row figure this page carried before this merge was the pre-punch table's, and the 157 the
-incoming lane's own page quoted was measured on that lane's base, which does not carry the groove
-lane's seven rows - neither is the merged tree's, and this page now states the merged tree's own
-measurement of it. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
+three `midi.retro_capture_*` rows the retrospective MIDI capture merge added are
+`midi.retro_capture_to_clip` as `true_inverse` (a live `Track` checkpoint, the `clip.add` shape) and
+`midi.retro_capture_arm` / `midi.retro_capture_status` as `not_mutating` (a mode flag and a
+read-only inspector) - `+1 true_inverse / +2 not_mutating`. The three rows the MIDI clock merge added
+are `clock.master_set` (`true_inverse`, a recorded action: the enabled flag and the port subscription
+are a bounded pair), `clock.slave_set` (the train's **`snapshot`** row - tempo-follow makes the slave
+write `Song::setTempo` whenever the measurement leaves its dead band, and a trajectory of project-state
+writes is not one state a bounded record restores) and `clock.get_state` (`not_mutating`) -
+`+1 true_inverse / +1 snapshot / +1 not_mutating`. The six rows the chain-preset merge added are
+`chain.save` / `chain.apply` / `chain.rename` / `chain.remove` (`true_inverse` recorded actions: the
+preset store is a file tree OUTSIDE the project, the user preset tree's `chainpresets/`, which no Song
+checkpoint carries) and `chain.list` / `chain.get_state` (`not_mutating` inspectors) -
+`+4 true_inverse / +2 not_mutating`. The 155-row figure this page carried before an earlier merge was
+the pre-punch table's, and the 157 one incoming lane's own page quoted was measured on that lane's
+base - neither is any merged tree's, and this page states only measurements of the tree it ships
+with. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
 (`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
 
 The seven rows the 0.3.0 groove lane added are `groove.list` (one `not_mutating`), `groove.apply` and
@@ -601,15 +616,24 @@ back, which it does not - see the row's own text in
   the **freshest** readable offline copy (`registry.rank_offline_bundles`) instead of the old cache-first
   order, which had let a 70-id 0.1.0-alpha cache leave **74 ids** of this tree's surface unreachable while
   the committed snapshot was current (`docs/COVERAGE-MATRIX-2026-09-13.md` §4.4). Measured by the test itself on
-  the merged tip (freeze + groove + the MCP lane + punch/recording crash recovery together): **164 ids
-  registered, 164 exposed live, 164 exposed offline** (166 tools with the two bridge-owned ones), **0 missing
-  and 0 extra** in both directions in all three modes — live, empty state directory, and with the stale cache planted and passed over.
-  **The chain-preset group adds six ids to that figure:** the snapshot is regenerated
-  from a live instance of the `030-chain-presets` tip at **170 ids** (`chain.save`,
-  `chain.list`, `chain.apply`, `chain.rename`, `chain.remove`, `chain.get_state`), and
-  `ControlCommandsSnapshot` passes against it. Like every figure in this section it is a
-  measurement of ONE tip, so the parent re-measures it at the final merged tip — a
-  command-group merge that lands after this one moves the number again.
+  the merged tip of THIS train (platform defects + folder tracks + retrospective capture + MIDI clock +
+  chain presets together): **185 ids registered, 185 exposed live, 185 exposed offline** (187 tools with the
+  two bridge-owned ones), **0 missing and 0 extra** in both directions in all three modes — live, empty state
+  directory, and with the stale cache planted and passed over. The 164 the figure read before this train was
+  the freeze/groove/MCP/punch tip's own measurement.
+  **The five lanes of this train add 21 ids to that figure:** folder tracks (10:
+  `track.set_folder`, `track.set_routing`, `track.folder_set_collapsed`, `track.set_pinned`,
+  `track.folder_get_state` and the four `track.visibility_set_*` verbs), retrospective MIDI capture (3:
+  `midi.retro_capture_arm`, `midi.retro_capture_status`, `midi.retro_capture_to_clip`), MIDI clock (3:
+  `clock.get_state`, `clock.master_set`, `clock.slave_set`) and chain presets (6: `chain.save`,
+  `chain.list`, `chain.apply`, `chain.rename`, `chain.remove`, `chain.get_state`); the platform-defects lane
+  adds none. The snapshot is regenerated ONCE, at the end of the train, from a live instance of the merged
+  build — at **185 ids** — and `ControlCommandsSnapshot` passes against it with 0 missing and 0 extra in all
+  three modes. The generator is invoked with an explicit `--lane` (this worktree, so `lane_head` names a
+  commit on `release/0.3.0`) and `ZENE_CONTROL_BINARY` (so `binary_sha256` names the exact executable that
+  answered); a default invocation records `lane` = `tools/zene-pa-agentctl`, a path in no worktree, with
+  `lane_head` null — which is what one lane's committed snapshot recorded and what this train repairs. Like
+  every figure in this section it is a measurement of ONE tip; this one is the tip it ships in.
 - **UI absence — one line:** none of this is in the interface; the tool list exists only through the MCP
   bridge over a control socket. **And the limit, stated plainly:** a Hermes session reads the bridge from the
   registration in `~/.hermes/config.yaml`, which points at a scratch copy outside this repository; until that
