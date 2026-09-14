@@ -387,20 +387,78 @@ that marker is published as-is, and no unverified claim is published without one
  refused typed and the target's chain is left untouched; and the store is a per-user directory, so a
  preset is not carried inside a project file, not shared with one and not versioned with it.
 
+## Phase-locked multitrack edit groups (`vca.*`, OWNER-31 item 11) — added 2026-09-14
+
+- **New: VCA / mix-and-edit groups are drivable.** The group *entity* landed earlier (task #622:
+  `include/VcaGroup.h`, `Mixer::createVcaGroup`, one fader published to member channels as a separate
+  relative factor, `<vcagroup>` beside the channels). What it never had was a way to *make* one, a way
+  to *address* one, and the edit half the feature's own name promises. This adds the registered
+  `vca.*` command group - **14 ids** - over that entity:
+  `vca.create`, `vca.remove`, `vca.list`, `vca.get_state`, `vca.rename`, `vca.set_gain`,
+  `vca.set_mute`, `vca.set_solo`, `vca.assign`, `vca.unassign`, `vca.set_phase_lock`,
+  `vca.track_add`, `vca.track_remove`, `vca.edit_move`. A group is addressed by its own stable id,
+  `vca-<n>`, the grammar every other addressable object here uses (`ch-<n>`, `trk-<n>`, `clip-<n>`);
+  the naming decision and why are recorded in `src/core/ControlCommandsVcaShared.h`. **Before this,
+  a group could only be created by editing the project file.**
+- **The edit half is built: the phase lock.** A group also carries a set of *tracks*
+  (`vca.track_add` / `vca.track_remove`) and a lock flag (`vca.set_phase_lock`, ON by default). With
+  the lock on, `vca.edit_move` moves the clip you name **and every other member's clips by the same
+  delta**, so a take recorded across eight inputs is slid as one object and stays sample-aligned.
+  The correspondence rule is the design decision: the named clip is the ANCHOR and goes to exactly
+  the position asked for, and every other member's clips that OVERLAP the anchor's pre-command span
+  move by the same delta; a member with nothing in that span is reported in `unlocked_tracks` and a
+  member whose track is gone in `skipped_tracks`. The delta is a delta, not "move every member onto
+  the anchor's new position", so two members deliberately offset by a few ticks stay offset - which
+  is what makes this a lock and not a snap-to-grid. `vca.set_phase_lock false` keeps the membership
+  and switches the propagation off.
+- **The edit set is persisted.** `<vcagroup>` gained a `locked` attribute and one
+  `<edittrack track="n"/>` child per edit-set track (`src/core/Mixer.cpp`), written by STABLE TRACK
+  ID and not by position. An older LMMS skips both, exactly as it skips a `<vcagroup>`, so grouping
+  still degrades to "no groups" there; a project with no `<vcagroup>` loads with no groups and every
+  channel at unity.
+- **Reversibility.** All twelve mutating ids are `true_inverse` (see the histogram section below for
+  the per-row mechanism); the two reads are `not_mutating`. `vca.edit_move` is the interesting one:
+  every clip it moves gets a live Clip checkpoint and the registry merges them into ONE undo step,
+  so one `control.undo` (or one Ctrl+Z) returns every member - not one undo per member.
+- **Proof.** `tests/src/core/ControlVcaCommandsTest.cpp` (registered QTest: the fourteen ids and
+  their schemas, the typed refusals, the contract rows, the measured effect of a lock read back
+  through `clip.move`-free state, and `control.undo` after a lock) and `tests/src/core/VcaGroupTest.cpp`
+  extended with the entity half (edit-track membership, the lock flag, and both surviving a
+  save/reload round trip through `Mixer::saveSettings`/`loadSettings`). The socket proof of the same
+  claim is the registered ctest **`ControlVcaCommands`** (`tests/control-vca-commands.py`), which
+  starts the real binary with `--control-socket` and drives it end to end.
+- **UI absence — one line: VCA / mix-and-edit groups are drivable through `--control-socket` and the
+  MCP bridge and have no interface.** There is no VCA strip, no group menu, no member list and no
+  phase-lock toggle; a group is created, named, filled and locked from the socket.
+  `docs/KNOWN-LIMITATIONS.md` carries the same sentence, and the sentence it carried before this lane
+  ("a group can only be created by editing the project file") is updated rather than deleted.
+- **Stated limits, in the release rather than discovered later.** (1) The ONE media edit propagated
+  by the lock is a clip MOVE; trim, slip, split and fades on a locked group are not propagated - the
+  membership and the rule are in place and move is the edit a multitrack take needs first.
+  (2) A track deleted while it is in an edit set stays in the set: its id is reported in
+  `missing_tracks` by `vca.get_state` and in `skipped_tracks` by `vca.edit_move`, and it is removed
+  deliberately with `vca.track_remove`. That is a decision, not an oversight - a group that rewrote
+  its own membership on somebody else's delete would hide the fact that the set changed.
+  (3) `vca.set_solo`'s undo does not restore `MixerChannel::m_muteBeforeSolo`, which is transient
+  and not part of the project file (the same limit `track.set_solo` states).
+  (4) The mix half's audibility was measured before this lane (`VcaGroupTest`'s rendered dB delta);
+  this lane's own end-to-end proof drives the model through the socket and reads state back, and
+  does not re-render.
+
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **185 rows**, measured from the table itself:
-**99 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 68 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **199 rows**, measured from the table itself:
+**111 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 70 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**183 rows / 66 `not_mutating`** - which is the base
+**197 rows / 68 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the merged tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the merge tip and reports 185 rows over the four
-classes named above (99 + 14 + 4 + 68), and its constant is the telemetry-off/wasm-off base of
-183 / 99 / 14 / 4 / 66. The figures this page carried before this train were lane-local and
+`ReversibilityContractTest` was run against a build of the merge tip and reports 199 rows over the four
+classes named above (111 + 14 + 4 + 70), and its constant is the telemetry-off/wasm-off base of
+197 / 111 / 14 / 4 / 68. The figures this page carried before this train were lane-local and
 incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
 tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
 internally impossible, which is the reason the number on this page is now the merged measurement and
@@ -439,6 +497,27 @@ own journal checkpoint) and `groove.extract` / `groove.set` / `groove.remove` / 
 (recorded-action `true_inverse` rows: the pool is project state the Song's journal checkpoint does not
 carry, so the recorded step writes the captured `<groove-pool>` element back). `docs/GROOVE-POOL.md`
 section 5 is the argument for each.
+
+The fourteen rows the `vca.*` lane added (OWNER-31 item 11, phase-locked multitrack edit groups) are
+`+12 true_inverse / +2 not_mutating`. The two reads - `vca.list` and `vca.get_state` - are
+`not_mutating` inspectors and live with the other passive rows; the twelve mutating commands are ALL
+`true_inverse`, and none of them through a checkpoint *of the group*: a `VcaGroup` is a `QObject`
+owned by the Mixer rather than a `JournallingObject` with an id on the journal's object map (its
+`<vcagroup>` element is part of the MIXER's serialized state, and a Mixer checkpoint would destroy
+and recreate every channel). Six rows lean on a live checkpoint of a MODEL instead - the group's
+fader (`vca.set_gain`), its mute (`vca.set_mute`), the composite solo step
+(`vca.set_solo`: the group's solo flag, every other group's flags and every channel's mute as ONE
+undo step, the shape `track.set_solo` uses, with the same stated limit that
+`MixerChannel::m_muteBeforeSolo` is transient and not restored) - and, for `vca.edit_move`, a live
+Clip checkpoint per moved clip, merged by the registry into one step. The other six are recorded
+ACTION steps for state that is not a model at all: a name (`vca.rename`), a membership list in either
+direction (`vca.assign`, `vca.unassign`, `vca.track_add`, `vca.track_remove`), a lock flag
+(`vca.set_phase_lock`), and a group's existence (`vca.create`, `vca.remove` - whose delete is
+EXACTLY reconstructible, unlike `mixer.remove_channel`, because a group holds scalars, flags and two
+id lists and nothing else in the mix refers to it). The two limits worth repeating are in the rows
+themselves: the transient `m_muteBeforeSolo` above, and `vca.edit_move`'s index-derived clip ids,
+which are why its inverse is the checkpoint and not a replayed `clip-<n>` id.
+`docs/VCA-EDIT-GROUPS.md` is the lane's report and carries the argument for each.
 
 The three rows the 0.3.0 MIDI clock lane added are the group's whole surface, and only one of them is
 `true_inverse`: `clock.get_state` is a `not_mutating` inspector; `clock.master_set` is a

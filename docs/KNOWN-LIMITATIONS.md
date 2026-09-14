@@ -143,15 +143,30 @@ that is this page's fault — report it and it gets added.
   preset management, no instrument latency compensation, and no out-of-process hosting. **No instrument hosting
   in CLAP.**
 - **No VCA groups in the interface.** Mix-and-edit groups exist, are tested, and are saved with the project —
-  but **a group can only be created by editing the project file** (`<vcagroup>`); there is no way to create one
-  from the interface yet.
-  Verified in the tree: the premise of the bullet holds and is now checkable — the group is a real entity
-  (`src/core/VcaGroup.cpp`, `include/VcaGroup.h`, owned by the mixer via `Mixer::createVcaGroup`,
-  `src/core/Mixer.cpp:720`), its gain is applied on the audio path (`:528-545`), and the save/load element it is
-  written as is `vcagroup` with a `vca` child (`:1893`, `:1898`, `:2022`, `:2037`). `docs/VCA-GROUPS.md` is the
-  implementing lane's report; the lane is an ancestor of this tip. What has *not* changed is the half that
-  matters to a user: nothing in the interface creates a group, so the way to get one is still to edit the
-  project file.
+  and since 2026-09-14 the **whole group is drivable through `--control-socket`, which is still the only way
+  to reach one: nothing in the interface creates a group, names one, assigns a member, locks it or edits
+  through it.**
+  Verified in the tree: the group is a real entity (`src/core/VcaGroup.cpp`, `include/VcaGroup.h`, owned by
+  the mixer via `Mixer::createVcaGroup`, `src/core/Mixer.cpp:720`), its gain is applied on the audio path
+  (`:528-545`), and the save/load element it is written as is `vcagroup` with a `vca` child (`:1893`,
+  `:1898`, `:2022`, `:2037`). `docs/VCA-GROUPS.md` is the implementing lane's report; the lane is an ancestor
+  of this tip. *Updated 2026-09-14 (OWNER-31 item 11, lane `030/vca-editgroups`): the UI half of this bullet
+  is still exactly true — nothing in `src/gui/` creates a group, adds a member or toggles the phase lock —
+  but the reachability half is no longer. The `vca.*` control group (14 ids: `vca.create`, `vca.remove`,
+  `vca.list`, `vca.get_state`, `vca.rename`, `vca.set_gain`, `vca.set_mute`, `vca.set_solo`, `vca.assign`,
+  `vca.unassign`, `vca.set_phase_lock`, `vca.track_add`, `vca.track_remove`, `vca.edit_move`) makes the
+  whole group drivable through the socket and the MCP bridge, including the **edit** half the group's name
+  promises: an edit set of tracks (`vca.track_add`) and a phase lock (`vca.set_phase_lock`, ON by default)
+  under which `vca.edit_move` moves a named clip and every other member's clips that overlap its
+  pre-command span by the same delta, so a take recorded across several inputs slides as one object and
+  stays sample-aligned. The edit set is persisted on the group's own `<vcagroup>` element (`locked`, plus
+  one `<edittrack track="n"/>` per member). `docs/VCA-EDIT-GROUPS.md` §1-§4 is that half's report, and
+  the three limits that remain are named there and in `docs/RELEASE-NOTES-v0.3.0-alpha.md`: **one** media
+  edit is propagated (a clip move — trim, slip, split and fades are not), a track deleted while it is in an
+  edit set stays in the set (reported as `missing_tracks` / `skipped_tracks` until `vca.track_remove`), and
+  `vca.set_solo`'s undo does not restore the transient `MixerChannel::m_muteBeforeSolo`. There is still no
+  Lua binding for any of it, and a group's audibility is proved by `VcaGroupTest`'s rendered dB delta, not
+  by the socket transcript.*
 - **No racks in the interface, and no scripting access.** Parallel chains and a chain selector exist and are
   saved with the project, but a user can only load a project that already contains a `<rack>`; there is no UI
   and no binding. Switching chains is not crossfaded, so it can click.

@@ -1899,11 +1899,27 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		group->muteModel()->saveSettings(_doc, groupDom, "muted");
 		group->soloModel()->saveSettings(_doc, groupDom, "soloed");
 
+		// OWNER-31 item 11: the edit half. `locked` is written on EVERY group
+		// (so the loader has one attribute to read and an element written
+		// before the edit half existed reads as locked), and one <edittrack>
+		// child per edit-set track, by STABLE TRACK ID rather than position -
+		// the number the track's own element carries. A pre-0.3.0 reader skips
+		// both exactly as it skips a <vcagroup>, so the grouping still degrades
+		// to "no groups" in an older LMMS.
+		groupDom.setAttribute("locked", group->isPhaseLocked() ? 1 : 0);
+
 		for (mix_ch_t member : group->members())
 		{
 			QDomElement memberDom = _doc.createElement( QString( "member" ) );
 			groupDom.appendChild( memberDom );
 			memberDom.setAttribute("channel", member);
+		}
+
+		for (int editTrack : group->editTracks())
+		{
+			QDomElement editDom = _doc.createElement( QString( "edittrack" ) );
+			groupDom.appendChild( editDom );
+			editDom.setAttribute("track", editTrack);
 		}
 	}
 }
@@ -2037,11 +2053,26 @@ void Mixer::loadSettings( const QDomElement & _this )
 		group->vcaModel()->loadSettings( groupDom, "vca" );
 		group->muteModel()->loadSettings( groupDom, "muted" );
 		group->soloModel()->loadSettings( groupDom, "soloed" );
+		// OWNER-31 item 11: the edit half. `locked` is read for EVERY group
+		// with a default of 1, so a <vcagroup> written before the edit half
+		// existed loads as the locked group it was.
+		group->setPhaseLocked( groupDom.attribute( "locked", "1" ) != QString( "0" ) );
 
 		for( QDomNode memberNode = groupDom.firstChild(); ! memberNode.isNull();
 				memberNode = memberNode.nextSibling() )
 		{
 			QDomElement memberDom = memberNode.toElement();
+			// The edit set, by STABLE TRACK ID. Nothing is resolved here: the
+			// mixer is restored BEFORE the track container (Song::loadState),
+			// so no Track exists yet to check the id against - and a group that
+			// dropped an id it could not resolve would rewrite the user's own
+			// membership. vca.get_state reports an id whose track is gone as
+			// `missing` instead.
+			if( memberDom.nodeName() == QString( "edittrack" ) )
+			{
+				group->addEditTrack( memberDom.attribute( "track" ).toInt() );
+				continue;
+			}
 			if( memberDom.nodeName() != QString( "member" ) )
 			{
 				continue;

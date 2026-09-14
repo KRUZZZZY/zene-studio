@@ -298,6 +298,21 @@ const ReversibilityRow kPassiveRows[] = {
 	R("track.visibility_set_list", RC::NotMutating, false,
 		"reads the container's named visibility sets and the active one",
 		"no write", ""),
+	// The `vca.*` group's two reads (OWNER-31 item 11). They are passive rows
+	// and not rows of the group's own table file because this table's blocks are
+	// split by WHAT THE INVERSE IS, not by command group: a reader with nothing
+	// to reverse belongs with the other `not_mutating` inspectors, exactly as
+	// track.folder_get_state and track.visibility_set_list do.
+	R("vca.list", RC::NotMutating, false,
+		"reads every group of the mix: the fader, the gain published from it, the "
+		"mute and solo flags, the phase lock, the member channels with the gain "
+		"each is being scaled by, and the edit set",
+		"no write", ""),
+	R("vca.get_state", RC::NotMutating, false,
+		"reads one group's own state and resolves its edit set against the live "
+		"track container - a read that reports an id whose track is gone as "
+		"missing rather than dropping it",
+		"no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
 
 #ifdef LMMS_HAVE_SESSION_VIEW
