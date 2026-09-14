@@ -24,11 +24,18 @@ socket, it is not in this release.
 - **partial** — present in part; what is missing is named.
 - **to build** — not in the tree; the recorded dependency is named, or "none" where the sources record none.
 
-**Base of record.** Status is stated against the audit's tree, `ddf5f171d` on `release/0.3.0`
+**Base of record.** Status was originally stated against the audit's tree, `ddf5f171d` on `release/0.3.0`
 (`docs/COVERAGE-MATRIX-2026-09-13.md`, branch `030/audit`). Rows the scope ledger records as landed **after**
 that measurement are marked *(landed since the audit)*; their groups were re-verified in the release tree at
 `334790219` and the proof given is the one registered there. A feature is called **in the tree** only where
 the audit's §6.2, or a registered ctest, says so.
+
+**Re-measured 2026-09-14 at the release tip `3956ef589`** — `docs/COVERAGE-REMEASURE-2026-09-14.md` on this
+branch is the measurement of record for the surface; where a status below is corrected, the row carries a
+`measured at 3956ef589:` line naming the command and its output. The one live reading this lane took used the
+built binary at `zene-030/build/zene` (one instance, reaped by explicit PID — `pgrep -a zene` → `EXIT=1`);
+that binary is built at `571016ff8`, the tip's parent, and the tip changes **no** `src/core/` file
+(`git diff --name-only 571016ff8..3956ef589 -- src/core/` → empty), so its registry is the tip's registry.
 
 **Item numbers.** Every number in this file is from the **owner's 31-item list** (`BACKLOG.md`, the
 assessment of 2026-09-12) and is written `OWNER-31 item N`. Nothing here uses the STATUS.md Bar-2 `1–45`
@@ -36,13 +43,28 @@ numbering; where that list is meant it is written `STATUS item N`. The two colli
 `ITEM-NUMBERING-CROSSWALK-2026-09-13.md`. Statuses also cite the wave numbering (`W1–W7`,
 `ableton-gap/PLAN-zene-studio.md`), and decisions `D11`/`D12` (`MASTER-PLAN.md` §3).
 
-**The surface these features are driven through.** At the audit tip: **28 command groups · 150 command ids**,
-each with schemas and reversibility metadata. At the release tree: **170 command ids** — `164` `.id =
-QStringLiteral` assignments in `src/core/ControlCommands*.cpp` plus the six helper-built `wasm.*` ids —
-measured by counting the registry source at `334790219` and again at `01b99753a` on 2026-09-13. The new
-`freeze`, `bounce`, `groove` and `record` groups and the three `transport.punch_*` ids are the difference.
-On **id prefixes** that is **31 groups**; the audit tip's 28 includes its helper-built `wasm` group, so the
-two group figures are counted on bases one apart — see *Reconciliation* 6.
+**The surface these features are driven through.** Re-measured at the release tip `3956ef589`
+(`docs/COVERAGE-REMEASURE-2026-09-14.md`): **33 command groups · 185 command ids**, each with schemas and
+reversibility metadata. That is the registry source and the live instance agreeing exactly:
+
+```
+$ grep -c '\.id = QStringLiteral' src/core/ControlCommands*.cpp        # per-file, summed
+185
+$ python3 verification/ctl.py --socket <own dir>/audit.sock commands    # one instance at zene-030/build/zene
+# 185 command(s)
+$ pgrep -a zene ; kill <PID> ; pgrep -a zene ; echo EXIT=$?
+EXIT=1                                                                  # reaped by explicit PID
+```
+
+The registry **source** carries **34 group names** — the 33 above plus the helper-built `wasm` group
+(5 ids), which is behind `#ifdef LMMS_HAVE_WASM` and absent from a build that does not define it
+(the live reading has no `wasm.*`), i.e. **190 ids** in the source over 34 groups. The measuring
+instrument (`scripts/zene-feature-tracker.py`) reports **192 ids / 35 groups**, which is 2 more than
+the source really has: its part-B regex matches `QStringLiteral("a.b")` anywhere, and at
+`src/core/ControlCommandsBrowserTags.cpp:175` and `:202` those are `cmd.verb = QStringLiteral("tag.add")`
+and `("tag.remove")` — verb fields of the registered `browser.tag.add` / `browser.tag.remove`, not ids.
+See `docs/COVERAGE-REMEASURE-2026-09-14.md` §4. The figures this paragraph carried before (170 ids /
+31 prefixes, measured at `334790219` and `01b99753a`) are superseded; see *Reconciliation* 6.
 
 **Row numbers, and the consistency pass of 2026-09-13.** Rows **1–59** keep the numbers they were first
 given here, so that every citation of "row N" in this project still resolves. The candidates the KB sweep
@@ -77,11 +99,25 @@ and the hardware- or ear-bound items are out.
 | 2 | Clip fades, crossfades and clip gain — this is the whole of "clip/object effects" | `clip.set_fade`, `clip.set_gain`, `clip.crossfade` (of the `clip.*` 10 ids) | **in the tree** — proof `ClipEditsTest` and `ClipFadesRenderTest` (registered, and the render proof asserts the equal-power identity and hashes every render as `AB_EVIDENCE`). Stated limits: audio clips only (a MIDI clip is refused, typed), and a crossfade is a pair of independent fades, not a linked object | charter In §3.2 (engine gaps); ladder row for OWNER-31 item 12; audit §6.2 |
 | 3 | Comping — take lanes and a non-destructive composite (W4) | `comp.*`, 7 ids: `comp.lane_add`, `comp.lane_remove`, `comp.lane_list`, `comp.assign`, `comp.select`, `comp.rebuild`, `comp.get_state` | **in the tree** — proof `TakeLaneCompTest` (7/7) and `TakeLaneTest`; the proof is a byte-identity pair (take files and buffers sha256-identical after every command and after save/reload). Stated limit: no playback path consumes the composite, so a comp does not sound different yet | charter In §3.2 (W4); audit §6.2 |
 | 4 | Phase-locked multitrack edit groups | none yet | **partial** — the group *entity* landed (`include/VcaGroup.h`, `Mixer::createVcaGroup`, `VcaGroupTest`) but there is no `vca.*` group to drive it and the edit-group half is to build; a group can only be created by editing the project file | ladder row for OWNER-31 item 11; audit Table B #4 |
-| 5 | Folder tracks | none yet | **to build** — dependency: **none** (OWNER-31 items 3/20/21, "depends: nothing"). Lane `030/folder-tracks` is dispatched, recovering the unmerged `next/trackfolder` rather than rebuilding. The layout/workspace-presets half of the same item stays on 0.5.0 by its own record | ladder row for OWNER-31 items 3/20/21; ledger "Dispatched to close…"; audit §6.1 |
+| 5 | Folder tracks | `track.set_folder`, `track.folder_get_state`, `track.folder_set_collapsed`, `track.set_pinned` — the folder half of `track.*`'s 17 ids | **in the tree** — a folder is a **real engine container** (`include/TrackFolder.h`, `src/tracks/TrackFolder.cpp`): `track.add` takes `type=folder`, the child carries a `folder` attribute, and `group` (organisation, the default) and `routing` (the folder's own mixer channel sums the children) are both drivable. Proofs `TrackFolderTest` and the registered socket transcript `ControlTrackFolderTranscript`. Stated limit: drivable through the socket and **not** from the interface — `grep -rniI 'set_folder' src/gui/` → 0 hits, and the only `TrackFolder` in `src/gui/` is a comment at `src/gui/MixerView.cpp:24` (`docs/KNOWN-LIMITATIONS.md`:178). The **layout/workspace-presets** half the row used to leave to 0.5.0 is still not in the tree: `grep -rniI 'workspace preset' src include` → 0 hits, so that clause stands | ladder row for OWNER-31 items 3/20/21; ledger "Dispatched to close…"; audit §6.1 |
 | 6 | Linked / smart clips | none yet | **to build** — dependency: OWNER-31 items 8/22 name item 11 / #611 ("editing must exist first"). Carried here because D12's prose names linked clips among the items the ladder moves in — see *Reconciliation*, which records that no ladder table row covers items 8/22 | D12 (`MASTER-PLAN.md` §3); master list, OWNER-31 items 8/22 |
 | 60 | Clip trim | `clip.trim` | **to build** — no `clip.trim` id exists at either base (`clip.*` is 10 ids: `add`, `duplicate`, `delete`, `move`, `resize`, `select`, `split`, `set_fade`, `set_gain`, `crossfade`). Dependency: OWNER-31 item 12 / `#611` (the clip-and-capture wave) — a dependency, not a gate | verdict Group A #6; `PLANNED-WORK-MASTER-LIST` :100, :387-390 |
 | 61 | Clip slip | `clip.slip` | **to build** — the same base and the same missing id as row 60; trim and slip are the two clip-editing verbs the wave names and the registry does not carry | verdict Group A #6; `PLANNED-WORK-MASTER-LIST` :387-390 |
-| 62 | Folder tracks as a routing / mix group — the routing half of OWNER-31 item 21 | none yet | **to build** — the folder *entity* is row 5's work; this row is the mode whose children's outputs sum into the folder's own mixer channel. Dependency: row 5 — item 21 is a mode of item 3, not a second feature, and the layout/workspace-preset half stays on 0.5.0 | verdict Group A #13; `BACKLOG` OWNER-31 item 21; `zene-next-trackfolder/docs/TRACK-FOLDER-DESIGN.md` §5-§7 |
+| 62 | Folder tracks as a routing / mix group — the routing half of OWNER-31 item 21 | `track.set_routing` — the `routing` mode of a folder | **in the tree** *(landed since the audit)* — routing mode gives the folder **one regular mixer channel of its own** (`Mixer::createChannel()`, deliberately **not** `createBusChannel()`, which refuses instrument output) and points every child's mixer-channel binding at it, so the children's output is summed through the folder's own effect chain and sent to master like any other channel; the previous bindings are recorded in the folder's `prevch` attribute so a folder saved in routing mode can be switched back in a later session, and routing mode **refuses an empty folder, typed**. Dependency: row 5 — now satisfied. Proof `TrackFolderTest` plus the registered transcript `ControlTrackFolderTranscript`. Stated limits: drivable through the socket and not from the interface (a folder's row is an ordinary `TrackView`), and a child's mixer-channel **index** can change across a routing-off/on cycle while the relation itself is preserved (`Mixer::deleteChannel` renumbers channels) | verdict Group A #13; `BACKLOG` OWNER-31 item 21; `zene-next-trackfolder/docs/TRACK-FOLDER-DESIGN.md` §5-§7 |
+
+**Rows 5 and 62, corrected 2026-09-14** (the row numbers, the group names, the proofs and the limits lines
+above are all measured, not carried):
+
+```
+measured at 3956ef589: grep -n 'cmd.id = QStringLiteral("track.set_folder")' src/core/ControlCommandsTrackFolder.cpp -> 283:	cmd.id = QStringLiteral("track.set_folder");
+measured at 3956ef589: grep -n 'cmd.id = QStringLiteral("track\.' src/core/ControlCommandsTrackFolder.cpp src/core/ControlCommandsTrackFolderSets.cpp -> 283 track.set_folder, 310 track.folder_set_collapsed, 333 track.set_routing, 361 track.set_pinned, 386 track.folder_get_state; 273 track.visibility_set_save, 298 track.visibility_set_apply, 322 track.visibility_set_remove, 344 track.visibility_set_list  (9 ids)
+measured at 3956ef589: ls include/TrackFolder.h src/tracks/TrackFolder.cpp -> both present, EXIT=0
+measured at 3956ef589: grep -oE '^add_test\([A-Za-z0-9_]+' build/tests/CTestTestfile.cmake -> TrackFolderTest, ControlTrackFolderTranscript  (both registered)
+measured at 3956ef589: grep -n 'Folder tracks are in the engine' docs/KNOWN-LIMITATIONS.md -> 178
+measured at 3956ef589: grep -rniI 'set_folder' src/gui/ -> 0 hits (EXIT=1)
+measured at 3956ef589: grep -rniI 'workspace preset' src include -> 0 hits
+```
+
 
 ## 2. Automation and modulation
 
@@ -101,9 +137,24 @@ and the hardware- or ear-bound items are out.
 | 12 | Punch in / out | `transport.punch_set`, `transport.punch_get_state`, `transport.punch_clear` | **in the tree** *(landed since the audit)* — proof `ControlPunchTranscript` (registered ctest: the GATE flips with the transport position on both sides of both boundaries, and the region survives `project.save` / `project.open`, read out of the saved file). Stated limit: the audio-side gate is deferred and named in `KNOWN-LIMITATIONS.md` | charter In §3.2 (engine gaps); ledger "Landed since that measurement" |
 | 13 | Recording crash recovery | `record.*`, 6 ids: `record.journal_begin`, `record.journal_update`, `record.journal_finish`, `record.recovery_get_state`, `record.recovery_restore`, `record.recovery_discard` | **in the tree** *(landed since the audit, and upgraded)* — proof `ControlRecordingRecovery` (registered ctest: it journals a capture, **SIGKILLs** the instance — a real abnormal exit, asserted as exit −9 — then starts a second instance that finds and recovers the take). The ledger records this as an upgrade from the partial `project.restore_revision` | charter In §3.2 (engine gaps); ledger "upgraded from a partial" |
 | 14 | Multi-track recorder | none yet | **partial** — a real 2-track recorder is in the tree with tests (`MultiTrackRecorderTest`, `TwoTrackRecordingHarness`, `TwoTrackAlsaCaptureProbe`, registered in `src/core/CMakeLists.txt`) but no `record.*` group drives the recorder; and the id that should cover it, **`track.set_arm`, is a registered refusal stub** — the feature and the command contradict each other | audit Table B #8 and §5 |
-| 15 | Retrospective MIDI capture | none yet | **to build** — dependency: **none** ("days-weeks, no dependency", owner-lifted 2026-09-12). Lane `030/retro-capture` is dispatched, recovering `next/midi-retro` / `next/midi-retro-impl` | ladder row for OWNER-31 item 14; ledger "Dispatched" |
+| 15 | Retrospective MIDI capture | `midi.retro_capture_arm`, `midi.retro_capture_status`, `midi.retro_capture_to_clip` — 3 of the `midi.*` 5 ids | **in the tree** *(landed since the audit)* — arming the mode keeps a rolling window of the MIDI the engine receives, per open client, so what was just played is written into a new clip **after** the fact; the engine half is `include/RetroMidiCapture.h` / `src/core/RetroMidiCapture.cpp`, and the proofs are `MidiRetroCaptureTest` and the registered socket transcript `ControlRetroCapture` (it plays real MIDI into the running engine and recovers it). Stated limit (`docs/KNOWN-LIMITATIONS.md`:578): **8192 events (128 KiB), the most recent, drop-oldest — a memory bound, not a time bound** (roughly 7–13 minutes for a human at 10–20 events a second; a dense controller stream fills the same window in under a minute), and nothing in `src/gui/` shows the window, its length or its contents (`grep -rniI 'RetroMidi' src/gui/` → 2 hits, an `#include "RetroMidiCaptureSettings.h"` at `src/gui/MainWindow.cpp:48` and a comment at `:422` — no view, no prompt, no shortcut) | ladder row for OWNER-31 item 14; ledger "Dispatched" |
 | 16 | Retrospective audio capture | none yet | **to build** — dependency: #611 (input count + the ALSA capture path), which is in this line; the remainder is a hardware caveat, named rather than hidden | ladder row for OWNER-31 item 15 |
 | 64 | Arbitrary input count / multiple simultaneous inputs | none yet | **to build** — dependency: engine work, not architectural (`#611`'s input-count row); the default Linux backend is playback-only today (`AudioAlsa` has no capture path). The real-interface half stays hardware-bound and unverified (see *Out of scope*) | verdict Group A #8; `PLANNED-WORK-MASTER-LIST` :103; `SURVEY-FEATURE-PRIORITY-SPEC` §2 |
+
+**Row 15, corrected 2026-09-14, and rows 12, 13 and 20 verified unchanged:**
+
+```
+measured at 3956ef589: grep -n 'cmd.id = QStringLiteral("midi.retro' src/core/ControlCommandsMidi.cpp -> 163 midi.retro_capture_arm, 214 midi.retro_capture_status, 360 midi.retro_capture_to_clip  (3 ids)
+measured at 3956ef589: ls include/RetroMidiCapture.h src/core/RetroMidiCapture.cpp -> both present, EXIT=0
+measured at 3956ef589: grep -oE '^add_test\([A-Za-z0-9_]+' build/tests/CTestTestfile.cmake -> MidiRetroCaptureTest, ControlRetroCapture  (both registered)
+measured at 3956ef589: grep -n 'Retrospective MIDI capture keeps the last 8192 events' docs/KNOWN-LIMITATIONS.md -> 578
+measured at 3956ef589: grep -rniI 'RetroMidi' src/gui/ -> 2 hits: src/gui/MainWindow.cpp:48 (#include "RetroMidiCaptureSettings.h") and :422 (a comment); no view, no prompt, no shortcut
+--- and the three rows left alone, each of which its own probe already satisfies ---
+measured at 3956ef589: ctl.py commands -> transport.punch_set, transport.punch_get_state, transport.punch_clear all present (185 ids, live); grep '^add_test(' build/tests/CTestTestfile.cmake -> ControlPunchTranscript registered -> row 12 unchanged
+measured at 3956ef589: ctl.py commands -> record.journal_begin/_update/_finish, record.recovery_get_state/_restore/_discard all present (6/6); grep '^add_test(' build/tests/CTestTestfile.cmake -> ControlRecordingRecovery registered -> row 13 unchanged
+measured at 3956ef589: ctl.py commands -> freeze.track, freeze.region, freeze.unfreeze, bounce.in_place all present (4/4); grep '^add_test(' build/tests/CTestTestfile.cmake -> ControlFreezeCommandsTranscript registered -> row 20 unchanged
+```
+
 
 ## 4. MIDI and controllers
 
@@ -158,7 +209,20 @@ other area covers.)*
 | 36 | Ableton-Link session sync (W6) | `link.*`, 5 ids: `link.get_state`, `link.set_enabled`, `link.set_quantum`, `link.set_start_stop_sync`, `link.set_session_tempo` | **in the tree** — proof `ControlLinkCommandsTest` and `ControlLinkSync` — **two real binaries, one session, one driving the other's tempo and beat phase through `--control-socket`**, with the phase compared against elapsed wall time; registered `RUN_SERIAL` and reports *Skipped* when the host cannot carry multicast. Stated limit: `zene-link-style` semantics without the Ableton Link library, so a Link-enabled third-party application cannot join yet | charter In §3.2 (W6); audit §6.2 |
 | 37 | DAWproject import / export | none yet | **to build** — dependency: OWNER-31 items 26 and 5 plus item 11; `grep -rniI 'dawproject'` across `src include tests tools docs` → 0 hits | ladder row for OWNER-31 item 19; audit §6.1 |
 | 38 | Project collection / archive, hashing, relink | none yet | **to build** — dependency: **none** ("detection buildable now"); the portable-bundle half is Bar 3 | ladder row for OWNER-31 item 18; audit §6.1 |
-| 74 | MIDI clock / MTC — the DAW as clock master or slave | none yet | **to build** — dependency: **none**; pure engine work with no architectural gate. **No 0.3.0 document placed this before this list**: it was the corrections document's strongest candidate gap (unplaced by the charter's In-list, the ladder and the ledger), and it stands here because D12's rule places it, not because a decision did | verdict Group A #4; `PLANNED-WORK-MASTER-LIST` :160; `AGENT-SURFACE-INVENTORY` Group 11; `V0.3-SCOPE-CORRECTIONS.md` § "Candidate gaps" |
+| 74 | MIDI clock / MTC — the DAW as clock master or slave | `clock.*`, 3 ids: `clock.get_state`, `clock.master_set`, `clock.slave_set` | **partial** *(landed since the audit)* — the **MIDI clock** half is in the tree: the DAW runs as a clock **master** (24 pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer emitted from the audio thread through the engine's own MIDI output) and as a clock **slave** (it follows an incoming clock, measures its tempo over one quarter note of pulses and writes that tempo to the song when told to follow); the engine half is `include/MidiClock.h` / `src/core/MidiClock.cpp`, and the proofs are `MidiClockTest` (the rate arithmetic) and the registered socket transcript `ControlClockCommands`. **MTC is absent, and stays recorded as absent**: `clock.get_state` reports `mtc: "absent"` and the group has no timecode command, because a full-frame timecode master needs a frame rate, a drop-frame flag and a SMPTE start offset and this engine's time model is ticks-per-bar with neither — `docs/KNOWN-LIMITATIONS.md`:566. Two further bounds, both stated in the same bullet: the bytes reach a MIDI device only where a real backend is open (a headless run measures what the engine PRODUCED, not what an instrument received), and an incoming START/STOP/CONTINUE/SONG POSITION does not move the transport in this release. Drivable through the socket, not from the interface (`grep -rniI 'MidiClock' src/gui/` → 0 hits). Dependency: **none**; pure engine work with no architectural gate. **No 0.3.0 document placed this before this list**: it was the corrections document's strongest candidate gap (unplaced by the charter's In-list, the ladder and the ledger), it stands here because D12's rule places it rather than because a decision did, and the group that landed does not change that provenance | verdict Group A #4; `PLANNED-WORK-MASTER-LIST` :160; `AGENT-SURFACE-INVENTORY` Group 11; `V0.3-SCOPE-CORRECTIONS.md` § "Candidate gaps" |
+
+**Row 74, corrected 2026-09-14 to *partial*** — the clock group is measured present, and MTC is measured
+absent and stays recorded as absent:
+
+```
+measured at 3956ef589: grep -n 'cmd.id = QStringLiteral("clock\.' src/core/ControlCommandsClock.cpp -> 209 clock.get_state, 240 clock.master_set, 268 clock.slave_set  (3 ids)
+measured at 3956ef589: ls include/MidiClock.h src/core/MidiClock.cpp -> both present, EXIT=0
+measured at 3956ef589: grep -oE '^add_test\([A-Za-z0-9_]+' build/tests/CTestTestfile.cmake -> MidiClockTest, ControlClockCommands  (both registered)
+measured at 3956ef589: grep -n -i 'MTC' src/core/ControlCommandsClock.cpp -> 21: 'MTC, stated: clock.get_state reports mtc: "absent" and this group has no'; 219: 'Read-only. mtc reports "absent": this'
+measured at 3956ef589: grep -n 'MIDI time code (MTC) is not generated at all' docs/KNOWN-LIMITATIONS.md -> 566
+measured at 3956ef589: grep -rniI 'MidiClock' src/gui/ -> 0 hits (EXIT=1), against 36 hits for MidiLearn in the same directory
+```
+
 
 ## 8. Project and files
 
@@ -166,11 +230,24 @@ other area covers.)*
 |---|---|---|---|---|
 | 39 | Bounded, coalescing undo | `control.undo_depth`, `control.set_undo_depth`, `control.set_undo_coalescing` (with `control.undo` / `control.redo`) | **in the tree** — proof `UndoBoundsTest` (the count cap and the byte budget measured through the socket; a 200-call drag asserted to be one journal step and one record; the window-at-0 negative control) and `ReversibilityUndoTest` | charter In §3.2 (engine gaps); audit §6.2 |
 | 40 | Autosave / project recovery | `project.restore_revision` (of the `project.*` 4 ids) | **partial** — in the tree and drivable, and the one in-tree *recovery* feature that is, but it is **referenced by no behavioural test** (Table A scores the group 3/4) | audit Table B #14 and Table A |
-| 41 | Plugin chains as reusable presets | none yet | **to build** — dependency: **none** ("buildable now — `EffectChain` already saves and loads"); `grep -rliIE` for `chain.?preset` or `EffectChainPreset` → 0 hits | ladder row for OWNER-31 item 2; audit §6.1 |
+| 41 | Plugin chains as reusable presets | `chain.*`, 6 ids: `chain.list`, `chain.get_state`, `chain.save`, `chain.apply`, `chain.rename`, `chain.remove` | **in the tree** *(landed since the audit)* — `chain.save` captures a target's effect chain as a named preset: every device in the chain's own order, each with the state document `plugin.state_save` writes for it, as **one** file in the store (`<userPresets>/chainpresets/<name>.zcp`, outside the project); `chain.apply` puts it on another track in another project, and `control.undo` restores the file a save replaced. Proofs `ControlChainPresets` (the registered socket transcript) and `ControlChainPresetTest`, both registered. Stated limit (`docs/KNOWN-LIMITATIONS.md`:516): the store is **per-user, not per-project**, and nothing in `src/gui/` creates, shows, edits or applies a preset — drivable through the socket, not from the interface. The `grep -rliIE 'chain.?preset'` this row used to cite is superseded by the registration itself | ladder row for OWNER-31 item 2; audit §6.1 |
 | 42 | mmpz-git depth (#612) | none yet | **to build** — dependency: the mmpz-git tooling itself is DONE (15/15); the depth is #612 (3-way merge, conflict presentation, large assets, an audible-diff CLI, CI render recipes) | charter In §3.2 (#612); master list #612 |
 | 75 | Undo robustness — structural-op journalling, and undo of a deleted track (OWNER-31 item 4) | none yet | **to build** — the journalling *pattern* exists (`ProjectJournal`, `CheckPointStack m_undoCheckPoints`, `MAX_UNDO_STATES = 100`), but `TrackContainer::removeTrack` erases the pointer and the destruction path has already deleted the track's clips, so a deletion is unrecoverable; add / remove / move track and add / remove effect are **not journalled** and several paths bypass `addJournalCheckPoint`. It is the mechanism A16 already obliges (#623) | verdict Group A #9; `PLANNED-WORK-MASTER-LIST` :151; `BACKLOG` OWNER-31 item 4 |
 | 76 | In-app revision timeline (OWNER-31 item 30) | none yet | **to build** — the artefacts it would list already exist on disk (the `.bak` written on every save, the autosave sidecar, and `mmpz-git` when the project is in a repository); the panel over them is the work. Dependency: none — item 18's hashing only if revisions must be shareable | verdict Group A #10; `BACKLOG` OWNER-31 item 30 and §4 shortlist |
 | 77 | Safe-start mode after a crash — launch with third-party plugins disabled (OWNER-31 item 31) | none yet | **to build** — its two prerequisites are already in the tree (the crash reporter, row 54, and the plugin scan cache + quarantine, row 46); the crash marker and the load-time "skip plugin instances" predicate are the work. Dependency: none architectural | `BACKLOG` OWNER-31 item 31; `PLANNED-WORK-MASTER-LIST` (crash reporter; plugin scan cache) |
+
+**Row 41, corrected 2026-09-14** — this is the row the generated feature queue was still sending the fleet
+at, and the `chain.*` group is measured present:
+
+```
+measured at 3956ef589: grep -n 'cmd.id = QStringLiteral("chain\.' src/core/ControlCommandsChain.cpp src/core/ControlCommandsChainEdit.cpp -> 198 chain.list, 248 chain.get_state, 282 chain.save, 147 chain.apply, 189 chain.rename, 266 chain.remove  (6 ids)
+measured at 3956ef589: python3 verification/ctl.py --socket .../audit.sock commands -> chain.list, chain.get_state, chain.save, chain.apply, chain.rename, chain.remove all present in the live 185
+measured at 3956ef589: grep -oE '^add_test\([A-Za-z0-9_]+' build/tests/CTestTestfile.cmake -> ControlChainPresets, ControlChainPresetTest  (both registered)
+measured at 3956ef589: grep -n 'Plugin-chain presets have no interface' docs/KNOWN-LIMITATIONS.md -> 516
+measured at 3956ef589: grep -n 'chain.save' docs/RELEASE-NOTES-v0.3.0-alpha.md -> 349
+measured at 3956ef589: python3 verification/ctl.py --socket .../audit.sock describe chain.save -> "Capture a target's effect chain as a named preset ... Writes ONE file in the store (chainpresets/<name>.zcp), outside the project ... Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back."
+```
+
 
 ## 9. Browser and content
 
@@ -196,7 +273,7 @@ other area covers.)*
 
 | # | Feature | Command group / ids | Status | List it comes from |
 |---|---|---|---|---|
-| 47 | The control surface itself: `--control-socket` and the in-app command registry | 28 groups · 150 ids at the audit tip; 31 groups · 170 ids at the release tree | **in the tree** — every id carries argument and result schemas and A16 reversibility metadata; at the audit tip 141 of 150 ids were referenced by a registered test artefact and **149 of 150 were swept to a typed reply** by the registered `agent_surface` ctest (`telemetry.consent` is the one documented allowlist entry) | charter §3.1 and In §3.2 (A11–A15); audit §1–§3 |
+| 47 | The control surface itself: `--control-socket` and the in-app command registry | **33 command groups · 185 command ids** at `3956ef589`, each with schemas and reversibility metadata (34 group names in the registry source, the extra one being the helper-built `wasm` group that no release build compiles in) | **in the tree** — the id set is identical in the registry source and in a live `control.commands_list` (185 = 185, empty difference both ways), and at the audit tip 141 of 150 ids were referenced by a registered test artefact and **149 of 150 were swept to a typed reply** by the registered `agent_surface` ctest (`telemetry.consent` is the one documented allowlist entry). The figures this row carried before (28 groups · 150 ids at the audit tip; 31 groups · 170 ids at the release tree) are superseded | charter §3.1 and In §3.2 (A11–A15); audit §1–§3; `docs/COVERAGE-REMEASURE-2026-09-14.md` |
 | 48 | `ARCH-2` — the control registry as a `zene::api` boundary | none yet | **to build** — dependency: none (0.3.0 by D11). The proof named is that the boundary compiles headless with no Qt widget includes; `grep -rniI` for `zene::api` or `namespace zene` over `src include` → 0 hits at the audit tip (the registry is `lmms::ControlRegistry`) | charter In §3.2 (Architecture); ledger, absent item 4; audit §6.1 |
 | 49 | MCP bridge coverage of the tree's surface | none yet | **to build** — dependency: none. The measured gap at the audit tip: **10 groups with no MCP tool** (`browser`, `comp`, `export`, `link`, `modulator`, `rack`, `session`, `telemetry`, `warp`, `wasm`) and **74 ids** invisible, because the registered bridge serves a stale 70-id 0.1.0-alpha cache against the tree's 144-id snapshot; lane `030/mcp-coverage` is dispatched. The mechanism needs no per-feature bridge work — a live instance at the configured socket closes the whole gap | audit §4 and §8; ladder "Wave 2 queue" |
 | 50 | Lua API stabilisation (#613) | `script.*`, 2 ids: `script.list`, `script.run` | **partial** — drivable, with `ScriptBindingsTest`, `ScriptEngineTest` and `ScriptStabilisationTest` behind it, but the binding deliberately reaches **no** mixer channel, effect chain, plugin, send, PDC, automation clip, controller or settings object — a pattern-editing API, not a DAW-control API | charter In §3.2 (#613); audit Table B #13 |
@@ -206,7 +283,18 @@ other area covers.)*
 | 86 | `CODE-6` — Lua: a memory budget beside the instruction budget | none yet | **to build** — `ScriptEngine.cpp:96` (`luaL_newstate`) has no allocator hook | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-6` |
 | 87 | `CODE-7` — telemetry transport: https only, never block the caller | none yet | **to build** — the transport only; the consent model is on the change plan's "Keep" list and is not touched | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-7` |
 | 88 | `CODE-8` — control-server shutdown hook must survive its owner | none yet | **to build** | verdict Group A #15; `BACKLOG` § Change-plan register, `CODE-8` |
-| 89 | The A16 reversibility contract, and the row-count deliverable that goes with it | n/a (a contract over every registered id) | **partial** — the contract is in the tree: every registered id carries reversibility metadata, and `ReversibilityContractTest` is registered and green (3/3 at `bcf440d61`, with `ControlRegistryTest` and `ReversibilityUndoTest`), the table having been split into three TUs on 2026-09-13 to satisfy the file-length gate. **The deliverable that is not settled is the row count** — 139 / 142 / 127 / 150 / 155 / 157 are all in circulation; see disagreement 6 | verdict Group A #17; `W13-A16-SPLIT-2026-09-13.md`; `ableton-gap/A16-STATUS-MEASURED.md` |
+| 89 | The A16 reversibility contract, and the row-count deliverable that goes with it | n/a (a contract over every registered id) | **partial** — the contract is in the tree: every registered id carries reversibility metadata, and `ReversibilityContractTest` is registered and green (3/3 at `bcf440d61`, with `ControlRegistryTest` and `ReversibilityUndoTest`), the table having been split into three TUs on 2026-09-13 to satisfy the file-length gate. **The deliverable that is not settled is the row count** — 139 / 142 / 127 / 150 / 155 / 157 are all in circulation; see disagreement 6. This lane does not settle it either: the figures it can measure are the **185 registered ids** and the reversibility table's own 155-row note at `docs/RELEASE-NOTES-v0.3.0-alpha.md`:430, which is not a run of the test | verdict Group A #17; `W13-A16-SPLIT-2026-09-13.md`; `ableton-gap/A16-STATUS-MEASURED.md` |
+
+**Row 47, corrected 2026-09-14** — the surface figures it quoted were the two stale bases:
+
+```
+measured at 3956ef589: grep -h -oE '\.id = QStringLiteral\("[a-z0-9_.]+"\)' src/core/ControlCommands*.cpp | sed 's/.*("//;s/")//' | sort -u | wc -l -> 185
+measured at 3956ef589: grep -h -oE '\.id = QStringLiteral\("[a-z0-9_.]+"\)' src/core/ControlCommands*.cpp | sed 's/.*("//;s/")//' | sed 's/\..*//' | sort -u | wc -l -> 33
+measured at 3956ef589: python3 verification/ctl.py --socket .../audit.sock commands -> "# 185 command(s)", 33 distinct prefixes
+measured at 3956ef589: python3 verification/ctl.py --socket .../audit.sock ping -> "version": "0.2.1-alpha.159+571016f"  (the built binary is the tip's parent; git diff --name-only 571016ff8..3956ef589 -- src/core/ is empty)
+measured at 3956ef589: pgrep -a zene -> no match, EXIT=1  (the one instance was reaped by explicit PID)
+```
+
 
 ## 12. Engineering and process
 
@@ -337,14 +425,18 @@ would otherwise produce, and each is listed because the directive covers it.
 
 ## What this means
 
-**89 features are on this list.** Counted from the tables above: **17 are in the tree** with a named proof,
-**26 are partial** — the engine is in or partly in, and the control-surface half, the registered proof or the
-routing is what is missing — and **46 are to build**. That is the whole commitment on one page: a fifth of it
-is proved today, three tenths need their socket surface or their test, and half is not written yet.
+**89 features are on this list.** Counted from the tables above by the measuring instrument's own
+`doc_state_of` (89 rows, no duplicates): **21 are in the tree** with a named proof, **27 are partial** — the
+engine is in or partly in, and the control-surface half, the registered proof or the routing is what is
+missing — and **41 are to build**. Before the 2026-09-14 re-measurement the same count was 17 / 26 / 46: the
+five rows whose status this pass corrects are **5** and **62** (folder tracks and their routing mode, to the
+tree), **15** (retrospective MIDI capture, to the tree), **41** (plugin-chain presets, to the tree) and **74**
+(MIDI clock, to partial — MTC is still absent). That is the whole commitment on one page: a quarter of it is
+proved today, three tenths need their socket surface or their test, and the rest is not written yet.
 
 The **30 rows numbered 60–89** are the candidates the KB sweep of 2026-09-13 found absent from the compiled
-list (`V0.3-COMPLETENESS-VERDICT.md`): of the 30, **1 is in the tree** (row 84, telemetry v1), **6 are
-partial** (rows 65, 68, 72, 78, 80, 89) and **23 are to build**. Thirteen more candidates from the same sweep
+list (`V0.3-COMPLETENESS-VERDICT.md`): of the 30, **2 are in the tree** (rows 62 and 84), **7 are partial**
+(rows 65, 68, 72, 74, 78, 80, 89) and **21 are to build**. Thirteen more candidates from the same sweep
 are named and excluded in *Out of scope* above. *Reconciliation* 7 states how the sweep's headline "34"
 relates to what is enumerated here.
 
@@ -387,9 +479,18 @@ two recorded exclusions and the out-of-scope sections above are the only places 
    `src/core/ControlCommands*.cpp` carries **164** `.id = QStringLiteral` assignments and the helper builds
    **6** more (`wasm.*`), so the id count is **170** — but the **group** count is **31 id prefixes plus the
    helper-built `wasm` group, i.e. 32 group names**. The audit tip's **28 = 27 prefixes + `wasm`**, so the
-   two group figures are one apart on their bases rather than a growth of three. Both are left dated and
-   unreconciled: only a decision on whether the compile-gated `wasm` group counts as a group of the surface
-   settles 31 against 32.
+   two group figures are one apart on their bases rather than a growth of three. Re-measured again on
+   2026-09-14 at `3956ef589` (`docs/COVERAGE-REMEASURE-2026-09-14.md`): the source carries **185** `.id =
+   QStringLiteral` assignments over **33 id prefixes**, the helper builds **5** more (`wasm.*`, now under
+   `#ifdef LMMS_HAVE_WASM`), and a live `control.commands_list` from the built binary returns the same
+   **185 ids over 33 groups** — so 190/34 is the registry source and 185/33 is the build. The 2026-09-13
+   figures above are kept as the record of that base, not corrected; what is settled is that the two bases
+   differ by **exactly** the compile-gated `wasm` group, which is the decision this item was waiting on.
+   One further discrepancy is measured rather than carried: the instrument
+   (`scripts/zene-feature-tracker.py`) reports **192 ids / 35 groups** on the same source, two more than it
+   has, because its part-B regex also matches `cmd.verb = QStringLiteral("tag.add")` at
+   `src/core/ControlCommandsBrowserTags.cpp:175` and `:202`. Nothing on this list declares `tag.add` or
+   `tag.remove`, so no row's verdict is affected — see `docs/COVERAGE-REMEASURE-2026-09-14.md` §4.
 7. **The sweep's "34 candidates" is a headline, not an enumeration.** `V0.3-COMPLETENESS-VERDICT.md` says
    "34 candidates absent … ~20 of them IN 0.3.0", but its **Group A table has 17 rows** and **Group B names
    13 features** — 30 entries between them. This file places all of them (30 rows, numbered 60–89, plus 13
