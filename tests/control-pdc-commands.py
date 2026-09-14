@@ -131,6 +131,14 @@ def sidechain_route(report, source, dest):
 SIDECHAIN_FIELDS = ("tap_point", "amount", "deferred")
 
 
+def send_count_of(report, channel):
+    """The send_count a channel reports, or -1 when the report does not list it."""
+    for entry in channels_of(report):
+        if entry.get("id") == channel:
+            return entry.get("send_count")
+    return -1
+
+
 def channel_ids(report):
     return tuple(channel.get("id") for channel in channels_of(report))
 
@@ -190,6 +198,9 @@ def check_topology(session, recorder):
     if len(added) != 2:
         return added
     first, second = added
+    # A new mixer channel is already routed to the master (the engine's default),
+    # so the check is that the count GREW by exactly one, not that it is one.
+    before = send_count_of(session.result("pdc.report"), first)
     sent = session.result("mixer.send_to", {"channel": first, "to": second, "amount": 0.5})
     report = session.result("pdc.report")
     route = route_from(report, first, second)
@@ -199,10 +210,9 @@ def check_topology(session, recorder):
     recorder.check("the send the mixer built is the send pdc.report shows",
                    sent.get("amount") == 0.5 and shown == {"amount": 0.5, "pre_fader": False},
                    "sent=%r route=%r" % (sent, route))
-    sender = [ch for ch in channels_of(report) if ch.get("id") == first]
-    recorder.check("the sender reports the send it owns",
-                   [ch.get("send_count") for ch in sender] == [1],
-                   "sender=%s" % (sender[:1],))
+    after = send_count_of(report, first)
+    recorder.check("the sender's own send count grew by exactly one",
+                   after == before + 1, "before=%r after=%r" % (before, after))
     zero_latency = {"total_latency_frames": report.get("total_latency_frames"),
                     "compensation_frames": (route or {}).get("compensation_frames")}
     recorder.check("a graph whose paths report no latency compensates nothing",

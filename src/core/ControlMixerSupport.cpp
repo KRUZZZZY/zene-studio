@@ -276,15 +276,17 @@ QJsonObject mixerRouteResult(const RoutingEnds& ends, MixerRoute* route,
 	return result;
 }
 
+} // namespace control
+
 void registerRoutingSurfaceCommands(ControlRegistry& registry)
 {
+	// The group registrations are declared in namespace lmms
+	// (include/ControlRegistryGroups.h), whose block the caller is in.
 	registerMixerRouteCommands(registry);
 	registerPdcCommands(registry);
 	registerRoutingCommands(registry);
 	registerBusCommands(registry);
 	registerPortCommands(registry);
 }
-
-} // namespace control
 
 } // namespace lmms
