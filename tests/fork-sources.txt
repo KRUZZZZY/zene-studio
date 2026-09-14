@@ -497,6 +497,7 @@ src/core/ControlRegistry.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
+src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
