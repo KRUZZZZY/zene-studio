@@ -443,6 +443,7 @@ src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
+src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsFreeze.cpp
@@ -461,6 +462,9 @@ src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginParams.cpp
 src/core/ControlCommandsPluginPreset.cpp
+src/core/ControlCommandsPluginScan.cpp
+src/core/ControlCommandsPluginScanEdit.cpp
+src/core/ControlCommandsPluginScanShared.h
 src/core/ControlCommandsPluginState.cpp
 src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
@@ -513,6 +517,7 @@ src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
+src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
