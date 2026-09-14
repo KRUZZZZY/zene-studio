@@ -202,6 +202,7 @@ set(LMMS_SRCS
 	# include/ControlReversibility.h.
 	core/ControlReversibilityTable.cpp
 	core/ControlReversibilityTableAction.cpp
+	core/ControlReversibilityTableChain.cpp
 	core/ControlReversibilityTablePassive.cpp
 	core/ControlReversibilityTableSnapshot.cpp
 	core/ControlReversibilityTableTrackFolder.cpp

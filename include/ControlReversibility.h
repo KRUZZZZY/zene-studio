@@ -126,6 +126,13 @@ LMMS_EXPORT const ReversibilityRow* reversibilityActionRowTable(int* rowCount);
 //! and five recorded-action rows. Joined into reversibilityRowTable() as well,
 //! so the block's class still comes from each row and not from its file.
 LMMS_EXPORT const ReversibilityRow* reversibilityTrackFolderRowTable(int* rowCount);
+//! The chain-preset GROUP's four recorded-action rows (OWNER-31 item 2: the
+//! preset store is a file tree outside the project, so each command records the
+//! undo step for its own file operation). Joined into the action half by
+//! reversibilityActionRowTable(), and through it into reversibilityRowTable(),
+//! for the same reason the folder rows are: the block's class comes from each
+//! row, not from its file.
+LMMS_EXPORT const ReversibilityRow* reversibilityChainRowTable(int* rowCount);
 //! The second block: the snapshot rows.
 LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.

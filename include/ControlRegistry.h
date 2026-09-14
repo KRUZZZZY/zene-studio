@@ -402,11 +402,6 @@ LMMS_EXPORT void registerPluginPresetCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDspCommands(ControlRegistry& registry);
 //! settings.*, audio.*, midi.* and app.version.
 LMMS_EXPORT void registerSettingsCommands(ControlRegistry& registry);
-//! midi.retro_capture_arm / midi.retro_capture_status / midi.retro_capture_to_clip
-//! - the retrospective MIDI capture surface (owner item 14,
-//! docs/MIDI-RETRO-CAPTURE.md). The arm switch is mode state (no transaction); the
-//! to-clip command is one journalled Track checkpoint over the clip it creates.
-LMMS_EXPORT void registerMidiRetroCaptureCommands(ControlRegistry& registry);
 //! automation.get_state and automation.mode_set.
 LMMS_EXPORT void registerAutomationCommands(ControlRegistry& registry);
 //! automation.add_point / automation.remove_point / automation.clear.
@@ -459,22 +454,14 @@ LMMS_EXPORT void registerRackCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerRackMacroCommands(ControlRegistry& registry);
 //! rack.zone_add / zone_remove / zone_resolve - the key/velocity zone half.
 LMMS_EXPORT void registerRackZoneCommands(ControlRegistry& registry);
-/*! chain.list / chain.get_state / chain.save - the READ and CAPTURE half of the
- * chain-preset group (the 0.3.0 ladder's "plugin-chain presets", OWNER-31
- * item 2). A chain preset is a named copy of a chain's devices WITH each
- * device's own state, kept in the user preset tree (chainpresets/) so it is
- * usable across projects; it is not a rack chain (rack.add_chain). The engine
- * half is include/ControlChainPresetSupport.h.
- */
-LMMS_EXPORT void registerChainReadCommands(ControlRegistry& registry);
-//! chain.apply / chain.rename / chain.remove - the EDIT half, in its own
-//! translation unit (the automation and warp groups' split).
-LMMS_EXPORT void registerChainEditCommands(ControlRegistry& registry);
 //! The command-group registration points the 0.3.0-alpha wave's last merges
 //! appended - comp.*, the guard-compiled wasm.*, browser.*, modulator.* and
-//! note.expression_*, and link.* - are declared in
-//! include/ControlRegistryGroups.h, which this header includes. Same namespace
-//! and the same signatures: a caller includes this header exactly as before.
+//! note.expression_*, and link.* - plus the retrospective MIDI capture group
+//! and the two chain-preset halves, whose declarations moved there when this
+//! header crossed the 500-line ratchet in the merge that brought the
+//! chain-preset lane in - are declared in include/ControlRegistryGroups.h, which
+//! this header includes. Same namespace and the same signatures: a caller
+//! includes this header exactly as before.
 //!
 //! They are split out because this header is new-ish product surface that
 //! Gate 7's 500-line ratchet measures, and the thirty group merges had pushed

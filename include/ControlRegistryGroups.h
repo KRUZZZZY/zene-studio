@@ -141,6 +141,30 @@ LMMS_EXPORT void registerTrackFolderSetCommands(ControlRegistry& registry);
  *  to build one from, and clock.get_state reports that as `mtc: "absent"`. */
 LMMS_EXPORT void registerClockCommands(ControlRegistry& registry);
 
+
+//! The retrospective MIDI capture surface (owner item 14, docs/MIDI-RETRO-CAPTURE.md),
+//! and the two halves of the chain-preset group (OWNER-31 item 2). Moved here from
+//! include/ControlRegistry.h, which is where this file's own note says the groups
+//! appended after the comp/wasm/browser/modulator/link wave belong: the chain and
+//! capture declarations were the last two additions and they took that header over
+//! the 500-line file-length ratchet. Same namespace, same signatures - a caller
+//! still includes include/ControlRegistry.h, which includes this file.
+//! midi.retro_capture_arm / midi.retro_capture_status / midi.retro_capture_to_clip
+//! - the retrospective MIDI capture surface (owner item 14,
+//! docs/MIDI-RETRO-CAPTURE.md). The arm switch is mode state (no transaction); the
+//! to-clip command is one journalled Track checkpoint over the clip it creates.
+LMMS_EXPORT void registerMidiRetroCaptureCommands(ControlRegistry& registry);
+/*! chain.list / chain.get_state / chain.save - the READ and CAPTURE half of the
+ * chain-preset group (the 0.3.0 ladder's "plugin-chain presets", OWNER-31
+ * item 2). A chain preset is a named copy of a chain's devices WITH each
+ * device's own state, kept in the user preset tree (chainpresets/) so it is
+ * usable across projects; it is not a rack chain (rack.add_chain). The engine
+ * half is include/ControlChainPresetSupport.h.
+ */
+LMMS_EXPORT void registerChainReadCommands(ControlRegistry& registry);
+//! chain.apply / chain.rename / chain.remove - the EDIT half, in its own
+//! translation unit (the automation and warp groups' split).
+LMMS_EXPORT void registerChainEditCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

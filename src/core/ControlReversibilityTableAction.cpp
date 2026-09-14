@@ -54,6 +54,11 @@
 
 #include "ControlReversibility.h"
 
+// The join at the bottom of this file builds a std::vector of the action rows
+// and the chain group's; ControlReversibility.h does not pull <vector> in on
+// this compiler, so it is included explicitly.
+#include <vector>
+
 // lmmsconfig.h carries the ZENE_TELEMETRY_ENABLED and LMMS_HAVE_SESSION_VIEW
 // switches. ControlReversibility.h pulls in neither, and the session.* rows
 // below are guarded by the second one, so it has to be included explicitly -
@@ -459,48 +464,6 @@ const ReversibilityRow kActionRows[] = {
 		"the before-state named none - so control.undo puts the subscription back "
 		"and not only the flag",
 		""),
-
-
-	// The chain-preset store (OWNER-31 item 2). These four are true_inverse for
-	// ONE shared reason, and it is not the project: the store is a file tree
-	// OUTSIDE the project (the user preset tree's chainpresets/, so a preset is
-	// usable across projects), which no Song checkpoint carries and no live
-	// object restores. Each command therefore records an ACTION checkpoint that
-	// undoes its own file operation - the groove pool's four edits' mechanism.
-	// The two read-only ids are in ControlReversibilityTablePassive.cpp.
-	R("chain.save", RC::TrueInverse, true,
-		"captures the target's chain - the ordered device list plus each "
-		"device's own state document - and writes ONE file in the preset store. "
-		"The file is outside the project, so the project's own journal does not "
-		"carry it",
-		"action checkpoint: the recorded step removes the preset file this "
-		"command created, or writes the revision it replaced (before.previous_"
-		"sha256) back to the preset's own path; the redo half re-writes the "
-		"captured document",
-		""),
-	R("chain.apply", RC::TrueInverse, true,
-		"REPLACES the target's effect chain (devices and their settings) with "
-		"the preset's. The device list is not a live object a checkpoint "
-		"restores, and the devices' state is not journalled",
-		"action checkpoint: the chain's own <fxchain> XML is captured before the "
-		"write (EffectChain::saveSettings) and the recorded step writes it back "
-		"through EffectChain::loadSettings, the project loader's own path. A chain "
-		"too large to capture within the bounded snapshot is REFUSED rather than "
-		"replaced without an inverse",
-		""),
-	R("chain.rename", RC::TrueInverse, true,
-		"renames one preset file in the store. The name is the key - the file name "
-		"IS the store's index - and the store is outside the project",
-		"action checkpoint: the recorded step renames the file back to "
-		"before.path, the same operation chain.rename performs, and the redo half "
-		"renames it forward again",
-		""),
-	R("chain.remove", RC::TrueInverse, true,
-		"deletes one preset file from the store, outside the project",
-		"action checkpoint: the preset's bytes are captured before the removal and "
-		"the recorded step writes them back to the same path, byte for byte, so the "
-		"preset returns exactly as it was",
-		""),
 };
 
 constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kActionRows[0]));
@@ -509,8 +472,23 @@ constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kA
 
 const ReversibilityRow* reversibilityActionRowTable(int* rowCount)
 {
-	if (rowCount != nullptr) { *rowCount = kActionRowCount; }
-	return kActionRows;
+	// The action half is TWO translation units: this one's rows first, then the
+	// chain-preset group's (ControlReversibilityTableChain.cpp). The chain rows
+	// are recorded-ACTION rows - the class this half is defined by - and they were
+	// split out only because this file crossed the 500-line file-length ratchet
+	// when two lanes' recorded-action rows landed in it at once. The join is here
+	// rather than in reversibilityRowTable() so the ONE row count callers read is
+	// unchanged: ControlReversibilityTable.cpp joins THIS function's result with
+	// the live-checkpoint rows exactly as before.
+	static const std::vector<ReversibilityRow> joined = [] {
+		int chainCount = 0;
+		const ReversibilityRow* chainRows = reversibilityChainRowTable(&chainCount);
+		std::vector<ReversibilityRow> all(kActionRows, kActionRows + kActionRowCount);
+		all.insert(all.end(), chainRows, chainRows + chainCount);
+		return all;
+	}();
+	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }
+	return joined.data();
 }
 
 } // namespace control
