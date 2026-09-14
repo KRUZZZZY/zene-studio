@@ -80,6 +80,12 @@ set(LMMS_TESTS
 	src/core/ControlLinkCommandsTest.cpp
 	src/core/ControlRegistryTest.cpp
 	src/core/ControlTempoMapCommandsTest.cpp
+	# The 0.3.0 verb wave's four ids (clip.trim, clip.slip, note.probability_set,
+	# render.stems): the three EDIT verbs' inverses are exercised for real -
+	# invoke, read back, control.undo, read back again - and render.stems'
+	# argument contract is proved without running a render. The end-to-end stem
+	# export is the ControlStemExportVerb ctest below, which drives the real binary.
+	src/core/ControlVerbInverseTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
 	# half (the extraction and application arithmetic and the pool's XML form,
@@ -1512,6 +1518,31 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# render.stems (0.3.0 verb wave, feature-tracker row 68): per-track stem
+	# export driven end to end through --control-socket, which is the half the
+	# engine's own StemExportTest cannot cover - that suite proves the four stems
+	# SUM TO THE MIX at the C++ level, and this one proves the DECLARED id drives
+	# that engine from the socket. It builds its own tracks, checks the argument
+	# refusals create nothing on disk, runs the real export, asserts the files
+	# exist, are non-empty RIFF/WAVE and follow the documented
+	# `<index>_<name>.wav` naming, runs it a SECOND time into the same directory
+	# (a re-export must report the files it rewrote rather than refuse an empty
+	# set), and reads control.transactions to show the verb leaves no project
+	# record. TIMEOUT is generous because EACH render is given the declared
+	# per-command budget the four commands that already render use
+	# (tests/freeze_bounce_evidence.py:57, RENDER_TIMEOUT = 180.0) - the wait is
+	# declared, not hidden behind a raised socket timeout. docs/RENDER-CHILD-WAIT.md
+	# records that the control surface is dead for the child's lifetime and that
+	# the deferred-reply fix is designed but not built; this lane does not build
+	# it and docs/KNOWN-LIMITATIONS.md says so for render.stems too.
+	add_test(NAME ControlStemExportVerb
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-stem-export-verb.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlStemExportVerb PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+	)
 	# Plugin chains as reusable presets (the 0.3.0 ladder's "plugin-chain
 	# presets", OWNER-31 item 2), which is the release contract's section 3.1
 	# claim for it, end to end through --control-socket: it starts the real
@@ -1661,6 +1692,12 @@ endif()
 # (tracks, MidiClips, notes) rather than only reading them, so it needs a Qt
 # platform plugin even though the assertions never open a window.
 set_tests_properties(ControlEditCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The 0.3.0 verb wave's inverse proof: clip.trim / clip.slip / note.probability_set
+# edit real Song model objects through the registry and then undo them through
+# control.undo, and render.stems' refusals touch the filesystem - so this wants a
+# real Qt platform plugin even though nothing opens a window.
+set_tests_properties(ControlVerbInverseTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.

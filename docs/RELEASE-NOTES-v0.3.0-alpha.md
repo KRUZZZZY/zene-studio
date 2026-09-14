@@ -387,24 +387,92 @@ that marker is published as-is, and no unverified claim is published without one
  refused typed and the target's chain is left untouched; and the store is a per-user directory, so a
  preset is not carried inside a project file, not shared with one and not versioned with it.
 
+## Clip edges, note probability and stem export: four ids for engines that already shipped
+
+Four 0.3.0 ids whose engines were in the tree and whose command surface was not. Each one is the
+registration only — the engine, its arithmetic and (for three of the four) its tests landed in an
+earlier wave — and each is added with an argument schema, a result schema and a SPEC A16
+reversibility row, so the whole of what a caller needs is declared rather than inferred.
+
+- **`clip.trim`** moves a clip's START edge and holds the audio the clip already carried at the same
+  song position: the start, the length and the source offset move together. That three-part rule is
+  not invented here — it is the song editor's own left-edge drag (`src/gui/clips/ClipView.cpp`), and
+  it is what neither `clip.move` (which slides the audio with the clip) nor `clip.resize` (which
+  changes only the tail) can do on its own. An optional `end` trims the tail in the same step.
+  `true_inverse` through the clip's own ProjectJournal checkpoint.
+- **`clip.slip`** moves the audio INSIDE a fixed clip rectangle: the position and the length do not
+  move and the part of the source that plays at the clip's start becomes `offset` ticks into it.
+  This is the first implementation of the verb in the product — a case-insensitive grep for "slip"
+  over `src/` and `include/` returns seven hits and every one is a comment. `true_inverse` through
+  the same checkpoint.
+- **`note.probability_set`** sets the chance, in [0, 1], that a note is played at all in a take,
+  the MIDI-depth field `docs/MIDI-DEPTH.md` describes and the engine has carried since. Per note, so
+  one clip can hold some 100% notes and some 50% notes; rolled against the project's own MIDI seed
+  once per note trigger. A value outside [0, 1] is **refused typed**, not clamped — "never silently
+  clamped" is the same rule `clip.set_gain` follows. `true_inverse` through the owning `MidiClip`'s
+  checkpoint.
+- **`render.stems`** exports every unmuted track to its own file in an absolute directory — one stem
+  per track, post-fader and post-effects, including that track's own sends and their tails, each
+  rendered to the project's length plus `tail_bars` bars (default 1, the whole-project render's own
+  convention) — and returns the file names it wrote. It drives the shipped `lmms exportstems` CLI in
+  a child process, the same way `render.render` drives `lmms render`, and for the same reason (an
+  in-process render drives this instance's audio engine). `not_mutating`: it writes output artefacts
+  and touches no project state.
+
+**UI absence, one line each.** `clip.trim` and `clip.slip` are **drivable through the socket, not
+from the interface** — the trim gesture exists in the song editor but no action, menu entry or
+keybinding reaches the command, and slip has no gesture at all. `note.probability_set` is **drivable
+through the socket, not from the interface** — `docs/MIDI-DEPTH.md` already states that probability
+is "not exposed in the GUI editor (no drag handle, no right-click entry)", and a grep for
+`probability` over `src/gui/` returns zero matches. `render.stems` is **drivable through the socket,
+not from the interface** — the File menu's "Export Tracks..." action is the *different, pre-existing*
+`renderTracks()` path, which trims each stem to its own track and does not align them, and it is
+neither changed by nor wired to this id. `docs/KNOWN-LIMITATIONS.md` carries all four sentences.
+
+**The limits, stated rather than left to be discovered.** Stems are **per track, not per bus**: a
+"bus" is a `MixerChannel`, not a `Track`, and the render path isolates tracks by muting, so
+`exportStems` selects tracks (`docs/STEM-EXPORT.md`, "No bus-level stems"). Neither edge verb authors
+`SampleClip`'s `srcin`/`srcout` window — that window is written only when it is not the whole buffer
+and applied on load only when the attribute is present, so **no reset-on-absence exists for it** and
+a checkpoint taken before a *first* window edit could not take the edit back; both verbs therefore
+write only attributes their clip type serialises unconditionally, and a frame-domain trim is a later
+feature. And `render.stems` carries the **declared bound** every render-running command carries: the
+export blocks the dispatch thread on `waitForFinished(600000)`, so the control surface does not
+answer — `control.ping` included — until it finishes. `docs/RENDER-CHILD-WAIT.md` records that defect
+and designs the deferred-reply fix; **this release does not build it**, and `render.stems` states the
+bound in its own description and contract row instead of pretending to a timeout knob it lacks.
+
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **185 rows**, measured from the table itself:
-**99 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 68 `not_mutating`**, in the configuration this
-build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
+The SPEC A16 classification table holds **189 rows**, counted from the table itself:
+**102 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 69 `not_mutating`**, in the configuration
+this build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**183 rows / 66 `not_mutating`** - which is the base
+**187 rows / 67 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **These are the merged tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the merge tip and reports 185 rows over the four
-classes named above (99 + 14 + 4 + 68), and its constant is the telemetry-off/wasm-off base of
-183 / 99 / 14 / 4 / 66. The figures this page carried before this train were lane-local and
+what left one of them stale before. **The 187 / 102 / 14 / 4 / 67 base is the verb wave's own
+measurement** - `ReversibilityContractTest` was run against a build of the lane tip in exactly that
+configuration and reports those counts over the four classes named above (102 + 14 + 4 + 67); the
+telemetry-in figure this page quotes is that base plus the two guarded rows and is stated as
+arithmetic on purpose rather than as a second measurement nobody took. The figures this page carried
+before this train were lane-local and
 incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
 tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
 internally impossible, which is the reason the number on this page is now the merged measurement and
 never a sum of anybody's report.
+The four rows the 0.3.0 verb wave added are `clip.trim` and `clip.slip` (`true_inverse` on a LIVE
+`Clip` checkpoint: both write only attributes their clip type serialises and reads back
+unconditionally - `pos`, `len`, `off`, `autoresize` - which is what makes a checkpoint taken before a
+*first* edit reversible; neither verb authors `SampleClip`'s `srcin`/`srcout` window precisely
+because that window has no reset-on-absence) and `note.probability_set` (`true_inverse` on the owning
+`MidiClip`'s checkpoint: `Note::loadSettings` reads the optional `prob` attribute with a default of
+1, so restoring a pre-first-edit state brings the note back to "always plays") -
+`+3 true_inverse`. `render.stems` is the fourth and is **`not_mutating`**: it writes one output file
+per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
+touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
+and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
 The nine rows the folder-tracks merge added are:
 `track.folder_set_collapsed` and `track.set_pinned` are `true_inverse` on a live Track checkpoint (both
 flags are part of the folder's own `<trackfolder>` element and are reset on absence, so the checkpoint

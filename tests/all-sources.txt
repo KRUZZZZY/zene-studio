@@ -924,6 +924,7 @@ src/core/ControlCommandsChain.cpp
 src/core/ControlCommandsChainEdit.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
+src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
@@ -940,6 +941,7 @@ src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsNoteExpression.cpp
+src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginParams.cpp
@@ -953,6 +955,7 @@ src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
+src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
@@ -988,6 +991,7 @@ src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
+src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
@@ -1343,6 +1347,7 @@ tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
+tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
