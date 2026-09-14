@@ -348,8 +348,11 @@ private slots:
 		QCOMPARE(first.size(), 3);
 		QStringList paths;
 		for (const PluginScanRecord& record : first) { paths << QFileInfo(record.filePath).fileName(); }
-		QCOMPARE(paths, QStringList{QStringLiteral("libalpha.so"), QStringLiteral("libbeta.so"),
-			QStringLiteral("libzeta.so")});
+		// Built outside the macro: QCOMPARE is a preprocessor macro, and the
+		// commas of a braced initialiser list would be read as its arguments.
+		const QStringList expected{QStringLiteral("libalpha.so"), QStringLiteral("libbeta.so"),
+			QStringLiteral("libzeta.so")};
+		QCOMPARE(paths, expected);
 
 		// A second read of the same cache reports the same order.
 		const QList<PluginScanRecord> second = cache.records();

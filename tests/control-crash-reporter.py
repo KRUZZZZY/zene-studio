@@ -95,6 +95,15 @@ REPORT_BODY = ("Zene Studio crash report v1\nsignal=SIGSEGV(11)\nfault_addr=0x0\
                "platform=test machine\ncompiler=test\nproject=(none)\n")
 
 
+#: The state a run that has crashed nothing reports.
+EMPTY_REPORT_STATE = {"reports": [], "report_count": 0, "pending": False, "offered": False}
+#: THIS process is running, so its own session marker is on disk: the marker is
+#: what the clean exit path removes (endSession()).
+RUNNING_MARKER_STATE = {"session_marker_present": True, "previous_run_exited_cleanly": False}
+#: The module's own bounds, as the read reports them.
+THE_BOUNDS = {"max_report_bytes": MAX_REPORT_BYTES, "max_project_path_bytes": MAX_PROJECT_PATH_BYTES}
+
+
 class Session:
     """The socket client, a running request id and the raw transcript."""
 
@@ -120,6 +129,13 @@ class Session:
         return {}
 
 
+def subset(source, keys):
+    """The named keys of a dict, so a check compares WHOLE dicts: one comparison
+    instead of a chain of `and`s, and a failure prints the value that differed.
+    """
+    return {key: (source or {}).get(key) for key in keys}
+
+
 def plant_report(instance, problems):
     """Create the report the reporter's predicates are about, where it looks."""
     directory = os.path.join(instance.workspace, REPORT_DIR_NAME)
@@ -139,39 +155,36 @@ def plant_report(instance, problems):
 # ---------------------------------------------------------------------------
 
 
-def check_fresh_state(session, instance, problems):
-    """The read, on an instance that has crashed nothing."""
-    state = session.result("crash.list_reports")
+def check_fresh_paths(state, instance, problems):
+    """The three file paths are the module's own names under the working dir."""
     directory = os.path.join(instance.workspace, REPORT_DIR_NAME)
-    problems.require(state.get("installed") is True,
-                     "the reporter must be installed on this platform: %r" % (state.get("installed"),))
+    expected = {"report_path": os.path.join(directory, REPORT_FILE_NAME),
+                "offered_marker_path": os.path.join(directory, OFFERED_MARKER_NAME),
+                "session_marker_path": os.path.join(instance.workspace, SESSION_MARKER_NAME)}
+    got = subset(state, expected.keys())
+    problems.require(got == expected,
+                     "the three file paths must be the module's own names: %r" % (got,))
     problems.require(state.get("report_directory") == directory,
                      "the report directory must be <working dir>/%s: %r"
                      % (REPORT_DIR_NAME, state.get("report_directory")))
-    problems.require(state.get("report_path") == os.path.join(directory, REPORT_FILE_NAME)
-                     and state.get("offered_marker_path")
-                     == os.path.join(directory, OFFERED_MARKER_NAME)
-                     and state.get("session_marker_path")
-                     == os.path.join(instance.workspace, SESSION_MARKER_NAME),
-                     "the three file paths must be the module's own names: %r"
-                     % ({k: state.get(k) for k in ("report_path", "offered_marker_path",
-                                                   "session_marker_path")},))
-    problems.require(state.get("reports") == [] and state.get("report_count") == 0
-                     and state.get("pending") is False and state.get("offered") is False,
+    problems.require(state.get("installed") is True,
+                     "the reporter must be installed on this platform: %r" % (state.get("installed"),))
+
+
+def check_fresh_state(session, instance, problems):
+    """The read, on an instance that has crashed nothing."""
+    state = session.result("crash.list_reports")
+    check_fresh_paths(state, instance, problems)
+    problems.require(subset(state, EMPTY_REPORT_STATE.keys()) == EMPTY_REPORT_STATE,
                      "a run that has not crashed has no report: %r" % (state.get("reports"),))
-    bounds = state.get("bounds") or {}
-    problems.require(bounds.get("max_report_bytes") == MAX_REPORT_BYTES
-                     and bounds.get("max_project_path_bytes") == MAX_PROJECT_PATH_BYTES,
-                     "the bounds are the module's own constants: %r" % (bounds,))
-    problems.require((state.get("upload") or {}).get("supported") is False,
-                     "this build has no upload: %r" % (state.get("upload"),))
-    # THIS process is running, so its own session marker is on disk: the marker
-    # is what the clean exit path removes (endSession()).
-    problems.require(state.get("session_marker_present") is True
-                     and state.get("previous_run_exited_cleanly") is False,
+    problems.require(subset(state, RUNNING_MARKER_STATE.keys()) == RUNNING_MARKER_STATE,
                      "the running instance's own marker must be reported: %r/%r"
                      % (state.get("session_marker_present"),
                         state.get("previous_run_exited_cleanly")))
+    problems.require(subset(state.get("bounds"), THE_BOUNDS.keys()) == THE_BOUNDS,
+                     "the bounds are the module's own constants: %r" % (state.get("bounds"),))
+    problems.require((state.get("upload") or {}).get("supported") is False,
+                     "this build has no upload: %r" % (state.get("upload"),))
     return state
 
 
@@ -192,9 +205,10 @@ def check_upload_refusal(session, problems):
     """The verb that does not exist is REFUSED, by name, with the file named."""
     refused = session.typed_error("crash.upload_report")
     message = refused.get("message") or ""
+    lowered = message.lower()
     problems.require(refused.get("kind") == "refused",
                      "upload must be a typed refusal: %r" % (refused,))
-    problems.require("no upload" in message and "network" in message,
+    problems.require("no upload" in lowered and "network" in lowered,
                      "the refusal must name the module's own stated absence: %r" % (message,))
     problems.require(REPORT_FILE_NAME in message,
                      "the refusal must name the file to attach by hand: %r" % (message,))

@@ -274,7 +274,7 @@ ControlResult handleQuarantineRemove(const QJsonObject& args)
 }
 
 //! The scan's own numbers, after a run, plus what the run did to the cache file.
-QJsonObject rescanReport(const PluginFactory& factory)
+QJsonObject rescanReport(PluginFactory& factory)
 {
 	QJsonObject result = scanStatsJson(factory);
 	result.insert(QStringLiteral("cache_file"), factory.scanCache().filePath());

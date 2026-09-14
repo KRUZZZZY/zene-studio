@@ -68,6 +68,7 @@
 
 #include <string>
 
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -114,6 +115,20 @@ struct CrashPaths
 	bool valid = false;
 };
 
+/*! The module composes its paths by CONCATENATION, and the working directory it
+ *  is handed carries its own trailing separator (ConfigManager::workingDir()),
+ *  so pendingReportPath() comes back as "<dir>//crash-reports/zene-crash-report.txt".
+ *  The reported paths are canonicalised with QDir::cleanPath, so a client gets a
+ *  path it can compare and pass to a tool without knowing that quirk - the same
+ *  file either way, and `report_path` is the file crashreporter::pendingReportPath()
+ *  names.
+ */
+std::string clean(const std::string& path)
+{
+	if (path.empty()) { return path; }
+	return QDir::cleanPath(QString::fromStdString(path)).toStdString();
+}
+
 CrashPaths crashPaths()
 {
 	CrashPaths paths;
@@ -127,11 +142,11 @@ CrashPaths crashPaths()
 		// empty and `valid` stays false, which is what the read reports.
 		return paths;
 	}
-	paths.root = pending.substr(0, pending.size() - suffix.size());
-	paths.reportDirectory = paths.root + "/" + crashreporter::kReportDirName;
-	paths.report = pending;
-	paths.offered = paths.reportDirectory + "/" + crashreporter::kOfferedMarkerName;
-	paths.sessionMarker = paths.root + "/" + crashreporter::kSessionMarkerName;
+	paths.root = clean(pending.substr(0, pending.size() - suffix.size()));
+	paths.reportDirectory = clean(paths.root + "/" + crashreporter::kReportDirName);
+	paths.report = clean(pending);
+	paths.offered = clean(paths.reportDirectory + "/" + crashreporter::kOfferedMarkerName);
+	paths.sessionMarker = clean(paths.root + "/" + crashreporter::kSessionMarkerName);
 	paths.valid = true;
 	return paths;
 }
@@ -176,8 +191,11 @@ ControlResult noReporter(const QString& command)
 ControlResult handleListReports()
 {
 	const CrashPaths paths = crashPaths();
-	const QJsonArray reports = paths.valid
-		? QJsonArray{fileJson(paths.report)} : QJsonArray();
+	// A "report" is a file that is THERE: a directory with no report in it lists
+	// nothing, and report_path below is where a crash would write one. So
+	// report_count is a count of reports, not of a path the module could use.
+	QJsonArray reports;
+	if (paths.valid && QFileInfo::exists(wire(paths.report))) { reports.append(fileJson(paths.report)); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("installed"), crashreporter::isInstalled());
