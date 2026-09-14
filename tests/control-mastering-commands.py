@@ -17,7 +17,9 @@ So this starts the REAL binary (the ControlSocketIntegration mould:
 `$<TARGET_FILE:zene>`, QT_QPA_PLATFORM=offscreen, the shared control_socket_harness)
 with its own HOME/XDG world, and opens the product's OWN fixture
 (tools/auto-mastering-demo.py, the generator the doc's reproduction section names):
-three transient-heavy sample tracks, so the limiter has real work.
+three transient-heavy sample tracks, so the limiter has real work. The plumbing
+(session, recorder, fixture loader, wire readers) is in tests/mastering_probe_lib.py,
+which is a separate file for this fork's per-FILE gates, not a second contract.
 
 WHAT IT ASSERTS, in numbers read off the wire:
 
@@ -53,116 +55,20 @@ Exit codes: 0 every check held; 1 a check failed (the app log is printed);
 
 from __future__ import annotations
 
-import hashlib
-import importlib.util
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import control_socket_harness as H  # noqa: E402  (path set above)
+import mastering_probe_lib as M  # noqa: E402  (path set above)
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-#: The wave-1 candidate set's size, and the file that carries the single render.
-CANDIDATES = 5
-SOURCE_RENDER = "00_source-mix.wav"
-
-#: The EBU R 128 target's own published numbers (docs/AUTO-MASTERING.md section 4).
-EBU_LUFS, EBU_TOLERANCE, EBU_CEILING = -23.0, 0.5, -1.0
-
-#: The capture bound mastering.run refuses to record an inverse beyond (64 MiB).
-CAPTURE_LIMIT = 64 * 1024 * 1024
-
-#: The keys a candidate may carry: settings only, so no ranking can hide in one.
-CANDIDATE_KEYS = ("chain_settings", "dynamics", "name", "target")
-
-
-class Session:
-    """The socket client, a running request id and the raw transcript."""
-
-    def __init__(self, client, transcript):
-        self.client = client
-        self.transcript = transcript
-        self.last_id = 0
-
-    def call(self, command, args=None, timeout=None):
-        self.last_id += 1
-        return self.client.call(self.last_id, command, args, transcript=self.transcript,
-                                timeout=timeout)
-
-    def result(self, command, args=None, timeout=None):
-        """The reply's result, or {'error': ...} so a failed call is visible."""
-        reply = self.call(command, args, timeout=timeout)
-        if reply.get("ok") is True:
-            return reply.get("result") or {}
-        return {"error": reply.get("error") or reply}
-
-    def typed_error(self, command, args=None):
-        reply = self.call(command, args)
-        if reply.get("ok") is False:
-            return reply.get("error") or {}
-        return {}
-
-
-class Recorder:
-    """Collects the named checks and their evidence, so a failure names the number."""
-
-    def __init__(self):
-        self.results = []
-
-    def check(self, name, passed, evidence):
-        self.results.append((name, bool(passed), evidence))
-
-    def problems(self):
-        return [(name, evidence) for name, passed, evidence in self.results if not passed]
-
-
-# ---------------------------------------------------------------------------
-# the fixture, and reading the wire
-# ---------------------------------------------------------------------------
-
-
-def shipped_fixture(directory):
-    """Builds the session with the product's own generator; its .mmp path, or None.
-
-    The generator is a script (its name is not importable as a module), so it is
-    loaded by path. It is the tool docs/AUTO-MASTERING.md's reproduction section
-    names, which is what makes this fixture the documented one rather than a second
-    fixture invented for a test.
-    """
-    path = os.path.join(REPO_ROOT, "tools", "auto-mastering-demo.py")
-    if not os.path.exists(path):
-        return None
-    spec = importlib.util.spec_from_file_location("auto_mastering_demo", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.make_fixture(directory)
-    project = os.path.join(directory, "demo.mmp")
-    return project if os.path.exists(project) else None
-
-
-def wav_names(directory):
-    """The .wav entries of a directory, by name, or () when it does not exist."""
-    if not os.path.isdir(directory):
-        return ()
-    return tuple(sorted(name for name in os.listdir(directory)
-                        if name.lower().endswith(".wav")))
-
-
-def sha256_of(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def command_entry(session, command):
-    for entry in session.result("control.commands_list").get("commands") or []:
-        if entry.get("id") == command:
-            return entry
-    return {}
+from mastering_probe_lib import (  # noqa: E402  (path set above)
+    CANDIDATES, CAPTURE_LIMIT, CANDIDATE_KEYS, EBU_CEILING, EBU_LUFS, EBU_TOLERANCE,
+    EXPECTED_TARGETS, SOURCE_RENDER, Recorder, Session, candidate_key_sets,
+    dynamics_names, ranked_keys, sha256_of, standard_less_names, target_tuple,
+    wav_names,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,18 +84,27 @@ def check_registration(session, recorder):
     recorder.check("control.commands_list carries the three mastering.* ids",
                    wanted <= listed, "missing=%s" % sorted(wanted - listed))
 
-    entry = command_entry(session, "mastering.run")
+    entry = session.command_entry("mastering.run")
     schema = entry.get("args_schema") or {}
     recorder.check("mastering.run requires out_dir and declares it writes",
                    entry.get("mutating") is True
                    and "out_dir" in (schema.get("required") or []),
                    "mutating=%r required=%r" % (entry.get("mutating"), schema.get("required")))
-    reads = [command_entry(session, read_id)
+    reads = [session.command_entry(read_id)
              for read_id in ("mastering.list_candidates", "mastering.get_state")]
     recorder.check("both reads declare a result schema and write nothing",
                    all(entry.get("mutating") is False and entry.get("result_schema")
                        for entry in reads),
                    "reads=%r" % [(entry.get("id"), entry.get("mutating")) for entry in reads])
+
+
+def check_candidate_targets(recorder, rows):
+    """Every candidate's target numbers, and the document each one comes from."""
+    measured = {row.get("name"): target_tuple(row) for row in rows}
+    recorder.check("every candidate carries its own target's numbers",
+                   measured == EXPECTED_TARGETS, "targets=%r" % measured)
+    recorder.check("every target names the document its numbers come from",
+                   not standard_less_names(rows), "missing=%r" % standard_less_names(rows))
 
 
 def check_candidate_set(session, recorder):
@@ -199,28 +114,17 @@ def check_candidate_set(session, recorder):
     recorder.check("mastering.list_candidates returns %d candidates" % CANDIDATES,
                    len(rows) == CANDIDATES and result.get("count") == CANDIDATES,
                    "count=%r len=%d" % (result.get("count"), len(rows)))
-
-    by_name = {row.get("name"): row for row in rows}
-    ebu = (by_name.get("ebu-r128") or {}).get("target") or {}
-    recorder.check("the EBU R 128 target carries its published numbers",
-                   ebu.get("integrated_lufs") == EBU_LUFS
-                   and ebu.get("tolerance_lu") == EBU_TOLERANCE
-                   and ebu.get("ceiling_dbtp") == EBU_CEILING
-                   and bool(ebu.get("standard")),
-                   "target=%r" % ebu)
-
-    dynamics = [name for name, row in by_name.items()
-                if (row.get("dynamics") or {}).get("enabled")]
+    check_candidate_targets(recorder, rows)
     recorder.check("the dynamics stage is on exactly one candidate",
-                   dynamics == ["streaming-16-dynamics"], "dynamics=%r" % dynamics)
+                   dynamics_names(rows) == ["streaming-16-dynamics"],
+                   "dynamics=%r" % dynamics_names(rows))
 
     # No field that could rank: a candidate's payload is settings only.
-    fields = {tuple(sorted(row.keys())) for row in rows}
     recorder.check("a candidate carries settings only - no score, no order, no best",
-                   fields == {CANDIDATE_KEYS}, "keys=%r" % sorted(fields))
-    recorder.check("the payload names no preferred candidate",
-                   "preferred" in (result.get("note") or "")
-                   and not any("rank" in key or "best" in key for key in result.keys()),
+                   candidate_key_sets(rows) == {CANDIDATE_KEYS},
+                   "keys=%r" % sorted(candidate_key_sets(rows)))
+    recorder.check("the payload names no preferred candidate and holds no order",
+                   "preferred" in (result.get("note") or "") and not ranked_keys(result),
                    "keys=%r" % sorted(result.keys()))
 
 
@@ -253,30 +157,8 @@ def check_refusals(session, recorder, outdir):
                    wav_names(outdir) == before, "after=%r" % (wav_names(outdir),))
 
 
-def check_the_run(session, recorder, outdir):
-    """The run: one render, five measured candidates, files that match the report."""
-    result = session.result("mastering.run", {"out_dir": outdir}, timeout=H.READY_TIMEOUT)
-    if result.get("error"):
-        recorder.check("mastering.run completed", False, "error=%r" % result.get("error"))
-        return result
-
-    recorder.check("the run counted ONE project render for %d candidates" % CANDIDATES,
-                   result.get("render_count") == 1
-                   and result.get("candidate_count") == CANDIDATES,
-                   "render_count=%r candidate_count=%r"
-                   % (result.get("render_count"), result.get("candidate_count")))
-
-    on_disk = wav_names(outdir)
-    recorder.check("the source render and every candidate are on disk",
-                   len(on_disk) == CANDIDATES + 1 and SOURCE_RENDER in on_disk,
-                   "files=%r" % (on_disk,))
-
-    rows = result.get("candidates") or []
-    reported = {os.path.basename(row.get("file") or "") for row in rows}
-    recorder.check("every reported file is the file that exists",
-                   reported <= set(on_disk) and len(reported) == CANDIDATES,
-                   "reported=%r on_disk=%r" % (sorted(reported), on_disk))
-
+def reading_problems(rows):
+    """Every candidate that is outside its own target's tolerance or ceiling."""
     problems = []
     for row in rows:
         target, metrics = row.get("target") or {}, row.get("metrics") or {}
@@ -290,20 +172,60 @@ def check_the_run(session, recorder, outdir):
                                target.get("tolerance_lu")))
         if dbtp > target.get("ceiling_dbtp", 0.0) + 0.05:
             problems.append("%s: %.2f dBTP above its ceiling" % (row.get("name"), dbtp))
-    recorder.check("every candidate is inside its own target's tolerance and ceiling",
-                   not problems, "; ".join(problems))
+    return problems
 
-    ebu = next((row for row in rows if row.get("name") == "ebu-r128"), {})
-    recorder.check("the EBU R 128 candidate is graded against the published numbers",
-                   (ebu.get("target") or {}).get("tolerance_lu") == EBU_TOLERANCE
-                   and ebu.get("loudness_pass") is True,
-                   "ebu=%r" % {key: ebu.get(key) for key in ("target", "loudness_pass")})
 
+def check_the_run_counts(recorder, result, outdir, rows):
+    """The counted facts: one render, six files, and the report matching them."""
+    recorder.check("the run counted ONE project render for %d candidates" % CANDIDATES,
+                   result.get("render_count") == 1
+                   and result.get("candidate_count") == CANDIDATES,
+                   "render_count=%r candidate_count=%r"
+                   % (result.get("render_count"), result.get("candidate_count")))
+    on_disk = wav_names(outdir)
+    recorder.check("the source render and every candidate are on disk",
+                   len(on_disk) == CANDIDATES + 1 and SOURCE_RENDER in on_disk,
+                   "files=%r" % (on_disk,))
+    reported = {os.path.basename(row.get("file") or "") for row in rows}
+    recorder.check("every reported file is the file that exists",
+                   reported <= set(on_disk) and len(reported) == CANDIDATES,
+                   "reported=%r on_disk=%r" % (sorted(reported), on_disk))
     facts = result.get("files") or []
     recorder.check("the run reports every written file with a hash and a size",
                    len(facts) == CANDIDATES + 1
                    and all(entry.get("exists") and entry.get("sha256") for entry in facts),
                    "facts=%d" % len(facts))
+
+
+def check_the_session_is_not_modified(session, recorder, before, after):
+    """The render ran in a child process, so THIS instance's project did not move."""
+    differing = sorted(key for key in set(before) | set(after)
+                       if before.get(key) != after.get(key))
+    recorder.check("the session is unchanged by a mastering run (it renders a copy)",
+                   not differing and bool(before),
+                   "differing=%r before=%r after=%r"
+                   % (differing, {k: before.get(k) for k in differing},
+                      {k: after.get(k) for k in differing}))
+
+
+def check_the_run(session, recorder, outdir):
+    """The run: one render, five measured candidates, files that match the report."""
+    before_state = session.result("project.get_state")
+    result = session.result("mastering.run", {"out_dir": outdir}, timeout=H.READY_TIMEOUT)
+    if result.get("error"):
+        recorder.check("mastering.run completed", False, "error=%r" % result.get("error"))
+        return result
+
+    rows = result.get("candidates") or []
+    check_the_run_counts(recorder, result, outdir, rows)
+    check_the_session_is_not_modified(session, recorder, before_state,
+                                      session.result("project.get_state"))
+    recorder.check("every candidate is inside its own target's tolerance and ceiling",
+                   not reading_problems(rows), "; ".join(reading_problems(rows)))
+    graded = {row.get("name"): (target_tuple(row), row.get("loudness_pass")) for row in rows}
+    recorder.check("the EBU R 128 candidate is graded against the published numbers",
+                   graded.get("ebu-r128") == ((EBU_LUFS, EBU_TOLERANCE, EBU_CEILING), True),
+                   "ebu=%r" % (graded.get("ebu-r128"),))
     return result
 
 
@@ -336,30 +258,51 @@ def check_transaction(session, recorder):
                        "commands=%r" % [record.get("command") for record in records])
         return
     top = mine[-1]
-    before = top.get("before") or {}
     recorder.check("mastering.run records true_inverse and is reversible",
                    top.get("class") == "true_inverse" and top.get("reversible") is True,
                    "class=%r reversible=%r" % (top.get("class"), top.get("reversible")))
+
+    before = top.get("before") or {}
+    measured = {"directory_is_set": bool(before.get("directory")),
+                "capture_limit_bytes": before.get("capture_limit_bytes"),
+                "created_count": before.get("created_count")}
     recorder.check("the record's before-state is the output directory, bounded",
-                   bool(before.get("directory"))
-                   and before.get("capture_limit_bytes") == CAPTURE_LIMIT
-                   and before.get("created_count") == CANDIDATES + 1,
-                   "before=%r" % {key: before.get(key) for key in
-                                  ("directory", "created_count", "held_before_count",
-                                   "capture_limit_bytes")})
+                   measured == {"directory_is_set": True, "capture_limit_bytes": CAPTURE_LIMIT,
+                                "created_count": CANDIDATES + 1},
+                   "before=%r" % measured)
     mechanism = top.get("mechanism") or ""
-    recorder.check("the mechanism names the recorded action, not a claimed checkpoint",
+    recorder.check("the mechanism names the recorded action and is honest about redo",
                    "action checkpoint" in mechanism and "ONE-WAY" in mechanism,
                    "mechanism=%r" % mechanism[:160])
 
 
 def check_undo_removes_the_run(session, recorder, outdir):
-    """The inverse, first half: what the run CREATED is removed."""
+    """The inverse, first half: what the run CREATED is removed, and redo cannot fake it."""
     reply = session.call("control.undo", timeout=H.READY_TIMEOUT)
     recorder.check("control.undo answered for the mastering run",
                    reply.get("ok") is True, "%r" % reply)
     recorder.check("the directory the run wrote into holds no candidate afterwards",
                    wav_names(outdir) == (), "files=%r" % (wav_names(outdir),))
+    # The row says the recorded step has NO redo half. Measured rather than trusted:
+    # a redo that silently replayed an older step would bring files back here.
+    session.call("control.redo")
+    recorder.check("control.redo does not resurrect a candidate set there is no redo half for",
+                   wav_names(outdir) == (), "files=%r" % (wav_names(outdir),))
+
+
+def file_hashes(directory, names):
+    """{name: sha256} for files read from disk, so a restore is compared by bytes."""
+    return {name: sha256_of(os.path.join(directory, name)) for name in names}
+
+
+def reported_hashes(facts):
+    """{file name: the hash the run reported} for one run's file facts."""
+    return {os.path.basename(entry.get("path") or ""): entry.get("sha256") for entry in facts}
+
+
+def differing_names(left, right):
+    """The names whose two hashes disagree."""
+    return [name for name in left if left[name] != right.get(name)]
 
 
 def check_a_replaced_revision_comes_back(session, recorder, outdir):
@@ -369,24 +312,21 @@ def check_a_replaced_revision_comes_back(session, recorder, outdir):
         recorder.check("the first run of the pair completed", False,
                        "error=%r" % first.get("error"))
         return
-    planted = {os.path.basename(entry.get("path")): entry.get("sha256")
-               for entry in first.get("files") or []}
-    wrong = [name for name, digest in planted.items()
-             if digest != sha256_of(os.path.join(outdir, name))]
-    recorder.check("the run's own hash matches the file it wrote", not wrong,
-                   "differing=%r" % wrong)
-    if wrong:
+
+    names = reported_hashes(first.get("files") or [])
+    planted = file_hashes(outdir, list(names.keys()))
+    recorder.check("the run's own hash matches the file it wrote", names == planted,
+                   "differing=%r" % differing_names(planted, names))
+    if names != planted:
         return
+
     session.result("mastering.run", {"out_dir": outdir}, timeout=H.READY_TIMEOUT)
     session.call("control.undo", timeout=H.READY_TIMEOUT)
-    after = {name: sha256_of(os.path.join(outdir, name)) for name in planted}
+    after = file_hashes(outdir, list(names.keys()))
     recorder.check("control.undo restores a REPLACED revision byte for byte",
-                   after == planted,
-                   "differing=%r" % [name for name, digest in after.items()
-                                     if planted.get(name) != digest])
-    recorder.check("the restored directory holds exactly the first run's files",
-                   set(wav_names(outdir)) == set(planted),
-                   "files=%r planted=%r" % (wav_names(outdir), sorted(planted)))
+                   after == planted, "differing=%r" % differing_names(planted, after))
+    recorder.check("and the restored directory holds exactly the first run's files",
+                   set(wav_names(outdir)) == set(names), "files=%r" % (wav_names(outdir),))
 
 
 def check_the_capture_bound(session, recorder, outdir):
@@ -443,12 +383,12 @@ def main(argv):
     recorder = Recorder()
     transcript = H.Transcript()
     with H.start_instance(argv[1]) as instance:
-        project = shipped_fixture(os.path.join(instance.tmp, "mastering-fixture"))
+        project = M.shipped_fixture(os.path.join(instance.tmp, "mastering-fixture"))
         if project is None:
             # Never Passed: a tree with no fixture generator cannot make this
             # measurement, and ctest reports 77 as Skipped.
             print("cannot run: no shipped fixture generator at %s/tools/auto-mastering-demo.py"
-                  % REPO_ROOT)
+                  % M.REPO_ROOT)
             return 77
         outdir = os.path.join(instance.tmp, "candidates")
 
@@ -467,9 +407,9 @@ def main(argv):
         check_refusals(session, recorder, outdir)
 
         session.result("project.open", {"path": project})
-        recorder.check("the fixture session is not empty",
-                       session.result("mastering.get_state").get("session_empty") is False,
-                       "state=%r" % session.result("mastering.get_state").get("session_empty"))
+        state = session.result("mastering.get_state")
+        recorder.check("the fixture session is not empty", state.get("session_empty") is False,
+                       "session_empty=%r" % state.get("session_empty"))
 
         run_result = check_the_run(session, recorder, outdir)
         if run_result.get("error"):
