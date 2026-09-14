@@ -1,5 +1,16 @@
 # Zene Studio — control-surface coverage matrix
 
+> **SUPERSEDED — 2026-09-14.** This file is a **tip-pinned snapshot**: its own header pins `ddf5f171d`
+> and its §1.2 computes **150 ids = 144 + 6** over **28 groups** (27 id prefixes + the helper-built
+> `wasm`). It is kept as the record of that base and is **not** updated in place. The measurement of
+> record is **`docs/COVERAGE-REMEASURE-2026-09-14.md`** (branch `030/audit`), taken at the release tip
+> **`3956ef589`** — `33` command groups and `185` command ids, the registry source and a live
+> `control.commands_list` agreeing exactly. Read §9 of that file for the four surfaces this one's own §9
+> (*Re-measurement, 2026-09-13*) left disagreeing (28/150, 30/154, 31/170), and §6 for the 41 ids the `chain`,
+> `clock`, folder-track, `midi.retro_capture_*`, `record`, `freeze`/`bounce`, `groove` and
+> `transport.punch_*` merges added between the two tips. The tip some other documents attribute to this
+> file, `0ee78abed`, appears nowhere in it and is **not verified**.
+
 | | |
 |---|---|
 | Tree inventoried | `ddf5f171d` (`release/0.3.0`, the 0.3.0-alpha integration tip) |
