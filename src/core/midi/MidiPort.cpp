@@ -67,6 +67,26 @@ MidiPort::MidiPort( const QString& name,
 {
 	m_midiClient->addPort( this );
 
+	// The readable/writable flags are DEVICE-ASSIGNMENT state, not an edit the
+	// user made: InstrumentTrack::autoAssignMidiDevice() flips them on every
+	// track construction and destruction (InstrumentTrack.cpp:114, :213), on
+	// every save (InstrumentTrack.cpp:1017, :1025), and from a piano-roll
+	// click (PianoRoll.cpp:4299, PianoView.cpp:686). Journalled, those setValue
+	// calls (AutomatableModel.cpp:317) each push an undo step for an assignment
+	// nobody asked to undo - and on a machine with no ALSA sequencer the MIDI
+	// client is the RAW MidiDummy (AudioEngine.cpp:1036, MidiClient.h:145), so
+	// the save-time clear/restore pushed ONE step per render.render /
+	// bounce.in_place / project.save and corrupted the undo contract
+	// (tests/control-freeze-commands-transcript.py; the depth trace in
+	// docs/UNDO-BOUNDS.md). Precedent for a model that is deliberately not
+	// journalled: SongEditor.cpp:250 (zooming), AutomationEditor.cpp:115
+	// (tension), AutomatableButton.cpp:220 (button-group members). Nothing is
+	// lost by it: the flags are still written to the project by
+	// MidiPort::saveSettings (:197-198) and still restored by loadSettings, and
+	// a checkpoint taken on the PORT itself still captures them as attributes.
+	m_readableModel.setJournalling( false );
+	m_writableModel.setJournalling( false );
+
 	m_readableModel.setValue( m_mode == Mode::Input || m_mode == Mode::Duplex );
 	m_writableModel.setValue( m_mode == Mode::Output || m_mode == Mode::Duplex );
 

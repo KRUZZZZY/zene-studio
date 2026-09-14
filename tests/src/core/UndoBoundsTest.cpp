@@ -52,14 +52,17 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QThread>
 
+#include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlUndoCoalescing.h"
 #include "Engine.h"
+#include "MidiPort.h"
 #include "ProjectJournal.h"
 #include "Song.h"
 #include "ReversibilityTestSupport.h"
@@ -405,6 +408,85 @@ private slots:
 		QCOMPARE(depth(), depthBeforeUndo);
 		QCOMPARE(run(QStringLiteral("transport.get_state"))
 			.result.value(QStringLiteral("tempo")).toInt(), 101);
+	}
+
+
+	//! A MIDI port's readable/writable flags are DEVICE state, not an edit: the
+	//! assignment costs NO undo step, and nothing was dropped to get that zero.
+	//!
+	//! WHY AN UNDO-BOUNDS TEST. `InstrumentTrack::autoAssignMidiDevice()` writes
+	//! these two models - off and on around every save
+	//! (InstrumentTrack.cpp:1017/:1025), and on every track construction and
+	//! destruction (:114/:213) - and `MidiPort::subscribeReadablePort()` writes
+	//! one whenever it forces input on (MidiPort.cpp:302). Journalled, each flip
+	//! reached `AutomatableModel::setValue` -> `addJournalCheckPoint()`
+	//! (AutomatableModel.cpp:317) and pushed a step for an assignment the user
+	//! never made. Measured cost: on a machine whose MIDI client is the RAW
+	//! `MidiDummy` fallback (every Linux CI runner - no ALSA sequencer,
+	//! AudioEngine.cpp:1036 with MidiClient.h:145, so `isRaw()` is true) the
+	//! save-time flip put ONE step on the stack for `render.render`,
+	//! `bounce.in_place` and `project.save` - the `not_mutating` commands - and
+	//! the freeze release gate failed with two undos landing on the wrong steps
+	//! (tests/control-freeze-commands-transcript.py; the mechanism is in
+	//! docs/UNDO-BOUNDS.md). The flags are not journalled now, and the three
+	//! assertions below are the contract that keeps them that way: the flip
+	//! still HAPPENS, it costs NO step, and the flag is still saved and restored
+	//! with the port - the zero is not bought by dropping the state.
+	void aDeviceAssignmentIsNotAnUndoStep()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		QVERIFY2(engine != nullptr && engine->midiClient() != nullptr,
+			"no MIDI client to build a port over");
+
+		// Construction assigns the flags from the mode (MidiPort.cpp:70-71):
+		// the +1-per-track-start that the reproduced trace showed as its
+		// startup offset.
+		const int before = depth();
+		MidiPort port(QStringLiteral("undo-bounds-probe"), engine->midiClient(),
+			nullptr, nullptr, MidiPort::Mode::Input);
+		QCOMPARE(port.isReadable(), true);
+		QCOMPARE(depth(), before);
+
+		// A REAL change of value in both directions, twice each way: the
+		// guarded `if (fittedValue(value) == m_value) return;` at
+		// AutomatableModel.cpp:310 must not be what makes this pass, so the
+		// flag is read back after every write.
+		port.setReadable(false);
+		QCOMPARE(port.isReadable(), false);
+		QCOMPARE(depth(), before);
+		port.setReadable(true);
+		QCOMPARE(port.isReadable(), true);
+		QCOMPARE(depth(), before);
+		port.setWritable(true);
+		QCOMPARE(port.isWritable(), true);
+		QCOMPARE(depth(), before);
+		port.setWritable(false);
+		QCOMPARE(port.isWritable(), false);
+		QCOMPARE(depth(), before);
+
+		// Nothing was dropped to get that: the flags are still written with the
+		// port and still read back by loadSettings (MidiPort.cpp:197-198,
+		// :251-252).
+		port.setReadable(true);
+		port.setWritable(true);
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		port.saveState(doc, root);
+		const QDomElement saved = root.firstChildElement();
+		QCOMPARE(saved.tagName(), QStringLiteral("midiport"));
+		QCOMPARE(saved.attribute(QStringLiteral("readable")), QStringLiteral("1"));
+		QCOMPARE(saved.attribute(QStringLiteral("writable")), QStringLiteral("1"));
+
+		// Mode::Disabled starts with both flags false, so a true here can only
+		// have come from the saved element.
+		MidiPort restored(QStringLiteral("undo-bounds-probe-restored"),
+			engine->midiClient(), nullptr, nullptr, MidiPort::Mode::Disabled);
+		QCOMPARE(restored.isReadable(), false);
+		QCOMPARE(restored.isWritable(), false);
+		restored.loadSettings(saved);
+		QCOMPARE(restored.isReadable(), true);
+		QCOMPARE(restored.isWritable(), true);
+		QCOMPARE(depth(), before);
 	}
 
 };
