@@ -152,7 +152,20 @@ def host_multicast_loopback(group="224.76.78.75", port=20808, bound_ms=None):
 
     payload = b"zene-link-host-loopback-probe"
     started = time.monotonic()
-    sender.sendto(payload, (group, port))
+    try:
+        sender.sendto(payload, (group, port))
+    except OSError as error:
+        # The other half of the CARRY measurement, and the same verdict as a socket
+        # that could not be configured at all: a host with no route to the group
+        # cannot send the datagram, let alone have a second socket receive it. That
+        # is the macOS runner's shape (run #34802239065: OSError [Errno 65] No route
+        # to host on macos-x86_64 and macos-arm64). Returning it as a verdict lets
+        # the caller's documented "cannot carry announcements" skip fire; raising it
+        # out of here killed the run in step 2b and the test then failed on the
+        # empty peer tables the absent announcements explain.
+        sender.close()
+        receiver.close()
+        return False, -1, "%s" % error
     delivered = False
     try:
         while not delivered:
