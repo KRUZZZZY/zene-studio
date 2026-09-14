@@ -159,10 +159,59 @@ def _debugger_run(tool, extra_args, pid):
     return lines + ["--- end %s ---" % tool]
 
 
+def _child_processes(pid):
+    """Every live CHILD of the instance, with its command line.
+
+    A stalled instance is not necessarily stuck itself: render.render, bounce.in_place,
+    freeze.track and freeze.region run the product's own CLI render in a CHILD process
+    and WAIT for it (ControlCommandsProject.cpp, BounceInPlace.cpp), so the instance is
+    parked in a poll - 0% CPU, every one of its OWN threads asleep - while the child
+    burns the core. A diagnosis that stops at "the instance is STILL RUNNING - a HANG,
+    not a crash" reads as a lost wake-up inside the instance, and that misreading is
+    exactly what the linux-arm64 render stall cost this project: the child is the
+    missing fact. Read from /proc, bounded, read-only, and never raises.
+    """
+    pids = []
+    try:
+        tids = sorted(os.listdir("/proc/%d/task" % pid))
+    except OSError:
+        return []
+    for tid in tids:
+        for field in _read("/proc/%d/task/%s/children" % (pid, tid)).split():
+            if field.isdigit():
+                pids.append(field)
+    if not pids:
+        return ["children: none (this instance has spawned no child process)"]
+
+    lines = ["children: %d live" % len(pids)]
+    for child in pids[:_MAX_THREADS_LISTED]:
+        state = "?"
+        stat = _read("/proc/%s/stat" % child)
+        if ") " in stat:
+            state = stat.rsplit(") ", 1)[1].split()[0]
+        wchan = _read("/proc/%s/wchan" % child).strip() or "-"
+        command = _read("/proc/%s/cmdline" % child).replace("\0", " ").strip()
+        lines.append("  child %s: state=%s wchan=%s cmd=%s" % (child, state, wchan, command))
+    return lines
+
+
 def _backtrace(pid):
-    """A debugger's view of EVERY thread, when the runner has one. Bounded and best-effort."""
-    for tool, extra_args in (("gdb", ["-batch", "-ex", "thread apply all bt"]),
-                             ("lldb", ["-b", "-o", "thread backtrace all", "-o", "quit"])):
+    """A debugger's view of EVERY thread, when the runner has one. Bounded and best-effort.
+
+    The MAIN (stopping) thread's stack goes FIRST, and that ordering is
+    load-bearing: `thread apply all bt` lists threads in DESCENDING gdb numbering,
+    so the main thread - the one that serves the control socket, and the only
+    thread whose stack explains a stalled command - is printed LAST and was cut off
+    by `_DEBUGGER_LINES` on every run it was needed. Measured on this tree: the
+    linux-arm64 stall's own diagnostic printed 22 threads' worth of idle
+    `QWaitCondition::wait` worker frames and stopped in the middle of them, which is
+    exactly why a thread parked in a poll on a render CHILD was read as a lost
+    wake-up for six matrices. The bare `bt` (the stopped thread, normally the main
+    one) is what makes the frame that matters survive the bound.
+    """
+    for tool, extra_args in (("gdb", ["-batch", "-ex", "bt", "-ex", "thread apply all bt"]),
+                             ("lldb", ["-b", "-o", "thread backtrace",
+                                       "-o", "thread backtrace all", "-o", "quit"])):
         if shutil.which(tool):
             return _debugger_run(tool, extra_args, pid)
     return ["no gdb or lldb on this runner: no backtrace available. The diagnostic that needs "
@@ -195,6 +244,7 @@ def instance_diagnosis():
     lines = ["diagnosis: the instance is STILL RUNNING (pid %d) - a HANG, not a crash" % proc.pid]
     lines += _proc_facts(proc.pid)
     lines += _thread_states(proc.pid)
+    lines += _child_processes(proc.pid)
     lines += _cpu_evidence(proc.pid)
     lines += _backtrace(proc.pid)
     lines += _log_tail(instance, "stdout_path")

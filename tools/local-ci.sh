@@ -23,7 +23,15 @@
 # (-DWANT_VST3=ON -DWANT_CLAP=ON) and the fetch happens up front.
 #
 # Exactness notes:
-#   * CI_CMAKE_OPTS below is the linux-x86_64 job's CMAKE_OPTS, byte for byte.
+#   * CI_CMAKE_OPTS below is the linux-x86_64 job's CMAKE_OPTS, byte for byte --
+#     including -DWANT_VST3_TEST_INSTRUMENT=ON (build.yml:79), which that job and
+#     no other passes. It used to be missing here while this line still claimed
+#     "byte for byte", and the size of that lie was measurable: the job ran 140
+#     tests and this bar ran 137, the three missing ones being exactly the VST3
+#     INSTRUMENT fixtures the option builds (Vst3InstrumentFixtureProbe,
+#     Vst3InstrumentTest, Vst3InstrumentIntegrationTest) - the 0.2.1 headline
+#     capability, unexercised by the local bar that is supposed to reproduce the
+#     job. Verified: `ctest -N` counts 140 with the option and 137 without.
 #   * The CI runner installs qtbase5-dev, so the CI job configures against Qt5.
 #     This box has no Qt5 development files and no sudo: when Qt5 is missing the
 #     script adds -DWANT_QT6=ON (part of task #616's documented configuration)
@@ -48,6 +56,7 @@ CI_CMAKE_OPTS=(
 	-DWANT_DEBUG_CPACK=ON
 	-DWANT_VST3=ON
 	-DWANT_CLAP=ON
+	-DWANT_VST3_TEST_INSTRUMENT=ON
 )
 
 usage() {
@@ -65,6 +74,7 @@ Usage:
 Runs cmake with the linux-x86_64 job's exact CMAKE_OPTS:
   -DUSE_WERROR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official
   -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON -DWANT_VST3=ON -DWANT_CLAP=ON
+  -DWANT_VST3_TEST_INSTRUMENT=ON
 Before that it runs the same provisioning step the workflow runs
 (.github/workflows/provision-plugin-hosting-deps.sh) so the pinned VST3 SDK and
 CLAP headers are in <build>/vst3sdk and <build>/clap; -DWANT_VST3=ON on a tree
