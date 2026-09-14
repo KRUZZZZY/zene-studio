@@ -186,9 +186,14 @@ private slots:
 		const int lenBefore = clipLength(fixture.clip);
 		const int offsetBefore = clipOffset(fixture.clip);
 		QVERIFY2(clipAutoResize(fixture.clip), "a clip added without a length keeps auto-resize");
+		// The engine gives a fresh clip a default length (one bar); a trim that
+		// took half of it from each side would leave nothing, so the inset is
+		// small and the assertion says why before it acts.
+		QVERIFY2(lenBefore > 64, qPrintable(QStringLiteral("the fixture clip is only %1 ticks long")
+			.arg(lenBefore)));
 
-		const int start = posBefore + 96;
-		const int end = posBefore + lenBefore - 96;
+		const int start = posBefore + 24;
+		const int end = posBefore + lenBefore - 24;
 		const ControlResult trimmed = run(QStringLiteral("clip.trim"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip},
 				{QStringLiteral("start"), start}, {QStringLiteral("end"), end}});
