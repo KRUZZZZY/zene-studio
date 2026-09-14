@@ -133,6 +133,14 @@ set(LMMS_SRCS
 	core/ControlCommandsRouting.cpp
 	core/ControlCommandsBus.cpp
 	core/ControlCommandsPorts.cpp
+	# Auto-mastering wave 1 (feature rows 25 and 72 of docs/FEATURE-LIST-0.3.0.md,
+	# docs/AUTO-MASTERING.md): the group's read half and its one writing verb, each
+	# its own translation unit for the reason above, plus the shared helpers (the
+	# child run's report, the instance's last-run record and the bounded
+	# output-directory capture SPEC A16's inverse is recorded from).
+	core/ControlMasteringSupport.cpp
+	core/ControlCommandsMastering.cpp
+	core/ControlCommandsMasteringRun.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp
@@ -233,6 +241,10 @@ set(LMMS_SRCS
 	# routing verbs): a GROUP's rows whatever their class, joined by
 	# reversibilityRowTable() exactly as the folder-tracks group's are.
 	core/ControlReversibilityTableRouting.cpp
+	# The auto-mastering group's three rows (feature rows 25 and 72): one
+	# recorded-action true_inverse row and the group's two not_mutating
+	# inspectors. A GROUP file on the same seam as the routing rows above.
+	core/ControlReversibilityTableMastering.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp
@@ -274,6 +286,11 @@ set(LMMS_SRCS
 	core/LufsMeter.cpp
 	core/MasteringChain.cpp
 	core/MasteringJob.cpp
+	# The auto-mastering run's report: the JSON document the CLI writes with
+	# --report and the control surface reads back, plus the human table the CLI
+	# prints (moved verbatim out of main.cpp, which an inherited file's line
+	# ratchet may not grow).
+	core/MasteringReport.cpp
 	core/LadspaManager.cpp
 	core/LfoController.cpp
 	core/LinkedModelGroups.cpp

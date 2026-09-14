@@ -113,6 +113,7 @@ include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlGrooveSupport.h
 include/ControlLayout.h
+include/ControlMasteringSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlRackSupport.h
@@ -241,6 +242,7 @@ include/MainApplication.h
 include/MainWindow.h
 include/MasteringChain.h
 include/MasteringJob.h
+include/MasteringReport.h
 include/MeterDialog.h
 include/MeterModel.h
 include/Metronome.h
@@ -937,6 +939,8 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
+src/core/ControlCommandsMastering.cpp
+src/core/ControlCommandsMasteringRun.cpp
 src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
@@ -988,6 +992,7 @@ src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
 src/core/ControlGrooveSupport.cpp
+src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlRackSupport.cpp
@@ -998,6 +1003,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
@@ -1048,6 +1054,7 @@ src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
+src/core/MasteringReport.cpp
 src/core/MeterModel.cpp
 src/core/Metronome.cpp
 src/core/MicroTimer.cpp

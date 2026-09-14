@@ -151,6 +151,13 @@ LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount)
  * reversibilityTrackFolderRowTable's do. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityRoutingRowTable(int* rowCount);
+/*! The `mastering.*` group's three rows (feature rows 25 and 72): one
+ *  recorded-action true_inverse row (mastering.run writes files in a directory
+ *  outside the project) and the group's two not_mutating inspectors. A GROUP
+ *  file on the same seam as the folder, vca and routing files - the class comes
+ *  from each row, not from its file. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

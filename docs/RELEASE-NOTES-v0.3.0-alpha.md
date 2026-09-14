@@ -529,18 +529,21 @@ that marker is published as-is, and no unverified claim is published without one
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **210 rows**, measured from the table itself:
-**116 `true_inverse`, 16 `snapshot`, 4 `irreversible`, 74 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **213 rows**, measured from the table itself:
+**117 `true_inverse`, 16 `snapshot`, 4 `irreversible`, 76 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**208 rows / 72 `not_mutating`** - which is the base
+**211 rows / 74 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the merged tree's own measurement, not arithmetic:**
 `ReversibilityContractTest` was run against a build of the merge tip and reports 210 rows over the four
 classes named above (116 + 16 + 4 + 74), and its constant is the telemetry-off/wasm-off base of
-208 / 116 / 16 / 4 / 72. The figures this page carried before this train were lane-local and
+208 / 116 / 16 / 4 / 72. The three rows the auto-mastering group added (feature rows 25 and 72,
+`mastering.run` / `mastering.list_candidates` / `mastering.get_state`) are `+1 true_inverse /
++2 not_mutating`, which is the 213 / 117 / 16 / 4 / 76 above and the 211-row base the test carries.
+The figures this page carried before this train were lane-local and
 incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
 tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
 internally impossible, which is the reason the number on this page is now the merged measurement and
@@ -1054,6 +1057,59 @@ class, and `reversibilityRowTable()` joins them exactly as it joins the folder-t
   disabled), the slave enabled with **no clock arriving** — unlocked, no tempo written, transport not moved, and
   the same again after several audio periods and three follower polls — every typed refusal, the A16 records, and
   both `control.undo` inverses including the slave's honest one.
+
+## Auto-mastering wave 1 — candidate generation and objective scoring, drivable (2026-09-14)
+
+- **The session can be mastered, and the candidates are measured rather than guessed.** `mastering.run`
+  renders the mix **once** (the count is the engine's own, `ProjectRenderer::renderCount`, and comes back as
+  `render_count`), branches every candidate of `MasteringJob::defaultCandidates()` off that one render, writes
+  one wav per candidate into a directory the caller names, and measures each with the merged BS.1770-4 meter:
+  integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against
+  that candidate's target and its loudness and true-peak verdicts. `mastering.list_candidates` publishes the
+  set the candidates are generated from (each target with the document its numbers come from — EBU R 128's
+  published −23 LUFS-I ± 0.5 LU and −1 dBTP, and a −14 LUFS-I streaming *convention* with a ±1.0 LU tolerance
+  this project chose and states), and `mastering.get_state` reads the last run back, hashing the files it
+  wrote. **Nothing ranks the candidates and nothing calls one best.** The design of record is
+  `docs/AUTO-MASTERING.md` (task #610); the engine (`include/MasteringJob.h`, `include/MasteringChain.h`) and
+  its own end-to-end test `MasteringTest` were already in the tree — what this adds is the surface.
+- **The run is a child process, on a serialised copy of the session.** `mastering.run` runs the shipped CLI
+  action (`zene master <project> -o <dir> --report <path>`) exactly as `render.render` and `bounce.in_place`
+  run their renders, for the reason their comments give: an in-process render drives **this** instance's audio
+  engine (`ProjectRenderer::startProcessing` → `audioEngine()->startProcessing()/stopProcessing()`, which owns
+  the device thread) and `Song::startExport` stops playback and re-measures the song. So the **session is not
+  modified** and the running instance's audio path is untouched; the numbers come back through `--report` (the
+  run's own JSON document) rather than from a parse of the printed table.
+- **Reversibility.** `mastering.run` is `true_inverse` through a recorded **action checkpoint** (SPEC A16): the
+  run's outputs are files in a directory **outside** the project, which no Song checkpoint carries and no live
+  object restores, so the recorded step removes every file the run created and writes back every revision the
+  directory already held, byte for byte. Both are captured **before** the first write and bounded at 64 MiB of
+  pre-existing wav files — beyond that the run is **refused**, typed, rather than performed without an inverse.
+  There is **no redo half**, and the record says so: a faithful redo would have to hold the run's own outputs,
+  and `control.redo`'s own contract already documents a one-way action step. The two reads are `not_mutating`.
+- **Proof:** the registered ctest `ControlMasteringCommands` (`tests/control-mastering-commands.py`) drives the
+  **real binary** over `--control-socket`, opening the product's own fixture
+  (`tools/auto-mastering-demo.py make`, the doc's reproduction section): it reads the candidate set off the
+  wire, refuses every junk request typed, runs the master (5 candidates from 1 render — 6 files that match the
+  reported paths), checks every candidate against **its own target's** tolerance and ceiling, reads the run
+  back through `mastering.get_state`, and takes it back **twice over**: after `control.undo` the directory
+  holds no candidate at all (a file that never existed can only be **removed**, not restored), and after a
+  second run replaces the first run's files, `control.undo` restores the replaced revision **byte for byte**
+  (compared by sha256). It also measures the capture bound being enforced. `tests/src/core/MasteringTest.cpp`
+  is extended with the document round trip the surface depends on: the JSON and the job's own reports agree
+  field for field, the document survives the file, and a reading the meter could not make is `null` rather
+  than a fabricated number.
+- **UI absence — one line: auto-mastering is drivable through the socket, not from the interface.** There is no
+  Export-dialog mastering mode, no candidate list panel and no A/B player; `grep -rniI 'Mastering' src/gui/`
+  returns **0** hits. `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds above.
+- **What wave 1 still does NOT have, stated rather than implied:** the wave-1 ENGINE is complete (candidate
+  generation + objective scoring, both drivable now); what is **not built** is the *decision* half the
+  feasibility study's step 5 names — **no pick-log**, so no record of which candidate a user chose, and
+  therefore **no learned ranker** (wave 3 is gated on real pick-logs, which do not exist yet); **no
+  reference-matching arm** (matching a candidate to a reference track); **no level-matched A/B**, so nothing
+  presents the candidates as comparable by ear (they differ in loudness by design — that is the target axis);
+  and the CLI's own bounds hold through the socket too — **wav only**, no per-candidate parallelism, and
+  renders in this tree are **not bit-reproducible** run to run, so two runs of the same master are equal only
+  to the meter's tolerance (≤ 0.05 LU / 0.01 dB), never byte for byte.
 
 ## Not in this draft yet
 

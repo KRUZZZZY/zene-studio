@@ -72,6 +72,13 @@ namespace
  *
  * Split out of the test slot so the slot's own complexity does not carry the four
  * option combinations (the complexity ratchet counts them).
+ *
+ * THE AUTO-MASTERING GROUP (feature rows 25 and 72, docs/AUTO-MASTERING.md) added
+ * THREE rows to the base: `mastering.run` is `true_inverse` through a recorded
+ * action checkpoint (the run's outputs are files in a directory outside the
+ * project, so no Song checkpoint carries them) and `mastering.list_candidates` /
+ * `mastering.get_state` are `not_mutating` inspectors - `+1 true_inverse /
+ * +2 not_mutating`, which is the 211 / 117 / 16 / 4 / 74 below.
  */
 struct DocumentedHistogram
 {
@@ -84,7 +91,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{208, 116, 16, 4, 72};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{211, 117, 16, 4, 74};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

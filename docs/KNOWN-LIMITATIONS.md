@@ -772,3 +772,23 @@ and a `<dc:rights>` stating they contain no third-party artwork, and all 34 gene
 **The upstream artwork sentence that used to sit here is deleted, not softened** — it read "the plugin logo's
 artwork is currently the upstream artwork, which is CC0-licensed and credited", which was true at the
 release-prep base and is false at this one.
+
+**Auto-mastering (wave 1) is drivable, and it does not rank anything.** `mastering.run` renders the open
+session **once** and writes N measured candidates into a directory the caller names (`mastering.list_candidates`
+publishes the set the candidates are generated from, `mastering.get_state` reads the last run back); it **does
+not rank them and does not claim a best**, because no validated preference scorer exists for master variants of
+one song. Candidate verdicts are against named, cited targets — EBU R 128 with its published ±0.5 LU, and a
+−14 LUFS-I streaming **convention** with a tolerance this project chose and states. The run is a **child
+process on a serialised copy of the session**, so the session is not modified and the running instance's audio
+path is untouched — but that also means the candidate files themselves are the only artefact, `control.undo`
+takes them back by **removing what the run created** and writing back the revisions the directory already held
+(bounded at 64 MiB of pre-existing wav files; beyond that the run is **refused** rather than performed without
+an inverse), and **there is no redo half**: `control.redo` cannot re-create a candidate set, only a re-issue of
+`mastering.run` can. Renders in this tree are **not bit-reproducible** run to run, so two runs of the same
+master are equal only to the meter's tolerance (≤ 0.05 LU / 0.01 dB), never byte for byte; within **one** run
+all candidates branch off the same render, so their metrics ARE comparable with each other. **`wav` only**, no
+per-candidate parallelism, no reference-matching arm, **no level-matched A/B** (the candidates differ in
+loudness by design, which is the target axis) and **no pick-log** — which is exactly why the learned ranker
+(wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
+drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
+mastering mode, no candidate list panel and no A/B player.
