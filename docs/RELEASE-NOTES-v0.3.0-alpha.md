@@ -340,8 +340,52 @@ that marker is published as-is, and no unverified claim is published without one
 - **Stated limits.** A groove's resolution is the slot, so several notes in one slot are described
   by their mean; there is no swing-percentage template generator (`groove.set` writers or
   `groove.extract` only); a groove moves MIDI notes, so a sample clip is refused typed; and a groove
-  is applied once and the notes are ordinary notes afterwards — nothing on the audio path reads a
-  template.
+ is applied once and the notes are ordinary notes afterwards — nothing on the audio path reads a
+ template.
+
+ ## Plugin chains as reusable presets (WAVE-1 / OWNER-31 item 2) — added 2026-09-13
+
+ - **A track's effect chain can be captured as a named preset and applied to another track, in another
+ project.** `chain.save` captures the target's chain — the ordered device list plus **each device's
+ own state document** (`plugin.state_save`'s document, so enabled, wet, autoquit and every parameter
+ travel with it) — into ONE file in the user preset tree
+ (`<userPresets>/chainpresets/<name>.zcp`). `chain.list` and `chain.get_state` read the store back
+ (each preset's name, path, device count and, per device, its own identity plus the size and SHA-256
+ of its state document); `chain.apply` replaces a target's chain with the preset's devices **in the
+ preset's order**, each device restored through `plugin.state_load`'s own path, which refuses a
+ document written for a different device; `chain.rename` and `chain.remove` edit the store. A chain
+ preset is **not** a rack chain: `rack.add_chain` adds one more parallel signal path inside one
+ channel's rack (`docs/RACKS.md`), while a chain preset is a copy of a chain's devices and settings
+ that can be applied anywhere, later.
+ - **The store is outside the project, deliberately.** A preset exists to be reused, and reuse means
+ another track in another project: the store is the product's own user preset root, so it survives
+ `project.save` / `project.open` by construction (it is not in the document at all) and it is the
+ **same** store under every project. `docs/KNOWN-LIMITATIONS.md` states that it is per-user rather
+ than per-project, and what that costs.
+ - **Control surface:** the `chain.*` group — `chain.list`, `chain.get_state`, `chain.save`,
+ `chain.apply`, `chain.rename`, `chain.remove` — with argument/result schemas and A16 reversibility
+ metadata. All four writers are `true_inverse` through a recorded **action checkpoint**, each undoing
+ its own operation: `chain.apply`'s writes the chain's own `<fxchain>` XML back
+ (`EffectChain::saveSettings` captured before the write, `EffectChain::loadSettings` — the project
+ loader's own path — on the way back), `chain.save`'s removes the file it created or writes the
+ revision it replaced back, `chain.rename`'s renames the file back and `chain.remove`'s writes the
+ removed bytes back. A target chain too large for the bounded snapshot is **refused** by
+ `chain.apply` rather than replaced without an inverse. Every refusal is typed and happens before the
+ checkpoint, so a refused call writes nothing.
+ - **Proof:** the registered ctests `ControlChainPresetTest` (the six contract rows, the document's
+ identity and name rules) and `ControlChainPresets` (`tests/control-chain-presets.py`), which starts
+ the real binary over `--control-socket` and asserts a REAL effect off the wire: the ordered device
+ list and the parameter values read back through `dsp.get_state` after an apply to a second track,
+ the same values again after a real `project.save` → `project.open` round trip, and every inverse
+ through `control.undo`.
+ - **UI absence — one line: plugin-chain presets are drivable through the socket, not from the
+ interface.** There is no chain-preset list, no "save chain as preset" action and no apply control;
+ nothing in `src/gui/` creates, shows, edits or applies a chain preset.
+ `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
+ - **Stated limits.** A preset carries effects only — not the track's instrument, not its mixer
+ routing and not the rack's parallel chains; a preset naming a device this build cannot load is
+ refused typed and the target's chain is left untouched; and the store is a per-user directory, so a
+ preset is not carried inside a project file, not shared with one and not versioned with it.
 
 ## The A16 contract table, and its histogram
 
@@ -560,6 +604,12 @@ back, which it does not - see the row's own text in
   the merged tip (freeze + groove + the MCP lane + punch/recording crash recovery together): **164 ids
   registered, 164 exposed live, 164 exposed offline** (166 tools with the two bridge-owned ones), **0 missing
   and 0 extra** in both directions in all three modes — live, empty state directory, and with the stale cache planted and passed over.
+  **The chain-preset group adds six ids to that figure:** the snapshot is regenerated
+  from a live instance of the `030-chain-presets` tip at **170 ids** (`chain.save`,
+  `chain.list`, `chain.apply`, `chain.rename`, `chain.remove`, `chain.get_state`), and
+  `ControlCommandsSnapshot` passes against it. Like every figure in this section it is a
+  measurement of ONE tip, so the parent re-measures it at the final merged tip — a
+  command-group merge that lands after this one moves the number again.
 - **UI absence — one line:** none of this is in the interface; the tool list exists only through the MCP
   bridge over a control socket. **And the limit, stated plainly:** a Hermes session reads the bridge from the
   registration in `~/.hermes/config.yaml`, which points at a scratch copy outside this repository; until that

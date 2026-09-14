@@ -64,6 +64,13 @@ set(LMMS_TESTS
 	# refusals the agent-surface sweep needs, and the A16 undo proof - a tag's
 	# inverse is the paired COMMAND, so control.undo dispatches it.
 	src/core/ControlBrowserCommandsTest.cpp
+	# The chain-preset group (the 0.3.0 ladder's "plugin-chain presets", OWNER-31
+	# item 2): the six ids and their schemas, the six contract rows, the store's
+	# name rule and location, and the MEASURED effect of an apply - the second
+	# track's device order and parameter values read back through dsp.get_state.
+	# The socket proof of the same claim is the registered ctest
+	# ControlChainPresets (tests/control-chain-presets.py).
+	src/core/ControlChainPresetTest.cpp
 	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	# The session-sync surface (D11 "Ableton Link sync"): the five link.*
@@ -271,7 +278,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
-		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest")
+		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -1503,6 +1511,27 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Plugin chains as reusable presets (the 0.3.0 ladder's "plugin-chain
+	# presets", OWNER-31 item 2), which is the release contract's section 3.1
+	# claim for it, end to end through --control-socket: it starts the real
+	# binary, captures a two-device chain from one track as a named preset,
+	# applies that preset to a SECOND track, and reads the ordered device list
+	# and every parameter value back off the wire through dsp.get_state - so a
+	# command that answered ok without applying anything fails here. It then
+	# takes the applied chain through a real project.save -> project.open round
+	# trip, proves the preset store survives it (it is NOT project state, which
+	# is what makes a preset usable in another project), and reverses the apply,
+	# the rename and the remove through control.undo. No fixture file: it builds
+	# its own tracks and devices through track.add / plugin.load, which is what
+	# an agent has. The store it writes lives in the instance's own temp HOME.
+	add_test(NAME ControlChainPresets
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-chain-presets.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlChainPresets PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# Session sync, two real instances (D11 "Ableton Link sync", the
 	# two-instance proof the brief names): both join one session and one drives
 	# the other's tempo and beat phase with no relay between them, through
@@ -1646,6 +1675,11 @@ set_tests_properties(ControlLinkCommandsTest PROPERTIES
 # Engine and drives project-free commands through the registry. Neither opens a
 # window, both want a real Qt platform plugin.
 set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The chain-preset group constructs a full Engine and drives real devices through
+# the registry (plugin.load, plugin.param_set, chain.save/apply), so it wants a
+# real Qt platform plugin even though nothing opens a window.
+set_tests_properties(ControlChainPresetTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The transport.tempo_map_* group constructs a full Engine and drives the map
 # through the registry (and the engine's undo stack), so it needs a Qt platform

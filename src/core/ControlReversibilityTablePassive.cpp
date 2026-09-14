@@ -425,6 +425,27 @@ const ReversibilityRow kPassiveRows[] = {
 		"no write: clock.master_set and clock.slave_set are the group's writers "
 		"and each carries a recorded action checkpoint", ""),
 
+
+	// The chain-preset store's two read-only inspectors (the 0.3.0 ladder's
+	// "plugin-chain presets", OWNER-31 item 2). Its four writers are
+	// action-checkpoint rows in ControlReversibilityTableAction.cpp: the
+	// store is a FILE tree outside the project, so nothing in it is a live
+	// JournallingObject a checkpoint could restore.
+	R("chain.list", RC::NotMutating, false,
+		"reads the preset store: every *.zcp document in the user preset tree's "
+		"chainpresets/ directory, each parsed for its device count and its device "
+		"identities, and with 'name' one preset in full. It creates no directory, "
+		"opens no device and writes nothing",
+		"no write: the store is read with QDir/QFileInfo and each document is "
+		"parsed for its own identity attributes. A store that does not exist yet "
+		"is an empty list, which is the state before chain.save runs once", ""),
+	R("chain.get_state", RC::NotMutating, false,
+		"reads ONE stored chain preset: its devices in order, each device's own "
+		"identity (the LV2 URI, the LADSPA file and label, or the built-in name), "
+		"the format, and the size and SHA-256 of the device's state document",
+		"no write: the state documents themselves are not even returned - the "
+		"command reports their size and hash, and chain.apply is what writes a "
+		"device's settings back", ""),
 };
 
 constexpr int kPassiveRowCount = static_cast<int>(sizeof(kPassiveRows) / sizeof(kPassiveRows[0]));

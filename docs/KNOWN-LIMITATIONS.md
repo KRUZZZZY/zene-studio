@@ -512,6 +512,21 @@ that is this page's fault — report it and it gets added.
   applied once rather than played live, and a re-quantise with no humanise puts the positions back on
   the grid but restores no velocity — a humanised take is reversed with `control.undo`, not by
   re-quantising).
+
+- **Plugin-chain presets have no interface, and their store is per-user rather than per-project — added
+  2026-09-13.** A track's effect chain (its ordered devices together with each device's own settings)
+  can be captured as a named preset and applied to another track, drivable through `--control-socket`
+  (`chain.list`, `chain.get_state`, `chain.save`, `chain.apply`, `chain.rename`, `chain.remove`), with a
+  registered ctest driving the real binary over the socket and asserting the applied device order and
+  parameter values — but **nothing in `src/gui/` creates, shows, edits or applies a chain preset**:
+  there is no preset list, no "save chain as preset" action and no apply control. Plugin-chain presets
+  are drivable through the socket, not from the interface. The store is also **per-user, not
+  per-project**: it lives in the user preset tree (`<userPresets>/chainpresets/`, one `.zcp` document per
+  preset), which is exactly what makes a preset usable in another project — and what means a preset is
+  not carried inside a project file, not shared with one and not versioned with it, so two machines with
+  the same project can hold different presets. A preset carries effects only: the track's instrument and
+  the rack's parallel chains (`rack.*`) are not part of it, and a preset naming a device this build
+  cannot load is refused, typed, with the target's chain left untouched.
 - **Punch in/out is the region and its gate, and there is no interface for it — added 2026-09-13.**
   A punch region (a tick range that capture is gated to, plus an arm flag) lives on the transport, is written
   with the project and survives a save/load — drivable through `--control-socket` (`transport.punch_set`,

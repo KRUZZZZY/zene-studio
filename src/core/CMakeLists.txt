@@ -185,6 +185,13 @@ set(LMMS_SRCS
 	core/ControlDeviceHosted.cpp
 	core/ControlDeviceState.cpp
 	core/ControlDeviceSupport.cpp
+	# The chain PRESET store and the chain.* group (the 0.3.0 ladder's
+	# "plugin-chain presets", OWNER-31 item 2): the store, its read/capture half
+	# and its edit half. A chain preset is NOT a rack chain - see
+	# control/ControlCommandsChain.cpp.
+	core/ControlChainPresetSupport.cpp
+	core/ControlCommandsChain.cpp
+	core/ControlCommandsChainEdit.cpp
 	core/ControlEditSupport.cpp
 	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
