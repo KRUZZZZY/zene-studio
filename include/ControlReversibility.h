@@ -135,6 +135,12 @@ LMMS_EXPORT const ReversibilityRow* reversibilityTrackFolderRowTable(int* rowCou
 LMMS_EXPORT const ReversibilityRow* reversibilityChainRowTable(int* rowCount);
 //! The second block: the snapshot rows.
 LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount);
+/*! The routing surface's rows: the pdc / routing / bus / port groups (feature
+ * rows 27-29) and the mixer group's routing verbs. A GROUP's rows, whatever their
+ * class - the class comes from each row, not from the file, exactly as
+ * reversibilityTrackFolderRowTable's do. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityRoutingRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

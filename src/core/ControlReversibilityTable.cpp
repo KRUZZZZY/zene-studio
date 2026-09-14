@@ -482,9 +482,12 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		const ReversibilityRow* actionRows = reversibilityActionRowTable(&actionCount);
 		int folderCount = 0;
 		const ReversibilityRow* folderRows = reversibilityTrackFolderRowTable(&folderCount);
+		int routingCount = 0;
+		const ReversibilityRow* routingRows = reversibilityRoutingRowTable(&routingCount);
 		std::vector<ReversibilityRow> all(kRows, kRows + kRowCount);
 		all.insert(all.end(), actionRows, actionRows + actionCount);
 		all.insert(all.end(), folderRows, folderRows + folderCount);
+		all.insert(all.end(), routingRows, routingRows + routingCount);
 		return all;
 	}();
 	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }

@@ -387,13 +387,87 @@ that marker is published as-is, and no unverified claim is published without one
  refused typed and the target's chain is left untouched; and the store is a per-user directory, so a
  preset is not carried inside a project file, not shared with one and not versioned with it.
 
+## Routing: PDC, the routing graph, buses and audio ports (`pdc.*`, `routing.*`, `bus.*`, `port.*`, and the mixer routing verbs) — added 2026-09-14
+
+- **The latency graph the mixer runs is now readable. `pdc.report` answers the whole PDC picture in one call:**
+  the total latency from a source entering the mixer to the master output (`Mixer::totalLatencyFrames()`), the
+  delay line's own capacity and whether the total is clamped to it, every channel with its alignment point
+  (`Mixer::channelInputLatency`) and the latency its own effect chain adds (`EffectChain::latencyFrames`),
+  every regular send with the compensation the mixer applies at it, the direct track inputs the PDC graph
+  reads (`AudioBusHandle::latencyFrames`), and **whether sidechain routing exists** — it does, with every
+  sidechain send's tap point and deferred flag listed. Feature row 27 recorded that latency compensation was
+  "neither readable nor settable through the socket"; it is readable now, and it is deliberately **not**
+  settable: `Mixer::updateLatencyCompensation()` recomputes each edge's delay from the topology once per
+  period, so a command that wrote one would be overwritten by the next period. What changes PDC is the
+  topology, and that is settable.
+- **The mixer's routing verbs exist at last.** `mixer.route_to` writes a channel's output path at unity,
+  `mixer.send_to` writes an auxiliary send with an amount, `mixer.sidechain_to` writes a sidechain send with
+  a tap point (`post_fader`, `pre_fx`, `pre_fader`, `post_fader_no_gain`), and `mixer.route_remove` removes
+  either kind. `ableton-gap/AGENT-TOOLING.md` §7 names `route_to` and `send_to` as part of this release's
+  mixer surface and the 0.3.0 tip registered neither. The engine's own rules are the refusals and the
+  defaults: a send **into a bus** comes back pre-fader without being asked (`Mixer::createChannelSend`), a
+  route that would close a **feedback path** is refused by `Mixer::isInfiniteLoop` before anything is
+  written, a channel cannot route to itself, and a sidechain route that would close a cycle of sidechain
+  sends alone is refused outright by `Mixer::createSidechainSend`.
+- **The routing graph is an inspector, and this is the honest half of row 28.** `routing.get_state` reports
+  the graph a target's signal is actually processed through — the `RoutingGraph`'s nodes with the engine's own
+  type names (`chain_input`, `effect`, `constant`, `onepole_lowpass`, `gain`, `sink`), their arity, the
+  connections, the cached topological processing order the audio thread walks, the output node, whether the
+  chain renders through the graph at all (`EffectChain::routesThroughGraph`), and, for a mixer channel, its
+  rack's graph (`Rack::routingGraph`). **No command edits a graph**, and that is a recorded decision rather
+  than a gap left open: `include/RoutingGraph.h`'s threading contract says topology edits must not run
+  concurrently with `process()` and names the atomic plan swap it deliberately does not implement, and a
+  chain's graph is derived — `EffectChain::rebuildRoutingGraph()` re-wires it from the effect list on every
+  change, so a hand-wired edge would be discarded by the next `plugin.load`. The patcher GUI is out of scope
+  for this release, exactly as row 28 records.
+- **Buses are topology state with the engine's own semantics.** `bus.create` makes a parallel bus
+  (`Mixer::createBusChannel`), `bus.list` reports every bus with its fader, sends and PDC numbers, and
+  `bus.remove` deletes one — refusing a channel that is not a bus and naming `mixer.remove_channel` for it. A
+  bus never receives instrument output and its incoming sends default to pre-fader, which is why the group
+  carries no `bus.set_*`: a bus **is** a mixer channel, so its fader and its routing are `mixer.set_volume`
+  and the routing verbs.
+- **The audio-ports pin matrix is drivable.** `port.get_state` reports a device's `AudioPortsModel` — the
+  input and output matrices with their channel counts, channel names and every enabled pin, plus the engine's
+  own used-track-channel / used-channel caches and whether the direct-routing optimisation is available —
+  and `port.set_pin` writes one pin through the **same call the PinConnector view makes**
+  (`AudioPortsModel::Matrix::setPin`), validating the direction and both indexes before anything moves. The
+  model is reached through the const accessor and written through a `const_cast`, which is the engine's own
+  idiom for this object: `AudioPortsModel::instantiateView()` does exactly that to hand a mutable model to its
+  editor.
+- **Proof.** `tests/control-pdc-commands.py` (`ControlPdcCommands`), `tests/control-routing-commands.py`
+  (`ControlRoutingCommands`), `tests/control-bus-commands.py` (`ControlBusCommands`) and
+  `tests/control-ports-commands.py` (`ControlPortsCommands`) each start the real binary under
+  `QT_QPA_PLATFORM=offscreen` and drive it over `--control-socket` through the shared
+  `control_socket_harness`. The routing transcript measures a real graph — one loaded effect is exactly two
+  nodes, one connection `0 -> 1`, output node 1 and processing order `(0, 1)`; a second effect makes it three
+  — and the bus transcript measures **both** A16 answers: `bus.create` is one undoable step and
+  `bus.remove` makes `control.undo` fail, typed, with the `irreversible` kind. The engine halves stay where
+  they were: `tests/src/core/PdcMixerTest.cpp`, `PhaseDSidechainTest.cpp`, `RoutingGraphTest.cpp`,
+  `RoutingGraphLiveTest.cpp`, `AudioPortsTest.cpp`, `AudioPortsModelTest.cpp`, `AudioBusTest.cpp`,
+  `AudioBusHandleTest.cpp` and `PluginAudioPortsTest.cpp` are all still registered.
+- **Stated bounds.** `pdc.report` publishes **0** for every latency unless a device reports one
+  (`Effect::latencyFrames()` defaults to 0, and in this tree only the WASM effect overrides it), so the
+  arithmetic of a nonzero delay is proven by `PdcMixerTest.cpp`, not by the transcript. `port.set_pin` needs a
+  device that **has** an audio-ports model (`AudioPlugin`-derived: the CLAP and VST3 hosts and the analysers);
+  every built-in effect answers `port.get_state` with a typed `not_found` naming that fact, and
+  `ControlPortsCommands` reports ctest **Skipped** (never Passed) when this build ships no such device and the
+  pin write therefore cannot be measured. `bus.remove` records the bus's full state but is **not reversible**.
+- **UI absence — one line per group:** PDC is drivable through the socket and nothing in the interface shows a
+  latency, a compensation or a per-channel PDC table; the routing graph is drivable through the socket and
+  nothing in the interface draws a patch bay, a cable, a node or a port, and no command edits a graph at all;
+  buses are drivable through the socket and nothing in the interface can add one or draw one differently;
+  audio ports are drivable through the socket and nothing in the interface opens a pin connector.
+  `docs/KNOWN-LIMITATIONS.md` carries the same four sentences.
+
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **185 rows**, measured from the table itself:
-**99 `true_inverse`, 14 `snapshot`, 4 `irreversible`, 68 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **196 rows** on this branch: the base this page measured at the
+merge tip (**185**), plus the routing surface's **11** rows (feature rows 27-29 and the mixer group's routing
+verbs) — measured from the table itself:
+**104 `true_inverse`, 16 `snapshot`, 4 `irreversible`, 72 `not_mutating`** in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**183 rows / 66 `not_mutating`** - which is the base
+**194 rows / 70 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
@@ -451,6 +525,20 @@ The row says exactly that, the transaction reports the tempo the command found, 
 `transport.set_tempo`. Claiming `true_inverse` here would be claiming that one Ctrl+Z puts the tempo
 back, which it does not - see the row's own text in
 `src/core/ControlReversibilityTableSnapshot.cpp`.
+
+The eleven rows the routing-surface lane added are the pdc / routing / bus / port groups (feature rows 27-29)
+and the mixer group's four routing verbs: `pdc.report`, `routing.get_state`, `bus.list` and `port.get_state`
+are `not_mutating` inspectors; `bus.create`, `mixer.route_to`, `mixer.send_to`, `mixer.sidechain_to` and
+`mixer.route_remove` are `true_inverse` **recorded actions** (a created channel has no before-state, and a
+`MixerRoute` / `MixerSidechainRoute` is not a `JournallingObject` — the send lists are not project-journalled
+state — so the recorded step deletes the route it created, or writes the captured amount and pre-fader flag /
+tap point back); `bus.remove` is a `snapshot` with no automatic replay (the class `mixer.remove_channel` has,
+for the same reason: nothing creates a channel WITH state) and `port.set_pin` is a `snapshot` whose inverse
+**is** a command (one pin is one bool in the processor's `<pins>` element, and there is no
+`JournallingObject` behind an `AudioPortsModel`, so the recorded inverse is `port.set_pin` with the previous
+value and `control.undo` dispatches it through `applies: command`) - `+5 true_inverse / +2 snapshot /
++4 not_mutating`. `src/core/ControlReversibilityTableRouting.cpp` holds the rows as one group, whatever their
+class, and `reversibilityRowTable()` joins them exactly as it joins the folder-tracks group's.
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 

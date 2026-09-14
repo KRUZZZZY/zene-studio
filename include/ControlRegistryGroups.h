@@ -165,6 +165,39 @@ LMMS_EXPORT void registerChainReadCommands(ControlRegistry& registry);
 //! chain.apply / chain.rename / chain.remove - the EDIT half, in its own
 //! translation unit (the automation and warp groups' split).
 LMMS_EXPORT void registerChainEditCommands(ControlRegistry& registry);
+/*! The mixer group's ROUTING verbs - mixer.route_to / mixer.send_to /
+ * mixer.sidechain_to / mixer.route_remove - in their own translation unit. They
+ * are part of the mixer group (the ids keep the `mixer.` prefix); the file
+ * is separate because ControlCommandsMixer.cpp is near gate 7's file-length cap,
+ * the automation and warp groups' split. ableton-gap/AGENT-TOOLING.md:186 names
+ * route_to / send_to as part of this release's mixer surface, and the sidechain
+ * half of feature row 27 ("PDC and sidechain") is here.
+ */
+LMMS_EXPORT void registerMixerRouteCommands(ControlRegistry& registry);
+/*! pdc.report - the plugin-delay-compensation read (feature row 27, "PDC and
+ * sidechain"): the mixer's published total latency, every channel's alignment
+ * point and chain latency, the compensation applied at every send, and whether
+ * sidechain routing exists. Read-only by design: the compensation is recomputed
+ * by Mixer::updateLatencyCompensation() every period, so no command sets it.
+ */
+LMMS_EXPORT void registerPdcCommands(ControlRegistry& registry);
+/*! routing.get_state - the routing-graph read (feature row 28): the graph a
+ * target's signal is processed through, its nodes, connections and cached
+ * processing order, plus a mixer channel's rack graph. An inspector: the engine's
+ * threading contract forbids live topology edits (include/RoutingGraph.h).
+ */
+LMMS_EXPORT void registerRoutingCommands(ControlRegistry& registry);
+/*! bus.list / bus.create / bus.remove - the parallel-bus topology (feature row
+ * 29, "Audio ports / AudioBus"). A bus is a MixerChannel with is_bus set
+ * (Mixer::createBusChannel, Phase D task #587); its set verbs are the mixer's
+ * own, so this group is only the topology.
+ */
+LMMS_EXPORT void registerBusCommands(ControlRegistry& registry);
+/*! port.get_state / port.set_pin - the audio-ports pin matrix (feature row 29):
+ * the device's AudioPortsModel, its in/out matrices and the pin write the
+ * PinConnector view performs (AudioPortsModel::Matrix::setPin).
+ */
+LMMS_EXPORT void registerPortCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
