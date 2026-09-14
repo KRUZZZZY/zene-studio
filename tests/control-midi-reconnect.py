@@ -213,6 +213,14 @@ def prepare(session, instance, controller):
         skipped("the engine is running the %r MIDI client, not the %r one: no "
                 "external sequencer client can be bound, and nothing can be noticed "
                 "when it goes away" % (running["client"], SEQUENCER), instance)
+    # The engine's port inventory is a ONE-SECOND POLL (MidiAlsaSeq::updatePortList),
+    # and a project's <midiport inports> is resolved against that list when the
+    # project loads: a binding written for a port the client has not listed yet
+    # creates no subscription at all. So the controller has to be IN the list
+    # before the project that binds it is opened.
+    if not flows.wait_for_port(session, controller.full_name, True, flows.POLL):
+        skipped("the engine never listed the external client %r: its port inventory "
+                "did not move" % controller.full_name, instance)
     path = readable_fixture(instance, controller.full_name)
     opened = session.ok("project.open", {"path": path})
     if opened.get("loaded_with_errors"):
@@ -263,6 +271,19 @@ def main():
         bystander.start()
         if not bystander.wait_ready(Problems()):
             skipped("the negative-control client did not start", instance)
+        # A client that only ever holds an ADDRESS. ALSA hands a freed client
+        # number straight back to the next client that opens, so without this the
+        # re-created controller comes back on the SAME address and the run cannot
+        # show what the feature is for (a re-attachment to a NEW one). The holder
+        # takes the freed number first - which is exactly what other clients on a
+        # real machine do - and it is started only once a controller has died.
+        holder = Controller(instance.tmp, "Zene Address Holder", "holder", "holder")
+        controllers.append(holder)
+
+        def hold():
+            if holder.process is None:
+                holder.start()
+                holder.wait_ready(Problems())
 
         running = prepare(session, instance, controller)
         print("")
@@ -286,7 +307,7 @@ def main():
 
         context = {"session": session, "instance": instance, "aconnect": aconnect,
                    "controller": controller, "bystander": bystander,
-                   "restart": restart}
+                   "restart": restart, "hold": hold}
         controller_context = context
         results.append(step("the engine attached to the external client",
                             flows.check_attached, context))

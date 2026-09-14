@@ -199,6 +199,9 @@ def check_loss(context, problems):
                      "the external client exited with %r, expected SIGKILL (-9): the "
                      "device was not actually destroyed" % code)
     context["first_address"] = controller.address
+    # Take the address the dead client freed, so the re-created controller is
+    # forced onto a NEW one (ALSA hands a freed number straight back otherwise).
+    context["hold"]()
 
     entry = wait_for_binding(session, IDENTITY, False, POLL)
     problems.require(entry is not None,

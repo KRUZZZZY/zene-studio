@@ -85,9 +85,12 @@ QString midiPortIdentity( const QString& portName )
 {
 	const int space = identityStart( portName );
 	if ( space < 0 ) { return portName; }
+	// Only a REAL address ("<digits>:<digits>") is stripped. A name that merely
+	// contains a space - a raw client's "Some Raw Port" - is its own identity;
+	// cutting it at the first space would make two such names, and every future
+	// one, a single identity.
+	if ( !addressPattern().match( portName.left( space ) ).hasMatch() ) { return portName; }
 	const QString tail = portName.mid( space + 1 );
-	// A name that is only an address has NO identity. Returning the address
-	// instead would make two such names - and every future one - one identity.
 	return tail.isEmpty() ? portName : tail;
 }
 
@@ -200,24 +203,28 @@ int MidiReconnect::reconcile( const QStringList& readablePorts, const QStringLis
 			continue;
 		}
 
-		if ( target == assignment.name )
+		// Nothing to do ONLY when it is live under the name it already holds.
+		// A LOST assignment is re-established even when the address came back
+		// the same - which the sequencer does whenever the freed number is still
+		// free - because the loss is what dropped the subscription: the engine
+		// port drops a selection whose port left its list
+		// (MidiPort::updateReadablePorts), so "the name is the same again" is
+		// not the same as "the subscription is there again".
+		const bool wasLost = assignment.lost;
+		if ( !wasLost && target == assignment.name )
 		{
-			// Live under the name it already holds - nothing to re-establish.
 			assignment.live = true;
-			assignment.lost = false;
 			continue;
 		}
 
-		// The identity is back at a DIFFERENT address. Re-attach, unless the
-		// mode is off - in which case the loss is recorded and nothing more,
-		// which is the whole content of the switch.
 		if ( !enabled )
 		{
+			// The loss stands, and nothing is re-attached: that is the whole
+			// content of the switch.
 			assignment.live = false;
 			continue;
 		}
 
-		const bool wasLost = assignment.lost;
 		assignment.name = target;
 		assignment.live = true;
 		assignment.lost = false;

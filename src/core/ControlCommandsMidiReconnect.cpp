@@ -26,6 +26,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -73,36 +74,52 @@ QJsonObject portJson(const MidiReconnect& memory, const QString& name, bool read
 	return out;
 }
 
-//! Every live port of one direction, gathered under its client NAME.
+//! Every live port of both directions, gathered under its client NAME.
 /*!
  * The client name is the middle field of "<client>:<port> <name>:<port name>",
  * and it is what a user calls the device. Grouping by it is what makes the
  * device that came back visible as the same client at a new address.
+ *
+ * ONE array, built in one pass over both directions, with the index of each
+ * client name resolved against THIS array - not against a list that outlives
+ * the call. (The first version shared a name list between a readable pass and a
+ * writable pass while the array itself was per call, so the writable pass used
+ * an index from the readable one and wrote past the end of its own array: a
+ * SIGSEGV on every call, caught by the transcript test and confirmed under gdb
+ * at QJsonArray::replace.)
  */
-QJsonArray clientsJson(const MidiReconnect& memory, const QStringList& ports, bool readable,
-	QStringList* groupedNames)
+QJsonArray clientsJson(const MidiReconnect& memory, const QStringList& readable,
+	const QStringList& writable, QJsonArray* ports)
 {
 	QJsonArray clients;
-	for (const QString& name : ports)
+	QHash<QString, int> indexOfClient;
+	for (int direction = 0; direction < 2; ++direction)
 	{
-		const QJsonObject port = portJson(memory, name, readable);
-		const QString client = port.value(QStringLiteral("client")).toString();
-		int at = groupedNames->indexOf(client);
-		if (at < 0)
+		const bool readableDirection = direction == 0;
+		const QStringList& names = readableDirection ? readable : writable;
+		for (const QString& name : names)
 		{
-			groupedNames->append(client);
-			QJsonObject entry;
-			entry.insert(QStringLiteral("name"), client);
-			entry.insert(QStringLiteral("ports"), QJsonArray());
-			clients.append(entry);
-			at = clients.size() - 1;
+			const QJsonObject port = portJson(memory, name, readableDirection);
+			ports->append(port);
+			const QString client = port.value(QStringLiteral("client")).toString();
+			int at = indexOfClient.value(client, -1);
+			if (at < 0)
+			{
+				QJsonObject entry;
+				entry.insert(QStringLiteral("name"), client);
+				entry.insert(QStringLiteral("ports"), QJsonArray());
+				entry.insert(QStringLiteral("port_count"), 0);
+				clients.append(entry);
+				at = clients.size() - 1;
+				indexOfClient.insert(client, at);
+			}
+			QJsonObject entry = clients.at(at).toObject();
+			QJsonArray held = entry.value(QStringLiteral("ports")).toArray();
+			held.append(port);
+			entry.insert(QStringLiteral("ports"), held);
+			entry.insert(QStringLiteral("port_count"), held.size());
+			clients.replace(at, entry);
 		}
-		QJsonObject entry = clients.at(at).toObject();
-		QJsonArray held = entry.value(QStringLiteral("ports")).toArray();
-		held.append(port);
-		entry.insert(QStringLiteral("ports"), held);
-		entry.insert(QStringLiteral("port_count"), held.size());
-		clients.replace(at, entry);
 	}
 	return clients;
 }
@@ -210,21 +227,7 @@ void registerMidiClientsList(ControlRegistry& registry)
 		const QStringList readable = client->readablePorts();
 		const QStringList writable = client->writablePorts();
 		QJsonArray ports;
-		QStringList grouped;
-		for (const QString& name : readable)
-		{
-			ports.append(portJson(*memory, name, true));
-		}
-		QJsonArray clients = clientsJson(*memory, readable, true, &grouped);
-		for (const QString& name : writable)
-		{
-			ports.append(portJson(*memory, name, false));
-		}
-		QJsonArray writableClients = clientsJson(*memory, writable, false, &grouped);
-		for (const QJsonValue& entry : writableClients)
-		{
-			clients.append(entry);
-		}
+		const QJsonArray clients = clientsJson(*memory, readable, writable, &ports);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("client"),

@@ -1737,6 +1737,12 @@ set_tests_properties(ControlTempoMapCommandsTest TempoMapPersistenceTest TempoMa
 # Qt platform plugin even though nothing opens a window.
 set_tests_properties(RetroMidiCaptureCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The engine half of MIDI controller auto-reconnection (0.3.0 row 18) builds a
+# real Engine - a MidiPort is a Model, and a model constructed with no Song
+# crashes in its own constructor - so it needs a Qt platform plugin even though
+# nothing opens a window.
+set_tests_properties(MidiReconnectTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The stable-id tests construct a full Engine and drive project.open/save through
 # the control registry, so they need a Qt platform plugin even though nothing
 # opens a window.

@@ -39,6 +39,8 @@
 #include "MidiReconnect.h"
 #include "TimePos.h"
 
+#include "Engine.h"
+
 using namespace lmms;
 
 namespace
@@ -95,6 +97,16 @@ QString alsaName(int client, int port, const QString& clientName, const QString&
 	return QStringLiteral("%1:%2 %3:%4").arg(client).arg(port).arg(clientName).arg(portName);
 }
 
+//! Deliver the client's readablePortsChanged() to \a port - the step that runs
+//! BEFORE the re-connection on every poll (MidiAlsaSeq::updatePortList() emits,
+//! and only then reconciles), and the step that drops a selection whose port is
+//! no longer in the list. Driven by name because the slot is private to
+//! MidiPort, exactly as the client's signal would drive it.
+void publishPortList(MidiPort& port)
+{
+	QMetaObject::invokeMethod(&port, "updateReadablePorts", Qt::DirectConnection);
+}
+
 const QString kProbe = QStringLiteral("Zene Probe Test:controller");
 
 } // namespace
@@ -105,6 +117,25 @@ class MidiReconnectTest : public QObject
 	Q_OBJECT
 
 private slots:
+
+	//! A real Engine, because a MidiPort is a Model: its AutomatableModels
+	//! register themselves with the running Song (the automation cache), so a
+	//! MidiPort constructed with no Engine at all crashes in the model
+	//! constructor. Nothing here touches the engine's own MIDI client - the
+	//! client and the ports under test are the synthetic ones below - and the
+	//! Engine is destroyed again in cleanupTestCase.
+	void initTestCase()
+	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
+		Engine::init(true);
+	}
+
+	void cleanupTestCase()
+	{
+		Engine::destroy();
+	}
 
 	//! The identity is the NAME half, and it is the SAME for two different
 	//! addresses. This is the whole premise: the number a sequencer client gets
@@ -175,14 +206,19 @@ private slots:
 			MidiPort::Mode::Input);
 		port.subscribeReadablePort(first);
 
+		// The device goes away: the client publishes the changed list (which is
+		// what drops the stale selection from the port's own map - the inports
+		// attribute the project serializes), and only then does the memory see it.
 		client.live().clear();
 		const QStringList empty;
+		publishPortList(port);
 		client.reconnect().reconcile(empty, empty);
 
 		// The same name, a different client number - what a replug produces.
 		const QString second = alsaName(133, 0, QStringLiteral("Zene Probe Test"),
 			QStringLiteral("controller"));
 		client.live() << second;
+		publishPortList(port);
 		QCOMPARE(client.reconnect().reconcile(client.live(), QStringList()), 1);
 		QCOMPARE(client.reconnect().reconnected(), 1);
 		QCOMPARE(client.reconnect().liveCount(), 1);
@@ -206,6 +242,45 @@ private slots:
 		QCOMPARE(client.reconnect().reconcile(client.live(), QStringList()), 0);
 		QCOMPARE(client.subscribeCalls(), calls);
 		QCOMPARE(client.reconnect().reconnected(), 1);
+	}
+
+	//! A LOST assignment is re-established even when the address it comes back at
+	//! is the SAME one. The sequencer hands the freed client number straight back
+	//! whenever it is still free, so "the same name is in the list again" is not
+	//! the same as "the subscription is there again": the loss is what dropped
+	//! it, because MidiPort::updateReadablePorts() drops a selection whose port
+	//! left the list. This is the state a real replug usually produces.
+	void aLostAssignmentComesBackAtTheSameAddressToo()
+	{
+		FakeMidiClient client;
+		const QString first = alsaName(128, 0, QStringLiteral("Zene Probe Test"),
+			QStringLiteral("controller"));
+		client.live() << first;
+		FakeProcessor processor;
+		MidiPort port(QStringLiteral("Default"), &client, &processor, nullptr,
+			MidiPort::Mode::Input);
+		port.subscribeReadablePort(first);
+		publishPortList(port);
+		client.reconnect().reconcile(client.live(), QStringList());
+
+		client.live().clear();
+		const QStringList empty;
+		publishPortList(port);
+		client.reconnect().reconcile(empty, empty);
+		QCOMPARE(client.reconnect().lost(), 1);
+		QVERIFY(!port.readablePorts().value(first, false));
+
+		// The same address, handed straight back.
+		client.live() << first;
+		publishPortList(port);
+		QCOMPARE(client.reconnect().reconcile(client.live(), QStringList()), 1);
+		QCOMPARE(client.subscribeCalls(), 2);
+		QCOMPARE(client.reconnect().reconnected(), 1);
+		QVERIFY(port.readablePorts().value(first, false));
+		const MidiReconnectAssignment* binding = client.reconnect().assignmentOf(&port, true);
+		QVERIFY(binding != nullptr);
+		QVERIFY(binding->live);
+		QVERIFY(!binding->lost);
 	}
 
 	//! The mode OFF is the whole content of the switch: the loss is still
