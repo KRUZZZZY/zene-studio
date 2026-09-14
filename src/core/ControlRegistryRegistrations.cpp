@@ -165,6 +165,13 @@ void registerControlCommands(ControlRegistry& registry)
 	// configuration (reporting no directory there), so the ids are honest either
 	// way and the two writers refuse, typed, when the reporter is not installed.
 	registerCrashReporterCommands(registry);
+	// Auto-mastering, wave 1 (feature rows 25 and 72; docs/AUTO-MASTERING.md):
+	// the read half (the candidate set the engine generates and the last run's
+	// report) and the one writer, which runs the shipped CLI action in a child
+	// process. No compile-time switch: the chain, the job and the BS.1770-4
+	// meter are in every configuration, so its ids are honest in every one.
+	registerMasteringCommands(registry);
+	registerMasteringRunCommands(registry);
 }
 
 } // namespace lmms

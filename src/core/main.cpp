@@ -74,6 +74,7 @@
 #include "ProjectRecovery.h"
 #include "ProjectRenderer.h"
 #include "MasteringJob.h"
+#include "MasteringReport.h"
 #include "RenderManager.h"
 #include "Song.h"
 #include "ScriptConsole.h"
@@ -249,7 +250,12 @@ void printHelp()
 		"          writes wav only\n"
 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
 		"  -a, --float                    Use 32bit float bit depth\n"
-		"  -b, --bitrate <bitrate>        Accepted and ignored by \"master\" (wav)\n\n",
+		"  -b, --bitrate <bitrate>        Accepted and ignored by \"master\" (wav)\n"
+		"      --report <path>            Also write the run's measurements to <path>\n"
+		"          as a JSON document: one row per candidate with its\n"
+		"          LUFS-I, short-term maximum, measured true peak, crest\n"
+		"          and the verdict against its own named target. The\n"
+		"          printed table is unchanged\n\n",
 		LMMS_VERSION, LMMS_PROJECT_COPYRIGHT );
 }
 
@@ -290,44 +296,11 @@ int noInputFileError()
 // Print one line per candidate: the three BS.1770-4 readings the task asks for,
 // the verdict against that candidate's named target, and the file it was written
 // to. Nothing here ranks the candidates or picks one - that is not measured.
-void printMasteringReport( const lmms::MasteringJob& job )
-{
-	const auto& source = job.sourceMetrics();
-	printf( "\nAuto-mastering: %d candidates from %d project render\n",
-		static_cast<int>( job.reports().size() ), job.renderCount() );
-	printf( "one render: %s\n", job.sourceRenderFile().toUtf8().constData() );
-	printf( "%-26s %-10s %8s %8s %8s  %s\n",
-		"candidate", "target", "LUFS-I", "ST-max", "dBTP", "verdict" );
-	printf( "%-26s %-10s %8.2f %8.2f %8.2f  %s\n", "source (no mastering)", "-",
-		source.integratedLufs, source.shortTermMaxLufs, source.truePeakDbtp, "-" );
-
-	for( const auto& report : job.reports() )
-	{
-		QStringList issues;
-		if( !report.lufsPass )
-		{
-			issues << QStringLiteral( "loudness %1 off target" )
-				.arg( report.lufsResidual, 0, 'f', 2 );
-		}
-		if( !report.truePeakPass )
-		{
-			issues << QStringLiteral( "over ceiling" );
-		}
-		if( report.shortTermWarn )
-		{
-			issues << QStringLiteral( "short-term flag" );
-		}
-		const QString verdict = issues.isEmpty() ? QStringLiteral( "pass" )
-			: QStringLiteral( "warn: " ) + issues.join( QStringLiteral( ", " ) );
-		printf( "%-26s %-10s %8.2f %8.2f %8.2f  %s\n",
-			report.name.toUtf8().constData(), report.targetName.toUtf8().constData(),
-			report.metrics.integratedLufs, report.metrics.shortTermMaxLufs,
-			report.metrics.truePeakDbtp, verdict.toUtf8().constData() );
-		printf( "%-26s %s\n", "", report.outputFile.toUtf8().constData() );
-	}
-	printf( "\nNo candidate is preferred: the readings above are the measurements, "
-		"the choice is the user's.\n" );
-}
+//
+// The printer itself MOVED to src/core/MasteringReport.cpp (printMasteringReport),
+// beside the JSON document this action can write with --report: the two shapes of
+// one report live in one translation unit, and this inherited file's line ratchet
+// is not grown by a second copy. Behaviour is unchanged.
 
 
 int main( int argc, char * * argv )
@@ -343,6 +316,10 @@ int main( int argc, char * * argv )
 	bool renderStems = false;
 	int stemTailBars = 1;
 	bool mastering = false;
+	// The machine-readable half of `master`: the JSON document the control
+	// surface's mastering.run reads back from the child process it starts. Empty
+	// unless the caller asks for it, so the CLI's printed output is unchanged.
+	QString masteringReportPath;
 	// One flag for "the user gave -o": the stem export's directory check and the
 	// mastering job's candidate-directory check read the same fact. The two lanes
 	// named it differently (outputSpecified / outputGiven); merge train 3C keeps
@@ -633,6 +610,17 @@ int main( int argc, char * * argv )
 				return usageError( QString( "Invalid tail length %1" ).arg( argv[i] ) );
 			}
 			stemTailBars = bars;
+		}
+		else if( arg == "--report" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No report path specified" );
+			}
+
+			masteringReportPath = QString::fromLocal8Bit( argv[i] );
 		}
 		else if( arg == "--format" || arg == "-f" )
 		{
@@ -981,6 +969,18 @@ int main( int argc, char * * argv )
 			if( job.run( &error ) )
 			{
 				printMasteringReport( job );
+				// The machine-readable half of this action, when the caller asked
+				// for it: the control surface's mastering.run reads this document
+				// back instead of parsing the printed table. A run that measured
+				// everything but could not write the report is a FAILURE, not a
+				// silent success - the caller that asked for a file did not get
+				// one.
+				if( !masteringReportPath.isEmpty() &&
+						!writeMasteringReport( job, masteringReportPath, &error ) )
+				{
+					fprintf( stderr, "master: %s\n", error.toUtf8().constData() );
+					headlessExitCode = EXIT_FAILURE;
+				}
 			}
 			else
 			{

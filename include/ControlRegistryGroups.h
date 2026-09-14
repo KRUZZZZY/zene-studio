@@ -262,6 +262,27 @@ LMMS_EXPORT void registerPluginScanEditCommands(ControlRegistry& registry);
  * network code at all (the automation.mode_set shape).
  */
 LMMS_EXPORT void registerCrashReporterCommands(ControlRegistry& registry);
+/*! The `mastering.*` group's READ half - mastering.list_candidates (the candidate
+ * set auto-mastering wave 1 generates: MasteringJob::defaultCandidates, with each
+ * candidate's named target, the standard its numbers come from, the dynamics
+ * stage and the chain settings implied) and mastering.get_state (the last run's
+ * own report plus the live, hashed state of the files it wrote).
+ *
+ * Feature rows 25 and 72 of docs/FEATURE-LIST-0.3.0.md; the engine
+ * (src/core/MasteringJob.cpp, src/core/MasteringChain.cpp) is in the tree and
+ * proven by the registered ctest MasteringTest. No compile-time switch: the
+ * chain, the job and the meter are in every configuration.
+ */
+LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
+/*! mastering.run - the group's one WRITING verb, in its own translation unit (the
+ * automation, warp, vca and chain-preset groups' read/edit split): one project
+ * render in a child process feeds every candidate, each candidate is written as a
+ * wav and measured against its own named target, and the files it creates are
+ * taken back by a recorded ACTION checkpoint (SPEC A16). It ranks nothing: there
+ * is no validated preference scorer for master variants of one song, which is why
+ * the choice is the user's (docs/AUTO-MASTERING.md section 8).
+ */
+LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

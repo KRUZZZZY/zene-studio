@@ -1733,6 +1733,29 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		RUN_SERIAL TRUE
 		SKIP_RETURN_CODE 77
 	)
+	# Auto-mastering wave 1 (feature rows 25 and 72 of docs/FEATURE-LIST-0.3.0.md;
+	# docs/AUTO-MASTERING.md, task #610), which is the release contract's section
+	# 3.1 claim for the `mastering.*` group: it starts the real binary, opens the
+	# product's OWN fixture (tools/auto-mastering-demo.py, the generator the doc's
+	# reproduction section names), masters the session with one project render and
+	# five measured candidates, reads every candidate's LUFS-I / true peak / verdict
+	# off the wire, and takes the run back twice over - control.undo after a first
+	# run leaves the directory empty (the REMOVAL half: a file that never existed
+	# cannot be restored), and after a re-run it restores the replaced revision
+	# byte for byte, compared by sha256. It also measures the two typed refusals
+	# that matter: out_dir must be absolute (junk args write nothing) and a
+	# directory holding more than the 64 MiB capture bound is REFUSED rather than
+	# performed without an inverse. It reports ctest *Skipped* (exit 77) - never
+	# *Passed* - when the tree has no fixture generator to run.
+	add_test(NAME ControlMasteringCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMasteringCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
 else()
 	message(STATUS "python3 not found: ControlSocketIntegration is not registered")
 endif()

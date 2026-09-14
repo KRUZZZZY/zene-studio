@@ -34,6 +34,9 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 #include <cmath>
@@ -44,6 +47,7 @@
 #include "Engine.h"
 #include "MasteringChain.h"
 #include "MasteringJob.h"
+#include "MasteringReport.h"
 #include "OutputSettings.h"
 #include "ProjectRenderer.h"
 #include "RenderManager.h"
@@ -56,6 +60,45 @@ using namespace lmms::masteringtest;
 
 namespace
 {
+
+//! True when one row of the report document carries the report's own identity,
+//! target and verdicts. Compared field by field rather than by whole object, so
+//! a failure names the field that moved.
+bool rowFieldsMatch(const QJsonObject& row, const MasteringCandidateReport& report)
+{
+	if (row.value(QStringLiteral("name")).toString() != report.name) { return false; }
+	if (row.value(QStringLiteral("file")).toString() != report.outputFile) { return false; }
+	if (row.value(QStringLiteral("target")).toObject().value(QStringLiteral("name")).toString()
+			!= report.targetName)
+	{
+		return false;
+	}
+	if (row.value(QStringLiteral("loudness_pass")).toBool() != report.lufsPass) { return false; }
+	if (row.value(QStringLiteral("true_peak_pass")).toBool() != report.truePeakPass) { return false; }
+	return row.value(QStringLiteral("short_term_flag")).toBool() == report.shortTermWarn;
+}
+
+//! True when the row's four readings are the report's four readings.
+bool rowReadingsMatch(const QJsonObject& row, const MasteringCandidateReport& report)
+{
+	const QJsonObject metrics = row.value(QStringLiteral("metrics")).toObject();
+	const auto near = [](double written, float measured) {
+		return std::fabs(written - static_cast<double>(measured)) <= 1e-4;
+	};
+	return near(metrics.value(QStringLiteral("lufs_i")).toDouble(), report.metrics.integratedLufs)
+		&& near(metrics.value(QStringLiteral("true_peak_dbtp")).toDouble(),
+			report.metrics.truePeakDbtp)
+		&& near(metrics.value(QStringLiteral("short_term_max_lufs")).toDouble(),
+			report.metrics.shortTermMaxLufs)
+		&& near(metrics.value(QStringLiteral("crest_factor_db")).toDouble(),
+			report.metrics.crestFactorDb);
+}
+
+//! True when one document row is the run's own row, in every field.
+bool reportRowMatches(const QJsonObject& row, const MasteringCandidateReport& report)
+{
+	return rowFieldsMatch(row, report) && rowReadingsMatch(row, report);
+}
 
 //! The candidate set with two settings-identical twins: the control for the
 //! distinction test. Identical settings must measure identically - a candidate
@@ -317,6 +360,72 @@ private slots:
 
 		QVERIFY2(afterDb <= 0.5, "the ordinary render's level moved after a mastering job");
 		QVERIFY2(floorDb <= 0.5, "the ordinary render is not stable enough to compare");
+	}
+
+	//! The report document the SURFACE reads is this run's own numbers.
+	//!
+	//! `mastering.run` reads the document a child process writes (`zene master
+	//! ... --report <path>`), so the JSON and the job's own reports must agree
+	//! field for field: a writer that dropped a field or rounded one would make
+	//! the socket's answer a different answer from the engine's, and no other test
+	//! in this tree would notice. The four readings, the target each candidate was
+	//! graded against, the two verdicts and the two counted facts are all compared
+	//! against the run itself - never against a second copy of the numbers.
+	void theReportDocumentIsTheRunItself()
+	{
+		MasteringJob job(m_outputSettings, ProjectRenderer::ExportFileFormat::Wave,
+			m_dir.filePath(QStringLiteral("report")), MasteringJob::defaultCandidates());
+		QString error;
+		QVERIFY2(job.run(&error), qPrintable(error));
+
+		const QJsonObject document = masteringRunReportJson(job);
+		QCOMPARE(document.value(QStringLiteral("candidate_count")).toInt(), job.reports().size());
+		QCOMPARE(document.value(QStringLiteral("render_count")).toInt(), job.renderCount());
+		QCOMPARE(document.value(QStringLiteral("render_count")).toInt(), 1);
+		QCOMPARE(document.value(QStringLiteral("sample_rate")).toInt(),
+			static_cast<int>(job.sampleRate()));
+		QCOMPARE(document.value(QStringLiteral("source_render_file")).toString(),
+			job.sourceRenderFile());
+
+		const QJsonArray rows = document.value(QStringLiteral("candidates")).toArray();
+		QCOMPARE(rows.size(), job.reports().size());
+		QStringList mismatched;
+		for (int i = 0; i < rows.size(); ++i)
+		{
+			if (!reportRowMatches(rows.at(i).toObject(), job.reports().at(i)))
+			{
+				mismatched << job.reports().at(i).name;
+			}
+		}
+		QVERIFY2(mismatched.isEmpty(),
+			qPrintable(QStringLiteral("the document's rows are not the run's rows: %1")
+				.arg(mismatched.join(QStringLiteral(", ")))));
+
+		// The file round trip the surface depends on: the CLI writes the document
+		// with --report and mastering.run reads it back with QJsonDocument. What
+		// comes back must be the document that was written.
+		const QString path = m_dir.filePath(QStringLiteral("run-report.json"));
+		QVERIFY2(writeMasteringReport(job, path, &error), qPrintable(error));
+		QFile file(path);
+		QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.errorString()));
+		const QJsonDocument parsed = QJsonDocument::fromJson(file.readAll());
+		QVERIFY(parsed.isObject());
+		QCOMPARE(parsed.object(), document);
+
+		// A reading the meter could not make is NULL in the document, never a
+		// fabricated number: silence has no gated loudness and no measured peak.
+		const std::vector<SampleFrame> silence(static_cast<std::size_t>(44100),
+			SampleFrame(0.0f, 0.0f));
+		const QJsonObject silent = masteringMetricsJson(MasteringChain::measure(silence, 44100));
+		std::printf("MASTERING_EVIDENCE report document: %d rows, render_count %d, "
+			"silence lufs_is_null %d, true_peak_is_null %d\n",
+			document.value(QStringLiteral("candidate_count")).toInt(),
+			document.value(QStringLiteral("render_count")).toInt(),
+			silent.value(QStringLiteral("lufs_i")).isNull() ? 1 : 0,
+			silent.value(QStringLiteral("true_peak_dbtp")).isNull() ? 1 : 0);
+		std::fflush(stdout);
+		QVERIFY2(silent.value(QStringLiteral("lufs_i")).isNull(),
+			"a loudness the meter could not measure was reported as a number");
 	}
 
 private:
