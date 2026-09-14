@@ -644,18 +644,27 @@ bound in its own description and contract row instead of pretending to a timeout
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **220 rows**, measured from the table itself:
-**116 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 79 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **227 rows**, measured from the table itself:
+**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**218 rows / 77 `not_mutating`** - which is the base
+**225 rows / 80 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **These are the branch's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this tip and reports 220 rows over the four
-classes named above (116 + 18 + 7 + 79), and its constant is the telemetry-off/wasm-off base of
-218 / 116 / 18 / 7 / 77. The figures this page carried before this train were lane-local and
+what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
+`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
+four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
+225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+(`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
+the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
+recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
+reporter's two writers, each with a named fallback - and five `not_mutating` rows: the three scan
+reads, `crash.list_reports` and its refusal `crash.upload_report`) and the auto-mastering
+group's three (`mastering.run`, `true_inverse` through a recorded action checkpoint; the two
+inspectors, `not_mutating`) - `+4 true_inverse / +2 snapshot / +3 irreversible / +8 not_mutating`
+against the base this page carried before the train, 208 / 116 / 16 / 4 / 72. The figures this page
+carried before this train were lane-local and
 incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
 tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
 internally impossible, which is the reason the number on this page is now the merged measurement and
