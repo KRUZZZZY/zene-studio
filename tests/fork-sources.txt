@@ -646,7 +646,6 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
-
 tests/src/tracks/SampleClipWindowTest.cpp
 tools/local-ci.sh
 tools/ncpu-shim.c
