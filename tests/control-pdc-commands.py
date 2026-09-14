@@ -127,6 +127,10 @@ def sidechain_route(report, source, dest):
     return None
 
 
+#: The sidechain route fields the report must carry.
+SIDECHAIN_FIELDS = ("tap_point", "amount", "deferred")
+
+
 def channel_ids(report):
     return tuple(channel.get("id") for channel in channels_of(report))
 
@@ -175,6 +179,10 @@ def check_baseline(session, recorder):
                    "sidechain=%r" % sidechain)
 
 
+#: The route fields the send the mixer built must read back with.
+ROUTE_FIELDS = ("amount", "pre_fader")
+
+
 def check_topology(session, recorder):
     """The report follows the routing: a real send appears with its own numbers."""
     added = add_channels(session, 2)
@@ -185,19 +193,21 @@ def check_topology(session, recorder):
     sent = session.result("mixer.send_to", {"channel": first, "to": second, "amount": 0.5})
     report = session.result("pdc.report")
     route = route_from(report, first, second)
+    # Comparing whole dicts rather than chaining `and`s: one comparison, and the
+    # failure prints the value that disagreed.
+    shown = {field: (route or {}).get(field) for field in ROUTE_FIELDS}
     recorder.check("the send the mixer built is the send pdc.report shows",
-                   sent.get("amount") == 0.5 and route is not None
-                   and route.get("amount") == 0.5 and route.get("pre_fader") is False,
+                   sent.get("amount") == 0.5 and shown == {"amount": 0.5, "pre_fader": False},
                    "sent=%r route=%r" % (sent, route))
     sender = [ch for ch in channels_of(report) if ch.get("id") == first]
     recorder.check("the sender reports the send it owns",
-                   bool(sender) and sender[0].get("send_count") == 1,
+                   [ch.get("send_count") for ch in sender] == [1],
                    "sender=%s" % (sender[:1],))
+    zero_latency = {"total_latency_frames": report.get("total_latency_frames"),
+                    "compensation_frames": (route or {}).get("compensation_frames")}
     recorder.check("a graph whose paths report no latency compensates nothing",
-                   report.get("total_latency_frames") == 0
-                   and (route or {}).get("compensation_frames") == 0,
-                   "total=%r compensation=%r"
-                   % (report.get("total_latency_frames"), (route or {}).get("compensation_frames")))
+                   zero_latency == {"total_latency_frames": 0, "compensation_frames": 0},
+                   "numbers=%r" % (zero_latency,))
     return added
 
 
@@ -212,22 +222,29 @@ def check_sidechain(session, added, recorder):
     report = session.result("pdc.report")
     sidechain = report.get("sidechain") or {}
     route = sidechain_route(report, first, second)
+    dialled = {field: (route or {}).get(field) for field in SIDECHAIN_FIELDS}
     recorder.check("the sidechain send is in the report with its tap point and level",
-                   sidechain.get("count") == 1 and route is not None
-                   and route.get("tap_point") == "pre_fx" and route.get("amount") == 0.25
-                   and route.get("deferred") is False,
+                   sidechain.get("count") == 1
+                   and dialled == {"tap_point": "pre_fx", "amount": 0.25, "deferred": False},
                    "made=%r route=%r sidechain=%r" % (made, route, sidechain))
     receiver = [ch for ch in channels_of(report) if ch.get("id") == second]
     recorder.check("the receiver counts the sidechain route it receives",
-                   bool(receiver) and receiver[0].get("sidechain_receive_count") == 1,
+                   [ch.get("sidechain_receive_count") for ch in receiver] == [1],
                    "receiver=%s" % (receiver[:1],))
+    check_sidechain_undo(session, first, second, recorder)
+
+
+def sidechain_count(session):
+    return (session.result("pdc.report").get("sidechain") or {}).get("count")
+
+
+def check_sidechain_undo(session, first, second, recorder):
+    """One undo takes the sidechain route out of the graph; nothing else moves."""
     undone = session.result("control.undo")
-    after = session.result("pdc.report")
     recorder.check("control.undo takes the sidechain send out of the graph",
-                   undone.get("undone") is True
-                   and ((after.get("sidechain") or {}).get("count")) == 0,
-                   "undone=%r sidechain_after=%r" % (undone.get("undone"),
-                                                     (after.get("sidechain") or {}).get("count")))
+                   undone.get("undone") is True, "undone=%r" % (undone.get("undone"),))
+    recorder.check("the graph holds no sidechain send afterwards",
+                   sidechain_count(session) == 0, "count_after=%r" % (sidechain_count(session),))
 
 
 def check_refusals(session, recorder):

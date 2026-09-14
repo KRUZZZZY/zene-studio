@@ -58,6 +58,9 @@ import control_socket_harness as H  # noqa: E402  (path set above)
 #: external plugin file is needed; plugin.list is still consulted first and the
 #: first loadable built-in EFFECT is used.
 PREFERRED_EFFECT = "amplifier"
+#: The A16 record a routing verb must leave behind: class, reversibility, and a
+#: non-empty mechanism.
+TRUE_INVERSE_RECORD = ("true_inverse", True, True)
 
 
 class Session:
@@ -130,20 +133,51 @@ def graph_of(state):
 # ---------------------------------------------------------------------------
 
 
+#: The graph a chain of ONE effect must report: two nodes (the chain input and
+#: the effect), one connection 0 -> 1, and the order the audio thread walks.
+ONE_EFFECT_GRAPH = {
+    "node_count": 2,
+    "connection_count": 1,
+    "connections": [{"from": 0, "from_port": 0, "to": 1, "to_port": 0}],
+    "processing_order": [0, 1],
+    "output_node": 1,
+}
+#: ... and the chain-level answers that go with it.
+ONE_EFFECT_CHAIN = {"effect_count": 1, "routes_through_graph": True}
+#: An empty chain: no nodes at all, and no output node (-1).
+EMPTY_CHAIN = {"kind": "track", "effect_count": 0, "node_count": 0, "output_node": -1}
+
+
+def subset(source, keys):
+    """The named keys of a dict, so a check compares whole dicts (one comparison
+    instead of a chain of `and`s, and the failure prints the value that differed)."""
+    return {key: (source or {}).get(key) for key in keys}
+
+
+def load_effects(session, track_id, effects, count):
+    """Loads up to `count` loadable effects onto the track; returns the loaded ids."""
+    loaded = []
+    for entry in effects[:count]:
+        reply = session.result("plugin.load", {"target": track_id, "device": entry.get("id")})
+        if reply.get("id"):
+            loaded.append(reply["id"])
+    return loaded
+
+
 def check_chain_graph(session, catalogue, recorder):
     """The graph the chain renders through follows the effect list, measurably."""
     track = session.result("track.add", {"type": "instrument", "name": "Routing Target"})
     track_id = track.get("track")
     if not track_id:
         H.fail("track.add returned no track id (%r)" % track, None, None)
+        return
 
     empty = session.result("routing.get_state", {"target": track_id})
+    empty_seen = subset(empty, ("kind", "rack"))
+    empty_seen["effect_count"] = (empty.get("chain") or {}).get("effect_count")
+    empty_seen.update(subset(graph_of(empty), ("node_count", "output_node")))
     recorder.check("a track target reports itself and an empty chain graph",
-                   empty.get("kind") == "track" and empty.get("rack") is None
-                   and (empty.get("chain") or {}).get("effect_count") == 0
-                   and graph_of(empty).get("node_count") == 0
-                   and graph_of(empty).get("output_node") == -1,
-                   "empty=%r" % (empty,))
+                   empty_seen == EMPTY_CHAIN, "empty_seen=%r" % (empty_seen,))
 
     effects = loadable_effects(catalogue)
     recorder.check("this build offers a loadable built-in effect to route",
@@ -151,21 +185,14 @@ def check_chain_graph(session, catalogue, recorder):
     if not effects:
         return
 
-    loaded = []
-    for entry in effects[:2]:
-        reply = session.result("plugin.load", {"target": track_id, "device": entry.get("id")})
-        if reply.get("id"):
-            loaded.append(entry)
+    recorder.check("the effects were loaded onto the track",
+                   len(load_effects(session, track_id, effects, 1)) == 1,
+                   "effects=%r" % (effects[:1],))
     one = session.result("routing.get_state", {"target": track_id})
     graph = graph_of(one)
     recorder.check("one loaded effect is a two-node graph, wired input -> effect",
-                   (one.get("chain") or {}).get("effect_count") == 1
-                   and graph.get("node_count") == 2 and graph.get("connection_count") == 1
-                   and graph.get("connections") == [{"from": 0, "from_port": 0, "to": 1,
-                                                     "to_port": 0}]
-                   and graph.get("processing_order") == [0, 1]
-                   and graph.get("output_node") == 1
-                   and (one.get("chain") or {}).get("routes_through_graph") is True,
+                   subset(graph, ONE_EFFECT_GRAPH) == ONE_EFFECT_GRAPH
+                   and subset(one.get("chain"), ONE_EFFECT_CHAIN) == ONE_EFFECT_CHAIN,
                    "graph=%r chain=%r" % (graph, one.get("chain")))
     recorder.check("the loaded nodes carry the engine's own type names",
                    [node.get("type") for node in graph.get("nodes") or []]
@@ -269,11 +296,18 @@ def check_route_remove_and_undo(session, recorder, ends):
     records = [record for record in session.result("control.transactions").get("transactions") or []
                if record.get("command") in ("mixer.route_remove", "mixer.route_to",
                                             "mixer.send_to")]
+    signatures = {(record.get("class"), record.get("reversible"),
+                   bool(record.get("mechanism"))) for record in records}
     recorder.check("every routing verb records an A16 transaction classified true_inverse",
-                   bool(records) and all(record.get("class") == "true_inverse"
-                                         and record.get("reversible") is True
-                                         and bool(record.get("mechanism")) for record in records),
+                   signatures == {TRUE_INVERSE_RECORD},
                    "records=%s" % (records[-3:] or [],))
+
+
+def sidechain_routes(session, source, dest):
+    """Every sidechain route the report lists from -> to."""
+    routes = ((session.result("pdc.report").get("sidechain") or {}).get("routes")) or []
+    return [route for route in routes
+            if route.get("from") == source and route.get("to") == dest]
 
 
 def check_sidechain(session, recorder, ends):
@@ -284,20 +318,15 @@ def check_sidechain(session, recorder, ends):
     made = session.result("mixer.sidechain_to",
                           {"channel": first, "to": second, "amount": 0.75,
                            "tap_point": "post_fader_no_gain"})
-    report = session.result("pdc.report")
-    routes = ((report.get("sidechain") or {}).get("routes")) or []
-    mine = [route for route in routes if route.get("from") == first and route.get("to") == second]
+    mine = sidechain_routes(session, first, second)
+    dialled = subset(mine[0] if mine else None, ("tap_point", "amount"))
     recorder.check("the sidechain route is reported with the tap point asked for",
-                   made.get("tap_point") == "post_fader_no_gain" and bool(mine)
-                   and mine[0].get("tap_point") == "post_fader_no_gain"
-                   and mine[0].get("amount") == 0.75,
+                   made.get("tap_point") == "post_fader_no_gain"
+                   and dialled == {"tap_point": "post_fader_no_gain", "amount": 0.75},
                    "made=%r routes=%r" % (made, mine))
     session.result("control.undo")
-    after = ((session.result("pdc.report").get("sidechain") or {}).get("routes")) or []
     recorder.check("control.undo removes the sidechain route as one step",
-                   not [route for route in after
-                        if route.get("from") == first and route.get("to") == second],
-                   "after=%r" % (after,))
+                   sidechain_routes(session, first, second) == [], "after=%r" % (mine,))
 
 
 def check_feedback_refusal(session, recorder, ends):

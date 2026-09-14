@@ -489,24 +489,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// MIDI clock (0.3.0): the DAW as a clock master and as a clock slave. No
 	// compile-time switch; the bound it states is in docs/KNOWN-LIMITATIONS.md.
 	registerClockCommands(registry);
-	// The mixer group's routing verbs (mixer.route_to / send_to / sidechain_to /
-	// route_remove): part of the mixer group, in their own translation unit - the
-	// automation and warp groups' split, because ControlCommandsMixer.cpp is near
-	// gate 7's file-length cap. ableton-gap/AGENT-TOOLING.md:186 names route_to /
-	// send_to, and the sidechain half of feature row 27 is here.
-	registerMixerRouteCommands(registry);
-	// PDC read (feature row 27), the routing-graph read (row 28) and the audio
-	// bus + audio ports topology (row 29). No compile-time switch: the mixer, the
-	// effect chains, the racks and the AudioPortsModel of a loaded device all
-	// exist in every configuration, so these ids are honest everywhere. The two
-	// reads are inspectors; the writes carry their SPEC A16 rows in
-	// ControlReversibilityTableRouting.cpp. The UI absences are stated in
-	// docs/KNOWN-LIMITATIONS.md: there is no PDC panel, no routing/patcher view
-	// and no bus or port editor.
-	registerPdcCommands(registry);
-	registerRoutingCommands(registry);
-	registerBusCommands(registry);
-	registerPortCommands(registry);
+	// The routing surface (feature rows 27-29) and the mixer's routing verbs; the
+	// rationale for each group is on its declaration in ControlRegistryGroups.h.
+	registerRoutingSurfaceCommands(registry);
 }
 
 } // namespace lmms

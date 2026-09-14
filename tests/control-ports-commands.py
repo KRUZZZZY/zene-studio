@@ -143,7 +143,7 @@ def check_device_without_ports(session, recorder):
     entry = builtin_effect(session)
     if not track_id:
         H.fail("track.add returned no track (%r)" % track, None, None)
-        return track_id
+        return None
     if entry is None:
         H.fail("this build ships no loadable built-in effect", None, None)
         return track_id
@@ -185,53 +185,80 @@ def find_ports_device(session, track_id, recorder):
                    True, "candidates=%r" % ([entry.get("name") for entry in candidates],))
     tried = []
     for entry in candidates[:MAX_CANDIDATES]:
-        loaded = session.result("plugin.load", {"target": track_id, "device": entry.get("id")})
-        if not loaded.get("id"):
-            continue
-        state = session.result("port.get_state", {"target": track_id, "device": loaded.get("id")})
+        found = try_ports_device(session, track_id, entry)
         tried.append(entry.get("name"))
-        if state.get("ports"):
-            return loaded.get("id"), state, tried
+        if found is not None:
+            return found[0], found[1], tried
     return None, None, tried
+
+
+def try_ports_device(session, track_id, entry):
+    """(device id, state) when this candidate exposes a matrix, else None."""
+    loaded = session.result("plugin.load", {"target": track_id, "device": entry.get("id")})
+    if not loaded.get("id"):
+        return None
+    state = session.result("port.get_state", {"target": track_id, "device": loaded.get("id")})
+    if not state.get("ports"):
+        return None
+    return loaded.get("id"), state
+
+
+#: The A16 record port.set_pin must leave behind: class, reversibility, mechanism.
+PIN_RECORD = ("snapshot", True, True)
+
+
+def direction_with_a_pin(state):
+    """The first direction that has an enabled pin, or None."""
+    for direction in ("in", "out"):
+        if first_pin(state, direction):
+            return direction
+    return None
+
+
+def pins_of(session, track_id, device, direction):
+    state = session.result("port.get_state", {"target": track_id, "device": device})
+    return matrix_of(state, direction).get("pins") or []
+
+
+def pin_write(session, track_id, device, direction, pin, enabled):
+    return session.result("port.set_pin", {
+        "target": track_id, "device": device, "direction": direction,
+        "track_channel": pin["track_channel"],
+        "processor_channel": pin["processor_channel"], "enabled": enabled})
 
 
 def check_pin_write(session, recorder, track_id, device, state):
     """The real measurement: a pin moves, the matrix says so, and undo puts it back."""
-    direction = "in" if first_pin(state, "in") else "out"
-    pin = first_pin(state, direction)
-    if pin is None:
+    direction = direction_with_a_pin(state)
+    if direction is None:
         recorder.check("the device has at least one enabled pin to flip", False,
                        "state=%r" % (state,))
         return
-    written = session.result("port.set_pin", {
-        "target": track_id, "device": device, "direction": direction,
-        "track_channel": pin["track_channel"],
-        "processor_channel": pin["processor_channel"], "enabled": False})
-    after = session.result("port.get_state", {"target": track_id, "device": device})
+    pin = first_pin(state, direction)
+    written = pin_write(session, track_id, device, direction, pin, False)
+    moved = {key: written.get(key) for key in ("previous", "enabled")}
     recorder.check("port.set_pin moves the pin the engine reports",
-                   written.get("previous") is True and written.get("enabled") is False
-                   and pin not in (matrix_of(after, direction).get("pins") or []),
-                   "written=%r pins=%r" % (written, matrix_of(after, direction).get("pins")))
+                   moved == {"previous": True, "enabled": False}
+                   and pin not in pins_of(session, track_id, device, direction),
+                   "written=%r pins=%r"
+                   % (written, pins_of(session, track_id, device, direction)))
     # The A16 record as control.transactions reports it: the class comes from the
     # contract table, and the inverse is this command carrying the previous value.
     records = [record for record in
                session.result("control.transactions").get("transactions") or []
                if record.get("command") == "port.set_pin"]
+    last = records[-1] if records else {}
+    signature = (last.get("class"), last.get("reversible"), bool(last.get("mechanism")))
     recorder.check("port.set_pin records a snapshot whose inverse is this command",
-                   bool(records) and records[-1].get("class") == "snapshot"
-                   and records[-1].get("reversible") is True
-                   and bool(records[-1].get("mechanism")),
-                   "records=%s" % (records[-2:] or [],))
+                   signature == PIN_RECORD, "records=%s" % (records[-2:] or [],))
     undone = session.result("control.undo")
-    restored = session.result("port.get_state", {"target": track_id, "device": device})
     recorder.check("control.undo dispatches the recorded inverse and the pin is back",
-                   undone.get("undone") is True
-                   and pin in (matrix_of(restored, direction).get("pins") or []),
+                   pin in pins_of(session, track_id, device, direction)
+                   and undone.get("undone") is True,
                    "undone=%r pins=%r" % (undone.get("undone"),
-                                          matrix_of(restored, direction).get("pins")))
-    refused = session.typed_error("port.set_pin", {
-        "target": track_id, "device": device, "direction": direction,
-        "track_channel": pin["track_channel"], "processor_channel": 250, "enabled": True})
+                                          pins_of(session, track_id, device, direction)))
+    refused = pin_write(session, track_id, device, direction, dict(pin, processor_channel=250),
+                        True)
     recorder.check("a processor_channel past the matrix is refused",
                    refused.get("kind") == "invalid_args", "error=%r" % (refused,))
 

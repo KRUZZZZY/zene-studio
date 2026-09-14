@@ -595,6 +595,7 @@ src/wasm/WasmWorker.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
 tests/control-absent-socket.py
+tests/control-bus-commands.py
 tests/control-chain-presets.py
 tests/control-clock-commands.py
 tests/control-commands-snapshot.py
@@ -606,11 +607,14 @@ tests/control-headless-working-directory.py
 tests/control-link-sync.py
 tests/control-negative-control.py
 tests/control-no-audio-device.py
+tests/control-pdc-commands.py
+tests/control-ports-commands.py
 tests/control-punch-transcript.py
 tests/control-readiness.py
 tests/control-recording-recovery.py
 tests/control-retro-capture.py
 tests/control-reversibility-transcript.py
+tests/control-routing-commands.py
 tests/control-session-lifecycle-transcript.py
 tests/control-session-m1.py
 tests/control-shutdown.py
@@ -650,3 +654,11 @@ tests/src/core/RackZonesTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/SessionModelTest.cpp
+tests/src/core/StableTrackIdsTest.cpp
+tests/src/core/StemExportTest.cpp
+tests/src/core/StemExportTestSupport.h
+tests/src/core/UndoBoundsTest.cpp
+tests/src/tracks/SampleClipWindowTest.cpp
+tools/local-ci.sh
+tools/ncpu-shim.c

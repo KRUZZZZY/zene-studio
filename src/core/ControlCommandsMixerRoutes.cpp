@@ -13,11 +13,14 @@
  * src/core/Mixer.cpp:1179) and had no command at all.
  *
  * WHY A SEPARATE TRANSLATION UNIT rather than more ids in
- * ControlCommandsMixer.cpp: that file is 296 lines and the four verbs below are
- * ~300 more; gate 7 measures a file, so this is the
- * ControlCommandsAutomation.cpp / ControlCommandsAutomationEdit.cpp split, in the
- * mixer group instead of the automation group. The ids keep the `mixer.` prefix,
- * so the group a client sees is still one group.
+ * ControlCommandsMixer.cpp: that file is 296 lines and these four verbs plus
+ * their engine-side helpers are more than gate 7's remaining headroom, so this
+ * is the ControlCommandsAutomation.cpp / ControlCommandsAutomationEdit.cpp
+ * split, in the mixer group instead of the automation group. The helper half -
+ * resolving both endpoints, the engine's own cycle refusal, the before-states and
+ * the recorded undo steps - lives in ControlMixerSupport.cpp beside the rest of
+ * this surface's engine calls, so neither file approaches the cap. The ids keep
+ * the `mixer.` prefix, so the group a client sees is still one group.
  *
  * ONE ENGINE MECHANISM, TWO NAMES, stated plainly because the alternative is a
  * client guessing: the mixer has ONE edge type - MixerRoute - and both a
@@ -70,169 +73,34 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
-//! The regular send from \a fromIndex to \a toIndex, or nullptr. The mixer's
-//! own list, walked the way channelSendModel does.
-MixerRoute* findRoute(mix_ch_t fromIndex, mix_ch_t toIndex)
+//! An amount a send accepts: 0..2, the range mixer.set_volume publishes.
+bool validSendAmount(double amount)
 {
-	MixerChannel* from = Engine::mixer()->mixerChannel(fromIndex);
-	for (MixerRoute* route : from->m_sends)
-	{
-		if (route->receiverIndex() == toIndex) { return route; }
-	}
-	return nullptr;
-}
-
-//! Both endpoints of a routing verb, resolved and validated. Every refusal here
-//! happens BEFORE any write, including the engine's own cycle rule.
-struct RouteEnds
-{
-	MixerChannel* from = nullptr;
-	MixerChannel* to = nullptr;
-};
-
-bool resolveRouteEnds(const QJsonObject& args, RouteEnds* ends, ControlResult* error)
-{
-	ends->from = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), error);
-	if (ends->from == nullptr) { return false; }
-	ends->to = resolveMixerChannel(args.value(QStringLiteral("to")).toString(), error);
-	if (ends->to == nullptr) { return false; }
-	if (ends->from->index() == ends->to->index())
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("a channel cannot route to itself"));
-		return false;
-	}
-	// The engine refuses a cycle at scheduling time (Mixer::checkInfiniteLoop);
-	// asking it FIRST means the refusal is the engine's judgement and nothing
-	// has been written when it comes back.
-	Mixer* mixer = Engine::mixer();
-	if (mixer->isInfiniteLoop(ends->from->index(), ends->to->index()))
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("routing %1 to %2 would close a feedback path (the mixer refuses it)")
-				.arg(channelId(ends->from->index()), channelId(ends->to->index())));
-		return false;
-	}
-	return true;
-}
-
-//! The before-state of a regular send, so a recorded inverse can restore it.
-QJsonObject routeBeforeState(MixerRoute* route)
-{
-	QJsonObject before;
-	before.insert(QStringLiteral("existed"), route != nullptr);
-	if (route != nullptr)
-	{
-		before.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
-		before.insert(QStringLiteral("pre_fader"), route->preFader());
-	}
-	return before;
-}
-
-//! The before-state of a sidechain send.
-QJsonObject sidechainBeforeState(MixerSidechainRoute* route)
-{
-	QJsonObject before;
-	before.insert(QStringLiteral("existed"), route != nullptr);
-	if (route != nullptr)
-	{
-		before.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
-		before.insert(QStringLiteral("tap_point"), sidechainTapPointName(route->mode()));
-	}
-	return before;
-}
-
-/*! One undo step for a create-or-adjust of a regular send.
- *
- * A route that did not exist is undone by DELETING it; a route that did exist is
- * undone by putting its amount and pre-fader flag back. One step either way, so
- * one agent command stays one Ctrl+Z (SPEC A16 deliverable 3).
- */
-void recordRouteStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObject& before,
-	float wantedAmount, bool wantedPreFader)
-{
-	const bool existed = before.value(QStringLiteral("existed")).toBool();
-	const float amount = static_cast<float>(before.value(QStringLiteral("amount")).toDouble(1.0));
-	const bool preFader = before.value(QStringLiteral("pre_fader")).toBool();
-	Mixer* mixer = Engine::mixer();
-	control::addUndoStep(
-		[mixer, fromIndex, toIndex, existed, amount, preFader]() {
-			if (!existed) { mixer->deleteChannelSend(fromIndex, toIndex); return; }
-			MixerRoute* route = findRoute(fromIndex, toIndex);
-			if (route != nullptr)
-			{
-				route->amount()->setValue(amount);
-				route->setPreFader(preFader);
-			}
-		},
-		// The redo re-applies exactly what this call applies, so a GUI redo is
-		// faithful rather than a silently-dropped step.
-		[mixer, fromIndex, toIndex, wantedAmount, wantedPreFader]() {
-			mixer->createChannelSend(fromIndex, toIndex, wantedAmount, wantedPreFader);
-		});
-}
-
-//! The same, for a sidechain send.
-void recordSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObject& before,
-	float wantedAmount, SidechainTapPoint wantedMode)
-{
-	const bool existed = before.value(QStringLiteral("existed")).toBool();
-	const float amount = static_cast<float>(before.value(QStringLiteral("amount")).toDouble(1.0));
-	SidechainTapPoint mode = SidechainTapPoint::PostFader;
-	sidechainTapPointFromName(before.value(QStringLiteral("tap_point")).toString(), &mode);
-	Mixer* mixer = Engine::mixer();
-	control::addUndoStep(
-		[mixer, fromIndex, toIndex, existed, amount, mode]() {
-			if (!existed) { mixer->deleteSidechainSend(fromIndex, toIndex); return; }
-			MixerSidechainRoute* route = mixer->channelSidechainSend(fromIndex, toIndex);
-			if (route != nullptr)
-			{
-				route->amount()->setValue(amount);
-				route->setMode(mode);
-			}
-		},
-		// The redo re-applies exactly what this call applies (the engine derives
-		// the deferred flag itself, so it is not re-applied by hand).
-		[mixer, fromIndex, toIndex, wantedAmount, wantedMode]() {
-			mixer->createSidechainSend(fromIndex, toIndex, wantedAmount, wantedMode);
-		});
-}
-
-QJsonObject routeResult(const RouteEnds& ends, MixerRoute* route, const QJsonObject& before)
-{
-	QJsonObject result;
-	result.insert(QStringLiteral("from"), channelId(ends.from->index()));
-	result.insert(QStringLiteral("to"), channelId(ends.to->index()));
-	result.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
-	result.insert(QStringLiteral("pre_fader"), route->preFader());
-	result.insert(QStringLiteral("created"), !before.value(QStringLiteral("existed")).toBool());
-	result.insert(QStringLiteral("route"), routeJson(*route));
-	return result;
+	return amount >= 0.0 && amount <= 2.0;
 }
 
 ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
 {
 	ControlResult error;
-	RouteEnds ends;
-	if (!resolveRouteEnds(args, &ends, &error)) { return error; }
+	RoutingEnds ends;
+	if (!resolveRoutingEnds(args, &ends, &error)) { return error; }
 
 	Mixer* mixer = Engine::mixer();
 	const mix_ch_t fromIndex = ends.from->index();
 	const mix_ch_t toIndex = ends.to->index();
 	// An auxiliary send takes the amount it is given (1.0 when none is given); a
 	// routing carries the signal at unity.
-	const float amount = auxiliary
-		? static_cast<float>(args.value(QStringLiteral("amount")).toDouble(1.0))
-		: 1.0f;
-	if (amount < 0.0f || amount > 2.0f)
+	const double wanted = auxiliary ? args.value(QStringLiteral("amount")).toDouble(1.0) : 1.0;
+	if (!validSendAmount(wanted))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("amount %1 is out of range: a send is 0..2").arg(amount));
+			QStringLiteral("amount %1 is out of range: a send is 0..2").arg(wanted));
 	}
+	const float amount = static_cast<float>(wanted);
 	const bool preFader = args.value(QStringLiteral("pre_fader")).toBool(false);
 
-	const QJsonObject before = routeBeforeState(findRoute(fromIndex, toIndex));
-	recordRouteStep(fromIndex, toIndex, before, amount, preFader);
+	const QJsonObject before = mixerRouteBeforeState(findMixerRoute(fromIndex, toIndex));
+	recordMixerRouteStep(fromIndex, toIndex, before, amount, preFader);
 	MixerRoute* route = mixer->createChannelSend(fromIndex, toIndex, amount, preFader);
 	if (route == nullptr)
 	{
@@ -241,14 +109,15 @@ ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
 				.arg(channelId(fromIndex), channelId(toIndex)));
 	}
 
-	QJsonObject result = routeResult(ends, route, before);
+	QJsonObject result = mixerRouteResult(ends, route, before);
+	const QString inverseOp = auxiliary ? QStringLiteral("mixer.send_to")
+									   : QStringLiteral("mixer.route_to");
+	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	QJsonObject inverseArgs;
 	inverseArgs.insert(QStringLiteral("channel"), channelId(fromIndex));
 	inverseArgs.insert(QStringLiteral("to"), channelId(toIndex));
-	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	QJsonObject transaction = transactionPayload(before,
-		existed ? (auxiliary ? QStringLiteral("mixer.send_to") : QStringLiteral("mixer.route_to"))
-				: QStringLiteral("mixer.route_remove"),
+		existed ? inverseOp : QStringLiteral("mixer.route_remove"),
 		inverseArgs, true,
 		existed
 			? QStringLiteral("action checkpoint: the recorded undo step writes the captured amount "
@@ -262,33 +131,39 @@ ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
 	return ControlResult::success(result);
 }
 
+//! The tap point asked for, or a typed refusal naming the four the engine has.
+bool resolveTapPoint(const QJsonObject& args, SidechainTapPoint* mode, ControlResult* error)
+{
+	const QString tapName = args.value(QStringLiteral("tap_point")).toString(
+		QStringLiteral("post_fader"));
+	if (sidechainTapPointFromName(tapName, mode)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("'%1' is not a tap point; use one of %2")
+			.arg(tapName, sidechainTapPointNames().join(QStringLiteral(", "))));
+	return false;
+}
+
 ControlResult handleSidechainWrite(const QJsonObject& args)
 {
 	ControlResult error;
-	RouteEnds ends;
-	if (!resolveRouteEnds(args, &ends, &error)) { return error; }
+	RoutingEnds ends;
+	if (!resolveRoutingEnds(args, &ends, &error)) { return error; }
+	const double wanted = args.value(QStringLiteral("amount")).toDouble(1.0);
+	if (!validSendAmount(wanted))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("amount %1 is out of range: a send is 0..2").arg(wanted));
+	}
+	SidechainTapPoint mode = SidechainTapPoint::PostFader;
+	if (!resolveTapPoint(args, &mode, &error)) { return error; }
 
 	Mixer* mixer = Engine::mixer();
 	const mix_ch_t fromIndex = ends.from->index();
 	const mix_ch_t toIndex = ends.to->index();
-	const float amount = static_cast<float>(args.value(QStringLiteral("amount")).toDouble(1.0));
-	if (amount < 0.0f || amount > 2.0f)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("amount %1 is out of range: a send is 0..2").arg(amount));
-	}
-	SidechainTapPoint mode = SidechainTapPoint::PostFader;
-	const QString tapName = args.value(QStringLiteral("tap_point")).toString(
-		QStringLiteral("post_fader"));
-	if (!sidechainTapPointFromName(tapName, &mode))
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'%1' is not a tap point; use one of %2")
-				.arg(tapName, sidechainTapPointNames().join(QStringLiteral(", "))));
-	}
-
-	const QJsonObject before = sidechainBeforeState(mixer->channelSidechainSend(fromIndex, toIndex));
-	recordSidechainStep(fromIndex, toIndex, before, amount, mode);
+	const float amount = static_cast<float>(wanted);
+	const QJsonObject before =
+		mixerSidechainBeforeState(mixer->channelSidechainSend(fromIndex, toIndex));
+	recordMixerSidechainStep(fromIndex, toIndex, before, amount, mode);
 	MixerSidechainRoute* route = mixer->createSidechainSend(fromIndex, toIndex, amount, mode);
 	if (route == nullptr)
 	{
@@ -308,13 +183,13 @@ ControlResult handleSidechainWrite(const QJsonObject& args)
 	result.insert(QStringLiteral("created"), !before.value(QStringLiteral("existed")).toBool());
 	result.insert(QStringLiteral("sidechain"), sidechainRouteJson(*route));
 
+	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	QJsonObject inverseArgs;
 	inverseArgs.insert(QStringLiteral("channel"), channelId(fromIndex));
 	inverseArgs.insert(QStringLiteral("to"), channelId(toIndex));
-	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	QJsonObject transaction = transactionPayload(before,
-		existed ? QStringLiteral("mixer.sidechain_to") : QStringLiteral("UNIMPLEMENTED: remove this "
-			"sidechain send"),
+		existed ? QStringLiteral("mixer.sidechain_to")
+				: QStringLiteral("UNIMPLEMENTED: remove this sidechain send"),
 		inverseArgs, true,
 		existed
 			? QStringLiteral("action checkpoint: the recorded undo step writes the captured amount "
@@ -326,69 +201,69 @@ ControlResult handleSidechainWrite(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
-ControlResult handleRouteRemove(const QJsonObject& args)
+//! Remove a sidechain send: re-created by the recorded step with its amount and
+//! tap point, so the inverse is exact.
+ControlResult removeSidechainSend(Mixer* mixer, const RoutingEnds& ends)
 {
-	ControlResult error;
-	RouteEnds ends;
-	if (!resolveRouteEnds(args, &ends, &error)) { return error; }
-
-	Mixer* mixer = Engine::mixer();
 	const mix_ch_t fromIndex = ends.from->index();
 	const mix_ch_t toIndex = ends.to->index();
-
-	if (args.value(QStringLiteral("sidechain")).toBool(false))
+	MixerSidechainRoute* route = mixer->channelSidechainSend(fromIndex, toIndex);
+	if (route == nullptr)
 	{
-		MixerSidechainRoute* route = mixer->channelSidechainSend(fromIndex, toIndex);
-		if (route == nullptr)
-		{
-			return ControlResult::failure(ControlErrorKind::NotFound,
-				QStringLiteral("no sidechain send from %1 to %2")
-					.arg(channelId(fromIndex), channelId(toIndex)));
-		}
-		const QJsonObject before = sidechainBeforeState(route);
-		const float amount = static_cast<float>(route->amount()->value());
-		const SidechainTapPoint mode = route->mode();
-		const bool deferred = route->deferred();
-		control::addUndoStep(
-			[mixer, fromIndex, toIndex, amount, mode]() {
-				mixer->createSidechainSend(fromIndex, toIndex, amount, mode);
-			},
-			[mixer, fromIndex, toIndex]() { mixer->deleteSidechainSend(fromIndex, toIndex); });
-		mixer->deleteSidechainSend(route);
-
-		QJsonObject result;
-		result.insert(QStringLiteral("removed"), true);
-		result.insert(QStringLiteral("sidechain"), true);
-		result.insert(QStringLiteral("from"), channelId(fromIndex));
-		result.insert(QStringLiteral("to"), channelId(toIndex));
-		QJsonObject transaction = transactionPayload(before,
-			QStringLiteral("mixer.sidechain_to"),
-			QJsonObject{{QStringLiteral("channel"), channelId(fromIndex)},
-				{QStringLiteral("to"), channelId(toIndex)},
-				{QStringLiteral("amount"), static_cast<double>(amount)},
-				{QStringLiteral("tap_point"), sidechainTapPointName(mode)}},
-			true,
-			deferred
-				? QStringLiteral("action checkpoint: the recorded undo step re-creates the route "
-					"through the same Mixer::createSidechainSend call, with the captured amount and "
-					"tap point. LIMIT: the route was DEFERRED (it closed a cycle through a regular "
-					"send), and the re-created route is deferred again only while that cycle is "
-					"still there")
-				: QStringLiteral("action checkpoint: the recorded undo step re-creates the route "
-					"through the same Mixer::createSidechainSend call, with the captured amount and "
-					"tap point"));
-		result.insert(QStringLiteral("__transaction"), transaction);
-		return ControlResult::success(result);
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no sidechain send from %1 to %2")
+				.arg(channelId(fromIndex), channelId(toIndex)));
 	}
+	const QJsonObject before = mixerSidechainBeforeState(route);
+	const float amount = static_cast<float>(route->amount()->value());
+	const SidechainTapPoint mode = route->mode();
+	const bool deferred = route->deferred();
+	control::addUndoStep(
+		[mixer, fromIndex, toIndex, amount, mode]() {
+			mixer->createSidechainSend(fromIndex, toIndex, amount, mode);
+		},
+		[mixer, fromIndex, toIndex]() { mixer->deleteSidechainSend(fromIndex, toIndex); });
+	mixer->deleteSidechainSend(route);
 
-	MixerRoute* route = findRoute(fromIndex, toIndex);
+	QJsonObject result;
+	result.insert(QStringLiteral("removed"), true);
+	result.insert(QStringLiteral("sidechain"), true);
+	result.insert(QStringLiteral("from"), channelId(fromIndex));
+	result.insert(QStringLiteral("to"), channelId(toIndex));
+	QJsonObject transaction = transactionPayload(before,
+		QStringLiteral("mixer.sidechain_to"),
+		QJsonObject{{QStringLiteral("channel"), channelId(fromIndex)},
+			{QStringLiteral("to"), channelId(toIndex)},
+			{QStringLiteral("amount"), static_cast<double>(amount)},
+			{QStringLiteral("tap_point"), sidechainTapPointName(mode)}},
+		true,
+		deferred
+			? QStringLiteral("action checkpoint: the recorded undo step re-creates the route "
+				"through the same Mixer::createSidechainSend call, with the captured amount and "
+				"tap point. LIMIT: the route was DEFERRED (it closed a cycle through a regular "
+				"send), and the re-created route is deferred again only while that cycle is "
+				"still there")
+			: QStringLiteral("action checkpoint: the recorded undo step re-creates the route "
+				"through the same Mixer::createSidechainSend call, with the captured amount and "
+				"tap point"));
+	result.insert(QStringLiteral("__transaction"), transaction);
+	return ControlResult::success(result);
+}
+
+//! Remove a regular send: re-created by the recorded step with its amount and
+//! pre-fader flag.
+ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
+{
+	const mix_ch_t fromIndex = ends.from->index();
+	const mix_ch_t toIndex = ends.to->index();
+	MixerRoute* route = findMixerRoute(fromIndex, toIndex);
 	if (route == nullptr)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no send from %1 to %2 (read %1's sends with pdc.report or "
 				"mixer.get_state)").arg(channelId(fromIndex), channelId(toIndex)));
 	}
-	const QJsonObject before = routeBeforeState(route);
+	const QJsonObject before = mixerRouteBeforeState(route);
 	const float amount = static_cast<float>(route->amount()->value());
 	const bool preFader = route->preFader();
 	control::addUndoStep(
@@ -415,6 +290,19 @@ ControlResult handleRouteRemove(const QJsonObject& args)
 			"send's whole state is those two numbers plus its endpoints)"));
 	result.insert(QStringLiteral("__transaction"), transaction);
 	return ControlResult::success(result);
+}
+
+ControlResult handleRouteRemove(const QJsonObject& args)
+{
+	ControlResult error;
+	RoutingEnds ends;
+	if (!resolveRoutingEnds(args, &ends, &error)) { return error; }
+	Mixer* mixer = Engine::mixer();
+	if (args.value(QStringLiteral("sidechain")).toBool(false))
+	{
+		return removeSidechainSend(mixer, ends);
+	}
+	return removeRegularSend(mixer, ends);
 }
 
 } // namespace

@@ -29,6 +29,7 @@
 #include <QString>
 
 #include "ControlRegistry.h"
+#include "LmmsTypes.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -79,6 +80,55 @@ LMMS_EXPORT QJsonObject sidechainRouteJson(MixerSidechainRoute& route);
  *  the mixer's own view must not be handed a second implementation of it.
  */
 LMMS_EXPORT QJsonObject channelLatencyJson(MixerChannel& channel);
+
+// ---------------------------------------------------------------------------
+// The mixer's routing verbs (mixer.route_to / mixer.send_to /
+// mixer.sidechain_to / mixer.route_remove)
+// ---------------------------------------------------------------------------
+
+//! The regular send from \a fromIndex to \a toIndex, or nullptr. The mixer's own
+//! list, walked the way `Mixer::channelSendModel` does.
+LMMS_EXPORT MixerRoute* findMixerRoute(mix_ch_t fromIndex, mix_ch_t toIndex);
+
+//! Both endpoints of a routing verb, resolved and validated. Every refusal -
+//! including the engine's own feedback rule (`Mixer::isInfiniteLoop`) - happens
+//! BEFORE any write.
+struct RoutingEnds
+{
+	MixerChannel* from = nullptr;
+	MixerChannel* to = nullptr;
+};
+
+//! Resolves "channel" and "to" and refuses (typed) self-routing and cycles.
+LMMS_EXPORT bool resolveRoutingEnds(const QJsonObject& args, RoutingEnds* ends,
+	ControlResult* error);
+
+//! The before-state of a regular send: whether it existed, and its amount and
+//! pre-fader flag when it did.
+LMMS_EXPORT QJsonObject mixerRouteBeforeState(MixerRoute* route);
+
+//! The before-state of a sidechain send: whether it existed, and its amount and
+//! tap point when it did.
+LMMS_EXPORT QJsonObject mixerSidechainBeforeState(MixerSidechainRoute* route);
+
+/*! One undo step for a create-or-adjust of a regular send (SPEC A16 deliverable
+ *  3: one agent command is one undo). A route that did not exist is undone by
+ *  DELETING it; one that did exist is undone by writing its captured amount and
+ *  pre-fader flag back. The redo re-applies exactly what the write applies, so a
+ *  GUI redo is faithful rather than a silently-dropped step.
+ */
+LMMS_EXPORT void recordMixerRouteStep(mix_ch_t fromIndex, mix_ch_t toIndex,
+	const QJsonObject& before, float wantedAmount, bool wantedPreFader);
+
+//! The same for a sidechain send (the engine derives the deferred flag itself,
+//! so the redo re-creates the route and lets the engine re-derive it).
+LMMS_EXPORT void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex,
+	const QJsonObject& before, float wantedAmount, SidechainTapPoint wantedMode);
+
+//! What a regular-send write reports, as the mixer.get_state send shape plus the
+//! "created" flag and the route itself.
+LMMS_EXPORT QJsonObject mixerRouteResult(const RoutingEnds& ends, MixerRoute* route,
+	const QJsonObject& before);
 
 } // namespace control
 

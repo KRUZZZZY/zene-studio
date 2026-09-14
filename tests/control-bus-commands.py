@@ -98,6 +98,14 @@ def channel_count(session):
     return session.result("mixer.get_state").get("count")
 
 
+def fader_of(entry):
+    """A bus entry's volume rounded to the wire's own precision (or -1 when the
+    entry is gone, so a missing bus cannot compare equal to a fader value)."""
+    if entry is None:
+        return -1.0
+    return round(float(entry.get("volume", -1.0)), 6)
+
+
 def transaction_for(session, command):
     for record in reversed(session.result("control.transactions").get("transactions") or []):
         if record.get("command") == command:
@@ -119,6 +127,19 @@ def check_empty(session, recorder):
                    "listed=%r channels=%r" % (listed.get("count"), listed.get("channel_count")))
 
 
+#: What bus.create must report: the engine's own bus flag, and the count the
+#: mixer moved to.
+CREATED_BUS = {"is_bus": True}
+#: What bus.list's entry for that bus must carry.
+LISTED_BUS = ("is_bus", "is_master", "index")
+
+
+def subset(source, keys):
+    """The named keys of a dict, so a check compares whole dicts (one comparison
+    instead of a chain of `and`s, and the failure prints the value that differed)."""
+    return {key: (source or {}).get(key) for key in keys}
+
+
 def check_create_and_list(session, recorder):
     """bus.create makes a real bus; the list and the A16 record both say so."""
     before = channel_count(session)
@@ -126,21 +147,22 @@ def check_create_and_list(session, recorder):
     bus = created.get("channel")
     listed = session.result("bus.list")
     entry = bus_entry(listed, bus)
+    made = subset(created, ("is_bus", "count"))
     recorder.check("bus.create makes a channel the engine calls a bus",
-                   created.get("is_bus") is True and bool(bus)
-                   and created.get("name", "").startswith("Bus")
-                   and created.get("count") == before + 1,
+                   bool(bus) and made == {"is_bus": True, "count": before + 1},
                    "created=%r" % (created,))
+    recorder.check("bus.create names the bus the way the engine does",
+                   created.get("name", "").startswith("Bus"), "created=%r" % (created,))
+    seen = subset(entry, LISTED_BUS)
     recorder.check("bus.list finds exactly that bus",
-                   listed.get("count") == 1 and entry is not None
-                   and entry.get("is_bus") is True and entry.get("is_master") is False
-                   and entry.get("index") == created.get("index"),
+                   listed.get("count") == 1
+                   and seen == {"is_bus": True, "is_master": False, "index": created.get("index")},
                    "listed=%r entry=%r" % (bus_ids(listed), entry))
     record = transaction_for(session, "bus.create")
+    signature = subset(record, ("class", "reversible"))
     recorder.check("bus.create records a reversible true_inverse transaction",
-                   record is not None and record.get("class") == "true_inverse"
-                   and record.get("reversible") is True
-                   and "action checkpoint" in str(record.get("mechanism")),
+                   signature == {"class": "true_inverse", "reversible": True}
+                   and "action checkpoint" in str((record or {}).get("mechanism")),
                    "record=%r" % (record,))
     return bus
 
@@ -152,14 +174,11 @@ def check_set_verb_and_undo(session, recorder, bus):
     session.result("mixer.set_volume", {"channel": bus, "volume": 0.5})
     entry = bus_entry(session.result("bus.list"), bus)
     recorder.check("the mixer's own set verb reaches the bus's fader",
-                   entry is not None and abs(entry.get("volume", 0.0) - 0.5) < 1e-6,
-                   "entry=%r" % (entry,))
+                   fader_of(entry) == 0.5, "entry=%r" % (entry,))
     undone = session.result("control.undo")
     entry = bus_entry(session.result("bus.list"), bus)
     recorder.check("control.undo puts the bus fader back",
-                   undone.get("undone") is True and entry is not None
-                   and abs(entry.get("volume", 0.0) - 1.0) < 1e-6,
-                   "undone=%r entry=%r" % (undone.get("undone"), entry))
+                   fader_of(entry) == 1.0, "undone=%r entry=%r" % (undone.get("undone"), entry))
 
 
 def check_create_undo(session, recorder, bus):
@@ -190,14 +209,15 @@ def check_remove_is_irreversible(session, recorder):
                    removed.get("removed") == bus and entry is None,
                    "removed=%r listed=%r" % (removed, bus_ids(session.result("bus.list"))))
     record = transaction_for(session, "bus.remove")
+    signature = subset(record, ("class", "reversible"))
     recorder.check("bus.remove records a snapshot with reversible false and a fallback",
-                   record is not None and record.get("class") == "snapshot"
-                   and record.get("reversible") is False
-                   and bool(record.get("mechanism")),
+                   signature == {"class": "snapshot", "reversible": False}
+                   and bool((record or {}).get("mechanism")),
                    "record=%r" % (record,))
     refused = session.typed_error("control.undo")
     recorder.check("control.undo refuses the removed bus, typed, instead of unwinding an older step",
-                   refused.get("kind") == "irreversible" and bool(refused.get("message")),
+                   refused.get("kind") == "irreversible", "error=%r" % (refused,))
+    recorder.check("the refusal names the fallback", bool(refused.get("message")),
                    "error=%r" % (refused,))
 
 

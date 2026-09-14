@@ -198,6 +198,13 @@ LMMS_EXPORT void registerBusCommands(ControlRegistry& registry);
  * PinConnector view performs (AudioPortsModel::Matrix::setPin).
  */
 LMMS_EXPORT void registerPortCommands(ControlRegistry& registry);
+/*! The five groups above, registered as ONE call from ControlRegistry.cpp's
+ * registerControlCommands(). They are one feature set - the routing surface of
+ * rows 27-29 - and ControlRegistry.cpp's registration block sits at gate 7's
+ * file-length cap, so the aggregation lives here rather than as five lines
+ * there.
+ */
+LMMS_EXPORT void registerRoutingSurfaceCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
