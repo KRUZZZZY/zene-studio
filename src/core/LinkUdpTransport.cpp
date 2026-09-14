@@ -65,9 +65,12 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+
+#include <QElapsedTimer>
 
 namespace lmms
 {
@@ -79,6 +82,21 @@ namespace
 //! JSON; anything larger is not one of ours and is read into the same bounded
 //! buffer and rejected by the model's decoder.
 constexpr int DatagramBufferBytes = 2048;
+
+/*! How long the loopback probe may take to come back before this host is
+ *  declared unable to RECEIVE an announcement. A host that can deliver one
+ *  delivers it in well under a millisecond (measured: 0.1 ms on loopback, see
+ *  docs/LINK-SYNC.md section 3), so a healthy host pays ~nothing here and only
+ *  a host that is about to be reported as unable to carry a session pays the
+ *  whole bound - once, at link.set_enabled.
+ */
+constexpr int LoopbackProbeBoundMs = 250;
+
+/*! The probe's payload. Deliberately NOT an announcement: the model's decoder
+ *  refuses anything whose JSON it cannot read, so this can never be mistaken
+ *  for a peer.
+ */
+constexpr const char* LoopbackProbePayload = "zene-link-loopback-probe";
 
 QString endpointString()
 {
@@ -146,6 +164,7 @@ public:
 	bool available() const override { return m_fd >= 0; }
 	QString reason() const override { return m_fd >= 0 ? QString() : m_reason; }
 	QString endpoint() const override { return endpointString(); }
+	LoopbackProbe loopbackProbe() const override { return m_probe; }
 
 	void send(const QByteArray& payload) override
 	{
@@ -162,9 +181,11 @@ public:
 	void setReceiver(Receiver receiver) override { m_receiver = std::move(receiver); }
 
 private:
-	//! Socket options + bind + join. Split out of start() so neither function
-	//! carries the whole recipe (the complexity ratchet measures both).
-	bool configure(int fd)
+	/*! Bind the group port and join the group on \a fd. \a why receives the
+	 *  failing step's reason when it is not null. ONE definition: the real
+	 *  socket and the probe socket below must be configured identically, or the
+	 *  measurement would be of a different socket than the one that travels. */
+	static bool joinGroup(int fd, QString* why)
 	{
 		int on = 1;
 		/* Two instances on ONE host both bind this port, so SO_REUSEADDR is
@@ -181,7 +202,10 @@ private:
 		local.sin_port = htons(link::DefaultPort);
 		if (::bind(fd, reinterpret_cast<sockaddr*>(&local), sizeof(local)) != 0)
 		{
-			m_reason = socketFailure(QStringLiteral("bind(%1)").arg(endpointString()));
+			if (why != nullptr)
+			{
+				*why = socketFailure(QStringLiteral("bind(%1)").arg(endpointString()));
+			}
 			return false;
 		}
 		ip_mreq membership{};
@@ -192,8 +216,80 @@ private:
 		if (::setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &membership,
 				sizeof(membership)) != 0)
 		{
-			m_reason = socketFailure(QStringLiteral("IP_ADD_MEMBERSHIP(%1)")
-				.arg(QString::fromLatin1(link::DefaultGroup)));
+			if (why != nullptr)
+			{
+				*why = socketFailure(QStringLiteral("IP_ADD_MEMBERSHIP(%1)")
+					.arg(QString::fromLatin1(link::DefaultGroup)));
+			}
+			return false;
+		}
+		return true;
+	}
+
+	/*! MEASURE that announcements can be RECEIVED on this host: open a SECOND
+	 *  socket, configured exactly like this one, and require a datagram sent
+	 *  from \a fd to the group to arrive on it inside the bound.
+	 *
+	 *  Why the second socket and not a send-to-self. A socket reading its own
+	 *  looped datagram proves the kernel loops a packet back to its SENDER;
+	 *  the session needs it delivered to ANOTHER socket, which is the case two
+	 *  instances on one box are and the case a platform that cannot receive
+	 *  multicast fails. Measuring the weak property would let exactly the host
+	 *  this check exists for pass it.
+	 *
+	 *  bind() and IP_ADD_MEMBERSHIP() succeeding says nothing about this: a
+	 *  host can accept both and still deliver nothing, which is why the probe
+	 *  exists and why `available()` is derived from its verdict. */
+	bool measureLoopback(int fd)
+	{
+		m_probe = LoopbackProbe();
+		m_probe.attempted = true;
+		m_probe.boundMs = LoopbackProbeBoundMs;
+
+		const int probeFd = ::socket(AF_INET, SOCK_DGRAM, 0);
+		if (probeFd < 0)
+		{
+			m_probe.boundMs = 0;
+			return false;
+		}
+		if (!joinGroup(probeFd, nullptr))
+		{
+			::close(probeFd);
+			return false;
+		}
+		QElapsedTimer clock;
+		clock.start();
+		(void)::sendto(fd, LoopbackProbePayload, std::strlen(LoopbackProbePayload), 0,
+			reinterpret_cast<const sockaddr*>(&m_group), sizeof(m_group));
+
+		char buffer[DatagramBufferBytes];
+		bool delivered = false;
+		while (!delivered)
+		{
+			pollfd waiting{probeFd, POLLIN, 0};
+			const int remaining = LoopbackProbeBoundMs - static_cast<int>(clock.elapsed());
+			if (remaining <= 0 || ::poll(&waiting, 1, remaining) <= 0) { break; }
+			const ssize_t read = ::recv(probeFd, buffer, sizeof(buffer), 0);
+			if (read <= 0) { break; }
+			// A datagram that is not the probe is some other instance's
+			// announcement, which is a peer: keep waiting for ours.
+			delivered = QByteArray(buffer, static_cast<int>(read)) == LoopbackProbePayload;
+		}
+		m_probe.delivered = delivered;
+		m_probe.elapsedMs = delivered ? static_cast<int>(clock.elapsed()) : -1;
+		::close(probeFd);
+		return delivered;
+	}
+
+	//! Socket options + bind + join + the receive measurement. Split out of
+	//! start() so neither function carries the whole recipe (the complexity
+	//! ratchet measures both).
+	bool configure(int fd)
+	{
+		QString why;
+		if (!joinGroup(fd, &why))
+		{
+			m_reason = why;
 			return false;
 		}
 		const unsigned char ttl = 1;    // one network segment, like a Link session
@@ -210,6 +306,18 @@ private:
 		group.sin_addr.s_addr = ::inet_addr(link::DefaultGroup);
 		group.sin_port = htons(link::DefaultPort);
 		m_group = group;
+
+		if (!measureLoopback(fd))
+		{
+			m_reason = QStringLiteral("%1 cannot be received on this host: a datagram sent to %2 "
+				"was not read by a SECOND socket here that bound the port and joined the group "
+				"within %3 ms, so a session cannot carry announcements here even though the socket "
+				"was configured. The sync model and its commands are still present "
+				"(docs/LINK-SYNC.md section 3)")
+				.arg(QString::fromLatin1(link::DefaultGroup), endpointString())
+				.arg(LoopbackProbeBoundMs);
+			return false;
+		}
 		return true;
 	}
 
@@ -241,6 +349,8 @@ private:
 	Receiver m_receiver;
 	QString m_reason{QStringLiteral("not started (link.set_enabled starts it)")};
 	sockaddr_in m_group{};
+	//! The receive measurement `available()` is derived from (start()).
+	LoopbackProbe m_probe;
 };
 
 #else // Q_OS_WIN and anything else without the POSIX datagram API

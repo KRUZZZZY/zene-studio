@@ -142,6 +142,32 @@ returns this build's implementation:
 * Non-blocking socket read through a **`QSocketNotifier` on the UI thread** —
   the same pattern `ControlServerSocket.cpp` uses. There is no receive thread,
   so there is no lock.
+* **`available` is a MEASUREMENT, not a configured socket** (defect fix,
+  `030/platform-defects`). Binding the port and joining the group says nothing
+  about whether a datagram sent to the group is ever RECEIVED: a host can accept
+  both and deliver nothing, and then two instances on one box can never see each
+  other while `link.get_state.transport` reports `available: true`. `start()`
+  measures it - after the join it opens a **second** socket, configured
+  identically (one definition, `LinkUdpTransport::joinGroup`, for both), sends a
+  probe from the real socket to the group, and requires that second socket to
+  read it inside **250 ms** (`LoopbackProbeBoundMs`). A failed probe makes
+  `start()` false, so the transport reports itself unavailable and `reason()`
+  names what was measured.
+  * **Why a second socket and not a send-to-self.** A socket reading its OWN
+    looped datagram proves the kernel loops a packet back to its sender. The
+    session needs it delivered to ANOTHER socket - which is what two instances on
+    one box are, and what a platform that cannot receive multicast fails to do.
+    Measuring the weak property would let exactly the host this check exists for
+    pass it.
+  * **The answer travels with the claim.** `transport.loopback_probe`
+    (`{attempted, delivered, elapsed_ms, bound_ms}`) is the receipt for
+    `transport.available`, so a client can CHECK it; `attempted: false` is "this
+    transport cannot answer", never "the probe passed".
+  * **The cost is bounded and paid once.** A host that can deliver does so in
+    well under a millisecond (measured on loopback: 0.1 ms for the raw
+    two-socket probe, 0 ms inside the transport, §6), so a healthy host pays
+    essentially nothing at `link.set_enabled`; only a host that is about to be
+    reported as unable to carry a session pays the whole bound.
 * **Windows gets the stub**: it reports itself unavailable, with the reason, in
   `link.get_state.transport.reason`. A second socket implementation that this
   lane could not run a single test for is worse than a stated gap; winsock2 is
@@ -204,6 +230,21 @@ cd build/tests && QT_QPA_PLATFORM=offscreen python3 ../../tests/control-link-syn
 test, because the multicast group is shared state by design and a concurrently
 running instance is a legitimate peer. It exits **77** (ctest "Skipped", never
 "Passed") when the host cannot carry announcements at all, and names the reason.
+
+**A skip is earned by a measurement, never chosen because an assertion was
+inconvenient** (defect fix, `030/platform-defects`). The skip used to cover only
+"the socket could not be configured" - the *carry* half - so a host that could
+never RECEIVE a multicast datagram did not skip; it failed, with `peer_count: 0`
+and nothing naming the cause. Step 2b now requires the other half:
+`transport.available` must be the verdict of a loopback probe that was MEASURED
+and DELIVERED, and the step makes its own independent two-socket probe on the same
+host (`link_sync_evidence.host_multicast_loopback`) so the transport's claim and
+the test's measurement can be compared. On this host (`linux-x86_64`,
+`enp130s0`) the transport reports
+`loopback_probe: {attempted: true, delivered: true, elapsed_ms: 0, bound_ms: 250}`
+and the test's own probe `delivered=True elapsed_ms=0`; on a host where nothing
+arrives the transport reports `available: false` with the measurement in
+`reason`, and this step reports **Skipped**.
 
 ## 7. Real-time safety
 

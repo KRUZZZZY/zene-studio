@@ -173,6 +173,17 @@ struct LinkSessionReport
 	bool transportAvailable = false;
 	QString transportReason;    //!< why not, when unavailable
 	QString transportEndpoint;
+	/*! The RECEIPT for `transportAvailable`. Availability is a MEASUREMENT, not
+	 *  a configured socket: start() sends a probe to the group and requires a
+	 *  SECOND socket on this host to receive it, and these four fields are that
+	 *  measurement. `transportProbeAttempted == false` means this transport
+	 *  cannot answer - never that the measurement passed - so a reader can tell
+	 *  "we measured and it works" from "nobody measured" (docs/LINK-SYNC.md
+	 *  section 3). */
+	bool transportProbeAttempted = false;
+	bool transportProbeDelivered = false;
+	int transportProbeElapsedMs = -1;   //!< -1 when nothing arrived inside the bound
+	int transportProbeBoundMs = 0;
 	int publishIntervalMs = DefaultPublishIntervalMs;
 	int peerTimeoutMs = PeerTimeoutMs;
 	//! How many announcements THIS instance has sent since it was enabled, and

@@ -77,7 +77,7 @@ import control_socket_harness as H  # noqa: E402  (path set above)
 # tests/link_sync_evidence.py: this file is the CLAIM and the checks, and the
 # plumbing was split out for the same Gate 7 reason control_socket_harness.py
 # was split out of its flows.
-from link_sync_evidence import SKIP_EXIT, Evidence, Peer, sha256_of  # noqa: E402
+from link_sync_evidence import SKIP_EXIT, Evidence, Peer, host_multicast_loopback, sha256_of  # noqa: E402
 
 #: How long to wait for a state that only a working session produces: a peer to
 #: appear, a tempo to be adopted, a departed peer to expire. Generous - a loaded
@@ -198,10 +198,22 @@ class SyncRun:
     def check_transport(self):
         """Availability is only knowable once the transport is STARTED, and
         link.set_enabled is what starts it - a state read must not open a socket,
-        so the check belongs here, after the join, and not in step 1."""
+        so the check belongs here, after the join, and not in step 1.
+
+        AND it must be a MEASUREMENT rather than a configured socket: the transport
+        reports the probe it ran (`transport.loopback_probe` - a datagram sent to
+        the group that a SECOND socket on this host had to receive), and this step
+        requires that receipt to agree with one this test makes itself. A host that
+        cannot RECEIVE multicast must SKIP with the reason, never fail - and it
+        must not report `available: true` while nothing can arrive.
+        """
         self.evidence.section("2b. whether announcements can travel at all")
+        delivered, elapsed, problem = host_multicast_loopback()
+        self.finding("host loopback probe", "delivered=%s elapsed_ms=%s%s"
+                     % (delivered, elapsed, (" problem=%s" % problem) if problem else ""))
         for peer in (self.leader, self.follower):
             transport = peer.state.get("transport", {})
+            probe = transport.get("loopback_probe") or {}
             self.finding("%s transport" % peer.label, json.dumps(transport))
             if transport.get("available") is not True:
                 print("SKIP: %s cannot carry announcements: %s"
@@ -209,6 +221,16 @@ class SyncRun:
                 print("      the model is still covered by the registered ctest "
                       "ControlLinkCommandsTest")
                 return SKIP_EXIT
+            # `available` is true, so the claim must be the verdict of a probe
+            # that came back - "nobody measured" is not "it works".
+            self.require(probe.get("attempted") is True and probe.get("delivered") is True,
+                         "%s reports transport.available with no delivered loopback probe (%s): "
+                         "availability must be MEASURED, not assumed"
+                         % (peer.label, json.dumps(probe)))
+            self.require(delivered,
+                         "%s's transport measured a delivered loopback probe while this test's own "
+                         "probe on the same host delivered nothing (elapsed=%s problem=%r)"
+                         % (peer.label, elapsed, problem))
         return 0
 
     def join(self):

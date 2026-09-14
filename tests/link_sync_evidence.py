@@ -97,3 +97,70 @@ def json_line(value):
 
 def binary_is_there(path):
     return os.path.exists(path)
+
+
+#: How long a loopback probe may take before this host is declared unable to
+#: receive an announcement. Generous next to the measured loopback time (well
+#: under a millisecond) and short enough that a broken host costs one probe.
+LOOPBACK_BOUND_MS = 250
+
+
+def host_multicast_loopback(group="224.76.78.75", port=20808, bound_ms=None):
+    """MEASURE this host: does a datagram sent to `group` arrive at a SECOND
+    socket here that bound the port and joined the group?
+
+    Deliberately a SECOND socket and not a send-to-self: a kernel that loops a
+    datagram back to its own SENDER has not shown that any other socket gets it,
+    and the two-instance proof needs exactly that. The socket recipe matches
+    LinkUdpTransport::joinGroup() - SO_REUSEADDR + SO_REUSEPORT, bind(INADDR_ANY),
+    IP_ADD_MEMBERSHIP(group, INADDR_ANY).
+
+    Returns (delivered, elapsed_ms, problem). `problem` is non-empty when a socket
+    could not be CONFIGURED at all, which is the carry half rather than the
+    receive half.
+    """
+    import socket
+    import struct
+    import time
+
+    bound = LOOPBACK_BOUND_MS if bound_ms is None else bound_ms
+
+    def make():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
+        sock.bind(("", port))
+        membership = struct.pack("4s4s", socket.inet_aton(group), socket.inet_aton("0.0.0.0"))
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+        sock.settimeout(bound / 1000.0)
+        return sock
+
+    sender = None
+    receiver = None
+    try:
+        sender = make()
+        receiver = make()
+    except OSError as error:
+        for sock in (sender, receiver):
+            if sock is not None:
+                sock.close()
+        return False, -1, "%s" % error
+
+    payload = b"zene-link-host-loopback-probe"
+    started = time.monotonic()
+    sender.sendto(payload, (group, port))
+    delivered = False
+    try:
+        while not delivered:
+            data, _ = receiver.recvfrom(2048)
+            delivered = data == payload
+    except OSError:
+        delivered = False
+    elapsed = int((time.monotonic() - started) * 1000)
+    sender.close()
+    receiver.close()
+    return delivered, (elapsed if delivered else -1), ""

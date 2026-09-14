@@ -105,6 +105,17 @@ QJsonObject linkStateJson()
 	transport.insert(QStringLiteral("endpoint"), report.transportEndpoint);
 	transport.insert(QStringLiteral("publish_interval_ms"), report.publishIntervalMs);
 	transport.insert(QStringLiteral("peer_timeout_ms"), report.peerTimeoutMs);
+	/* `available` is a MEASUREMENT, so the measurement travels with it: a
+	 * datagram sent to the group that a SECOND socket on this host had to
+	 * receive. `attempted: false` is "this transport cannot answer", which is
+	 * NOT the same as "it passed" - the distinction the whole field exists for
+	 * (docs/LINK-SYNC.md section 3). */
+	QJsonObject loopback;
+	loopback.insert(QStringLiteral("attempted"), report.transportProbeAttempted);
+	loopback.insert(QStringLiteral("delivered"), report.transportProbeDelivered);
+	loopback.insert(QStringLiteral("elapsed_ms"), report.transportProbeElapsedMs);
+	loopback.insert(QStringLiteral("bound_ms"), report.transportProbeBoundMs);
+	transport.insert(QStringLiteral("loopback_probe"), loopback);
 	result.insert(QStringLiteral("transport"), transport);
 	/* The honest half, and the reason it is IN the state and not only in a doc:
 	 * this model syncs Zene instances; it does not speak Ableton Link's
