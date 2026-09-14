@@ -3,6 +3,41 @@ include(CTest)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 
+# --- MSVC + Ninja: ONE link at a time in THIS directory ----------------------
+# Every target built from this file - the ~75 test executables the LMMS_TESTS
+# loop creates, FakeRemotePluginClient, the partc_ref_* reference MODULEs, the
+# plugin/CLAP/VST3 integration binaries and synthetic_audio_plugin - lands in
+# build\tests, and every one of them links with the vcpkg toolchain's
+# `vcpkg z-applocal` post-link step chained into its link rule (vcpkg.cmake's
+# add_library/add_executable wrappers). z-applocal copies the imported vcpkg
+# dependency DLLs into the binary's own directory. Two of those copies racing
+# over the same destination file is a Win32 sharing violation, `Access is
+# denied.`, reported against an edge whose own link succeeded - documented for
+# partc_ref_bassbooster.dll (run 34748733618) and again for
+# tests\RoutingGraphTest.exe (run 34794059702), the latter on an edge with no
+# LNK/C diagnostic of any kind.
+#
+# A Ninja link pool of depth one orders these links, and with them their
+# post-link steps, against each other and nothing else; it cannot hide a real
+# link error, because every link still runs and still fails on a real failure.
+# vcpkg's own knob for this class, X_VCPKG_APPLOCAL_DEPS_SERIALIZED, is NOT the
+# tool: it passes USES_TERMINAL only from the toolchain's add_executable
+# wrapper, never for a MODULE target.
+#
+# DECLARED AND APPLIED HERE, before the first target in this file is created,
+# and deliberately not beside the long note that documents the race: CMake's
+# CMAKE_JOB_POOL_LINK variable only initialises the JOB_POOL_LINK property of
+# the targets created AFTER it is set, so a pool set next to the partc_ref loop
+# would cover that loop and nothing else - one site fixed and the rest left.
+# The pool is a GLOBAL property and the name travels with it: ninja errors if a
+# rule names a pool JOB_POOLS does not declare. It is a Ninja-only mechanism
+# (ignored by the other generators), which is why it is scoped to the
+# toolchains that need it, the same way the partc_ref loop scopes its own.
+if(MSVC)
+	set_property(GLOBAL APPEND PROPERTY JOB_POOLS zene_tests_link=1)
+	set(CMAKE_JOB_POOL_LINK zene_tests_link)
+endif()
+
 set(LMMS_TESTS
 	src/core/ArrayVectorTest.cpp
 	src/core/AudioBufferTest.cpp
@@ -523,15 +558,23 @@ set(PART_C_MIGRATED_DEFINITIONS "")
 # wrapper never sets it - so it cannot cover a MODULE target. A Ninja pool of one
 # (ninja is the Windows generator) orders these links, and with them their post-link
 # steps, against each other and nothing else, and it cannot hide a real link error.
-# HONEST LIMIT: this closes the window the race needs, the first burst of writers
-# into a fresh build\tests. If a later change makes another target in this file the
-# first writer into that directory, the same property belongs on it too, or on every
-# target here via CMAKE_JOB_POOL_LINK.
-if(MSVC)
-	# Ninja-only properties: ignored by other generators, and ninja errors if a rule
-	# names a pool that JOB_POOLS does not declare, so the two travel together.
-	set_property(GLOBAL APPEND PROPERTY JOB_POOLS zene_partc_ref_link=1)
-endif()
+# HONEST LIMIT - CLOSED. This note used to end: "this closes the window the
+# race needs, the first burst of writers into a fresh build	ests. If a later
+# change makes another target in this file the first writer into that directory,
+# the same property belongs on it too, or on every target here via
+# CMAKE_JOB_POOL_LINK." A later change did exactly that: run 34794059702 failed
+# the build on `[2411/2443] Linking CXX executable tests\RoutingGraphTest.exe`
+# with the same bare `Access is denied.` and no LNK/C diagnostic, and a test
+# executable is not a MODULE, so the per-target property below never covered it.
+# The property now lives at the top of this file, on EVERY target built from
+# it, via CMAKE_JOB_POOL_LINK (see the note there); the loop below keeps its own
+# explicit set only so a target created before that variable were ever set is
+# still covered. Nothing here is the remedy: it is the record of the race.
+#
+# The declaration of the pool lives at the top of this file with the variable.
+# Ninja errors if a rule names a pool JOB_POOLS does not declare, so a
+# set_property(TARGET ... JOB_POOL_LINK ...) without it must never be added
+# without the GLOBAL declaration beside it.
 
 foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	string(REPLACE "|" ";" FIELDS "${ENTRY}")
@@ -552,9 +595,10 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 
 	add_library(partc_ref_${PLUGIN_ID} MODULE ${PLUGIN_SOURCES})
 	if(MSVC)
-		# The link and its post-link applocal step, one reference module at a time;
-		# see the pool note above this loop.
-		set_property(TARGET partc_ref_${PLUGIN_ID} PROPERTY JOB_POOL_LINK zene_partc_ref_link)
+		# The link and its post-link applocal step, one target at a time. This is
+		# now the directory-wide default via CMAKE_JOB_POOL_LINK; set explicitly
+		# here too so the property is on the target whatever the variable did.
+		set_property(TARGET partc_ref_${PLUGIN_ID} PROPERTY JOB_POOL_LINK zene_tests_link)
 	endif()
 	target_include_directories(partc_ref_${PLUGIN_ID} PRIVATE
 		"${PART_C_REFERENCE_DIR}"
