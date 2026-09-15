@@ -1,0 +1,12 @@
+rev=1e33a3ddd
+upstream-modifications.txt entries : 451
+fork-sources.txt           entries : 550
+all-sources.txt            entries : 1589
+tools-sources.txt          entries : 35
+src/core/CMakeLists.txt    .cpp    : 379
+tests/CMakeLists.txt       add_test: 58
+ControlRegistryRegistrations register: 75
+ControlReversibilityTable.cpp join items: 3
+include/ControlRegistryGroups.h declares : 58
+include/ControlReversibility.h declares : 51
+snapshot json command entries           : 297
