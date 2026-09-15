@@ -32,13 +32,12 @@
 
 #include "Telemetry.h"
 
-// The compiled-out half of this file asserts on the command registry, which is
-// where the absence of the client is observable (see the #else slot below).
-// It has to be included here, at file scope: an #include inside the class body
-// would nest the header's declarations inside the class.
-#ifndef ZENE_TELEMETRY_ENABLED
+// The command registry is included at file scope for BOTH halves of this file:
+// it is where the absence of the client is observable in a compiled-out build
+// (the #else slot below), and where ROW 85's decision is observable in an
+// enabled one (noAutomatedCallerCanReachAConsentVerb). An #include inside the
+// class body would nest the header's declarations inside the class.
 #include "ControlRegistry.h"
-#endif
 
 #include <QtTest>
 
@@ -276,6 +275,48 @@ private slots:
 		// Leave the store as we found it: off.
 		Telemetry::saveConsent(TelemetryConsent{});
 		QVERIFY(!Telemetry::loadConsent().enabled);
+	}
+
+	//! ROW 85's DECISION, executable (docs/TELEMETRY-V1.md section 2.6). The
+	//! boarded-gap list names `telemetry.consent_set`; this surface does NOT
+	//! declare it, and that is a decision rather than an omission:
+	//! `telemetry.consent` IS the consent verb, and a consent verb an automated
+	//! caller could reach would be a command that turns telemetry ON on the
+	//! user's behalf - the one thing the feature's design forbids. All three
+	//! halves are measurable, which is what makes this a test rather than prose:
+	//! the id is absent, no telemetry.* command is mutating, and the ONE consent
+	//! verb refuses every caller that is not a human - the registry refuses it
+	//! before the handler runs, so that holds with no engine and no display.
+	void noAutomatedCallerCanReachAConsentVerb()
+	{
+		lmms::ControlRegistry* registry = lmms::ControlRegistry::instance();
+		QVERIFY2(registry->command(QStringLiteral("telemetry.consent_set")) == nullptr,
+			"telemetry.consent_set exists. If the consent act ever genuinely needs a second id, "
+			"the decision in docs/TELEMETRY-V1.md section 2.6 is what has to be revised first - "
+			"not quietly added this row back");
+
+		const QStringList ids = registry->commandIds().filter(QStringLiteral("telemetry."));
+		QCOMPARE(ids.size(), 2);
+		for (const QString& id : ids)
+		{
+			const lmms::ControlCommand* command = registry->command(id);
+			QVERIFY2(command != nullptr, qPrintable(id));
+			QVERIFY2(!command->mutating,
+				qPrintable(QStringLiteral("%1 is mutating: a mutating telemetry command is one "
+					"an automated caller could use to change the consent record, which is the "
+					"human's act alone").arg(id)));
+		}
+
+		const lmms::ControlResult refused = registry->invoke(QStringLiteral("telemetry.consent"));
+		QVERIFY2(!refused.ok, "an automated caller reached the consent screen");
+		QCOMPARE(refused.errorKind, lmms::ControlErrorKind::Requires);
+		QVERIFY2(!refused.errorMessage.isEmpty(), "the refusal carried no reason");
+
+		const lmms::ControlCommand* status = registry->command(QStringLiteral("telemetry.status"));
+		QVERIFY2(status != nullptr, "telemetry.status is not registered");
+		QVERIFY2(status->requiresDecl.isEmpty(),
+			"telemetry.status declares a requires: the read-only report has no excuse and must "
+			"stay reachable by the headless sweep");
 	}
 
 	// --- 8. the packager kill switch (enabled build) -----------------------

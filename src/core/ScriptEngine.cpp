@@ -33,6 +33,7 @@
 #include <QVector>
 
 #include <cstring>
+#include <cstdlib>
 
 extern "C"
 {
@@ -51,6 +52,7 @@ extern "C"
 #include "PatternStore.h"
 #include "ProjectJournal.h"
 #include "ScriptApiVersion.h"
+#include "ScriptMemoryBudget.h"
 #include "ScriptBindings.h"
 #include "ScriptConsole.h"
 #include "Song.h"
@@ -93,10 +95,17 @@ public:
 	ScriptEngine::RunResult run(const QString& source, const QString& chunkName,
 					QString* error)
 	{
-		lua_State* L = luaL_newstate();
+		// CODE-6: the budget travels with the state it bounds. The allocator is
+		// ScriptMemoryState::allocate (include/ScriptMemoryBudget.h) - the second
+		// budget, beside the instruction hook below it.
+		ScriptMemoryState memory;
+		memory.budget = m_engine->memoryBudget();
+
+		lua_State* L = lua_newstate(&ScriptMemoryState::allocate, &memory);
 		if (L == nullptr)
 		{
-			*error = QStringLiteral("could not create a Lua state");
+			*error = memory.stateRefusedMessage();
+			m_engine->recordRunMemory(0, memory.peak, memory.refused);
 			return ScriptEngine::RunResult::ScriptError;
 		}
 
@@ -124,12 +133,28 @@ public:
 		if (status != LUA_OK)
 		{
 			const char* message = lua_tostring(L, -1);
-			*error = message != nullptr ? QString::fromUtf8(message)
-							: QStringLiteral("unknown Lua error");
+			const QString luaMessage = message != nullptr ? QString::fromUtf8(message)
+					: QStringLiteral("unknown Lua error");
+			if (status == LUA_ERRMEM)
+			{
+				// CODE-6: name a memory refusal as a BUDGET one - Lua's own
+				// text ("not enough memory") does not say which bound was hit.
+				*error = memory.budgetExceededMessage(luaMessage);
+			}
+			else
+			{
+				*error = luaMessage;
+			}
 			result = ScriptEngine::RunResult::ScriptError;
 		}
 
+		// Read the measurements BEFORE closing: lua_close() frees everything,
+		// which is why a closed state cannot report what it held.
+		const quint64 live = memory.live;
+		const quint64 peak = memory.peak;
+		const quint64 refusals = memory.refused;
 		lua_close(L);
+		m_engine->recordRunMemory(live, peak, refusals);
 		return result;
 	}
 

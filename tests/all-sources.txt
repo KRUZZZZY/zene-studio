@@ -375,6 +375,7 @@ include/ScriptBindings.h
 include/ScriptConsole.h
 include/ScriptEngine.h
 include/ScriptLuaQtTypes.h
+include/ScriptMemoryBudget.h
 include/ScriptPackage.h
 include/SendButtonIndicator.h
 include/SerializingObject.h
@@ -1373,6 +1374,7 @@ tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp
 tests/src/core/ControlVcaEditGroupsTest.cpp
@@ -1440,6 +1442,7 @@ tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp
+tests/src/core/ScriptMemoryBudgetTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
@@ -1455,6 +1458,7 @@ tests/src/core/TakeLaneCompTest.cpp
 tests/src/core/TakeLaneTest.cpp
 tests/src/core/TakeLaneTestSupport.h
 tests/src/core/TelemetryTest.cpp
+tests/src/core/TelemetryTransportTest.cpp
 tests/src/core/TempoMapPersistenceTest.cpp
 tests/src/core/TempoMapTest.cpp
 tests/src/core/TimelineTest.cpp

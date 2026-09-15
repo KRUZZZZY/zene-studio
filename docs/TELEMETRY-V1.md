@@ -115,6 +115,72 @@ allowlist entry for `telemetry.consent` is accounted for in that build by
 `--compiled-out telemetry.consent`, passed by `tests/CMakeLists.txt` and checked in both directions
 by the gate. See `docs/TELEMETRY-KILL-SWITCH.md` §3 and §5.)**
 
+### 2.6 Row 85 closed by decision: there is no `telemetry.consent_set`
+
+The 0.3.0 feature list's row 85 carries the boarded gap `telemetry.consent_set`
+(`ableton-gap/AGENT-TOOLING.md` §5, "Boarded gaps"). **The id is deliberately not added**, and the row
+is closed by this decision rather than by a third command. The reasons, in the order they bind:
+
+1. **`telemetry.consent` IS the consent verb.** It opens the one consent screen, and that screen's
+   Save is the only writer of the consent record (`Telemetry::saveConsent()`), which §2.5's "one
+   action, one implementation" also pins: the Help-menu action and the registry handler are one
+   function. A second id for the same act would be two names for one decision, which A11 exists to
+   prevent.
+2. **A consent verb an automated caller can reach is the one thing the design forbids.** Consent is a
+   human act; `telemetry.consent` declares `requires: display, human`, so `checkRequires()` refuses
+   every automated caller *before* the handler runs. A `consent_set` that an agent could call would be
+   a command that turns telemetry **on** on the user's behalf, against both the recorded design (the
+   consent screen exists precisely so a human decides) and the release's privacy bar (consent has to
+   be evidenced from the user). Adding it with the same `requires: display, human` instead would
+   deliver a second allowlisted id for an act the surface already names — a duplicate id with no new
+   capability, which is what this row is closed against.
+3. **The gap list asked for a verb, and the surface has one.** What the boarded list wanted was that
+   the feature not be reachable only from a menu; it is not. `telemetry.consent` is the verb (a client
+   can see it in `control.commands_list`, with its `requires`, and be told exactly why it cannot call
+   it), and `telemetry.status` is the read-only half an agent may use.
+
+**This decision is executable, not prose.** `ControlRegistryTest::noAutomatedCallerCanReachAConsentVerb`
+asserts all three halves: `telemetry.consent_set` is absent from the registry; no `telemetry.*`
+command is `mutating` (so nothing on the surface can write the consent record); and the group's one
+consent verb refuses an automated caller with the typed `requires` error while `telemetry.status`
+answers. If a later release adds a consent writer that automation may call, that test fails first and
+this section is the document to revise.
+
+**The condition that would reopen the row.** A `telemetry.consent_set` becomes the right command the
+day consent stops being a purely human act: for example a *packager* or *owner* policy file that sets
+an enterprise default, with its own written consent basis and its own evidence, and which is
+distinguishable in `telemetry.status` from a user's own decision. Nothing in 0.3.0 has such a source,
+and the empty `telemetry/endpoint` means an enabled build still sends nothing at all (§2.3, §7).
+
+### 2.7 The transport, hardened (CODE-7): https only, and it never blocks the caller
+
+§2.4 said "the production transport ships with an empty endpoint: a configured-and-consented build
+still refuses to open a socket". Two things were true of it and are now fixed rather than assumed,
+both in `src/core/TelemetryNetworkTransport.cpp` (the consent model is untouched, as the change plan
+requires):
+
+* **https only.** `send()` posted to `QUrl(m_endpoint)` whatever scheme the endpoint carried, so an
+  endpoint configured as `http://` would have put the payload on the wire in clear. The scheme is now
+  checked on **every** send — `TelemetryNetworkTransport::isAllowedEndpoint()`, one definition, https
+  with a host and nothing else — and a refusal is in words (`lastRefusal()`, `describe()`), so
+  "endpoint set" and "endpoint this build would post to" are distinguishable.
+* **It never blocks the caller.** The old `send()` ran a nested `QEventLoop::exec()` behind a 10 s
+  single-shot timer and waited for `reply->finished`: a slow, blackholed or unreachable endpoint parked
+  the calling thread (the GUI thread) for ten seconds. A send now hands the POST to Qt and returns;
+  the reply deletes itself when it finishes. `true` therefore means "queued", **not** "delivered", and
+  the interface comment says so. The consequence is stated instead of hidden: the transport wants an
+  event loop on the thread that owns it, and a reply that never arrives is an attempt that is never
+  counted as a send.
+
+`telemetry.status` reports the policy and the verdict on the configured endpoint
+(`transport_policy`, `transport_endpoint`, `transport_endpoint_allowed`,
+`transport_endpoint_reason`, `transport_blocking`), so the property is observable through the socket
+rather than only readable in the source. The proof is the registered ctest
+`TelemetryTransportTest`: a plain-http endpoint is refused **before the delivery seam is reached** (the
+recorder standing in for the network is never called — the measurable form of "before a socket
+exists"), and a send to TEST-NET-1 (192.0.2.0/24, RFC 5737 — reserved, never answers) returns at once,
+which the ten-second implementation could not do on any machine.
+
 ## 3. The payload allowlist (24 keys, closed)
 
 Hardware / platform group (17):

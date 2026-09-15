@@ -340,6 +340,7 @@ include/ScriptBindings.h
 include/ScriptConsole.h
 include/ScriptEngine.h
 include/ScriptLuaQtTypes.h
+include/ScriptMemoryBudget.h
 include/ScriptPackage.h
 include/SessionModel.h
 include/SessionScheduler.h

@@ -142,6 +142,14 @@ const ReversibilityRow kSnapshotRows[] = {
 		"snapshot: the transaction's before-state holds the previous cap, and the recorded inverse is the command itself (control.undo dispatches control.set_undo_depth with steps/bytes set back). The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",
 		"the steps evicted by a cap change are NOT recoverable: control.undo restores the CAP, not the history it dropped. Raise the cap before a long session, or re-drive the edits"),
 
+	// CODE-6: the Lua memory budget. The instruction budget's sibling, and the
+	// same shape: a bounded scalar the process holds, settable through the
+	// surface, reported back by the command that runs the scripts it bounds.
+	R("script.set_memory_budget", RC::Snapshot, true,
+		"the budget is a bound on what a SCRIPT may hold - process state, not project state (the control.set_undo_depth precedent). Lowering it does not evict anything: a run already in flight keeps the budget it opened its Lua state with, and the next run is refused past the new cap",
+		"snapshot: the transaction's before-state holds the previous budget and the recorded inverse is this command with that value, so one control.undo puts the cap back. The measurement is not stored twice: script.run reports the budget in force and what the run measured against it (memory_live_bytes, memory_peak_bytes, memory_refusals), read from the allocator's own count",
+		"the inverse restores the CAP, not the runs it refused: a script the old budget aborted stays aborted, and re-running it is a new run under the restored cap. Raising the cap is also not retroactive to a run already executing - the worker reads the budget once, when it opens the state"),
+
 	// The browser's tag commands (030/w10-browser): restored after a merge
 	// resolution took the other side wholesale and dropped them. The A16 contract
 	// test caught it - it requires a row for every registered command.
