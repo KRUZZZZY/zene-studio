@@ -275,6 +275,11 @@ set(LMMS_TESTS
 	# new-file cap; the fixtures both use are in SmfInterchangeTestSupport.h.
 	src/core/SmfInterchangeTest.cpp
 	src/core/SmfInterchangeRoundTripTest.cpp
+	# DAWproject import / export (feature row 37): the round trip that compares
+	# the MODEL - tracks, clips, notes, mixer channels, tempo map - rather than
+	# the file or its hash. A separate executable so the file stays inside the
+	# new-file cap; it builds a real Engine and drives the dawproject.* commands.
+	src/core/DawProjectInterchangeRoundTripTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
@@ -2210,6 +2215,11 @@ set_tests_properties(ControlTempoMapCommandsTest TempoMapPersistenceTest TempoMa
 # opens a window - the same reason as the tempo-map group above. Both halves of
 # the proof need it.
 set_tests_properties(SmfInterchangeTest SmfInterchangeRoundTripTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The DAWproject round-trip test constructs a full Engine, drives tracks/clips/
+# notes through the registry and writes/reads real files, so it needs a Qt
+# platform plugin even though nothing opens a window.
+set_tests_properties(DawProjectInterchangeRoundTripTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a

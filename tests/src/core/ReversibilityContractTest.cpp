@@ -118,8 +118,12 @@ DocumentedHistogram documentedHistogram()
 	 *  one row count. Each lane's delta is named beside its rows in
 	 *  src/core/ControlReversibilityTable*.cpp. The paragraph in
 	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
-	 *  assertion's job is that the two cannot drift. */
-	DocumentedHistogram out{281, 151, 21, 6, 103};
+	 *  assertion's job is that the two cannot drift.
+	 *
+	 *  DAWproject (feature row 37, this lane): +4 rows - 3 not_mutating
+	 *  (dawproject.convention, export, read) + 1 true_inverse (import), so the
+	 *  merged tip's base becomes 285 / 152 / 21 / 6 / 106. */
+	DocumentedHistogram out{285, 152, 21, 6, 106};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
