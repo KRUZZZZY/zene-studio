@@ -33,6 +33,7 @@
 #include <QString>
 
 #include "ClapBusMap.h"
+#include "ClapLoader.h"
 #include "ClapParamDescriptor.h"
 #include "PluginHostChunking.h"
 
@@ -59,6 +60,16 @@ struct ClassInfo
  * clap.plugin-factory extension and unloads it again. Main thread only.
  */
 auto listClasses(const QString& modulePath, QString* error) -> std::vector<ClassInfo>;
+
+/*!
+ * The same scan, reporting WHY a module could not be read as a typed code
+ * (`status` receives Code::None when it could). The failures that look alike in
+ * prose -- no such file, no `clap_entry`, a CLAP 0.x module, an init() that
+ * fails -- are distinct codes, which is what a scan of a user's plug-in
+ * directory has to report to be actionable. See ClapLoader.h.
+ */
+auto listClasses(const QString& modulePath, loader::Status* status, QString* error)
+	-> std::vector<ClassInfo>;
 
 /*! The counters behind HostedPlugin::process(), shared with the control
  * surface: the engine half is include/PluginHostChunking.h (core), because the
@@ -87,6 +98,10 @@ public:
 	auto load(const QString& modulePath, const QString& pluginId, QString* error) -> bool;
 	void unload();
 	auto isLoaded() const -> bool;
+	//! The typed reason the last load() failed: Code::None when it did not.
+	//! Where `error` carries the sentence a user reads, this is what a caller
+	//! matches on -- see ClapLoader.h for the codes and their meaning.
+	auto lastLoadFailure() const -> const loader::Status&;
 	auto classInfo() const -> const ClassInfo&;
 	auto className() const -> QString;
 	auto vendor() const -> QString;

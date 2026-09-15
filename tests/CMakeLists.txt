@@ -1259,6 +1259,7 @@ if(TARGET lmms_clap)
 		src/plugins/ClapHostTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
@@ -1281,6 +1282,51 @@ if(TARGET lmms_clap)
 		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>")
 	add_dependencies(ClapHostTest clap-test-gain)
 
+	# The TYPED error path of the module loader (ClapLoader.h). Subjects: the
+	# four one-fault modules built above -- each fails in exactly one way, so a
+	# wrong code is a host defect and not a fixture artefact -- plus
+	# clap-test-gain as the control that says the typed path does not fire on a
+	# module that is fine. Nothing here needs an audio device or the engine.
+	#
+	# WHERE IT RUNS (checked against .github/workflows/build.yml, not assumed).
+	# Every job that provisions the CLAP headers builds it; of the three Windows
+	# jobs, msvc-x64 is the one that runs `ctest`, so that is the job where the
+	# typed path is exercised on Windows -- against the Windows half of the
+	# loader (LoadLibraryW/GetProcAddress). mingw64 and windows-arm64 configure
+	# with -DWANT_CLAP=ON and build the module, but run no ctest, so for them the
+	# proof is that it compiles and that the release-honesty guard finds the
+	# clapeffect module in their artifacts. On Linux and macOS it runs with the
+	# rest of the suite.
+	add_executable(ClapLoaderErrorTest
+		src/plugins/ClapLoaderErrorTest.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
+	)
+	add_test(NAME ClapLoaderErrorTest COMMAND ClapLoaderErrorTest)
+	target_include_directories(ClapLoaderErrorTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		${CMAKE_BINARY_DIR}/src
+		${CMAKE_SOURCE_DIR}/include
+		${LMMS_CLAP_EFFECT_DIR}
+	)
+	target_compile_features(ClapLoaderErrorTest PRIVATE cxx_std_20)
+	target_link_libraries(ClapLoaderErrorTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_clap
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(ClapLoaderErrorTest PRIVATE
+		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>"
+		CLAP_TEST_BROKEN_NO_SYMBOL_PATH="$<TARGET_FILE:clap-test-broken-no-symbol>"
+		CLAP_TEST_BROKEN_OLD_VERSION_PATH="$<TARGET_FILE:clap-test-broken-old-version>"
+		CLAP_TEST_BROKEN_INIT_FAILS_PATH="$<TARGET_FILE:clap-test-broken-init-fails>"
+		CLAP_TEST_BROKEN_NO_FACTORY_PATH="$<TARGET_FILE:clap-test-broken-no-factory>")
+	add_dependencies(ClapLoaderErrorTest clap-test-gain clap-test-broken-no-symbol
+		clap-test-broken-old-version clap-test-broken-init-fails clap-test-broken-no-factory)
+
 	add_executable(ClapEffectIntegrationTest
 		src/plugins/ClapEffectIntegrationTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
@@ -1288,6 +1334,7 @@ if(TARGET lmms_clap)
 		${LMMS_CLAP_EFFECT_DIR}/ClapEffectControlDialog.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapEffectControls.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapParameter.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapSubPluginFeatures.cpp
 	)
@@ -1490,7 +1537,7 @@ endif()
 # sources directly, so their objects carry the coverage the ratchet tracks.
 # PluginPortsMigrationReference is deliberately left un-instrumented: the
 # reference side of the behaviour comparison must stay plain.
-foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapEffectIntegrationTest
+foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapLoaderErrorTest ClapEffectIntegrationTest
 		Vst3BusMapTest Vst3HostTest Vst3EffectIntegrationTest Vst3ChunkProbeTest
 		WasmSandboxTest PluginPortsMigrationTest AudioPluginTest
 		synthetic_audio_plugin)

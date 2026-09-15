@@ -472,6 +472,8 @@ plugins/ClapEffect/ClapEffectControls.cpp
 plugins/ClapEffect/ClapEffectControls.h
 plugins/ClapEffect/ClapHost.cpp
 plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapLoader.cpp
+plugins/ClapEffect/ClapLoader.h
 plugins/ClapEffect/ClapParamDescriptor.h
 plugins/ClapEffect/ClapParameter.cpp
 plugins/ClapEffect/ClapParameter.h
