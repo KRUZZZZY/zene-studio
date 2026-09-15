@@ -596,8 +596,13 @@ private slots:
 		const bool wasEnabled = initial.result.value(QStringLiteral("enabled")).toBool();
 		const QJsonObject axes = initial.result.value(QStringLiteral("axes")).toObject();
 		QCOMPARE(axes.value(QStringLiteral("pitch")).toBool(), true);
-		QCOMPARE(axes.value(QStringLiteral("pressure")).toBool(), false);
-		QCOMPARE(axes.value(QStringLiteral("timbre")).toBool(), false);
+		// Task #649: pressure and timbre are APPLIED, not merely stored - they
+		// reach the instrument as MIDI events on the note's own channel. The
+		// measured proof is MpePlaybackTest (a block with the expression
+		// against the same block without it); this read-back is the surface's
+		// own answer to the same question.
+		QCOMPARE(axes.value(QStringLiteral("pressure")).toBool(), true);
+		QCOMPARE(axes.value(QStringLiteral("timbre")).toBool(), true);
 		QCOMPARE(initial.result.value(QStringLiteral("per_stream_settings_reachable")).toBool(),
 			false);
 
