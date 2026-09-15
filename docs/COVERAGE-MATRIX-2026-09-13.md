@@ -1,4 +1,15 @@
 # Zene Studio — control-surface coverage matrix
+> **SUPERSEDED — 2026-09-14.** This file is a **tip-pinned snapshot**: its own header pins `ddf5f171d`
+> and its §1.2 computes **150 ids = 144 + 6** over **28 groups** (27 id prefixes + the helper-built
+> `wasm`). It is kept as the record of that base and is **not** updated in place. The measurement of
+> record is **`docs/COVERAGE-REMEASURE-2026-09-14.md`** (branch `030/audit`), taken at the release tip
+> **`3956ef589`** — `33` command groups and `185` command ids, the registry source and a live
+> `control.commands_list` agreeing exactly. Read §9 of that file for the four surfaces this one's own §9
+> (*Re-measurement, 2026-09-13*) left disagreeing (28/150, 30/154, 31/170), and §6 for the 41 ids the `chain`,
+> `clock`, folder-track, `midi.retro_capture_*`, `record`, `freeze`/`bounce`, `groove` and
+> `transport.punch_*` merges added between the two tips. The tip some other documents attribute to this
+> file, `0ee78abed`, appears nowhere in it and is **not verified**.
+
 
 | | |
 |---|---|
@@ -492,3 +503,43 @@ are closed; the rest is unchanged and re-stated with the numbers measured here.*
   soft-takeover/LED/mapping-templates row. Table C itself is left as the audit wrote it, since §6 was
   not re-derived. (The groove-pool row is still "absent" **in this tree**: that branch was being merged
   in `zene-030` while this re-measurement was taken.)
+
+### 3.3 The 9 ids with no registered-test reference
+
+Computed as `150 tree ids − {ids literal-referenced by any registered test artefact}`
+(`tests/src/**/*.cpp` plus the `tests/*.py` that appear in `tests/CMakeLists.txt` — 134 artefacts):
+
+| group | ids | why |
+|---|---|---|
+| `export` | `export.get_settings`, `export.set_dither`, `export.set_src_quality` | the only artefact that exercises them, `tests/control-export-settings.py`, is **not registered**; its committed transcript is at `tests/evidence/export-src-dither/transcript.txt` |
+| `session` | `session.clear`, `session.clear_slot`, `session.launch_slot`, `session.stop_all`, `session.stop_slot` | nothing outside `src/`+`include/` mentions them |
+| `midi` | `midi.learn_toggle` | only referenced from `tests/upstream-modifications.txt`, which is a manifest |
+
+## 9. Re-measurement, 2026-09-13 — the release tree's own counts, both figures dated
+
+The counts above are the **audit tip's own** and stay as written. A later lane re-measured the release tree by
+the same method — counting the registry source, not a document — because `docs/FEATURE-LIST-0.3.0.md`,
+`V0.3-SCOPE-CORRECTIONS.md` and the coverage-matrix copies were quoting 28/150, 30/154 and 31/170 against each
+other. Read-only (`git grep` against the ref); the `zene-030` worktree was not touched.
+
+| base | ids | groups, as defined |
+|---|---|---|
+| `ddf5f171d` (this matrix's tip, `030/audit`) | **150** = 144 `.id =` assignments + 6 helper-built `wasm.*` | **28** = 27 id prefixes **+** the helper-built `wasm` group |
+| `334790219` (`release/0.3.0`) | **170** = 164 + 6 | **31** id prefixes **+** the helper-built `wasm` group = 32 group names |
+| `01b99753a` (`release/0.3.0`, 2026-09-13) | **170** = 164 + 6 | as above |
+
+```
+git grep -h -o '\.id = QStringLiteral(' <ref> -- 'src/core/ControlCommands*.cpp' | wc -l          # 164
+git grep -h -o '\.id = QStringLiteral("[^"]*\.' <ref> -- 'src/core/ControlCommands*.cpp' \
+  | sed 's/.*QStringLiteral("//; s/\.[^.]*$//' | sort -u                                          # 31 prefixes
+```
+
+The groups added against this matrix's 28 are **`bounce` (1 id), `freeze` (3), `groove` (7), `record` (6)** and
+three more `transport` ids (`transport.punch_*`) — 27 + 4 = 31 prefixes, with the id total up by 20 (17 new
+ids in those four groups plus the 3 punch ids).
+
+**One base difference is left unreconciled rather than smoothed:** this matrix's **28 includes** the
+helper-built `wasm` group, while the release-tree figure of **31 excludes** it — so the two are one apart as
+*group* counts, not three. Whether the compile-gated `wasm` group counts as a group of the surface is a
+definition no document settles, and neither figure is changed here because of it. Stated in both directions so
+a reader does not read one as an error: the ids (150 → 170) agree on one base; the groups (28 vs 31/32) do not.
