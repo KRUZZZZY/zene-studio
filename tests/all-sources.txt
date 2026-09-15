@@ -334,6 +334,7 @@ include/Plugin.h
 include/PluginAudioPorts.h
 include/PluginBrowser.h
 include/PluginFactory.h
+include/PluginHostChunking.h
 include/PluginIssue.h
 include/PluginScanCache.h
 include/PluginView.h
@@ -979,6 +980,7 @@ src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
+src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
@@ -1046,6 +1048,7 @@ src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlCommandsWasm.cpp
 src/core/ControlCommandsWasmEdit.cpp
+src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
@@ -1072,7 +1075,9 @@ src/core/ControlReversibilityTableArchive.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
+src/core/ControlReversibilityTableHostChunking.cpp
 src/core/ControlReversibilityTableInterchange.cpp
+src/core/ControlReversibilityTableLive.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
@@ -1086,6 +1091,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
@@ -1166,6 +1172,7 @@ src/core/Piano.cpp
 src/core/PlayHandle.cpp
 src/core/Plugin.cpp
 src/core/PluginFactory.cpp
+src/core/PluginHostChunking.cpp
 src/core/PluginIssue.cpp
 src/core/PluginScanCache.cpp
 src/core/PresetPreviewPlayHandle.cpp
@@ -1413,6 +1420,8 @@ src/tracks/PatternTrack.cpp
 src/tracks/SampleTrack.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
+src/wasm/WasmOfflineRender.cpp
+src/wasm/WasmOfflineRender.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
@@ -1420,8 +1429,11 @@ src/wasm/WasmSandboxHost.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
+src/wasm/WasmWorkerPool.cpp
+src/wasm/WasmWorkerPool.h
 tests/data/clap-test-plugin/clap-test-gain.c
 tests/data/gigproof/make_gig.cpp
+tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp
 tests/src/core/AllocationProbe.h
 tests/src/core/ArrayVectorTest.cpp
@@ -1574,6 +1586,7 @@ tests/src/plugins/PluginPortsMigrationReference.cpp
 tests/src/plugins/PluginPortsMigrationTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
+tests/src/plugins/Vst3ChunkProbeTest.cpp
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
 tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
@@ -1586,6 +1599,7 @@ tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
+tests/src/wasm/WasmWorkerPoolTest.cpp
 tools/mmpz-git/scratch/qtesc.cpp
 tools/mmpz-git/scratch/qtroundtrip.cpp
 tools/mmpz-git/scratch/qtsave.cpp
