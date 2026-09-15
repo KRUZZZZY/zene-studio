@@ -78,6 +78,20 @@ QString bestMatch( const QStringList& livePorts, const QString& identity,
 	return !exact.isEmpty() ? exact : first;
 }
 
+//! Subscribe \a assignment's port at the name the assignment now holds.
+/*!
+ * Split out of reconcile() so the loop carries the decisions and this carries
+ * the two optional steps (an assignment whose port is gone, and the direction);
+ * the all-scope per-method complexity ratchet counts reconcile's decisions, and
+ * these two are not decisions about what to do.
+ */
+void subscribeAssignment( MidiReconnectAssignment& assignment )
+{
+	if ( assignment.port == nullptr ) { return; }
+	if ( assignment.readable ) { assignment.port->subscribeReadablePort( assignment.name, true ); }
+	else { assignment.port->subscribeWritablePort( assignment.name, true ); }
+}
+
 } // namespace
 
 
@@ -233,17 +247,7 @@ int MidiReconnect::reconcile( const QStringList& readablePorts, const QStringLis
 			++assignment.reconnects;
 			++m_reconnected;
 		}
-		if ( assignment.port != nullptr )
-		{
-			if ( assignment.readable )
-			{
-				assignment.port->subscribeReadablePort( target, true );
-			}
-			else
-			{
-				assignment.port->subscribeWritablePort( target, true );
-			}
-		}
+		subscribeAssignment( assignment );
 		++applied;
 	}
 	return applied;
