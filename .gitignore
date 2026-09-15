@@ -17,6 +17,14 @@ Brewfile.lock.json
 /.cache/
 compile_commands.json
 /third_party/
+# The integration trains' working logs (merge tooling, per-merge counts, ctest
+# and gate logs). Working material, not product content: Gate 6 classifies every
+# changed path, and a log directory at the repository root has no class it
+# allows. The three earlier trains' directories were already untracked; the
+# wave-4 train committed its own by accident, and the 2026-09-15 wave-5 train
+# untracked it (files kept on disk) and moved its RECORD to
+# docs/reports/MERGE-TRAIN-030w4.md. Keep them out of git.
+/.merge-logs-*/
 
 # (The tests/integration-logs-ci-fix/**/out/ ignore rule that stood here was removed with
 # the committed evidence on 2026-09-13, REPO-1/CP-1: the harness directory it covered is

@@ -124,7 +124,7 @@ Mixer* liveMixer()
 // The function list is read out of the running lua_State, not from a table
 // written by hand: a second list of names is a list that can be wrong. The
 // class-member half of the surface is enumerated from the registration sources
-// by tools/lua-api-surface.py, whose output docs/lua-api-surface.txt is the
+// by tests/lua-api-surface.py, whose output docs/LUA-API-SURFACE.md is the
 // committed ratchet (tests/CMakeLists.txt: LuaApiSurface).
 // ---------------------------------------------------------------------------
 

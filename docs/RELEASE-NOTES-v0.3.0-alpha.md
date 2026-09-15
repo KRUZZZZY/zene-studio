@@ -2287,7 +2287,7 @@ PDC, automation clip, controller or settings object, which is what the audit mea
   script-side header gate). `zene.apiSurface()` reports the version and the LIVE `zene` surface,
   and `tests/lua-api-surface.py` (registered ctest **`LuaApiSurface`**) derives the whole surface
   — every namespace function and every class member — from the registration sources and fails on
-  drift in EITHER direction against the committed `docs/lua-api-surface.txt`: a removed or renamed
+  drift in EITHER direction against the committed `docs/LUA-API-SURFACE.md`: a removed or renamed
   name is a breaking change (bump `ZENE_LUA_API_VERSION_MAJOR`), an added name is additive (bump
   `ZENE_LUA_API_VERSION_MINOR`). The test names each entry and prints the policy. It needs no
   build of the DAW, so it runs everywhere.

@@ -370,5 +370,5 @@ one `case` label per op.
   chain from Lua, asserts the ENGINE's own state, asserts the control surface resolves the same
   `ch-<n>` to the same `EffectChain`, proves the fader write is undoable through `ProjectJournal`,
   and checks `zene.apiSurface()` against the version this test binary was compiled with.
-- `LuaApiSurface` (ctest, `tests/lua-api-surface.py` + `docs/lua-api-surface.txt`): the version and
+- `LuaApiSurface` (ctest, `tests/lua-api-surface.py` + `docs/LUA-API-SURFACE.md`): the version and
   compatibility policy as a ratchet - see `docs/LUA-COMPATIBILITY-POLICY.md` section 1a.

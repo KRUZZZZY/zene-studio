@@ -41,11 +41,11 @@ not "enforced", so nothing here is left to review:
 |---|---|
 | The numbers come from one place | `ScriptStabilisationTest::versionEntryPointReportsTheBuiltVersion` compares what the engine reports against what the test binary was compiled with (both from `CMakeLists.txt`) |
 | A script declares what it needs | `ScriptEngine::isCompatibleVersion()` — the `--! zene-api` / `--! lmms-api` header gate (section 3.1) |
-| No name is removed within a major version | `tests/lua-api-surface.py`, registered as the ctest **`LuaApiSurface`**: it derives the whole surface (every `zene.*` function and every class member) from the registration sources and fails on drift against the committed `docs/lua-api-surface.txt`, naming each entry as `REMOVED (breaking)` |
+| No name is removed within a major version | `tests/lua-api-surface.py`, registered as the ctest **`LuaApiSurface`**: it derives the whole surface (every `zene.*` function and every class member) from the registration sources and fails on drift against the committed `docs/LUA-API-SURFACE.md`, naming each entry as `REMOVED (breaking)` |
 | An addition bumps MINOR | the same test: an entry the manifest lacks is reported as `ADDED (additive)` and the recorded `api <major>.<minor>` line is compared with `CMakeLists.txt`, so a surface change without a version change fails |
 | A script can ask what it is running against | `zene.apiSurface()` (version, stability, and the live `zene` surface), `zene.version()`, `zene.apiVersion()`, `zene.apiVersionMinor()` |
 
-`docs/lua-api-surface.txt` is a DERIVED file: `python3 tests/lua-api-surface.py
+`docs/LUA-API-SURFACE.md` is a DERIVED file: `python3 tests/lua-api-surface.py
 --write` produces it and never hand-edit it. When `LuaApiSurface` fails, the
 message says which of the two bumps (MINOR for an addition, MAJOR for a removal)
 the change needs.

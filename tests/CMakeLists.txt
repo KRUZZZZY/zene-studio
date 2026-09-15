@@ -1767,7 +1767,7 @@ ELSE()
 ENDIF()
 # ---------------------------------------------------------------------------
 # LuaApiSurface (0.3.0 feature row 50): the version + compatibility policy as a
-# RATCHET. docs/lua-api-surface.txt is the API surface of the version this tree
+# RATCHET. docs/LUA-API-SURFACE.md is the API surface of the version this tree
 # declares, derived from the registration sources by tests/lua-api-surface.py.
 # The test re-derives it and fails on drift in EITHER direction - a removed name
 # (breaking: needs a MAJOR bump) and an added one (additive: needs a MINOR bump)
@@ -1780,7 +1780,7 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/lua-api-surface.py
 			--check
 			--root ${CMAKE_SOURCE_DIR}
-			--manifest ${CMAKE_SOURCE_DIR}/docs/lua-api-surface.txt
+			--manifest ${CMAKE_SOURCE_DIR}/docs/LUA-API-SURFACE.md
 	)
 endif()
 

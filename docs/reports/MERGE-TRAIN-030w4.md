@@ -1,5 +1,14 @@
 # WAVE-4 INTEGRATION TRAIN — state at the merged tip
 
+> **Location (2026-09-15, wave-5 train).** Moved from `.merge-logs-030w4/REPORT-030w4.md`
+> to `docs/reports/` because Gate 6 classifies every path changed since its base and a
+> log directory at the repository root matches no class it allows (`.merge-logs-030w4/*.py`,
+> `*.sh` and `*.txt` were reported as "undeclared change to upstream-inherited code",
+> 14 of them). The record's own text is unchanged, and the working logs it names —
+> `.merge-logs-030w4/…` — are all still on this box at that path; the directory is now
+> untracked (`.gitignore: /.merge-logs-*/`), the way the w1/w2/w3 trains' directories
+> always were. Nothing was deleted: only the record is in git, at the path above.
+
 **Train:** eight verified lane branches merged into `release/0.3.0` in `zene-030`, with
 VERIFIED UNION merges, the FIXUP section-5a defect fixed with a test, the A16 histogram
 constant re-measured, the MCP commands snapshot regenerated from a live instance, the

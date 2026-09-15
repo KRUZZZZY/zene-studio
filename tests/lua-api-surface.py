@@ -7,7 +7,7 @@ a fact rather than a promise:
   * the API surface (every `zene.*` function and every registered class member)
     is derived from the REGISTRATION SOURCES, which are the only place it is
     defined - there is no second, hand-written list to drift;
-  * docs/lua-api-surface.txt is the committed surface of the version the build
+  * docs/LUA-API-SURFACE.md is the committed surface of the version the build
     reports. A surface change that is not recorded there fails this test, in
     either direction: a REMOVED name (a breaking change, which the policy says
     needs a MAJOR bump) and an ADDED name (additive, which the policy says
@@ -17,7 +17,7 @@ a fact rather than a promise:
     change with an unchanged version, is caught here.
 
 Usage:
-  tests/lua-api-surface.py --write     # regenerate docs/lua-api-surface.txt
+  tests/lua-api-surface.py --write     # regenerate docs/LUA-API-SURFACE.md
   tests/lua-api-surface.py --check     # what ctest LuaApiSurface runs
   tests/lua-api-surface.py --check --manifest <path> --root <tree>
 """
@@ -53,7 +53,7 @@ The Lua API surface changed. docs/LUA-COMPATIBILITY-POLICY.md section 2:
     ZENE_LUA_API_VERSION_MAJOR, which makes every existing script fail the
     `--! zene-api` header gate with a message naming this build, then run
     tests/lua-api-surface.py --write.
-Never hand-edit docs/lua-api-surface.txt: it is a derived file.
+Never hand-edit docs/LUA-API-SURFACE.md: it is a derived file.
 """
 
 
@@ -219,7 +219,7 @@ def main() -> int:
     group.add_argument("--write", action="store_true")
     args = parser.parse_args()
     root = Path(args.root).resolve()
-    manifest = Path(args.manifest).resolve() if args.manifest else root / "docs/lua-api-surface.txt"
+    manifest = Path(args.manifest).resolve() if args.manifest else root / "docs/LUA-API-SURFACE.md"
     return write(root, manifest) if args.write else check(root, manifest)
 
 

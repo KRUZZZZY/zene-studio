@@ -92,7 +92,7 @@ DocumentedHistogram documentedHistogram()
 	 *  RE-MEASURED ON THE MERGED TIP, 2026-09-15, by the wave-4 integration
 	 *  train - the constant is a MEASUREMENT and this is the tree's own number,
 	 *  not a sum of anybody's lane report. Measured with
-	 *  `bash .merge-logs-030w4/measure-a16.sh` (part 2 of tools/dawproject-proof.sh
+	 *  `bash tools/dawproject-proof.sh` (its part 2, the A16 histogram probe, on its own
 	 *  on its own: the probe tools/dawproject-a16-histogram.cpp compiled against
 	 *  this tree's src/core/ControlReversibilityTable*.cpp with this build's own
 	 *  flags, the tables assembled the way ReversibilityTable's constructor
