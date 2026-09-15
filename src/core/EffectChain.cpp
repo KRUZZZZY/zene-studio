@@ -37,52 +37,12 @@
 #include "DummyEffect.h"
 #include "Engine.h"
 #include "LatencyCompensation.h"
-#include "PatchWiring.h"
 #include "RoutingChainNodes.h"
 #include "RoutingGraph.h"
 
 namespace lmms
 {
 
-namespace
-{
-
-//! The graph node id a patch reference names, through the derived node table
-//! ids[0] = the chain's input node, ids[k] = the node of effect k-1, or -1.
-auto nodeIdFor(const PatchRef& ref, const std::vector<int>& ids) -> int
-{
-	if (ref.isInput()) { return ids.empty() ? -1 : ids.front(); }
-
-	const std::size_t index = static_cast<std::size_t>(ref.index()) + 1;
-	if (ref.index() < 0 || index >= ids.size()) { return -1; }
-	return ids[index];
-}
-
-/*! Connects @a wiring on @a graph through @a ids and sets its output node.
- *
- *  @returns false on the first edge the graph refuses (a port out of range, a
- *  repeated edge, a cycle) or when a reference names no node in @a ids. A
- *  false leaves whatever connected cleanly on the graph, which is why every
- *  caller treats it as "no wiring" and rebuilds from the derived one rather
- *  than keeping a half-wired graph; connect() itself rolls back the single
- *  edge it refused.
- */
-auto wireGraph(RoutingGraph& graph, const PatchWiring& wiring, const std::vector<int>& ids) -> bool
-{
-	for (const PatchEdge& edge : wiring.edges())
-	{
-		const int from = nodeIdFor(edge.from, ids);
-		const int to = nodeIdFor(edge.to, ids);
-		if (from < 0 || to < 0) { return false; }
-		if (!graph.connect(from, to, edge.fromPort, edge.toPort)) { return false; }
-	}
-
-	const int output = nodeIdFor(wiring.output(), ids);
-	if (output < 0) { return false; }
-	return graph.setOutputNode(output);
-}
-
-} // namespace
 
 
 EffectChain::EffectChain( Model * _parent ) :
@@ -109,157 +69,14 @@ auto EffectChain::routingGraph() const -> const RoutingGraph&
 }
 
 
-void EffectChain::rebuildRoutingGraph()
-{
-	m_graph->clear();
-	m_effectNodes.clear();
-	m_graphInput.reset();
-	m_graphOutput.reset();
-	m_graphActive = false;
-	m_patchDropped = false;
-
-	auto* engine = Engine::audioEngine();
-	const f_cnt_t frames = engine != nullptr ? engine->framesPerPeriod() : 0;
-	if (frames == 0 || m_effects.empty()) { return; }
-
-	// Effects with audio ports route their own ports on the bus (AudioPlugin
-	// overrides the bus entry point for exactly that); the graph's planar
-	// blocks cannot carry that port map, so the whole chain keeps the
-	// pre-existing path rather than routing half of it.
-	for (const Effect* effect : m_effects)
-	{
-		if (effect->audioPortsModel() != nullptr) { return; }
-	}
-
-	m_graphInput = std::make_unique<AudioBuffer>(frames, DEFAULT_CHANNELS);
-	m_graphOutput = std::make_unique<AudioBuffer>(frames, DEFAULT_CHANNELS);
-	m_graphInput->silenceAllChannels();
-	m_graphOutput->silenceAllChannels();
-
-	auto input = std::make_unique<ChainInputNode>(m_graphInput.get());
-	const int inputId = m_graph->addNode(std::move(input));
-
-	// The node set is DERIVED - one source node plus one node per effect, in
-	// list order - and these ids index it: ids[0] is the chain's input node,
-	// ids[k] is the node of effect k-1. A patch addresses those roles rather
-	// than these ids, because the ids are rebuilt here on every topology change.
-	std::vector<int> ids;
-	ids.reserve(m_effects.size() + 1);
-	ids.push_back(inputId);
-	for (Effect* effect : m_effects)
-	{
-		auto node = std::make_unique<EffectNode>(effect);
-		EffectNode* const raw = node.get();
-		ids.push_back(m_graph->addNode(std::move(node)));
-		m_effectNodes.push_back(raw);
-	}
-
-	// The wiring is the DERIVED one (linear, in chain order) until a patch
-	// replaces it, and the authored wiring is applied here on every rebuild -
-	// which is what makes a hand-wired edge survive the next plugin.load.
-	const PatchWiring derived = PatchWiring::linear(static_cast<int>(m_effects.size()));
-	if (m_patch.isEmpty() ? !wireGraph(*m_graph, derived, ids) : !wireGraph(*m_graph, m_patch, ids))
-	{
-		// A patch the current effect list cannot take is DROPPED rather than
-		// kept for a list it does not fit, and the chain falls back to its
-		// derivation - the same wiring it had before the patch existed.
-		m_patchDropped = !m_patch.isEmpty();
-		m_patch.clear();
-		if (!wireGraph(*m_graph, derived, ids))
-		{
-			// Unreachable for a linear chain (no cycle is possible); leave the
-			// chain on the plain loop rather than on a half-wired graph.
-			m_graph->clear();
-			m_effectNodes.clear();
-			m_graphInput.reset();
-			m_graphOutput.reset();
-			return;
-		}
-	}
-
-	m_graph->prepare(frames, DEFAULT_CHANNELS);
-	m_graphActive = true;
-}
+// The graph rebuild (rebuildRoutingGraph) and the patcher half (patchNodeId,
+// setPatchWiring) are defined in src/core/EffectChainPatcher.cpp. This file is
+// upstream-inherited and carries a whole-tree file-length baseline row, so the
+// fork's additions live in their own translation unit; behaviour is unchanged.
 
 
-auto EffectChain::patchNodeId(const PatchRef& ref) const -> int
-{
-	if (m_graph == nullptr) { return -1; }
-
-	// The chain's graph is always rebuilt from empty (no node is ever removed
-	// from it), so its ids are dense: 0 .. nodeCount()-1.
-	for (int id = 0; id < m_graph->nodeCount(); ++id)
-	{
-		const RoutingNode* node = m_graph->node(id);
-		if (node == nullptr) { continue; }
-
-		if (ref.isInput())
-		{
-			if (dynamic_cast<const ChainInputNode*>(node) != nullptr) { return id; }
-			continue;
-		}
-		if (ref.index() < 0 || ref.index() >= static_cast<int>(m_effects.size())) { return -1; }
-
-		const auto* effectNode = dynamic_cast<const EffectNode*>(node);
-		if (effectNode != nullptr && effectNode->effect() == m_effects[ref.index()]) { return id; }
-	}
-	return -1;
-}
 
 
-auto EffectChain::setPatchWiring(const PatchWiring& wiring, QString* error) -> bool
-{
-	auto* engine = Engine::audioEngine();
-
-	if (wiring.isEmpty())
-	{
-		// "No patch" is the derived wiring, and a chain can always be put back
-		// on it - there is nothing to refuse and nothing to validate.
-		if (engine != nullptr) { engine->requestChangeInModel(); }
-		m_patch.clear();
-		rebuildRoutingGraph();
-		if (engine != nullptr) { engine->doneChangeInModel(); }
-		return true;
-	}
-
-	// The new wiring is built off the audio thread (rebuildRoutingGraph()
-	// allocates every node's buffers) and published under the model-change
-	// guard the audio thread takes for a whole render period, so the edit is
-	// never concurrent with process() - RoutingGraph.h's threading contract.
-	const PatchWiring previous = m_patch;
-	if (engine != nullptr) { engine->requestChangeInModel(); }
-	m_patch = wiring;
-	rebuildRoutingGraph();
-	// applied == the chain renders through its graph AND the graph took the
-	// wiring. Either half can fail: a chain with nothing routable has no graph
-	// at all, and a wiring the current effect list cannot take is dropped by
-	// rebuildRoutingGraph().
-	const bool applied = m_graphActive && !m_patchDropped;
-	const bool hasGraph = m_graphActive;
-	if (!applied)
-	{
-		// Nothing is written: the previous wiring is rebuilt in place, so a
-		// refusal leaves the chain in exactly the state it was in.
-		m_patch = previous;
-		rebuildRoutingGraph();
-	}
-	if (engine != nullptr) { engine->doneChangeInModel(); }
-
-	if (!applied)
-	{
-		if (error != nullptr)
-		{
-			*error = hasGraph
-				? QStringLiteral("the wiring could not be applied to this chain's graph - a reference or "
-					"a port the graph refuses - so the chain is back on its derived wiring")
-				: QStringLiteral("this chain does not render through its routing graph, so it has no "
-					"wiring to replace: a graph is built for a chain of effects whose devices route "
-					"their own audio ports, and its graph is empty");
-		}
-		return false;
-	}
-	return true;
-}
 
 
 void EffectChain::refreshLatency()

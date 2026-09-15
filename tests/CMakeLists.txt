@@ -169,6 +169,15 @@ set(LMMS_TESTS
 	src/core/RoutingGraphLiveTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
+	# The patcher node-graph group (feature row 69, docs/PATCHER-GRAPH.md): the
+	# two ids and their A16 rows, the read of a chain's derived graph, and the
+	# EDIT - proved by rendering the channel through the mixer before and after
+	# a re-wire (the re-wired render is the linear one without the bypassed
+	# effect's gain), by surviving EffectChain::rebuildRoutingGraph() - what
+	# plugin.load calls - and by control.undo. The graph is built from two
+	# legacy test effects, because a chain of audio-plugin devices keeps its
+	# plain effect loop and would prove nothing.
+	src/core/PatcherCommandsTest.cpp
 	src/core/VcaGroupTest.cpp
 	# The `vca.*` command group's own suite (OWNER-31 item 11, phase-locked
 	# multitrack edit groups): the fourteen ids and their schemas, the typed
@@ -386,6 +395,13 @@ target_compile_definitions(RoutingGraphLiveTest PRIVATE
 # VcaGroupTest (#622) constructs a full Engine and drives Mixer::masterMix()
 # synchronously, the same shape as the Phase D harnesses.
 set_tests_properties(VcaGroupTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# PatcherCommandsTest constructs a full Engine, appends effects to a real mixer
+# channel's chain and drives Mixer::masterMix() to measure that a re-wire changes
+# the render, so it needs a Qt platform plugin for the same reason (guiless
+# otherwise: nothing opens a window).
+set_tests_properties(PatcherCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ControlVcaCommandsTest drives the `vca.*` command group through the registry

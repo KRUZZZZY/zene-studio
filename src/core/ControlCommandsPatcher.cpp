@@ -1,7 +1,7 @@
 /*
- * ControlCommandsPatcher.cpp - the `patcher.*` command group (SPEC A11-A16):
- *                               the node graph a target's signal is processed
- *                               through, READ and EDITABLE.
+ * ControlCommandsPatcher.cpp - the `patcher.*` command group (SPEC A11-A16),
+ *                               READ HALF: the node graph a target's signal is
+ *                               processed through, addressed as a PATCH.
  *
  * THE ITEM THIS CLOSES. Feature row 69 of docs/FEATURE-LIST-0.3.0.md, "Patcher
  * node-graph driving" (the audit's Group A #7): "no `patcher.` id exists at
@@ -14,47 +14,43 @@
  *      with process()", and making live edits safe needs "the atomic plan swap
  *      described in the full design (see PATCHER-MVP.md); this spike
  *      deliberately does not implement it" (PATCHER-MVP.md section 3: "No live
- *      plan swap"; section 4 Part C 3: the lock-free pending-change plan swap
- *      of mixer/SPEC-dynamic-routing.md section 5.4).
+ *      plan swap"; section 4 Part C 3 names the lock-free pending-change plan
+ *      swap of mixer/SPEC-dynamic-routing.md section 5.4).
  *   2. a chain's graph is DERIVED - EffectChain::rebuildRoutingGraph() re-wires
  *      it from the effect list on every change - so a hand-wired edge would be
  *      discarded by the next plugin.load.
  *
- * THIS FILE resolves both, and the resolution is the design decision row 69
- * asked for:
+ * THE DESIGN DECISION row 69 asked for, and the evidence for it:
  *
  *   * (1) is answered by the seam the engine ALREADY has for exactly this.
  *     AudioEngine::renderNextPeriod() holds m_changeMutex for a whole render
  *     period (src/core/AudioEngine.cpp:368) and requestChangeInModel() /
  *     doneChangeInModel() lock the same mutex from the control thread
- *     (src/core/AudioEngine.cpp:628-637), so an edit published under that
- *     guard is NEVER concurrent with process() - which is the requirement the
- *     contract states, word for word. Every topology edit in this tree already
- *     takes it (EffectChain::appendEffect/removeEffect/moveUp/moveDown/clear).
- *     The edit is therefore built off the audio thread - a whole new graph,
- *     nodes and buffers included - and published under the guard:
- *     EffectChain::setPatchWiring(). It is NOT the lock-free double-buffered
+ *     (src/core/AudioEngine.cpp:628-637), so an edit published under that guard
+ *     is NEVER concurrent with process() - the requirement the contract states
+ *     word for word. Every topology edit in this tree already takes it
+ *     (EffectChain::appendEffect/removeEffect/moveUp/moveDown/clear). The edit
+ *     builds a whole new graph off the audio thread - nodes, buffers and plan
+ *     included - and publishes it under the guard: EffectChain::setPatchWiring()
+ *     (src/core/EffectChainPatcher.cpp). It is NOT the lock-free double-buffered
  *     plan: it blocks the audio thread for the rebuild's duration, and
  *     docs/KNOWN-LIMITATIONS.md says so.
- *   * (2) is answered by making the wiring DATA the chain owns:
- *     include/PatchWiring.h. The node SET stays derived (the effect list's, so
- *     `graphMirrorsEffectList()` stays true and the graph really renders), and
- *     the AUTHORED wiring is re-applied by every rebuild - so a hand-wired edge
- *     survives plugin.load instead of being discarded by it. A wiring the
- *     effect list can no longer take is dropped, reported and documented rather
- *     than half-applied.
+ *   * (2) is answered by making the wiring DATA the chain owns
+ *     (include/PatchWiring.h). The node SET stays derived - the effect list's,
+ *     so `graphMirrorsEffectList()` stays true and the graph really renders -
+ *     and the AUTHORED wiring is re-applied by every rebuild, so a hand-wired
+ *     edge survives plugin.load instead of being discarded by it. A wiring the
+ *     effect list can no longer take is dropped, reported
+ *     (patcher.get_state's `patch_dropped`) and documented rather than
+ *     half-applied.
  *
  * A16, honestly:
  *   patcher.get_state   not_mutating  - an inspector; it writes nothing
- *   patcher.set_wiring  snapshot      - the inverse is the SAME command with
- *                                       the wiring captured before the write
- *                                       (`applies: command`), the port.set_pin
- *                                       shape: an EffectChain is a Model and a
- *                                       SerializingObject, not a
- *                                       JournallingObject, so no live
- *                                       checkpoint exists
+ *   patcher.set_wiring  snapshot      - its own row, in the EDIT half's file;
+ *                                       the inverse is the same command with the
+ *                                       wiring captured before the write
  *
- * WHAT THIS GROUP IS NOT: there is no patcher canvas, no node you can ADD to a
+ * WHAT THIS GROUP IS NOT: no patcher canvas, no node an agent can ADD to a
  * chain's graph (the node set is the effect list's), no parameter pin and no
  * <routinggraph> XML. docs/PATCHER-GRAPH.md states the bounds;
  * docs/KNOWN-LIMITATIONS.md carries the one-line absence.
@@ -73,10 +69,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public
- * License along with this program (see COPYING); if not, write to the
- * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License along
+ * with this program (see COPYING); if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <QDomDocument>
@@ -84,15 +79,12 @@
 #include <QJsonObject>
 #include <QString>
 
-#include <algorithm>
-#include <utility>
 #include <vector>
 
 #include "ControlDeviceSupport.h"
-#include "ControlEdit.h"
 #include "ControlRegistry.h"
 
-#include "ControlVocabulary.h"
+#include "ControlCommandsPatcherShared.h"
 #include "EffectChain.h"
 #include "PatchWiring.h"
 #include "RoutingChainNodes.h"
@@ -208,23 +200,6 @@ QJsonObject graphJson(const EffectChain& chain, const RoutingGraph& graph)
 	return out;
 }
 
-//! The wiring this chain renders through right now: the authored one when a
-//! patch is set, and the derived linear one otherwise.
-auto effectiveWiring(const EffectChain& chain) -> PatchWiring
-{
-	if (chain.patchActive()) { return chain.patchWiring(); }
-	return PatchWiring::linear(static_cast<int>(chain.effects().size()));
-}
-
-QJsonObject wiringJson(const PatchWiring& wiring)
-{
-	QJsonObject out;
-	out.insert(QStringLiteral("edges"), wiring.toJson());
-	out.insert(QStringLiteral("edge_count"), wiring.size());
-	out.insert(QStringLiteral("output"), wiring.output().toString());
-	return out;
-}
-
 //! Whether an edit can land at all, and why not when it cannot - machine
 //! readable, because "the graph is empty" is the measured normal case for a
 //! chain of audio-plugin devices (EffectChain::rebuildRoutingGraph() returns
@@ -245,6 +220,22 @@ QJsonObject editabilityJson(const EffectChain& chain)
 			"loop (EffectChain::rebuildRoutingGraph)"));
 	return out;
 }
+
+ControlResult getState(const QJsonObject& args)
+{
+	ControlResult error;
+	ControlTarget target;
+	if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error))
+	{
+		return error;
+	}
+	return ControlResult::success(control::patcherStateJson(*target.chain, target));
+}
+
+} // namespace
+
+namespace control
+{
 
 QJsonObject patcherStateJson(const EffectChain& chain, const ControlTarget& target)
 {
@@ -274,337 +265,22 @@ QJsonObject patcherStateJson(const EffectChain& chain, const ControlTarget& targ
 	return result;
 }
 
-//! The wiring's edges as (fromId, toId) pairs, or false when a reference names
-//! no node of the current graph (which includes an effect index that is gone).
-auto wiringIds(const EffectChain& chain, const PatchWiring& wiring,
-	std::vector<std::pair<int, int>>* ids, int* inputId, int* outputId) -> bool
+PatchWiring effectiveWiring(const EffectChain& chain)
 {
-	ids->clear();
-	for (const PatchEdge& edge : wiring.edges())
-	{
-		const int from = chain.patchNodeId(edge.from);
-		const int to = chain.patchNodeId(edge.to);
-		if (from < 0 || to < 0) { return false; }
-		ids->emplace_back(from, to);
-	}
-	*inputId = chain.patchNodeId(PatchRef::input());
-	*outputId = chain.patchNodeId(wiring.output());
-	return *inputId >= 0 && *outputId >= 0;
+	if (chain.patchActive()) { return chain.patchWiring(); }
+	return PatchWiring::linear(static_cast<int>(chain.effects().size()));
 }
 
-//! False when the wiring's ids contain a cycle: connect() would refuse the
-//! closing edge, and a patch is validated before it is applied rather than
-//! half-applied and rolled back.
-auto wiringIsAcyclic(const std::vector<std::pair<int, int>>& ids) -> bool
+QJsonObject wiringJson(const PatchWiring& wiring)
 {
-	int highest = -1;
-	for (const auto& edge : ids) { highest = std::max({highest, edge.first, edge.second}); }
-	if (highest < 0) { return true; }
-
-	std::vector<std::vector<int>> adjacency(highest + 1);
-	std::vector<int> indegree(highest + 1, 0);
-	std::vector<bool> present(highest + 1, false);
-	for (const auto& edge : ids)
-	{
-		adjacency[edge.first].push_back(edge.second);
-		++indegree[edge.second];
-		present[edge.first] = true;
-		present[edge.second] = true;
-	}
-
-	std::size_t live = 0;
-	std::vector<int> ready;
-	for (int id = 0; id <= highest; ++id)
-	{
-		if (!present[id]) { continue; }
-		++live;
-		if (indegree[id] == 0) { ready.push_back(id); }
-	}
-
-	std::size_t sorted = 0;
-	while (!ready.empty())
-	{
-		const int id = ready.back();
-		ready.pop_back();
-		++sorted;
-		for (const int next : adjacency[id])
-		{
-			if (--indegree[next] == 0) { ready.push_back(next); }
-		}
-	}
-	return sorted == live;
+	QJsonObject out;
+	out.insert(QStringLiteral("edges"), wiring.toJson());
+	out.insert(QStringLiteral("edge_count"), wiring.size());
+	out.insert(QStringLiteral("output"), wiring.output().toString());
+	return out;
 }
 
-//! False when the host block could never leave the graph: an output node the
-//! input cannot reach renders silence, which is a wiring mistake rather than a
-//! route (plugin.bypass is how a device is taken out of the path).
-auto wiringReachesOutput(const std::vector<std::pair<int, int>>& ids, int inputId, int outputId) -> bool
-{
-	std::vector<int> frontier{inputId};
-	std::vector<int> visited{inputId};
-	while (!frontier.empty())
-	{
-		const int id = frontier.back();
-		frontier.pop_back();
-		if (id == outputId) { return true; }
-		for (const auto& edge : ids)
-		{
-			if (edge.first != id) { continue; }
-			if (std::find(visited.begin(), visited.end(), edge.second) != visited.end()) { continue; }
-			visited.push_back(edge.second);
-			frontier.push_back(edge.second);
-		}
-	}
-	return false;
-}
-
-//! Repeated and self edges. connect() refuses both, but a refusal that names
-//! the edge is worth more than one that says "the graph refused it".
-auto wiringEdgesAreDistinct(const PatchWiring& wiring, QString* reason) -> bool
-{
-	const std::vector<PatchEdge>& edges = wiring.edges();
-	for (std::size_t i = 0; i < edges.size(); ++i)
-	{
-		for (std::size_t j = i + 1; j < edges.size(); ++j)
-		{
-			const PatchEdge& mine = edges[i];
-			const PatchEdge& theirs = edges[j];
-			if (mine.fromPort != theirs.fromPort || mine.toPort != theirs.toPort
-				|| !mine.from.equals(theirs.from) || !mine.to.equals(theirs.to))
-			{
-				continue;
-			}
-			*reason = QStringLiteral("two edges are the same connection (%1 port %2 -> %3 port %4)")
-				.arg(mine.from.toString()).arg(mine.fromPort)
-				.arg(mine.to.toString()).arg(mine.toPort);
-			return false;
-		}
-	}
-	for (const PatchEdge& edge : edges)
-	{
-		if (edge.from.equals(edge.to))
-		{
-			*reason = QStringLiteral("%1 cannot be connected to itself").arg(edge.from.toString());
-			return false;
-		}
-	}
-	return true;
-}
-
-//! Every edge's ports, against the arity of the node it names. A chain graph's
-//! nodes are 1-in/1-out today except the input node (no inputs), and a wiring
-//! written against a node type with other arities is checked the same way.
-auto wiringPortsFit(const EffectChain& chain, const RoutingGraph& graph, const PatchWiring& wiring,
-	QString* reason) -> bool
-{
-	for (const PatchEdge& edge : wiring.edges())
-	{
-		const RoutingNode* source = graph.node(chain.patchNodeId(edge.from));
-		const RoutingNode* dest = graph.node(chain.patchNodeId(edge.to));
-		if (source == nullptr || dest == nullptr) { continue; }  // named by the caller's ref check
-
-		if (edge.fromPort < 0 || edge.fromPort >= source->outputCount())
-		{
-			*reason = QStringLiteral("%1 has %2 output port(s), so from_port %3 is out of range")
-				.arg(edge.from.toString()).arg(source->outputCount()).arg(edge.fromPort);
-			return false;
-		}
-		if (edge.toPort < 0 || edge.toPort >= dest->inputCount())
-		{
-			*reason = QStringLiteral("%1 has %2 input port(s), so to_port %3 is out of range")
-				.arg(edge.to.toString()).arg(dest->inputCount()).arg(edge.toPort);
-			return false;
-		}
-	}
-	return true;
-}
-
-} // namespace
-
-/*! Everything a patch can get wrong, checked against the CURRENT node set
- *  BEFORE the chain is touched, so a refusal writes nothing: an unknown
- *  reference, a repeated or self edge, a port outside a node's arity, a cycle,
- *  and an output node the input cannot reach.
- */
-auto validateWiring(const EffectChain& chain, const PatchWiring& wiring, QString* reason) -> bool
-{
-	if (wiring.isEmpty()) { return true; }  // "the derived wiring" is always valid
-
-	const int effectCount = static_cast<int>(chain.effects().size());
-	for (const PatchEdge& edge : wiring.edges())
-	{
-		for (const PatchRef* end : {&edge.from, &edge.to})
-		{
-			if (end->isInput()) { continue; }
-			if (end->index() >= 0 && end->index() < effectCount) { continue; }
-			*reason = QStringLiteral("%1 names no node of this chain: it has %2 effect(s)")
-				.arg(end->toString()).arg(effectCount);
-			return false;
-		}
-	}
-	if (!wiring.output().isInput()
-		&& (wiring.output().index() < 0 || wiring.output().index() >= effectCount))
-	{
-		*reason = QStringLiteral("the output node %1 names no node of this chain: it has %2 effect(s)")
-			.arg(wiring.output().toString()).arg(effectCount);
-		return false;
-	}
-	if (!wiringEdgesAreDistinct(wiring, reason)) { return false; }
-
-	const RoutingGraph& graph = chain.routingGraph();
-	if (!wiringPortsFit(chain, graph, wiring, reason)) { return false; }
-
-	std::vector<std::pair<int, int>> ids;
-	int inputId = -1;
-	int outputId = -1;
-	if (!wiringIds(chain, wiring, &ids, &inputId, &outputId))
-	{
-		*reason = QStringLiteral("the wiring names a node this chain's graph does not have");
-		return false;
-	}
-	if (!wiringIsAcyclic(ids))
-	{
-		*reason = QStringLiteral("the wiring has a cycle: this graph is a DAG and a feedback path is not "
-			"expressible in it");
-		return false;
-	}
-	if (!wiringReachesOutput(ids, inputId, outputId))
-	{
-		*reason = QStringLiteral("the chain's input cannot reach the output node %1, so the graph would "
-			"render silence; wire a path to it, or point `output` at a node the input reaches")
-			.arg(wiring.output().toString());
-		return false;
-	}
-	return true;
-}
-
-//! The wiring a command asks for: its edges, and its output node - the last
-//! effect when `output` is absent, which is the node the derivation uses.
-auto wiringFromArgs(const QJsonObject& args, const EffectChain& chain, PatchWiring* wanted,
-	ControlResult* error) -> bool
-{
-	const QJsonValue edges = args.value(QStringLiteral("edges"));
-	if (edges.isUndefined() || edges.isNull())
-	{
-		wanted->clear();  // documented default: the derived wiring
-	}
-	else if (!edges.isArray())
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'edges' must be an array of {from, to} objects; an empty array - or no "
-				"'edges' at all - restores the derived wiring"));
-		return false;
-	}
-	else
-	{
-		QString parseError;
-		if (!PatchWiring::fromJson(edges.toArray(), wanted, &parseError))
-		{
-			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'edges' is malformed: %1").arg(parseError));
-			return false;
-		}
-	}
-
-	const QString output = args.value(QStringLiteral("output")).toString();
-	if (output.isEmpty())
-	{
-		if (wanted->isEmpty()) { return true; }  // nothing to route: nothing to output
-		const int effectCount = static_cast<int>(chain.effects().size());
-		if (effectCount == 0)
-		{
-			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("an edge list needs an 'output' node on a chain this empty: it has no "
-					"effect for the default output to name"));
-			return false;
-		}
-		wanted->setOutput(PatchRef::effect(effectCount - 1));
-		return true;
-	}
-
-	QString refError;
-	PatchRef ref;
-	if (!PatchRef::parse(output, &ref, &refError))
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, refError);
-		return false;
-	}
-	wanted->setOutput(ref);
-	return true;
-}
-
-ControlResult getState(const QJsonObject& args)
-{
-	ControlResult error;
-	ControlTarget target;
-	if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error))
-	{
-		return error;
-	}
-	return ControlResult::success(patcherStateJson(*target.chain, target));
-}
-
-ControlResult setWiring(const QJsonObject& args)
-{
-	ControlResult error;
-	ControlTarget target;
-	if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error))
-	{
-		return error;
-	}
-	EffectChain& chain = *target.chain;
-
-	PatchWiring wanted;
-	if (!wiringFromArgs(args, chain, &wanted, &error)) { return error; }
-
-	QString reason;
-	if (!validateWiring(chain, wanted, &reason))
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, reason);
-	}
-
-	const bool wasAuthored = chain.patchActive();
-	const PatchWiring before = effectiveWiring(chain);
-
-	if (!chain.setPatchWiring(wanted, &reason))
-	{
-		return ControlResult::failure(ControlErrorKind::Refused, reason);
-	}
-
-	QJsonObject result = patcherStateJson(chain, target);
-	result.insert(QStringLiteral("previous"), wiringJson(before));
-	result.insert(QStringLiteral("changed"), !before.equals(effectiveWiring(chain)));
-
-	// SPEC A16: an EffectChain is a Model and a SerializingObject, not a
-	// JournallingObject, so there is no live checkpoint to take. The inverse is
-	// the SAME command with the wiring captured before the write, and a chain
-	// that WAS on its derived wiring comes back to it AS the derivation (an
-	// empty edge list) rather than as a linear-looking authored patch.
-	QJsonObject beforeState;
-	beforeState.insert(QStringLiteral("wiring"),
-		wasAuthored ? QStringLiteral("authored") : QStringLiteral("derived"));
-	beforeState.insert(QStringLiteral("edges"), before.toJson());
-	beforeState.insert(QStringLiteral("output"), before.output().toString());
-
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("target"), target.id);
-	inverseArgs.insert(QStringLiteral("edges"), wasAuthored ? before.toJson() : QJsonArray());
-	if (wasAuthored) { inverseArgs.insert(QStringLiteral("output"), before.output().toString()); }
-
-	QJsonObject transaction = transactionPayload(beforeState, QStringLiteral("patcher.set_wiring"),
-		inverseArgs, true,
-		QStringLiteral("snapshot: the previous wiring is a bounded list of edges plus one output node, and "
-			"the recorded inverse is patcher.set_wiring with it - empty when the chain was on its derived "
-			"wiring, so the derivation comes back as the derivation. There is no JournallingObject behind "
-			"an EffectChain (a Model and a SerializingObject), so no live checkpoint exists"));
-	QJsonObject inverse = transaction.value(QStringLiteral("inverse")).toObject();
-	inverse.insert(QStringLiteral("applies"), QStringLiteral("command"));
-	transaction.insert(QStringLiteral("inverse"), inverse);
-	result.insert(QStringLiteral("__transaction"), transaction);
-	return ControlResult::success(result);
-}
-
-} // namespace
+} // namespace control
 
 void registerPatcherCommands(ControlRegistry& registry)
 {
@@ -639,39 +315,8 @@ void registerPatcherCommands(ControlRegistry& registry)
 		registry.registerCommand(cmd);
 	}
 
-	{
-		ControlCommand cmd;
-		cmd.id = QStringLiteral("patcher.set_wiring");
-		cmd.group = QStringLiteral("patcher");
-		cmd.verb = QStringLiteral("set_wiring");
-		cmd.description = QStringLiteral("Re-wire a target's effect chain: 'edges' is the whole wiring "
-			"({from, to, from_port, to_port} objects whose ends are \"input\" or \"effect:<index>\"), "
-			"'output' is the node the host block leaves through (the last effect by default), and an "
-			"empty or absent edge list restores the DERIVED wiring. The new graph is built off the audio "
-			"thread and published under the audio engine's model-change guard, so the edit is never "
-			"concurrent with the render (include/RoutingGraph.h's threading contract) and it survives "
-			"the next plugin.load - the derived rebuild re-applies it. Refused, typed, with nothing "
-			"written, when the chain does not render through its graph (see patcher.get_state's "
-			"`editable`), when an edge would make a cycle, or when the output cannot be reached from the "
-			"input. Reversible: the previous wiring, derived or authored, is restored by control.undo.");
-		cmd.argsSchema = objectSchema({
-			{QStringLiteral("target"), stringProperty()},
-			{QStringLiteral("edges"), arrayProperty()},
-			{QStringLiteral("output"), stringProperty()},
-		}, {QStringLiteral("target")});
-		cmd.resultSchema = objectSchema({
-			{QStringLiteral("target"), stringProperty()},
-			{QStringLiteral("wiring"), stringProperty()},
-			{QStringLiteral("effective_wiring"), objectProperty()},
-			{QStringLiteral("previous"), objectProperty()},
-			{QStringLiteral("changed"), booleanProperty()},
-			{QStringLiteral("routes_through_graph"), booleanProperty()},
-			{QStringLiteral("graph"), objectProperty()},
-		});
-		cmd.mutating = true;
-		cmd.handler = [](const QJsonObject& args) { return setWiring(args); };
-		registry.registerCommand(cmd);
-	}
+	// The group's EDIT half (patcher.set_wiring), in its own translation unit.
+	registerPatcherEditCommands(registry);
 }
 
 } // namespace lmms

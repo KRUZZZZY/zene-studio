@@ -465,8 +465,10 @@ src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNotes.cpp
-src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPatcher.cpp
+src/core/ControlCommandsPatcherEdit.cpp
+src/core/ControlCommandsPatcherShared.h
+src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginParams.cpp
 src/core/ControlCommandsPluginPreset.cpp
@@ -542,6 +544,7 @@ src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
 src/core/ControlWasmSupport.cpp
 src/core/CrashReporter.cpp
+src/core/EffectChainPatcher.cpp
 src/core/ExportDither.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp

@@ -249,6 +249,14 @@ LMMS_EXPORT void registerRoutingSurfaceCommands(ControlRegistry& registry);
  * same graph, and docs/PATCHER-GRAPH.md records the design and its bounds.
  */
 LMMS_EXPORT void registerPatcherCommands(ControlRegistry& registry);
+/*! patcher.set_wiring - the group's EDIT half, registered by
+ * registerPatcherCommands() and defined in src/core/ControlCommandsPatcherEdit.cpp.
+ * The two halves are two translation units for the reason the automation and
+ * plugin-scan groups are: gate 7 measures a file. The rationale for the verb, the
+ * order of operations that makes every refusal write nothing, and the A16 record
+ * it leaves are on that file's own header.
+ */
+LMMS_EXPORT void registerPatcherEditCommands(ControlRegistry& registry);
 /*! The plugin scan cache and its quarantine list (feature row 46): the READ half
  * (plugin.scan_cache_get_state / scan_cache_list / scan_cache_lookup, in
  * src/core/ControlCommandsPluginScan.cpp) and the EDIT half
