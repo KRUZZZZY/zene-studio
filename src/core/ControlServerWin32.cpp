@@ -192,32 +192,56 @@ QByteArray overCapRefusalLine()
 	return QJsonDocument(reply).toJson(QJsonDocument::Compact);
 }
 
+//! One overlapped read: whatever the peer has sent is appended to \p buffer.
+//! Returns false when this connection is over - the peer closed its end, the pipe
+//! failed, or the instance is closing (the quit event cancels the pending read).
+bool readChunk(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, QByteArray* buffer)
+{
+	char chunk[kReadChunkBytes];
+	OVERLAPPED operation;
+	std::memset(&operation, 0, sizeof(operation));
+	ResetEvent(ioEvent);
+	operation.hEvent = ioEvent;
+	DWORD got = 0;
+	if (!ReadFile(pipe, chunk, sizeof(chunk), &got, &operation))
+	{
+		if (GetLastError() != ERROR_IO_PENDING) { return false; } // the peer is gone
+		if (!waitForIo(pipe, &operation, quitEvent, &got)) { return false; }
+	}
+	if (got == 0) { return false; } // a clean EOF: the peer closed its end
+	buffer->append(chunk, static_cast<int>(got));
+	return true;
+}
+
 } // namespace
 
 ControlErrorKind ControlServer::listenWin32(const QString& path, QString* detail)
 {
+	// Every refusal below comes back as a KIND, and the caller (listen(), in
+	// ControlServerSocket.cpp) reports it through its own `fail` lambda - so a
+	// launcher that never got a listener reads the same typed line on Windows as
+	// on POSIX.  \p detail is filled when it is asked for, or not at all.
+	const auto refuse = [detail](ControlErrorKind kind, const QString& message) {
+		if (detail) { *detail = message; }
+		return kind;
+	};
+
 	if (isListening())
 	{
-		if (detail) { *detail = QStringLiteral("already listening on %1").arg(m_path); }
-		return ControlErrorKind::InvalidArgs;
+		return refuse(ControlErrorKind::InvalidArgs,
+			QStringLiteral("already listening on %1").arg(m_path));
 	}
 	if (!path.startsWith(kPipeNamespace, Qt::CaseInsensitive))
 	{
-		if (detail)
-		{
-			*detail = QStringLiteral("the control socket path must name a Windows named pipe "
-				"(\"\\\\.\\pipe\\<name>\") on this platform; got \"%1\"").arg(path);
-		}
-		return ControlErrorKind::InvalidArgs;
+		return refuse(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the control socket path must name a Windows named pipe "
+				"(\"\\\\.\\pipe\\<name>\") on this platform; got \"%1\"").arg(path));
 	}
 	if (path.size() > kMaxPipeNameChars)
 	{
-		if (detail)
-		{
-			*detail = QStringLiteral("the control socket path is too long (%1 characters; "
-				"a Windows pipe name is at most %2)").arg(path.size()).arg(kMaxPipeNameChars);
-		}
-		return ControlErrorKind::InvalidArgs;
+		return refuse(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the control socket path is too long (%1 characters; "
+				"a Windows pipe name is at most %2)").arg(path.size()).arg(kMaxPipeNameChars));
 	}
 
 	void* quitEvent = createEvent();
@@ -227,12 +251,8 @@ ControlErrorKind ControlServer::listenWin32(const QString& path, QString* detail
 		const DWORD error = GetLastError();
 		if (quitEvent != nullptr) { CloseHandle(asHandle(quitEvent)); }
 		if (connectEvent != nullptr) { CloseHandle(asHandle(connectEvent)); }
-		if (detail)
-		{
-			*detail = QStringLiteral("cannot create the named pipe's events (%1)")
-				.arg(win32ErrorText(error));
-		}
-		return ControlErrorKind::Refused;
+		return refuse(ControlErrorKind::Refused,
+			QStringLiteral("cannot create the named pipe's events (%1)").arg(win32ErrorText(error)));
 	}
 
 	m_win32QuitEvent = quitEvent;
@@ -344,23 +364,9 @@ void ControlServer::win32ClientLoop(void* hPipe)
 
 	QByteArray buffer;
 	bool draining = false;
-
 	while (!m_win32Quit.load())
 	{
-		char chunk[kReadChunkBytes];
-		OVERLAPPED operation;
-		std::memset(&operation, 0, sizeof(operation));
-		ResetEvent(ioEvent);
-		operation.hEvent = ioEvent;
-		DWORD got = 0;
-		if (!ReadFile(pipe, chunk, sizeof(chunk), &got, &operation))
-		{
-			const DWORD error = GetLastError();
-			if (error != ERROR_IO_PENDING) { break; } // the peer is gone
-			if (!waitForIo(pipe, &operation, quitEvent, &got)) { break; }
-		}
-		if (got == 0) { break; } // the peer closed its end: a clean EOF
-
+		if (!readChunk(pipe, ioEvent, quitEvent, &buffer)) { break; }
 		if (draining)
 		{
 			// The over-cap line was refused: the rest of what this peer sends is
@@ -368,41 +374,45 @@ void ControlServer::win32ClientLoop(void* hPipe)
 			// connection was never allowed to buffer an unbounded line.
 			continue;
 		}
-		buffer.append(chunk, static_cast<int>(got));
-
-		// Every COMPLETE line is dispatched, in wire order.  dispatchLine() runs
-		// on the server's thread (win32Dispatch), never here.
-		int newline = buffer.indexOf('\n');
-		bool peerGone = false;
-		while (newline >= 0)
-		{
-			const QByteArray line = buffer.left(newline);
-			buffer.remove(0, newline + 1);
-			const QByteArray reply = win32Dispatch(line);
-			if (m_win32Quit.load()) { break; }
-			if (!reply.isEmpty() && !writeAll(pipe, ioEvent, quitEvent, reply + '\n'))
-			{
-				peerGone = true;
-				break;
-			}
-			newline = buffer.indexOf('\n');
-		}
-		if (peerGone || m_win32Quit.load()) { break; }
-
-		if (buffer.size() > MaxRequestLineBytes)
-		{
-			// ONE request line that never ended: refuse it in the surface's own
-			// vocabulary, then read and discard the rest (the POSIX rule).
-			if (!writeAll(pipe, ioEvent, quitEvent, overCapRefusalLine() + '\n')) { break; }
-			buffer.clear();
-			buffer.squeeze();
-			draining = true;
-		}
+		if (!win32ServeBuffer(hPipe, ioEvent, quitEvent, buffer, &draining)) { break; }
 	}
 
 	DisconnectNamedPipe(pipe);
 	CloseHandle(pipe);
 	CloseHandle(ioEvent);
+}
+
+bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEvent,
+	QByteArray& buffer, bool* overCap)
+{
+	const HANDLE pipe = asHandle(hPipe);
+	const HANDLE ioEvent = asHandle(hIoEvent);
+	const HANDLE quitEvent = asHandle(hQuitEvent);
+
+	// Every COMPLETE line, in wire order.  dispatchLine() runs on the server's
+	// thread (win32Dispatch), never here.
+	int newline = buffer.indexOf('\n');
+	while (newline >= 0)
+	{
+		const QByteArray line = buffer.left(newline);
+		buffer.remove(0, newline + 1);
+		const QByteArray reply = win32Dispatch(line);
+		if (m_win32Quit.load()) { return false; }
+		if (!reply.isEmpty() && !writeAll(pipe, ioEvent, quitEvent, reply + '\n')) { return false; }
+		newline = buffer.indexOf('\n');
+	}
+
+	// A buffer still over the cap is ONE request line that never ended: refuse it
+	// in the surface's own vocabulary, then read and discard the rest (the POSIX
+	// rule, and the same sentence).
+	if (buffer.size() > MaxRequestLineBytes)
+	{
+		if (!writeAll(pipe, ioEvent, quitEvent, overCapRefusalLine() + '\n')) { return false; }
+		buffer.clear();
+		buffer.squeeze();
+		*overCap = true;
+	}
+	return true;
 }
 
 QByteArray ControlServer::win32Dispatch(const QByteArray& line)

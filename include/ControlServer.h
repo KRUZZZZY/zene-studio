@@ -204,6 +204,14 @@ private:
 	//! for the answer, bounded.  Empty when the instance started closing before
 	//! the request could be answered.
 	QByteArray win32Dispatch(const QByteArray& line);
+	//! Serve every COMPLETE line already in \p buffer, in wire order: dispatch it
+	//! on the server's thread and write its reply back.  Returns false when the
+	//! connection is over (the peer is gone, or the instance is closing).  The
+	//! 1 MiB cap is applied here too, because a line that never ends is exactly
+	//! what is left once every complete one is gone: \p overCap is set once that
+	//! refusal has been sent, and the caller then reads and discards the rest.
+	bool win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEvent, QByteArray& buffer,
+		bool* overCap);
 
 	//! The full \\.\pipe\<name> this instance listens on; empty when it is not.
 	QString m_pipeName;
