@@ -14,23 +14,23 @@ negative control that proves it can still fail.
 
 WHAT IT DOES, in one run of the real binary:
 
-  1. builds an AUDIBLE fixture through the commands an agent has (one instrument track, two
-     clips, one note each) and reads the track's own mixer channel off the wire;
+  1. builds an AUDIBLE fixture through the commands an agent has (one instrument track on
+     the shipped default template, two clips, one note each) and reads the mixer channel the
+     control will move off the wire;
   2. for EACH headline path - `render.render` (a render), `render.stems` (a stem export),
      `bounce.in_place` (a freeze/bounce) - renders the fixture RUNS times in its own temp
-     directory and measures the same-build run-to-run floor over EVERY pair of those runs;
-     a SECOND fixture, the bundled project the record names as still non-reproducible,
-     carries the render path through a fixture whose floor is not zero;
+     directory and measures the same-build run-to-run floor over EVERY pair of those runs.
+     A SECOND fixture, the bundled project the record names as still non-reproducible,
+     carries the render path through a fixture whose floor is NOT zero;
   3. judges the measured floor against the floor the committed record
      (tests/golden-audio-record.tsv) says this fixture has, and the candidate render's
      FINGERPRINT against the record's golden envelope - every term against its own tolerance
      (max |delta| LSB and dBFS, the level delta, the per-window envelope), never one number;
-  4. NEGATIVE CONTROL: moves a fader by a stated dB through `mixer.set_volume` - a deliberate
-     gain change made by the PRODUCT, not by this script - re-renders, and requires the
-     comparison to FAIL it.  A comparison that cannot fail is not evidence, so this is a
-     check, not a demonstration;
-  5. BOUND: sweeps the same fader from far below the floor to far above it and reports which
-     changes this programme distinguishes - the honest limit of what it can claim.
+  4. NEGATIVE CONTROL, then BOUND: moves a fader by a stated dB through `mixer.set_volume` -
+     a deliberate gain change made by the PRODUCT, not by this script - re-renders and
+     requires the comparison to FAIL it (a comparison that cannot fail is not evidence, so
+     this is a check and not a demonstration), then sweeps the same fader from far below the
+     floor to far above it and reports which changes this programme distinguishes.
 
 `--write-record` re-measures the floors with --runs (at least DEEP_RUNS) and rewrites
 tests/golden-audio-record.tsv - a deliberate, reviewable act: the record IS the baseline,
@@ -60,16 +60,17 @@ REQUEST_IDS = iter(range(1, 100000))
 # The fixture's name in the record.  The fixture is the command sequence in build_fixture()
 # - no committed project file - so its identity is reviewable in this file.
 FIXTURE = "socket-1track-2clips"
+TRACK_NAME = "Golden Target"     # the fixture track's name, and the stem file's name
 CLIP_TICKS = 192                 # one 4/4 bar
 PARTS = ("render", "stems", "bounce")
 COMMANDS = {"render": "render.render", "stems": "render.stems",
             "bounce": "bounce.in_place"}
 
-# The SECOND fixture, and the reason the programme has two.  This one is bundled product
-# content (no new file) and it is the project docs/RENDER-DETERMINISM.md records as still
-# not bit-reproducible after the renderer fix: 3/3 runs distinct, 98.3 % of frames differing,
-# up to 13 758 LSB.  It carries the render path through a fixture that really does jitter,
-# which is what a tolerance model is for.
+# The SECOND fixture, and the reason there are two: bundled product content (no new file)
+# and the project docs/RENDER-DETERMINISM.md records as still not bit-reproducible after the
+# renderer fix (3/3 runs distinct, 98.3 % of frames, up to 13 758 LSB).  It carries the
+# render path through a fixture that really does jitter - which is what a tolerance model is
+# for.
 DEMO = "bundled-Root84-TrancyLoop"
 DEMO_PROJECT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "data", "projects", "shorties", "Root84-TrancyLoop.mmpz")
@@ -94,7 +95,6 @@ RENDER_COMMANDS = tuple(COMMANDS.values())
 
 
 class Session:
-    """The socket client with the render budget, plus the check recorder."""
 
     def __init__(self, client, transcript, recorder):
         self.client = client
@@ -106,10 +106,9 @@ class Session:
         started = time.time()
         reply = self.client.call(next(REQUEST_IDS), command, args, timeout=budget,
                                  transcript=self.transcript)
-        elapsed = time.time() - started
-        if command in RENDER_COMMANDS and elapsed >= 5.0:
-            print("slow render: %s took %.1fs (one engine start + the audio; the declared "
-                  "budget is %.0fs)" % (command, elapsed, RENDER_TIMEOUT))
+        if command in RENDER_COMMANDS and time.time() - started >= 5.0:
+            print("slow render: %s took %.1fs (one engine start + the audio)"
+                  % (command, time.time() - started))
         return reply
 
     def result(self, command, args=None):
@@ -124,7 +123,7 @@ class Session:
 
 def build_fixture(session):
     """The audible fixture, and the mixer channel whose fader the control moves."""
-    added = session.result("track.add", {"type": "instrument", "name": "Golden Target"})
+    added = session.result("track.add", {"type": "instrument", "name": TRACK_NAME})
     track = added.get("track")
     if not track:
         H.fail("track.add returned no track id (%r)" % added)
@@ -132,6 +131,15 @@ def build_fixture(session):
         print("no audible instrument in this build: the golden-audio programme cannot run")
         print("kinds: %r" % session.result("plugin.list").get("counts_by_kind"))
         return None
+    # The stem export names each file after the TRACK, and `track.add`'s name did not survive
+    # loading the instrument (measured: the track added as "Golden Target" exported as
+    # 03_TripleOscillator.wav), so the fixture renames it after the load and reads the name
+    # back - without that, the stem selection could measure another track's file, or nothing.
+    session.result("track.rename", {"track": track, "name": TRACK_NAME})
+    named = session.result("track.get_state", {"track": track})
+    session.check("the fixture track carries the name its stem file is found by",
+                  named.get("name") == TRACK_NAME,
+                  "track.get_state name=%r, wanted %r" % (named.get("name"), TRACK_NAME))
     clips = []
     for position in (0, CLIP_TICKS):
         clip = session.result("clip.add", {"track": track, "position": position,
@@ -141,7 +149,6 @@ def build_fixture(session):
         session.result("note.add", {"clip": clip.get("clip"), "key": 60, "position": 0,
                                     "length": CLIP_TICKS // 2, "velocity": 120})
         clips.append(clip.get("clip"))
-    state = session.result("track.get_state", {"track": track})
     mixer = session.result("mixer.get_state")
     channels = {c.get("id"): c for c in (mixer.get("channels") or [])}
     # The track's OWN channel, picked off the wire rather than assumed: ch-0 is the master
@@ -154,21 +161,38 @@ def build_fixture(session):
                  key=lambda cid: channels[cid].get("index", 0))
     channel = own[-1] if own else next((cid for cid, c in channels.items()
                                         if c.get("is_master")), None)
-    session.check("the fixture track has a mixer channel of its own to move",
-                  bool(own), "track.get_state=%r, non-master channels=%s of %s"
-                  % (state.get("id"), own, sorted(channels)))
     if channel is None:
         H.fail("no addressable mixer channel: %r" % sorted(channels))
+    if not own:
+        # MEASURED, not assumed: a headless instance's mixer holds the MASTER channel alone
+        # (Mixer's constructor creates one; MixerView creates the rest), so a track added
+        # over the socket sums into the master and has no fader of its own.  The control
+        # moves the master here, and its own check - the gain change is CAUGHT - is what
+        # proves that fader is in the fixture's path.
+        print("note: the mixer holds one channel (%s, the master): the fixture track sums "
+              "into it, so the control moves the master" % channel)
     volume = float(channels[channel]["volume"])
     print("fixture: track=%s clips=%s channel=%s (%s) fader %.4f; mixer has %d channel(s)"
           % (track, clips, channel, channels[channel].get("name"), volume, len(channels)))
-    return {"track": track, "clips": clips, "channel": channel, "volume": volume}
+    return {"track": track, "clips": clips, "channel": channel, "volume": volume,
+            "name": TRACK_NAME}
 
 
-def stem_files(directory):
-    """The stem WAVs render.stems wrote, sorted."""
-    return sorted(os.path.join(directory, name) for name in os.listdir(directory)
+def stem_files(directory, track_name=None):
+    """The stem WAVs render.stems wrote, sorted - the fixture's own when named.
+
+    `render.stems` exports EVERY unmuted track of the session, and a headless instance
+    starts on the shipped default template (data/projects/templates/default.mpt: three
+    tracks), so the export writes more than the fixture's stem.  The fixture measures ITS
+    OWN - the `<index>_<name>.wav` whose name carries the fixture track's name, the contract
+    tests/control-stem-export-verb.py reads - and a rename cannot quietly measure nothing,
+    because the count is checked.
+    """
+    files = sorted(os.path.join(directory, name) for name in os.listdir(directory)
                   if name.lower().endswith(".wav"))
+    if track_name is None:
+        return files
+    return [path for path in files if track_name in os.path.basename(path)]
 
 
 def render_once(session, part, fixture, run_dir):
@@ -180,7 +204,7 @@ def render_once(session, part, fixture, run_dir):
         written = [out] if reply.get("path") and os.path.exists(out) else []
     elif part == "stems":
         reply = session.result("render.stems", {"out": run_dir, "format": "wav"})
-        written = stem_files(run_dir) if reply.get("stems") else []
+        written = (stem_files(run_dir, fixture["name"]) if reply.get("stems") else [])
     else:
         out = os.path.join(run_dir, "bounce.wav")
         reply = session.result("bounce.in_place", {"track": fixture["track"], "out": out})
@@ -207,23 +231,8 @@ def measure_path(session, fixture_name, part, fixture, outdir, runs):
                           % (fixture_name, part, index), False,
                           "%.2f dBFS over %d frames" % (measured, frames))
             return None
-    floor = G.measure_floor(renders)
-    print("")
-    print("=== %s / %s (%s): %d runs, floor over %d pairs ==="
-          % (fixture_name, part, COMMANDS[part], runs, floor["pairs"]))
-    print("  renders              : %s" % ", ".join(os.path.basename(p) for p in renders))
     print("  levels               : %s dBFS" % ", ".join("%.3f" % v for v in levels))
-    print("  floor max |delta|    : %.3f LSB (%.2f dBFS)"
-          % (floor["max_delta_lsb"], floor["max_delta_dbfs"]))
-    print("  floor differing frms : %d (first %s)"
-          % (floor["differing_frames"], floor["first_diff_frame"]))
-    print("  floor level delta    : %+.6f dB" % (floor["level_delta_db"] or 0.0))
-    print("  floor envelope delta : %.6f dB" % floor["envelope"]["max_delta_db"])
-    print("  byte-identical pairs : %s of %d" % (floor["identical_bytes"], floor["pairs"]))
-    for pair in floor["per_pair"]:
-        print("    runs %s: %.3f LSB, %d frames differ, level %+.6f dB"
-              % (pair["pair"], pair["max_delta_lsb"], pair["differing_frames"],
-                 pair["level_delta_db"] or 0.0))
+    floor = R.measure_floor(renders, "%s / %s" % (fixture_name, part), COMMANDS[part])
     return {"fixture": fixture_name, "part": part, "runs": renders, "floor": floor,
             "levels": levels}
 
@@ -254,11 +263,11 @@ def negative_control(session, fixture, measured, outdir):
     control = G.compare(measured["runs"][0], produced[0])
     tol = G.tolerance(measured["floor"])
     caught, lines = G.verdict(control, tol)
-    print("  control render       : %s" % os.path.basename(produced[0]))
-    print("  measured             : %.3f LSB max |delta|, %d differing frames, level "
+    print("  measured (%s)        : %.3f LSB max |delta|, %d differing frames, level "
           "%+.6f dB, envelope %.6f dB"
-          % (control["max_delta_lsb"], control["differing_frames"],
-             control["level_delta_db"] or 0.0, control["envelope"]["max_delta_db"]))
+          % (os.path.basename(produced[0]), control["max_delta_lsb"],
+             control["differing_frames"], control["level_delta_db"] or 0.0,
+             control["envelope"]["max_delta_db"]))
     for line in lines:
         print("  %s" % line)
     session.check("%s: THE NEGATIVE CONTROL - a %+.2f dB gain change is CAUGHT"
@@ -269,7 +278,7 @@ def negative_control(session, fixture, measured, outdir):
     golden_passed, golden_lines = R.compare_fingerprints(G.fingerprint(produced[0]), row)
     print("  the record's golden term on the same control render:")
     for line in golden_lines:
-        print("  %s" % line)
+        print("  %s" % line)  # noqa: E501  (each term, with its own tolerance)
     session.check("%s: the record's golden term catches the control too" % label,
                   golden_passed is False,
                   "the record's own tolerance, %s"
@@ -326,7 +335,7 @@ def record_rows(measured_by_key, binary_sha256):
 
 def try_quit(session, instance, recorder):
     """control.quit, and the instance must actually stop."""
-    reply = session.call("control.quit")
+    reply = session.call("control.quit")  # the quit's own reply, not an assumption
     if reply.get("ok") is not True:
         recorder.check("control.quit answered", False, "%r" % reply)
         return
@@ -339,16 +348,14 @@ def try_quit(session, instance, recorder):
 def open_demo_fixture(session):
     """The second fixture: a BUNDLED project that is RECORDED as not bit-reproducible.
 
-    docs/RENDER-DETERMINISM.md's stability table (rows for `shorties/Root84-TrancyLoop.mmpz`)
-    records it as 3/3 runs distinct, 98.3 % of its frames differing, up to 13 758 LSB, and
-    section 10 says the mechanism is in the instruments and survives six falsification
-    experiments.  That is the non-determinism this programme's tolerance model exists to
-    survive, so the model is measured against a fixture that HAS it - a tolerance model
-    demonstrated only on a bit-reproducible fixture has not been demonstrated.
+    docs/RENDER-DETERMINISM.md records it as 3/3 runs distinct, 98.3 % of its frames
+    differing, up to 13 758 LSB, with the mechanism in the instruments (section 10).  That is
+    the non-determinism this programme's tolerance model exists to survive, so the model is
+    measured against a fixture that HAS it: one demonstrated only on a bit-reproducible
+    fixture has not been demonstrated.
 
-    The fader the control moves is the MASTER channel: it exists in every session, and this
-    fixture's own tracks are not the only path into the mix.  Opening a project REPLACES the
-    session, which is why this fixture is measured after the socket-built one.
+    The fader the control moves is the MASTER channel - it exists in every session - and
+    opening a project REPLACES the session, which is why this fixture goes second.
     """
     if not os.path.exists(DEMO_PROJECT):
         session.check("the bundled fixture project exists", False, DEMO_PROJECT)
@@ -365,22 +372,23 @@ def open_demo_fixture(session):
     mixer = session.result("mixer.get_state")
     channels = {c.get("id"): c for c in (mixer.get("channels") or [])}
     master = next((cid for cid, entry in channels.items() if entry.get("is_master")), None)
-    session.check("the bundled fixture has an addressable master channel", master is not None,
-                  "mixer.get_state ids=%s" % sorted(channels))
     if master is None:
+        session.check("the bundled fixture has an addressable master channel", False,
+                      "mixer.get_state ids=%s" % sorted(channels))
         return None
     volume = float(channels[master]["volume"])
     print("fixture %s: %d track(s), tempo %r, master %s fader %.4f"
           % (DEMO, opened.get("track_count", 0), opened.get("tempo"), master, volume))
-    return {"track": None, "clips": [], "channel": master, "volume": volume}
+    return {"track": None, "clips": [], "channel": master, "volume": volume,
+            "name": None}
 
 
 def fixture_plan():
     """Every fixture this programme measures, and the headline paths it measures on each.
 
-    Two fixtures on purpose.  The socket-built one is cheap and covers all THREE headline
-    paths (a render, a stem export, a freeze/bounce); the bundled one is the fixture the
-    recorded non-determinism actually lives in and carries the render path through it.
+    Two fixtures on purpose: the socket-built one is cheap and covers all THREE headline
+    paths (a render, a stem export, a freeze/bounce); the bundled one is where the recorded
+    non-determinism lives and carries the render path through it.
     """
     return (
         {"name": FIXTURE, "setup": build_fixture, "parts": PARTS},
@@ -413,8 +421,7 @@ def main(argv):
         session = Session(client, transcript, recorder)
         session.result("control.version")
         outdir = os.path.join(instance.tmp, "golden")
-        print("instance : %s" % binary)
-        print("binary   : sha256 %s" % binary_sha256)
+        print("instance : %s\nbinary   : sha256 %s" % (binary, binary_sha256))
         print("mode     : %s, %d run(s) per path"
               % ("WRITE RECORD" if write_record else "verify", runs))
         try:
@@ -460,16 +467,13 @@ def main(argv):
                                    "caught: %s" % [row["delta_db"]
                                                    for row in sweep["caught"]])
             if write_record and measured_by_key:
-                new_rows = record_rows(list(measured_by_key.values()), binary_sha256)
+                new_rows = record_rows(measured_by_key, binary_sha256)
                 path = R.write_record(new_rows, R.provenance(binary_sha256, runs, (
-                    "fixture %s = the socket-built session in this file's build_fixture()"
-                    % FIXTURE,
-                    "fixture %s = data/projects/shorties/Root84-TrancyLoop.mmpz, the bundled"
-                    % DEMO,
-                    "  project docs/RENDER-DETERMINISM.md records as still not",
-                    "  bit-reproducible: the recorded non-determinism this tolerance model",
-                    "  exists to survive",
-                )), record_path)
+                    "fixture %s = the socket-built session in this file's build_fixture(), on "
+                    "the shipped default template" % FIXTURE,
+                    "fixture %s = data/projects/shorties/Root84-TrancyLoop.mmpz, which "
+                    "docs/RENDER-DETERMINISM.md records as still not bit-reproducible"
+                    % DEMO)), record_path)
                 print("\nrecord written: %s (%d rows)" % (path, len(new_rows)))
             elif not write_record:
                 try_quit(session, instance, recorder)

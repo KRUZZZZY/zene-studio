@@ -55,6 +55,20 @@ def nudge(path, samples_by):
     return path
 
 
+def dual_synth(path, left, right):
+    """A 16-bit STEREO WAV: the frame-versus-sample distinction needs two channels."""
+    import wave
+    data = array.array("h")
+    for pair in zip(left, right):
+        data.extend(pair)
+    with wave.open(path, "wb") as handle:
+        handle.setnchannels(2)
+        handle.setsampwidth(2)
+        handle.setframerate(44100)
+        handle.writeframes(data.tobytes())
+    return path
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="golden-audio-selftest-")
     failures = []
@@ -101,6 +115,30 @@ def main():
               quiet["max_delta_lsb"] == 0.0 and quiet["level_delta_db"] is None,
               "%.3f LSB, level %r (undefined, not 0.0 and not nan)"
               % (quiet["max_delta_lsb"], quiet["level_delta_db"]))
+
+        # A stereo pair in which one frame's BOTH channels move and two frames' single
+        # channels do: 5 differing SAMPLES over 4 differing FRAMES.  This lane shipped a
+        # version that reported the sample count under the frame label - the record read
+        # "910 619 frames" for a 477 440-frame render - which is exactly the kind of number
+        # a reader would have believed.
+        left = [int(0.5 * 32767 * math.sin(2.0 * math.pi * 440.0 * i / rate))
+                for i in range(4096)]
+        right = [int(0.4 * 32767 * math.sin(2.0 * math.pi * 220.0 * i / rate))
+                 for i in range(4096)]
+        moved_left, moved_right = list(left), list(right)
+        moved_left[10] += 1
+        moved_right[10] -= 1
+        moved_left[20] += 1
+        moved_right[21] -= 1
+        moved_right[22] -= 1
+        stereo = G.compare(dual_synth(tmp + "/stereo-a.wav", left, right),
+                           dual_synth(tmp + "/stereo-b.wav", moved_left, moved_right))
+        check("differing SAMPLES (5) and differing FRAMES (4) are counted separately",
+              stereo["differing_samples"] == 5 and stereo["differing_frames"] == 4
+              and stereo["first_diff_frame"] == 10,
+              "%d samples, %d frames, first %s: a frame whose both channels move is ONE frame"
+              % (stereo["differing_samples"], stereo["differing_frames"],
+                 stereo["first_diff_frame"]))
 
         gain = G.compare(ident, gain_half_db)
         check("a -0.5 dB gain is reported as a +0.5 dB level delta",

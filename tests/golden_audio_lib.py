@@ -215,7 +215,14 @@ def compare(path_a, path_b):
     numpy = _numpy()
     frames = min(a["frames"], b["frames"])
     channels = min(a["channels"], b["channels"])
-    peak, differing, first = 0.0, 0, None
+    peak, differing_samples, first = 0.0, 0, None
+    # Two different counts, because they answer different questions and this programme has
+    # been bitten by the difference: `differing_samples` counts every channel's every sample,
+    # `differing_frames` counts a frame ONCE when any channel differs (the frame count is what
+    # the render-determinism table in docs/RENDER-DETERMINISM.md reports, and a stereo file
+    # makes the two differ by up to 2x).
+    different_frames = (numpy.zeros(frames, dtype=bool) if numpy is not None
+                        else bytearray(frames))
     sum_abs = sum_sq = 0.0
     for channel in range(channels):
         sa = _channel(a, channel)[:frames]
@@ -225,23 +232,28 @@ def compare(path_a, path_b):
             if delta.size:
                 peak = max(peak, float(delta.max()))
             dirty = numpy.flatnonzero(delta)
-            differing += int(dirty.size)
-            if dirty.size and (first is None or int(dirty[0]) < first):
-                first = int(dirty[0])
+            differing_samples += int(dirty.size)
+            if dirty.size:
+                different_frames[dirty] = True
             sum_abs += float(delta.sum())
             sum_sq += float((delta * delta).sum())
         else:
             for i in range(frames):
                 value = abs(float(sa[i]) - float(sb[i]))
                 if value > 0.0:
-                    differing += 1
+                    differing_samples += 1
+                    different_frames[i] = 1
                     if first is None or i < first:
                         first = i
                 sum_abs += value
                 sum_sq += value * value
                 if value > peak:
                     peak = value
-    total = channels * frames
+    differing_frames = (int(different_frames.sum()) if numpy is not None
+                        else sum(different_frames))
+    if differing_frames and first is None:
+        first = int(numpy.flatnonzero(different_frames)[0]) if numpy is not None \
+            else different_frames.index(1)
     a_levels, _ = envelope(a)
     b_levels, _ = envelope(b)
     windows = min(len(a_levels), len(b_levels))
@@ -251,14 +263,15 @@ def compare(path_a, path_b):
             continue
         worst_env = max(worst_env, abs(a_levels[index] - b_levels[index]))
     lsb = a["lsb"]
+    total = channels * frames
     level_a, level_b = dbfs(_rms(a["flat"])), dbfs(_rms(b["flat"]))
     return {
         "wav_a": path_a,
         "wav_b": path_b,
         "frames_compared": frames,
         "channels_compared": channels,
-        "differing_samples": differing,
-        "differing_frames": differing,
+        "differing_samples": differing_samples,
+        "differing_frames": differing_frames,
         "first_diff_frame": first,
         "max_abs_delta": peak,
         "max_delta_lsb": peak / lsb,
