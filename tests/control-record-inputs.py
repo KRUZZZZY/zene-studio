@@ -30,7 +30,10 @@ What it drives, in order:
      instance's route channel capacity is still the one it started with - asserted,
      because that is what "restart required" MEANS;
   4. typed refusals                        channels 0, 33 and a bad bus pair;
-  5. restart                               instance B, same working directory;
+  5. restart                               instance B, started against the config file
+     instance A's `record.input_set` WROTE - the file is read off disk by this test and
+     handed to the harness's own Instance class, so "the next start reads it" is measured
+     rather than assumed;
   6. `record.get_state`                    the new count is live: sixteen routes,
      each able to select any of the eight input channels;
   7. `record.arm_track {route: 0, input_channel: 7}`  a route armed for channel 7 -
@@ -177,7 +180,25 @@ def check_registration(session, recorder):
                    "description=%r" % arm.get("description"))
 
 
-def check_arbitrary_input_count_instance_a(session, recorder, shared):
+def start_instance_with_config(binary, config_text, config_path, workingdir):
+    """A harness Instance started against the config file WE hand it.
+
+    The shared harness gives every instance its own config inside its own temp
+    directory, which is right for isolation and useless for proving that a
+    NEXT START reads what a previous command wrote. So the second instance is
+    built through the harness's own class and then pointed at a config file this
+    test writes - the one instance A's `record.input_set` produced.
+    """
+    instance = H.Instance(binary, workingdir=workingdir)
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, "w") as handle:
+        handle.write(config_text)
+    instance.config_path = config_path
+    instance.spawn()
+    return instance
+
+
+def check_arbitrary_input_count_instance_a(session, recorder, shared, instance):
     """The count is a config value, and the running instance keeps its own."""
     before = session.result("record.get_state")
     recorder.check("instance A's engine prepared the default route count",
@@ -194,6 +215,15 @@ def check_arbitrary_input_count_instance_a(session, recorder, shared):
     recorder.check("record.input_set reports the previous plan",
                    (raised.get("previous") or {}).get("channels") == 2,
                    "previous=%r" % raised.get("previous"))
+
+    # THE WRITE IS ON DISK, measured rather than trusted: the config file this
+    # instance was started with now carries the plan under `audioinput`, which is
+    # exactly what instance B is started from below.
+    with open(instance.config_path) as handle:
+        written = handle.read()
+    recorder.check("record.input_set wrote the plan into the instance's config file",
+                   "audioinput" in written and 'channels="8"' in written,
+                   "config=%r" % written[-400:])
 
     # THE ARBITRARY CHANNEL IS NOT LIVE YET, and saying so is the point: the
     # engine is built with its capacity, so a route armed for channel 7 in THIS
@@ -216,6 +246,7 @@ def check_arbitrary_input_count_instance_a(session, recorder, shared):
     recorder.check("the configured plan already reports the new count",
                    plan.get("channels") == 8,
                    "configured=%r" % plan)
+    return written
 
 
 def check_input_set_refusals(session, recorder, shared):
@@ -424,21 +455,26 @@ def run_instance_a(binary, recorder, shared, transcript):
     session.result("control.version")
     check_input_path_shape(session, recorder, "instance A")
     check_registration(session, recorder)
-    check_arbitrary_input_count_instance_a(session, recorder, shared)
+    written_config = check_arbitrary_input_count_instance_a(session, recorder, shared, instance)
     check_input_set_refusals(session, recorder, shared)
     reply = session.call("control.quit")
     if reply.get("ok") is not True:
         recorder.check("instance A quits through control.quit", False, "reply=%r" % reply)
     instance.wait_for_exit(H.QUIT_TIMEOUT)
+    return written_config
 
 
-def run_instance_b(binary, recorder, shared, transcript):
-    instance = H.start_instance(binary, workingdir=shared)
+def run_instance_b(binary, recorder, shared, transcript, written_config):
+    # Started against the config file instance A's record.input_set produced, so
+    # "the next start reads it" is measured rather than assumed.
+    instance = start_instance_with_config(binary, written_config,
+                                         os.path.join(shared, "lmmsrc.xml"), shared)
     H.wait_for_socket(instance)
     client = H.connect(instance)
     H.wait_ready(instance, client, transcript)
     session = Session(client, transcript)
-    print("instance B: %s (working dir %s)" % (instance.socket_path, shared))
+    print("instance B: %s (working dir %s, config %s)"
+          % (instance.socket_path, shared, instance.config_path))
     session.result("control.version")
     check_instance_b(session, recorder, shared)
     check_track_set_arm_and_undo(session, recorder, shared)
@@ -459,8 +495,8 @@ def main(argv):
     shared = tempfile.mkdtemp(prefix="zctl-rec-inputs-", dir="/tmp")
     transcript = H.Transcript()
     try:
-        run_instance_a(argv[1], recorder, shared, transcript)
-        run_instance_b(argv[1], recorder, shared, transcript)
+        written_config = run_instance_a(argv[1], recorder, shared, transcript)
+        run_instance_b(argv[1], recorder, shared, transcript, written_config)
     finally:
         shutil.rmtree(shared, ignore_errors=True)
 
