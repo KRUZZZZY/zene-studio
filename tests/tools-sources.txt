@@ -102,6 +102,7 @@ tools/mcp-zene-control/zene_control/config.py
 tools/mcp-zene-control/zene_control/protocol.py
 tools/mcp-zene-control/zene_control/registry.py
 tools/mcp-zene-control/zene_control/server.py
+tools/mcp-zene-control/zene_control/staleness.py
 tools/mcp-zene-control/zene_control/tools.py
 # SPLIT 2026-09-12 (tools-scope bar). The bridge's two test files arrived over the
 # 500-line limit (tools/mcp-zene-control/tests/test_mcp_e2e.py 610 lines,
@@ -125,7 +126,9 @@ tools/mcp-zene-control/zene_control/tools.py
 # changed, moved out of a suite or weakened by the split; line and CCN counts are in
 # docs/TOOLS-SCOPE-AND-GATE6-FIX.md.
 tools/mcp-zene-control/tests/mcp_fixture.py
+tools/mcp-zene-control/tests/test_declared_surface.py
 tools/mcp-zene-control/tests/test_mcp_errors.py
+tools/mcp-zene-control/tests/test_offline_staleness.py
 tools/mcp-zene-control/tests/test_wire_client.py
 tools/mmpz-git/demo_check.py
 tools/mmpz-git/demo_edits.py

@@ -17,10 +17,20 @@ When no instance is reachable the tool list is served from the last-known copy
 if that is missing too, from the snapshot committed next to this module
 (``commands_snapshot.json``, produced by ``snapshot_commands.py`` from a real
 instance). Both carry their provenance so a caller can tell live from stale.
+
+PROVENANCE IS NOT ENOUGH ON ITS OWN, so every bundle also records the *surface*
+it describes — the id count, the group count and a hash of the sorted id list
+(:func:`surface_fingerprint`) — and :func:`surface_drift` compares two surfaces
+and names the ids that differ. An offline copy whose recorded surface disagrees
+with a live instance is stale *in a way that can be pointed at*: the bridge
+reports it (`zene_status`, `zene_commands`) instead of quietly serving a shorter
+list. The recurring defect this guards against is a derived artefact that
+cannot fail: a stamp alone cannot be checked, a fingerprint can.
 """
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -41,6 +51,12 @@ BRIDGE_TOOL_NAMES = ("zene_commands", "zene_status")
 
 BUNDLE_KIND = "zene-control-command-list"
 BUNDLE_SCHEMA = 1
+
+#: How many ids a drift report names before it stops listing and starts
+#: counting. A 100-id gap is reported in full up to this many entries plus a
+#: count, so the reply stays readable and nothing is silently dropped: the
+#: counts are always exact.
+DRIFT_SAMPLE = 20
 
 _UNSAFE = re.compile(r"[^0-9A-Za-z_]+")
 _RUNS = re.compile(r"_{2,}")
@@ -186,6 +202,86 @@ def mcp_tool(spec: CommandSpec, timeout_s: float) -> dict:
 
 # -- command-list bundles (live / cache / snapshot) ------------------------
 
+def command_ids(commands: list[dict] | None) -> list[str]:
+    """The non-empty ids of a command list, sorted and deduplicated."""
+    return sorted({str(entry.get("id") or "") for entry in (commands or [])} - {""})
+
+
+def group_of(command_id: str) -> str:
+    """The group a command id belongs to (`mixer.set_volume` -> `mixer`)."""
+    return command_id.split(".", 1)[0]
+
+
+def surface_fingerprint(commands: list[dict] | None) -> dict:
+    """What surface a command list describes, in three checkable numbers.
+
+    `id_count` and `group_count` are the figures a reader scans; `ids_sha256` is
+    the one a *check* can use, because it moves when any id is added, removed or
+    renamed and cannot be produced from a stale list. `\n` is the separator so
+    the digest is over a canonical form: sorted ids, one per line, no trailing
+    newline.
+    """
+    ids = command_ids(commands)
+    return {
+        "id_count": len(ids),
+        "group_count": len({group_of(item) for item in ids}),
+        "ids_sha256": hashlib.sha256("\n".join(ids).encode("utf-8")).hexdigest(),
+    }
+
+
+def surface_drift(live_commands: list[dict] | None,
+                  offline_commands: list[dict] | None,
+                  limit: int = DRIFT_SAMPLE) -> dict:
+    """How an offline copy's surface differs from a live instance's.
+
+    `stale` is the flag this exists for: True when the two lists do not register
+    the same ids, false when they do. `missing_ids` are ids the live instance
+    registers and the copy does not offer (the coverage gap an agent cannot see
+    through the copy); `extra_ids` are ids the copy offers that no live instance
+    registers (a removed or renamed feature the copy still advertises). Both are
+    capped at `limit` entries with the exact remainder in `*_truncated`, so a
+    100-id gap is readable and still counted to the id.
+    """
+    live = set(command_ids(live_commands))
+    offline = set(command_ids(offline_commands))
+    missing = sorted(live - offline)
+    extra = sorted(offline - live)
+    drift = {
+        "stale": bool(missing or extra),
+        "live_count": len(live),
+        "offline_count": len(offline),
+        "missing_count": len(missing),
+        "extra_count": len(extra),
+        "missing_ids": missing[:limit],
+        "extra_ids": extra[:limit],
+        "missing_truncated": max(0, len(missing) - limit),
+        "extra_truncated": max(0, len(extra) - limit),
+    }
+    if drift["stale"]:
+        drift["verdict"] = (
+            f"the offline copy describes a different surface: {len(missing)} id(s) the live "
+            f"instance registers are not in it, {len(extra)} id(s) it carries are not registered"
+        )
+    else:
+        drift["verdict"] = (f"the offline copy and the live instance register the same "
+                            f"{len(live)} id(s)")
+    return drift
+
+
+def bundle_surface(bundle: dict) -> dict:
+    """The surface a bundle describes: what it recorded, else one derived from its ids.
+
+    Bundles captured before 2026-09-15 carry no `surface` key. The fingerprint is a
+    function of the ids, so deriving it from the copy's own command list is the same
+    value a fresh capture would record — and it means an older copy is still
+    comparable instead of being reported as surface-less.
+    """
+    recorded = bundle.get("surface")
+    if isinstance(recorded, dict) and recorded.get("ids_sha256"):
+        return recorded
+    return surface_fingerprint(bundle.get("commands"))
+
+
 def bundle_from_result(result: dict, provenance: dict) -> dict:
     commands = result.get("commands")
     if not isinstance(commands, list):
@@ -197,6 +293,7 @@ def bundle_from_result(result: dict, provenance: dict) -> dict:
         "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "proto": result.get("proto"),
         "count": len(commands),
+        "surface": surface_fingerprint(commands),
         "instance": provenance,
         "commands": commands,
     }
@@ -312,6 +409,7 @@ class CommandSource:
             "source": self.source,
             "count": self.count,
             "captured_at": self.bundle.get("captured_at"),
+            "surface": bundle_surface(self.bundle),
             "instance": self.bundle.get("instance") or {},
             "proto": self.bundle.get("proto"),
             "commands": self.bundle.get("commands") or [],

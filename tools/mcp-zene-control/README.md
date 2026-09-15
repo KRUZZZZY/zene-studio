@@ -958,3 +958,17 @@ undo:   transactions recorded for mixer.add_channel, mixer.set_volume, project.o
   `zene_commands` work before any instance exists, and it can go stale; `snapshot_commands.py` regenerates it
   from a live instance (`--socket`) or a saved commands array (`--from-file`), with `--out` defaulting to this
   file.
+* **The snapshot is now CHECKABLE, and the figures in the bullets above describe earlier captures — added
+  2026-09-15.** The committed `zene_control/commands_snapshot.json` records **144 commands across 27 groups**
+  (version `0.2.0-alpha.126+12fc4ef`, captured `2026-09-13T15:59:39Z`) and, beside `count` and `captured_at`,
+  a **surface** — `id_count`, `group_count`, `ids_sha256` over the sorted id list
+  (`registry.surface_fingerprint`). `registry.surface_drift` measures any offline copy against a live list and
+  names the ids that differ; `zene_status` and `zene_commands` report that as `offline_drift` whenever an
+  instance is answering, so a copy that is older than the running DAW is *named* instead of silently short.
+  The registered ctest `ControlMcpGroupCoverage` (`tests/control-mcp-group-coverage.py`) drives one command
+  from each of the ten groups feature-list row 49 measured as tool-free, through a real MCP stdio session
+  against the real binary; measured against the integration tip's build: **265 ids across 43 groups live**
+  (267 tools with the two bridge-owned ones) against this snapshot's 144, nine groups driven end to end and
+  `wasm.` excused by a both-directions `--compiled-out` flag (no build on this machine compiles the wasmtime
+  sandbox in — `Wasmtime_LIBRARY-NOTFOUND`). Regenerate the snapshot at the merge tip with the generator, never
+  by hand: `python3 snapshot_commands.py --socket <sock>` prints the surface it captured.

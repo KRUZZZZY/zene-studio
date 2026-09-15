@@ -2608,3 +2608,56 @@ if(PYTHON3_EXECUTABLE)
 			--manifest ${CMAKE_SOURCE_DIR}/docs/lua-api-surface.txt
 	)
 endif()
+
+# ---------------------------------------------------------------------------
+# The bridge's GROUP COVERAGE, driven rather than listed:
+# tests/control-mcp-group-coverage.py starts this build's binary, opens a real MCP
+# stdio session to tools/mcp-zene-control/server.py over its control socket, and
+# drives one command from EACH of the ten command groups feature-list row 49
+# measured as having no MCP tool (browser, comp, export, link, modulator, rack,
+# session, telemetry, warp, wasm). It also asserts the stale-offline-list flag
+# fires exactly when the live and offline id sets differ, so a staleness report
+# that cannot be wrong in either direction is checked in both.
+#
+# The three compile-time options that move a whole group are passed in the same
+# way ControlCommandsSnapshot passes them - a group this configuration does NOT
+# compile in is excused, and every flag is checked in BOTH directions (a prefix
+# declared compiled out that the binary DOES register is a failure, so no flag
+# can become a blindfold):
+#   - WANT_WASM=ON with the wasmtime C API on the find path adds wasm.* (item
+#     #614). Anywhere the sandbox degrades to OFF, wasm. is declared compiled
+#     out; a wasm-enabled build gets no flag and must drive the group for real.
+#     The bridge's own half of that case is
+#     tools/mcp-zene-control/tests/test_declared_surface.py.
+#   - WANT_SESSION_VIEW=OFF drops session.* and ZENE_TELEMETRY=OFF drops
+#     telemetry.*; both default ON.
+#
+# SKIPPED (exit 77 -> ctest "Skipped", never "Passed") when no interpreter with
+# the `mcp` distribution can be found: the bridge's stdio server is the thing
+# being driven, so without it this check cannot look at anything.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE)
+	set(ZENE_MCP_COMPILED_OUT "")
+	if(NOT LMMS_HAVE_SESSION_VIEW)
+		list(APPEND ZENE_MCP_COMPILED_OUT --compiled-out session.)
+	endif()
+	if(NOT ZENE_TELEMETRY_ENABLED)
+		list(APPEND ZENE_MCP_COMPILED_OUT --compiled-out telemetry.)
+	endif()
+	if(NOT WANT_WASM)
+		list(APPEND ZENE_MCP_COMPILED_OUT --compiled-out wasm.)
+	endif()
+	add_test(NAME ControlMcpGroupCoverage
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mcp-group-coverage.py
+			$<TARGET_FILE:zene>
+			${ZENE_MCP_COMPILED_OUT}
+	)
+	set_tests_properties(ControlMcpGroupCoverage PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
+else()
+	message(STATUS "python3 not found: ControlMcpGroupCoverage is not registered")
+endif()

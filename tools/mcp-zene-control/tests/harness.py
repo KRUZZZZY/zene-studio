@@ -265,14 +265,33 @@ class StubDaw:
 
     Policies: ``silent`` (accept, read, never reply), ``close`` (accept, read one
     line, close mid-request), ``ping`` (answer control.ping, per `proto` and
-    `engine_ready`), ``ok`` (answer everything with an empty result).
+    `engine_ready`), ``surface`` (answer control.ping and control.commands_list
+    from a DECLARED command list, and acknowledge every other command), ``ok``
+    (answer everything with an empty result).
     """
 
     def __init__(self, policy: str = "ok", proto: int = 1, engine_ready: bool = False,
-                 tmp_root: str | None = None):
+                 commands: list[str] | None = None, tmp_root: str | None = None):
         self.policy = policy
         self.proto = proto
         self.engine_ready = engine_ready
+        if policy == "surface":
+            # A declared surface is a stand-in that ANSWERS every command it
+            # declares, so it reports the engine ready: `wasm.*` is not an
+            # engine-free group, and the bridge waits for control.ping to say so
+            # before it sends anything (the readiness rule, test_10 below).
+            self.engine_ready = True
+        #: For `surface`: the ids this stand-in instance declares. They are NOT
+        #: invented here - a caller passes ids read from the DAW's own registry
+        #: sources - so a check built on this proves the BRIDGE carries a group,
+        #: which is what a build that does not compile the group in still needs.
+        self.commands = [{"id": item, "group": item.split(".", 1)[0],
+                          "description": "declared stand-in surface", "requires": [],
+                          "mutating": False,
+                          "args_schema": {"type": "object", "properties": {},
+                                          "additionalProperties": False},
+                          "result_schema": {"type": "object", "properties": {}}}
+                         for item in (commands or [])]
         self.tmp = tempfile.mkdtemp(prefix="zene-stub-", dir=tmp_root or "/tmp")
         self.path = os.path.join(self.tmp, "stub.sock")
         self.seen: list[dict] = []
@@ -339,6 +358,7 @@ class StubDaw:
                 pass
 
     def _reply(self, request: dict) -> dict:
+        """One request, by policy: each policy's answer is its own method."""
         request_id = request.get("id")
         cmd = request.get("cmd")
         if self.policy == "weird":
@@ -346,26 +366,45 @@ class StubDaw:
             return {"id": request_id, "ok": False,
                     "error": {"kind": "made_up_kind", "message": "stub: unknown kind"}}
         if self.policy == "daw_like":
-            # mirrors ControlServer::protoMatches: a request without `proto` is
-            # accepted from any version, a foreign proto is refused.
-            if "proto" in request and request.get("proto") != self.proto:
-                return {"id": request_id, "ok": False,
-                        "error": {"kind": "refused",
-                                  "message": f"unsupported protocol version; this instance "
-                                             f"speaks proto {self.proto}"}}
-            if cmd == "control.ping":
-                return {"id": request_id, "ok": True,
-                        "result": {"pong": True, "engine_ready": self.engine_ready,
-                                   "version": "stub-0", "proto": self.proto}}
-            return {"id": request_id, "ok": True, "result": {}}
+            return self._reply_daw_like(request, request_id, cmd)
         if self.policy == "ping":
-            if cmd == "control.ping":
-                return {"id": request_id, "ok": True,
-                        "result": {"pong": True, "engine_ready": self.engine_ready,
-                                   "version": "stub-0", "proto": self.proto}}
-            return {"id": request_id, "ok": False,
-                    "error": {"kind": "busy", "message": "stub: engine not ready"}}
+            return self._reply_ping(request_id, cmd)
+        if self.policy == "surface":
+            return self._reply_surface(request_id, cmd)
         return {"id": request_id, "ok": True, "result": {}}
+
+    def _reply_daw_like(self, request: dict, request_id: object, cmd: object) -> dict:
+        """Mirrors ControlServer::protoMatches: no `proto` is accepted from any
+        version, a foreign proto is refused."""
+        if "proto" in request and request.get("proto") != self.proto:
+            return {"id": request_id, "ok": False,
+                    "error": {"kind": "refused",
+                              "message": f"unsupported protocol version; this instance "
+                                         f"speaks proto {self.proto}"}}
+        if cmd == "control.ping":
+            return self._ping_reply(request_id)
+        return {"id": request_id, "ok": True, "result": {}}
+
+    def _reply_ping(self, request_id: object, cmd: object) -> dict:
+        if cmd == "control.ping":
+            return self._ping_reply(request_id)
+        return {"id": request_id, "ok": False,
+                "error": {"kind": "busy", "message": "stub: engine not ready"}}
+
+    def _reply_surface(self, request_id: object, cmd: object) -> dict:
+        """The declared surface, and a plain ack for everything addressed to it."""
+        if cmd == "control.ping":
+            return self._ping_reply(request_id, version="stand-in")
+        if cmd == "control.commands_list":
+            return {"id": request_id, "ok": True,
+                    "result": {"commands": self.commands, "count": len(self.commands),
+                               "proto": self.proto}}
+        return {"id": request_id, "ok": True, "result": {"command": cmd, "acknowledged": True}}
+
+    def _ping_reply(self, request_id: object, version: str = "stub-0") -> dict:
+        return {"id": request_id, "ok": True,
+                "result": {"pong": True, "engine_ready": self.engine_ready,
+                           "version": version, "proto": self.proto}}
 
     def commands_seen(self) -> list[str]:
         with self._lock:

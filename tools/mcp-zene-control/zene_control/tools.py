@@ -16,19 +16,26 @@ import os
 import time
 from typing import Any
 
-from .config import (ENGINE_FREE_GROUPS, LONG_COMMANDS, SERVER_NAME, SERVER_VERSION,
-                     Config, ErrorKind, ZeneControlError, engine_free)
+from .config import (COMMANDS_LIST_TIMEOUT, ENGINE_FREE_GROUPS, LONG_COMMANDS, SERVER_NAME,
+                     SERVER_VERSION, SNAPSHOT_FIX, Config, ErrorKind, ZeneControlError,
+                     engine_free)
 from .protocol import ControlClient
+from .staleness import StalenessMixin
 from . import registry as R
 
-#: Readiness may consume at most this fraction-free bound: the readiness poll
-#: uses min(ready_timeout, timeout_s) and the command then gets its own
-#: timeout_s, so one call is bounded by ready_timeout + timeout_s.
-COMMANDS_LIST_TIMEOUT = 10.0
+#: The command-list probe's bound moved to :mod:`zene_control.config` (the
+#: staleness mixin uses the same value); it stays importable from here because
+#: this module documented it, and `__all__` says so.
+__all__ = ["Bridge", "COMMANDS_LIST_TIMEOUT"]
 
 
-class Bridge:
-    """Stateless-ish façade over the socket: one instance per configuration."""
+class Bridge(StalenessMixin):
+    """Stateless-ish façade over the socket: one instance per configuration.
+
+    Serving and dispatching commands live here; the live-vs-offline surface
+    comparison (`probe_live`, `offline_drift`) is in :class:`staleness.StalenessMixin`,
+    which needs nothing from this file but the two paths it defines.
+    """
 
     def __init__(self, config: Config):
         self.config = config
@@ -262,22 +269,30 @@ class Bridge:
             bridge_tools=list(R.BRIDGE_TOOL_NAMES),
             engine_free_groups=sorted(ENGINE_FREE_GROUPS),
         )
+        if resolved.source == "live":
+            # A live list is authoritative for TOOLS, but the offline copies are
+            # what answers when no instance is up: measure them while there IS
+            # one, so staleness is reported here instead of discovered later.
+            payload["offline_drift"] = self.offline_drift(resolved.bundle)
         if not include_schemas:
             self._compact_commands(payload)
         if resolved.error is not None:
             payload["summary"] = resolved.summary()
+        drift = payload.get("offline_drift")
+        if drift and drift["stale"]:
+            payload["summary"] = (f"{payload['summary']}; the offline copy(ies) "
+                                  f"{', '.join(drift['stale_copies'])} are STALE against this "
+                                  f"instance (see offline_drift) — regenerate with: "
+                                  f"{SNAPSHOT_FIX.split('#')[0].strip()}")
         return payload
 
-    def status_payload(self, arguments: dict | None = None) -> dict:
-        args = dict(arguments or {})
-        override = args.pop("timeout_s", None)
-        budget = self.config.timeout_for("zene_status", override)
-        socket_exists = os.path.exists(self.config.socket_path)
-        payload: dict[str, Any] = {
+    def _status_base(self) -> dict[str, Any]:
+        """The diagnostic's configuration half: everything that needs no socket."""
+        return {
             "ok": True,
             "bridge": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "socket_path": self.config.socket_path,
-            "socket_exists": socket_exists,
+            "socket_exists": os.path.exists(self.config.socket_path),
             "workdir": self.config.workdir,
             "state_dir": self.config.state_dir,
             "expected_proto": self.config.proto,
@@ -292,6 +307,9 @@ class Bridge:
             "instance": None,
             "error": None,
         }
+
+    def _status_probe(self, payload: dict, budget: float) -> None:
+        """Fill in reachability: one bounded ping, and the typed error when it fails."""
         try:
             with ControlClient(self.config.socket_path, budget, self.config.proto) as client:
                 ping = client.handshake(wait_ready=False)
@@ -302,41 +320,96 @@ class Bridge:
             })
         except ZeneControlError as exc:
             payload["error"] = exc.to_payload(command="zene_status")["error"]
+            if not payload["socket_exists"]:
+                payload["error"] = ZeneControlError(
+                    ErrorKind.NO_INSTANCE, f"no control socket at {self.config.socket_path}"
+                ).to_payload(command="zene_status")["error"]
 
+    def _status_surfaces(self, payload: dict, budget: float) -> None:
+        """What an offline call would serve, and how it compares with a live instance.
+
+        The instance is answering, so the question "is the offline list stale?" HAS
+        an answer. Ask it: without this, the only way to learn that the snapshot was
+        older than the running DAW was to compare figures by hand, which is what
+        left a 70-id copy in place for days.
+        """
         resolved = self.resolve(prefer_live=False)
         payload["command_list"] = {
             "source": resolved.source,
             "count": resolved.count,
             "captured_at": resolved.bundle.get("captured_at"),
+            "surface": R.bundle_surface(resolved.bundle),
             "path": resolved.path,
             "proto": resolved.bundle.get("proto"),
         }
+        if payload["reachable"]:
+            live_bundle, live_error = self.probe_live(budget)
+            payload["live_surface"] = self._live_surface(live_bundle, live_error)
+            if live_bundle is not None:
+                payload["offline_drift"] = self.offline_drift(live_bundle)
+                payload["command_list"]["live_count"] = live_bundle["count"]
         snapshot = R.load_bundle(self.snapshot_path())
         if snapshot is not None:
             payload["snapshot"] = {
                 "path": self.snapshot_path(),
                 "captured_at": snapshot.get("captured_at"),
                 "count": snapshot.get("count"),
+                "surface": R.bundle_surface(snapshot),
                 "instance": snapshot.get("instance"),
             }
-        if not socket_exists and payload["error"] is None:
-            payload["error"] = ZeneControlError(
-                ErrorKind.NO_INSTANCE, f"no control socket at {self.config.socket_path}"
-            ).to_payload(command="zene_status")["error"]
 
-        if payload["reachable"] and payload["engine_ready"]:
-            payload["verdict"] = "instance reachable and engine ready: engine commands are safe to call"
-        elif payload["reachable"]:
-            payload["verdict"] = ("instance reachable but engine_ready is false: the bridge will poll "
-                                  "control.ping before sending engine commands")
-        else:
-            payload["verdict"] = ("no usable instance; the bridge still serves the cached/snapshot "
-                                  "command list (zene_commands)")
-        payload["summary"] = (f"zene-control: reachable={payload['reachable']} "
-                              f"engine_ready={payload['engine_ready']} "
-                              f"commands={payload['command_list']['count']} "
-                              f"({payload['command_list']['source']}) socket={self.config.socket_path}")
+    @staticmethod
+    def _live_surface(live_bundle: dict | None, live_error: ZeneControlError | None) -> dict:
+        """The live surface's fingerprint, or why it could not be read."""
+        if live_bundle is not None:
+            return live_bundle["surface"]
+        error = live_error or ZeneControlError(ErrorKind.BRIDGE_ERROR,
+                                               "live command list unreadable")
+        return {"read": False, "error": error.to_payload(command="control.commands_list")["error"]}
+
+    def _status_summary(self, payload: dict) -> str:
+        """One line: reachability, the served list, the live surface, and staleness."""
+        drift = payload.get("offline_drift") or {}
+        live = payload.get("live_surface") or {}
+        parts = [f"zene-control: reachable={payload['reachable']}",
+                 f"engine_ready={payload['engine_ready']}",
+                 f"commands={payload['command_list']['count']} "
+                 f"({payload['command_list']['source']})"]
+        if "id_count" in live:
+            parts.append(f"live_surface={live['id_count']} ids/{live['group_count']} groups")
+        if drift.get("stale"):
+            behind = drift["copies"][0]["missing_count"] if drift.get("copies") else 0
+            parts.append(f"OFFLINE STALE: {drift['stale_copies']} behind by {behind} id(s)")
+        parts.append(f"socket={self.config.socket_path}")
+        return " ".join(parts)
+
+    def status_payload(self, arguments: dict | None = None) -> dict:
+        """`zene_status`: the diagnostic, assembled in four separable steps."""
+        args = dict(arguments or {})
+        budget = self.config.timeout_for("zene_status", args.pop("timeout_s", None))
+        payload = self._status_base()
+        self._status_probe(payload, budget)
+        self._status_surfaces(payload, budget)
+        payload["verdict"] = self._status_verdict(payload)
+        payload["summary"] = self._status_summary(payload)
         return payload
+
+    def _status_verdict(self, payload: dict) -> str:
+        """What the reachability and staleness facts add up to, in one sentence."""
+        if payload["reachable"] and payload["engine_ready"]:
+            verdict = "instance reachable and engine ready: engine commands are safe to call"
+        elif payload["reachable"]:
+            verdict = ("instance reachable but engine_ready is false: the bridge will poll "
+                       "control.ping before sending engine commands")
+        else:
+            verdict = ("no usable instance; the bridge still serves the cached/snapshot "
+                       "command list (zene_commands)")
+        drift = payload.get("offline_drift") or {}
+        if drift.get("stale"):
+            verdict += ("; the offline command list is STALE against this instance's surface "
+                        "(see offline_drift) — regenerate it with: "
+                        + SNAPSHOT_FIX.split("#")[0].strip())
+        return verdict
 
     def project_state(self) -> dict:
         """`project.get_state`, the state the product serialises (SPEC A14)."""
@@ -357,7 +430,10 @@ BRIDGE_TOOL_SPECS: list[tuple[str, str, dict]] = [
         "List the DAW's command registry — the same list the bridge turns into tools. "
         "Uses the live instance when one answers, and falls back to the last-known copy "
         "(cache, then the committed snapshot) when none does, so this works BEFORE an "
-        "instance exists. Reports honestly where the list came from.",
+        "instance exists. Reports honestly where the list came from, the SURFACE the copy "
+        "describe (id count, group count, id hash) and, whenever an instance is answering, "
+        "an `offline_drift` block measuring every offline copy against it — a stale copy is "
+        "named, with the ids it is missing.",
         {
             "type": "object",
             "properties": {
@@ -375,8 +451,11 @@ BRIDGE_TOOL_SPECS: list[tuple[str, str, dict]] = [
     (
         "zene_status",
         "Where the control socket is, whether an instance answers, whether its engine is "
-        "ready, the bridge's budgets and the typed error when there is no instance. Always "
-        "answers (a diagnostic), never raises for a missing instance.",
+        "ready, the bridge's budgets, the live surface beside the offline copies, and the "
+        "typed error when there is no instance. Always answers (a diagnostic), never raises "
+        "for a missing instance. When an instance is up it also reports `offline_drift`: "
+        "whether the cached/snapshot list an agent would be served with nothing running is "
+        "STALE against that instance, and which ids it is missing.",
         {
             "type": "object",
             "properties": {"timeout_s": _TIME},
