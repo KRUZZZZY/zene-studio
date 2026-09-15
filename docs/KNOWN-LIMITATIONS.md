@@ -883,3 +883,21 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+**Loudness metering is drivable and there is no meter in the interface — the socket is the only way to watch
+or measure a level.** `meter.get_state` reads the PASSIVE tap on the live master (gated integrated loudness,
+momentary, short-term, the loudest short-term window and true peak, fed one period per rendered period out of
+`AudioEngine::renderStageMix()`), `meter.arm` arms or disarms it (arming starts a fresh measurement; a
+disarmed tap is one relaxed atomic load per audio period and measures nothing), and `meter.measure_file`
+measures a **rendered file** with the same BS.1770-4 meter the render path uses, with the EBU R 128 verdict.
+The render path's own report — the `.loudness.txt` sidecar — is reachable as well now: `export.get_settings`
+exposes `loudness_report` and `export.set_loudness_report` turns it on for the next render. What is **absent
+from the interface**: there is **no loudness meter widget, no LUFS/true-peak readout, no meter bridge and no
+loudness column** — `grep -rniI 'lufs\|loudness' src/gui/` finds only the export dialog's existing report
+checkbox and its result label — so nothing in this release shows a level while the transport runs. Stated
+limits: the live tap measures the **master mix only** (no per-track or per-bus loudness, no R128 momentary
+history graph and no loudness range / LRA); the meter is **stereo** in the application (`DEFAULT_CHANNELS`),
+while `meter.measure_file` accepts 1 to 6 channels and refuses more, typed; a reading is JSON `null` — never a
+plausible number — while the meter has no measurement (silence, or a window that has not filled), and the
+**EBU R 128 target (−23.0 LUFS-I ±0.5 LU, −1.0 dBTP) is the only thing graded** (the −14 LUFS-I streaming
+figure is carried as an informative convention); and `meter.measure_file` measures a file **this** instance can
+open — it does not fetch, decode or render one. `docs/METER-SURFACE.md` is the feature's own record.

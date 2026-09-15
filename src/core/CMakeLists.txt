@@ -153,6 +153,10 @@ set(LMMS_SRCS
 	# untouched here: this group forks no DSP, it makes the merged meter
 	# drivable.
 	core/ControlCommandsMeter.cpp
+	core/ControlCommandsMeterFile.cpp
+	# ... which is also the group's shared JSON vocabulary and the target it
+	# reports against (include/ControlMeterSupport.h), so the live readout and a
+	# measured file cannot drift into two spellings of one number.
 	core/MasterLoudnessTap.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).

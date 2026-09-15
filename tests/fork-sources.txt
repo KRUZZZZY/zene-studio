@@ -276,6 +276,7 @@ include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlGrooveSupport.h
 include/ControlMasteringSupport.h
+include/ControlMeterSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlRackSupport.h
@@ -458,6 +459,7 @@ src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
 src/core/ControlCommandsMeter.cpp
+src/core/ControlCommandsMeterFile.cpp
 src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
