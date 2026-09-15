@@ -31,6 +31,8 @@
 #include <cstdint>
 
 #include "LmmsTypes.h"
+#include "SessionArrangementRecorder.h"
+#include "SessionFollow.h"
 #include "SessionModel.h"
 #include "lmms_export.h"
 
@@ -117,7 +119,12 @@ enum class LaunchCommandType : std::uint8_t
 {
 	Press = 0,
 	Release,
-	Stop
+	Stop,
+	/*! Installs a Follow Action plan (or clears one, with `enabled` false) on a
+	 *  cell. It touches no launch state: the plan is stored and the slot's own
+	 *  state machine consults it while it plays (task #641). Same queue, same
+	 *  producer, same POD rule as the three above. */
+	Follow
 };
 
 //! Where a slot is in its launch life cycle.
@@ -297,6 +304,42 @@ public:
 	//! thread.
 	tick_t positionTicks() const noexcept { return m_positionTicks; }
 
+	// ---- Follow Actions (task #641, SPEC §4.1 / SPEC A3) ---------------
+
+	/*! Installs a cell's Follow Action plan, or clears it when
+	 *  `plan.enabled` is false. Model thread; one queue push, no allocation.
+	 *  Returns false when the queue is full (dropped, counted) - the same
+	 *  bounded failure the launch requests have. */
+	bool requestFollowPlan( int track, int scene, const FollowPlan& plan ) noexcept;
+
+	/*! Cells whose plan is currently installed and enabled. Any thread; the
+	 *  audio thread publishes it when it stores a plan. */
+	int armedFollowCells() const noexcept
+	{
+		return m_followArmed.load( std::memory_order_relaxed );
+	}
+
+	//! Follow actions that have fired since the last reset(). Any thread.
+	std::uint64_t followFires() const noexcept
+	{
+		return m_followFires.load( std::memory_order_relaxed );
+	}
+
+	/*! The newest fire, packed as ONE value (packFollowFire /
+	 *  followFireOutcome / followFireIndex / followFireTargetScene /
+	 *  followFireTick): outcome, the chain entry that produced it, the scene it
+	 *  addressed and the action time it was scheduled for. Any thread. */
+	std::uint64_t lastFollowFire() const noexcept
+	{
+		return m_lastFollowFire.load( std::memory_order_relaxed );
+	}
+
+	/*! Arrangement Record's event ring (task #641). The model thread consumes
+	 *  it (see ControlCommandsSessionRecord.cpp); the audio thread only feeds it
+	 *  while it is armed. */
+	SessionArrangementRecorder& arrangementRecorder() noexcept { return m_recorder; }
+	const SessionArrangementRecorder& arrangementRecorder() const noexcept { return m_recorder; }
+
 private:
 	struct Command
 	{
@@ -305,6 +348,9 @@ private:
 		LaunchCommandType type = LaunchCommandType::Press;
 		LaunchMode mode = LaunchMode::Trigger;
 		LaunchQuantisation quantisation = LaunchQuantisation::Bar;
+		//! Only read for LaunchCommandType::Follow; a POD payload, so the queue
+		//! stays a fixed array of trivially copyable elements.
+		FollowPlan plan;
 	};
 
 	/*! Fixed-capacity single-producer/single-consumer queue. The model thread
@@ -354,6 +400,22 @@ private:
 		LaunchMode mode = LaunchMode::Trigger;
 		LaunchQuantisation quantisation = LaunchQuantisation::Bar;
 		SlotLaunchState state;
+		//! Follow Actions: the action time this slot is waiting for, and
+		//! whether it has been initialised for the playback that is running.
+		//! Audio thread, like everything else in this struct.
+		bool followScheduled = false;
+		tick_t followNextTick = 0;
+	};
+
+	/*! One installed plan. A separate fixed table rather than a member of
+	 *  ActiveSlot: a plan outlives the playback it was installed for (arming a
+	 *  cell is what makes its NEXT launch follow), and a cell that has never
+	 *  launched has no ActiveSlot to hang it on. */
+	struct InstalledFollowPlan
+	{
+		int track = -1;
+		int scene = -1;
+		FollowPlan plan;
 	};
 
 	bool enqueue( const Command& command ) noexcept;
@@ -385,7 +447,37 @@ private:
 	//! Fires whatever the clock has reached, one pass over the active slots.
 	void advanceSlots( const SessionClockContext& ctx ) noexcept;
 
+	// ---- Follow Actions, audio thread ----------------------------------
+	//! Stores (or clears) one cell's plan. Audio thread, from drainCommands.
+	//! Returns false when there is no free entry (the plan is dropped and
+	//! counted like any other refused command).
+	bool installFollowPlan( int track, int scene, const FollowPlan& plan ) noexcept;
+	//! The plan installed for a cell, or nullptr. Audio thread.
+	const FollowPlan* planFor( int track, int scene ) const noexcept;
+	/*! Evaluates one playing slot's chain against the clock. Called once per
+	 *  audio period per active slot; fires at most ONE action per action time
+	 *  (the slot's next action tick advances by one step per evaluation), so a
+	 *  chain whose entries do nothing still cannot spin. Audio thread. */
+	void evaluateFollow( ActiveSlot& slot, const SessionClockContext& ctx ) noexcept;
+	/*! Everything the launch state machine's events imply for this task: the
+	 *  launch counters and the start-line publication, the slot's Follow Action
+	 *  schedule, and the Arrangement Record's event ring. Called by
+	 *  advanceSlots() once per active slot per period, and defined in
+	 *  src/core/SessionFollow.cpp so this file stays inside the file-length
+	 *  ratchet. Audio thread. */
+	void afterLaunchEvents( ActiveSlot& slot, const SessionClockContext& ctx,
+		LaunchEvent event ) noexcept;
+	//! Publishes a fire for the model thread. Audio thread; one relaxed store.
+	void publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept
+	{
+		m_lastFollowFire.store( packFollowFire( fire.outcome, fire.chosenIndex,
+			fire.targetScene, tick ), std::memory_order_relaxed );
+	}
+	//! Audio thread: how many installed cells have an ENABLED plan.
+	void recountArmedFollowCells() noexcept;
+
 	std::array<ActiveSlot, MaxActiveSlots> m_active{};
+	std::array<InstalledFollowPlan, MaxFollowPlans> m_followPlans{};
 	CommandQueue m_queue;
 	std::atomic<std::uint64_t> m_dropped{ 0 };
 	std::atomic<std::uint64_t> m_launches{ 0 };
@@ -400,6 +492,19 @@ private:
 	//! active slot on its next period (see reset()).
 	std::atomic<std::uint32_t> m_resetGeneration{ 0 };
 	std::uint32_t m_seenGeneration = 0;
+
+	// ---- Follow Actions and Arrangement Record (task #641) --------------
+	//! Newest fire, packed; see lastFollowFire().
+	std::atomic<std::uint64_t> m_lastFollowFire{ 0 };
+	std::atomic<std::uint64_t> m_followFires{ 0 };
+	//! Cells with an enabled plan installed; see armedFollowCells().
+	std::atomic<int> m_followArmed{ 0 };
+	//! The audio thread's Follow Action RNG (xorshift32, SessionFollow.h).
+	//! Audio-thread-only, so it needs no atomic.
+	std::uint32_t m_followRng = 0x2545f491u;
+	//! Arrangement Record's ring; the audio thread feeds it, the model thread
+	//! drains it (see include/SessionArrangementRecorder.h).
+	SessionArrangementRecorder m_recorder;
 
 	// ---- audio-thread-only session clock (SPEC A2) ---------------------
 	tick_t m_positionTicks = 0;

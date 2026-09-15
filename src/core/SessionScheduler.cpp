@@ -203,6 +203,11 @@ void applyLaunchCommand( SlotLaunchState& state, LaunchMode mode,
 		case LaunchCommandType::Release:
 			releaseSlot( state, mode, quantisation, ctx );
 			return;
+		case LaunchCommandType::Follow:
+			// A plan install touches no launch state; drainCommands() handles it
+			// before reaching here. Named explicitly rather than left to
+			// `default`, which would stop the slot (task #641).
+			return;
 		case LaunchCommandType::Stop:
 		default:
 			stopSlot( state, quantisation, ctx );
@@ -324,6 +329,17 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
 	while( m_queue.pop( command ) )
 	{
 		m_processed.fetch_add( 1, std::memory_order_relaxed );
+		if( command.type == LaunchCommandType::Follow )
+		{
+			// A plan install, not a launch: it is stored for the cell and read
+			// by any playback of it (task #641). Counted like a dropped press
+			// when there is no free entry.
+			if( !installFollowPlan( command.track, command.scene, command.plan ) )
+			{
+				m_dropped.fetch_add( 1, std::memory_order_relaxed );
+			}
+			continue;
+		}
 		ActiveSlot* slot = findSlot( command.track, command.scene );
 
 		if( command.type == LaunchCommandType::Press )
@@ -369,6 +385,17 @@ bool SessionScheduler::consumeResetRequest() noexcept
 	{
 		slot = ActiveSlot{};
 	}
+	for( auto& installed : m_followPlans )
+	{
+		installed = InstalledFollowPlan{};
+	}
+	m_followArmed.store( 0, std::memory_order_relaxed );
+	m_followFires.store( 0, std::memory_order_relaxed );
+	m_lastFollowFire.store( 0, std::memory_order_relaxed );
+	// Arrangement Record's ring is deliberately NOT cleared: the events it
+	// already carries belong to the performance that has just ended, and the
+	// caller lands them (the disarm path). Dropping them here is the data loss
+	// the feature exists to prevent.
 	m_positionTicks = 0;
 	m_freeRunFrames = 0.0;
 	m_wasRunning = false;
@@ -419,14 +446,10 @@ void SessionScheduler::advanceSlots( const SessionClockContext& ctx ) noexcept
 			continue;
 		}
 		const LaunchEvent event = advanceLaunchState( slot.state, slot.mode, ctx );
-		if( event == LaunchEvent::Started || event == LaunchEvent::Retriggered )
-		{
-			m_launches.fetch_add( 1, std::memory_order_relaxed );
-			// The slot's own scheduled line, not this period's position, so two
-			// clips launched for the same bar report the SAME line whatever
-			// period noticed them; `observed` says how far past it we were.
-			publishStart( slot.state.startedTick, ctx.positionTicks );
-		}
+		// Counters, the published start line, the Follow Action schedule and
+		// Arrangement Record's ring - one place, so they cannot disagree about
+		// what happened this period (src/core/SessionFollow.cpp).
+		afterLaunchEvents( slot, ctx, event );
 		if( slot.state.phase == SlotPhase::Idle )
 		{
 			// Finished (or cancelled): give the entry back so the table stays
