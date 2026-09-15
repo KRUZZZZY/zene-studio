@@ -883,3 +883,38 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+## The plugin hosts chunk, and the WASM pool renders offline — what is still not there (CODE-4, CODE-5)
+
+**Chunking the plugin host paths has no interface.** `plugin.host_chunking` (read-only) reports the contract and
+the live counters over `--control-socket`; **nothing in the interface shows them**, there is no per-device panel
+and no per-device breakdown at all — the counters are process-wide, they are never reset except by exiting the
+process, and they are read as a snapshot (the audio path increments them, the command reads them, so a request
+in flight may or may not be in a given read). What the rule covers is the **host**: the frames the host hands the
+plug-in and the buffers it hands them in. A plug-in that writes outside the frames it was asked for is still its
+own bug and this release does not defend against it.
+
+The proof is a **host-level unit test with an in-tree MIT fixture** (`Vst3ChunkProbeTest`, and
+`ClapHostTest::testChunkedProcessing` against the CLAP fixture), because **no third-party VST3 or CLAP plug-in
+can be installed on the build machine**: the chunk sequence, the "no call larger than the declared block" witness
+and the audio equality between two prepared block sizes are all measured against fixtures this repository owns,
+never against a real third-party plug-in. The prepared block size comes from the engine's period at the moment
+the device is loaded, so a buffer-size change mid-session still reaches the host through the device's own
+re-prepare path rather than through this feature.
+
+**The WASM worker pool is bounded and its wake-up is a futex.** Lanes are `min(cores - 1, 8)` and the number is
+fixed the first time the pool is used — there is **no configuration knob** and no per-module lane allocation.
+A `submit()` from the audio thread takes **one futex wake when every lane is parked** (`wasm.pool`'s `wakeups`);
+while a lane is awake it takes none (`wakes_suppressed`). That is a deliberate, measured trade and not a
+lock-free guarantee: the queue hand-off itself is lock free, the wake is not.
+
+**The offline render is not the live streaming path.** `wasm.render_offline` renders one block in flight on a
+fresh worker, which is what makes the repeatability verdict meaningful; **live playback keeps the weaker
+contract** and can still drop blocks when no slot or queue entry is free (`dropped_blocks` is reported per run,
+and a run with a non-zero value is not a render to trust). The verdict is **within this build's own measured
+run-to-run floor** — it is **not** bit-identity, **not** a promise across builds, machines or optimisation
+levels, and it says nothing about a module that is itself non-deterministic (a module that seeds noise from the
+clock can push the floor up and still be "deterministic within its own floor"; the honest reading is that the
+floor, not the verdict, is what that case tells you). And the sandbox is still **not in any device's audio
+path**: `wasm.render_offline` and the rest of the `wasm.*` group run the module in a sandbox of their own and
+produce no audio the user hears — the limit `docs/WASM-EFFECT-ABI.md` section 13 records is unchanged.

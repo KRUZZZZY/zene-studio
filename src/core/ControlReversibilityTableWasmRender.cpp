@@ -37,6 +37,11 @@ using RC = ReversibilityClass;
 #define R(id, cls, rev, reason, mechanism, fallback) \
 	{ id, cls, reason, mechanism, fallback, rev, nullptr }
 
+// The rows travel with the group exactly as the rest of the wasm.* rows do
+// (ControlReversibilityTablePassive.cpp:370): a build without the wasmtime C API
+// compiles no wasm.* command, so it must carry no row for an id it cannot
+// answer.
+#ifdef LMMS_HAVE_WASM
 const ReversibilityRow kWasmRenderRows[] = {
 	// =====================================================================
 	// CODE-5, feature row 73: the shared WASM worker pool, and the
@@ -65,6 +70,12 @@ const ReversibilityRow kWasmRenderRows[] = {
 
 constexpr int kWasmRenderRowCount =
 	static_cast<int>(sizeof(kWasmRenderRows) / sizeof(kWasmRenderRows[0]));
+#else
+// No wasmtime: an EMPTY table, but a valid pointer - the join in
+// ControlReversibilityTable.cpp walks [rows, rows + count).
+const ReversibilityRow kWasmRenderRows[1] = {};
+constexpr int kWasmRenderRowCount = 0;
+#endif // LMMS_HAVE_WASM
 
 } // namespace
 

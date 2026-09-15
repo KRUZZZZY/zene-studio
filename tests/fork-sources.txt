@@ -507,6 +507,7 @@ src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlCommandsWasm.cpp
 src/core/ControlCommandsWasmEdit.cpp
+src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
@@ -534,6 +535,7 @@ src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
@@ -662,6 +664,7 @@ tests/control-wasm-sandbox.py
 tests/control_instance_diagnosis.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
+tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/freeze_bounce_evidence.py
 tests/link_sync_evidence.py
 tests/mastering_probe_lib.py
@@ -697,6 +700,8 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
+tests/src/plugins/Vst3ChunkProbeTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/src/wasm/WasmWorkerPoolTest.cpp
 tools/local-ci.sh
 tools/ncpu-shim.c

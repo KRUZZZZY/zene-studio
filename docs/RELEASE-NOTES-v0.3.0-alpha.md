@@ -1258,6 +1258,59 @@ joins the routing surface's: the passive block and the live block are both at th
   renders in this tree are **not bit-reproducible** run to run, so two runs of the same master are equal only
   to the meter's tolerance (≤ 0.05 LU / 0.01 dB), never byte for byte.
 
+## Plugin hosts process exactly the frames they are asked for, in chunks (CODE-4, row 82) — added 2026-09-15
+
+Both native host paths used to get a request larger than the block they were prepared for wrong, in two
+different ways. `Vst3Host.cpp` handed the plug-in one call with `numSamples = frames` while its own silence
+and scratch blocks stayed the prepared block long, so the plug-in read and wrote past both (measured:
+`free(): invalid size` from glibc's allocator). `ClapHost.cpp` clamped the request to the prepared block and
+returned success, which processed the first block and left the rest of the caller's buffers holding whatever
+was there before. Both now run an explicit chunk loop: chunks of at most the prepared block, the last one
+carrying the remainder, so the request is processed whole; a channel the caller does not supply maps to the
+start of the zeroed block or the scratch, never past its end; parameter changes are delivered once, with the
+request's first chunk, and MIDI is drained once and sliced per chunk with the offset rebased to that chunk.
+The rule is written on `HostedPlugin::process()` in both host headers.
+
+Observable: **`plugin.host_chunking`** (read-only) reports the contract and the counters both hosts increment —
+process() calls, frames asked for, plug-in calls they became, requests that needed more than one chunk and the
+frames beyond the prepared block they carried, the largest request and the block size the last one was
+prepared with. `chunks` > `requests` with a non-zero `frames_beyond_prepared_block` is a request that was
+chunked rather than truncated or over-run.
+
+Proven by `Vst3ChunkProbeTest` and `ClapHostTest::testChunkedProcessing` against a purpose-built in-tree MIT
+fixture that reports what it was asked for (`tests/data/vst3-chunk-probe`, and the same witnesses added to the
+CLAP fixture `tests/data/clap-test-plugin/clap-test-gain.c`). Measured, 1061 frames into a 512-frame block:
+chunk sequence 512, 512, 37; no call larger than the declared block; the full request written; and a second
+instance prepared for 1061 frames producing identical audio. With the chunk loop removed the same test fails
+on both counts and aborts in the allocator.
+
+## A shared WASM worker pool and a deterministic offline render (`wasm.pool`, `wasm.render_offline`, CODE-5, row 73) — added 2026-09-15
+
+The WASM worker owned a `std::thread` and a `sleep_for(200us)` polling loop, so N hosted modules cost N
+threads and a queued block waited for the next tick. `WasmWorkerPool` is now ONE process-wide pool of bounded
+lanes (`min(cores - 1, 8)`) that every worker shares: a lane claims one worker at a time, drains its queue in
+FIFO order and releases it, so a stateful module's blocks are processed in submission order while different
+workers run on different lanes. A lane parks on a work generation and `submit()` wakes it — a real wake-up, and
+while a lane is already awake the audio thread takes no syscall at all.
+
+`wasm.render_offline` renders a module offline — one block in flight, on a fresh worker, so nothing can be
+reordered or dropped — and reports whether the render is reproducible **within a measured tolerance**. This is
+deliberate: `docs/RENDER-DETERMINISM.md` records that this tree's renders are not bit-reproducible run to run
+for every project (period-boundary differences, up to one frame of start jitter, two bundled projects still
+unstable). So the command renders the same input twice on an inline control path to MEASURE this build's own
+run-to-run floor in the same call, renders it two to eight times through the pool as the subject, and answers
+`deterministic` when the subject is within that floor in both differing frames and largest absolute difference.
+The SHA-256 digests it returns are informational; the comparator is self-tested on a one-sample perturbation,
+so "the same" is a measurement and not a constant.
+
+Observable: **`wasm.pool`** (lanes, workers, lane passes, blocks, wake-ups, wake-ups suppressed, parks) and
+**`wasm.render_offline`**, both read-only with their A16 rows in
+`src/core/ControlReversibilityTableWasmRender.cpp`. Proven by `WasmWorkerPoolTest`, which measured on this box:
+3 hosted workers on 8 shared lanes; with every lane parked, a `submit()` woke one and the block came back
+through `collect()`; floor 0 of 8192 frames differ and subject 0 of 8192 (so the verdict is the measured one),
+while a 0.25-scale vs 0.75-scale stimulus differs on 8160 frames — the comparator and the render are both
+exercised.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
