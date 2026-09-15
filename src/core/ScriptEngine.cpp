@@ -55,6 +55,7 @@ extern "C"
 #include "ScriptMemoryBudget.h"
 #include "ScriptBindings.h"
 #include "ScriptConsole.h"
+#include "ScriptDawBindings.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -110,9 +111,11 @@ public:
 		}
 
 		ScriptBindings::beginRun();
+		ScriptDawBindings::beginRun();
 		*static_cast<ScriptWorker**>(lua_getextraspace(L)) = this;
 		openSandbox(L);
 		ScriptBindings::registerAll(L, m_engine);
+		ScriptDawBindings::registerAll(L);
 
 		m_state.instructions = 0;
 		m_state.budget = m_engine->instructionBudget();
@@ -460,9 +463,51 @@ void ScriptEngine::applyCommands(std::size_t max)
 }
 
 
+/*! Two case bodies moved out of applyCommand().
+ *
+ *  applyCommand is a grandfathered entry in tests/complexity-baseline.tsv
+ *  (CCN 29, tolerance 0) and the DAW-control ops add a guard and a case label
+ *  to it; these two bodies (unchanged in behaviour) pay for both.
+ */
+void applyAddNote(const ScriptCommand& command)
+{
+	auto* clip = static_cast<MidiClip*>(command.object0);
+	if (clip == nullptr)
+	{
+		return;
+	}
+	// quant_pos=false: quantization needs the GUI piano roll, and there is
+	// no GUI in a headless build.
+	clip->addNote(Note(TimePos(command.i2), TimePos(command.i1), command.i0,
+			static_cast<volume_t>(command.i3),
+			static_cast<panning_t>(command.f0)), false);
+}
+
+void applyRemoveNote(const ScriptCommand& command)
+{
+	auto* clip = static_cast<MidiClip*>(command.object0);
+	if (clip == nullptr)
+	{
+		return;
+	}
+	const NoteVector& notes = clip->notes();
+	if (command.i0 < 0 || command.i0 >= static_cast<int>(notes.size()))
+	{
+		return;
+	}
+	clip->removeNote(notes[command.i0]);
+}
+
 void ScriptEngine::applyCommand(const ScriptCommand& command)
 {
 	m_lastApplyThread.store(QThread::currentThread(), std::memory_order_release);
+	// The DAW-control ops (mixer channel, effect chain, effect) are dispatched
+	// in their own translation unit, so this switch grows by one type and no
+	// case labels: src/core/ScriptDawEdit.cpp.
+	if (ScriptDawBindings::applyQueuedCommand(command))
+	{
+		return;
+	}
 	switch (command.type)
 	{
 	case ScriptCommand::Type::AddPatternTrack:
@@ -474,34 +519,12 @@ void ScriptEngine::applyCommand(const ScriptCommand& command)
 		break;
 
 	case ScriptCommand::Type::AddNote:
-	{
-		auto* clip = static_cast<MidiClip*>(command.object0);
-		if (clip == nullptr)
-		{
-			break;
-		}
-		// quant_pos=false: quantization needs the GUI piano roll, and there is
-		// no GUI in a headless build.
-		clip->addNote(Note(TimePos(command.i2), TimePos(command.i1), command.i0,
-					static_cast<volume_t>(command.i3),
-					static_cast<panning_t>(command.f0)), false);
+		applyAddNote(command);
 		break;
-	}
 
 	case ScriptCommand::Type::RemoveNote:
-	{
-		auto* clip = static_cast<MidiClip*>(command.object0);
-		if (clip == nullptr)
-		{
-			break;
-		}
-		const NoteVector& notes = clip->notes();
-		if (command.i0 >= 0 && command.i0 < static_cast<int>(notes.size()))
-		{
-			clip->removeNote(notes[command.i0]);
-		}
+		applyRemoveNote(command);
 		break;
-	}
 
 	case ScriptCommand::Type::ClearNotes:
 		if (auto* clip = static_cast<MidiClip*>(command.object0))
@@ -576,6 +599,13 @@ void ScriptEngine::applyCommand(const ScriptCommand& command)
 				.arg(command.i2)
 				.arg(command.i0)
 				.arg(command.i1));
+		break;
+
+	// Handled before the switch (ScriptDawBindings::applyQueuedCommand). The
+	// label is here so a future command type cannot be added to the enum
+	// without this switch being revisited: -Wswitch makes an unhandled
+	// enumerator a -Werror failure, and that is the point.
+	case ScriptCommand::Type::DawEdit:
 		break;
 	}
 }

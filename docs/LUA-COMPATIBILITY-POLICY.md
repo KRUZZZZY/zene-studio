@@ -27,8 +27,28 @@ engine reports against what the *test* binary was compiled with (both from the
 same CMake variable), so a version hardcoded in either place fails
 `ScriptStabilisationTest`.
 
-Current value: **0.1.0**, reported as `0.1` in the major.minor form a script
-declares, with stability `v0-unstable`.
+Current value: **0.2.0**, reported as `0.2` in the major.minor form a script
+declares, with stability `v0-unstable`. It moved from 0.1.0 when the DAW-control
+binding (mixer channel, effect chain, effect; `zene.mixer()`, `zene.apiSurface()`)
+was added: an addition bumps MINOR, which is the whole of section 2's first rule.
+
+## 1a. What enforces this document
+
+Each clause below names the artefact that fails when it is broken. "Described" is
+not "enforced", so nothing here is left to review:
+
+| Clause | Enforced by |
+|---|---|
+| The numbers come from one place | `ScriptStabilisationTest::versionEntryPointReportsTheBuiltVersion` compares what the engine reports against what the test binary was compiled with (both from `CMakeLists.txt`) |
+| A script declares what it needs | `ScriptEngine::isCompatibleVersion()` — the `--! zene-api` / `--! lmms-api` header gate (section 3.1) |
+| No name is removed within a major version | `tests/lua-api-surface.py`, registered as the ctest **`LuaApiSurface`**: it derives the whole surface (every `zene.*` function and every class member) from the registration sources and fails on drift against the committed `docs/lua-api-surface.txt`, naming each entry as `REMOVED (breaking)` |
+| An addition bumps MINOR | the same test: an entry the manifest lacks is reported as `ADDED (additive)` and the recorded `api <major>.<minor>` line is compared with `CMakeLists.txt`, so a surface change without a version change fails |
+| A script can ask what it is running against | `zene.apiSurface()` (version, stability, and the live `zene` surface), `zene.version()`, `zene.apiVersion()`, `zene.apiVersionMinor()` |
+
+`docs/lua-api-surface.txt` is a DERIVED file: `python3 tests/lua-api-surface.py
+--write` produces it and never hand-edit it. When `LuaApiSurface` fails, the
+message says which of the two bumps (MINOR for an addition, MAJOR for a removal)
+the change needs.
 
 ## 2. Current state: v0, no stability promise
 
@@ -92,10 +112,18 @@ These are implemented, not aspirational. Each is proved by a test in
    DAW's Qt logging path (prefixed `lua:`), as well as the capture buffer
    `ScriptEngine::takeLogMessages()` reads. A script's fatal error is reported
    there too. (`ScriptStabilisationTest::consoleOutputReachesTheLoggingPath`.)
+8. **The DAW-control surface** (added 2026-09-15, API 0.2). `zene.mixer()` returns
+   the live mixer; a channel's gain, mute, solo and name, its effect chain, and a
+   device's parameters and enabled state are readable and writable from a script,
+   under the `ch-<n>` / `fx-<n>` ids the control surface uses. Every write is
+   queued to the apply side and journalled where the engine journals the manual
+   path, so one `control.undo` reverses it. (`ScriptDawBindingTest`; what is
+   deliberately NOT bound is listed in `docs/LUA-API-STABILISATION.md` §5.)
 
 ## 4. What is explicitly NOT promised
 
-* **No stability of the surface.** See §2.
+* **No stability of the surface.** See §2. What §1a adds is that a change is
+  RECORDED and caught, not that the surface is frozen.
 * **No script-defined devices.** A script cannot yet define a device or effect
   the engine runs. Design and touch points:
   `docs/LUA-SCRIPT-DEVICES-DESIGN.md` (not implemented).

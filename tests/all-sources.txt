@@ -397,6 +397,7 @@ include/Scale.h
 include/ScriptApiVersion.h
 include/ScriptBindings.h
 include/ScriptConsole.h
+include/ScriptDawBindings.h
 include/ScriptEngine.h
 include/ScriptLuaQtTypes.h
 include/ScriptMemoryBudget.h
@@ -1231,6 +1232,9 @@ src/core/ScriptApiVersion.cpp
 src/core/ScriptBindings.cpp
 src/core/ScriptCommandQueue.cpp
 src/core/ScriptConsole.cpp
+src/core/ScriptDawBindings.cpp
+src/core/ScriptDawEdit.cpp
+src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptPackage.cpp
 src/core/SerializingObject.cpp
@@ -1569,6 +1573,7 @@ tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
+tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/ScriptEngineTest.cpp
 tests/src/core/ScriptMemoryBudgetTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp

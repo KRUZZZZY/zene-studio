@@ -1285,3 +1285,22 @@ interface.** There is no pipe-name field, no control-surface page and no Windows
 `grep -rniI 'control-socket\|ControlServer\|controlSocket' src/gui/` returns **2** hits, both
 comments about *unattended* runs (`GuiApplication.cpp`, `MainWindow.cpp`) and neither a widget, a
 dialog nor a menu entry.
+
+**The Lua API's DAW-control binding is socket-and-file scripted, never a panel — added 2026-09-15
+(feature row 50, task #674).** `zene.mixer()`, `Mixer`, `MixerChannel`, `EffectChain` and `Effect`
+make the mixer, a channel's gain/mute/solo, its effect chain and a device's parameters drivable from
+a Lua script (they are the same objects and the same `ch-<n>` / `fx-<n>` ids the `mixer.*` /
+`plugin.*` command groups address), and `zene.apiSurface()` reports the API version and the live
+surface. There is **no interface** for any of it: no Lua console pane, no script editor and no
+widget that shows what a script changed (`grep -rniI 'luaConsole\|LuaConsole\|scriptEditor' src/
+include/` returns 0 hits); the only GUI path is the pre-existing File > Run Lua Script file dialog
+(`src/gui/MainWindow.cpp:942`), which runs a whole file and reports nothing back. Withheld on
+purpose, one line each: channel **pan** (a `MixerChannel` has no pan control in this tree, which is
+why `mixer.set_pan` refuses), channel/effect **removal** (no inverse exists for a deleted channel;
+that stays the socket's `irreversible` `mixer.remove_channel`), **sends** (read-only — routing is
+`mixer.route_*`'s job), **PDC** (not bound: derived per chain, reported by `dsp.get_state`),
+**plugins beyond a chain** (no scan, no preset publishing from Lua), **automation clips and
+controllers** (other groups own those objects), **settings** (only `script.set_memory_budget`), and
+a channel **rename is journalless** (`MixerChannel::m_name` is a plain `QString`; no inverse is
+claimed for it). The proof is the registered ctest `ScriptDawBindingTest`, which drives a real
+mixer channel and the socket-addressable chain from Lua and reads the engine back.

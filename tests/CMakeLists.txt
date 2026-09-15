@@ -2578,3 +2578,33 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 else()
 	message(STATUS "python3 not found: ControlCommandsSnapshot is not registered")
 endif()
+
+	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
+	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
+	# control surface addresses from Lua, reads the engine back (not the script's
+	# own buffer), and checks the version surface zene.apiSurface() reports.
+	src/core/ScriptDawBindingTest.cpp
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
+# ProjectJournal) and drives it through the Lua binding, so it needs the same
+# headless Qt platform.
+set_tests_properties(ScriptDawBindingTest PROPERTIES
+# ---------------------------------------------------------------------------
+# LuaApiSurface (0.3.0 feature row 50): the version + compatibility policy as a
+# RATCHET. docs/lua-api-surface.txt is the API surface of the version this tree
+# declares, derived from the registration sources by tests/lua-api-surface.py.
+# The test re-derives it and fails on drift in EITHER direction - a removed name
+# (breaking: needs a MAJOR bump) and an added one (additive: needs a MINOR bump)
+# - naming the entries and quoting the policy. It needs no build of the product:
+# the surface is what the sources register, so it runs on every platform and on a
+# machine that cannot build the DAW. docs/LUA-COMPATIBILITY-POLICY.md, section 2.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME LuaApiSurface
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/lua-api-surface.py
+			--check
+			--root ${CMAKE_SOURCE_DIR}
+			--manifest ${CMAKE_SOURCE_DIR}/docs/lua-api-surface.txt
+	)
+endif()

@@ -317,3 +317,58 @@ All eight new sources (four headers, four translation units) are registered in
 `tests/fork-sources.txt` and the new test in `tests/CMakeLists.txt`; both
 inherited-file edits carry a ledger entry with a reason, and every new entry
 point states the thread it runs on (§5).
+
+## 8. The DAW-control half, and what is deliberately not bound (2026-09-15)
+
+Feature row 50 measured the v0 binding as a **pattern-editing** API: it reached no mixer channel,
+effect chain, plugin, send, PDC, automation clip, controller or settings object. The DAW-control
+half is now in the tree:
+
+| Object | Lua | Where it is implemented |
+|---|---|---|
+| The mixer | `zene.mixer()` -> `Mixer:channelCount/channel/channelById/master/ids/addChannel` | `src/core/ScriptDawBindings.cpp` |
+| A mixer channel | `MixerChannel:gain/setGain/muted/setMuted/soloed/setSoloed/name/setName/isMaster/isBus/chain/send*` | `src/core/ScriptDawBindings.cpp` (reads), `src/core/ScriptDawEdit.cpp` (writes) |
+| An effect chain | `EffectChain:effectCount/effect/effectById/loadEffect/removeEffect` | `src/core/ScriptDawEffects.cpp`, `src/core/ScriptDawEdit.cpp` |
+| A device instance | `Effect:index/id/pluginName/displayName/enabled/setEnabled/parameterCount/parameterName/parameter` | `src/core/ScriptDawEffects.cpp`, `src/core/ScriptDawEdit.cpp` |
+| The API surface itself | `zene.apiSurface()` | `src/core/ScriptDawBindings.cpp` |
+
+Two rules make it one surface rather than two: the ids (`ch-<n>`, `fx-<n>`, `dev-<n>`) come from
+`ControlVocabulary.h`, and the objects are the engine's own (`resolveControlTarget()`,
+`controlInstantiateDevice()`, `controlEffectParameters()`), so a Lua read and a `plugin.param_get`
+read cannot disagree. A parameter is returned as the existing `FloatModel` wrapper, so parameter
+writes inherit that wrapper's journalled `setValue` path.
+
+Writes never run on the script's thread. `ScriptCommand::Type::DawEdit` carries an opcode
+(`ScriptDawBindings::Op`) and the apply side dispatches it in `src/core/ScriptDawEdit.cpp`; the
+pattern is `EmitMidiNote`'s (a discriminator field in a fixed POD command), chosen because
+`ScriptEngine::applyCommand` is grandfathered in `tests/complexity-baseline.tsv` and must not grow
+one `case` label per op.
+
+### Withheld, one line each
+
+- **Channel pan** - a `MixerChannel` carries no pan control in this tree, which is exactly why
+  `mixer.set_pan` refuses; inventing one would change the mixer's serialization format.
+- **Channel and effect removal** - a deleted channel has no inverse (`mixer.remove_channel` is the
+  socket's `irreversible` row); the binding does not add a one-way door a script can walk through
+  by accident.
+- **Sends** - read-only (`sendCount`/`sendTarget`/`sendAmount`/`sendPreFader`): creating or moving
+  a send re-routes audio and belongs to `mixer.route_*`, where the routing graph is checked.
+- **PDC** - not bound at all. Chain latency is derived from the effects that will process audio and
+  is reported by `dsp.get_state`; a script may not set it.
+- **Plugins outside a chain** - a script loads and unloads devices on a chain it can reach; it
+  cannot scan, instantiate a device with no chain, or publish a preset.
+- **Automation clips and controllers** - other groups own those objects (`automation.*`,
+  `modulator.*`); the binding reaches neither.
+- **Settings** - `script.set_memory_budget` remains the only knob a script owns.
+- **A channel rename is journalless** - `MixerChannel::m_name` is a plain `QString`, so no inverse
+  exists; the binding performs the rename (a script that creates a channel must be able to name it)
+  and claims no undo for it.
+
+### Proof
+
+- `ScriptDawBindingTest` (registered ctest, `tests/CMakeLists.txt`): drives a real channel and its
+  chain from Lua, asserts the ENGINE's own state, asserts the control surface resolves the same
+  `ch-<n>` to the same `EffectChain`, proves the fader write is undoable through `ProjectJournal`,
+  and checks `zene.apiSurface()` against the version this test binary was compiled with.
+- `LuaApiSurface` (ctest, `tests/lua-api-surface.py` + `docs/lua-api-surface.txt`): the version and
+  compatibility policy as a ratchet - see `docs/LUA-COMPATIBILITY-POLICY.md` section 1a.

@@ -83,7 +83,12 @@ ENDIF()
 # release. Explicitly NOT LMMS's own ${VERSION}: the API can move without the
 # application, and a script cares only about the API.
 SET(ZENE_LUA_API_VERSION_MAJOR "0")
-SET(ZENE_LUA_API_VERSION_MINOR "1")
+# 0.2 (0.3.0-alpha, feature row 50): the additive half of the DAW-control
+# binding - Mixer / MixerChannel / EffectChain / Effect and zene.mixer(),
+# zene.apiSurface(). Policy section 2: an addition bumps MINOR, so a script
+# that declares `--! zene-api 0.2` cannot be run by a build that predates them
+# (the gate refuses minor > build minor) while every 0.1 script keeps running.
+SET(ZENE_LUA_API_VERSION_MINOR "2")
 SET(ZENE_LUA_API_VERSION_PATCH "0")
 
 # Override version information for non-base builds

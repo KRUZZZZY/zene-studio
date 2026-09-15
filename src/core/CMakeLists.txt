@@ -603,6 +603,9 @@ set(LMMS_SRCS
 	core/ScriptBindings.cpp
 	core/ScriptCommandQueue.cpp
 	core/ScriptConsole.cpp
+	core/ScriptDawBindings.cpp
+	core/ScriptDawEdit.cpp
+	core/ScriptDawEffects.cpp
 	core/ScriptEngine.cpp
 	core/ScriptPackage.cpp
 	core/LmmsSemaphore.cpp

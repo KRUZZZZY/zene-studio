@@ -79,6 +79,13 @@ struct ScriptCommand
 		Stop,			//!< transport stop
 		AddCheckPoint,		//!< object0 = JournallingObject* (undo checkpoint)
 		EmitMidiNote,		//!< i0 = key, i1 = velocity, i2 = channel, i3 = 1 note-on / 0 note-off
+		/*! One DAW-control edit (mixer channel, effect chain, effect).
+		 *  i0 = ScriptDawBindings::Op, object0 = the target, i1 = an index or a
+		 *  flag, text = a device reference or a name. ONE type carries the whole
+		 *  op family because applyCommand() is a grandfathered entry in
+		 *  tests/complexity-baseline.tsv: the dispatch over the opcode lives in
+		 *  src/core/ScriptDawEdit.cpp. */
+		DawEdit,
 	};
 
 	Type type{};
