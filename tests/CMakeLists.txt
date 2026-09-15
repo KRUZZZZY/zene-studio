@@ -163,6 +163,13 @@ set(LMMS_TESTS
 	# below, which drives the real binary.
 	src/core/GrooveTemplateTest.cpp
 	src/core/ControlGrooveCommandsTest.cpp
+	# The crash reporter's ARM pair (crash.enable / crash.disable, board task
+	# #643): install() arms and uninstall() disarms, measured on the KERNEL's
+	# dispositions (handlersArmed) and on real signals in forked children - with
+	# the negative control: disarmed, a real SIGSEGV/SIGABRT writes NO report and
+	# still kills the child by the signal, so the absence is "the handler is gone"
+	# and not "the signal was swallowed".
+	src/core/CrashReporterArmTest.cpp
 	src/core/CrashReporterTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp

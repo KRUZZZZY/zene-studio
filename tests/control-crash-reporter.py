@@ -56,14 +56,25 @@ WHAT IT ASSERTS, in numbers:
     non-empty mechanism for both;
   * an acknowledge or a discard with nothing to act on is a typed not_found, and
     an argument to a command that takes none is a typed invalid_args - so a
-    mistyped call cannot look like a successful one.
+    mistyped call cannot look like a successful one;
+  * THE ARM PAIR (board task #643): crash.enable is REFUSED on a fresh instance,
+    because main() has already armed the reporter; crash.disable disarms it (the
+    read then reports installed/armed false while still naming the report
+    directory and the report file that is still there), a second disable is a
+    typed refusal, and control.undo takes the disarm back through the recorded
+    paired command (restored_by crash.enable) - which is the A16 claim measured on
+    the wire, not just in the table.
 
 THE BOUND THIS TEST STATES RATHER THAN HIDES: nothing can UN-acknowledge a report
 or restore a discarded one - the module has no such function and nothing writes a
 report from a caller's bytes - so both writers are irreversible by design and the
 test asserts the typed refusal and the named fallback rather than a fake inverse.
-There is also no crash.enable / crash.disable: main() installs the reporter
-before this socket exists, and the module has no uninstall.
+The one thing this socket CANNOT measure about the arm pair is its whole point:
+that a crash while disarmed writes NO report, because the report is written from
+a signal handler and the process then dies. That leg is measured where a child can
+really be killed - tests/src/core/CrashReporterArmTest.cpp (ctest
+CrashReporterArmTest), which raises a real SIGSEGV and SIGABRT in forked children
+and asserts no report appears while the process still dies by the signal.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python3 control-crash-reporter.py <zene-binary>
@@ -290,6 +301,95 @@ def check_transactions(session, problems):
                      "discard must record an irreversible transaction: %r" % (classes,))
 
 
+def check_arm_pair(session, instance, problems):
+    """The arm pair (board task #643): disarm, refuse the no-op, and take it back.
+
+    The state each verb reports is read back from the kernel rather than out of a
+    flag: `armed` is crashreporter::handlersArmed() and `installed` is the module's
+    own flag, and the read carries both plus `agree`. What this socket cannot
+    measure - that a crash while disarmed writes NO report - is measured in
+    tests/src/core/CrashReporterArmTest.cpp, where a child can really be killed.
+    """
+    already = session.typed_error("crash.enable")
+    problems.require(already.get("kind") == "refused"
+                     and "already armed" in (already.get("message") or "").lower(),
+                     "enabling a reporter main() already armed must be a typed refusal: %r"
+                     % (already,))
+    armed = session.result("crash.list_reports")
+    problems.require(subset(armed, ["installed", "armed", "agree"])
+                     == {"installed": True, "armed": True, "agree": True},
+                     "the read must report the arming it has: %r"
+                     % (subset(armed, ["installed", "armed", "agree"]),))
+
+    # A report to lose, so "disarming deletes nothing" is measured on a file.
+    planted = plant_report(instance, problems)
+    if planted is None:
+        problems.add("the report fixture could not be planted, so 'disarming deletes nothing' "
+                     "was not measured")
+    disabled = session.result("crash.disable")
+    problems.require(subset(disabled, ["enabled", "armed", "installed", "agree"])
+                     == {"enabled": False, "armed": False, "installed": False, "agree": True},
+                     "crash.disable must report the disarmed state it read back: %r"
+                     % (subset(disabled, ["enabled", "armed", "installed", "agree"]),))
+    problems.require(disabled.get("report_directory") == os.path.join(instance.workspace,
+                                                                     REPORT_DIR_NAME),
+                     "the disarmed reporter must still name its report directory: %r"
+                     % (disabled.get("report_directory"),))
+
+    disarmed = session.result("crash.list_reports")
+    problems.require(subset(disarmed, ["installed", "armed", "agree"])
+                     == {"installed": False, "armed": False, "agree": True},
+                     "the read must report the disarm: %r"
+                     % (subset(disarmed, ["installed", "armed", "agree"]),))
+    problems.require(disarmed.get("report_path") == planted
+                     and planted is not None and os.path.exists(planted),
+                     "disarming must DELETE NOTHING: the report and its path must survive it: %r"
+                     % (disarmed.get("report_path"),))
+    problems.require(disarmed.get("report_count") == 1 and disarmed.get("pending") is True,
+                     "the report the disarm left behind must still be listed and pending: %r"
+                     % (subset(disarmed, ["report_count", "pending"]),))
+    again = session.typed_error("crash.disable")
+    problems.require(again.get("kind") == "refused",
+                     "disarming an already disarmed reporter must be a typed refusal: %r" % (again,))
+
+    # The recorded inverse is the paired COMMAND, so one undo re-arms - and the
+    # dispatch records ITS own inverse, so the pair is a faithful toggle.
+    undone = session.result("control.undo")
+    problems.require(undone.get("undone") is True and undone.get("restored_by") == "crash.enable",
+                     "control.undo must dispatch the recorded inverse command: %r" % (undone,))
+    rearmed = session.result("crash.list_reports")
+    problems.require(subset(rearmed, ["installed", "armed"])
+                     == {"installed": True, "armed": True},
+                     "one control.undo must arm the reporter again: %r"
+                     % (subset(rearmed, ["installed", "armed"]),))
+
+    back = session.result("control.undo")
+    problems.require(back.get("restored_by") == "crash.disable",
+                     "a second undo must disarm again through the inverse the dispatch recorded: %r"
+                     % (back,))
+    enabled = session.result("crash.enable")
+    problems.require(enabled.get("enabled") is True and enabled.get("armed") is True
+                     and enabled.get("installed") is True,
+                     "crash.enable must arm the reporter it found disarmed: %r"
+                     % (subset(enabled, ["enabled", "armed", "installed"]),))
+    # ... and the writers work again, so a disarm is not a one-way door for them.
+    cleared = session.result("crash.discard_report")
+    problems.require(cleared.get("discarded") is True,
+                     "the writers must work again once the reporter is re-armed: %r" % (cleared,))
+
+
+def check_arm_transactions(session, problems):
+    """Both verbs are A16 `snapshot` rows with the paired command as the inverse."""
+    records = [record for record in session.result("control.transactions").get("transactions") or []
+               if record.get("command", "").startswith("crash.")]
+    classes = {(record.get("command"), record.get("class"), record.get("reversible"),
+                bool(record.get("mechanism"))) for record in records}
+    problems.require(("crash.disable", "snapshot", True, True) in classes,
+                     "crash.disable must record a reversible snapshot transaction: %r" % (classes,))
+    problems.require(("crash.enable", "snapshot", True, True) in classes,
+                     "crash.enable must record a reversible snapshot transaction: %r" % (classes,))
+
+
 def check_quit(session, instance, problems):
     """The instance stops cleanly, so the socket contract holds end to end."""
     reply = session.call("control.quit")
@@ -337,6 +437,8 @@ def main(argv):
                 check_acknowledge(session, problems, report_path)
                 check_discard(session, problems, report_path)
             check_transactions(session, problems)
+            check_arm_pair(session, instance, problems)
+            check_arm_transactions(session, problems)
             check_quit(session, instance, problems)
         finally:
             transcript.dump()
