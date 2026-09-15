@@ -30,6 +30,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlStructuralSupport.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "JournallingObject.h"
@@ -49,8 +50,10 @@ namespace
 
 //! The per-revision cap on a captured track's XML (SPEC A16: a bounded
 //! snapshot). A track larger than this refuses the inverse rather than keeping
-//! a truncated one.
-constexpr int MaxTrackSnapshotChars = 65536;
+//! a truncated one. The bound itself is ONE definition
+//! (control::StructuralSnapshotLimit) - this alias is what the transaction's
+//! mechanism text quotes.
+constexpr int MaxTrackSnapshotChars = StructuralSnapshotLimit;
 
 //! The Track::Type a track.add type name selects - the same mapping the
 //! creation below uses, so the undo step's redo cannot disagree with it.
@@ -195,6 +198,7 @@ void registerTrackRemove(ControlRegistry& registry)
 		{QStringLiteral("removed"), control::stringProperty()},
 		{QStringLiteral("track_count"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("dry_run"), control::booleanProperty()},
+		{QStringLiteral("index"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -222,39 +226,39 @@ void registerTrackRemove(ControlRegistry& registry)
 		Song* song = Engine::getSong();
 		const int before = static_cast<int>(song->tracks().size());
 
-		// SPEC A16 deliverable 5: a deleted track cannot be restored in place -
-		// its journal id resolves to nullptr the moment it is freed - so the
-		// inverse is the OPERATION: capture the track's own XML first, then
-		// recreate it through Track::create(element, song), the call
-		// TrackContainer::loadSettings makes. Bounded: a track whose XML is
-		// over MaxTrackSnapshotChars refuses the inverse rather than keeping a
-		// truncated (corrupt) one.
-		QString capturedXml;
-		auto holder = std::make_shared<Track*>(track);
-		const bool captured = control::captureTrackXml(track, &capturedXml, MaxTrackSnapshotChars);
-		if (captured)
-		{
-			control::addUndoStep(
-				[song, capturedXml, holder]() {
-					*holder = control::restoreTrackFromXml(capturedXml, song);
-				},
-				[holder]() {
-					if (*holder != nullptr) { control::removeTrack(*holder); *holder = nullptr; }
-				});
-		}
+		// SPEC A16 deliverable 5 / task #664: the inverse is recorded BEFORE the
+		// delete, by the ONE implementation the product's own delete path and
+		// this command share (control::journalTrackRemoval). It has to be before:
+		// ~Track deletes the track's clips and only then calls
+		// TrackContainer::removeTrack, so a checkpoint taken at the container
+		// restores a track with an empty clip list - the track would come back
+		// and the music would not.
+		//
+		// Bounded: a track whose XML is over the cap refuses the inverse rather
+		// than keeping a truncated (corrupt) one, and the transaction then says
+		// so instead of claiming a reversibility that does not exist.
+		const bool captured = control::journalTrackRemoval(track);
+		const int removedIndex = index;
 		removeTrack(track);
-		*holder = nullptr;
 
 		QJsonObject result;
 		result.insert(QStringLiteral("removed"), id);
 		result.insert(QStringLiteral("track_count"), before - 1);
 		result.insert(QStringLiteral("dry_run"), false);
+		// The index it was removed from: the one number an undo cannot read back
+		// off the song afterwards (the restored track would be appended), so the
+		// reply states it and the proof checks the track really comes back there.
+		result.insert(QStringLiteral("index"), removedIndex);
 		result.insert(QStringLiteral("__transaction"),
 			captured
 				? trackSnapshot(snapshot, QStringLiteral("recreate the track from its captured XML"),
-					QStringLiteral("action checkpoint: the track's own XML (Track::saveState) is "
-						"captured before the delete and the recorded undo step recreates it with "
-						"Track::create(element, song), the same call the project loader makes"),
+					QStringLiteral("action checkpoint (structural step): the track's own XML "
+						"(Track::saveState - its clips and their notes included) is captured "
+						"before the delete and the recorded undo step recreates it with "
+						"Track::create(element, song), the same call the project loader makes, "
+						"at the index it was removed from. THE CLIPS COME BACK with it, "
+						"because they are IN the captured document; a checkpoint taken after "
+						"the delete could not, since ~Track destroys them first"),
 					true)
 				: trackSnapshot(snapshot, QStringLiteral("UNIMPLEMENTED for this track"),
 					QStringLiteral("snapshot only: this track's serialized state is larger than the "

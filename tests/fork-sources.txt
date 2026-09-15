@@ -284,6 +284,7 @@ include/ControlRegistry.h
 include/ControlRegistryGroups.h
 include/ControlReversibility.h
 include/ControlServer.h
+include/ControlStructuralSupport.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -488,6 +489,7 @@ src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsStructure.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackFolder.cpp
@@ -528,6 +530,7 @@ src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
+src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
@@ -535,6 +538,7 @@ src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
+src/core/ControlStructuralSupport.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -565,6 +569,7 @@ src/core/OnnxRuntimeStemSeparator.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournalBounds.cpp
+src/core/ProjectJournalStructural.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRevisions.cpp
 src/core/Rack.cpp
@@ -648,6 +653,7 @@ tests/control-socket-path-safety.py
 tests/control-stable-ids.py
 tests/control-stem-export-verb.py
 tests/control-track-folder.py
+tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py

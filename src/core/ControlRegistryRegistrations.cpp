@@ -57,6 +57,10 @@ void registerControlCommands(ControlRegistry& registry)
 {
 	registerControlGroupCommands(registry);
 	registerTransportCommands(registry);
+	// The structural half of track.* (task #664): track.move, the arrangement's
+	// order. Registered beside the transport/track group it extends, for the
+	// same reason the tempo map's unit is: one group, several TUs.
+	registerTrackStructureCommands(registry);
 	registerTransportTempoMapCommands(registry);
 	registerTransportPunchCommands(registry);
 	registerRecordingCommands(registry);

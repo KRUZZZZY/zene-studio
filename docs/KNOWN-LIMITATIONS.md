@@ -883,3 +883,23 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+- **Structural undo is drivable and undoable through the socket, and the interface has no history panel —
+  added 2026-09-15.** `track.add`, `track.remove`, `track.move`, `plugin.load` and `plugin.unload` are journalled
+  as ONE stack (`ProjectJournal`, the same one the GUI's Ctrl+Z unwinds), and one `control.undo` restores each of
+  them. A **deleted track comes back WITH its clips and their notes**, at the index it was removed from, because
+  the inverse is captured **before** the delete: `~Track` destroys the clips and only then calls
+  `TrackContainer::removeTrack`, so a checkpoint taken at the container restores a track with an **empty clip
+  list**. Three limits, stated rather than discoverable: (1) `clip-<n>` is an **index-derived** ordinal of the
+  clip in the whole song's arrangement order (feature row 51, unchanged by this work), so deleting a track SHIFTS
+  every later clip's id and the undo shifts them back — a client must **re-read** `arrangement.get_state` after an
+  undo rather than cache a clip id across one; the `trk-<n>` of the restored track **does** survive, because it is
+  persisted on the track element and `Track::loadTrack` takes it back; (2) a track or device whose captured
+  document is over the 64 KiB cap records **no** inverse and says so in its transaction — a truncated capture is a
+  corrupt restore, so it is refused instead; (3) the captured document's size is charged to the undo stack's byte
+  budget, so a long run of structural deletes is evicted like any other step. **`track.move` is new** (the
+  arrangement's order had no command at all — the reorder existed only as a drag) and it is refused, not clamped,
+  for an index outside the song. In the interface: the track ✕ button and a track drag record the **same** step the
+  commands do (`control::journalTrackRemoval` / `TrackContainer::moveTrack`), so those two gestures are undoable
+  with Ctrl+Z — but there is still **no undo-history panel**, nothing lists the structural steps, and there is no
+  control that names or limits the capture bound.

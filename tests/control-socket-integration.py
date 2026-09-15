@@ -989,10 +989,17 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
             fail("no transaction recorded for %s" % command, process, log_path)
     for command in ("plugin.param_set", "plugin.bypass", "plugin.load",
                     "plugin.state_load", "plugin.preset_load", "settings.set",
-                    "audio.device_set"):
+                    "audio.device_set", "plugin.unload"):
+        # plugin.unload is here rather than in the refusal loop below since
+        # task #664 (feature row 75): a removed device is now RESTORED by one
+        # control.undo - the recorded structural step re-instantiates the same
+        # plugin at the same index in the chain and puts its captured state
+        # document back - so the row moved from `irreversible` to `true_inverse`
+        # and the command reports reversible=true. The assertion is not weakened:
+        # it is the same assertion, on the behaviour the release now has.
         if not recorded[command][-1].get("reversible"):
             fail("%s must record reversible=true" % command, process, log_path)
-    for command in ("plugin.unload", "plugin.state_save", "plugin.preset_save"):
+    for command in ("plugin.state_save", "plugin.preset_save"):
         if recorded[command][-1].get("reversible"):
             fail("%s must honestly record reversible=false" % command, process, log_path)
     if recorded["plugin.load"][0].get("inverse", {}).get("op") != "plugin.unload":

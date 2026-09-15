@@ -40,6 +40,11 @@
 #include "Song.h"
 #include "UnattendedRun.h"
 
+// The structural-undo helpers (task #664): journalling a reorder at the ONE
+// place every reorder passes through, and the replay guard that keeps a
+// recorded step's own move from being recorded again.
+#include "ControlStructuralSupport.h"
+
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "TextFloat.h"
@@ -243,6 +248,29 @@ void TrackContainer::removeTrack( Track * _track )
 
 void TrackContainer::moveTrack(Track* track, int indexTo)
 {
+	// A REORDER is journalled HERE, at the one place every reorder passes
+	// through, rather than at each caller: the product's own drag and its
+	// arrow-key moves both arrive here (TrackContainerView::moveTrackView), and
+	// row 75's complaint is exactly that such a path "bypasses
+	// addJournalCheckPoint". A container's ORDER is not a serialized property of
+	// any track, so the recorded step is an action pair holding the index the
+	// track came from (control::journalTrackMove, task #664).
+	//
+	// Two guards, both load-bearing:
+	//   - only the SONG's container is journalled. A pattern track carries a
+	//     nested TrackContainer of its own, and a step recorded against it would
+	//     replay against the wrong list;
+	//   - a reorder that IS a recorded step's replay is not recorded again
+	//     (structuralReplayInProgress()), or one control.undo would leave a new
+	//     step behind for every unwind and the history would grow as it unwinds.
+	Song* song = Engine::getSong();
+	const int from = control::trackIndexIn(this, track);
+	if (song != nullptr && this == static_cast<const TrackContainer*>(song)
+		&& from >= 0 && from != indexTo && !control::structuralReplayInProgress())
+	{
+		control::journalTrackMove(track, from, indexTo);
+	}
+
 	m_tracks.erase(std::find(m_tracks.begin(), m_tracks.end(), track));
 	m_tracks.insert(m_tracks.begin() + indexTo, track);
 

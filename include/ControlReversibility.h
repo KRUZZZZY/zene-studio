@@ -150,6 +150,15 @@ LMMS_EXPORT const ReversibilityRow* reversibilityVerbRowTable(int* rowCount);
 //! for the same reason the folder rows are: the block's class comes from each
 //! row, not from its file.
 LMMS_EXPORT const ReversibilityRow* reversibilityChainRowTable(int* rowCount);
+//! The STRUCTURAL group's four recorded-action rows (task #664, feature row 75):
+//! a created track, a reordered track, a deleted track restored WITH its clips
+//! and a removed device re-instantiated with its settings - the operations
+//! whose inverse carries a captured document whose measured size is charged to
+//! the undo stack's byte budget. Joined into the action half by
+//! reversibilityActionRowTable(), and through it into reversibilityRowTable(),
+//! for the same reason the chain rows are: the block's class comes from each
+//! row, not from its file.
+LMMS_EXPORT const ReversibilityRow* reversibilityStructureRowTable(int* rowCount);
 //! The second block: the snapshot rows.
 LMMS_EXPORT const ReversibilityRow* reversibilitySnapshotRowTable(int* rowCount);
 /*! The routing surface's rows: the pdc / routing / bus / port groups (feature
@@ -285,6 +294,25 @@ LMMS_EXPORT void addUndoStep(std::function<void()> undo,
 //! Restoring them one checkpoint at a time would cost one Ctrl+Z each, i.e. N
 //! undo steps for one command, which is the defect this exists to prevent.
 LMMS_EXPORT void addUndoStep(const QVector<JournallingObject*>& journallingObjects);
+
+/*! One undo step for a STRUCTURAL operation - one that creates or destroys the
+ *  object rather than changing it - where the inverse is carried by a captured
+ *  DOCUMENT (Zene Studio, task #664, feature row 75).
+ *
+ *  Same recorded pair as addUndoStep() above, with the one difference that
+ *  matters: \a payloadBytes are the measured size of the document the closure
+ *  holds, and they are COUNTED against the stack's byte budget. A deleted
+ *  track's own XML is a bounded 64 KiB document, and an action step that carried
+ *  it while counting as zero bytes would make the declared byte budget a lie -
+ *  the stack would evict nothing no matter how many structural deletes it
+ *  retained. A client that wants to know what an undo costs reads
+ *  control.undo_depth's `retained_bytes`, which includes these.
+ *
+ *  \a payloadBytes may be 0 for a structural step with no document (a reorder:
+ *  the state is the container's order, not a serialized value).
+ */
+LMMS_EXPORT void addStructuralUndoStep(std::function<void()> undo,
+	std::function<void()> redo, qint64 payloadBytes);
 
 } // namespace control
 

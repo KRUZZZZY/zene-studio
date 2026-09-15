@@ -139,28 +139,6 @@ const ReversibilityRow kActionRows[] = {
 		"action checkpoint: the recorded undo step restores the map captured "
 		"before the switch, so the flag comes back with the events",
 		""),
-	R("track.add", RC::TrueInverse, true,
-		"a created Track has no before-state to restore, so the inverse is the "
-		"operation, not a snapshot. DISAGREEMENT with A16-STATUS-MEASURED.md, "
-		"which records this as reversible:false (no checkpoint exists)",
-		"action checkpoint: the recorded undo step removes the created track "
-		"through the product's own TrackContainerView::deleteTrackView path "
-		"(the path whose checkpoint upstream left commented out); a fresh "
-		"instrument track carries only defaults, so removing it restores the "
-		"container exactly. The project-scoped next-id counter is monotonic and "
-		"is NOT rewound: a re-add gets a fresh trk-<n>, which is the documented "
-		"limit of this inverse",
-		""),
-	R("track.remove", RC::TrueInverse, true,
-		"a deleted JournallingObject's journal id resolves to nullptr, so a "
-		"checkpoint cannot bring it back. DISAGREEMENT with "
-		"A16-STATUS-MEASURED.md, which records this as reversible:false",
-		"action checkpoint: the track's own XML (Track::saveState into a "
-		"JournalData DataFile) is captured before the delete and the recorded "
-		"undo step recreates it with Track::create(element, song) - the same "
-		"call TrackContainer::loadSettings makes. The capture is bounded like "
-		"the device-state snapshot (64 KiB)",
-		""),
 	R("mixer.add_channel", RC::TrueInverse, true,
 		"a created MixerChannel has no before-state; the mixer is a "
 		"JournallingObject but restoring its checkpoint would destroy and "
@@ -472,19 +450,25 @@ constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kA
 
 const ReversibilityRow* reversibilityActionRowTable(int* rowCount)
 {
-	// The action half is TWO translation units: this one's rows first, then the
-	// chain-preset group's (ControlReversibilityTableChain.cpp). The chain rows
-	// are recorded-ACTION rows - the class this half is defined by - and they were
-	// split out only because this file crossed the 500-line file-length ratchet
-	// when two lanes' recorded-action rows landed in it at once. The join is here
-	// rather than in reversibilityRowTable() so the ONE row count callers read is
-	// unchanged: ControlReversibilityTable.cpp joins THIS function's result with
-	// the live-checkpoint rows exactly as before.
+	// The action half is THREE translation units: this one's rows first, then
+	// the chain-preset group's (ControlReversibilityTableChain.cpp), then the
+	// STRUCTURAL group's (ControlReversibilityTableStructure.cpp - the created /
+	// deleted / reordered objects of task #664). Both satellites are
+	// recorded-ACTION rows - the class this half is defined by - and they are
+	// separate files only because each landed when this one was at the 500-line
+	// file-length ratchet. The join is here rather than in
+	// reversibilityRowTable() so the ONE row count callers read is unchanged:
+	// ControlReversibilityTable.cpp joins THIS function's result with the
+	// live-checkpoint rows exactly as before.
 	static const std::vector<ReversibilityRow> joined = [] {
-		int chainCount = 0;
-		const ReversibilityRow* chainRows = reversibilityChainRowTable(&chainCount);
 		std::vector<ReversibilityRow> all(kActionRows, kActionRows + kActionRowCount);
-		all.insert(all.end(), chainRows, chainRows + chainCount);
+		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityChainRowTable,
+				reversibilityStructureRowTable})
+		{
+			int count = 0;
+			const ReversibilityRow* rows = rowsFor(&count);
+			all.insert(all.end(), rows, rows + count);
+		}
 		return all;
 	}();
 	if (rowCount != nullptr) { *rowCount = static_cast<int>(joined.size()); }

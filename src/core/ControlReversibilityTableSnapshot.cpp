@@ -85,8 +85,9 @@ const ReversibilityRow kSnapshotRows[] = {
 		"two branches: appending an EFFECT has an exact inverse (the instance "
 		"is new and carries only defaults), but REPLACING an instrument does "
 		"not - the replaced instrument and its parameter values are gone",
-		"the effect branch pushes an action checkpoint that unloads the device "
-		"it created (plugin.load of an effect is therefore one undoable step). "
+		"the effect branch pushes a STRUCTURAL action checkpoint that unloads "
+		"the device it created (plugin.load of an effect is therefore one "
+		"undoable step, and its redo re-instantiates the same catalogue entry). "
 		"The instrument branch records the replaced plugin NAME only and is "
 		"NOT reversible: replacing an instrument destroys its state",
 		"the instrument branch: reload the previous instrument by dev-<n> "
