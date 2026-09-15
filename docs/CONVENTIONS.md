@@ -36,6 +36,7 @@ actually checks it:
 | **Strict typing / no `any`** | A TypeScript rule. The C++ analogue — no narrowing conversions at trust boundaries — has no free, reliable enforcer in this tree and is not wired. |
 | **Formatting (`.clang-format`) and lint (`.clang-tidy`)** | Both configs are committed and neither is run by a gate or by CI. There is no `clang-format --dry-run -Werror` check and no `run-clang-tidy` job, so formatting is convention-by-imitation. Adding them is a known gap, not a hidden one; `.clang-tidy`'s checks are the closest thing to a house style that exists in writing. |
 | **Documentation/commit conventions** | `hermes-agent-skill-authoring`-style rules and the KB creation protocol apply to *writing new KB articles*, not to this repo's source. |
+| **Where a lane's report and transcript live** | Not a gate, deliberately: the check would have to guess which root `.md` is a lane report, and a guess is what gets weakened. The rule is written in `docs/reports/README.md` — a lane's report, and the transcript that backs it, go to `docs/reports/`; the repository root is not a candidate — and it has been applied by hand twice (2026-09-13 moved `DOCS-NAMING.md` and the `CMDN-*` pair; 2026-09-15 moved the seven `LANE-STATE*.md` reports), the second time because the first had nothing enforcing it. A design document is not a report and stays in `docs/`. |
 
 ## QA process conventions (KB `qa-gate-protocol`)
 
