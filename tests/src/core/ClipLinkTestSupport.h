@@ -47,6 +47,13 @@
 namespace cliplinktest
 {
 
+// The fixtures drive lmms's own control surface, so they name it directly (a
+// test that has to write lmms:: in front of every type is a test nobody reads).
+using namespace lmms;
+
+// Declared before the two scene builders below, which call it.
+inline QString addTrack(const QString& type);
+
 // -----------------------------------------------------------------------
 // fixtures, all through the control surface (the release's own door)
 // -----------------------------------------------------------------------

@@ -81,8 +81,6 @@ private slots:
 	{
 		Engine::init(true);
 		ControlRegistry::setReady(true);
-		QVERIFY(m_dir.isValid());
-		m_project = m_dir.filePath(QStringLiteral("link-roundtrip.mmp"));
 	}
 
 	void cleanupTestCase()
