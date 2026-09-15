@@ -30,6 +30,12 @@
 #include <QString>
 #include <QVector>
 
+#if defined(Q_OS_WIN)
+#include <QMutex>
+#include <thread>
+#include <vector>
+#endif
+
 #include "ControlRegistry.h"
 
 class QSocketNotifier;
@@ -37,16 +43,16 @@ class QSocketNotifier;
 namespace lmms
 {
 
-//! A local (AF_UNIX) socket speaking line-delimited JSON-RPC, one request and
-//! one response per line:
+//! A local (AF_UNIX on POSIX, named pipe on Windows) socket speaking
+//! line-delimited JSON-RPC, one request and one response per line:
 //!
 //!   -> {"id":1,"cmd":"mixer.get_state","args":{},"proto":1}
 //!   <- {"id":1,"ok":true,"result":{...}}
 //!   <- {"id":1,"ok":false,"error":{"kind":"invalid_args","message":"..."}}
 //!
-//! Off unless the instance is started with --control-socket <path>. The socket
-//! file is mode 0600, is unlinked on exit, and the listener is AF_UNIX only:
-//! nothing ever listens on the network (SPEC A12 / AGENT-TOOLING.md #9.1).
+//! Off unless the instance is started with --control-socket <path>. The POSIX
+//! socket file is mode 0600, is unlinked on exit, and the listener is AF_UNIX
+//! only: nothing ever listens on the network (SPEC A12 / AGENT-TOOLING.md #9.1).
 //!
 //! The bind is destructive to the path it uses, so it is refused rather than
 //! performed when the path already holds something that is not a socket, or
@@ -55,7 +61,8 @@ namespace lmms
 //! only the socket THIS instance bound. See docs/CONTROL-SOCKET-PATH-SAFETY.md.
 //!
 //! Implemented with POSIX sockets plus QSocketNotifier rather than Qt Network,
-//! so the audio application gains no new Qt module dependency.
+//! so the audio application gains no new Qt module dependency.  The Windows
+//! half uses a named pipe behind the same JSON-RPC contract (CODE-9).
 class ControlServer : public QObject
 {
 	Q_OBJECT
@@ -77,7 +84,8 @@ public:
 	explicit ControlServer(ControlRegistry* registry, QObject* parent = nullptr);
 	~ControlServer() override;
 
-	//! Listen on \p path (must be absolute). Returns false and sets \p error on failure.
+	//! Listen on \p path (must be absolute on POSIX, or a \\.\pipe\ name on
+	//! Windows). Returns false and sets \p error on failure.
 	bool listen(const QString& path, QString* error);
 
 	//! The typed error kind of the last listen() that FAILED; ControlErrorKind::None
@@ -89,7 +97,11 @@ public:
 	//! Stop listening, drop every client and unlink the socket file. Idempotent.
 	void close();
 
+#if defined(Q_OS_WIN)
+	bool isListening() const { return m_acceptPipe != nullptr; }
+#else
 	bool isListening() const { return m_listenFd >= 0; }
+#endif
 	QString socketPath() const { return m_path; }
 	ControlRegistry* registry() const { return m_registry; }
 
@@ -104,6 +116,11 @@ signals:
 private:
 	struct Client
 	{
+#if defined(Q_OS_WIN)
+		//! The pipe handle and the thread servicing it.
+		void* hPipe = nullptr;
+		std::thread thread;
+#else
 		int fd = -1;
 		QSocketNotifier* notifier = nullptr;
 		//! Armed only while `pending` holds the tail of a reply the socket would
@@ -111,6 +128,7 @@ private:
 		//! larger than the socket buffer is not an error, and treating it as one
 		//! loses the answer to a legitimate request.
 		QSocketNotifier* writeNotifier = nullptr;
+#endif
 		//! The bytes of a reply not accepted by the socket yet, in wire order.
 		//! A line already partially written stays FIRST here, so the peer reads
 		//! each line whole and in order.
@@ -155,9 +173,34 @@ private:
 	//! ControlServerSocket.cpp beside listen().
 	bool adoptListener(int fd, const QString& path, const QByteArray& nativePath);
 
-	ControlRegistry* m_registry;
+#if defined(Q_OS_WIN)
+	//! Windows named-pipe transport (CODE-9).  The same JSON-RPC contract,
+	//! implemented with CreateNamedPipe / ConnectNamedPipe and one thread per
+	//! client.  dispatchLine() is invoked from the client threads via
+	//! BlockingQueuedConnection so it always runs on the server's thread.
+	bool listenWin32(const QString& path, QString* error);
+	void closeWin32();
+
+	QString m_pipeName;
+	bool m_win32Quit = false;
+	void* m_acceptPipe = nullptr; // HANDLE
+	std::thread m_acceptThread;
+
+	struct Win32Client {
+		void* hPipe = nullptr; // HANDLE
+		std::thread thread;
+	};
+	mutable QMutex m_win32Mutex;
+	std::vector<Win32Client> m_win32Clients;
+
+	void win32AcceptLoop();
+	void win32ClientLoop(void* hPipe);
+	void win32RemoveClient(void* hPipe);
+#else
 	int m_listenFd = -1;
 	QSocketNotifier* m_notifier = nullptr;
+#endif
+	ControlRegistry* m_registry;
 	QString m_path;
 	ControlErrorKind m_lastErrorKind = ControlErrorKind::None;
 	//! The (device, inode) this instance bound with listen(), so close() can tell

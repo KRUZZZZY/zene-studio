@@ -134,15 +134,15 @@ void ControlServer::Client::retire() const
 {
 	// Both notifiers belong to the ControlServer (their parent), so they outlive this
 	// struct's copies; deleteLater keeps the deletion off the current activation.
+#if !defined(Q_OS_WIN)
 	if (writeNotifier) { writeNotifier->setEnabled(false); writeNotifier->deleteLater(); }
 	if (notifier) { notifier->setEnabled(false); notifier->deleteLater(); }
+#endif
 }
 
 void ControlServer::onNewConnection()
 {
-#if !defined(Q_OS_UNIX)
-	return;
-#else
+#if defined(Q_OS_UNIX)
 	while (isListening())
 	{
 		const int fd = ::accept(m_listenFd, nullptr, nullptr);
@@ -246,9 +246,7 @@ WriteOutcome writeWhatFits(int fd, const char* data, int size, int* written)
 
 void ControlServer::onClientReadable(int fd)
 {
-#if !defined(Q_OS_UNIX)
-	Q_UNUSED(fd);
-#else
+#if defined(Q_OS_UNIX)
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
 
@@ -279,6 +277,7 @@ void ControlServer::onClientReadable(int fd)
 	}
 	if (closed) { dropClient(fd); }
 #endif
+	Q_UNUSED(fd);
 }
 
 bool ControlServer::dispatchPendingLines(int fd, QByteArray& buffer)
@@ -325,15 +324,14 @@ void ControlServer::refuseOverCapLine(int fd, bool closed)
 
 void ControlServer::dropClient(int fd)
 {
-#if !defined(Q_OS_UNIX)
-	Q_UNUSED(fd);
-#else
+#if defined(Q_OS_UNIX)
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return; }
 	it->retire();
 	::close(it->fd);
 	m_clients.erase(it);
 #endif
+	Q_UNUSED(fd);
 }
 
 bool ControlServer::sendBytes(int fd, const QByteArray& bytes)
