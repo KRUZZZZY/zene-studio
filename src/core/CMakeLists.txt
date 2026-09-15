@@ -440,6 +440,10 @@ set(LMMS_SRCS
 	core/ControlCommandsProjectArchive.cpp
 	core/ControlProjectAssets.cpp
 	core/ControlProjectAssetsRelink.cpp
+	# The mmpz-git depth group (feature row 42, task #612): the control-surface
+	# wrappers around tools/mmpz-git/mmpz_git.py.
+	core/ControlCommandsProjectMmpzGit.cpp
+	core/ControlReversibilityTableMmpzGit.cpp
 	# The plugin.host_chunking row (feature row 82, CODE-4). One row in its own
 	# file for the same reason: a file-length cap, not a group boundary.
 	core/ControlReversibilityTableHostChunking.cpp

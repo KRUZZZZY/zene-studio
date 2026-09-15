@@ -1201,3 +1201,5 @@ path**: `wasm.render_offline` and the rest of the `wasm.*` group run the module 
 produce no audio the user hears — the limit `docs/WASM-EFFECT-ABI.md` section 13 records is unchanged.
 
 **Stable ids — slice 2 (feature row 51).** `clip-<n>`, `note-<n>`, `ch-<n>` and `fx-<n>` are persistent across save/open, `dev-<n>` is a catalogue selector and is intentionally not in the project file. **Stable id inspection is drivable through the socket, not from the interface**: there is no id column in the track list, the clip list, the piano roll, the mixer or the rack; `control.id_contract` is the only way to read the contract and the counts.
+
+**mmpz-git depth is drivable through the socket, not from the interface.** The merge driver, semantic diff, conflict reporter and audible-diff CLI are wrapped as `project.merge`, `project.diff`, `project.conflicts` and `project.audible_diff` on the control surface, but nothing in the GUI reaches them. The audible-diff command requires the built binary as its renderer; the merge driver operates on project files, not the running session.

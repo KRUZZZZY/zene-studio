@@ -198,6 +198,31 @@ a directory instead. So for a project holding a large sample:
   the value level (base64), which is not a waveform merge. `gitattributes.sample`
   already says this about LFS.
 
+### 3.5a Where the sidecar actually lands under `git merge` (found by the proof)
+
+The sidecar above was named from `%A`, the path the driver must write. That is
+right for every direct caller and **wrong under git**: `git merge` stages a
+merge driver's output in a temp file and renames it into the work tree
+afterwards. Measured on git 2.43.0 with the project in a subdirectory:
+
+```
+$ git merge --no-edit theirs        # real repo, drivers from `mmpz-git install`
+... mmpz-git: 1 large field(s) abbreviated in the file;
+    full values in .merge_file_yzoe2q.mmpz-git-conflicts.json
+$ ls
+.gitattributes  .merge_file_yzoe2q.mmpz-git-conflicts.json  project.mmpz
+```
+
+The full values were preserved - at a transient path git removes, named after a
+file that no longer exists. The fix names the sidecar from `%P` (the work-tree
+path git passes) whenever `%A` is one of git's `<dir>/.merge_file_XXXXXX` temp
+files, and from `ours` otherwise, so direct callers are unchanged. Regression
+test: `GitDriverFlow.test_git_merge_puts_the_sidecar_beside_the_project` drives
+the real thing (throwaway repo, the installed drivers, two branches, `git
+merge`) and asserts the sidecar is beside `project.mmpz` and that no
+`.merge_file_*` file keeps one; `depth-demo.sh` section 4 asserts the same
+through the transcript.
+
 ### 3.6 CI render recipes
 
 `tools/mmpz-git/render-recipe.sh` — finds or builds the binary once, renders
@@ -218,9 +243,9 @@ Determinism, which the whole audible-diff rests on: two renders of the same
 project are **byte-identical** (`cmp` clean, same sha256), and per-bar RMS over
 two renders agreed to 0.000000 dB on every bar of every track.
 
-## 4. The two proofs
+## 4. The four proofs
 
-`bash tools/mmpz-git/depth-demo.sh` runs all three as a transcript in a
+`bash tools/mmpz-git/depth-demo.sh` runs all four as a transcript in a
 throwaway git repo with the real drivers installed, and exits non-zero if any
 behaves differently. All exit codes below are printed unpiped.
 
@@ -280,6 +305,30 @@ Before: exit 0, no markers, theirs' note gone. Now: exit 1, marked in the file,
 theirs' note present, and a human decides. The equivalent rename case (E) is a
 conflict too.
 
+### Proof 4 — large assets, through git, with the values kept
+
+Ours and theirs each embed a different 8 KB sample in the same track's
+`<audiofileprocessor>` (`sampledata`, where `AudioFileProcessor.cpp:199` puts
+it), then `git merge`:
+
+```
+$ git merge --no-edit feat/sample-theirs
+[EXIT=1]
+--> the report summarises the blobs by hash instead of printing them:
+$ mmpz-git conflicts project.mmpz
+  [1] track "Kick"
+      embedded sample data: base <absent> -> ours <10924 chars, sha256=9938212aa8539cd7, ...>,
+      theirs <10924 chars, sha256=0f272e62bec8e17f, ...>
+```
+
+and the merged document itself is then checked, not eyeballed (eight checks, all
+`OK` in the transcript): ours' sample appears exactly once in the file (as the
+attribute, never repeated in the comment), theirs' appears nowhere in it, the
+one conflict comment is **1600 characters** where the two blobs are 21,848, the
+comment carries the hash summaries, and the `.mmpz-git-conflicts.json` sidecar
+**beside `project.mmpz`** holds both full values. That last check is the one
+that failed first time - see §3.5a.
+
 ### And the file is still a project the DAW can open
 
 Every file the tool writes is checked by the built binary through
@@ -320,6 +369,17 @@ Not covered, explicitly:
 * `--track NAME` compares one track; it does not attribute a *mix* difference to
   an instrument.
 
+How far the chain was exercised without a build (this lane, 2026-09-15): the
+argument passing, the per-track WAV matching, the bar grid read from the
+project's own `<head bpm>`, and all three exit codes were run against the real
+`data/projects/shorties/sv-DnB-Startup.mmpz` with `--renderer` pointed at a stub
+that answers `render`/`rendertracks` with generated PCM - identical project:
+exit 0 `render identically`; one note added: exit 1 with per-track and mix bar
+ranges; a missing input with a renderer present: exit 2 `no such file`; no
+renderer at all: exit 2 `no renderer found`. That is a **plumbing** check - the
+audio was generated, not rendered - so the numbers in §3.4 remain the ones a
+real build measured, and the classes that need that build still skip here.
+
 ## 6. Tests
 
 Run: `python3 tools/mmpz-git/tests/test_mmpz_git.py -v` (no build needed for the
@@ -329,7 +389,10 @@ the pre-existing Qt6 test skips without `scratch/qtsave2`).
 Added classes: `MergeDepth` :270 (8 tests — the deep test, the audit, the
 marker-placement guard), `BinarySafety` :448 (clean and conflicted merge outputs
 must load in the binary), `MusicalPresentation` :498, `LargeAssets` :586,
-`PureAudioMaths` :679, `AudibleDiffBinary` :766, `Cli` :817.
+`PureAudioMaths` :679, `AudibleDiffBinary` :766, `Cli` :817, and `GitDriverFlow`
+(the git-driven end-to-end merge that pins the sidecar next to the work-tree
+file — §3.5a; it drives a throwaway repo through the drivers `mmpz-git install`
+writes, so it is the one test that exercises the git contract itself).
 
 The pre-existing 15 tests are unchanged in intent and still pass, including the
 byte-verbatim round-trip and the canonical-form contracts.

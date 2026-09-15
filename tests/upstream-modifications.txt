@@ -625,3 +625,16 @@ src/core/ControlAutomationSupport.cpp	stable ids slice 2: effect automation entr
 src/core/ControlChainPresetSupport.cpp	stable ids slice 2: restored device entries use effectIdOf() instead of effectId(index)
 src/core/ControlCommandsControl.cpp	stable ids slice 2: adds control.id_contract command and registerIdContractCommand()
 src/core/ControlReversibilityTableLive.cpp	stable ids slice 2: A16 row for control.id_contract (NotMutating)
+
+# --- 030/undo-structural (the 0.3.0-alpha wave-2 five-lane merge train) ---
+# mmpz-git depth (feature row 42, task #612), 2026-09-15: its two NEW sources
+# (src/core/ControlCommandsProjectMmpzGit.cpp, src/core/ControlReversibilityTableMmpzGit.cpp)
+# are registered where fork-NEW product code belongs - tests/fork-sources.txt - not here,
+# and the four shared files it edits (include/ControlReversibility.h,
+# include/ControlRegistryGroups.h, src/core/ControlRegistryRegistrations.cpp,
+# src/core/ControlReversibilityTable.cpp) are fork-NEW too and already in that manifest, so
+# this file carries no mmpz-git entry at all: an entry here asserts a divergence of INHERITED
+# code, which none of the six is (SCOPE, tests/upstream-modifications.txt:18-24). The bare
+# header line above this block was checkpointed without its '#' and without a TAB, which
+# makes the gate read it as an entry with an empty reason and refuse the whole file
+# (tests/no-upstream-regression-gate.sh:73-87, found running it on this branch).
