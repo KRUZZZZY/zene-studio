@@ -162,10 +162,18 @@ nothing must not leave an undo step behind. Every mutating verb is one undoable 
 ## 6. Reproducing the proofs
 
 ```
-cmake -S . -B build && cmake --build build --target ChordTrackTest ChordDetectTest \
-    ChordProgressionTest ControlChordCommandsTest -j2
-cd build/tests && ctest -R 'Chord' --output-on-failure
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWANT_QT6=ON \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+cmake --build build --target ChordTrackTest ChordDetectTest ChordProgressionTest \
+    ControlChordCommandsTest ControlChordWriteTest -j2
+cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R 'Chord' --output-on-failure
 ```
+
+Measured on the lane's tree (2026-09-15): `100% tests passed, 0 tests failed out of 5`, and the
+existing tests this group touches are green with it — `ReversibilityContractTest`,
+`ReversibilityUndoTest`, `ControlRegistryTest`, `agent_surface` and `ControlCommandsSnapshot`
+(the last two drive the REAL binary over `--control-socket`; the snapshot was regenerated with the
+documented tool, 227 -> 236 ids).
 
 * `ChordTrackTest` — ordering, replace-by-position, the 64-event bound, "0 means hold", the XML
   round trip, reset-on-absence, and `Song::clearProject()`.
