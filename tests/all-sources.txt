@@ -64,6 +64,7 @@ include/AudioFileFlac.h
 include/AudioFileMP3.h
 include/AudioFileOgg.h
 include/AudioFileWave.h
+include/AudioInputPath.h
 include/AudioJack.h
 include/AudioOss.h
 include/AudioPlugin.h
@@ -78,6 +79,7 @@ include/AudioSdl.h
 include/AudioSndio.h
 include/AudioSoundIo.h
 include/AudioStretcher.h
+include/AudioWideInputStage.h
 include/AutomatableButton.h
 include/AutomatableModel.h
 include/AutomatableModelView.h
@@ -114,9 +116,11 @@ include/ControlClipLinkSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
+include/ControlExportPresetSupport.h
 include/ControlGrooveSupport.h
 include/ControlLayout.h
 include/ControlMasteringSupport.h
+include/ControlMeterSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlNoteShared.h
@@ -127,6 +131,7 @@ include/ControlRegistryGroups.h
 include/ControlReversibility.h
 include/ControlScaleShared.h
 include/ControlServer.h
+include/ControlStemSupport.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -184,6 +189,7 @@ include/GuiApplication.h
 include/Hardware.h
 include/ImportFilter.h
 include/InlineAutomation.h
+include/InputChannelRing.h
 include/Instrument.h
 include/InstrumentFunctionViews.h
 include/InstrumentFunctions.h
@@ -245,6 +251,7 @@ include/Lv2ViewBase.h
 include/Lv2Worker.h
 include/MainApplication.h
 include/MainWindow.h
+include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
@@ -347,6 +354,8 @@ include/RemotePluginBase.h
 include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
+include/RetroAudioCapture.h
+include/RetroAudioRing.h
 include/RetroMidiCapture.h
 include/RetroMidiCaptureSettings.h
 include/RetroMidiClipWriter.h
@@ -903,9 +912,11 @@ src/core/AudioBusHandle.cpp
 src/core/AudioEngine.cpp
 src/core/AudioEngineProfiler.cpp
 src/core/AudioEngineWorkerThread.cpp
+src/core/AudioInputPath.cpp
 src/core/AudioPortsModel.cpp
 src/core/AudioResampler.cpp
 src/core/AudioStretcher.cpp
+src/core/AudioWideInputStage.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationNode.cpp
@@ -947,6 +958,7 @@ src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
+src/core/ControlCommandsExportPresets.cpp
 src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
@@ -954,6 +966,8 @@ src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
+src/core/ControlCommandsMeter.cpp
+src/core/ControlCommandsMeterFile.cpp
 src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
@@ -981,7 +995,10 @@ src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRecording.cpp
+src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
+src/core/ControlCommandsRecordingRetro.cpp
+src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRouting.cpp
 src/core/ControlCommandsScale.cpp
@@ -991,6 +1008,8 @@ src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsStemModel.cpp
+src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackFolder.cpp
@@ -1014,6 +1033,7 @@ src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlExportPresetSupport.cpp
 src/core/ControlGrooveSupport.cpp
 src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
@@ -1027,12 +1047,16 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableMastering.cpp
+src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
+src/core/ControlReversibilityTableRecording.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
+src/core/ControlReversibilityTableStems.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
@@ -1041,6 +1065,9 @@ src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
+src/core/ControlStemModel.cpp
+src/core/ControlStemSupport.cpp
+src/core/ControlStemWav.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -1080,6 +1107,7 @@ src/core/LmmsSemaphore.cpp
 src/core/LocklessAllocator.cpp
 src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
+src/core/MasterLoudnessTap.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
@@ -1128,6 +1156,7 @@ src/core/RackZones.cpp
 src/core/RecordingJournal.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
+src/core/RetroAudioCapture.cpp
 src/core/RetroMidiCapture.cpp
 src/core/RetroMidiCaptureSettings.cpp
 src/core/RetroMidiClipWriter.cpp
@@ -1416,6 +1445,7 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
+tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
@@ -1451,11 +1481,13 @@ tests/src/core/RackTestSupport.h
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
+tests/src/core/RecordingInputPathTest.cpp
 tests/src/core/RecordingRealtimeTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RenderJobQueueTest.cpp
+tests/src/core/RetroAudioCaptureTest.cpp
 tests/src/core/RetroMidiCaptureCommandsTest.cpp
 tests/src/core/RetroMidiRingTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
