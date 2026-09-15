@@ -231,8 +231,8 @@ def measure_path(session, fixture_name, part, fixture, outdir, runs):
                           % (fixture_name, part, index), False,
                           "%.2f dBFS over %d frames" % (measured, frames))
             return None
-    print("  levels               : %s dBFS" % ", ".join("%.3f" % v for v in levels))
     floor = R.measure_floor(renders, "%s / %s" % (fixture_name, part), COMMANDS[part])
+    print("  run levels           : %s dBFS" % ", ".join("%.3f" % v for v in levels))
     return {"fixture": fixture_name, "part": part, "runs": renders, "floor": floor,
             "levels": levels}
 
