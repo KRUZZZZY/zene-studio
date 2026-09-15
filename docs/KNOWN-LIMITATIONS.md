@@ -528,6 +528,29 @@ that is this page's fault — report it and it gets added.
   the grid but restores no velocity — a humanised take is reversed with `control.undo`, not by
   re-quantising).
 
+- **Render/export presets have no interface, and a ranged render is socket-only — added 2026-09-15.**
+  A named render preset (a sample rate, a bit depth and a stereo mode) can be saved, listed, applied
+  and removed, drivable through `--control-socket` (`export.preset_add`, `export.preset_list`,
+  `export.preset_apply`, `export.preset_remove`), and the applied preset is what the NEXT
+  `render.render` is started with — but **nothing in `src/gui/` creates, shows, edits or applies a
+  render preset** (a grep for `renderpreset` / `render preset` over `src/gui/` returns zero hits: the
+  export dialog keeps its own per-render controls and has no preset list, no "save as preset" action
+  and no apply control). Nor does the interface render a SELECTION to audio through this surface:
+  `render.render` takes `start_ticks` / `end_ticks` and renders exactly that span (the CLI it drives
+  gained `--range-start` / `--range-end`), while the dialog's "export between loop markers" checkbox
+  is its own, pre-existing path and is neither changed by nor wired to these ids. Stated limits: a
+  preset carries the **three settings only** — bitrate, compression level, the loudness report, dither
+  and the SRC-quality choice are **not** in a preset, because the render CLI has no flag for them; an
+  applied preset governs **`render.render` only**, while `render.stems` keeps its own fixed 44100 Hz
+  and its own one-bar tail; the applied selection is **process-wide, not project state**, so it is not
+  saved with the project and a new instance starts on the defaults; the **stereo mode is read only by
+  the MP3 encoder** (`src/core/audio/AudioFileMP3.cpp:112`), so a WAV render stores it, passes it and
+  is unaffected by it; the store is **per-user, not per-project** (`<userPresets>/renderpresets/`, one
+  JSON document per preset), so two machines with the same project can hold different presets; the
+  range is rendered EXACTLY, with no tail bar, so a selection render is not the same file as the
+  matching span of a whole-project render once that render's own tail is counted; and a render already
+  performed is **not** undone by undoing the apply that influenced it — its file stays where it was
+  written, so the fallback is to apply the right preset and render again.
 - **Plugin-chain presets have no interface, and their store is per-user rather than per-project — added
   2026-09-13.** A track's effect chain (its ordered devices together with each device's own settings)
   can be captured as a named preset and applied to another track, drivable through `--control-socket`

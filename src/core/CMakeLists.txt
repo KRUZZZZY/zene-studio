@@ -218,6 +218,12 @@ set(LMMS_SRCS
 	core/ControlCommandsRackZones.cpp
 	core/ControlCommandsScript.cpp
 	core/ControlCommandsExport.cpp
+	# The render/export preset store (feature row 70): the saved presets and the
+	# settings the NEXT render is started with, plus the group's A16 rows. The
+	# applied preset becomes the render CHILD's own command line
+	# (controlExportPresetRenderArgs), so there is no second render path.
+	core/ControlCommandsExportPresets.cpp
+	core/ControlExportPresetSupport.cpp
 	core/ControlCommandsFreeze.cpp
 	# The session tempo/phase sync model and its wire (D11 "Ableton Link sync"):
 	# the model, the transport seam, the UDP multicast transport, and the
@@ -328,6 +334,10 @@ set(LMMS_SRCS
 	# export.set_loudness_report. A GROUP file on the same seam as the rows
 	# above.
 	core/ControlReversibilityTableMeter.cpp
+	# The render/export preset store's rows (feature row 70): three
+	# recorded-action true_inverse rows and the group's one not_mutating read. A
+	# GROUP file on the same seam as the mastering and routing rows above.
+	core/ControlReversibilityTableExportPresets.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

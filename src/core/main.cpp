@@ -204,6 +204,9 @@ void printHelp()
 		"  -a, --float                    Use 32bit float bit depth\n"
 		"  -b, --bitrate <bitrate>        Specify output bitrate in KBit/s\n"
 		"          Default: 160.\n"
+		"      --bit-depth <bits>         Bit depth of the render: 16 (default),\n"
+		"          24 or 32. 32 is the same as --float, which stays the\n"
+		"          switch it always was.\n"
 		"  -f, --format <format>         Specify format of render-output where\n"
 		"          Format is either 'wav', 'flac', 'ogg' or 'mp3'.\n"
 		"  -l, --loop                     Render as a loop\n"
@@ -243,6 +246,13 @@ void printHelp()
 		"          Range: 44100 (default) to 192000\n"
 		"          Possible values: 1, 2, 4, 8\n"
 		"          Default: 2\n"
+		"      --range-start <ticks>      Render only the span of the song from\n"
+		"      --range-end <ticks>        <ticks> up to (but not including)\n"
+		"          <ticks>: a time range instead of the whole project, which\n"
+		"          is what a selection render is. Both are required together\n"
+		"          and the span is rendered EXACTLY - no tail bar and no loop\n"
+		"          repetition - so \"render what I selected\" is the audio of\n"
+		"          the same span of a whole-project render.\n"
 		"\nOptions for \"master\":\n"
 		"  -o, --output <dir>             Directory the candidates are written into\n"
 		"          Required: a candidate set is several files, never one\n"
@@ -315,6 +325,16 @@ int main( int argc, char * * argv )
 	bool renderTracks = false;
 	bool renderStems = false;
 	int stemTailBars = 1;
+	// The render RANGE (feature row 71, "selection to audio"): the span of ticks
+	// the render is limited to, or -1 for "the whole project" - which is what
+	// every render this product has produced so far rendered. Both ends are
+	// required together and are applied through the engine's OWN bounded render
+	// (Song::setRenderBetweenMarkers with the timeline's loop points, the path
+	// the GUI's "render between loop markers" checkbox drives), so a ranged
+	// render and a whole-project render are the same renderer over a different
+	// span rather than two renderers.
+	tick_t renderRangeBegin = -1;
+	tick_t renderRangeEnd = -1;
 	bool mastering = false;
 	// The machine-readable half of `master`: the JSON document the control
 	// surface's mastering.run reads back from the child process it starts. Empty
@@ -611,6 +631,65 @@ int main( int argc, char * * argv )
 			}
 			stemTailBars = bars;
 		}
+		else if( arg == "--range-start" || arg == "--range-end" )
+		{
+			// The two ends of the render range, in ticks. Named separately rather
+			// than as one "a,b" value so a caller that gets one of them wrong is
+			// told which one, and so the control surface can pass the tick the
+			// transport reports without reformatting it.
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( QString( "No tick position given for %1" ).arg( arg ) );
+			}
+
+			bool ok = false;
+			const int ticks = QString( argv[i] ).toInt( &ok );
+			if( !ok || ticks < 0 )
+			{
+				return usageError( QString( "Invalid tick position %1" ).arg( argv[i] ) );
+			}
+
+			if( arg == "--range-start" )
+			{
+				renderRangeBegin = ticks;
+			}
+			else
+			{
+				renderRangeEnd = ticks;
+			}
+		}
+		else if( arg == "--bit-depth" )
+		{
+			// The integer bit depths, so a stored export preset's depth can reach
+			// the render. --float (-a) stays the 32-bit switch it always was.
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No bit depth specified" );
+			}
+
+			QString const depth( argv[i] );
+
+			if( depth == "16" )
+			{
+				os.setBitDepth( OutputSettings::BitDepth::Depth16Bit );
+			}
+			else if( depth == "24" )
+			{
+				os.setBitDepth( OutputSettings::BitDepth::Depth24Bit );
+			}
+			else if( depth == "32" )
+			{
+				os.setBitDepth( OutputSettings::BitDepth::Depth32Bit );
+			}
+			else
+			{
+				return usageError( QString( "Invalid bit depth %1" ).arg( argv[i] ) );
+			}
+		}
 		else if( arg == "--report" )
 		{
 			++i;
@@ -870,6 +949,20 @@ int main( int argc, char * * argv )
 		return usageError( "No output directory specified for master (use -o)" );
 	}
 
+	// A render range is a PAIR: one end alone is a span with a missing side, and
+	// it is refused here - before a project is loaded, before a child is spawned
+	// and before a destination is opened - rather than rendering something the
+	// caller did not ask for.
+	if( ( renderRangeBegin >= 0 ) != ( renderRangeEnd >= 0 ) )
+	{
+		return usageError( "A render range needs BOTH --range-start and --range-end" );
+	}
+	if( renderRangeBegin >= 0 && renderRangeEnd <= renderRangeBegin )
+	{
+		return usageError( QString( "Empty render range: --range-start %1 is not before "
+			"--range-end %2" ).arg( renderRangeBegin ).arg( renderRangeEnd ) );
+	}
+
 	ConfigManager::inst()->loadConfigFile(configFile);
 
 	// Install the local crash reporter as soon as the user's working directory
@@ -963,6 +1056,23 @@ int main( int argc, char * * argv )
 		printf( "Done\n" );
 
 		Engine::getSong()->setExportLoop( renderLoop );
+
+		// The RANGE, when one was asked for. It rides the engine's own bounded
+		// render rather than a second renderer: the timeline's loop points are
+		// the span and Song::setRenderBetweenMarkers turns startExport into
+		// "render exactly [loopBegin, loopEnd)" - the path the GUI's "render
+		// between loop markers" checkbox has always driven. Two consequences
+		// worth stating where the code is: the span is rendered EXACTLY (no
+		// tail bar is added - a selection render is the selection), and the loop
+		// points are set in THIS process only, which is a headless render child
+		// that then exits, never the session a caller is editing.
+		if( renderRangeBegin >= 0 )
+		{
+			auto& timeline = Engine::getSong()->getTimeline( Song::PlayMode::Song );
+			timeline.setLoopPoints( TimePos( renderRangeBegin ), TimePos( renderRangeEnd ) );
+			Engine::getSong()->setRenderBetweenMarkers( true );
+			printf( "Rendering ticks %d to %d\n", renderRangeBegin, renderRangeEnd );
+		}
 
 		if( mastering )
 		{

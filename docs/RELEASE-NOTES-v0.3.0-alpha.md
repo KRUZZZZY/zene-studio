@@ -1453,6 +1453,49 @@ with them.
   `grep -rniI 'lufs\|loudness' src/gui/` finds only the export dialog's existing report checkbox and its
   result label. `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds;
   `docs/METER-SURFACE.md` is the feature's own record.
+## Render/export presets and a render that takes a time range (`export.preset_*`, `render.render`) — added 2026-09-15
+
+Two feature rows, one store and one span. Nothing like either existed: a case-insensitive grep for
+"export preset", "RenderPreset" and "batch export" over the tree returned **0** hits before this.
+
+- **`export.preset_add` / `export.preset_list` / `export.preset_apply` / `export.preset_remove`** — a
+  named render/export preset is a name plus the three `OutputSettings` fields a render can actually be
+  told: the sample rate, the bit depth and the stereo mode. It is stored as ONE JSON document in the
+  user preset tree (`<userPresets>/renderpresets/<name>.zrp`), **outside the project**, so "the 24/96
+  master" is the same preset whichever project is open — and so `project.open` cannot lose it.
+  `export.preset_apply` puts the render path on a preset (or, with no name, back on its own defaults:
+  44100 Hz, 16-bit, joint stereo); the NEXT `render.render` is started with those settings **as its own
+  child-process command line**, through the one render path the product ships. `true_inverse` for the
+  three writers — each records the action checkpoint that removes its document, writes back the
+  revision it replaced, or restores the selection it replaced — and `not_mutating` for the read.
+  A preset whose values nothing could honour is **refused typed at the point it is written** rather
+  than discovered by a failed render: the sample rate must be inside the window the shipped render CLI
+  accepts (44100–192000 Hz).
+- **`render.render` takes a time range** — `start_ticks` and `end_ticks`, both required together,
+  render only that span of the song instead of the whole project. This is the `--range-start` /
+  `--range-end` the render CLI gained with it, and the range rides the engine's **own** bounded render
+  (`Song::setRenderBetweenMarkers` with `Timeline::setLoopPoints` — the path the GUI's "render between
+  loop markers" checkbox has always driven), so a selection render is the same renderer over a span:
+  **no second renderer, and no tail bar or loop repetition** — the selection is exactly the selection.
+  Half a range, an empty range and a negative range are refused typed, before the session is
+  serialised or a destination opened.
+- **UI absence — one line: render/export presets and a ranged render are drivable through the socket,
+  not from the interface.** `grep -rniI 'renderpreset\|render preset' src/gui/` returns **0** hits:
+  the export dialog still has its own per-render controls, its own bit-depth/stereo-mode combo boxes
+  and its own "export between loop markers" checkbox, and **no preset list, no "save as preset"
+  action and no apply control** reaches the store or the applied selection.
+  `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds below.
+- **The limits, stated rather than left to be discovered.** A preset carries the **three settings
+  only** — `OutputSettings`' bitrate, compression level, loudness-report, dither and SRC-quality
+  choices are **not** in a preset (the CLI has no flag for them), and an applied preset governs
+  **`render.render` only**: `render.stems` keeps its own fixed 44100 Hz and its own one-bar tail.
+  The applied selection is **process-wide, not project state** — it is not saved with the project and
+  a new instance starts on the defaults — and the **stereo mode is only read by the MP3 encoder**
+  (`src/core/audio/AudioFileMP3.cpp:112`), so a WAV render stores it, passes it and is unaffected by it.
+  The store is **per-user, not per-project**, exactly as the chain-preset store is. And `render.render`
+  carries the **declared bound** every render-running command carries: the render runs in a child
+  process and the control surface does not answer — `control.ping` included — until it finishes
+  (`docs/RENDER-CHILD-WAIT.md`); the range does not raise that bound, it is applied inside the child.
 
 ## Not in this draft yet
 
