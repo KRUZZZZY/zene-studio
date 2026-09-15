@@ -1704,7 +1704,10 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# Registered only when the feature is compiled in (WANT_STEM_SPLIT=ON,
 	# OFF by default: in a default build the ids do not exist at all);
 	# SKIP_RETURN_CODE 77 is for a host with no python onnxruntime, which would
-	# make the backend unavailable rather than the group wrong.
+	# make the backend unavailable rather than the group wrong. The test itself
+	# passes the user-site onnxruntime directory through PYTHONPATH, because the
+	# harness's redirected HOME would otherwise hide it from the instance (see
+	# its onnxruntime_site_dir).
 	IF(LMMS_HAVE_STEM_SPLIT)
 		add_test(NAME ControlStemCommands
 			COMMAND ${PYTHON3_EXECUTABLE}

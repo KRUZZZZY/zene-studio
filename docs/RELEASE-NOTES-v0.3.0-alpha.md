@@ -749,12 +749,13 @@ stem-separation group (feature row 26, board task #653) is compiled only when `W
 (`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
 `stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
 which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
-on carries 234 rows / 89 `not_mutating`, and
-`ReversibilityContractTest::documentedHistogram()` holds the `#ifdef LMMS_HAVE_STEM_SPLIT` guard that
-adds them, so no figure on this page has to be rewritten for a configuration the release does not
-ship. All seven drive one offline engine, write output artefacts (four stem WAVs and a
-checksum-verified model file) and record no project state: a job is not a document, and a written stem
-is an output.
+on carries **234 rows / 89 `not_mutating`** - measured, not derived: the seven-row guard was added to
+`ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
+against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
+227 + 7 rows and 82 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
+configuration the release does not ship. All seven drive one offline engine, write output artefacts
+(four stem WAVs and a checksum-verified model file) and record no project state: a job is not a
+document, and a written stem is an output.
 The nine rows the folder-tracks merge added are:
 `track.folder_set_collapsed` and `track.set_pinned` are `true_inverse` on a live Track checkpoint (both
 flags are part of the folder's own `<trackfolder>` element and are reset on absence, so the checkpoint
