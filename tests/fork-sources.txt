@@ -294,6 +294,7 @@ include/ExportDither.h
 include/ExportRenderSettings.h
 include/GroovePool.h
 include/GrooveTemplate.h
+include/ImportDetectionDsp.h
 include/LatencyCompensation.h
 include/LinkPeerTransport.h
 include/LinkSync.h
@@ -545,6 +546,7 @@ src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
+src/core/ImportDetectionDsp.cpp
 src/core/LatencyCompensation.cpp
 src/core/LinkSync.cpp
 src/core/LinkSyncWire.cpp

@@ -177,6 +177,7 @@ include/GrooveTemplate.h
 include/GroupBox.h
 include/GuiApplication.h
 include/Hardware.h
+include/ImportDetectionDsp.h
 include/ImportFilter.h
 include/InlineAutomation.h
 include/Instrument.h
@@ -1040,6 +1041,7 @@ src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
+src/core/ImportDetectionDsp.cpp
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
 src/core/Instrument.cpp
