@@ -9,11 +9,16 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		core/StemTrackBuilder.cpp
 		# The agent surface of the same engine (feature row 26, task #653): the
 		# socket-facing half - the instance's one job manager, its availability
-		# probe and the WAV writer (ControlStemSupport.h) - and the `stem.*`
-		# group itself. Inside the option because without it there is no engine
-		# for either file to drive.
+		# probe and its result writer (ControlStemSupport.h) - the model-store
+		# half of it, the WAV writer, and the `stem.*` group itself (its read +
+		# job half and its model-store half). Inside the option because without
+		# it there is no engine for any of them to drive; each file is split the
+		# way this tree splits a group, for the file-length ratchet.
 		core/ControlStemSupport.cpp
+		core/ControlStemModel.cpp
+		core/ControlStemWav.cpp
 		core/ControlCommandsStems.cpp
+		core/ControlCommandsStemModel.cpp
 		# Listed so that AUTOMOC finds the Q_OBJECT header (it lives in
 		# include/StemSeparation/, not next to the .cpp).
 		${CMAKE_SOURCE_DIR}/include/StemSeparation/StemJobManager.h
@@ -279,6 +284,13 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	# The `stem.*` group's seven not_mutating rows (feature row 26, task #653):
+	# the offline stem engine's read verb, its four job verbs and its two
+	# model-store verbs. ALWAYS compiled, like every other table file, and EMPTY
+	# (a count of 0) when WANT_STEM_SPLIT is off and the ids do not exist - so
+	# the join in ControlReversibility.cpp needs no guard and the release
+	# configuration's row count is untouched.
+	core/ControlReversibilityTableStems.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

@@ -82,6 +82,11 @@ LMMS_EXPORT void registerWasmEditCommands(ControlRegistry& registry);
  *  the same #ifdef, and so are its seven A16 rows, so the registry and the
  *  contract table stay consistent in both directions. */
 LMMS_EXPORT void registerStemCommands(ControlRegistry& registry);
+//! stem.model_get_state / stem.model_download - the model-store half, in its
+//! own translation unit (the folder-track, session, warp, rack, comp and
+//! automation groups' read/edit split, for the file-length ratchet). Called by
+//! registerStemCommands; the registry has exactly one stem.* registration point.
+LMMS_EXPORT void registerStemModelCommands(ControlRegistry& registry);
 
 //! The browser.* group (W8 tag/metadata search plus the waveform peak cache):
 //! browser.roots, browser.query, browser.tags and browser.peaks. The engine half

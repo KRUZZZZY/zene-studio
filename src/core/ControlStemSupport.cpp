@@ -28,11 +28,8 @@
 #include <algorithm>
 #include <memory>
 
-#include <QCryptographicHash>
-#include <QDataStream>
 #include <QDateTime>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
@@ -42,7 +39,6 @@
 #include "lmmsconfig.h"
 
 #include "SampleBuffer.h"
-#include "SampleFrame.h"
 #include "StemSeparation/StemJobManager.h"
 #include "StemSeparation/StemModelStore.h"
 #include "StemSeparation/StemTypes.h"
@@ -61,14 +57,6 @@ namespace control
 namespace
 {
 
-//! The one WAV header this file writes: RIFF/WAVE, IEEE float, stereo. 44
-//! bytes, the same header the reference CLI writes
-//! (tools/stem_split_cli.py, write_wav: audio_format 3, 32-bit), so a stem this
-//! surface produced and a stem the CLI produced are the same file format.
-constexpr int kWavHeaderBytes = 44;
-//! channel count and bits per sample of that header.
-constexpr int kWavChannels = 2;
-constexpr int kWavBits = 32;
 
 //! The fixed stem order of the model contract, as wire names
 //! (include/StemSeparation/StemTypes.h:35-46).
@@ -108,61 +96,6 @@ bool isTerminal(StemJobManager::State state)
  *  (include/SampleFrame.h:50-53, include/LmmsTypes.h:39), which the static
  *  assertion below pins so a future frame layout cannot silently corrupt a stem.
  */
-bool writeWav(const QString& path, const SampleBuffer& buffer, int sampleRate, QString* error)
-{
-	static_assert(sizeof(SampleFrame) == 2 * sizeof(float),
-		"a stem is written as the buffer's raw interleaved stereo float32 stream");
-
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-	{
-		*error = QStringLiteral("cannot write %1: %2").arg(path, file.errorString());
-		return false;
-	}
-	const quint64 frames = static_cast<quint64>(buffer.size());
-	const quint64 dataBytes = frames * kWavChannels * (kWavBits / 8);
-
-	QByteArray header;
-	QDataStream out(&header, QIODevice::WriteOnly);
-	out.setByteOrder(QDataStream::LittleEndian);
-	out.writeRawData("RIFF", 4);
-	out << static_cast<quint32>(36 + dataBytes);
-	out.writeRawData("WAVEfmt ", 8);
-	out << static_cast<quint32>(16) << static_cast<quint16>(3) << static_cast<quint16>(kWavChannels)
-		<< static_cast<quint32>(sampleRate)
-		<< static_cast<quint32>(sampleRate * kWavChannels * (kWavBits / 8))
-		<< static_cast<quint16>(kWavChannels * (kWavBits / 8)) << static_cast<quint16>(kWavBits);
-	out.writeRawData("data", 4);
-	out << static_cast<quint32>(dataBytes);
-	if (header.size() != kWavHeaderBytes)
-	{
-		*error = QStringLiteral("internal error: the WAV header is %1 bytes, not %2")
-			.arg(header.size()).arg(kWavHeaderBytes);
-		return false;
-	}
-	if (file.write(header) != header.size())
-	{
-		*error = QStringLiteral("cannot write the WAV header of %1").arg(path);
-		return false;
-	}
-	const qint64 payload = static_cast<qint64>(dataBytes);
-	if (file.write(reinterpret_cast<const char*>(buffer.data()), payload) != payload)
-	{
-		*error = QStringLiteral("cannot write %1 (%2 bytes of audio)").arg(path).arg(payload);
-		return false;
-	}
-	return true;
-}
-
-QString sha256OfFile(const QString& path)
-{
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
-	QCryptographicHash hash(QCryptographicHash::Sha256);
-	if (!hash.addData(&file)) { return QString(); }
-	return QString::fromLatin1(hash.result().toHex());
-}
-
 //! One job this surface issued. The manager holds the job itself; this is what
 //! only the surface knows: where the mix came from and when it was submitted.
 struct JobRecord
@@ -395,7 +328,7 @@ public:
 				return false;
 			}
 			const QString path = QDir(directory).filePath(name + QStringLiteral(".wav"));
-			if (!writeWav(path, *stems[static_cast<size_t>(i)], record.sampleRate, error))
+			if (!stemWriteWavFile(path, *stems[static_cast<size_t>(i)], record.sampleRate, error))
 			{
 				return false;
 			}
@@ -407,7 +340,7 @@ public:
 			entry.insert(QStringLiteral("seconds"),
 				static_cast<double>(stems[static_cast<size_t>(i)]->size()) / record.sampleRate);
 			entry.insert(QStringLiteral("bytes"), static_cast<double>(QFileInfo(path).size()));
-			entry.insert(QStringLiteral("sha256"), sha256OfFile(path));
+			entry.insert(QStringLiteral("sha256"), stemSha256OfFile(path));
 			files.append(entry);
 		}
 
@@ -504,6 +437,20 @@ StemSurface* surface()
 } // namespace
 
 
+QString stemRequireAbsolutePath(const QString& value, const QString& name)
+{
+	if (value.isEmpty())
+	{
+		return QStringLiteral("'%1' is required").arg(name);
+	}
+	if (!value.startsWith(QLatin1Char('/')))
+	{
+		return QStringLiteral("'%1' must be an absolute path, and '%2' is not").arg(name, value);
+	}
+	return QString();
+}
+
+
 QJsonObject stemState()
 {
 	return surface()->stateObject();
@@ -536,116 +483,6 @@ bool stemCancelJob(int jobId, QJsonObject* job, QString* error)
 bool stemWriteResult(int jobId, const QString& directory, QJsonObject* result, QString* error)
 {
 	return surface()->writeResult(jobId, directory, result, error);
-}
-
-QJsonObject stemModelState(bool withHash)
-{
-	const StemModelSpec spec = StemModelStore::defaultModelSpec();
-	const QString path = StemModelStore::defaultModelPath();
-	const QFileInfo info(path);
-
-	QJsonObject specJson;
-	specJson.insert(QStringLiteral("name"), spec.name);
-	specJson.insert(QStringLiteral("url"), spec.url);
-	specJson.insert(QStringLiteral("sha256"), spec.sha256);
-	specJson.insert(QStringLiteral("size_bytes"), static_cast<double>(spec.sizeBytes));
-	specJson.insert(QStringLiteral("license"), spec.license);
-	specJson.insert(QStringLiteral("license_url"), spec.licenseUrl);
-	specJson.insert(QStringLiteral("model_card_url"), spec.modelCardUrl);
-	const bool pinned = !spec.sha256.trimmed().isEmpty() && spec.sizeBytes > 0
-		&& StemModelStore::isDownloadUrlAllowed(spec.url);
-	specJson.insert(QStringLiteral("pinned"), pinned);
-
-	QJsonObject out;
-	out.insert(QStringLiteral("dir"), StemModelStore::defaultModelDir());
-	out.insert(QStringLiteral("path"), path);
-	out.insert(QStringLiteral("present"), StemModelStore::isModelPresent(path));
-	out.insert(QStringLiteral("bytes"), static_cast<double>(info.size()));
-	out.insert(QStringLiteral("spec"), specJson);
-	// The policy, in the store's own terms: an unpinned spec is never fetched,
-	// and this is what makes the "never bundled, always verified" rule
-	// enforceable rather than aspirational.
-	out.insert(QStringLiteral("download_allowed"), pinned);
-	out.insert(QStringLiteral("download_reason"), pinned
-		? QStringLiteral("the spec is pinned (HTTPS URL, SHA-256 and size present)")
-		: QStringLiteral("the default spec is deliberately unpinned in v1: take the URL and the "
-			"SHA-256 from the model card (%1) and pass them to stem.model_download, or place the "
-			"file at 'path' by hand").arg(spec.modelCardUrl));
-	QJsonObject env;
-	env.insert(QStringLiteral("LMMS_STEM_MODEL"), qEnvironmentVariable("LMMS_STEM_MODEL"));
-	env.insert(QStringLiteral("LMMS_STEM_MODEL_DIR"), qEnvironmentVariable("LMMS_STEM_MODEL_DIR"));
-	out.insert(QStringLiteral("env"), env);
-
-	if (withHash)
-	{
-		QString error;
-		const QString hash = StemModelStore::sha256OfFile(path, &error);
-		out.insert(QStringLiteral("sha256"), hash);
-		out.insert(QStringLiteral("hash_error"), hash.isEmpty() ? error : QString());
-		// null when there is nothing to compare against - never a bare "true"
-		// that a caller could read as "this file is the model".
-		out.insert(QStringLiteral("matches_spec"), pinned
-			? QJsonValue(hash.compare(spec.sha256.trimmed(), Qt::CaseInsensitive) == 0)
-			: QJsonValue(QJsonValue::Null));
-	}
-	return out;
-}
-
-bool stemModelDownload(const QString& url,
-	const QString& sha256,
-	qint64 sizeBytes,
-	const QString& name,
-	const QString& destDir,
-	QJsonObject* result,
-	QString* error)
-{
-	StemModelSpec spec = StemModelStore::defaultModelSpec();
-	if (!url.isEmpty()) { spec.url = url; }
-	if (sha256.isEmpty() && sizeBytes <= 0 && url.isEmpty())
-	{
-		// The default path: the store's own spec, which is unpinned by policy.
-		*error = QStringLiteral("refusing to download the default model spec: it is deliberately "
-			"unpinned in v1 (no URL, no SHA-256, no size). Take the URL and checksum from the "
-			"model card (%1) and pass url/sha256/size_bytes, or place the file at '%2' by hand")
-			.arg(spec.modelCardUrl).arg(StemModelStore::defaultModelPath());
-		return false;
-	}
-	spec.sha256 = sha256;
-	spec.sizeBytes = sizeBytes;
-	if (!name.isEmpty()) { spec.name = name; }
-	if (!StemModelStore::isDownloadUrlAllowed(spec.url))
-	{
-		*error = QStringLiteral("refusing '%1': the model store downloads over HTTPS only, from a "
-			"URL with a host (http://, file:// and relative paths are rejected)")
-			.arg(spec.url);
-		return false;
-	}
-	if (spec.sha256.trimmed().isEmpty() || spec.sizeBytes <= 0)
-	{
-		*error = QStringLiteral("refusing '%1': a download must be pinned with both 'sha256' and "
-			"'size_bytes' - the store verifies the file before it is moved into place")
-			.arg(spec.name);
-		return false;
-	}
-
-	const QString directory = destDir.isEmpty() ? StemModelStore::defaultModelDir() : destDir;
-	QString storeError;
-	if (!StemModelStore::download(spec, directory, StemModelStore::DownloadProgressFn(), &storeError))
-	{
-		*error = storeError;
-		return false;
-	}
-	const QString path = QDir(directory).filePath(spec.name + QStringLiteral(".onnx"));
-
-	QJsonObject out;
-	out.insert(QStringLiteral("name"), spec.name);
-	out.insert(QStringLiteral("path"), path);
-	out.insert(QStringLiteral("bytes"), static_cast<double>(QFileInfo(path).size()));
-	out.insert(QStringLiteral("sha256"), spec.sha256);
-	out.insert(QStringLiteral("verified"), true);
-	out.insert(QStringLiteral("model_card_url"), spec.modelCardUrl);
-	*result = out;
-	return true;
 }
 
 } // namespace control

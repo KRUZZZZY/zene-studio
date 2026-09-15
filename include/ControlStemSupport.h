@@ -26,7 +26,10 @@
  *    `Queued` by design (src/core/StemJobManager.cpp:171-173, so GUI polling of
  *    a just-submitted id is race-free), so the manager alone cannot tell a
  *    caller that an id was never issued;
- *  * the availability probe, and the one WAV writer the result verb needs.
+ *  * the availability probe, and the WAV writer the result verb needs - the
+ *    writer itself lives in ControlStemWav.cpp and the model-store verbs in
+ *    ControlStemModel.cpp, because the file-length ratchet reads a file as a
+ *    unit (the same reason the A16 table is split across files).
  *
  * THE THREADING CONTRACT, in one place. Control handlers run on the application
  * thread (ControlRegistry::invoke -> runOnUiThread, ControlRegistry.cpp:183).
@@ -85,6 +88,9 @@
 
 namespace lmms
 {
+
+class SampleBuffer;
+
 namespace control
 {
 
@@ -159,6 +165,34 @@ LMMS_EXPORT bool stemWriteResult(int jobId,
 	const QString& directory,
 	QJsonObject* result,
 	QString* error);
+
+/*! The one WAV writer the result verb uses (src/core/ControlStemWav.cpp): \a
+ *  buffer as float32 RIFF/WAVE - audio_format 3, 32-bit, stereo, the reference
+ *  CLI's own header - with \a sampleRate in it. False with a typed message when
+ *  the file cannot be opened or written.
+ *
+ *  In its own translation unit for the reason the A16 table is split: the
+ *  file-length ratchet reads a file as a unit, and the writer is a
+ *  self-contained job.
+ */
+LMMS_EXPORT bool stemWriteWavFile(const QString& path,
+	const SampleBuffer& buffer,
+	int sampleRate,
+	QString* error);
+
+//! Lowercase hex SHA-256 of \a path; empty when it cannot be read. The result
+//! verb reports this per stem, so a caller can verify the file it got.
+LMMS_EXPORT QString stemSha256OfFile(const QString& path);
+
+/*! The one absolute-path check the group's argument validation uses, for the
+ *  source file and for an output directory alike: empty when \a value is an
+ *  absolute path, else the typed sentence naming \a name ("'out' must be an
+ *  absolute path, and 'stems' is not"). It lives with the surface rather than in
+ *  one of the two command files because both halves validate with it - the same
+ *  rule `render.stems` applies to its `out`, which refuses a relative path
+ *  rather than guessing a destination next to the project.
+ */
+LMMS_EXPORT QString stemRequireAbsolutePath(const QString& value, const QString& name);
 
 /*! The model store's own facts, for `stem.model_get_state`: the resolved
  *  directory and path, whether the file is present and its size, the spec the
