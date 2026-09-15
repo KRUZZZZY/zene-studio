@@ -360,6 +360,7 @@ include/RetroMidiCapture.h
 include/RetroMidiCaptureSettings.h
 include/RetroMidiClipWriter.h
 include/RetroMidiRing.h
+include/RevisionTimeline.h
 include/RingBuffer.h
 include/RmsHelper.h
 include/RoutingChainNodes.h
@@ -1000,6 +1001,7 @@ src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsRenderStems.cpp
+src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
@@ -1053,6 +1055,7 @@ src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp
+src/core/ControlReversibilityTableRevisions.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
@@ -1160,6 +1163,10 @@ src/core/RetroAudioCapture.cpp
 src/core/RetroMidiCapture.cpp
 src/core/RetroMidiCaptureSettings.cpp
 src/core/RetroMidiClipWriter.cpp
+src/core/RevisionTimeline.cpp
+src/core/RevisionTimelineCompare.cpp
+src/core/RevisionTimelineGit.cpp
+src/core/RevisionTimelineGit.h
 src/core/RingBuffer.cpp
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
@@ -1493,6 +1500,7 @@ tests/src/core/RetroMidiRingTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/RevisionTimelineTest.cpp
 tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/ScriptBindingsTest.cpp

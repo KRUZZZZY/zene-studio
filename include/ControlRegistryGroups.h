@@ -400,6 +400,23 @@ LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
  *  that outgrew that budget are declared. Called by
  *  registerControlCommands() beside registerRecordingInputCommands(). */
 LMMS_EXPORT void registerRecordingRouteCommands(ControlRegistry& registry);
+/*! revisions.list / revisions.compare / revisions.restore - the in-app revision
+ *  timeline (feature-list row 76, OWNER-31 item 30) over the revision artefacts
+ *  this engine ALREADY writes: the keep-3 rotation `project.save` performs
+ *  (`<file>.rev0..rev2`), the `<file>.bak` a save from the interface leaves, the
+ *  autosave `recover.mmp` and its `.info` identity sidecar, and the project's own
+ *  git history where it lives in a repository (read through one bounded `git log`
+ *  - no new store, no format change). The engine half is
+ *  include/RevisionTimeline.h; `restore` is a recorded-action true_inverse whose
+ *  inverse is project.restore_revision's own rotation, and `compare` is a
+ *  STRUCTURAL element-count summary, not a semantic diff (`mmpz-git diff` owns
+ *  that). No compile-time switch - every artefact is a file the engine already
+ *  reads and writes, so the ids are honest in every configuration.
+ *
+ *  Declared here rather than beside the project.* declarations because
+ *  include/ControlRegistry.h sits at the file-length ratchet's limit; registered
+ *  from src/core/ControlRegistryRegistrations.cpp. */
+LMMS_EXPORT void registerRevisionsCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

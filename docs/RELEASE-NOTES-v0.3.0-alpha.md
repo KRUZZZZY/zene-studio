@@ -705,20 +705,75 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
   agent-owned job, no model-manager UI, and nothing in the interface says the model is missing —
   `stem.get_state` is where that answer lives.
 
+## The in-app revision timeline (feature-list row 76, OWNER-31 item 30)
+
+**The revisions a project has are listed with their source and their time, two of them can be
+compared structurally, and any one of them can be restored - over the socket, not from a panel.**
+The three ids are `revisions.list`, `revisions.compare` and `revisions.restore` (group `revisions`;
+engine half `include/RevisionTimeline.h`, split across `src/core/RevisionTimeline.cpp`,
+`RevisionTimelineGit.cpp` and `RevisionTimelineCompare.cpp`). **No new store was written and no
+project format changed**: every entry comes from an artefact this engine already produces for its own
+reason -
+
+| source | the artefact | who writes it |
+|---|---|---|
+| `rotation` | `<file>.rev0` .. `<file>.rev2`, each capped at 8 MiB | the A16 keep-3 rotation `project.save` performs, reusing `control::projectRevisionPath()` |
+| `backup` | `<file>.bak` | `DataFile::writeFile`, on every save from the interface |
+| `autosave` | `recover.mmp` (+ `recover.mmp.bak`) and its `.info` sidecar | the periodic autosave; the sidecar supplies the recorded `savedUTC` and the project it belongs to |
+| `git` | the commits that touched the file | the project's own repository, read through one bounded `git log` (`RevisionTimelineBounds::GitTimeoutMs` = 2500 ms) |
+
+`revisions.list` reports each entry's `id`, `source`, UTC `timestamp`, `bytes`, `path` and `sha256`
+(empty for a git entry: the commit sha is its identity), newest first, plus a per-source count and a
+`git` object that says *why* there are no git entries - no git on the machine, no repository, or
+`include_git: false` - rather than failing the list. `revisions.compare` takes two ids (or one, and
+the file as it is on disk, the id `live`), reports each side's metadata, whether the two are
+byte-identical, and a **structural** comparison: each document's element count per tag, the element
+totals and the tags that differ. It is deliberately **not** a semantic diff - `mmpz-git diff` is that
+tool, outside this process, and this page will not claim a second implementation. `revisions.restore`
+restores one id over the file on disk **after rotating the live file into the keep-3 set**, so the
+restore is itself recoverable: `control.undo` restores revision 0 (the file it replaced), or removes
+the file the restore created when there was none. A restore whose live file is over the policy's
+8 MiB per-revision cap is **refused, typed, before anything is written** - that is the one path in
+this group that could not be reversed, and it is a refusal rather than an irreversible row.
+**The session in memory is not reloaded** by a restore; `project.open` is how a caller works on the
+restored bytes, exactly as `project.restore_revision` states for its own restore.
+
+**A16.** `revisions.list` and `revisions.compare` are `not_mutating`; `revisions.restore` is
+`true_inverse` through a recorded ACTION checkpoint (rows in
+`src/core/ControlReversibilityTableRevisions.cpp`, joined into the table; +3 rows on the histogram
+above). **Proof:** the registered ctest **`RevisionTimelineTest`** builds a real project document, a
+`.bak`, a `.rev0` and an autosave with its sidecar in a temp directory, drives all three ids through
+the registry (the path a socket client takes), asserts that the list reports each artefact with its
+source and time, that `compare` reports the differing `<note>` counts of two documents, that a
+`backup` restore and a `rev0` restore both come back **byte for byte** through
+`control::restoreProjectRevision(path, 0)` - the inverse the transaction names - and that an unknown
+id, a vanished artefact and an empty project path are typed refusals that write nothing. Where the
+machine has `git` it builds a real repository with a commit and proves the commit's own bytes are
+readable and restorable; without git that case skips by name.
+
+**UI absence — one line: the revision timeline is drivable through the socket, not from the
+interface.** There is no revision panel, no timeline strip, no "restore this revision" menu entry and
+no autosave/revision UI of any kind in this release - `docs/KNOWN-LIMITATIONS.md` carries the same
+sentence, and `revisions.list` is where a caller finds out what a project has.
+
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **265 rows**, measured from the table itself:
-**141 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 96 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **268 rows**, measured from the table itself:
+**142 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 98 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**263 rows / 94 `not_mutating`** - which is the base
+**266 rows / 96 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **This is the MERGED tree's own measurement, not arithmetic:**
 `ReversibilityContractTest` was run against a build of the eight-lane wave-1 merge train's tip and
 reports **265** rows over the four classes named above (141 + 21 + 7 + 96), and its constant is the
-telemetry-off/wasm-off base of **263 / 141 / 21 / 7 / 94**.
+telemetry-off/wasm-off base of **263 / 141 / 21 / 7 / 94**; the lane that landed after that train,
+`030/revision-timeline` (feature row 76), adds THREE rows on top - 1 `true_inverse`
+(`revisions.restore`) and 2 `not_mutating` (`revisions.list`, `revisions.compare`) - which moves this
+page and that constant together to **268 / 142 / 21 / 7 / 98** over the base
+**266 / 142 / 21 / 7 / 96**.
 
 Every other figure of this shape below was measured on the branch that wrote it, or on an earlier
 merge tip, and is kept as that lane's own record rather than as this tree's number:
@@ -730,9 +785,9 @@ here is the merged measurement and never a sum of anybody's report - which is wh
 re-ran the test and rewrote this paragraph and that constant together. The measurement agrees with
 the lanes' own deltas exactly, which is the check that it is a measurement and not a total:
 225 base + 1 (telemetry) + 4 (meter) + 4 (linked clips) + 9 (recording) + 1 (pitch-stretch) +
-4 (render presets) + 15 (note/scale) = 263, and the class columns add up the same way.
+4 (render presets) + 15 (note/scale) + 3 (revisions) = 266, and the class columns add up the same way.
 
-What the eight lanes added, in each lane's own words:
+What the lanes added, in each lane's own words:
 
 * **`030/meter-surface` (feature row 24) - +4 rows, +2 `true_inverse`, +2 `not_mutating`:**
   `meter.arm` and `export.set_loudness_report` as recorded-action `true_inverse` rows,
@@ -766,6 +821,15 @@ What the eight lanes added, in each lane's own words:
 * **`030/stem-surface` (feature row 26) - +0 rows in this configuration:** its seven
   `not_mutating` rows are guarded by `WANT_STEM_SPLIT` and the release does not ship them; see
   below.
+* **`030/revision-timeline` (feature row 76, OWNER-31 item 30) - +3 rows, +1 `true_inverse`,
+  +2 `not_mutating`:** the in-app revision timeline over the artefacts the engine ALREADY writes.
+  `revisions.restore` is a recorded-action `true_inverse` row (the live file is rotated into the
+  keep-3 set before the staged revision replaces it, so the recorded undo step restores revision 0 -
+  or removes the file the restore created when there was none), and `revisions.list` /
+  `revisions.compare` are `not_mutating` inspectors. There is no irreversible row: the one path that
+  could be one, a live file over the policy's 8 MiB per-revision cap, is a typed refusal BEFORE any
+  write. The classes are stated on each row in `src/core/ControlReversibilityTableRevisions.cpp`,
+  which holds exactly those three.
 
 The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
@@ -792,16 +856,16 @@ because that window has no reset-on-absence) and `note.probability_set` (`true_i
 per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
 touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
 and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
-**The seven `stem.*` rows are NOT in the 265 above, and that is the point:** the offline
+**The seven `stem.*` rows are NOT in the 268 above, and that is the point:** the offline
 stem-separation group (feature row 26, board task #653) is compiled only when `WANT_STEM_SPLIT=ON` -
 **OFF in the default release configuration** this page describes - so its seven `not_mutating` rows
 (`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
 `stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
 which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
-on carries **272 rows / 103 `not_mutating`** - measured, not derived: the seven-row guard was added to
+on carries **275 rows / 105 `not_mutating`** - measured, not derived: the seven-row guard was added to
 `ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
 against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
-265 + 7 rows and 96 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
+268 + 7 rows and 98 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
 configuration the release does not ship. All seven drive one offline engine, write output artefacts
 (four stem WAVs and a checksum-verified model file) and record no project state: a job is not a
 document, and a written stem is an output.

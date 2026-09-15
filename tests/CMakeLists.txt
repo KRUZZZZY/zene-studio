@@ -201,6 +201,12 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp
 	src/core/ReversibilityUndoTest.cpp
+	# The in-app revision timeline (feature-list row 76, OWNER-31 item 30): the
+	# list/compare/restore surface over the revision artefacts the engine already
+	# writes - real project documents, a real `.bak`/`.rev0`/autosave fixture, and
+	# a real git repository for the history half - driven through the registry, so
+	# the proof covers the path a socket client takes.
+	src/core/RevisionTimelineTest.cpp
 	# The bounded, coalescing undo (task #623): the declared depth caps, the
 	# drag rule, the byte budget and the refusal of an evicted step.
 	src/core/UndoBoundsTest.cpp
@@ -460,6 +466,13 @@ set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
 # Qt platform plugin even though the test itself is guiless (same reason as
 # PluginScanCacheTest above).
 set_tests_properties(MasteringTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# RevisionTimelineTest drives a real Engine and the `revisions.*` group through
+# the registry, writes real project documents and - where the machine has git -
+# runs real `git` commands, so it needs a Qt platform plugin for the same reason
+# the tests above do.
+set_tests_properties(RevisionTimelineTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The dither and SRC-quality tests build a real Engine and drive the real

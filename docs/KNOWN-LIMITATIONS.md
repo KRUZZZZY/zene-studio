@@ -1093,3 +1093,27 @@ feature. **UI absence — one line: the stretch mode is settable through the soc
 interface** — `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/`
 returns **0** hits, there is no clip-context entry, no checkbox and no marker-drag gesture for it, and a
 project file or `warp.stretch` are the only two ways to author it.
+- **The revision timeline is drivable, and it is not a semantic diff — added 2026-09-15.** A project's
+  revisions are listed with their source and their UTC time by `revisions.list` (group `revisions`,
+  feature-list row 76 / OWNER-31 item 30): the **keep-3 rotation** `project.save` performs
+  (`<file>.rev0` .. `<file>.rev2`, 8 MiB each), the **`<file>.bak`** a save from the interface leaves,
+  the **autosave** (`recover.mmp`, and `recover.mmp.bak` when it replaced one, each with its `.info`
+  sidecar's recorded time) and the project's own **git history** where it lives in a repository (one
+  bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine — the `git` object in the
+  reply says which). **No new store and no format change**: every entry is an artefact the engine
+  already writes. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
+  comparison** — each document's element count per tag and the tags that differ — and it is **not a
+  semantic diff**; the musical diff of two project documents stays `tools/mmpz-git`'s (`mmpz-git diff`),
+  outside this process; **a git entry carries no `sha256`** (hashing every listed commit would be one
+  child process per entry — the commit sha is its identity); **`revisions.restore` does not reload the
+  session** — it restores the FILE, and `project.open` is how a caller works on the restored bytes
+  (the same sentence `project.restore_revision` carries); the restore is reversible only through the
+  keep-3 set, so a live file over the policy's 8 MiB per-revision cap is **refused, typed, before
+  anything is written** rather than restored without an inverse; and **`mmpz` documents are compared
+  after `qUncompress`**, so a document over 64 MiB decompressed is reported unreadable rather than
+  counted. Proof: the registered ctest `RevisionTimelineTest` (real documents, a real `.bak`/`.rev0`/
+  autosave fixture, a real repository where git exists, all three ids driven through the registry).
+  **UI absence — one line: the revision timeline is drivable through the socket, not from the
+  interface** — `grep -rniI 'RevisionTimeline\|revisions\.list\|revisions\.restore\|RevisionEntry'
+  src/gui/` returns **0** hits: there is no revision panel, no timeline strip and no "restore this
+  revision" entry, and `revisions.list` is where a caller finds out what a project has.

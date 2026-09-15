@@ -220,6 +220,14 @@ void registerControlCommands(ControlRegistry& registry)
 	// group's four ids are two translation units (the read/repair half is
 	// registered by the same call chain, at its declaration).
 	registerClipLinkCommands(registry);
+	// The in-app revision timeline (feature row 76, OWNER-31 item 30): list the
+	// revisions a project already has - the keep-3 rotation, the interface save's
+	// `<file>.bak`, the autosave and its sidecar, the project's own git history -
+	// compare two of them structurally, and restore one. No compile-time switch:
+	// every artefact is a file the engine already reads and writes, so its three
+	// ids are honest in every configuration. The engine half is
+	// include/RevisionTimeline.h; the rationale is on the declaration.
+	registerRevisionsCommands(registry);
 }
 
 } // namespace lmms
