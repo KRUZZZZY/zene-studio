@@ -1189,6 +1189,12 @@ void Song::clearProject()
 	// (docs/GROOVE-POOL.md section 4).
 	m_groovePool.clear();
 
+	// The chord track is project state too, and the chords of one project must
+	// not be writable into the next one's clips. It is written to the file ONLY
+	// when it holds a chord, so the empty state has to be reachable here as
+	// well as from the (absent) element in loadProject.
+	m_chordTrack.clear();
+
 	// The modulation layer is project state too, and a layer from one project
 	// must not keep driving the next one's parameters. CLEARING the layer drops
 	// its resolved routes with it, so no write target outlives the project it
@@ -1713,6 +1719,14 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 		m_groovePool.saveSettings( dataFile, dataFile.content() );
 	}
 
+	// And for the chord track: written ONLY when the project holds a chord, so
+	// a project that never used one re-saves exactly the bytes it has always
+	// had (include/ChordTrack.h).
+	if( m_chordTrack.shouldPersist() )
+	{
+		m_chordTrack.saveSettings( dataFile, dataFile.content() );
+	}
+
 	// The named visibility sets (owner items 3+20+21): project state beside the
 	// tempo map and the modulation layer, and written only when there is at
 	// least one, so a project that never made one re-saves the bytes it always
@@ -1933,6 +1947,16 @@ bool Song::restorePublisherBackedSection(const QDomNode &node)
 	if (node.nodeName() == "groove-pool")
 	{
 		m_groovePool.loadSettings(node.toElement());
+		return true;
+	}
+	// The chord track. A project whose file carries no <chord-track> element -
+	// every project saved before this existed, and every project that never
+	// wrote a chord - loads into an EMPTY track, which is the state the engine
+	// was in before the feature and the same reset-on-absence rule the groove
+	// pool's branch above follows (ChordTrack::loadSettings clears first).
+	if (node.nodeName() == "chord-track")
+	{
+		m_chordTrack.loadSettings(node.toElement());
 		return true;
 	}
 	return false;

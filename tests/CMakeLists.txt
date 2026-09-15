@@ -85,6 +85,21 @@ set(LMMS_TESTS
 	# The socket proof of the same claim is the registered ctest
 	# ControlChainPresets (tests/control-chain-presets.py).
 	src/core/ControlChainPresetTest.cpp
+	# The chord track, its detection and its generators (feature row 35,
+	# docs/CHORD-TRACK.md): the engine half (the track's ordering, bounds and
+	# <chord-track> element; the detection on known note sets; the catalogue and
+	# the generator's SEEDED repeatability pair - same seed identical, different
+	# seed different) and the surface half (the nine ids, their schemas, the six
+	# contract rows, both kinds of inverse, and the project file).
+	src/core/ChordTrackTest.cpp
+	src/core/ChordDetectTest.cpp
+	src/core/ChordProgressionTest.cpp
+	src/core/ControlChordCommandsTest.cpp
+	# The write half of the same surface, in its own binary: the two generators
+	# (the seeded repeatability pair read off the wire), the track's write-out
+	# into a clip, and the chord track's round trip through the project file -
+	# the element present when the track holds a chord, ABSENT when it does not.
+	src/core/ControlChordWriteTest.cpp
 	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	# The session-sync surface (D11 "Ableton Link sync"): the five link.*

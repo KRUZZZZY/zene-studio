@@ -231,6 +231,12 @@ void registerControlCommands(ControlRegistry& registry)
 	// tempo map and a file, both of which exist in every configuration, so
 	// its ids are honest in every one.
 	registerInterchangeCommands(registry);
+	// The chord track, its detection and its generators (feature row 35). No
+	// compile-time switch: the track is plain project state on the Song, the
+	// vocabulary is the piano roll's own ChordTable and the arithmetic is a
+	// function over a note list, so its ids are honest in every configuration
+	// (docs/CHORD-TRACK.md, include/ControlRegistryGroups.h).
+	registerChordCommands(registry);
 }
 
 } // namespace lmms
