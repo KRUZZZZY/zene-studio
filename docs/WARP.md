@@ -157,6 +157,16 @@ The two mapping functions are closed at the markers; only the rate is half-open.
 
 ## 3. The stretch mode, and what a user would hear
 
+> **Update (2026-09-15, lane `030/pitch-stretch`, feature-list row 30).** The paragraph below is
+> correct about the mode this engine had when #597 landed and it is still correct about its
+> **default**: a warp renders through the resampler and the pitch moves with the rate. What changed
+> is that a clip can now **select** a second mode — `WarpStretchMode::PreservePitch`, settable through
+> `warp.stretch` or the `stretch="wsola"` attribute of the same `<warp>` element — which renders the
+> same rate through `AudioStretcher` (WSOLA) and keeps the pitch where it was. Measured on one clip's
+> two modes under a 2× warp: resample renders 0.5000 / 0.3000 at 880 / 1320 Hz, the stretch renders
+> 0.4992 / 0.2990 at 440 / 660 Hz, same length, same level. `docs/PITCH-STRETCH.md` is the record;
+> nothing else in this document changed, and no behaviour changed for a clip that does not ask.
+
 **The stretch is resampling. It changes pitch.** `SamplePlayHandle::warpRatio()`
 (`src/core/SamplePlayHandle.cpp:166`) hands `Sample::play` a resampler ratio derived from
 the marker segment's source-frames-per-tick, and `Sample::play` passes it to

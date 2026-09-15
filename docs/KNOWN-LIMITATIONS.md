@@ -883,3 +883,27 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+**Pitch-preserving time-stretch is drivable, and it is not formant-preserving.** A warped clip renders
+its rate change through a WSOLA stretcher instead of the resampler when it asks for it
+(`warp.stretch` with `mode="preserve_pitch"`, or the `stretch="wsola"` attribute of the clip's own
+`<warp>` element), and the pitch is measured where it was: on a 2x warp of a 440 Hz + 660 Hz source the
+stretcher renders 0.4992 / 0.2990 of the two tones where the default resampling mode renders all of it
+an octave up at 880 / 1320 Hz (`docs/PITCH-STRETCH.md`). Stated limits, all measured or structural:
+**formants are not preserved** (WSOLA keeps the waveform's period, not a vowel's spectral envelope, so a
+large stretch of a voice moves the formants *with* the pitch — pitch-preserving is not
+formant-preserving); the alignment search reaches ±128 source frames (2.9 ms at 44.1 kHz), so content
+**below ~345 Hz** cannot be aligned and is stretched as plain overlap-add; **transients are not
+detected** (a grain straddling an onset smears it over up to one grain, 23 ms); the sample-rate
+conversion on this path is **linear interpolation** between source frames — the engine's default
+`Linear` class — so the export's `SincBest` quality does **not** reach it; **one rate per audio period**
+is inherited from `Sample::play`, so a rate *change* takes effect at the next period boundary
+(≤ 23 ms) while a marker pair covering a whole clip is exact everywhere; and the stretcher's parameters
+(the grain length and the search radius — the quality/complexity dial, 17x realtime at the default
+58.7 ms per second of stretched audio) are **not exposed** on the control surface. A clip that renders
+linearly is never routed through the stretcher and `warp.stretch` **refuses** `preserve_pitch` for it;
+a project with no warp, or with warps in the default mode, renders exactly as it did before this
+feature. **UI absence — one line: the stretch mode is settable through the socket, not from the
+interface** — `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/`
+returns **0** hits, there is no clip-context entry, no checkbox and no marker-drag gesture for it, and a
+project file or `warp.stretch` are the only two ways to author it.
