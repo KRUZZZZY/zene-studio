@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{225, 120, 18, 7, 80};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{226, 122, 18, 6, 80};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
@@ -149,15 +149,17 @@ private slots:
 	//! src/core/ControlReversibilityTable.cpp has 74 rows today, one per registered
 	//! command" (docs/RELEASE-NOTES-v0.2.1-alpha.md, at 0.2.1: 30 `true_inverse`,
 	//! 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`) - and nothing asserted them.
-	//! At 0.3.0 the same four counts read 227 / 120 / 18 / 7 / 82 over 227 rows at
-	//! the three-merge tip this train lands, and the
+	//! At 0.3.0 the same four counts read 228 / 122 / 18 / 6 / 82 over 228 rows
+	//! (the structural-undo lane moved them by three: track.move is a new
+	//! true_inverse row, and plugin.unload moved out of the irreversible block),
+	//! and the
 	//! current figure lives in docs/RELEASE-NOTES-v0.3.0-alpha.md. Two compile-time
 	//! groups move with their option and are ADDED to the invariant part rather
 	//! than written out per configuration: the two `telemetry.*` not_mutating rows
 	//! (ZENE_TELEMETRY_ENABLED) and the six `wasm.*` rows - three snapshot, three
 	//! not_mutating - which are present exactly when the wasmtime C API is
 	//! (LMMS_HAVE_WASM, item #614). The release configuration has the client in and
-	//! no wasmtime, so the notes' own figures are its 227 / 120 / 18 / 7 / 82.
+	//! no wasmtime, so the notes' own figures are its 228 / 122 / 18 / 6 / 82.
 	//! The two tests above hold the table to account for COVERAGE (every registered command
 	//! has a row, every row names a registered command) and for behaviour; a row
 	//! added or moved between classes could therefore ship with the notes still

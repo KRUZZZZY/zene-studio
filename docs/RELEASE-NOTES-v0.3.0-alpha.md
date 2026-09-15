@@ -644,18 +644,24 @@ bound in its own description and contract row instead of pretending to a timeout
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **227 rows**, measured from the table itself:
-**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **228 rows**, measured from the table itself:
+**122 `true_inverse`, 18 `snapshot`, 6 `irreversible`, 82 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**226 rows / 80 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
-four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this merge tip and reports 228 rows over the
+four classes named above (122 + 18 + 6 + 82), and its constant is the telemetry-off/wasm-off base of
+226 / 122 / 18 / 6 / 80. The structural-undo work moved the split by three: `track.move` is a NEW
+`true_inverse` row (+1 row, +1 true_inverse), and `plugin.unload` moved OUT of the `irreversible`
+block (`+1 true_inverse`, `-1 irreversible`) because a removed device is now re-instantiated with its
+settings by one `control.undo` - the four structural rows (`track.add`, `track.move`, `track.remove`,
+`plugin.unload`) live in their own table TU,
+`src/core/ControlReversibilityTableStructure.cpp`, joined into the action half so the block still
+reads as ONE `true_inverse` block with one row count. The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash

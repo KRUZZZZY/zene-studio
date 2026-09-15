@@ -6,67 +6,34 @@ ONE control.undo restores them - INCLUDING a deleted track WITH ITS CLIPS.
 The acceptance evidence for undo robustness, produced by driving the REAL `zene`
 binary headless and printing every request and reply verbatim.
 
-WHAT THIS PROVES, AND WHY IT IS THE SHAPE IT IS.
+THE DEFECT THIS FILE EXISTS FOR is not "undo does not work". It is narrower and
+worse: `TrackContainer::removeTrack` forgets a POINTER, and the destruction path
+beside it is what loses the music - `~Track` deletes every clip (and `~Clip` the
+notes) and only THEN calls removeTrack(). So a journal checkpoint taken at the
+container restores a track with an EMPTY CLIP LIST: the track comes back and the
+music does not. Every assertion about restored music below is therefore made
+against the CLIPS' CONTENT, read back through the socket after the undo - never
+against "a track with that name exists again", which a lossy undo also satisfies.
 
-The defect the row names is not "undo does not work". It is narrower and worse:
-`TrackContainer::removeTrack` forgets a POINTER, and the destruction path beside
-it is what loses the music - `~Track` deletes every clip (and `~Clip` the notes)
-and only then calls removeTrack(). So a journal checkpoint taken at the container
-restores a track with an EMPTY CLIP LIST: the track comes back and the music does
-not. Every check below is therefore written against the CLIPS' CONTENT, read back
-through the socket after the undo - never against "a track with that name exists
-again", which a lossy undo would also satisfy.
-
-The checks, in order:
-
-  1. the fixture                     three instrument tracks, each with a MidiClip,
-                                     the middle one carrying three notes - read
-                                     back so the baseline is MEASURED;
-  2. `track.remove` deletes music    the removed track, its clip and its notes
-                                     are gone (the control for check 3);
-  3. `control.undo` returns the      the track is back, AND its clip is back with
-     deleted track WITH its clips    the same position, length and note count, AND
-                                     `roll.get_state` reports the same notes: the
-                                     same keys, positions, lengths and velocities.
-                                     Read by the clip id read BACK, after the undo;
-  4. ... at the index it was        a 3-track song, the FIRST track deleted: the
-     removed from                    restored order equals the pre-delete order
-                                     exactly, and its `trk-<n>` is the SAME id
-                                     (the track's id is persisted, so a cached
-                                     trk-7 still names it);
-  5. the stable-id interaction,      `clip-<n>` is the INDEX-derived ordinal of a
-     MEASURED (feature row 51)       clip in the WHOLE song, so deleting a track
-                                     SHIFTS every later clip's id. This check
-                                     measures that shift (before/after, printed),
-                                     asserts it is exactly what the index rule
-                                     implies, and asserts the shift REVERSES on
-                                     the undo - i.e. the clip ids are a function
-                                     of the arrangement, so a client must re-read
-                                     them after an undo rather than cache one;
-  6. `control.redo`                  the deletion is re-done: the restored track
-                                     goes away again, so the recorded inverse is a
-                                     PAIR and not a one-way door;
-  7. `track.move`                    the arrangement's order, drivable: a reorder
-                                     is visible in track.list, ONE control.undo
-                                     puts the order back, the redo re-applies it,
-                                     and an out-of-range index is REFUSED rather
-                                     than clamped;
-  8. `plugin.load` / `plugin.unload` a device appended to a track's chain, given a
-     + `control.undo`                non-default parameter, then REMOVED: one
-                                     control.undo re-instantiates it AT ITS INDEX
-                                     with its parameter restored (this is the row's
-                                     "add/remove effect" half), and the redo removes
-                                     it again;
-  9. `control.undo_depth`            the byte budget COUNTS a structural payload:
-                                     deleting a track grows retained_bytes by the
-                                     captured document, where an action step that
-                                     counted 0 would print no growth at all - the
-                                     negative control for the accounting itself;
- 10. `control.transactions`          the A16 record of every structural edit is
-                                     reversible, and names the mechanism;
- 11. refusals                        a track.move past the end, and a track.remove
-                                     of a track that is not there, are typed and
-                                     change nothing.
+The checks, in order: (1) the fixture - three tracks, each with a clip, the
+middle one carrying three notes, MEASURED against the default song rather than
+assumed; (2) `track.remove` deletes the track AND its clip and notes (the control
+for 3); (3) `control.undo` returns the track WITH its clip - same position,
+length and note count - and `roll.get_state` reports the same notes, key by key;
+(4) ... at the index it was removed from, under the SAME persisted `trk-<n>`;
+(5) the row-51 interaction MEASURED and printed: `clip-<n>` is the index-derived
+ordinal of a clip in the WHOLE song, so a delete shifts every later clip's id and
+the undo shifts them back; (6) `control.redo` re-does the deletion, so the
+inverse is a PAIR; (7) `track.move` - the arrangement's order: a reorder, ONE
+undo back, the redo forward, and an out-of-range index REFUSED, not clamped;
+(8) `plugin.load` / `plugin.unload` - a device given a non-default parameter and
+then removed: one `control.undo` re-instantiates it AT ITS INDEX with the
+parameter restored, and the redo removes it again; (9) `control.undo_depth` -
+the byte budget COUNTS a structural payload, so a delete GROWS retained_bytes
+(a step that charged 0 bytes would print no growth); (10) `control.transactions`
+- the A16 record of every structural edit is reversible and names its mechanism;
+(11) refusals - a `track.move` past the end, a `track.remove` of a missing track
+and a `plugin.unload` of a missing device are typed and change nothing.
 
 Started through the shared harness (tests/control_socket_harness.py), so this file
 adds no second launch path. Usage:
@@ -85,26 +52,21 @@ from freeze_bounce_evidence import Recorder, Session, report_results
 CLIP_TICKS = 768  # one bar
 NOTES = ((60, 0, 192, 100), (64, 192, 192, 90), (67, 384, 384, 127))
 
-
 def note_signature(clip):
     """A clip's notes, comparable across a delete/undo: what a lossy undo loses."""
     return sorted((n.get("key"), n.get("position"), n.get("length"), n.get("velocity"))
                   for n in (clip.get("notes") or []))
-
 
 def clip_signature(clip):
     """The clip's OWN state - position, length and its note content."""
     return (clip.get("position"), clip.get("length"), clip.get("note_count"),
             note_signature(clip))
 
-
 def roll(session, clip_id):
     return session.result("roll.get_state", {"clip": clip_id})
 
-
 def arrangement(session):
     return session.result("arrangement.get_state")
-
 
 def find_track(state, track_id):
     for entry in state.get("tracks") or []:
@@ -112,28 +74,29 @@ def find_track(state, track_id):
             return entry
     return None
 
-
 def clips_of(state, track_id):
-    track = find_track(state, track_id)
-    return list((track or {}).get("clips") or [])
-
+    return list((find_track(state, track_id) or {}).get("clips") or [])
 
 def clip_entry(state, clip_id):
-    for entry in state.get("clips") or []:
-        if entry.get("id") == clip_id:
-            return entry
-    return None
-
+    return next((e for e in (state.get("clips") or []) if e.get("id") == clip_id), None)
 
 def order_of(state):
     return [t.get("id") for t in (state.get("tracks") or [])]
 
+def devices_of(session, target):
+    """The device ids in `target`'s chain. dsp.get_state answers with the chain
+    WRAPPED ({chains:[...]}) - the wrapper is read here, once, so no check below
+    can mistake "no devices" for "no chain"."""
+    state = session.result("dsp.get_state", {"target": target})
+    for chain in state.get("chains") or []:
+        if chain.get("id") == target:
+            return [d.get("id") for d in (chain.get("devices") or [])], chain
+    return [], None
 
 def build_clip(session, track, position, notes):
     """One clip of `notes` on `track`; returns (clip_id, its measured signature)."""
-    clip = session.result("clip.add", {"track": track, "position": position,
-                                       "length": CLIP_TICKS})
-    clip_id = clip.get("clip")
+    clip_id = session.result("clip.add", {"track": track, "position": position,
+                                          "length": CLIP_TICKS}).get("clip")
     if not clip_id:
         return None, None
     for key, offset, length, velocity in notes:
@@ -141,13 +104,10 @@ def build_clip(session, track, position, notes):
                                     "length": length, "velocity": velocity})
     return clip_id, clip_signature(roll(session, clip_id))
 
-
 def build_fixture(session, instance, transcript):
-    """Three instrument tracks; the middle one carries the notes.
-
-    The session is NOT empty - a fresh instance holds the default song's tracks -
-    so the fixture is measured against that baseline rather than assuming one.
-    """
+    """Three instrument tracks; the middle one carries the notes. The session is
+    NOT empty - a fresh instance holds the default song's tracks - so the fixture
+    is measured against that baseline rather than assuming an empty song."""
     baseline = arrangement(session)
     tracks = []
     for name in ("Drums", "Bass", "Pad"):
@@ -166,11 +126,6 @@ def build_fixture(session, instance, transcript):
             "baseline_tracks": len(baseline.get("tracks") or []),
             "baseline_clips": len(baseline.get("clips") or [])}
 
-
-# ---------------------------------------------------------------------------
-# 1-3. the deleted track returns WITH its clips and their notes
-# ---------------------------------------------------------------------------
-
 def check_fixture_and_delete(session, recorder, fixture):
     state = arrangement(session)
     grew_tracks = len(state.get("tracks") or []) - fixture["baseline_tracks"]
@@ -180,7 +135,7 @@ def check_fixture_and_delete(session, recorder, fixture):
                    "the session had %d track(s)/%d clip(s), now %d/%d"
                    % (fixture["baseline_tracks"], fixture["baseline_clips"],
                       len(state.get("tracks") or []), len(state.get("clips") or [])))
-    for track, (clip_id, signature) in fixture["clips"].items():
+    for track, (clip_id, _signature) in fixture["clips"].items():
         entry = clip_entry(state, clip_id)
         expected_notes = len(NOTES) if track == fixture["tracks"][1] else 1
         recorder.check("track %s's clip %s carries its notes" % (track, clip_id),
@@ -189,7 +144,6 @@ def check_fixture_and_delete(session, recorder, fixture):
 
     victim = fixture["tracks"][1]
     victim_clip = fixture["clips"][victim][0]
-    before = arrangement(session)
     removed = session.result("track.remove", {"track": victim})
     after = arrangement(session)
     recorder.check("track.remove really removed the track",
@@ -205,21 +159,18 @@ def check_fixture_and_delete(session, recorder, fixture):
                    % (victim, [c.get("id") for c in (after.get("clips") or [])
                                if c.get("track") == victim], victim_clip,
                       clip_entry(after, victim_clip)))
-    return {"victim": victim, "victim_clip": victim_clip, "before": before}
-
+    return {"victim": victim, "victim_clip": victim_clip}
 
 def check_undo_returns_the_music(session, recorder, fixture, deleted):
     depth_before = session.result("control.undo_depth")
     undone = session.result("control.undo")
     state = arrangement(session)
-
     recorder.check("control.undo reports it unwound something",
                    undone.get("undone") is not False and undone.get("error") is None,
                    "undo=%r" % undone)
     recorder.check("the deleted track is back",
                    find_track(state, deleted["victim"]) is not None,
                    "tracks=%s" % order_of(state))
-
     # THE CHECK THIS FILE EXISTS FOR: the clips, read back by the id the
     # arrangement reports NOW - not by an id cached before the delete.
     restored = clips_of(state, deleted["victim"])
@@ -237,33 +188,26 @@ def check_undo_returns_the_music(session, recorder, fixture, deleted):
         recorder.check("...and every note came back: key, position, length and velocity",
                        note_signature(rolled) == expected_notes,
                        "notes=%r expected=%r" % (note_signature(rolled), expected_notes))
-    depth_after = session.result("control.undo_depth").get("depth")
+    after_depth = session.result("control.undo_depth").get("depth")
     recorder.check("the undo cost exactly one step",
                    depth_before.get("depth") is not None
-                   and depth_after == depth_before.get("depth") - 1,
-                   "depth before=%r after=%r" % (depth_before.get("depth"), depth_after))
-
-
-# ---------------------------------------------------------------------------
-# 4-5. the index it was removed from, and the index-derived clip id MEASURED
-# ---------------------------------------------------------------------------
+                   and after_depth == depth_before.get("depth") - 1,
+                   "depth before=%r after=%r" % (depth_before.get("depth"), after_depth))
 
 def check_first_track_returns_at_its_index_and_id(session, recorder, fixture):
     victim = fixture["tracks"][0]
     before_order = order_of(arrangement(session))
     before_clip = fixture["clips"][victim][0]
-    # The clip ids of the OTHER tracks, before the delete: the row-51 measurement.
     others_before = {t: clips_of(arrangement(session), t) for t in fixture["tracks"][1:]}
 
     session.result("track.remove", {"track": victim})
-    mid_order = order_of(arrangement(session))
     others_mid = {t: clips_of(arrangement(session), t) for t in fixture["tracks"][1:]}
     session.result("control.undo")
     state = arrangement(session)
     after_order = order_of(state)
     others_after = {t: clips_of(state, t) for t in fixture["tracks"][1:]}
 
-    recorder.check("the deleted FIRST track comes back AT ITS INDEX, not appended",
+    recorder.check("the deleted track comes back AT ITS INDEX, not appended",
                    after_order == before_order,
                    "before=%s after=%s" % (before_order, after_order))
     recorder.check("...and it keeps the SAME trk-<n> (the id is persisted, not re-derived)",
@@ -277,15 +221,15 @@ def check_first_track_returns_at_its_index_and_id(session, recorder, fixture):
                    "restored=%r expected=%r" % (restored, fixture["clips"][victim][1]))
 
     # ROW 51, MEASURED: clip-<n> is the ordinal of the clip in the WHOLE song, so
-    # removing the first track pulls every later clip's id down by one. The
-    # delete is therefore VISIBLE in ids that name other clips - and the undo
-    # puts them back. Printed, not asserted away: it is the documented limit.
+    # removing the first track pulls every later clip's id down by one. The delete
+    # is therefore VISIBLE in ids that name other clips, and the undo puts them
+    # back. Printed, not asserted away: it is the documented limit.
     shifted = [(t, others_before[t], others_mid[t]) for t in others_before
                if others_before[t] != others_mid[t]]
     print("row 51 (index-derived clip ids): %d of %d later tracks' clip ids moved on the delete"
           % (len(shifted), len(others_before)))
     for track, was, now in shifted:
-        print("    %s: %s -> %s  (back to %s after the undo)"
+        print("    %s: %s -> %s (back to %s after the undo)"
               % (track, was, now, others_after[track]))
     recorder.check("the index rule is exactly what moved them: removing track 0 shifts "
                    "every later clip's ordinal down by one",
@@ -300,8 +244,6 @@ def check_first_track_returns_at_its_index_and_id(session, recorder, fixture):
     recorder.check("the clip id the deleted track's own clip got back is the pre-delete one",
                    clips_of(state, victim) == [before_clip],
                    "got=%r expected=%r" % (clips_of(state, victim), [before_clip]))
-    return victim
-
 
 def check_redo_removes_it_again(session, recorder, deleted):
     redone = session.result("control.redo")
@@ -312,27 +254,18 @@ def check_redo_removes_it_again(session, recorder, deleted):
                    "redo=%r tracks=%s" % (redone, order_of(state)))
     session.result("control.undo")
 
-
-# ---------------------------------------------------------------------------
-# 7. track.move - the arrangement's order
-# ---------------------------------------------------------------------------
-
 def check_track_move(session, recorder, fixture):
-    """The arrangement's order: reorder, ONE undo back, redo forward, refusals.
-
-    Every expectation is computed from the order the song actually has - a fresh
-    instance already holds the default song's tracks, so "index 0" is not "the
-    first track this fixture made".
-    """
+    """Every expectation is computed from the order the song ACTUALLY has - a
+    fresh instance already holds the default song's tracks, so "index 0" is not
+    "the first track this fixture made"."""
     before = order_of(arrangement(session))
     moved_track = before[-1]
     rest = before[:-1]
 
     session.result("track.move", {"track": moved_track, "index": 0})
-    moved = order_of(arrangement(session))
     recorder.check("track.move puts the track at the requested index",
-                   moved == [moved_track] + rest,
-                   "order=%s expected=%s" % (moved, [moved_track] + rest))
+                   order_of(arrangement(session)) == [moved_track] + rest,
+                   "order=%s expected=%s" % (order_of(arrangement(session)), [moved_track] + rest))
     session.result("control.undo")
     recorder.check("ONE control.undo puts the arrangement's order back",
                    order_of(arrangement(session)) == before,
@@ -346,7 +279,7 @@ def check_track_move(session, recorder, fixture):
                    order_of(arrangement(session)) == before,
                    "order=%s" % order_of(arrangement(session)))
 
-    count = len(order_of(arrangement(session)))
+    count = len(before)
     refused = session.typed_error("track.move", {"track": before[0], "index": count})
     recorder.check("an out-of-range index is REFUSED, not clamped",
                    refused.get("kind") in ("refused", "invalid_args"),
@@ -358,38 +291,22 @@ def check_track_move(session, recorder, fixture):
     # A move to the index a track is already at changes nothing and records
     # nothing: a step for a no-op would make one Ctrl+Z do nothing at all.
     here = before[2] if len(before) > 2 else before[0]
-    same = session.result("track.move", {"track": here, "index": order_of(arrangement(session)).index(here)})
+    same = session.result("track.move", {"track": here,
+                                         "index": order_of(arrangement(session)).index(here)})
     recorder.check("moving a track to where it already is is a no-op, not a change",
                    same.get("moved") is False, "result=%r" % same)
     recorder.check("...and it left the order alone",
                    order_of(arrangement(session)) == before,
                    "order=%s" % order_of(arrangement(session)))
 
-
-# ---------------------------------------------------------------------------
-# 8. plugin.load / plugin.unload - the effect half
-# ---------------------------------------------------------------------------
-
-def devices_of(session, target):
-    """The device ids in `target`'s chain. dsp.get_state answers with the chain
-    WRAPPED ({chains:[...]}) - the wrapper is read here, once, so no check below
-    can mistake "no devices" for "no chain"."""
-    state = session.result("dsp.get_state", {"target": target})
-    for chain in state.get("chains") or []:
-        if chain.get("id") == target:
-            return [d.get("id") for d in (chain.get("devices") or [])], chain
-    return [], None
-
-
 def pick_effect(session):
+    """The first loadable effect this build offers, or None (then the DEVICE half
+    cannot run and reports Skipped rather than Passed)."""
     listing = session.result("plugin.list", {"kind": "effect", "loadable_only": True})
     devices = listing.get("devices") or []
     print("plugin.list: %d device(s) in this build, %d loadable"
           % (listing.get("total", 0), len(devices)))
-    for entry in devices:
-        return entry.get("id")
-    return None
-
+    return devices[0].get("id") if devices else None
 
 def check_effect_removal_is_undoable(session, recorder, fixture):
     device = pick_effect(session)
@@ -425,7 +342,7 @@ def check_effect_removal_is_undoable(session, recorder, fixture):
                    effect not in ids, "chain devices=%s (chain=%r)" % (ids, chain is not None))
 
     session.result("control.undo")
-    ids, chain = devices_of(session, target)
+    ids, _chain = devices_of(session, target)
     recorder.check("control.undo RE-INSTANTIATES the removed device at its index",
                    ids == [effect], "chain ids=%s (expected [%r])" % (ids, effect))
     if ids:
@@ -436,16 +353,10 @@ def check_effect_removal_is_undoable(session, recorder, fixture):
                        and abs(float(value.get("value")) - changed) < 1e-6,
                        "param=%s got=%r expected=%r" % (name, value.get("value"), changed))
     session.result("control.redo")
-    ids, chain = devices_of(session, target)
-    recorder.check("the redo removes it again",
-                   effect not in ids, "chain ids=%s" % ids)
+    ids, _chain = devices_of(session, target)
+    recorder.check("the redo removes it again", effect not in ids, "chain ids=%s" % ids)
     session.result("control.undo")
     return True
-
-
-# ---------------------------------------------------------------------------
-# 9-11. the accounting, the record, and the refusals
-# ---------------------------------------------------------------------------
 
 def check_the_payload_is_counted(session, recorder, fixture):
     victim = fixture["tracks"][2]
@@ -470,7 +381,6 @@ def check_the_payload_is_counted(session, recorder, fixture):
                    % (session.result("control.undo_depth").get("retained_bytes"),
                       before.get("retained_bytes")))
 
-
 def check_transaction_records(session, recorder, fixture, device_ran):
     records = session.result("control.transactions")
     by_command = {}
@@ -493,24 +403,24 @@ def check_transaction_records(session, recorder, fixture, device_ran):
         return None
 
     for op in ("track.remove", "track.move"):
-        record = a_reversible_record(op)
         recorder.check("the A16 record holds a reversible row for %s" % op,
-                       record is not None, "records=%r" % (by_command.get(op),))
+                       a_reversible_record(op) is not None,
+                       "records=%r" % (by_command.get(op),))
     # The device row is only asserted when the device half actually ran: this
     # build may ship no loadable effect (the plugin modules are separate build
     # targets), and a check that cannot be made must not be reported as one that
     # held. When it did run, the same assertion applies.
     if device_ran:
-        record = a_reversible_record("plugin.unload")
         recorder.check("the A16 record holds a reversible row for plugin.unload",
-                       record is not None, "records=%r" % (by_command.get("plugin.unload"),))
+                       a_reversible_record("plugin.unload") is not None,
+                       "records=%r" % (by_command.get("plugin.unload"),))
     else:
         print("device half did not run (no loadable effect in this build): the "
               "plugin.unload A16 row was NOT asserted - reported, never passed")
     return by_command
 
-
 def check_refusals(session, recorder, fixture):
+    """The typed refusals: nothing is removed, nothing is moved, nothing undone."""
     missing = session.typed_error("track.remove", {"track": "trk-99999"})
     recorder.check("removing a track that is not there is typed, not silent",
                    missing.get("kind") == "not_found", "error=%r" % missing)
@@ -523,7 +433,6 @@ def check_refusals(session, recorder, fixture):
                    unloaded.get("kind") in ("not_found", "invalid_args"),
                    "error=%r" % unloaded)
 
-
 def check_quit(session, instance, recorder):
     session.result("control.quit")
     session.client.close()
@@ -533,20 +442,15 @@ def check_quit(session, instance, recorder):
     recorder.check("control.quit stops the instance", exited and code == 0,
                    "exited=%r code=%r after %.1fs" % (exited, code, waited))
 
-
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
         return 2
     recorder = Recorder()
     transcript = H.Transcript()
-    fixture = None
-    # PluginFactory searches <dir of the binary>/plugins, and the built-in
-    # effect modules are separate build targets that land there - name it
-    # explicitly so the DEVICE half of this proof can run.
-    plugin_dir = os.path.join(os.path.dirname(os.path.abspath(argv[1])), "plugins")
-    env = {"LMMS_PLUGIN_DIR": plugin_dir} if os.path.isdir(plugin_dir) else None
-    with H.start_instance(argv[1], workingdir=None, extra_env=env) as instance:
+    wanted = None
+    with H.start_instance(argv[1], workingdir=None,
+                          extra_env=plugin_env(argv[1])) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)
         H.wait_ready(instance, client, transcript)
@@ -557,8 +461,7 @@ def main(argv):
         fixture = build_fixture(session, instance, transcript)
         check_fixture_and_delete(session, recorder, fixture)
         check_undo_returns_the_music(session, recorder, fixture,
-                                     {"victim": fixture["tracks"][1],
-                                      "victim_clip": fixture["clips"][fixture["tracks"][1]][0]})
+                                     {"victim": fixture["tracks"][1]})
         check_redo_removes_it_again(session, recorder,
                                     {"victim": fixture["tracks"][1]})
         check_first_track_returns_at_its_index_and_id(session, recorder, fixture)
@@ -571,9 +474,6 @@ def main(argv):
 
     report_results(recorder)
     transcript.dump()
-    if fixture is None:
-        H.ok("no fixture could be built: Skipped, never Passed")
-        return 77
     if recorder.problems:
         print("")
         recorder.problems.report("structural undo control-surface transcript")
@@ -583,6 +483,13 @@ def main(argv):
              "reported, never silently passed")
     H.ok("structural undo control-surface transcript (every check held)")
     return 0
+
+def plugin_env(binary):
+    """PluginFactory searches <dir of the binary>/plugins, and the built-in effect
+    modules are separate build targets that land there - name it explicitly so the
+    DEVICE half of this proof can run."""
+    plugin_dir = os.path.join(os.path.dirname(os.path.abspath(binary)), "plugins")
+    return {"LMMS_PLUGIN_DIR": plugin_dir} if os.path.isdir(plugin_dir) else None
 
 
 if __name__ == "__main__":

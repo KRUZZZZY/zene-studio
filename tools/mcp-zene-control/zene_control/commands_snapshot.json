@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-14T15:30:39Z",
+  "captured_at": "2026-09-15T11:57:39Z",
   "commands": [
     {
       "args_schema": {
@@ -6737,7 +6737,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. The removed device's full state XML is recorded in the transaction's 'before' snapshot so it can be rebuilt: write that XML to a file, load the same dev-<n> again and issue plugin.state_load.",
+      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. REVERSIBLE: the device's own state document is captured before the removal and one control.undo re-instantiates the same plugin at the same index in the chain with its settings restored. The transaction's 'before' snapshot still carries the state XML, so a client that prefers to rebuild by hand can; a device whose state exceeds the capture cap reports itself as snapshot-only instead.",
       "group": "plugin",
       "id": "plugin.unload",
       "mutating": true,
@@ -6748,8 +6748,17 @@
           "count": {
             "type": "integer"
           },
+          "index": {
+            "type": "integer"
+          },
+          "plugin": {
+            "type": "string"
+          },
           "removed": {
             "type": "string"
+          },
+          "reversible": {
+            "type": "boolean"
           },
           "target": {
             "type": "string"
@@ -9213,6 +9222,58 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "index": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "index"
+        ],
+        "type": "object"
+      },
+      "description": "Reorder a track: put it at `index` in the song's track list (0-based, the index track.list prints). Reversible through one recorded action step - control.undo puts the track back where it was, and the redo sends it forward again. Refuses an index outside the song rather than clamping it. A track that is not in the song container is refused too: the engine's own reorder erases-then-inserts, so a foreign pointer would be DUPLICATED into the song.",
+      "group": "track",
+      "id": "track.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "moved": {
+            "type": "boolean"
+          },
+          "order": {
+            "type": "array"
+          },
+          "previous_index": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "track_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "dry_run": {
             "type": "boolean"
           },
@@ -9235,6 +9296,9 @@
         "properties": {
           "dry_run": {
             "type": "boolean"
+          },
+          "index": {
+            "type": "integer"
           },
           "removed": {
             "type": "string"
@@ -11153,16 +11217,9 @@
       }
     }
   ],
-  "count": 227,
+  "count": 228,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 205380680,
-    "binary_sha256": "a0a84b3dfac4e6cf20981d69c2e2b088d607898a6f11863f49f1e8333809c6a0",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "89a5e79429edb00b99f6d6f3a275fa9cd6e8bd08",
-    "proto": 1,
-    "source_socket": "/home/kruzzzzy/zene-030-merge2-598d4f5c1/zene-merge2.sock",
-    "version": "0.2.1-alpha.191+6c55700"
+    "source_file": "/tmp/wundo-commands.json"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
