@@ -67,6 +67,22 @@ LMMS_EXPORT void registerWasmCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerWasmEditCommands(ControlRegistry& registry);
 #endif
 
+/*! The stem.* group (docs/FEATURE-LIST-0.3.0.md row 26, board task #653): the
+ *  offline stem-separation engine made drivable - stem.get_state, the job verbs
+ *  (stem.job_start / job_status / job_result / job_cancel) and the model-store
+ *  verbs (stem.model_get_state / model_download). The engine half is
+ *  include/StemSeparation/ (StemJobManager, StemModelStore, the two backends)
+ *  and was already in the tree with five registered tests; the only route to it
+ *  was tools/stem_split_cli.py, outside the socket, plus a GUI-only clip action.
+ *
+ *  The feature is opt-in at configure time: WANT_STEM_SPLIT defaults to OFF
+ *  (CMakeLists.txt:120) and a default build compiles none of the engine, so the
+ *  registry must not carry ids whose handler could not exist - the rule the
+ *  telemetry.*, session.* and wasm.* groups follow. Its call site is guarded by
+ *  the same #ifdef, and so are its seven A16 rows, so the registry and the
+ *  contract table stay consistent in both directions. */
+LMMS_EXPORT void registerStemCommands(ControlRegistry& registry);
+
 //! The browser.* group (W8 tag/metadata search plus the waveform peak cache):
 //! browser.roots, browser.query, browser.tags and browser.peaks. The engine half
 //! is include/BrowserCatalog.h (the roots the browser tabs read, the metadata an

@@ -284,6 +284,7 @@ include/ControlRegistry.h
 include/ControlRegistryGroups.h
 include/ControlReversibility.h
 include/ControlServer.h
+include/ControlStemSupport.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -488,6 +489,7 @@ src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackFolder.cpp
@@ -535,6 +537,7 @@ src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
+src/core/ControlStemSupport.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -646,6 +649,7 @@ tests/control-session-m1.py
 tests/control-shutdown.py
 tests/control-socket-path-safety.py
 tests/control-stable-ids.py
+tests/control-stem-commands.py
 tests/control-stem-export-verb.py
 tests/control-track-folder.py
 tests/control-vca-commands.py

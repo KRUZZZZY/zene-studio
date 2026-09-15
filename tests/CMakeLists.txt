@@ -1687,6 +1687,35 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
 	)
+	# stem.* (docs/FEATURE-LIST-0.3.0.md row 26, board task #653): the offline
+	# stem-separation engine driven end to end through --control-socket, which
+	# is the half the engine's own five tests cannot cover - they prove the
+	# separation, the job manager and the model store at the C++ level, and this
+	# one proves the DECLARED ids drive them from the socket. It runs the REAL
+	# pipeline on the committed 458-byte stub ONNX graph
+	# (tests/data/stub-4stem-linear.onnx) through tools/stem_split_cli.py, so no
+	# 166 MB model download is needed: it starts a job and shows the surface
+	# still answers (control.ping) while the job runs, polls it to completion
+	# with stem.job_status, writes the four stems with stem.job_result and
+	# asserts each file is a non-empty float32 RIFF/WAVE of the mix's own
+	# length, checks the argument and state refusals, cancels a slowed job
+	# (LMMS_STEM_CHUNK_DELAY_MS, the separator's own test hook) and reads the
+	# model store's policy - the unpinned default spec refuses to download.
+	# Registered only when the feature is compiled in (WANT_STEM_SPLIT=ON,
+	# OFF by default: in a default build the ids do not exist at all);
+	# SKIP_RETURN_CODE 77 is for a host with no python onnxruntime, which would
+	# make the backend unavailable rather than the group wrong.
+	IF(LMMS_HAVE_STEM_SPLIT)
+		add_test(NAME ControlStemCommands
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-stem-commands.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlStemCommands PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 900
+			SKIP_RETURN_CODE 77
+		)
+	ENDIF()
 	# Plugin chains as reusable presets (the 0.3.0 ladder's "plugin-chain
 	# presets", OWNER-31 item 2), which is the release contract's section 3.1
 	# claim for it, end to end through --control-socket: it starts the real

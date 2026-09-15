@@ -7,6 +7,13 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		core/StemJobManager.cpp
 		core/StemModelStore.cpp
 		core/StemTrackBuilder.cpp
+		# The agent surface of the same engine (feature row 26, task #653): the
+		# socket-facing half - the instance's one job manager, its availability
+		# probe and the WAV writer (ControlStemSupport.h) - and the `stem.*`
+		# group itself. Inside the option because without it there is no engine
+		# for either file to drive.
+		core/ControlStemSupport.cpp
+		core/ControlCommandsStems.cpp
 		# Listed so that AUTOMOC finds the Q_OBJECT header (it lives in
 		# include/StemSeparation/, not next to the .cpp).
 		${CMAKE_SOURCE_DIR}/include/StemSeparation/StemJobManager.h

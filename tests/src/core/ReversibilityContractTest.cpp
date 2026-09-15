@@ -68,7 +68,10 @@ namespace
  * group's sources are not compiled, ControlRegistry.cpp's #ifdef removes its
  * registration and the rows leave the table with the ids - which is the
  * direction the other tests in this file assert (every row names a registered
- * command).
+ * command). The seven `stem.*` rows below follow the same rule in the same
+ * direction: the offline stem engine is compiled only when WANT_STEM_SPLIT is
+ * ON - OFF in the release configuration - so its rows are present exactly when
+ * its ids are, and the figures above are the release configuration's own.
  *
  * Split out of the test slot so the slot's own complexity does not carry the four
  * option combinations (the complexity ratchet counts them).
@@ -93,6 +96,16 @@ DocumentedHistogram documentedHistogram()
 	out.rows += 6;          // wasm.load / unload / set_param, list / get_state / process
 	out.snapshot += 3;
 	out.notMutating += 3;
+#endif
+#ifdef LMMS_HAVE_STEM_SPLIT
+	// The seven stem.* rows (feature row 26, board task #653): stem.get_state,
+	// stem.job_start / job_status / job_result / job_cancel, and the two
+	// model-store verbs. All seven are not_mutating - one offline engine,
+	// output artefacts and no project state - and they are present exactly
+	// when the engine is (WANT_STEM_SPLIT, OFF by default), so the release
+	// configuration's figures are unchanged by them.
+	out.rows += 7;
+	out.notMutating += 7;
 #endif
 	return out;
 }
