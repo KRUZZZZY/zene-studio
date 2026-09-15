@@ -371,6 +371,26 @@ LMMS_EXPORT void registerDeviceCommands(ControlRegistry& registry);
  *  `export.set_loudness_report` in src/core/ControlCommandsExport.cpp.
  */
 LMMS_EXPORT void registerMeterCommands(ControlRegistry& registry);
+/*! clip.link_create / clip.link_remove / clip.link_get_state / clip.link_sync -
+ *  the linked / smart clip relation (feature-list row 6, board task #645): two
+ *  clips that share one source, so an edit to one is seen by all of them, with
+ *  the link surviving save/reload and an unlink that detaches for good.
+ *
+ *  The engine half is include/ClipLinks.h (the relation: Clip::linkId(), the
+ *  group, and the mirror that does the propagating); the design decision - a
+ *  persisted group id plus a WRITE-THROUGH MIRROR, not a shared content object
+ *  and not copy-on-write - is recorded there and in docs/LINKED-CLIPS.md. The
+ *  ids keep the `clip.` prefix so an agent finds them where it finds clip.trim;
+ *  `link.*` is a different feature (docs/LINK-SYNC.md).
+ */
+LMMS_EXPORT void registerClipLinkCommands(ControlRegistry& registry);
+/*! clip.link_get_state / clip.link_sync - the same group's READ half and its
+ *  repair verb, in their own translation unit (the automation, warp, vca and
+ *  chain-preset groups' read/edit split): the group has four ids and the
+ *  file-length ratchet is not moved for a new feature. Ids keep the `clip.`
+ *  prefix, so an agent finds the read where it finds the write.
+ */
+LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

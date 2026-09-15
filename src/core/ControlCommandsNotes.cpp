@@ -25,6 +25,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "MidiClip.h"
@@ -234,6 +235,9 @@ void registerNoteMove(ControlRegistry& registry)
 		clip->rearrangeAllNotes();
 		clip->updateLength();
 		clip->dataChanged();
+		// Row 6: a content edit to a linked clip is an edit to the whole group -
+		// the members' note lists are rebuilt from this clip's, in the same step.
+		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 
 		const int newIndex = indexOfNote(clip, note);
 		if (newIndex < 0)
@@ -294,6 +298,7 @@ void registerNoteResize(ControlRegistry& registry)
 		note->setLength(TimePos(static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble())));
 		clip->updateLength();
 		clip->dataChanged();
+		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
@@ -346,6 +351,7 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		clip->addJournalCheckPoint();
 		note->setVolume(static_cast<volume_t>(args.value(QStringLiteral("velocity")).toDouble()));
 		clip->dataChanged();
+		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));

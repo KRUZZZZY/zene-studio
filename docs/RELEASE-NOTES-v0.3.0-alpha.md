@@ -707,11 +707,11 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **227 rows**, measured from the table itself:
-**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **231 rows**, measured from the table itself:
+**123 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 83 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**229 rows / 81 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
@@ -722,6 +722,19 @@ four classes named above (122 + 18 + 7 + 84), and its constant is the telemetry-
 (feature row 24, `030/meter-surface`): `meter.arm` and `export.set_loudness_report` as recorded-action
 `true_inverse` rows, `meter.get_state` and `meter.measure_file` as `not_mutating` inspectors — the **+2
 true_inverse / +2 not_mutating** growth against the base this page carried before that lane. The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this merge tip and reports 231 rows over the
+four classes named above (123 + 18 + 7 + 83), and its constant is the telemetry-off/wasm-off base of
+229 / 123 / 18 / 7 / 81.
+**The last four rows are the linked / smart clip group (feature row 6, 2026-09-15):** `clip.link_create`,
+`clip.link_remove` and `clip.link_sync` are `true_inverse` on LIVE `Clip` / `MidiClip` checkpoints - the
+relation is the `link` attribute the clip's own element carries, written only when the clip is a member and
+reset to 0 by `Clip::loadClipEdits` when the attribute is absent, so a checkpoint taken before a *first*
+link restores "unlinked" exactly and one taken before a mirror restores the members' note lists - and
+`clip.link_get_state` is `not_mutating` (it reads the groups, their members and each member's content
+verdict, and writes nothing) - `+3 true_inverse / +1 not_mutating` against the 227 this page carried
+before them. `docs/LINKED-CLIPS.md` §4 is the argument, and the one `control.undo` that takes the whole
+group back is asserted by `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
+The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
@@ -1496,6 +1509,54 @@ Two feature rows, one store and one span. Nothing like either existed: a case-in
   carries the **declared bound** every render-running command carries: the render runs in a child
   process and the control surface does not answer — `control.ping` included — until it finishes
   (`docs/RENDER-CHILD-WAIT.md`); the range does not raise that bound, it is applied inside the child.
+## Linked / smart clips: two clips, one source (`clip.link_*`) — added 2026-09-15
+
+Feature-list row 6 (section 1), board task #645: **a linked clip is a clip that shares its source with
+another, so an edit to one is seen by all.** The engine half is `include/ClipLinks.h` plus
+`Clip::linkId()`; the surface is four ids in the `clip.` group (`clip.link_create`, `clip.link_remove`,
+`clip.link_get_state`, `clip.link_sync` — not `link.*`, which is session tempo/beat sync, `docs/LINK-SYNC.md`).
+
+- **The decision this row asked for: a persisted group id plus a WRITE-THROUGH MIRROR — not a shared content
+  object, and not copy-on-write.** The relation is an int on the clip (`0` = unlinked) written to the clip's
+  OWN element as `link="<n>"` only when the clip is a member, and read back with the same reset-on-absence rule
+  the take lane already follows. An edit to a member copies that member's note list onto every other member of
+  the group in the same step. Aliasing one `NoteVector` across N clips was rejected because it needs a
+  load-order re-linking pass (the very thing a save/reload round trip has to prove), because the note list is
+  read as a value by the play handle, the piano roll, the comp lanes and the serialiser, and because a
+  disagreement would then be impossible by construction — and therefore unreportable. Copy-on-write in its
+  strict sense (share until someone edits, then DETACH) is the opposite of the feature: a write fans OUT, and
+  the detach is its own command. `docs/LINKED-CLIPS.md` §1–2 is the full argument.
+- **The relation survives a save/reload**, and that is the registered proof's centrepiece: the `link`
+  attribute rides each member's own element, so a reload rebuilds the group from the clips with no second
+  registry in the file and no repair step. `ClipLinkTest::theLinkSurvivesSaveAndReload()` writes a project,
+  asserts the attribute is in the file, reloads it, asserts the group is still there with both members in
+  sync, and then **edits one reloaded member and asserts the other one changes** — the round trip and the
+  propagation together, which is what makes it a smart clip and not a session hack.
+- **`clip.link_remove` is the unlink, and it is the only detach.** A group needs two ends: an unlink that
+  leaves one member dissolves the relation entirely, so no group of one outlives its last pair. Merging two
+  groups by naming a member of another is refused typed (`refused`) instead of silently overwriting one
+  group's content with the other's.
+- **Reversibility (SPEC A16): `true_inverse` for the three writers, `not_mutating` for the read**, rows in
+  `src/core/ControlReversibilityTableVerbs.cpp` beside `clip.trim`'s. The checkpoint is taken over EVERY
+  member a command writes (`ProjectJournal`'s multi-object overload) and the registry's
+  `mergeCheckpointsFrom()` folds those into the command's one undo step, so **one `control.undo` takes the
+  whole group back** — asserted, not asserted-about: `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
+- **UI absence — one line:** the four ids are drivable through the socket and not from the interface — no
+  link badge, no "edit shared source" gesture, no group colour; and of the edit kinds, `note.add` /
+  `note.remove` / `note.move` / `note.resize` / `note.velocity_set` propagate while `clip.move` /
+  `resize` / `trim` / `slip` / `set_fade` / `set_gain` / `crossfade`, mute/solo, name, colour and take lane
+  stay per-member, and an audio clip cannot be a member at all (the group's content channel is a note list, so
+  `clip.link_create` refuses a `SampleClip` typed). `docs/KNOWN-LIMITATIONS.md` carries the same sentence; the
+  ctest `ClipLinkTest::theOneLineUiAbsenceIsWrittenDown()` reads both files from the built tree and fails if
+  either loses it.
+- **What is NOT here, stated rather than implied:** no UI (§ above); no audio-clip linking; the mirror writes
+  the WHOLE note list rather than a delta (so a one-note edit to a member of a large group rewrites every
+  member's list — unconditional by design, because a delta-based mirror is where divergence would come from);
+  a member with auto-resize on re-sizes to the propagated content, because that is the engine's own rule for a
+  clip whose notes changed, while a manually resized member (`autoresize=0`) keeps its length; and outside the
+  command path a GUI gesture that calls the note entry points directly takes one checkpoint per object the
+  journal sees, so a human's Ctrl+Z there may need more than one press — the pre-existing behaviour of a
+  gesture that is not one command.
 
 ## Not in this draft yet
 

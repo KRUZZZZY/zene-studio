@@ -29,6 +29,7 @@
 #include <QDomElement>
 
 #include "GuiApplication.h"
+#include "ClipLinks.h"
 #include "InstrumentTrack.h"
 #include "MidiClipView.h"
 #include "PatternStore.h"
@@ -194,6 +195,10 @@ Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 
 	emit dataChanged();
 
+	// Row 6: a content edit to a linked clip reaches every member of its group, in
+	// the same step. Unlinked clips (the normal case) skip it; see ClipLinks.h.
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
+
 	return new_note;
 }
 
@@ -211,6 +216,7 @@ NoteVector::const_iterator MidiClip::removeNote(NoteVector::const_iterator it)
 	updateLength();
 
 	emit dataChanged();
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }   // row 6; see addNote
 	return new_it;
 }
 
@@ -231,6 +237,7 @@ NoteVector::const_iterator MidiClip::removeNote(Note* note)
 	updateLength();
 
 	emit dataChanged();
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
 	return it;
 }
 
@@ -455,6 +462,9 @@ void MidiClip::exportToXML(QDomDocument& doc, QDomElement& midiClipElement, bool
 	midiClipElement.setAttribute("steps", m_steps);
 	midiClipElement.setAttribute("len", length());
 
+	// The non-default attributes (take lane, link group, fades/gain): additive.
+	saveClipEdits(midiClipElement);
+
 	// now save settings of all notes
 	for (auto& note : m_notes)
 	{
@@ -476,6 +486,9 @@ void MidiClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void MidiClip::loadSettings( const QDomElement & _this )
 {
+	// A load pass must not propagate (row 6): members are re-created in turn.
+	ClipLinks::MirroringSuspension noMirroring;
+
 	m_clipType = static_cast<Type>( _this.attribute( "type"
 								).toInt() );
 	setName( _this.attribute( "name" ) );
@@ -530,6 +543,10 @@ void MidiClip::loadSettings( const QDomElement & _this )
 	
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
 	setStartTimeOffset(_this.attribute("off").toInt());
+
+	// The non-default attributes, read back on the reset-on-absence rule: this is
+	// what rebuilds a link group from the members' own elements (row 6).
+	loadClipEdits(_this);
 
 	emit dataChanged();
 }

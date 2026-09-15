@@ -1,8 +1,11 @@
 /*
  * ControlReversibilityTableVerbs.cpp - the 0.3.0 verb wave's LIVE-checkpoint rows
  *                                      of THE SPEC A16 classification table:
- *                                      clip.trim, clip.slip and
- *                                      note.probability_set.
+ *                                      clip.trim, clip.slip,
+ *                                      note.probability_set and the linked /
+ *                                      smart clip relation's four rows
+ *                                      (clip.link_create / link_remove /
+ *                                      link_sync / link_get_state, row 6).
  *
  * This file is data, like the blocks it belongs to. It exists for the same reason
  * ControlReversibilityTableTrackFolder.cpp does: the three rows are true_inverse
@@ -97,6 +100,55 @@ const ReversibilityRow kVerbRows[] = {
 		"the clip's note list and Note::loadSettings reads the optional 'prob' attribute "
 		"with a default of 1, so restoring a checkpoint taken before a FIRST probability "
 		"edit brings the note back to 'always plays' rather than leaving the edit in place)",
+		""),
+	/* ---- the linked / smart clip relation (feature-list row 6, task #645) ------
+	 * Three writing verbs and one read. The relation is the clip's OWN serialized
+	 * attribute (`link`, written by Clip::saveClipEdits only when the clip is a
+	 * member, read back by Clip::loadClipEdits with a reset-on-absence rule), so
+	 * the engine's own checkpoint is a LIVE inverse - the same class clip.trim and
+	 * clip.slip are, and for the same serialisation reason.
+	 *
+	 * The one thing these rows say that clip.trim's cannot: the checkpoint covers
+	 * EVERY member a mirror writes (ProjectJournal's multi-object overload) and
+	 * the registry's mergeCheckpointsFrom() folds those into the one step the
+	 * command makes, so one undo restores the whole group rather than only the
+	 * member the caller named. */
+	R("clip.link_create", RC::TrueInverse, true,
+		"the group is a property of each member's own serialized state - the 'link' "
+		"attribute Clip::saveClipEdits writes and Clip::loadClipEdits resets to 0 when it "
+		"is absent - so a checkpoint taken before a FIRST link restores 'unlinked' exactly, "
+		"and the content the members adopt is their note list, which MidiClip::loadSettings "
+		"clears and re-loads",
+		"ProjectJournal (Clip checkpoints: one checkpoint covering the anchor and every "
+		"newcomer is taken BEFORE the first 'link' attribute is written, and the members' "
+		"note lists are part of the same checkpoint set, so one control.undo returns the "
+		"whole relation and every list it changed - the registry merges the mirrors into "
+		"that one step)",
+		""),
+	R("clip.link_remove", RC::TrueInverse, true,
+		"unlinking writes the same 'link' attribute (0, i.e. absent) on the clip and, when "
+		"the group is left with one member, on that member: both are the clips' own "
+		"serialized state, so the checkpoint taken before the unlink carries the group id "
+		"and restoring it puts the member back in its group",
+		"ProjectJournal (Clip checkpoints: the same live checkpoint as clip.link_create; "
+		"the recorded inverse op is clip.link_create with the remaining member as the "
+		"anchor, and 'applies: journal' is what control.undo uses)",
+		""),
+	R("clip.link_sync", RC::TrueInverse, true,
+		"the write is a member's note list (MidiClip state) and nothing else - the source "
+		"clip's placement is untouched - so the engine's checkpoint of each member written "
+		"is the whole of the state the command can change",
+		"ProjectJournal (MidiClip checkpoints: MidiClip::loadSettings clears and re-loads "
+		"the note list, and one checkpoint covers every member the mirror rewrites, merged "
+		"into this command's single undo step)",
+		""),
+	R("clip.link_get_state", RC::NotMutating, false,
+		"a read of the link groups (each group's members, the content channel it shares, "
+		"the note count, the reference member and each member's content fingerprint "
+		"verdict): it writes nothing, so there is no transaction and nothing for "
+		"control.undo to reverse or to be blocked by",
+		"nothing to inverse. The three writers are clip.link_create, clip.link_remove and "
+		"clip.link_sync, and all three carry a live Clip checkpoint",
 		""),
 };
 

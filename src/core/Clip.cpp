@@ -33,6 +33,7 @@
 #include "AutomationClip.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "ProjectIds.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -84,7 +85,8 @@ Clip::Clip(const Clip& other):
 	m_selectViewOnCreate{other.m_selectViewOnCreate},
 	m_color(other.m_color),
 	m_edits(other.m_edits),
-	m_laneIndex(other.m_laneIndex)
+	m_laneIndex(other.m_laneIndex),
+	m_linkId(other.m_linkId)
 {
 	if (getTrack())
 	{
@@ -257,6 +259,14 @@ void Clip::saveClipEdits(QDomElement& element) const
 	{
 		element.setAttribute("lane", m_laneIndex);
 	}
+	/* The link group (row 6). Written only when the clip is a member, like the
+	 * lane above: an unlinked clip - every clip in every project written before
+	 * this feature - carries no `link` attribute at all, so I9 (additive
+	 * serialisation) holds without a migration entry. */
+	if (m_linkId > 0)
+	{
+		element.setAttribute("link", m_linkId);
+	}
 	if (m_edits.gain != 1.0f)
 	{
 		element.setAttribute("gain", QString::number(gainLinearToDb(m_edits.gain), 'f', 6));
@@ -321,6 +331,20 @@ void Clip::loadClipEdits(const QDomElement& element)
 	// to a take lane) loads as lane 0. A field that survived its own absence here
 	// would make the pre-edit state unreachable from a journal checkpoint.
 	m_laneIndex = std::max(0, element.attribute("lane", "0").toInt());
+	/* The link group (row 6), on the same reset-on-absence rule and for the same
+	 * reason: the checkpoint a clip.link_create takes BEFORE the first link
+	 * carries no `link` attribute, so loading it restores "unlinked" exactly -
+	 * the inverse of a first link is a real inverse rather than a no-op.
+	 *
+	 * An id read from a file is OBSERVED by the project-scoped counter
+	 * (SPEC-stable-ids.md R3), so a group number that a project already uses can
+	 * never be handed out again by allocateGroupId() - including for a reloaded
+	 * document whose ids are read before any new clip is created. */
+	m_linkId = std::max(0, element.attribute("link", "0").toInt());
+	if (m_linkId > 0)
+	{
+		ProjectIds::observe(m_linkId);
+	}
 }
 
 void Clip::setColor(const std::optional<QColor>& color)

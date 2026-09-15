@@ -268,9 +268,11 @@ include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
 include/ClipEdits.h
+include/ClipLinks.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
+include/ControlClipLinkSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
@@ -433,6 +435,7 @@ src/core/BrowserMetadata.cpp
 src/core/BrowserPeakCache.cpp
 src/core/BrowserTagStore.cpp
 src/core/ClipEdits.cpp
+src/core/ClipLinks.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
@@ -447,6 +450,8 @@ src/core/ControlCommandsChain.cpp
 src/core/ControlCommandsChainEdit.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
+src/core/ControlCommandsClipLink.cpp
+src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp

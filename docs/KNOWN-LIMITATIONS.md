@@ -1008,3 +1008,22 @@ plausible number — while the meter has no measurement (silence, or a window th
 **EBU R 128 target (−23.0 LUFS-I ±0.5 LU, −1.0 dBTP) is the only thing graded** (the −14 LUFS-I streaming
 figure is carried as an informative convention); and `meter.measure_file` measures a file **this** instance can
 open — it does not fetch, decode or render one. `docs/METER-SURFACE.md` is the feature's own record.
+## Linked / smart clips: two clips, one source (`clip.link_*`, feature row 6)
+
+`clip.link_create` / `clip.link_remove` / `clip.link_get_state` / `clip.link_sync` are
+**drivable through the socket, not from the interface**: a link group is created, inspected, repaired and
+broken only through those four ids, and nothing in `src/gui/` draws a link badge, offers "edit shared
+source", or colours a member of a group (`grep -rn "linkId\|clip.link_" src/gui/` returns nothing).
+**UI absence — one line: content edits propagate and placement edits do not.** What a link shares is the
+clip's note list, so `note.add` / `note.remove` / `note.move` / `note.resize` / `note.velocity_set` on ANY
+member are seen by every member of the group (and `clip.link_sync` forces the group to agree when an edit
+did not pass through those verbs — a piano-roll in-place gesture, a hand-edited project file); what it does
+NOT share is where and how each member plays that content, so `clip.move`, `clip.resize`, `clip.trim`,
+`clip.slip`, `clip.set_fade`, `clip.set_gain`, `clip.crossfade`, mute/solo, a member's name or colour and
+its take lane are per-member and never propagate. **An audio clip cannot be a member**: the group's content
+channel is a note list, so `clip.link_create` refuses a `SampleClip` typed (`invalid_args`) rather than
+creating a group of one that would look linked and share nothing. The design decision (a persisted group id
+plus a write-through mirror — not a shared content object, not copy-on-write), the edit-kind table and the
+bounds are `docs/LINKED-CLIPS.md`; the proof is the registered ctest **ClipLinkTest** (the propagation, the
+unlink, the A16 rows, and a save/reload round trip that shows the link is still there and still propagates
+after `loadProject`).

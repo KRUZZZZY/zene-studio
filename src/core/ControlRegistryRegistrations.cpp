@@ -203,6 +203,13 @@ void registerControlCommands(ControlRegistry& registry)
 	// the report and the tap are in every configuration, so its three ids are
 	// honest in every one.
 	registerMeterCommands(registry);
+	// Linked / smart clips (feature-list row 6, board task #645): two clips that
+	// share one source, so an edit to one is seen by all of them. No compile-time
+	// switch - the relation is a clip attribute and the content channel is the
+	// clip's own note list, so its ids are honest in every configuration. The
+	// group's four ids are two translation units (the read/repair half is
+	// registered by the same call chain, at its declaration).
+	registerClipLinkCommands(registry);
 }
 
 } // namespace lmms

@@ -56,6 +56,15 @@ set(LMMS_TESTS
 	src/core/BrowserCatalogTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
+	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
+	# that propagates across it, an unlink, and the relation surviving a
+	# save/reload round trip - all driven through the control surface.
+	src/core/ClipLinkTest.cpp
+	# The same feature's other half: the save/reload round trip (the row's
+	# acceptance criterion) and the typed refusals. Two binaries because the
+	# file-length ratchet is not moved for a new feature; the fixtures both use
+	# are src/core/ClipLinkTestSupport.h.
+	src/core/ClipLinkPersistenceTest.cpp
 	src/core/ClipSerialisationTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp
