@@ -1258,6 +1258,73 @@ joins the routing surface's: the passive block and the live block are both at th
   renders in this tree are **not bit-reproducible** run to run, so two runs of the same master are equal only
   to the meter's tolerance (≤ 0.05 LU / 0.01 dB), never byte for byte.
 
+## Note randomisation, note transforms, slide notes, the `scale.*` group and `device.mpe_set` — added 2026-09-15
+
+Fifteen ids over four groups, all of them a **command surface over an engine that was already in the tree**
+(board task #648; feature-list rows 11, 66 and 81). Nothing here is new DSP: `NoteRandom`, `NoteTransform`,
+the slide-note flag, `ChordTable` and `MpeExpression` all shipped before this wave, with their own tests;
+what none of them had was an id, an argument and result schema, an A16 row and a proof. Each has all four
+now, and each is exercised through the registry (the same door an agent uses) by the registered ctest
+`ControlNoteScaleVerbsTest` in `tests/CMakeLists.txt`.
+
+- **`note.random_seed_get` / `note.random_seed_set`** — the project's MIDI seed (`Song::midiSeed`,
+  serialized as the header's `midiseed` attribute and written only when it is not 0). The pair is what makes
+  a seeded take survive a save and a re-open. `true_inverse` through a **recorded action checkpoint** — the
+  seed lives on the Song, which is not a `JournallingObject`, so the recorded undo step calls
+  `Song::setMidiSeed` with the before-value (`clock.master_set`'s shape, for the same reason).
+- **`note.randomize`** — the seeded roll: `velocity_jitter` (0..1) multiplies each note's velocity by a
+  factor in `[1-j, 1+j]`, and an optional `position_jitter` moves it by up to that many ticks, never before
+  tick 0. Both draws are **pure functions of the seed and the note's identity** (`NoteRandom::velocityFactor`
+  and `rollUnit`, on their own salts), so the same seed on the same starting notes reproduces the take
+  **exactly** and a different seed produces a different one — the pair the proof asserts, so a comparator
+  that only checks "the call succeeded" cannot pass it. The seed defaults to the project's persisted one; a
+  `seed` argument rolls from that number **without** writing it to the project (`note.random_seed_set` is the
+  verb that persists one). `true_inverse` through the clip's own `MidiClip` checkpoint — and **not** by
+  re-running, because the roll is multiplicative on the current velocity and drawn from each note's position
+  at entry.
+- **`note.transpose` / `note.velocity_offset` / `note.velocity_scale`** — `NoteTransform`'s three transforms
+  as commands, over the whole clip or over `note.select`'s selection. The grid quantise is deliberately
+  **not** re-wrapped: `groove.quantize` already drives `NoteTransform::quantizeNotes` with a strength, a
+  humanise amount and a seed, and a second id for one behaviour is what SPEC A11's "one action, one
+  implementation" exists to prevent. The engine's clamps are stated (a transpose stops at 0/127, a velocity
+  at 0/200) and the arguments are **refused** outside the range this surface accepts, never silently clamped.
+  `true_inverse` through the clip checkpoint.
+- **`note.slide_set` / `note.slide_clear`** — the FL-style slide (portamento) note, and one clip-level verb
+  that clears every flag in scope as ONE undo step. `true_inverse` through the clip checkpoint **including a
+  first edit**: `slide` is written only when it is set, but `Note::loadSettings` assigns
+  `attribute("slide").toInt()` unconditionally, so an absent attribute means "regular note" and the restore
+  is exact — the same reset-on-absence rule `note.probability_set` relies on for `prob`.
+- **`scale.list` / `scale.get_state` / `scale.root_set` / `scale.set` / `scale.snap_notes`** — the scale and
+  key vocabulary as commands, over `ChordTable`'s own 95 named entries (the boarded-gaps list names
+  `scale.root_set` and `scale.set` by name). `scale.list` publishes each scale's degrees, pitch classes and a
+  twelve-character membership mask; `scale.get_state` answers for the context OR for a root/scale the call
+  names, and with a `clip` argument counts the notes in and out of scale with the engine's own predicate
+  (`NoteTransform::matches`); `scale.snap_notes` moves the out-of-scale notes to the nearest in-scale pitch
+  (ties downward, `NoteTransform::snapToScale`) and reports how many moved and how many are still out.
+  `scale.root_set` / `scale.set` are `true_inverse` through recorded action steps; `scale.snap_notes` is
+  `true_inverse` through the clip checkpoint, and **not** by re-running the snap, because a note it moved is
+  now in scale, so a second call moves nothing and cannot bring the old key back.
+- **`device.mpe_get_state` / `device.mpe_set`** — the registry's first `device.*` group: the MPE **input
+  switch** (`MpeExpression::setEnabled`, one relaxed atomic store, nothing on a realtime path) and the honest
+  read-back of what that flag does and does not make audible. `device.mpe_set` is `true_inverse` through a
+  recorded action step; the flag is a process-wide `std::atomic_bool` and, by the engine's own design, is
+  **deliberately not serialized**. The master channel and the bend range are per-MIDI-stream instance
+  settings with no object the control surface can reach, so the group reports the engine's defaults instead
+  of writing a copy nothing reads.
+
+**A16, counted:** `+11 true_inverse / +4 not_mutating` over the fifteen rows
+(`src/core/ControlReversibilityTableNoteScale.cpp`, a GROUP file joined into
+`reversibilityRowTable()`). Seven of the eleven reverse through a live `MidiClip` checkpoint; four (the
+seed, the scale group's two context writers and the MPE flag) through a recorded action step, because none
+of them is a `JournallingObject`.
+
+**UI absence — one line each.** All three groups are **drivable through the socket, not from the
+interface**: no action, menu entry, shortcut or view randomises a note, shows or edits the project seed,
+transposes a clip or a selection as a command, marks a slide note, snaps notes to a scale, shows the scale
+group's context or reaches the MPE switch — and the piano roll's own key/scale combo boxes are **not wired**
+to `scale.*` in either direction. `docs/KNOWN-LIMITATIONS.md` carries the sentences, and the bounds above
+with them.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the

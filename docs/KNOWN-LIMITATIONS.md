@@ -883,3 +883,39 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+**Note randomisation, note transforms, slide notes, the `scale.*` group and `device.mpe_set` are drivable
+through the socket and absent from the interface** (board task #648; feature-list rows 11, 66 and 81). One
+line each, because the scope contract asks for one each:
+
+- **Note randomisation, transforms and slide notes are drivable through the socket, not from the interface.**
+  `note.randomize` (the seeded roll), `note.random_seed_get` / `note.random_seed_set` (the project's MIDI
+  seed), `note.transpose` / `note.velocity_offset` / `note.velocity_scale` and `note.slide_set` /
+  `note.slide_clear` have no action, menu entry, shortcut or view: the piano roll's velocity edits are per
+  note and per drag, its transpose is an interactive drag, and there is no slide-note action and no marker
+  for one — a slide note sounds like a portamento and looks like any other note. The seed is persisted in the
+  project header (`midiseed`) and **no interface shows or edits it**.
+- **`note.randomize` rolls on top of what is already there.** The velocity roll is multiplicative on the
+  note's current velocity and the position roll is drawn from the note's identity at entry, so applying the
+  command twice is not a no-op and the inverse is the clip's checkpoint, never a re-run.
+- **`note.random_seed_set` accepts 0..2147483647.** The engine's seed is a `uint32_t` and the schema subset's
+  integer is signed, so a project carrying a larger seed can be **read** exactly (`note.random_seed_get`
+  reports a number) but not re-set to that value through this surface.
+- **The scale group's context is not the piano roll's key/scale selector, in either direction.**
+  `scale.list` / `scale.get_state` read the engine's own vocabulary (`ChordTable`) and the group's own
+  context; `scale.root_set` / `scale.set` write that context, which is **process state and deliberately not
+  serialized** (the `MpeExpression::isEnabled()` precedent: a project never changes meaning because of a
+  control-surface setting); `scale.snap_notes` is the one verb that edits a clip. The piano roll's key and
+  scale combo boxes are unchanged and are neither read nor written by any of these ids, so an interface-only
+  user can neither see nor set what the group resolves against. `scale.snap_notes` **refuses** rather than
+  guessing a scale when the context holds none.
+- **`device.mpe_set` is drivable through the socket, not from the interface.** No checkbox, menu entry or
+  setting reaches the MPE input switch and none shows its state; the per-note expression editor
+  `docs/MPE.md` names is still absent (this page's MPE entry above stands). What it gates, exactly: while it
+  is off the MIDI input path is what it was before MPE existed; while it is on, a bend / pressure / CC74 on a
+  note's own member channel is that note's expression instead of a channel-wide bend. **Pitch is the only
+  axis playback applies** (the row-12 bound above); pressure and timbre stay stored and readable. Switching
+  the flag off does **not** clear expression already stored on notes — `note.expression_clear` is the verb
+  for that. The master channel and the bend range are per-MIDI-stream **instance** settings with no object
+  the control surface can reach, so `device.mpe_get_state` reports the engine's defaults rather than writing
+  a copy nothing reads.
