@@ -14,7 +14,8 @@
  *
  * Build and run (no Qt, no FFTW, no libsndfile):
  *   g++ -std=c++20 -O2 -Iinclude tools/import-detection-proof.cpp \
- *       src/core/ImportDetectionDsp.cpp -o /tmp/import-detection-proof
+ *       src/core/ImportDetectionDsp.cpp src/core/ImportDetectionKey.cpp \
+ *       src/core/ImportDetectionSpectrum.cpp -o /tmp/import-detection-proof
  *   /tmp/import-detection-proof; echo EXIT=$?
  *
  * WHAT IT PROVES: that the arithmetic recovers the tempo and the key of a

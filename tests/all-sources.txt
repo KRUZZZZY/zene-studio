@@ -1050,6 +1050,9 @@ src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
 src/core/ImportDetection.cpp
 src/core/ImportDetectionDsp.cpp
+src/core/ImportDetectionKey.cpp
+src/core/ImportDetectionSpectrum.cpp
+src/core/ImportDetectionSpectrum.h
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
 src/core/Instrument.cpp

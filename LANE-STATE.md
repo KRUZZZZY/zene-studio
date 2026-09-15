@@ -7,9 +7,11 @@ no merge, no rebase, no push (this pass). GPLv2-clean; no new dependency (see th
 
 | commit | what |
 |---|---|
-| `120c09675` | `feat(detect)`: the detection arithmetic — `include/ImportDetectionDsp.h`, `src/core/ImportDetectionDsp.cpp` (Qt-free: no file I/O, no dependency) and the box-local proof `tools/import-detection-proof.cpp`. |
+| `120c09675` | `feat(detect)`: the detection arithmetic — `include/ImportDetectionDsp.h` with `src/core/ImportDetectionDsp.cpp`, `src/core/ImportDetectionKey.cpp` and `src/core/ImportDetectionSpectrum.{h,cpp}` (Qt-free: no file I/O, no dependency, and split across three units because the file-length ratchet allows 500 lines each) plus the box-local proof `tools/import-detection-proof.cpp`. |
 | `69123e2f1` | `feat(detect)`: the engine layer (`include/ImportDetection.h`, `src/core/ImportDetection.cpp`), the project field (`include/ProjectKey.h`, `src/core/ProjectKey.cpp`), the command group, its SPEC A16 rows, its registration, the `Song` hooks, and both registered proofs. |
 | `c1a367983` | `docs(detect)`: `docs/IMPORT-DETECTION.md` (the record), the `docs/KNOWN-LIMITATIONS.md` entry, the release-notes section — plus the file split the length ratchet asked for. |
+| `ad3659f48` | `fix(detect)`: the registered test's own two defects, found by BUILDING it (`m_dir`/`m_clickA`… undeclared; `QDomElement` incomplete) and a `ProjectKey::saveSettings` simplification. |
+| `2b1649410` | `fix(detect)`: the three defects the registered proofs found by RUNNING them — the key score became a tonic-weighted template CORRELATION (a mean named an A major fixture "Neopolitan", margin 0.003), the chroma band's hard 110 Hz edge became raised-cosine RAMPS (a 110 Hz sine read as A# 1.000 > A 0.712), and `SampleDecoder`'s DrumSynth fallback got the null-`AudioEngine` guard that was crashing the refusal path. The A16 histogram moved with the added rows. |
 
 ## The ids, their classes, and where each is registered
 
@@ -131,7 +133,10 @@ with "Nothing was written") each left the project untouched.
 | Gate 9 (scope manifests) | `bash tests/fork-sources-gate.sh` | **EXIT=0** — PASS (446 fork-NEW / 1060 inherited / 35 tooling) |
 | Gate 6 (upstream divergence ledger) | `bash tests/no-upstream-regression-gate.sh` | **EXIT=0** — PASS (410 changed paths declared) |
 | unregistered tests | `bash tests/unregistered-tests-gate.sh` | **EXIT=0** — PASS (128 registered, 2 declared-not-built) |
-| Gate 7 (whole tree) | `bash tests/file-length-gate.sh --check --scope all` | **EXIT=1** — RED, and red BEFORE this lane for other files (see below) |
+| Gate 7 (whole tree) | `bash tests/file-length-gate.sh --check --scope all` | **EXIT=1** — RED, and red BEFORE this lane for other files (see below; this lane's own two entries are `include/Song.h` 711 → 729 and `src/core/Song.cpp`'s +26) |
+| A16 contract (anti-drift + histogram) | `ctest -R ReversibilityContractTest` from `<build>/tests` | **EXIT=0** — PASS |
+| registry consistency | `ctest -R ControlRegistryTest` | **EXIT=0** — PASS |
+| agent surface (reflection, ratchet, reverse completeness, headless sweep) | `ctest -R agent_surface` | **EXIT=0** — PASS: **230 commands, 229 swept, 1 allowlisted, 0 compiled out**; `detect.analyze` → `typed_error invalid_args`, `detect.apply` → `typed_error invalid_args`, `detect.get_state` → `ok` |
 
 **The whole-tree file-length scope is red, and this lane adds to it.** At the base commit the all-scope
 baseline was already exceeded by `src/core/midi/MidiAlsaSeq.cpp` (718 → 867), `src/core/Mixer.cpp`

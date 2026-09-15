@@ -147,7 +147,8 @@ can compile with one `g++` command on a machine where the product does not build
 
 ```
 g++ -std=c++20 -O2 -Wall -Wextra -Iinclude tools/import-detection-proof.cpp \
-    src/core/ImportDetectionDsp.cpp -o /tmp/import-detection-proof   # EXIT=0
+    src/core/ImportDetectionDsp.cpp src/core/ImportDetectionKey.cpp \
+    src/core/ImportDetectionSpectrum.cpp -o /tmp/import-detection-proof   # EXIT=0
 /tmp/import-detection-proof                                          # EXIT=0
 ```
 
@@ -284,7 +285,8 @@ or accepts one, and `grep -rniI 'detect\.' src/gui/` returns no call site of the
 ```bash
 # the engine arithmetic, with no Qt, no FFTW and no libsndfile (this box can run it):
 g++ -std=c++20 -O2 -Wall -Wextra -Iinclude tools/import-detection-proof.cpp \
-    src/core/ImportDetectionDsp.cpp -o /tmp/import-detection-proof
+    src/core/ImportDetectionDsp.cpp src/core/ImportDetectionKey.cpp \
+    src/core/ImportDetectionSpectrum.cpp -o /tmp/import-detection-proof
 /tmp/import-detection-proof; echo "EXIT=$?"
 
 # the registered engine proof (needs the product built):

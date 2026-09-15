@@ -102,6 +102,8 @@ set(LMMS_SRCS
 	# project's detected-key field (the `<detected-key>` element a detect.apply
 	# writes). No compile-time switch: all three are in every configuration.
 	core/ImportDetectionDsp.cpp
+	core/ImportDetectionKey.cpp
+	core/ImportDetectionSpectrum.cpp
 	core/ImportDetection.cpp
 	core/ProjectKey.cpp
 	core/BounceInPlace.cpp
