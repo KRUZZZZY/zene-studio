@@ -525,6 +525,44 @@ LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
  *  the limit fails the gate. Called by registerControllerSurfaceCommands; the
  *  registry still has exactly one controller.* registration point. */
 LMMS_EXPORT void registerControllerTemplateCommands(ControlRegistry& registry);
+
+/*! The Session View's completion halves (board task #641, the #596 work):
+ *  Follow Actions and Arrangement Record.
+ *
+ *  - registerSessionFollowCommands: session.follow_set / session.follow_get_state
+ *    - arm one cell's Follow Action chain and read the engine's fires back. The
+ *    engine half is include/SessionFollow.h and src/core/SessionFollow.cpp (the
+ *    evaluation the data layer's FollowAction chains have carried since #594 and
+ *    nothing consulted).
+ *  - registerSessionRecordCommands: session.arrangement_record_arm /
+ *    _status / _land plus session.back_to_arrangement - the performance's own
+ *    event ring (include/SessionArrangementRecorder.h) and the one verb that
+ *    writes it into the arrangement timeline as clips.
+ *
+ *  Both travel with the Session View data layer and are registered only inside
+ *  registerControlCommands()'s #ifdef LMMS_HAVE_SESSION_VIEW block, because
+ *  without the flag there is no grid to address and the registry must not carry
+ *  ids whose handler could not exist - the rule the telemetry.*, wasm.* and
+ *  stem.* groups follow. Their six A16 rows are guarded by the same switch in
+ *  src/core/ControlReversibilityTableSessionView.cpp, so the table and the
+ *  registry stay consistent in both directions.
+ *
+ *  These are declared HERE rather than in include/ControlRegistry.h because that
+ *  header is at the file-length ratchet (502 lines) and this header is where the
+ *  groups that outgrew it are declared. There is no interface for any of it in
+ *  this release: an agent can drive all of it through --control-socket, and
+ *  nobody can from the UI (docs/KNOWN-LIMITATIONS.md). */
+LMMS_EXPORT void registerSessionFollowCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerSessionRecordCommands(ControlRegistry& registry);
+/*! session.arrangement_record_land - the one WRITING verb of the Arrangement
+ *  Record group, in its own translation unit (the automation, warp, vca and
+ *  chain-preset groups' read/edit split, and here also the file-length ratchet's
+ *  reason: the group measured 518 lines against the 500-line limit as one file).
+ *  It creates the arrangement clips the recorded performance describes, over one
+ *  Track journal checkpoint per touched track. Called by
+ *  registerSessionRecordCommands; the registry has exactly one registration point
+ *  for this half. */
+LMMS_EXPORT void registerSessionRecordLandCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

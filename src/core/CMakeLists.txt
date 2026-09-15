@@ -87,6 +87,15 @@ IF(LMMS_HAVE_SESSION_VIEW)
 		# registerControlCommands() guards the two calls the same way.
 		core/ControlCommandsSession.cpp
 		core/ControlCommandsSessionLaunch.cpp
+		# The Session View's completion halves (board task #641): Follow Actions
+		# and Arrangement Record, each half in its own TU because the file-length
+		# ratchet measures a file as a unit (the record group measured 518 lines
+		# as one file) and because the pairing both halves share lives in
+		# core/ControlCommandsSessionRecordInternal.h.
+		core/SessionFollow.cpp
+		core/ControlCommandsSessionFollow.cpp
+		core/ControlCommandsSessionRecord.cpp
+		core/ControlCommandsSessionRecordLand.cpp
 	)
 ENDIF()
 
@@ -455,6 +464,14 @@ set(LMMS_SRCS
 	# board task #647). A GROUP file on the same seam as the mastering and
 	# routing rows above.
 	core/ControlReversibilityTableAutomationModes.cpp
+	# The Session View completion halves' six rows (board task #641, the #596
+	# work): Follow Actions and Arrangement Record. A GROUP file on the same
+	# seam, and it exists because the two files the other session.* rows live in
+	# are at the file-length ratchet (include/ControlRegistry.h at 502 lines, and
+	# the passive block at its limit). Joined into reversibilityRowTable() by ONE
+	# entry; EMPTY without LMMS_HAVE_SESSION_VIEW, the same way the wasm render
+	# rows are empty without the wasmtime C API.
+	core/ControlReversibilityTableSessionView.cpp
 
 	# the controller.* group (feature row 19, board task #651): MIDI controller
 	# soft-takeover, LED/feedback output and the mapping templates.
