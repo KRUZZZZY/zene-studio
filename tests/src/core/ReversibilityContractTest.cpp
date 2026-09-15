@@ -89,38 +89,48 @@ DocumentedHistogram documentedHistogram()
 {
 	/*! telemetry-off, wasm-off base; the guards add the rest.
 	 *
-	 *  RE-MEASURED ON THE MERGED TIP, 2026-09-15, by the wave-4 integration
+	 *  RE-MEASURED ON THE MERGED TIP, 2026-09-15, by the WAVE-5 integration
 	 *  train - the constant is a MEASUREMENT and this is the tree's own number,
 	 *  not a sum of anybody's lane report. Measured with
-	 *  `bash tools/dawproject-proof.sh` (its part 2, the A16 histogram probe, on its own
-	 *  on its own: the probe tools/dawproject-a16-histogram.cpp compiled against
+	 *  `bash tools/dawproject-proof.sh` (its part 2, the A16 histogram probe, on
+	 *  its own: the probe tools/dawproject-a16-histogram.cpp compiled against
 	 *  this tree's src/core/ControlReversibilityTable*.cpp with this build's own
 	 *  flags, the tables assembled the way ReversibilityTable's constructor
 	 *  assembles them). It printed, for this configuration (ZENE_TELEMETRY_ENABLED
 	 *  on, -DLMMS_HAVE_WASM=1, WANT_STEM_SPLIT off):
 	 *
-	 *      MEASURED rows=322 true_inverse=156 snapshot=30 irreversible=10 not_mutating=126
+	 *      MEASURED rows=334 true_inverse=158 snapshot=32 irreversible=10 not_mutating=134
 	 *
 	 *  The base below is that measurement with the guards' own additions removed
 	 *  (-2 rows / -2 not_mutating for telemetry, -6 rows / -3 snapshot /
 	 *  -3 not_mutating for wasm; stem is off, so its seven rows are absent from
-	 *  both sides), i.e. 314 / 156 / 27 / 10 / 121 - and the four class columns
-	 *  sum to 314 exactly.
+	 *  both sides), i.e. 326 / 158 / 29 / 10 / 129 - and the four class columns
+	 *  sum to 326 exactly.
 	 *
-	 *  WHAT MOVED IT SINCE THE WAVE-3 TIP (285 / 152 / 21 / 6 / 106 in the same
-	 *  base): the eight branches this train merged. Their deltas are each named
-	 *  beside their own rows in src/core/ControlReversibilityTable*.cpp, and the
-	 *  merge commits record the per-file union counts; the numbers above are what
-	 *  the TABLE measures, which is the thing this assertion is about.
+	 *  WHAT MOVED IT SINCE THE WAVE-4 TIP (314 / 156 / 27 / 10 / 121 in the same
+	 *  base): the eight branches the wave-5 train merged. Their rows are named
+	 *  beside their own entries in src/core/ControlReversibilityTable*.cpp - the
+	 *  session rows in ControlReversibilityTableSessionView.cpp, the crash
+	 *  arm/disarm pair in ControlReversibilityTableScanAndCrash.cpp, the MIDI
+	 *  re-connection rows in ControlReversibilityTableMidiReconnect.cpp (joined
+	 *  by ONE entry each, the rule lane brief section 5 requires of a new group)
+	 *  - and the merge commits record the per-file union counts; the numbers
+	 *  above are what the TABLE measures, which is the thing this assertion is
+	 *  about.
 	 *
 	 *  DRIFT WARNING, STATED RATHER THAN HIDDEN: the A16 paragraph in
 	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md still carries the wave-3 train's
-	 *  figures (284 rows and the per-lane deltas around it). The two are meant to
-	 *  agree; re-taking that paragraph is the merge point's remaining doc task,
-	 *  named in the train's report rather than silently reconciled here.
+	 *  branch-local figures (284 rows, 152 / 21 / 7 / 104, and the per-lane deltas
+	 *  around it). The two are meant to agree; re-taking that paragraph against
+	 *  this measurement (334 rows live, 326 base) is the merge point's remaining
+	 *  doc task, named in each train's report rather than silently reconciled
+	 *  here.
 	 *
 	 *  The older history below is kept because each paragraph names a real
 	 *  branch-local figure and why it is not this tree's number.
+	 *
+	 *  THE WAVE-4 TRAIN'S MEASUREMENT, as it stood before the wave-5 merges:
+	 *  314 / 156 / 27 / 10 / 121 (322 rows live in its configuration).
 	 *
 	 *  THE WAVE-2 FIVE-LANE TRAIN'S MEASUREMENT, as it stood before this merge:
 	 *  the table measured 283 rows over the four classes - 151 true_inverse,
@@ -141,7 +151,7 @@ DocumentedHistogram documentedHistogram()
 	 *  the action half so the block still reads as ONE `true_inverse` block with
 	 *  one row count. Each lane's delta is named beside its rows in
 	 *  src/core/ControlReversibilityTable*.cpp. */
-	DocumentedHistogram out{314, 156, 27, 10, 121};
+	DocumentedHistogram out{326, 158, 29, 10, 129};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
