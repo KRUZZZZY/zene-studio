@@ -148,6 +148,7 @@ include/ControllerConnection.h
 include/ControllerConnectionDialog.h
 include/ControllerDialog.h
 include/ControllerRackView.h
+include/ControllerSurface.h
 include/ControllerView.h
 include/Controls.h
 include/CrashReporter.h
@@ -972,6 +973,8 @@ src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
+src/core/ControlCommandsController.cpp
+src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsDawProject.cpp
 src/core/ControlCommandsDevice.cpp
@@ -983,6 +986,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHostChunking.cpp
+src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
@@ -1012,6 +1016,7 @@ src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
@@ -1074,8 +1079,10 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableArchive.cpp
+src/core/ControlReversibilityTableAutomationModes.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
+src/core/ControlReversibilityTableController.cpp
 src/core/ControlReversibilityTableDawProject.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableHostChunking.cpp
@@ -1083,6 +1090,7 @@ src/core/ControlReversibilityTableInterchange.cpp
 src/core/ControlReversibilityTableLive.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
+src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp
@@ -1099,6 +1107,7 @@ src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
+src/core/ControlServerWin32.cpp
 src/core/ControlSession.cpp
 src/core/ControlStemModel.cpp
 src/core/ControlStemSupport.cpp
@@ -1110,6 +1119,7 @@ src/core/ControlVocabulary.cpp
 src/core/ControlWasmSupport.cpp
 src/core/Controller.cpp
 src/core/ControllerConnection.cpp
+src/core/ControllerSurface.cpp
 src/core/CrashReporter.cpp
 src/core/DataFile.cpp
 src/core/DawProjectModel.cpp
