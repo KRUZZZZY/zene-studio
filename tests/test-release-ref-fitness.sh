@@ -91,16 +91,7 @@ case "$REQ" in
 	*"static gates (3, 4, 6, 7, 8, 9, 11)"*) check "quality-gates' static-gates job is required by name" 0 0 ;;
 	*) check "quality-gates' static-gates job is required by name" 0 1 ;;
 esac
-check "7 platform jobs + checks' 3 + static-gates = 11 required names" 11 "$(printf '%s\n' "$REQ" | python3 -c "
-import sys
-n = 0
-for ln in sys.stdin:
-    ln = ln.rstrip('\n')
-    if not ln:
-        continue
-    wf, jobs = ln.split('\t', 1)
-    n += 1 if wf == 'quality-gates.yml' else len(jobs.split())
-print(n)")"
+check "one required job per line: 11 required names" 11 "$(printf '%s\n' "$REQ" | grep -c .)"
 echo
 
 # ---------------------------------------------------------------------------

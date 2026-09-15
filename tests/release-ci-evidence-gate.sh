@@ -41,9 +41,10 @@
 #   bash tests/release-ci-evidence-gate.sh --dump-required
 #
 #   --runs-tsv FILE reads rows `<workflow-basename>\t<job name>\t<status>\t<conclusion>`
-#   instead of calling the API. This is the offline/rehearsal form: the self-test drives
-#   it with fixtures, and a recorded live capture (gh api, saved verbatim) can be replayed
-#   by anyone. It never invents a row.
+#   instead of calling the API, plus one `<workflow>\t<run>\t<status>\t<conclusion>` row
+#   per run. This is the offline/rehearsal form: the self-test drives it with fixtures, and
+#   a recorded live capture (gh api, saved verbatim) can be replayed by anyone. It never
+#   invents a row.
 #
 # Exit codes: 0 = covered, 1 = refused (missing/red/in-flight), 2 = usage error,
 #             3 = the API or its client is unavailable (unmeasured is a refusal).
@@ -79,9 +80,20 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-# workflow file -> required job display names. Tab-separated, one workflow per line.
-REQUIRED="build.yml	linux-x86_64 linux-arm64 macos-x86_64 macos-arm64 mingw64 msvc-x64 windows-arm64
-checks.yml	scripted-checks shellcheck yamllint
+# One required JOB per line: <workflow file><TAB><job display name>. ONE PER LINE, not a
+# space-separated list per workflow, because a job display name can itself contain spaces
+# and commas (`static gates (3, 4, 6, 7, 8, 9, 11)`) and a word-split would turn it into
+# nine pseudo-jobs that are then all reported missing.
+REQUIRED="build.yml	linux-x86_64
+build.yml	linux-arm64
+build.yml	macos-x86_64
+build.yml	macos-arm64
+build.yml	mingw64
+build.yml	msvc-x64
+build.yml	windows-arm64
+checks.yml	scripted-checks
+checks.yml	shellcheck
+checks.yml	yamllint
 quality-gates.yml	static gates (3, 4, 6, 7, 8, 9, 11)"
 
 if [ "$DUMP" -eq 1 ]; then
@@ -148,39 +160,33 @@ echo
 FAILED=0
 printf '  %-18s %-30s %s\n' "workflow" "required job" "verdict"
 
-while IFS=$'\t' read -r wf jobs; do
-	for job in $jobs; do
-		verdict="MISSING — this commit has no such job in any push run of $wf"
-		had_run=0
-		while IFS=$'\t' read -r rwf rjob rstatus rconcl; do
-			[ -n "${rwf:-}" ] || continue
-			[ "$rwf" = "$wf" ] || continue
-			had_run=1
-			if [ "$rjob" = "$job" ]; then
-				if [ "$rstatus" != "completed" ]; then
-					verdict="IN FLIGHT ($rstatus) — not a result; the release waits for it"
-				elif [ "$rconcl" = "success" ]; then
-					verdict="ok (success)"
-				else
-					verdict="RED ($rconcl)"
-				fi
-			elif [ "$rjob" = "<run>" ] && [ "$rconcl" != "success" ] && [ "$rconcl" != "in_progress" ]; then
-				# The run's own conclusion, when it is a completed non-success.
-				case "$verdict" in
-					"ok (success)") verdict="RED (the run itself concluded $rconcl)" ;;
-				esac
+while IFS=$'	' read -r wf job; do
+	[ -n "${wf:-}" ] || continue
+	verdict="MISSING — this commit has no such job in any push run of $wf"
+	had_run=0
+	while IFS=$'	' read -r rwf rjob rstatus rconcl; do
+		[ -n "${rwf:-}" ] || continue
+		[ "$rwf" = "$wf" ] || continue
+		# `<run>` rows are the workflow's own conclusion, not a job's; they are asserted
+		# by the whole-run loop below and must not overwrite a job-level verdict here (a
+		# red run would otherwise mask the jobs inside it that did succeed).
+		[ "$rjob" = "<run>" ] && continue
+		had_run=1
+		if [ "$rjob" = "$job" ]; then
+			if [ "$rstatus" != "completed" ]; then
+				verdict="IN FLIGHT ($rstatus) — not a result; the release waits for it"
+			elif [ "$rconcl" = "success" ]; then
+				verdict="ok (success)"
+			else
+				verdict="RED ($rconcl)"
 			fi
-		done <<< "$ROWS"
-		if [ "$had_run" -eq 0 ]; then
-			verdict="MISSING — no push run of $wf exists for this commit"
 		fi
-		if [ "$verdict" = "ok (success)" ]; then
-			printf '  %-18s %-30s %s\n' "$wf" "$job" "$verdict"
-		else
-			printf '  %-18s %-30s %s\n' "$wf" "$job" "$verdict"
-			FAILED=$((FAILED + 1))
-		fi
-	done
+	done <<< "$ROWS"
+	if [ "$had_run" -eq 0 ]; then
+		verdict="MISSING — no push run of $wf exists for this commit"
+	fi
+	printf '  %-18s %-30s %s\n' "$wf" "$job" "$verdict"
+	[ "$verdict" = "ok (success)" ] || FAILED=$((FAILED + 1))
 done <<< "$REQUIRED"
 
 # A completed push run that is red anywhere refuses the commit even if every required job
