@@ -176,10 +176,15 @@ private slots:
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
 		QCOMPARE(set.result.value(QStringLiteral("memory_budget")).toInt(), int(2 * OneMiB));
 		QCOMPARE(engine->memoryBudget(), 2 * OneMiB);
-		const QJsonObject transaction = set.result.value(QStringLiteral("__transaction")).toObject();
-		QCOMPARE(transaction.value(QStringLiteral("reversible")).toBool(), true);
-		QCOMPARE(transaction.value(QStringLiteral("before")).toObject()
-				.value(QStringLiteral("memory_budget")).toInt(),
+		// The registry strips __transaction from the reply and records it, so the
+		// inverse is read back from the record - the same reader control.transactions
+		// publishes, which is what a client would use.
+		const ControlRegistry::Transaction* recorded = registry->lastTransaction();
+		QVERIFY2(recorded != nullptr, "the budget change recorded no transaction");
+		QCOMPARE(recorded->command, QStringLiteral("script.set_memory_budget"));
+		QCOMPARE(recorded->cls, QStringLiteral("snapshot"));
+		QVERIFY2(recorded->reversible, "the budget change recorded no inverse");
+		QCOMPARE(recorded->before.value(QStringLiteral("memory_budget")).toInt(),
 			int(ScriptEngine::DefaultMemoryBudgetBytes));
 
 		// script.run reports the budget in force and the run's own measurement.

@@ -50,11 +50,10 @@ namespace lmms
 
 bool TelemetryNetworkTransport::isAllowedEndpoint(const QUrl & endpoint, QString * reason)
 {
-	if (endpoint.isEmpty() || endpoint.host().isEmpty())
+	if (endpoint.isEmpty())
 	{
 		// The shipped default: no ingest service exists yet, so an enabled
-		// build still refuses to open a socket. That refusal is a POLICY one,
-		// and it reads the same way an https refusal does.
+		// build still refuses to open a socket.
 		if (reason != nullptr)
 		{
 			*reason = QStringLiteral("no endpoint is configured (the telemetry/endpoint config "
@@ -63,6 +62,10 @@ bool TelemetryNetworkTransport::isAllowedEndpoint(const QUrl & endpoint, QString
 		return false;
 	}
 
+	// The scheme is checked BEFORE the host, because it is the reason a
+	// configured-but-wrong endpoint is wrong: "file:///tmp/x", "ftp://…" and a
+	// scheme-less string are all non-https, and a client that reads only "no
+	// host" would go looking in the wrong place.
 	const QString scheme = endpoint.scheme().toLower();
 	if (scheme != QLatin1String("https"))
 	{
@@ -72,6 +75,16 @@ bool TelemetryNetworkTransport::isAllowedEndpoint(const QUrl & endpoint, QString
 				"https only: a payload sent in clear is not something the consent notice covers, "
 				"so it is refused rather than downgraded")
 				.arg(scheme.isEmpty() ? QStringLiteral("none") : scheme);
+		}
+		return false;
+	}
+
+	if (endpoint.host().isEmpty())
+	{
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("the https endpoint names no host, so there is nowhere to "
+				"post to");
 		}
 		return false;
 	}
