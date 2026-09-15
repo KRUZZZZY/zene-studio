@@ -22,6 +22,8 @@
 
 #include "WasmWorker.h"
 
+#include "WasmWorkerPool.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -41,7 +43,16 @@ bool WasmWorker::start(const std::string& modulePath, std::string& error,
 	m_modulePath = modulePath;
 	m_stop.store(false, std::memory_order_release);
 	m_state.store(State::Loading, std::memory_order_release);
-	m_thread = std::thread(&WasmWorker::run, this);
+	// No thread of our own: a lane of the shared pool loads the module and then
+	// runs this worker's blocks. addWorker() asks for a wake-up, so the load
+	// starts immediately rather than at the next tick of a timer.
+	if (!WasmWorkerPool::instance().addWorker(this))
+	{
+		error = "the WASM worker pool is full (WasmWorkerPool::maxWorkers)";
+		m_state.store(State::Failed, std::memory_order_release);
+		return false;
+	}
+	m_registeredWithPool = true;
 
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(timeoutMs);
@@ -62,9 +73,16 @@ bool WasmWorker::start(const std::string& modulePath, std::string& error,
 void WasmWorker::stop()
 {
 	m_stop.store(true, std::memory_order_release);
-	if (m_thread.joinable())
+	if (m_registeredWithPool)
 	{
-		m_thread.join();
+		WasmWorkerPool::instance().removeWorker(this);
+		m_registeredWithPool = false;
+		// Wait for the lane that may be inside drainOnLane() to let go: the
+		// sandbox below is destroyed once nobody can be using it.
+		while (m_laneClaimed.load(std::memory_order_acquire))
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
 	}
 	if (m_state.load(std::memory_order_acquire) != State::Failed)
 	{
@@ -86,7 +104,76 @@ void WasmWorker::stop()
 	m_loadedSampleRate = 0.0f;
 }
 
-void WasmWorker::run()
+bool WasmWorker::claimForLane()
+{
+	bool expected = false;
+	return m_laneClaimed.compare_exchange_strong(expected, true, std::memory_order_acquire,
+		std::memory_order_relaxed);
+}
+
+void WasmWorker::releaseLane()
+{
+	m_laneClaimed.store(false, std::memory_order_release);
+}
+
+bool WasmWorker::hasPendingWork() const
+{
+	if (m_stop.load(std::memory_order_acquire)) { return false; }
+	// A module to load (or reload) is work: the first block cannot be processed
+	// before it, and the pool's lane is the thread that does it.
+	if (m_state.load(std::memory_order_acquire) == State::Loading) { return true; }
+	return !m_commands.empty();
+}
+
+bool WasmWorker::drainOnLane()
+{
+	bool didWork = false;
+
+	// 1. the module, on the first pass after start() (and after every
+	//    re-instantiation request).
+	if (m_state.load(std::memory_order_acquire) == State::Loading)
+	{
+		loadModuleOnLane();
+		didWork = true;
+	}
+
+	// 2. every queued block, in FIFO order. This lane holds the claim, so no
+	//    other lane is inside the sandbox - which is what keeps a stateful
+	//    module's blocks in the order the audio thread submitted them.
+	std::uint32_t index = 0;
+	while (m_commands.pop(index))
+	{
+		didWork = true;
+		Slot& slot = m_slots[index];
+		slot.state.store(SlotState::Processing, std::memory_order_release);
+		const float sampleRate = m_sampleRate.load(std::memory_order_acquire);
+		if (m_state.load(std::memory_order_acquire) == State::Ready &&
+			sampleRate != m_loadedSampleRate)
+		{
+			// Sample-rate change: re-instantiate so the module never runs
+			// with a stale rate or stale state. While it runs the audio thread
+			// sees State::Loading and passes audio through dry.
+			reinstantiate(sampleRate);
+		}
+		if (m_state.load(std::memory_order_acquire) == State::Ready)
+		{
+			processSlot(slot, sampleRate);
+		}
+		else
+		{
+			passthrough(slot);
+		}
+		slot.state.store(SlotState::Done, std::memory_order_release);
+		while (!m_results.push(index) && !m_stop.load(std::memory_order_acquire))
+		{
+			std::this_thread::yield();
+		}
+		m_processed.fetch_add(1, std::memory_order_release);
+	}
+	return didWork;
+}
+
+bool WasmWorker::loadModuleOnLane()
 {
 	m_sandbox = std::make_unique<WasmSandbox>();
 	std::string error;
@@ -94,62 +181,20 @@ void WasmWorker::run()
 	{
 		m_lastError = error;
 		m_state.store(State::Failed, std::memory_order_release);
-		return;
+		return false;
 	}
 	if (!m_sandbox->hasProcess())
 	{
 		m_lastError = "module does not export " + std::string(abi::processExport)
 			+ "()";
 		m_state.store(State::Failed, std::memory_order_release);
-		return;
+		return false;
 	}
 	m_declaredChannels.store(m_sandbox->declaredChannels(), std::memory_order_relaxed);
 	m_declaredLatency.store(m_sandbox->declaredLatency(), std::memory_order_relaxed);
 	m_loadedSampleRate = m_sampleRate.load(std::memory_order_acquire);
 	m_state.store(State::Ready, std::memory_order_release);
-
-	while (!m_stop.load(std::memory_order_acquire))
-	{
-		std::uint32_t index = 0;
-		bool didWork = false;
-		while (m_commands.pop(index))
-		{
-			didWork = true;
-			Slot& slot = m_slots[index];
-			slot.state.store(SlotState::Processing, std::memory_order_release);
-			const float sampleRate = m_sampleRate.load(std::memory_order_acquire);
-			if (m_state.load(std::memory_order_acquire) == State::Ready &&
-				sampleRate != m_loadedSampleRate)
-			{
-				// Sample-rate change: re-instantiate so the module never runs
-				// with a stale rate or stale state. This happens on the worker
-				// thread only; while it runs the audio thread sees
-				// State::Loading and passes audio through dry.
-				reinstantiate(sampleRate);
-			}
-			if (m_state.load(std::memory_order_acquire) == State::Ready)
-			{
-				processSlot(slot, sampleRate);
-			}
-			else
-			{
-				passthrough(slot);
-			}
-			slot.state.store(SlotState::Done, std::memory_order_release);
-			while (!m_results.push(index) &&
-				!m_stop.load(std::memory_order_acquire))
-			{
-				std::this_thread::yield();
-			}
-			m_processed.fetch_add(1, std::memory_order_release);
-		}
-		if (!didWork)
-		{
-			// Idle: sleep briefly. The audio thread never blocks on this; it
-			// only ever observes empty queues and passes audio through dry.
-			std::this_thread::sleep_for(std::chrono::microseconds(200));
-		}
-	}
+	return true;
 }
 
 void WasmWorker::processSlot(Slot& slot, float sampleRate)
@@ -242,19 +287,13 @@ void WasmWorker::passthrough(Slot& slot)
 bool WasmWorker::reinstantiate(float sampleRate)
 {
 	m_state.store(State::Loading, std::memory_order_release);
-	std::string error;
-	if (!m_sandbox->loadModuleFile(m_modulePath, error) ||
-		!m_sandbox->hasProcess())
+	if (!loadModuleOnLane())
 	{
-		m_lastError = error.empty() ? "module reload failed" : error;
-		m_state.store(State::Failed, std::memory_order_release);
+		m_lastError = m_lastError.empty() ? "module reload failed" : m_lastError;
 		return false;
 	}
 	m_loadedSampleRate = sampleRate;
-	m_declaredChannels.store(m_sandbox->declaredChannels(), std::memory_order_relaxed);
-	m_declaredLatency.store(m_sandbox->declaredLatency(), std::memory_order_relaxed);
 	m_reinstantiated.fetch_add(1, std::memory_order_relaxed);
-	m_state.store(State::Ready, std::memory_order_release);
 	return true;
 }
 
@@ -293,6 +332,10 @@ bool WasmWorker::submit(const SampleFrame* interleaved, std::uint32_t frames,
 		m_dropped.fetch_add(1, std::memory_order_relaxed);
 		return false;
 	}
+	// Real wake-up, from the audio thread: the pool bumps its work generation
+	// and wakes a parked lane. While a lane is already awake this is a relaxed
+	// increment and an acquire load - no lock, no allocation, no syscall.
+	WasmWorkerPool::instance().notifyWork();
 	m_submitted.fetch_add(1, std::memory_order_release);
 	return true;
 }

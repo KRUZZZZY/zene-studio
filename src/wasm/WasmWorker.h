@@ -35,18 +35,20 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <thread>
 
 namespace lmms::wasm
 {
 
-//! Runs one WasmSandbox on a dedicated worker thread.
+//! Runs one WasmSandbox on a lane of the shared WasmWorkerPool.
 //!
 //! Threading contract (specs/SPEC-wasm-sandbox.md section 4): modules NEVER run
 //! on the audio thread. The audio thread calls submit()/collect(), which only
 //! touch pre-allocated slot memory and lock-free SPSC queues - no allocation,
-//! no locks, no syscalls. The worker thread owns the sandbox and does all
-//! module loading, memory copying and instantiation work.
+//! no locks. submit() additionally asks the pool for a wake-up, and that call
+//! takes no syscall at all while a lane is awake (WasmWorkerPool::notifyWork).
+//! A lane owns the sandbox while it drains this worker, and only one lane may
+//! hold a worker at a time, so a stateful module sees its blocks in submission
+//! order (see claimForLane()).
 // Exported from the host: the WasmEffect plugin (a separate .so) resolves
 // these symbols at load time, exactly like Effect/PluginFactory.
 class LMMS_EXPORT WasmWorker
@@ -120,6 +122,10 @@ public:
 	bool waitForIdle(int timeoutMs);
 
 private:
+	//! The pool's lanes drive claimForLane()/drainOnLane()/releaseLane(); they
+	//! are the only callers that may, and nothing else reaches them.
+	friend class WasmWorkerPool;
+
 	enum class SlotState : std::uint32_t
 	{
 		Free,
@@ -136,15 +142,34 @@ private:
 		std::array<float, 2 * maxBlockFrames> out{};
 	};
 
-	void run();
+	// --- pool side (called by WasmWorkerPool's lanes) --------------------
+	/*! Take exclusive ownership of this worker for one drain, or fail if
+	 *  another lane holds it. Every lane passes through here, which is what
+	 *  makes "one block of one worker at a time, in FIFO order" true. */
+	bool claimForLane();
+	void releaseLane();
+	//! Whether a lane would find work here: a module to load, or blocks queued.
+	bool hasPendingWork() const;
+	/*! Load the module if needed, then run every queued block in order.
+	 *  Returns true when at least one of those happened. Runs on a lane; the
+	 *  caller holds the claim. */
+	bool drainOnLane();
+
 	void processSlot(Slot& slot, float sampleRate);
 	void passthrough(Slot& slot);
-	//! Worker thread: reload/re-instantiate the module for a new sample rate.
+	//! Lane: load the module named by m_modulePath (the first load and every
+	//! re-instantiation go through here).
+	bool loadModuleOnLane();
+	//! Lane: reload/re-instantiate the module for a new sample rate.
 	bool reinstantiate(float sampleRate);
 
 	std::string m_modulePath;
-	std::thread m_thread;
+	//! One lane at a time; see claimForLane(). No thread of our own: the pool's
+	//! lanes run drainOnLane().
+	std::atomic<bool> m_laneClaimed{false};
 	std::atomic<bool> m_stop{false};
+	//! Control thread only: whether this worker is in the pool's registry.
+	bool m_registeredWithPool = false;
 	std::atomic<State> m_state{State::Idle};
 	std::string m_lastError;
 	//! Rate of the most recent block, written by the audio thread in submit().

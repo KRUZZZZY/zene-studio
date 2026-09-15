@@ -56,6 +56,9 @@ IF(WANT_WASM)
 		core/ControlWasmSupport.cpp
 		core/ControlCommandsWasm.cpp
 		core/ControlCommandsWasmEdit.cpp
+		# CODE-5 (feature row 73): the pool's own state and the deterministic
+		# offline render with its measured tolerance verdict.
+		core/ControlCommandsWasmRender.cpp
 	)
 ENDIF()
 
@@ -283,6 +286,10 @@ set(LMMS_SRCS
 	# The plugin.host_chunking row (feature row 82, CODE-4). One row in its own
 	# file for the same reason: a file-length cap, not a group boundary.
 	core/ControlReversibilityTableHostChunking.cpp
+	# The wasm.pool / wasm.render_offline rows (feature row 73, CODE-5), for the
+	# same reason: the passive block that holds the rest of the wasm.* rows is at
+	# the file-length cap.
+	core/ControlReversibilityTableWasmRender.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

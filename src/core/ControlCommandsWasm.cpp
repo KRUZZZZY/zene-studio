@@ -394,6 +394,9 @@ void registerWasmCommands(ControlRegistry& registry)
 	registerWasmListCommand(registry);
 	registerWasmGetStateCommand(registry);
 	registerWasmProcessCommand(registry);
+	// The shared worker pool and the deterministic offline render (CODE-5,
+	// feature row 73), in their own translation unit.
+	registerWasmRenderCommands(registry);
 	// The mutating half, in its own translation unit (the automation, warp, rack
 	// and comp groups' read/edit split).
 	registerWasmEditCommands(registry);

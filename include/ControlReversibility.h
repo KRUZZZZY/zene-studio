@@ -181,6 +181,13 @@ LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount
  *  Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityHostChunkingRowTable(int* rowCount);
+/*! The `wasm.pool` and `wasm.render_offline` rows (feature row 73, CODE-5): the
+ *  shared worker pool's counters, and the deterministic offline render whose
+ *  verdict is measured against this build's own run-to-run floor. In its own
+ *  file because the passive block that carries the rest of the wasm.* rows is at
+ *  the file-length cap. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityWasmRenderRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

@@ -612,6 +612,8 @@ src/gui/StemSplitController.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
+src/wasm/WasmOfflineRender.cpp
+src/wasm/WasmOfflineRender.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
@@ -619,6 +621,8 @@ src/wasm/WasmSandboxHost.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
+src/wasm/WasmWorkerPool.cpp
+src/wasm/WasmWorkerPool.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
 tests/control-absent-socket.py

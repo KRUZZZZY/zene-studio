@@ -62,6 +62,13 @@ LMMS_EXPORT ControlCommand wasmCommand(const QString& verb, const QString& descr
 	const QJsonObject& resultProperties, bool mutating,
 	const std::function<ControlResult(const QJsonObject&)>& handler);
 
+//! wasm.pool and wasm.render_offline (CODE-5, feature row 73): the shared
+//! worker pool's own state, and the deterministic offline render whose result
+//! carries a verdict measured against this build's own run-to-run floor. Its
+//! own translation unit (src/core/ControlCommandsWasmRender.cpp) on the same
+//! seam the group's read/edit split uses.
+LMMS_EXPORT void registerWasmRenderCommands(ControlRegistry& registry);
+
 //! The schema of the `state` object every wasm.* result carries.
 LMMS_EXPORT const QJsonObject& wasmStateProperty();
 

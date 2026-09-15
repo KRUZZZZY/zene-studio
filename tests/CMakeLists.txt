@@ -896,6 +896,48 @@ if(WANT_WASM)
 		LMMS_TESTING
 		WASM_ABI_EXAMPLE_WAT="${CMAKE_SOURCE_DIR}/tests/data/wasm-effect-abi/softclip.wat"
 	)
+
+	# CODE-5 (feature row 73): the shared worker pool, its wake-ups, and the
+	# deterministic offline render - whose verdict is a MEASURED comparison
+	# against this build's own run-to-run floor (docs/RENDER-DETERMINISM.md is
+	# the recorded contract; byte identity and fixed thresholds are both out).
+	#
+	# It COMPILES the sources under test itself - the pool, the worker, the
+	# offline render and the sandbox - exactly as ClapHostTest and Vst3HostTest
+	# do for their hosts, instead of linking lmmsobjs: the wasm sources are Qt
+	# free and reference no core symbol, so the test builds and runs without the
+	# engine. (Linking lmmsobjs would drag the whole core into the test and cost
+	# a full build of it.) The subject module comes from the wasm-modules target.
+	add_executable(WasmWorkerPoolTest
+		src/wasm/WasmWorkerPoolTest.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandbox.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorker.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorkerPool.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
+	)
+	add_test(NAME WasmWorkerPoolTest COMMAND WasmWorkerPoolTest)
+	target_include_directories(WasmWorkerPoolTest PRIVATE
+		# the generated headers the core's own headers carry: lmms_export.h
+		# (build/src) and lmmsconfig.h (build/include)
+		${CMAKE_BINARY_DIR}
+		${CMAKE_BINARY_DIR}/src
+		${CMAKE_BINARY_DIR}/include
+		${CMAKE_SOURCE_DIR}/include
+		${CMAKE_SOURCE_DIR}/src/wasm
+	)
+	target_include_directories(WasmWorkerPoolTest SYSTEM PRIVATE ${WASMTIME_INCLUDE_DIRS})
+	target_link_libraries(WasmWorkerPoolTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		${WASMTIME_LIBRARIES}
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_features(WasmWorkerPoolTest PRIVATE cxx_std_20)
+	target_compile_definitions(WasmWorkerPoolTest PRIVATE
+		LMMS_TESTING
+		WASM_MODULE_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
+	)
+	add_dependencies(WasmWorkerPoolTest wasm-modules)
 endif()
 
 # Native CLAP hosting tests. They only exist when the MIT licensed CLAP headers

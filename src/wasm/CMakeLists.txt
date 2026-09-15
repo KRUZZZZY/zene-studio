@@ -1,9 +1,11 @@
 set(LMMS_SRCS
 	${LMMS_SRCS}
 
+	wasm/WasmOfflineRender.cpp
 	wasm/WasmSandbox.cpp
 	wasm/WasmSandboxHost.cpp
 	wasm/WasmWorker.cpp
+	wasm/WasmWorkerPool.cpp
 
 	PARENT_SCOPE
 )
