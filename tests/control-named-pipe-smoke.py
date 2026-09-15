@@ -10,16 +10,17 @@ shapes, the same `--control-socket <path>` start line.  This script drives a REA
 built instance and checks exactly that over the wire:
 
   1. the instance starts with `--control-socket \\\\.\\pipe\\<name>` and prints the
-     same `control socket listening on <path>` line the POSIX transports print;
-  2. a client can connect to that pipe (CreateFileW) and exchange whole lines;
+     same `control socket listening on <path>` line the POSIX transport prints;
+  2. a client can connect to that pipe and exchange whole lines;
   3. `control.ping` answers with the protocol's own result (pong, proto 1); two
      requests written in ONE write are answered with TWO lines, in order (the
      framing rule: one request line in, one response line out, never a spliced
      line);
-  4. `control.commands_list` carries the command ids the surface has on POSIX -
-     checked as a set membership of long-standing ids, plus the shape (strings);
+  4. `control.commands_list` carries the command ids the surface has always had -
+     checked as set membership of long-standing ids, plus the shape and the
+     declared count;
   5. a malformed request line and an unknown command id get the typed refusal
-     shape: {"id":..,"ok":false,"error":{"kind":..,"message":..}} with a kind from
+     shape {"id":..,"ok":false,"error":{"kind":..,"message":..}} with a kind from
      the protocol's closed set;
   6. a request line past the 1 MiB cap is refused with the SAME invalid_args
      sentence the POSIX path sends, and only that connection is dropped: a fresh
@@ -28,8 +29,8 @@ built instance and checks exactly that over the wire:
      stderr and a non-zero exit - the launcher-visible refusal shape, which on
      POSIX comes from listen() and here from listenWin32() through the same
      reporter;
-  8. `control.quit` answers, the instance exits inside a bound, and the pipe name
-     is gone afterwards.
+  8. `control.quit` answers, the instance exits inside a bound, and the control
+     path is gone afterwards.
 
 A hang is a failure: every wait below is bounded, and the bound expiring is a
 failure (exit 1), never a skip.
@@ -41,7 +42,8 @@ of the evidence (docs/CONTROL-NAMED-PIPE.md says so in the same words).
 
 ON POSIX IT STILL RUNS - over the socket, by hand, as a check of ITS OWN logic:
 the transport is chosen by the SHAPE OF THE PATH (`\\\\.\\pipe\\...` -> named pipe,
-anything else -> AF_UNIX), so a developer without Windows can run
+anything else -> AF_UNIX, see the imported `control_pipe_client`), so a developer
+without Windows can run
 
     QT_QPA_PLATFORM=offscreen python3 tests/control-named-pipe-smoke.py <zene>
 
@@ -51,19 +53,19 @@ timeouts and expectations executable where the pipe is not.  Without a binary it
 exits 77 (ctest: Skipped), the same convention the other control transcripts use.
 
 Usage:
-    QT_QPA_PLATFORM=offscreen python3 tests/control-named-pipe-smoke.py <zene-binary>
+    QT_QPA_PLATFORM=offscreen python3 tests/control-named-pipe-smoke.py <zene-binary> [socket-path]
 Exit code 0 only when every check passed; 77 when there is nothing to drive.
 """
 
 import json
 import os
-import random
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
 import time
+
+from control_pipe_client import Failure, Timeout, default_socket_path, make_client
 
 # ---------------------------------------------------------------------------
 # bounds.  A healthy instance answers a ping in milliseconds; the FIRST reply can
@@ -82,8 +84,8 @@ MAX_REQUEST_LINE_BYTES = 1024 * 1024
 DUMMY_DEVICE = "Dummy (no sound output)"
 
 # The ids a client may rely on always being there.  Deliberately a small,
-# long-standing set: this asserts the Windows transport serves the SAME SURFACE,
-# not that the surface is frozen.
+# long-standing set: this asserts that the Windows transport serves the SAME
+# SURFACE, not that the surface is frozen.
 STABLE_IDS = (
     "control.ping",
     "control.version",
@@ -95,14 +97,6 @@ STABLE_IDS = (
 )
 
 KINDS = ("not_found", "requires", "invalid_args", "busy", "refused", "irreversible")
-
-
-class Failure(Exception):
-    """One check did not hold.  The message is the evidence."""
-
-
-class Timeout(Failure):
-    """A bounded wait expired.  Always a failure, never a skip."""
 
 
 def ok(message):
@@ -210,191 +204,6 @@ class Instance:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
-# ---------------------------------------------------------------------------
-# transports.  One interface, two kernels: AF_UNIX on POSIX, a named pipe on
-# Windows.  The tests below cannot tell which one they are driving.
-# ---------------------------------------------------------------------------
-
-
-class UnixSocketClient:
-    def __init__(self, path, timeout_s):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(timeout_s)
-        self.sock.connect(path)
-        self.buffer = b""
-
-    def send(self, payload):
-        self.sock.sendall(payload)
-
-    def read_line(self, timeout_s):
-        self.sock.settimeout(timeout_s)
-        while b"\n" not in self.buffer:
-            try:
-                chunk = self.sock.recv(65536)
-            except socket.timeout:
-                raise Timeout("no reply line within %.1fs" % timeout_s)
-            if not chunk:
-                raise Failure("the connection closed with %d buffered bytes and no newline"
-                              % len(self.buffer))
-            self.buffer += chunk
-        line, _, self.buffer = self.buffer.partition(b"\n")
-        return line
-
-    def connection_closed(self, timeout_s):
-        self.sock.settimeout(timeout_s)
-        try:
-            return self.sock.recv(65536) == b""
-        except socket.timeout:
-            return False
-
-    def close(self):
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-
-class NamedPipeClient:
-    """A byte-mode named pipe client, with CreateFileW/PeekNamedPipe/ReadFile.
-
-    PeekNamedPipe is what makes the read bounded: a blocking ReadFile on a pipe
-    with nothing to give would hang the test forever, which this file's contract
-    forbids (a hang is a failure, and a failure has to be reportable).
-    """
-
-    GENERIC_READ = 0x80000000
-    GENERIC_WRITE = 0x40000000
-    OPEN_EXISTING = 3
-    ERROR_FILE_NOT_FOUND = 2
-    ERROR_PIPE_BUSY = 231
-
-    def __init__(self, path, timeout_s):
-        if os.name != "nt":
-            raise Failure("a named pipe needs Windows; this host is %s" % sys.platform)
-        import ctypes
-        from ctypes import wintypes
-        self.ctypes = ctypes
-        self.wintypes = wintypes
-        self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        k = self.kernel32
-        k.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
-                                  ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
-                                  ctypes.c_void_p]
-        k.CreateFileW.restype = ctypes.c_void_p
-        k.WriteFile.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD,
-                                ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
-        k.WriteFile.restype = wintypes.BOOL
-        k.ReadFile.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD,
-                               ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
-        k.ReadFile.restype = wintypes.BOOL
-        k.PeekNamedPipe.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD,
-                                    ctypes.POINTER(wintypes.DWORD),
-                                    ctypes.POINTER(wintypes.DWORD),
-                                    ctypes.POINTER(wintypes.DWORD)]
-        k.PeekNamedPipe.restype = wintypes.BOOL
-        k.CloseHandle.argtypes = [ctypes.c_void_p]
-        k.CloseHandle.restype = wintypes.BOOL
-        k.WaitNamedPipeW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
-        k.WaitNamedPipeW.restype = wintypes.BOOL
-        self.invalid = ctypes.c_void_p(-1).value
-        self.path = path
-        self.buffer = b""
-        self.handle = self._connect(timeout_s)
-
-    def _connect(self, timeout_s):
-        deadline = time.time() + timeout_s
-        while True:
-            handle = self.kernel32.CreateFileW(
-                self.path, self.GENERIC_READ | self.GENERIC_WRITE, 0, None,
-                self.OPEN_EXISTING, 0, None)
-            if handle and handle != self.invalid:
-                return handle
-            error = self.ctypes.get_last_error()
-            if time.time() >= deadline:
-                raise Timeout("the pipe %s was not connectable within %.1fs (CreateFileW "
-                              "error %d)" % (self.path, timeout_s, error))
-            if error == self.ERROR_PIPE_BUSY:
-                # Every instance is serving a client: the documented wait.
-                self.kernel32.WaitNamedPipeW(self.path, 1000)
-            elif error != self.ERROR_FILE_NOT_FOUND:
-                raise Failure("CreateFileW on %s failed with error %d" % (self.path, error))
-            time.sleep(0.05)
-
-    def send(self, payload):
-        sent = 0
-        while sent < len(payload):
-            written = self.wintypes.DWORD(0)
-            chunk = payload[sent:]
-            ok_write = self.kernel32.WriteFile(self.handle, chunk, len(chunk),
-                                               self.ctypes.byref(written), None)
-            if not ok_write:
-                raise Failure("WriteFile on %s failed with error %d"
-                              % (self.path, self.ctypes.get_last_error()))
-            sent += written.value
-
-    def read_line(self, timeout_s):
-        deadline = time.time() + timeout_s
-        while b"\n" not in self.buffer:
-            if time.time() >= deadline:
-                raise Timeout("no reply line within %.1fs" % timeout_s)
-            available = self.wintypes.DWORD(0)
-            if not self.kernel32.PeekNamedPipe(self.handle, None, 0, None,
-                                               self.ctypes.byref(available), None):
-                raise Failure("PeekNamedPipe on %s failed with error %d"
-                              % (self.path, self.ctypes.get_last_error()))
-            if available.value == 0:
-                time.sleep(0.01)
-                continue
-            chunk = self.ctypes.create_string_buffer(min(available.value, 65536))
-            got = self.wintypes.DWORD(0)
-            if not self.kernel32.ReadFile(self.handle, chunk, len(chunk),
-                                          self.ctypes.byref(got), None):
-                raise Failure("ReadFile on %s failed with error %d"
-                              % (self.path, self.ctypes.get_last_error()))
-            self.buffer += chunk.raw[:got.value]
-        line, _, self.buffer = self.buffer.partition(b"\n")
-        return line
-
-    def connection_closed(self, timeout_s):
-        """True when the server's end is gone: the next peek/read sees EOF."""
-        deadline = time.time() + timeout_s
-        while time.time() < deadline:
-            if self.buffer:
-                return False
-            available = self.wintypes.DWORD(0)
-            if not self.kernel32.PeekNamedPipe(self.handle, None, 0, None,
-                                               self.ctypes.byref(available), None):
-                return True
-            if available.value:
-                return False
-            time.sleep(0.01)
-        return False
-
-    def close(self):
-        if self.handle:
-            self.kernel32.CloseHandle(self.handle)
-            self.handle = None
-
-
-def is_pipe_path(path):
-    return path.lower().startswith("\\\\.\\pipe\\")
-
-
-def make_client(path, timeout_s):
-    return NamedPipeClient(path, timeout_s) if is_pipe_path(path) else UnixSocketClient(path, timeout_s)
-
-
-def default_socket_path(tmpdir):
-    if os.name == "nt":
-        return "\\\\.\\pipe\\zene-code9-smoke-%d-%d" % (os.getpid(), random.randrange(100000))
-    return os.path.join(tmpdir, "zene.sock")
-
-
-# ---------------------------------------------------------------------------
-# the checks
-# ---------------------------------------------------------------------------
-
-
 class Client:
     """A transcript-recording JSON-RPC client over whichever transport is in use."""
 
@@ -433,7 +242,7 @@ class Client:
     def typed_refusal(self, cmd, what, timeout_s=REPLY_BOUND):
         reply = self.call(cmd, timeout_s=timeout_s)
         if reply.get("ok") is not False:
-            raise Failure("%s answered ok - expected the typed refusal (%s)" % (what, what))
+            raise Failure("%s answered ok - expected a typed refusal (%s)" % (cmd, what))
         error = reply.get("error")
         if not isinstance(error, dict) or "kind" not in error or "message" not in error:
             raise Failure("%s answered without the {kind,message} error object: %s"
@@ -444,45 +253,144 @@ class Client:
         return reply
 
 
+def connect_when_available(instance, socket_path):
+    """The listener appearing is not the instance being ready: poll, bounded.
+
+    A runner without the offscreen plugin is a platform fact rather than a defect
+    in the transport, so that one failure mode is retried once with the platform's
+    own default QPA.
+    """
+    deadline = time.time() + CONNECT_BOUND
+    last = None
+    while time.time() < deadline:
+        if not instance.alive():
+            raise Failure("the instance exited (code %s) before its control socket was "
+                          "usable; log:\n%s" % (instance.process.returncode,
+                                                instance.log()[-4000:]))
+        try:
+            return make_client(socket_path, 5.0)
+        except (Failure, Timeout, OSError) as exc:
+            last = exc
+            time.sleep(0.1)
+    if "platform plugin" in instance.log():
+        print("note: the offscreen QPA plugin is unavailable here; retrying with the "
+              "platform default")
+        instance.kill()
+        instance.offscreen = False
+        instance.spawn()
+        deadline = time.time() + CONNECT_BOUND
+        while time.time() < deadline:
+            try:
+                return make_client(socket_path, 5.0)
+            except (Failure, Timeout, OSError) as exc:
+                last = exc
+                time.sleep(0.1)
+    raise Timeout("the control socket %s was never connectable within %.1fs (%s); log:\n%s"
+                  % (socket_path, CONNECT_BOUND, last, instance.log()[-4000:]))
+
+
+def check_framing_and_ids(client, transcript):
+    """Checks 3 and 4: two requests in one write, then the surface's own id list."""
+    first = json.dumps({"id": 101, "cmd": "control.version", "args": {}, "proto": 1},
+                       separators=(",", ":"))
+    second = json.dumps({"id": 102, "cmd": "control.ping", "args": {}, "proto": 1},
+                        separators=(",", ":"))
+    client.send((first + "\n" + second + "\n").encode("utf-8"))
+    reply_a = json.loads(client.read_line(REPLY_BOUND))
+    reply_b = json.loads(client.read_line(REPLY_BOUND))
+    if reply_a.get("id") != 101 or reply_b.get("id") != 102:
+        raise Failure("two requests in one write were not answered one line each, in "
+                      "order: got ids %r then %r" % (reply_a.get("id"), reply_b.get("id")))
+    ok("two requests in one write -> two whole reply lines, in order (no spliced line)")
+
+    surface = transcript.ok_call("control.commands_list")
+    entries = surface.get("commands") or surface.get("ids") or []
+    if not isinstance(entries, list) or not entries:
+        raise Failure("control.commands_list answered without an id list: %s"
+                      % json.dumps(surface)[:300])
+    names = set()
+    for entry in entries:
+        if isinstance(entry, str):
+            names.add(entry)
+        elif isinstance(entry, dict) and isinstance(entry.get("id"), str):
+            names.add(entry["id"])
+        else:
+            raise Failure("an entry of control.commands_list is neither an id string nor "
+                          "an object with one: %r" % (entry,))
+    declared = surface.get("count")
+    if declared is not None and declared != len(entries):
+        raise Failure("control.commands_list declares count=%r for %d entries: the "
+                      "transport must not lose or duplicate an entry" % (declared, len(entries)))
+    missing = [name for name in STABLE_IDS if name not in names]
+    if missing:
+        raise Failure("the surface is missing %s (of %d ids): the Windows transport must "
+                      "serve the SAME command ids" % (missing, len(names)))
+    ok("control.commands_list carries %d ids, including all %d checked"
+       % (len(names), len(STABLE_IDS)))
+
+
+def check_refusals(client, transcript):
+    """Checks 5 and 6: the typed refusals, then the 1 MiB cap and its blast radius."""
+    # A malformed line cannot name a request, so the surface answers id -1 (the id
+    # it gives a reply that belongs to no request).
+    line = transcript.raw(b'{"id":201,"cmd":\n')
+    reply = json.loads(line)
+    if reply.get("ok") is not False or reply.get("id") != -1:
+        raise Failure("a malformed request line was not refused in the protocol's shape: "
+                      "%s" % line[:300])
+    kind = (reply.get("error") or {}).get("kind")
+    if kind != "invalid_args":
+        raise Failure("a malformed request line was refused with kind %r, expected "
+                      "invalid_args" % kind)
+    ok("a malformed request line is refused with the typed error shape (id -1, invalid_args)")
+
+    reply = transcript.call("no.such_command", request_id=202)
+    if reply.get("ok") is not False or reply.get("id") != 202:
+        raise Failure("an unknown command id was not refused typed: %s"
+                      % json.dumps(reply)[:300])
+    ok("an unknown command id is refused typed (%s)" % (reply.get("error") or {}).get("kind"))
+
+    over = b"x" * (MAX_REQUEST_LINE_BYTES + 4096)
+    for offset in range(0, len(over), 64 * 1024):
+        client.send(over[offset:offset + 64 * 1024])
+    line = client.read_line(REPLY_BOUND)
+    reply = json.loads(line)
+    if reply.get("ok") is not False or reply.get("id") != -1:
+        raise Failure("an over-cap request line was not refused typed: %s" % line[:300])
+    kind = (reply.get("error") or {}).get("kind")
+    if kind != "invalid_args":
+        raise Failure("an over-cap request line answered kind %r, expected invalid_args" % kind)
+    ok("a request line past the %d-byte cap is refused with the same invalid_args line the "
+       "POSIX path sends" % MAX_REQUEST_LINE_BYTES)
+
+
+def check_startup_refusal(binary):
+    """Check 7: what a LAUNCHER sees for a path that is not a pipe name."""
+    bad = Instance(binary, "not-a-pipe-name")
+    try:
+        bad.spawn()
+        exited, code = bad.wait_for_exit(EXIT_BOUND)
+        if not exited:
+            raise Failure("a non-pipe --control-socket path did not make the instance "
+                          "exit; log:\n%s" % bad.log()[-2000:])
+        if code == 0:
+            raise Failure("a non-pipe --control-socket path exited 0")
+        stderr = bad.log()
+        if '"kind":"invalid_args"' not in stderr.replace(" ", ""):
+            raise Failure("the start-up refusal is not the protocol's typed line "
+                          "(\\\"kind\\\":\\\"invalid_args\\\"); output:\n%s" % stderr[-2000:])
+        ok("a path that is not \\\\.\\pipe\\<name> is refused at start-up with the typed "
+           "line (exit %s)" % code)
+    finally:
+        bad.close()
+
+
 def run(binary, socket_path, problems):
     instance = Instance(binary, socket_path)
     client = None
     try:
         instance.spawn()
-        # The listener can appear before the GUI: wait for the NAME, then connect.
-        deadline = time.time() + CONNECT_BOUND
-        last = None
-        while time.time() < deadline:
-            if not instance.alive():
-                raise Failure("the instance exited (code %s) before its control socket was "
-                              "usable; log:\n%s" % (instance.process.returncode,
-                                                    instance.log()[-4000:]))
-            try:
-                client = make_client(socket_path, 5.0)
-                break
-            except (Failure, Timeout, OSError) as exc:
-                last = exc
-                time.sleep(0.1)
-        if client is None:
-            # A runner without the offscreen plugin is a platform fact, not a defect
-            # in the transport: retry once with the platform's own default QPA.
-            if "platform plugin" in instance.log():
-                print("note: the offscreen QPA plugin is unavailable here; retrying with the "
-                      "platform default")
-                instance.kill()
-                instance.offscreen = False
-                instance.spawn()
-                deadline = time.time() + CONNECT_BOUND
-                while time.time() < deadline and client is None:
-                    try:
-                        client = make_client(socket_path, 5.0)
-                    except (Failure, Timeout, OSError) as exc:
-                        last = exc
-                        time.sleep(0.1)
-        if client is None:
-            raise Timeout("the control socket %s was never connectable within %.1fs (%s); "
-                          "log:\n%s" % (socket_path, CONNECT_BOUND, last,
-                                        instance.log()[-4000:]))
+        client = connect_when_available(instance, socket_path)
         ok("the instance listens on %s and a client can connect to it" % socket_path)
 
         if "control socket listening on %s" % socket_path not in instance.log():
@@ -492,93 +400,16 @@ def run(binary, socket_path, problems):
         ok("the start line is the shared one ('control socket listening on <path>')")
 
         transcript = Client(client)
-
-        # 1. liveness, before anything that needs the engine.
         result = transcript.ok_call("control.ping", timeout_s=START_BOUND)
         if result.get("pong") is not True:
             raise Failure("control.ping answered without pong: %s" % json.dumps(result)[:300])
         if result.get("proto") != 1:
             raise Failure("control.ping reports proto %r, this surface speaks 1"
                           % result.get("proto"))
-        ok("control.ping answers over the pipe (pong, proto 1)")
+        ok("control.ping answers (pong, proto 1)")
 
-        # 2. framing: TWO requests in ONE write, TWO reply lines, in order.
-        first = json.dumps({"id": 101, "cmd": "control.version", "args": {}, "proto": 1},
-                           separators=(",", ":"))
-        second = json.dumps({"id": 102, "cmd": "control.ping", "args": {}, "proto": 1},
-                            separators=(",", ":"))
-        client.send((first + "\n" + second + "\n").encode("utf-8"))
-        line_a = client.read_line(REPLY_BOUND)
-        line_b = client.read_line(REPLY_BOUND)
-        reply_a, reply_b = json.loads(line_a), json.loads(line_b)
-        if reply_a.get("id") != 101 or reply_b.get("id") != 102:
-            raise Failure("two requests in one write were not answered one line each, in "
-                          "order: got ids %r then %r" % (reply_a.get("id"), reply_b.get("id")))
-        ok("two requests in one write -> two whole reply lines, in order (no spliced line)")
-
-        # 3. the same command ids, read off the wire.
-        surface = transcript.ok_call("control.commands_list")
-        ids = surface.get("commands") or surface.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise Failure("control.commands_list answered without an id list: %s"
-                          % json.dumps(surface)[:300])
-        names = set()
-        for entry in ids:
-            if isinstance(entry, str):
-                names.add(entry)
-            elif isinstance(entry, dict) and isinstance(entry.get("id"), str):
-                names.add(entry["id"])
-            else:
-                raise Failure("an entry of control.commands_list is neither an id string nor "
-                              "an object with one: %r" % (entry,))
-        declared = surface.get("count")
-        if declared is not None and declared != len(ids):
-            raise Failure("control.commands_list declares count=%r for %d entries: the "
-                          "transport must not lose or duplicate an entry"
-                          % (declared, len(ids)))
-        missing = [name for name in STABLE_IDS if name not in names]
-        if missing:
-            raise Failure("the pipe serves a surface missing %s (of %d ids): the Windows "
-                          "transport must serve the SAME command ids" % (missing, len(names)))
-        ok("control.commands_list carries %d ids over the pipe, including all %d checked"
-           % (len(names), len(STABLE_IDS)))
-
-        # 4. a malformed request line, and an unknown command id: typed refusals.
-        #    A malformed line cannot name a request, so the surface answers id -1
-        #    (the id it gives a reply that belongs to no request).
-        line = transcript.raw(b'{"id":201,"cmd":\n')
-        reply = json.loads(line)
-        if reply.get("ok") is not False or reply.get("id") != -1:
-            raise Failure("a malformed request line was not refused in the protocol's shape: "
-                          "%s" % line[:300])
-        error = reply.get("error") or {}
-        if error.get("kind") != "invalid_args":
-            raise Failure("a malformed request line was refused with kind %r, expected "
-                          "invalid_args" % error.get("kind"))
-        ok("a malformed request line is refused with the typed error shape (id -1, "
-           "invalid_args)")
-
-        reply = transcript.call("no.such_command", request_id=202)
-        if reply.get("ok") is not False or reply.get("id") != 202:
-            raise Failure("an unknown command id was not refused typed: %s"
-                          % json.dumps(reply)[:300])
-        ok("an unknown command id is refused typed (%s)"
-           % (reply.get("error") or {}).get("kind"))
-
-        # 5. the 1 MiB request-line cap, then the SAME connection's fate and a fresh one.
-        over = b"x" * (MAX_REQUEST_LINE_BYTES + 4096)
-        chunk = 64 * 1024
-        for offset in range(0, len(over), chunk):
-            client.send(over[offset:offset + chunk])
-        line = client.read_line(REPLY_BOUND)
-        reply = json.loads(line)
-        if reply.get("ok") is not False or reply.get("id") != -1:
-            raise Failure("an over-cap request line was not refused typed: %s" % line[:300])
-        if (reply.get("error") or {}).get("kind") != "invalid_args":
-            raise Failure("an over-cap request line answered kind %r, expected invalid_args"
-                          % (reply.get("error") or {}).get("kind"))
-        ok("a request line past the %d-byte cap is refused with the same invalid_args line "
-           "the POSIX path sends" % MAX_REQUEST_LINE_BYTES)
+        check_framing_and_ids(client, transcript)
+        check_refusals(client, transcript)
         client.close()
         client = None
 
@@ -589,31 +420,12 @@ def run(binary, socket_path, problems):
             raise Failure("a connection after an over-cap refusal could not ping")
         ok("the listener survives an over-cap connection: a fresh one pings")
 
-        # 6. the refusal a LAUNCHER sees, for a path that is not a pipe name.
-        bad = Instance(binary, "not-a-pipe-name")
-        try:
-            bad.spawn()
-            exited, code = bad.wait_for_exit(EXIT_BOUND)
-            if not exited:
-                raise Failure("a non-pipe --control-socket path did not make the instance "
-                              "exit; log:\n%s" % bad.log()[-2000:])
-            if code == 0:
-                raise Failure("a non-pipe --control-socket path exited 0")
-            stderr = bad.log()
-            if '"kind":"invalid_args"' not in stderr.replace(" ", ""):
-                raise Failure("the start-up refusal is not the protocol's typed line "
-                              "(\\\"kind\\\":\\\"invalid_args\\\"); stderr:\n%s"
-                              % stderr[-2000:])
-            ok("a path that is not \\\\.\\pipe\\<name> is refused at start-up with the typed "
-               "line (exit %s)" % code)
-        finally:
-            bad.close()
+        check_startup_refusal(binary)
 
-        # 7. normal shutdown, and the name is gone.
         reply = survivor.call("control.quit", request_id=900)
         if reply.get("ok") is not True:
             raise Failure("control.quit was refused: %s" % json.dumps(reply)[:300])
-        ok("control.quit answers over the pipe")
+        ok("control.quit answers")
         fresh.close()
         client = None
         exited, code = instance.wait_for_exit(EXIT_BOUND)
@@ -645,11 +457,6 @@ def run(binary, socket_path, problems):
 
 
 def main(argv):
-    if os.name != "nt":
-        if len(argv) < 2:
-            print("usage: %s <zene-binary> [socket-path]" % argv[0])
-            print("(on this host the path selects the AF_UNIX transport: the same assertions)")
-            return 77
     if len(argv) < 2:
         print("SKIP: no binary given (ctest passes $<TARGET_FILE:zene>)")
         return 77
