@@ -173,6 +173,13 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The `detect.*` group's three rows (feature row 34): one recorded-action
+ *  true_inverse row (detect.apply writes the tempo map AND the project's own
+ *  `<detected-key>` field, neither of which a live checkpoint reaches) and the
+ *  group's two not_mutating inspectors. A GROUP file on the same seam as the
+ *  folder, vca, routing and mastering files - the class comes from each row, not
+ *  from its file. Joined into reversibilityRowTable(). */
+LMMS_EXPORT const ReversibilityRow* reversibilityDetectRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

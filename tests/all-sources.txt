@@ -177,6 +177,7 @@ include/GrooveTemplate.h
 include/GroupBox.h
 include/GuiApplication.h
 include/Hardware.h
+include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/ImportFilter.h
 include/InlineAutomation.h
@@ -323,6 +324,7 @@ include/PositionLine.h
 include/PresetPreviewPlayHandle.h
 include/ProjectIds.h
 include/ProjectJournal.h
+include/ProjectKey.h
 include/ProjectNotes.h
 include/ProjectRecovery.h
 include/ProjectRenderer.h
@@ -935,6 +937,7 @@ src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsCrash.cpp
+src/core/ControlCommandsDetect.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsFreeze.cpp
@@ -1011,6 +1014,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableDetect.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
@@ -1041,6 +1045,7 @@ src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
+src/core/ImportDetection.cpp
 src/core/ImportDetectionDsp.cpp
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
@@ -1100,6 +1105,7 @@ src/core/PresetPreviewPlayHandle.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournal.cpp
 src/core/ProjectJournalBounds.cpp
+src/core/ProjectKey.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
@@ -1344,6 +1350,7 @@ src/wasm/WasmSandboxHost.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
+tests/control-detect-commands.py
 tests/data/clap-test-plugin/clap-test-gain.c
 tests/data/gigproof/make_gig.cpp
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp
@@ -1388,6 +1395,7 @@ tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
+tests/src/core/ImportDetectionTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp

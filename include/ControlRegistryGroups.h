@@ -283,6 +283,28 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+/*! The `detect.*` group (feature row 34 of docs/FEATURE-LIST-0.3.0.md): transient /
+ *  BPM / key detection for an imported audio file, over the control surface -
+ *  detect.analyze (the SUGGESTION: one file in, tempo + first transient + key out,
+ *  nothing written), detect.apply (the ACCEPTANCE: the tempo into the tempo map
+ *  and the key into the project's own `<detected-key>` field, as ONE undoable
+ *  step) and detect.get_state (what the project holds, the two method names, the
+ *  bounds and the accuracy sentence).
+ *
+ * The engine half is include/ImportDetection.h over the Qt-free arithmetic in
+ * include/ImportDetectionDsp.h, and the key's vocabulary is the PRE-EXISTING one
+ * (InstrumentFunctionNoteStacking::ChordTable, the names the piano roll's scale
+ * combo is filled from) - this feature names no new scales. No compile-time
+ * switch: the decoder, the arithmetic and the project field are in every
+ * configuration, so its three ids are honest in every one.
+ *
+ * BACKLOG.md item 10 is the scope this follows rather than exceeds: (a) tempo and
+ * (b) the first transient, shown as suggestions, "never applied silently". The
+ * accuracy that is MEASURED (synthesised input with a known answer) and the
+ * accuracy that is NOT (real music, unverified on this box) are both stated in
+ * detect.get_state's own reply and in docs/IMPORT-DETECTION.md.
+ */
+LMMS_EXPORT void registerDetectCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

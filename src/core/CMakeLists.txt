@@ -95,6 +95,15 @@ set(LMMS_SRCS
 	core/BrowserMetadata.cpp
 	core/BrowserPeakCache.cpp
 	core/BrowserTagStore.cpp
+	# Import detection (feature row 34 of docs/FEATURE-LIST-0.3.0.md): the Qt-free
+	# arithmetic (a hand-rolled spectral-flux tempo estimate and a chroma key
+	# estimate - no new dependency), the file + vocabulary half over the engine's
+	# own SampleDecoder and the pre-existing ChordTable scale names, and the
+	# project's detected-key field (the `<detected-key>` element a detect.apply
+	# writes). No compile-time switch: all three are in every configuration.
+	core/ImportDetectionDsp.cpp
+	core/ImportDetection.cpp
+	core/ProjectKey.cpp
 	core/BounceInPlace.cpp
 	core/BufferManager.cpp
 	core/Clipboard.cpp
@@ -145,6 +154,12 @@ set(LMMS_SRCS
 	core/ControlMasteringSupport.cpp
 	core/ControlCommandsMastering.cpp
 	core/ControlCommandsMasteringRun.cpp
+	# Import detection (feature row 34): detect.analyze (the SUGGESTION - one audio
+	# file in, tempo + first transient + key out, nothing written), detect.apply
+	# (the acceptance: the tempo into the tempo map and the key into the project's
+	# own field, as ONE undoable step) and detect.get_state. No compile-time
+	# switch.
+	core/ControlCommandsDetect.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp
@@ -272,6 +287,11 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	# The import-detection group's three rows (feature row 34): one recorded-action
+	# true_inverse row (detect.apply writes the tempo map AND the project's own
+	# detected-key field, neither of which a live checkpoint reaches) and the two
+	# not_mutating inspectors. A GROUP file on the same seam as the rows above.
+	core/ControlReversibilityTableDetect.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

@@ -172,6 +172,13 @@ void registerControlCommands(ControlRegistry& registry)
 	// meter are in every configuration, so its ids are honest in every one.
 	registerMasteringCommands(registry);
 	registerMasteringRunCommands(registry);
+	// Import detection (feature row 34: transient / BPM / key detection on
+	// import). No compile-time switch: the engine's own decoder, the Qt-free
+	// arithmetic and the project's `<detected-key>` field are in every
+	// configuration, so its three ids are honest in every one. detect.analyze is
+	// the SUGGESTION and detect.apply the acceptance (BACKLOG.md item 10's
+	// "never applied silently").
+	registerDetectCommands(registry);
 }
 
 } // namespace lmms
