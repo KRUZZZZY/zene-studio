@@ -168,10 +168,6 @@ QJsonObject referenceWithRaw(const QJsonArray& references, const QString& raw)
 	return QJsonObject();
 }
 
-QJsonArray missingOf(const ControlResult& result)
-{
-	return result.result.value(QStringLiteral("missing")).toArray();
-}
 
 } // namespace
 
