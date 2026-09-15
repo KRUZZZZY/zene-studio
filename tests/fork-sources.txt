@@ -545,6 +545,7 @@ src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipTrim.cpp
+src/core/ControlCommandsCrashControl.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp

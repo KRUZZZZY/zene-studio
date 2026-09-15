@@ -51,6 +51,7 @@ bool install(const std::string&) { return false; }
 bool uninstall() { return false; }
 bool handlersArmed() { return false; }
 std::string reportDirectory() { return std::string(); }
+std::string handledSignalList() { return std::string(); }
 bool isInstalled() { return false; }
 void setProjectPath(const std::string&) {}
 void beginSession() {}

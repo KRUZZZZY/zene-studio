@@ -171,6 +171,14 @@ bool handlersArmed();
 // derived from the same value.
 std::string reportDirectory();
 
+// The signals the reporter claims, as text, in the order install() sets them:
+// "SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE" (SIGFPE absent under the debug-only
+// LMMS_DEBUG_FPE build flag, whose handler owns it).  Built from the same list
+// install()/uninstall()/handlersArmed() read, so an agent asking "what does
+// arming mean?" is answered from the one definition rather than from a second
+// copy at the call site.  Empty on Windows, where nothing is ever installed.
+std::string handledSignalList();
+
 // Re-point the working directory (main thread, safe points only, after the
 // user's real working directory is known).  Does not create anything.
 bool setReportDirectory(const std::string& workingDirectory);

@@ -314,6 +314,24 @@ std::string reportDirectory()
 	return s_dir;
 }
 
+//! The signals the reporter claims, as text, in the order install() sets them:
+//! "SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE" (SIGFPE absent under
+//! LMMS_DEBUG_FPE). Built from the SAME list install(), uninstall() and
+//! handlersArmed() read, so the control surface cannot name a set the handler
+//! does not catch. Empty on Windows, where nothing is ever installed.
+std::string handledSignalList()
+{
+	std::string out;
+	int count = 0;
+	const int* signals = handlerSignals(count);
+	for (int i = 0; i < count; ++i)
+	{
+		if (i > 0) { out += ", "; }
+		out += signalName(signals[i]);
+	}
+	return out;
+}
+
 bool isInstalled()
 {
 	return s_installed;

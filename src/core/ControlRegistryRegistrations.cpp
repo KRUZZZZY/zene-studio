@@ -207,6 +207,11 @@ void registerControlCommands(ControlRegistry& registry)
 	// configuration (reporting no directory there), so the ids are honest either
 	// way and the two writers refuse, typed, when the reporter is not installed.
 	registerCrashReporterCommands(registry);
+	// The crash reporter's ARM pair (feature row 54, board task #643): enable and
+	// disable. Same module, same no-compile-time-switch rule - on Windows nothing
+	// is ever armed, install() returns false, and crash.enable refuses with that
+	// reason rather than reporting an arming that did not happen.
+	registerCrashControlCommands(registry);
 	// Auto-mastering, wave 1 (feature rows 25 and 72; docs/AUTO-MASTERING.md):
 	// the read half (the candidate set the engine generates and the last run's
 	// report) and the one writer, which runs the shipped CLI action in a child

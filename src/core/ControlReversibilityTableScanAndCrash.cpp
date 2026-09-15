@@ -175,6 +175,37 @@ const ReversibilityRow kScanAndCrashRows[] = {
 		"re-run the action that crashed: the reporter writes a new bounded report "
 		"at the same path. The discarded report's CONTENT is not recoverable by "
 		"anything in this engine"),
+	// ------------------------------------------------------------------
+	// The reporter's ARM pair (board task #643): what the two verbs the group
+	// above says cannot exist now do, and how each is taken back. Both are
+	// `snapshot` with the paired COMMAND for the same reason the plugin
+	// quarantine pair is: a signal disposition is PROCESS state, not project
+	// state (include/CrashReporter.h), so no ProjectJournal checkpoint can hold
+	// it and there is nothing to addJournalCheckPoint() on.
+	// ------------------------------------------------------------------
+	R("crash.enable", RC::Snapshot, true,
+		"arming installs the crash handler's dispositions "
+		"(crashreporter::install); the reporter is not a JournallingObject and "
+		"what it changes is the process's signal dispositions, so the project's "
+		"undo stack holds no state that describes it",
+		"snapshot: the recorded inverse is the paired COMMAND crash.disable "
+		"(applies=command), dispatched by control.undo through the registry. The "
+		"before-state records whether the reporter was already armed and the "
+		"report directory this call armed, and the call is REFUSED when it is "
+		"already armed - so a recorded inverse is never an inverse of a call that "
+		"changed nothing",
+		""),
+	R("crash.disable", RC::Snapshot, true,
+		"disarming restores the default disposition for exactly the signals "
+		"install() claimed; the set itself is not state any command of this "
+		"engine reconstructs, and no checkpoint can hold a disposition",
+		"snapshot: the recorded inverse is the paired COMMAND crash.enable "
+		"(applies=command) with the report directory captured BEFORE the write. "
+		"The directory rides in the inverse's args because the reporter keeps it "
+		"while disarmed while a client's working directory can move under it - "
+		"re-arming somewhere else would restore a different reporter than the one "
+		"that was there",
+		""),
 };
 
 constexpr int kScanAndCrashRowCount =

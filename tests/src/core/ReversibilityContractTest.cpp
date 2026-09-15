@@ -122,16 +122,41 @@ DocumentedHistogram documentedHistogram()
 	 *
 	 *  DAWproject (feature row 37, this lane): +4 rows - 3 not_mutating
 	 *  (dawproject.convention, export, read) + 1 true_inverse (import), so the
-	 *  merged tip's base becomes 285 / 152 / 21 / 6 / 106. */
-	DocumentedHistogram out{285, 152, 21, 6, 106};
+	 *  merged tip's base becomes 285 / 152 / 21 / 6 / 106.
+	 *
+	 *  RE-MEASURED (030/crash-enable, board task #643, 2026-09-15). The literal
+	 *  below is what THIS tree measures, because every figure above was a
+	 *  branch-local observation and this branch's base is not the DAWproject
+	 *  lane's: 300 rows - 153 true_inverse, 28 snapshot, 7 irreversible, 112
+	 *  not_mutating. The measurement is a parse of the row macros (R / RC / RCO)
+	 *  in src/core/ControlReversibilityTable*.cpp with each row attributed to
+	 *  the compile-time guard it sits under, deduplicated by id the way the
+	 *  table's own QHash is - NOT a run of this test (no build of the merged
+	 *  tree exists on this lane), which is why the merge tip MUST re-measure it
+	 *  rather than trust it: a lane that merges after this one moves it again.
+	 *
+	 *  This lane's own delta is +2 rows, both `snapshot`:
+	 *  crash.enable / crash.disable (the reporter's arm pair, whose recorded
+	 *  inverse is the paired command) - named beside their rows in
+	 *  src/core/ControlReversibilityTableScanAndCrash.cpp.
+	 *
+	 *  The two guarded groups were re-measured in the same pass: the telemetry
+	 *  clause's 2 not_mutating rows are what this tree has, and the wasm clause
+	 *  below is 8 rows (3 snapshot, 5 not_mutating), not the 6 an earlier lane
+	 *  wrote - wasm.pool and wasm.render_offline are guarded by the same
+	 *  LMMS_HAVE_WASM #ifdef (src/core/ControlReversibilityTableWasmRender.cpp)
+	 *  and were left out of that figure.
+	 */
+	DocumentedHistogram out{300, 153, 28, 7, 112};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
 #endif
 #ifdef LMMS_HAVE_WASM
-	out.rows += 6;          // wasm.load / unload / set_param, list / get_state / process
+	out.rows += 8;          // wasm.load / unload / set_param, list / get_state / process
+	                        // + pool / render_offline, the same LMMS_HAVE_WASM #ifdef
 	out.snapshot += 3;
-	out.notMutating += 3;
+	out.notMutating += 5;
 #endif
 #ifdef LMMS_HAVE_STEM_SPLIT
 	// The seven stem.* rows (feature row 26, board task #653): stem.get_state,

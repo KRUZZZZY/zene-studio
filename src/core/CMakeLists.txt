@@ -235,6 +235,9 @@ set(LMMS_SRCS
 	# half). Separate translation units for the reason the automation and warp
 	# groups are split - gate 7 measures a file, not a group.
 	core/ControlCommandsCrash.cpp
+	# The reporter's ARM pair (crash.enable / crash.disable, feature row 54, board
+	# task #643), in its own TU: ControlCommandsCrash.cpp is at 476 lines.
+	core/ControlCommandsCrashControl.cpp
 	core/ControlCommandsPluginScan.cpp
 	core/ControlCommandsPluginScanEdit.cpp
 	# plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
