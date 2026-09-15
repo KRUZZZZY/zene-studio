@@ -635,6 +635,7 @@ tests/control-mastering-commands.py
 tests/control-negative-control.py
 tests/control-no-audio-device.py
 tests/control-pdc-commands.py
+tests/control-pitch-stretch-transcript.py
 tests/control-plugin-scan-commands.py
 tests/control-ports-commands.py
 tests/control-punch-transcript.py

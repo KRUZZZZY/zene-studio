@@ -255,8 +255,12 @@ nothing — one bool test per period.
   row 228, +1 `true_inverse`). It is listed here because the fix is a *count* the test itself asks to be
   updated with the table, and the merge tip must re-count it again.
 * **Not run at all**: the coverage, mutation and file-length gates, the full ctest suite (only the
-  targets this lane needed were built), the socket transcript
-  (`tests/control-warp-commands-transcript.py`), and CI. `tests/run-all-gates.sh` was not run.
+  targets this lane needed were built), and CI. `tests/run-all-gates.sh` was not run.
+* **The socket transcript IS GREEN** and committed: `tests/control-pitch-stretch-transcript.py` drives
+  the real binary headless through the shared harness and every check held (20 PASS / 0 FAIL, exit 0) —
+  including the typed refusal, the switch, the read-back, the A16 record with its re-issuable inverse
+  and `control.undo` restoring the previous mode. The raw log is committed as
+  `docs/PITCH-STRETCH-TRANSCRIPT.md`.
 * **`agent_surface` (the junk-argument sweep over every registered id, `warp.stretch` included) is
   GREEN** on this branch's binary, and so are `ControlWarpCommandsTest` (the pre-existing warp group's
   own contract test, 1.41 s) and `WarpMarkersTest`.
