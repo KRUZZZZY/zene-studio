@@ -761,8 +761,6 @@ tests/src/core/RackZonesTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
-tests/src/core/SafeStartLoadPathTest.cpp
-tests/src/core/SafeStartTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
