@@ -203,6 +203,31 @@ bool journalTrackRemoval(Track* track)
 	return true;
 }
 
+//! The sub-plugin key a captured device document carries, if any.
+//!
+//! controlEffectStateXml() appends the key as an element of the body, so a
+//! HOSTED device - whose descriptor name ("ladspaeffect", "lv2effect") is shared
+//! by every plugin of its format - is re-instantiated as the SAME plugin and not
+//! as an arbitrary sibling. False when the document carries no key with
+//! attributes, i.e. for a built-in whose name alone identifies it.
+bool deviceKeyFromState(const QDomElement& root,
+	Plugin::Descriptor::SubPluginFeatures::Key* key)
+{
+	const QDomNodeList keys = root.elementsByTagName(KeyElement);
+	if (keys.isEmpty() || !keys.item(0).isElement()) { return false; }
+	*key = Plugin::Descriptor::SubPluginFeatures::Key(keys.item(0).toElement());
+	return !key->attributes.isEmpty();
+}
+
+//! Puts \a effect, freshly appended to \a chain (its end), back at \a index by
+//! walking it up through the chain's own reorder - the call the rack's move
+//! buttons make. A no-op when it is already there or the index is out of range.
+void placeEffectAt(EffectChain* chain, Effect* effect, int index)
+{
+	const int count = static_cast<int>(chain->effects().size());
+	for (int i = count - 1; i > index && i > 0; --i) { chain->moveUp(effect); }
+}
+
 Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index)
 {
 	if (chain == nullptr || stateXml.isEmpty()) { return nullptr; }
@@ -221,28 +246,16 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 	// not park an unattended instance on a dialog.
 	if (!controlPluginIsInstantiable(pluginName, &error)) { return nullptr; }
 
-	// The sub-plugin key travels INSIDE the captured document (controlEffectStateXml
-	// appends it to the body), so a hosted device - whose descriptor name
-	// ("ladspaeffect", "lv2effect") is shared by every plugin of its format - is
-	// re-instantiated as the SAME plugin and not as an arbitrary sibling.
 	Plugin::Descriptor::SubPluginFeatures::Key key;
-	bool hosted = false;
-	const QDomNodeList keys = root.elementsByTagName(KeyElement);
-	if (!keys.isEmpty() && keys.item(0).isElement())
-	{
-		key = Plugin::Descriptor::SubPluginFeatures::Key(keys.item(0).toElement());
-		hosted = !key.attributes.isEmpty();
-	}
+	const bool hosted = deviceKeyFromState(root, &key);
 
 	Effect* effect = Effect::instantiate(pluginName, chain, hosted ? &key : nullptr);
 	if (effect == nullptr) { return nullptr; }
 
 	// appendEffect() puts it at the END of the chain, which is where a project
-	// load leaves it too; the recorded index is restored by walking it back up
-	// through the chain's own reorder, the same call the rack makes.
+	// load leaves it too; the recorded index is restored afterwards.
 	chain->appendEffect(effect);
-	const int count = static_cast<int>(chain->effects().size());
-	for (int i = count - 1; i > index && i > 0; --i) { chain->moveUp(effect); }
+	placeEffectAt(chain, effect, index);
 
 	// The settings last, and only onto a device that is already in the chain:
 	// an unrestored (default) device is a wrong-sounding device, an absent one
