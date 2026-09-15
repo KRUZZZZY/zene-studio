@@ -266,6 +266,12 @@ LMMS_EXPORT const ReversibilityRow* reversibilityHostChunkingRowTable(int* rowCo
  *  the file-length cap. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityWasmRenderRowTable(int* rowCount);
+/*! The mmpz-git depth group's four not_mutating rows (feature row 42, task #612):
+ *  project.merge, project.diff, project.conflicts and project.audible_diff.
+ *  A GROUP file on the same seam as the folder, vca, routing and mastering files.
+ *  Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityMmpzGitRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 /*! The `stem.*` group's seven not_mutating rows (feature row 26, board task

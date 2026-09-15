@@ -2007,3 +2007,14 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   detector reads notes), no time-varying key analysis (the key is one estimate for the whole note
   list), no roman-numeral analysis of arbitrary chord sequences, and no chord track that sounds on
   its own — it is harmony written down, and `chord.track_write` is what turns it into notes.
+
+### mmpz-git depth (#612)
+
+- **Three-way merge of concurrent track edits** with a musical (not textual) conflict presentation. The merge driver uses deep whole-subtree fingerprints so a delete or rename on one side can never silently discard an edit nested below it. Conflicts are reported as `track "Bass" > pattern "I" > note F#1 at bar 1 beat 1`, not as XML noise, and marked in the file as machine-readable comments.
+- **Large-asset handling.** Embedded samples and plugin state chunks are summarised by hash in conflict comments; the full value is preserved in a `.mmpz-git-conflicts.json` sidecar so the project file does not bloat.
+- **Audible-diff CLI** (`project.audible_diff`): renders two projects and reports which bars of which track differ, with per-bar RMS and peak-difference metrics.
+- **CI render recipe** (`tools/mmpz-git/render-recipe.sh`): headless render with unpiped exit codes, SHA-256 of output, and refusal on empty renders.
+- **Four control-surface ids:** `project.merge`, `project.diff`, `project.conflicts`, `project.audible_diff`, each with argument/result schemas and A16 reversibility metadata.
+- **Proof:** `MmpzGitDepthTest` (registered ctest: the Python test suite over real project files) and `bash tools/mmpz-git/depth-demo.sh` (a rerunnable transcript with unpiped exit codes that builds two branches, merges them, and asserts the result).
+- **UI absence — one line:** drivable through the socket, not from the interface.
+

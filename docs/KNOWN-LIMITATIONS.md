@@ -1192,3 +1192,6 @@ clock can push the floor up and still be "deterministic within its own floor"; t
 floor, not the verdict, is what that case tells you). And the sandbox is still **not in any device's audio
 path**: `wasm.render_offline` and the rest of the `wasm.*` group run the module in a sandbox of their own and
 produce no audio the user hears — the limit `docs/WASM-EFFECT-ABI.md` section 13 records is unchanged.
+
+
+**mmpz-git depth is drivable through the socket, not from the interface.** The merge driver, semantic diff, conflict reporter and audible-diff CLI are wrapped as `project.merge`, `project.diff`, `project.conflicts` and `project.audible_diff` on the control surface, but nothing in the GUI reaches them. The audible-diff command requires the built binary as its renderer; the merge driver operates on project files, not the running session.

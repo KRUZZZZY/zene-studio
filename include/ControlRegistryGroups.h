@@ -483,6 +483,12 @@ LMMS_EXPORT void registerChordWriteCommands(ControlRegistry& registry);
  * given. Named in docs/KNOWN-LIMITATIONS.md and the release notes.
  */
 LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
+/*! The mmpz-git depth group (feature row 42, task #612): project.merge,
+ *  project.diff, project.conflicts and project.audible_diff.  The engine half
+ *  is tools/mmpz-git/mmpz_git.py; this is the thin control-surface wrapper.
+ *  No compile-time switch: the Python tool is shipped in every configuration.
+ */
+LMMS_EXPORT void registerProjectMmpzGitCommands(ControlRegistry& registry);
 
 /*! The declarations that do not fit beside their own group are here: include/ControlRegistry.h
  *  includes this header, in the same namespace with the same signatures, so a caller

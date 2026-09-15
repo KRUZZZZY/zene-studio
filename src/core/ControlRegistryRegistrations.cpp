@@ -80,6 +80,10 @@ void registerControlCommands(ControlRegistry& registry)
 	// The project-asset reference group (feature row 38): detection, hashing and
 	// relink over a project FILE.
 	registerProjectArchiveCommands(registry);
+	// The mmpz-git depth group (feature row 42, task #612): 3-way merge, diff,
+	// conflict reporter and audible-diff wrappers around tools/mmpz-git/mmpz_git.py.
+	registerProjectMmpzGitCommands(registry);
+
 	registerSurfaceCommands(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF

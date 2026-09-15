@@ -2444,6 +2444,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 300
 		SKIP_RETURN_CODE 77
 	)
+	# mmpz-git depth (feature row 42, task #612): the Python test suite for the
+	# merge driver, diff, conflict reporter and audible-diff CLI.  It needs no
+	# running instance: it operates on project files directly.  The binary-
+	# dependent classes (BinarySafety, AudibleDiffBinary) skip when build/zene
+	# is absent, exactly as the pre-existing Qt6 test skips without scratch/qtsave2.
+	add_test(NAME MmpzGitDepthTest
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_SOURCE_DIR}/tools/mmpz-git/tests/test_mmpz_git.py -v)
+	set_tests_properties(MmpzGitDepthTest PROPERTIES
+		TIMEOUT 300
+	)
 else()
 	message(STATUS "python3 not found: ControlCommandsSnapshot is not registered")
 endif()
