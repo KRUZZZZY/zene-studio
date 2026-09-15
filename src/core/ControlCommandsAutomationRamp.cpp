@@ -97,11 +97,11 @@ QString modeName(bool sampleAccurate)
  *  RIGHT NOW, which is the difference between "the clip asked for sample
  *  accuracy" and "the last rendered block used it".
  */
-QJsonObject rampStateJson(Track* track, const AutomationParameter& parameter, AutomationClip* clip,
-	const AutomationRamp* ramp)
+QJsonObject rampStateJson(const QString& targetId, const AutomationParameter& parameter,
+	AutomationClip* clip, const AutomationRamp* ramp)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("track"), control::trackIdOf(track));
+	entry.insert(QStringLiteral("track"), targetId);
 	entry.insert(QStringLiteral("parameter"), parameter.id());
 	entry.insert(QStringLiteral("clip"), clip->name());
 	entry.insert(QStringLiteral("clip_type"), clip->nodeName());
@@ -189,8 +189,34 @@ ControlResult automationRampSet(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
-/*! automation.ramp_get - the read half: for every automation clip in the song,
- *  the mode it asked for and the ramp the audio thread published for it.
+/*! automation.ramp_get - the read half: every automation clip in the project,
+ *  per parameter it drives, the mode the clip asked for and the ramp the audio
+ *  thread published for it.
+ *
+ *  THE ENUMERATION IS THE CLIPS, not the holder track's device chain. A clip
+ *  can sit on any automation track the engine plays: a regular AutomationTrack
+ *  in the song, the song's HIDDEN global automation track (where
+ *  AutomationClip::globalAutomationClip() puts the clip for a model no track
+ *  owns - a mixer channel's own fader), or a pattern's. control::automationTracks()
+ *  is the one list of them, and it is the same list existingAutomationClip()
+ *  answers the WRITE half from, so the two halves cannot disagree about which
+ *  clips exist.
+ *
+ *  The previous shape walked the song's tracks, kept the Automation /
+ *  HiddenAutomation ones and resolved each of those as a control target -
+ *  which cannot work, twice over: resolveControlTarget() refuses a track that
+ *  carries no device chain by design (ControlDeviceSupport.cpp), and that is
+ *  exactly what an automation track is, so the loop yielded nothing at all;
+ *  and the global automation track is not in Song::tracks() to begin with. The
+ *  parameter is now taken from the clip's own objects(), addressed by the pair
+ *  ramp_set takes - entry `track` is the target id the parameter is addressed
+ *  by ("ch-<n>"/"trk-<n>"), `parameter` its "<plugin>/<index>" id - so the id
+ *  this command reports is the id that addresses the parameter back. The
+ *  clip's own holder track stays visible in the nested `automation.track`.
+ *
+ *  An object the surface has no id for (the song's tempo, a pattern-internal
+ *  control) is COUNTED in `unaddressable_object_count` rather than dropped
+ *  silently: its clip exists, and its mode is real.
  *
  *  Reports what the ENGINE did rather than what the project asked for, because
  *  those are the two things an agent has to be able to tell apart: a clip in
@@ -206,25 +232,30 @@ ControlResult automationRampGet(const QJsonObject& args)
 	QJsonArray entries;
 	int sampleAccurateCount = 0;
 	int liveRampCount = 0;
-	for (Track* track : Engine::getSong()->tracks())
+	int unaddressableCount = 0;
+	for (Track* holder : control::automationTracks())
 	{
-		const auto type = track->type();
-		if (type != Track::Type::Automation && type != Track::Type::HiddenAutomation) { continue; }
-		if (!trackFilter.isEmpty() && trackFilter != control::trackIdOf(track)) { continue; }
-		ControlTarget target;
-		ControlResult error;
-		if (!resolveControlTarget(control::trackIdOf(track), &target, &error)) { continue; }
-
-		for (const AutomationParameter& parameter : control::automationParameters(target))
+		for (Clip* clipInTrack : holder->getClips())
 		{
-			AutomationClip* clip = control::existingAutomationClip(parameter.model);
+			AutomationClip* clip = dynamic_cast<AutomationClip*>(clipInTrack);
 			if (clip == nullptr) { continue; }
-			if (clip->sampleAccurate()) { ++sampleAccurateCount; }
-			else if (!includeBlockMode) { continue; }
+			for (const QPointer<AutomatableModel>& object : clip->objects())
+			{
+				if (object == nullptr) { continue; }
+				control::ParameterAddress address;
+				if (!control::addressableParameterForModel(object, &address))
+				{
+					++unaddressableCount;
+					continue;
+				}
+				if (!trackFilter.isEmpty() && trackFilter != address.target) { continue; }
+				if (clip->sampleAccurate()) { ++sampleAccurateCount; }
+				else if (!includeBlockMode) { continue; }
 
-			const AutomationRamp* ramp = parameter.model->automationRamp();
-			if (ramp != nullptr) { ++liveRampCount; }
-			entries.append(rampStateJson(track, parameter, clip, ramp));
+				const AutomationRamp* ramp = address.parameter.model->automationRamp();
+				if (ramp != nullptr) { ++liveRampCount; }
+				entries.append(rampStateJson(address.target, address.parameter, clip, ramp));
+			}
 		}
 	}
 
@@ -233,6 +264,7 @@ ControlResult automationRampGet(const QJsonObject& args)
 	result.insert(QStringLiteral("count"), entries.size());
 	result.insert(QStringLiteral("sample_accurate_count"), sampleAccurateCount);
 	result.insert(QStringLiteral("live_ramp_count"), liveRampCount);
+	result.insert(QStringLiteral("unaddressable_object_count"), unaddressableCount);
 	result.insert(QStringLiteral("ramp_capacity"), AutomationRamp::MaxKnots);
 	return ControlResult::success(result);
 }
@@ -279,8 +311,15 @@ void registerAutomationRampCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("Per automated parameter: the sample-accuracy mode its "
 			"clip asked for, and the ramp the audio thread built for it in the last rendered "
 			"block - knots, frames, whether the value MOVES inside the block, and how many "
-			"knots the fixed capacity had to refuse. 'include_block_mode' false trims it to "
-			"the parameters asking for sample accuracy.");
+			"knots the fixed capacity had to refuse. Entries are read from the clips "
+			"themselves, on every track the engine plays automation from (including the "
+			"hidden global automation track), so 'track' is the target the parameter is "
+			"addressed by ('ch-<n>'/'trk-<n>', the one ramp_set takes) and 'parameter' its "
+			"'<plugin>/<index>' id: the pair addresses the parameter back. 'track' filters "
+			"on that target, and 'include_block_mode' false trims it to the parameters "
+			"asking for sample accuracy. 'unaddressable_object_count' counts the clip "
+			"objects the surface has no parameter id for (the song's tempo, a "
+			"pattern-internal control) rather than dropping them silently.");
 		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("include_block_mode"), control::booleanProperty()},
@@ -291,6 +330,8 @@ void registerAutomationRampCommands(ControlRegistry& registry)
 			{QStringLiteral("sample_accurate_count"),
 				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 			{QStringLiteral("live_ramp_count"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("unaddressable_object_count"),
 				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 			{QStringLiteral("ramp_capacity"),
 				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},

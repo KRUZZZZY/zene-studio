@@ -37,6 +37,7 @@
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "Mixer.h"
 #include "PatternStore.h"
 #include "Song.h"
 #include "Track.h"
@@ -206,11 +207,8 @@ ControlResult automatableRangeRefusal(const AutomatableModel* model, double valu
 			.arg(model->displayName()));
 }
 
-namespace
-{
-
-//! Every automation track the engine plays automation from: the song's own
-//! tracks, the pattern store's, and the song's hidden global automation track.
+/*! Every automation track the engine plays automation from: the song's own
+ *  tracks, the pattern store's, and the song's hidden global automation track. */
 QList<Track*> automationTracks()
 {
 	QList<Track*> out;
@@ -234,8 +232,6 @@ QList<Track*> automationTracks()
 	return out;
 }
 
-} // namespace
-
 AutomationClip* existingAutomationClip(AutomatableModel* model)
 {
 	for (Track* track : automationTracks())
@@ -251,6 +247,58 @@ AutomationClip* existingAutomationClip(AutomatableModel* model)
 		}
 	}
 	return nullptr;
+}
+
+bool addressableParameterForModel(const AutomatableModel* model, ParameterAddress* out)
+{
+	if (model == nullptr) { return false; }
+
+	/*! The targets whose parameters the surface can name, in the order the
+	 *  commands themselves walk them: the song's own tracks (a track's
+	 *  instrument and its device chain) and then every mixer channel's chain.
+	 *  Each id goes through resolveControlTarget - the commands' own resolver -
+	 *  so a track that carries no device chain is skipped for the same reason it
+	 *  is not addressable, and the parameter list comes from
+	 *  automationParameters(), so the index reported here is the index the
+	 *  client passes back in.
+	 */
+	QList<QString> targets;
+	const TrackContainer::TrackList* songTracks = Engine::getSong() == nullptr
+		? nullptr
+		: &Engine::getSong()->tracks();
+	if (songTracks != nullptr)
+	{
+		for (Track* track : *songTracks)
+		{
+			targets.append(trackIdOf(track));
+		}
+	}
+	Mixer* mixer = Engine::mixer();
+	if (mixer != nullptr)
+	{
+		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+		{
+			MixerChannel* channel = mixer->mixerChannel(i);
+			if (channel != nullptr) { targets.append(channelIdOf(channel)); }
+		}
+	}
+
+	for (const QString& id : targets)
+	{
+		ControlTarget target;
+		ControlResult error;
+		if (!resolveControlTarget(id, &target, &error)) { continue; }
+		for (const AutomationParameter& parameter : automationParameters(target))
+		{
+			if (parameter.model == model)
+			{
+				out->target = id;
+				out->parameter = parameter;
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 AutomationClip* automationClipForModel(AutomatableModel* model, bool* created, ControlResult* error)

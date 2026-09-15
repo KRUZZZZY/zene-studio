@@ -40,6 +40,7 @@ namespace lmms
 
 class AutomatableModel;
 class AutomationClip;
+class Track;
 struct ControlTarget;
 
 namespace control
@@ -83,8 +84,45 @@ LMMS_EXPORT ControlResult automatableRangeRefusal(const AutomatableModel* model,
 // automation clips
 // ---------------------------------------------------------------------------
 
+/*! Every automation track the engine plays automation from: the song's own
+ *  tracks, the pattern store's, and the song's hidden global automation track
+ *  (`Song::m_globalAutomationTrack`, where AutomationClip::globalAutomationClip()
+ *  puts the clip for a model no track owns).
+ *
+ *  This is the ONE answer to "which clips exist", so the half of the surface
+ *  that WRITES a clip's flag (existingAutomationClip, below) and the half that
+ *  READS the clips back (automation.ramp_get) cannot disagree about the set.
+ */
+LMMS_EXPORT QList<Track*> automationTracks();
+
 //! The first clip bound to \a model, whether or not it still has points.
 LMMS_EXPORT AutomationClip* existingAutomationClip(AutomatableModel* model);
+
+/*! What a clip's object is addressed by on the control surface.
+ *
+ *  \c target is the device-addressed id ramp_set / add_point accept ("ch-<n>"
+ *  or "trk-<n>") and \c parameter carries the "<plugin>/<index>" id beside it,
+ *  i.e. the exact pair a client passes back in. Both are derived through the
+ *  commands' own resolver and parameter order, never re-spelled here.
+ */
+struct ParameterAddress
+{
+	QString target;
+	AutomationParameter parameter;
+};
+
+/*! The address of \a model, or false when the surface has no id for it.
+ *
+ *  An automation clip can be bound to ANY AutomatableModel - the song's tempo
+ *  and master volume, a mixer channel's own fader, a track's volume - and those
+ *  are not parameters any command addresses: the surface's parameters are the
+ *  ones automationParameters() reports for a "ch-<n>" / "trk-<n>" target (a
+ *  track's instrument and the effects on a track's or a channel's chain). False
+ *  here is a real answer, so a caller reports the object rather than dropping
+ *  it. Allocates - control thread only.
+ */
+LMMS_EXPORT bool addressableParameterForModel(const AutomatableModel* model,
+	ParameterAddress* out);
 
 /*! The clip that automates \a model, or a fresh one on a new AutomationTrack.
  *
