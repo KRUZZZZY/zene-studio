@@ -122,10 +122,9 @@ bool DawProjectTrack::operator==(const DawProjectTrack& other) const
 	return id == other.id && name == other.name && color == other.color
 		&& contentType == other.contentType && typeName == other.typeName
 		&& lostContentType == other.lostContentType && channelId == other.channelId
-		&& channelRole == other.channelRole && solo == other.solo
-		&& audioChannels == other.audioChannels && volume == other.volume
-		&& mute == other.mute && pan == other.pan && hasPan == other.hasPan
-		&& clips == other.clips;
+		&& solo == other.solo && mute == other.mute && volume == other.volume
+		&& hasVolume == other.hasVolume && pan == other.pan && hasPan == other.hasPan
+		&& destinationChannelId == other.destinationChannelId && clips == other.clips;
 }
 
 int DawProjectModel::clipCount() const
@@ -148,8 +147,8 @@ bool DawProjectModel::operator==(const DawProjectModel& other) const
 		&& applicationName == other.applicationName
 		&& applicationVersion == other.applicationVersion && tempo == other.tempo
 		&& numerator == other.numerator && denominator == other.denominator
-		&& tracks == other.tracks && tempoPoints == other.tempoPoints
-		&& meterPoints == other.meterPoints;
+		&& mixerChannels == other.mixerChannels && tracks == other.tracks
+		&& tempoPoints == other.tempoPoints && meterPoints == other.meterPoints;
 }
 
 namespace
@@ -169,16 +168,27 @@ QString dawProjectModelDigest(const DawProjectModel& model)
 		.arg(model.formatVersion, model.applicationName, model.applicationVersion);
 	lines << QStringLiteral("transport tempo=%1 time=%2/%3")
 		.arg(value(model.tempo)).arg(model.numerator).arg(model.denominator);
+	for (int index = 0; index < model.mixerChannels.size(); index++)
+	{
+		const DawProjectMixerChannel& channel = model.mixerChannels[index];
+		lines << QStringLiteral("mixer %1 id=%2 name=%3 role=%4 solo=%5 volume=%6 mute=%7")
+			.arg(index).arg(channel.id, channel.name, channel.role)
+			.arg(channel.solo ? 1 : 0).arg(value(channel.volume))
+			.arg(channel.mute ? 1 : 0);
+	}
 	for (int index = 0; index < model.tracks.size(); index++)
 	{
 		const DawProjectTrack& track = model.tracks[index];
 		lines << QStringLiteral("track %1 id=%2 name=%3 type=%4 content=%5 color=%6")
 			.arg(index).arg(track.id, track.name, track.typeName, track.contentType,
 				track.color.isEmpty() ? QStringLiteral("-") : track.color);
-		lines << QStringLiteral("  channel id=%1 role=%2 solo=%3 volume=%4 mute=%5 pan=%6")
-			.arg(track.channelId, track.channelRole)
-			.arg(track.solo ? 1 : 0).arg(value(track.volume)).arg(track.mute ? 1 : 0)
-			.arg(track.hasPan ? value(track.pan) : QStringLiteral("absent"));
+		lines << QStringLiteral("  channel id=%1 solo=%2 volume=%3 mute=%4 pan=%5 dest=%6")
+			.arg(track.channelId).arg(track.solo ? 1 : 0)
+			.arg(track.hasVolume ? value(track.volume) : QStringLiteral("absent"))
+			.arg(track.mute ? 1 : 0)
+			.arg(track.hasPan ? value(track.pan) : QStringLiteral("absent"))
+			.arg(track.destinationChannelId.isEmpty() ? QStringLiteral("-")
+				: track.destinationChannelId);
 		for (int clipIndex = 0; clipIndex < track.clips.size(); clipIndex++)
 		{
 			const DawProjectClip& clip = track.clips[clipIndex];
@@ -245,12 +255,26 @@ QJsonObject dawProjectModelJson(const DawProjectModel& model)
 	root.insert(QStringLiteral("numerator"), model.numerator);
 	root.insert(QStringLiteral("denominator"), model.denominator);
 	root.insert(QStringLiteral("track_count"), model.trackCount());
+	root.insert(QStringLiteral("mixer_channel_count"), model.mixerChannelCount());
 	root.insert(QStringLiteral("clip_count"), model.clipCount());
 	root.insert(QStringLiteral("note_count"), model.noteCount());
 	root.insert(QStringLiteral("tempo_point_count"), model.tempoPoints.size());
 	root.insert(QStringLiteral("meter_point_count"), model.meterPoints.size());
 	root.insert(QStringLiteral("split_events"), model.splitEvents);
 	root.insert(QStringLiteral("digest"), dawProjectModelDigest(model));
+
+	QJsonArray mixers;
+	for (const DawProjectMixerChannel& channel : model.mixerChannels)
+	{
+		mixers.append(QJsonObject{{QStringLiteral("id"), channel.id},
+			{QStringLiteral("name"), channel.name},
+			{QStringLiteral("role"), channel.role},
+			{QStringLiteral("solo"), channel.solo},
+			{QStringLiteral("mute"), channel.mute},
+			{QStringLiteral("volume"), channel.volume},
+			{QStringLiteral("audio_channels"), channel.audioChannels}});
+	}
+	root.insert(QStringLiteral("mixer_channels"), mixers);
 
 	QJsonArray tracks;
 	for (const DawProjectTrack& track : model.tracks)
@@ -263,13 +287,13 @@ QJsonObject dawProjectModelJson(const DawProjectModel& model)
 		entry.insert(QStringLiteral("content_type"), track.contentType);
 		entry.insert(QStringLiteral("lost_content_type"), track.lostContentType);
 		entry.insert(QStringLiteral("channel_id"), track.channelId);
-		entry.insert(QStringLiteral("channel_role"), track.channelRole);
+		entry.insert(QStringLiteral("destination_channel_id"), track.destinationChannelId);
 		entry.insert(QStringLiteral("solo"), track.solo);
-		entry.insert(QStringLiteral("volume"), track.volume);
 		entry.insert(QStringLiteral("mute"), track.mute);
+		entry.insert(QStringLiteral("has_volume"), track.hasVolume);
+		entry.insert(QStringLiteral("volume"), track.volume);
 		entry.insert(QStringLiteral("has_pan"), track.hasPan);
 		entry.insert(QStringLiteral("pan"), track.pan);
-		entry.insert(QStringLiteral("audio_channels"), track.audioChannels);
 		entry.insert(QStringLiteral("clip_count"), track.clipCount());
 		entry.insert(QStringLiteral("note_count"), track.noteCount());
 		QJsonArray clips;

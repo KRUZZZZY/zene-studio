@@ -7,63 +7,46 @@
  * docs/DAWPROJECT-INTERCHANGE.md, which is the document the release contract
  * asks for when it asks which version was implemented.
  *
- * THE DOCUMENT'S SHAPE, in the order Project.xsd's `project` sequence requires
- * (Application, Transport, Structure, Arrangement, Scenes):
+ * THE DOCUMENT'S SHAPE (the schema's own sequence: Application, Transport,
+ * Structure, Arrangement, Scenes), every name one Project.xsd declares:
  *
  *   <Project version="1.0">
- *     <Application name="Zene Studio" version="0.3.0-alpha"/>
- *     <Transport>
- *       <Tempo min="10" max="999" unit="bpm" value="140" id="id0" name="Tempo"/>
- *       <TimeSignature denominator="4" numerator="4" id="id1"/>
- *     </Transport>
+ *     <Application name="Zene Studio" version="..."/>
+ *     <Transport><Tempo .../><TimeSignature .../></Transport>
  *     <Structure>
- *       <Track contentType="notes" loaded="true" id="id2" name="Bass" color="#a2eabf">
- *         <Channel audioChannels="2" role="regular" solo="false" id="id3" name="Bass">
- *           <Volume max="2" min="0" unit="linear" value="0.65914" id="id4" name="Volume"/>
- *           <Mute value="false" id="id5" name="Mute"/>
- *           <Pan max="1" min="0" unit="normalized" value="0.5" id="id6" name="Pan"/>
- *         </Channel>
+ *       <Channel id="mixer0" role="master"><Volume .../><Mute .../></Channel>
+ *       <Track contentType="notes" loaded="true" id="id4" name="Bass">
+ *         <Channel id="strip1" destination="mixer0"><Pan .../></Channel>
  *       </Track>
  *     </Structure>
- *     <Arrangement id="id7">
- *       <Lanes timeUnit="beats" id="id8">
- *         <Lanes track="id2" id="id9">
- *           <Clips id="id10">
- *             <Clip time="0" duration="8" playStart="0">
- *               <Notes id="id11"><Note time="0" duration="0.25" channel="0" key="65"
- *                                 vel="0.787402" rel="0.787402"/></Notes>
- *             </Clip>
- *           </Clips>
- *         </Lanes>
- *       </Lanes>
- *       <TempoAutomation timeUnit="beats" unit="bpm" id="id12">
- *         <Target parameter="id0"/>
- *         <RealPoint time="0" value="140" interpolation="hold"/>
- *       </TempoAutomation>
- *       <TimeSignatureAutomation timeUnit="beats" id="id13">
- *         <Target parameter="id1"/>
- *         <TimeSignaturePoint time="0" numerator="4" denominator="4"/>
- *       </TimeSignatureAutomation>
- *     </Arrangement>
- *     <Scenes/>
- *   </Project>
+ *     <Arrangement id="..."><Lanes timeUnit="beats" id="...">
+ *       <Lanes track="id4" id="..."><Clips id="..."><Clip time="0"
+ *           duration="8" playStart="0"><Notes id="..."><Note time="0"
+ *           duration="0.25" channel="0" key="65" vel="0.787402"
+ *           rel="0.787402"/></Notes></Clip></Clips></Lanes></Lanes>
+ *       <TempoAutomation ...><Target parameter="id0"/><RealPoint .../></...>
+ *       <TimeSignatureAutomation ...><Target parameter="id1"/>...</...>
+ *     </Arrangement><Scenes/></Project>
+ *
+ * The full attribute set of every element is in
+ * docs/DAWPROJECT-INTERCHANGE.md, which reproduces the XSD declarations.
  *
  * THE ORDER INSIDE <Arrangement> IS Lanes, Markers, TempoAutomation,
  * TimeSignatureAutomation - the schema's own sequence, so the automation
- * timelines come AFTER the lanes and not before them.
+ * timelines come AFTER the lanes and not before them. Inside <Structure> the
+ * mixer's bare <Channel> elements come first and the <Track>s after them; each
+ * track's <Channel destination="..."> names the strip it feeds.
  *
- * IDS. Every id is `id<n>` in document order, which is the shape the format's
- * own example uses and needs no uniqueness argument beyond the counter. The
- * ids that are also referenced - the tempo and time-signature parameters, the
- * per-track lanes and the tracks themselves - are the ones a <Target
- * parameter="..."/> and a <Lanes track="..."/> point at, so they are assigned
- * before the elements that refer to them.
+ * IDS. Every id is `id<n>` in document order (the shape the format's own
+ * example uses), and the ones that are also REFERENCED - the tempo and
+ * time-signature parameters, the tracks, their lanes and the mixer strips - are
+ * assigned before the elements that point at them.
  *
- * WHAT IT REFUSES RATHER THAN ROUNDS. A tempo outside the engine's own bounds,
- * a metre whose denominator is not a power of two, a negative time, or a clip
- * whose lane has no track id. The format could express all four; this engine
- * cannot read three of them back and the fourth has no referent, so writing
- * them would produce a file that says something the session is not.
+ * WHAT IT REFUSES RATHER THAN ROUNDS: a tempo outside the engine's own bounds,
+ * a metre whose denominator is not a power of two, or a clip whose lane has no
+ * track id. The format could express all three; this engine cannot read them
+ * back or place them, so writing them would produce a file that claims
+ * something the session is not.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -255,16 +238,69 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 	writer.writeEndElement();
 
 	writer.writeStartElement(QStringLiteral("Structure"));
+	// The mixer's own strips come FIRST as bare <Channel> elements (<Structure>
+	// is a choice of Track | Channel): an LMMS MixerChannel is a summing strip
+	// several tracks may feed, and writing it bare is what makes the IDREF below
+	// mean what the format says it means.
+	QVector<QString> mixerIds;
+	mixerIds.reserve(model.mixerChannels.size());
+	for (const DawProjectMixerChannel& channel : model.mixerChannels)
+	{
+		const QString channelId = idFor(&counter);
+		mixerIds.append(channelId);
+		writer.writeStartElement(QStringLiteral("Channel"));
+		writer.writeAttribute(QStringLiteral("audioChannels"),
+			QString::number(channel.audioChannels));
+		if (!channel.role.isEmpty())
+		{
+			writer.writeAttribute(QStringLiteral("role"), channel.role);
+		}
+		writer.writeAttribute(QStringLiteral("solo"),
+			channel.solo ? QStringLiteral("true") : QStringLiteral("false"));
+		writer.writeAttribute(QStringLiteral("id"), channelId);
+		if (!channel.name.isEmpty())
+		{
+			writer.writeAttribute(QStringLiteral("name"), channel.name);
+		}
+		writeValueParameter(writer, QStringLiteral("Volume"), QStringLiteral("Volume"),
+			QStringLiteral("linear"), channel.volume, 0.0, 2.0, idFor(&counter));
+		writeBoolParameter(writer, QStringLiteral("Mute"), QStringLiteral("Mute"), channel.mute,
+			idFor(&counter));
+		writer.writeEndElement();  // Channel (bare, a mixer strip)
+	}
+
+	//! The IDREF joining a track to its strip: by conversion-time mixer index
+	//! when there is one (the session path), else by the id the file used.
+	const auto destinationFor = [&model, &mixerIds](const DawProjectTrack& track) -> QString {
+		if (track.mixerChannelIndex >= 0)
+		{
+			for (int index = 0; index < model.mixerChannels.size(); index++)
+			{
+				if (model.mixerChannels[index].index == track.mixerChannelIndex)
+				{
+					return mixerIds[index];
+				}
+			}
+		}
+		if (!track.destinationChannelId.isEmpty())
+		{
+			for (int index = 0; index < model.mixerChannels.size(); index++)
+			{
+				if (model.mixerChannels[index].id == track.destinationChannelId)
+				{
+					return mixerIds[index];
+				}
+			}
+		}
+		return QString();
+	};
+
 	QVector<QString> trackIds;
-	QVector<QString> channelIds;
 	trackIds.reserve(model.tracks.size());
-	channelIds.reserve(model.tracks.size());
 	for (const DawProjectTrack& track : model.tracks)
 	{
 		const QString trackId = idFor(&counter);
-		const QString channelId = idFor(&counter);
 		trackIds.append(trackId);
-		channelIds.append(channelId);
 
 		writer.writeStartElement(QStringLiteral("Track"));
 		if (!track.contentType.isEmpty())
@@ -277,12 +313,6 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 		if (!track.color.isEmpty()) { writer.writeAttribute(QStringLiteral("color"), track.color); }
 
 		writer.writeStartElement(QStringLiteral("Channel"));
-		writer.writeAttribute(QStringLiteral("audioChannels"),
-			QString::number(track.audioChannels));
-		if (!track.channelRole.isEmpty())
-		{
-			writer.writeAttribute(QStringLiteral("role"), track.channelRole);
-		}
 		writer.writeAttribute(QStringLiteral("solo"),
 			track.solo ? QStringLiteral("true") : QStringLiteral("false"));
 		if (!track.channelId.isEmpty())
@@ -290,8 +320,18 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 			writer.writeAttribute(QStringLiteral("id"), track.channelId);
 		}
 		if (!track.name.isEmpty()) { writer.writeAttribute(QStringLiteral("name"), track.name); }
-		writeValueParameter(writer, QStringLiteral("Volume"), QStringLiteral("Volume"),
-			QStringLiteral("linear"), track.volume, 0.0, 2.0, idFor(&counter));
+		const QString destination = destinationFor(track);
+		if (!destination.isEmpty())
+		{
+			writer.writeAttribute(QStringLiteral("destination"), destination);
+		}
+		// The TRACK's own volume (LMMS' 0..200 scale, unity 100 - scaled by the
+		// caller). The mixer strips above carry the faders.
+		if (track.hasVolume)
+		{
+			writeValueParameter(writer, QStringLiteral("Volume"), QStringLiteral("Volume"),
+				QStringLiteral("linear"), track.volume, 0.0, 2.0, idFor(&counter));
+		}
 		writeBoolParameter(writer, QStringLiteral("Mute"), QStringLiteral("Mute"), track.mute,
 			idFor(&counter));
 		// LOSSY #6: written only where the track type HAS a panning model. A
@@ -303,7 +343,7 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 			writeValueParameter(writer, QStringLiteral("Pan"), QStringLiteral("Pan"),
 				QStringLiteral("normalized"), track.pan, 0.0, 1.0, idFor(&counter));
 		}
-		writer.writeEndElement();  // Channel
+		writer.writeEndElement();  // Channel (the track's own strip)
 		writer.writeEndElement();  // Track
 	}
 	writer.writeEndElement();  // Structure
@@ -450,6 +490,7 @@ bool writeDawProject(const QString& path, const DawProjectModel& model,
 		report->bytes = bytes;
 		report->sha256 = dawProjectSha256(projectXml);
 		report->trackCount = model.trackCount();
+		report->mixerChannelCount = model.mixerChannelCount();
 		report->clipCount = model.clipCount();
 		report->noteCount = model.noteCount();
 		report->tempoPointCount = model.tempoPoints.size();

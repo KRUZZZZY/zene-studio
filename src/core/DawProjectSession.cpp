@@ -120,21 +120,6 @@ Track* createTrackOfType(Track::Type type, Song* song)
 	return Track::create(type, song);
 }
 
-//! The mixer channel a track is assigned to, or nullptr when its type has none
-//! or the index is outside the mixer.
-MixerChannel* channelForTrack(Track* track)
-{
-	IntModel* model = track->mixerChannelModel();
-	if (model == nullptr) { return nullptr; }
-	const int index = model->value();
-	Mixer* mixer = Engine::mixer();
-	if (mixer == nullptr || index < 0 || index >= static_cast<int>(mixer->numChannels()))
-	{
-		return nullptr;
-	}
-	return mixer->mixerChannel(index);
-}
-
 //! The panning model a track type has, or nullptr. This is the LOSSY #6 seam:
 //! MixerChannel carries volume, mute and solo but no pan, so the value the
 //! format's <Pan> carries comes from the TRACK - and only InstrumentTrack
@@ -150,6 +135,34 @@ FloatModel* panningModelForTrack(Track* track)
 	return nullptr;
 }
 
+//! The volume model a track type exposes, or nullptr - the same seam as the
+//! panning one, and for the same reason.
+FloatModel* volumeModelForTrack(Track* track)
+{
+	if (auto* instrument = dynamic_cast<InstrumentTrack*>(track))
+	{
+		return instrument->volumeModel();
+	}
+	return nullptr;
+}
+
+/*! LMMS has TWO volume scales and the format has ONE. A MixerChannel's fader is
+ *  0..2 with 1.0 at unity (what `mixer.set_volume` takes); an
+ *  InstrumentTrack's own volume is 0..200 with 100 at unity
+ *  (include/volume.h: MinVolume 0, MaxVolume 200, DefaultVolume 100). The
+ *  format's <Volume> is `unit="linear"` min 0 max 2, so the mixer fader is
+ *  written as-is and the TRACK volume is divided by this. Getting it wrong would
+ *  put every track 100x too loud, which is exactly the kind of mapping the
+ *  release contract asks to have written down. */
+constexpr double TrackVolumeUnity = 100.0;
+
+QString roleForMixerChannel(MixerChannel* channel)
+{
+	if (channel->index() == 0) { return QStringLiteral("master"); }
+	if (channel->isBus()) { return QStringLiteral("submix"); }
+	return QStringLiteral("regular");
+}
+
 } // namespace
 
 DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
@@ -163,8 +176,27 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 	model.numerator = song->getTimeSigModel().numeratorModel().value();
 	model.denominator = song->getTimeSigModel().denominatorModel().value();
 
-	// Which mixer channels more than one track is assigned to: the format's
-	// model is one Channel per Track, so the sharing is what cannot be carried.
+	// The mixer's own strips: one bare <Channel> per MixerChannel, in mixer
+	// order, carrying the fader, its mute and its solo. A track POINTS at the
+	// strip it feeds (below) rather than owning it, because an LMMS MixerChannel
+	// is a summing strip several tracks may share.
+	Mixer* mixer = Engine::mixer();
+	for (int index = 0; index < static_cast<int>(mixer->numChannels()); index++)
+	{
+		MixerChannel* channel = mixer->mixerChannel(index);
+		DawProjectMixerChannel entry;
+		entry.index = index;
+		entry.id = QStringLiteral("mixer%1").arg(index);
+		entry.name = channel->m_name;
+		entry.role = roleForMixerChannel(channel);
+		entry.volume = static_cast<double>(channel->m_volumeModel.value());
+		entry.mute = channel->m_muteModel.value();
+		entry.solo = channel->m_soloModel.value();
+		model.mixerChannels.append(entry);
+	}
+
+	// Which mixer strips more than one track feeds: the format joins by a single
+	// IDREF, so the SHARING is what cannot be carried (LOSSY #7).
 	std::map<int, int> channelUse;
 
 	for (Track* track : song->tracks())
@@ -176,19 +208,26 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 		if (entry.lostContentType) { local.unmappedTrackTypes++; }
 		entry.name = track->name();
 		entry.color = colorText(track->color());
-		entry.channelId = QStringLiteral("channel%1").arg(model.tracks.size() + 1);
-		entry.channelRole = QStringLiteral("regular");
+		entry.channelId = QStringLiteral("strip%1").arg(model.tracks.size() + 1);
+		entry.mute = track->isMuted();
+		entry.solo = track->isSolo();
 
-		if (MixerChannel* channel = channelForTrack(track))
+		if (FloatModel* volume = volumeModelForTrack(track))
 		{
-			entry.mixerChannelIndex = channel->index();
-			entry.volume = static_cast<double>(channel->m_volumeModel.value());
-			entry.mute = channel->m_muteModel.value();
-			entry.solo = channel->m_soloModel.value();
-			if (!channel->m_name.isEmpty()) { entry.name = track->name(); }
-			if (channel->index() == 0) { entry.channelRole = QStringLiteral("master"); }
-			else if (channel->isBus()) { entry.channelRole = QStringLiteral("submix"); }
-			channelUse[channel->index()]++;
+			entry.hasVolume = true;
+			entry.volume = static_cast<double>(volume->value()) / TrackVolumeUnity;
+		}
+
+		if (IntModel* channelModel = track->mixerChannelModel())
+		{
+			entry.mixerChannelIndex = channelModel->value();
+			if (entry.mixerChannelIndex >= 0
+				&& entry.mixerChannelIndex < model.mixerChannels.size())
+			{
+				entry.destinationChannelId =
+					model.mixerChannels[entry.mixerChannelIndex].id;
+			}
+			channelUse[entry.mixerChannelIndex]++;
 		}
 		else { local.mixerSharingLost++; }
 
@@ -337,6 +376,22 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 	if (rebuilt.size() > 0) { rebuilt.setActive(true); }
 	song->tempoMap().edit([&rebuilt](TempoMap& map) { map = rebuilt; return true; });
 
+	// The mixer's strips, by POSITION: the bare <Channel> elements of <Structure>
+	// are the mixer's own channels in mixer order, so the n-th one is LMMS'
+	// channel n. Creating what is missing is how a session with a one-channel
+	// mixer takes a file that carries more.
+	Mixer* mixer = Engine::mixer();
+	for (int position = 0; position < model.mixerChannels.size(); position++)
+	{
+		while (static_cast<int>(mixer->numChannels()) <= position) { mixer->createChannel(); }
+		MixerChannel* channel = mixer->mixerChannel(position);
+		const DawProjectMixerChannel& entry = model.mixerChannels[position];
+		if (!entry.name.isEmpty()) { channel->m_name = entry.name; }
+		channel->m_volumeModel.setValue(static_cast<float>(entry.volume));
+		channel->m_muteModel.setValue(entry.mute);
+		channel->m_soloModel.setValue(entry.solo);
+	}
+
 	for (const DawProjectTrack& entry : model.tracks)
 	{
 		Track* track = createTrackOfType(trackTypeFromName(entry.typeName), song);
@@ -351,6 +406,40 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 		}
 		if (!entry.name.isEmpty()) { track->setName(entry.name); }
 		if (!entry.color.isEmpty()) { track->setColor(QColor(entry.color)); }
+		track->setMuted(entry.mute);
+		track->setSolo(entry.solo);
+
+		if (entry.hasVolume)
+		{
+			if (FloatModel* volume = volumeModelForTrack(track))
+			{
+				volume->setValue(static_cast<float>(entry.volume * TrackVolumeUnity));
+			}
+		}
+
+		// The strip this track feeds: the format's one routing fact that maps
+		// onto LMMS. `mixerChannelModel()` returns nullptr for a track type with
+		// no channel (a folder), which is not a failure - the format has no way
+		// to say a track has none either.
+		if (!entry.destinationChannelId.isEmpty())
+		{
+			int destination = -1;
+			for (int position = 0; position < model.mixerChannels.size(); position++)
+			{
+				if (model.mixerChannels[position].id == entry.destinationChannelId)
+				{
+					destination = position;
+					break;
+				}
+			}
+			if (destination >= 0 && destination < static_cast<int>(mixer->numChannels()))
+			{
+				if (IntModel* channelModel = track->mixerChannelModel())
+				{
+					channelModel->setValue(destination);
+				}
+			}
+		}
 
 		if (entry.hasPan)
 		{
@@ -389,14 +478,6 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 			const tick_t length = static_cast<tick_t>(
 				dawProjectTicksFromBeats(clipEntry.duration));
 			if (length > 0) { clip->changeLength(TimePos(length)); }
-		}
-
-		if (MixerChannel* channel = channelForTrack(track))
-		{
-			channel->m_volumeModel.setValue(static_cast<float>(entry.volume));
-			channel->m_muteModel.setValue(entry.mute);
-			channel->m_soloModel.setValue(entry.solo);
-			if (!entry.name.isEmpty()) { channel->m_name = entry.name; }
 		}
 	}
 	return true;

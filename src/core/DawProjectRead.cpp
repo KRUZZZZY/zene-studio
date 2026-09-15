@@ -146,6 +146,10 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 				if (reader.isEndElement() && reader.name() == QLatin1String("Structure")) { break; }
 				if (!reader.isStartElement()) { continue; }
 				if (reader.name() == QLatin1String("Track")) { parseTrack(reader, state, 0); }
+				else if (reader.name() == QLatin1String("Channel"))
+				{
+					parseMixerChannel(reader, state);
+				}
 				else { skipElement(reader); }
 			}
 		}
@@ -250,6 +254,7 @@ bool dawProjectModelFromXml(const QByteArray& xml, DawProjectModel* model,
 	local.applicationName = parsed.applicationName;
 	local.applicationVersion = parsed.applicationVersion;
 	local.trackCount = parsed.trackCount();
+	local.mixerChannelCount = parsed.mixerChannelCount();
 	local.clipCount = parsed.clipCount();
 	local.noteCount = parsed.noteCount();
 	local.tempoPointCount = parsed.tempoPoints.size();

@@ -25,10 +25,10 @@
  * REVERSIBILITY. export and read do not touch the session - they read it or
  * write a file outside it - so they are not_mutating, the class project.save
  * and interchange.smf_export carry. import DOES mutate: it replaces the
- * session's tracks, tempo map, global tempo and metre and each track's mixer
- * strip. ONE undo restores all of it through a recorded ACTION checkpoint
- * carrying the captured document (include/ControlStructuralSupport.h's shape
- * for a deleted track, extended to the whole session).
+ * session's tracks, tempo map, global tempo and metre and the mixer strips. ONE
+ * undo restores all of it through a recorded ACTION checkpoint carrying the
+ * captured document (include/ControlStructuralSupport.h's shape for a deleted
+ * track, extended to the whole session).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -117,6 +117,7 @@ void insertModelSummary(QJsonObject* result, const dwp::DawProjectModel& model)
 	result->insert(QStringLiteral("application_name"), model.applicationName);
 	result->insert(QStringLiteral("application_version"), model.applicationVersion);
 	result->insert(QStringLiteral("track_count"), model.trackCount());
+	result->insert(QStringLiteral("mixer_channel_count"), model.mixerChannelCount());
 	result->insert(QStringLiteral("clip_count"), model.clipCount());
 	result->insert(QStringLiteral("note_count"), model.noteCount());
 	result->insert(QStringLiteral("tempo_point_count"), model.tempoPoints.size());
@@ -234,8 +235,7 @@ void registerConventionCommand(ControlRegistry& registry)
 		"ticks per quarter note and the exact rule between a tick and a beat, the ZIP method used, "
 		"the contentType vocabulary and how LMMS' nine track types map onto it, and the STATED "
 		"LOSSES - everything this module does not carry. A file declaring another MAJOR version is "
-		"refused by dawproject.read/dawproject.import rather than read with this build's "
-		"assumptions.");
+		"refused rather than read with this build's assumptions.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("format_name"), stringProperty()},
@@ -282,6 +282,7 @@ void registerExportCommand(ControlRegistry& registry)
 		{QStringLiteral("application_name"), stringProperty()},
 		{QStringLiteral("application_version"), stringProperty()},
 		{QStringLiteral("track_count"), integerProperty()},
+		{QStringLiteral("mixer_channel_count"), integerProperty()},
 		{QStringLiteral("clip_count"), integerProperty()},
 		{QStringLiteral("note_count"), integerProperty()},
 		{QStringLiteral("tempo_point_count"), integerProperty()},
@@ -333,12 +334,11 @@ void registerReadCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("read");
 	cmd.description = QStringLiteral("Read a .dawproject container's model WITHOUT touching the "
 		"session: the format version the file declares, the application that wrote it, every "
-		"track with its clips and notes, the tempo and time-signature timelines, each track's "
-		"mixer strip, the entries the container carries that this module does not use, and the "
-		"model's printable digest. This is what makes a round trip checkable against the FILE and "
-		"the MODEL rather than a hash. A file that is not a ZIP, has no project.xml entry, "
-		"declares another major format version, or carries a value the engine will not accept is a "
-		"typed refusal.");
+		"track with its clips and notes, the tempo and time-signature timelines, the mixer strips, "
+		"the entries the container carries that this module does not use, and the model's "
+		"printable digest - what makes a round trip checkable against the FILE and the MODEL "
+		"rather than a hash. A file that is not a ZIP, has no project.xml entry, declares another "
+		"major format version, or carries a value the engine will not accept is a typed refusal.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}},
 		{QStringLiteral("path")});
 	cmd.resultSchema = objectSchema({
@@ -349,6 +349,7 @@ void registerReadCommand(ControlRegistry& registry)
 		{QStringLiteral("has_metadata"), booleanProperty()},
 		{QStringLiteral("title"), stringProperty()},
 		{QStringLiteral("track_count"), integerProperty()},
+		{QStringLiteral("mixer_channel_count"), integerProperty()},
 		{QStringLiteral("clip_count"), integerProperty()},
 		{QStringLiteral("note_count"), integerProperty()},
 		{QStringLiteral("tempo_point_count"), integerProperty()},
@@ -393,20 +394,19 @@ void registerImportCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("import");
 	cmd.description = QStringLiteral("Apply a .dawproject container's model to the session: "
 		"REPLACE the tracks, write the global tempo and time signature, replace the tempo map with "
-		"the file's two automation timelines and set each created track's mixer strip. One "
-		"command, one undo: the whole session captured before the import - every track's own XML, "
-		"the mixer strips, the tempo map and the two globals - is put back through the project "
+		"the file's two automation timelines and set the mixer strips it carries. One command, one "
+		"undo: the whole session captured before the import is put back through the project "
 		"loader's own paths when the stack unwinds. `loss` in the reply reports what the file "
-		"carried that this build does not apply (device state, sends, audio clips, folder nesting, "
-		"a routing graph). Refused, typed, when the file cannot be read, when a tempo or metre is "
-		"outside the engine's own bounds, or when the file needs more tempo-map events than the "
-		"map holds - a refusal writes nothing.");
+		"carried that this build does not apply. Refused, typed, when the file cannot be read, "
+		"when a tempo or metre is outside the engine's own bounds, or when the file needs more "
+		"tempo-map events than the map holds - a refusal writes nothing.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}},
 		{QStringLiteral("path")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("format_version"), stringProperty()},
 		{QStringLiteral("track_count"), integerProperty()},
+		{QStringLiteral("mixer_channel_count"), integerProperty()},
 		{QStringLiteral("clip_count"), integerProperty()},
 		{QStringLiteral("note_count"), integerProperty()},
 		{QStringLiteral("tempo"), numberProperty()},

@@ -9,36 +9,14 @@
  * it was read from.
  *
  * WHAT THIS FILE IS. One in-memory MODEL of a DAWproject document (the structs
- * below), plus the four conversions a round trip is made of:
- *
- *   modelFromSong       the session -> the model
- *   xmlFromModel        the model -> the container's project.xml bytes
- *   modelFromXml        the container's project.xml bytes -> the model
- *   applyModelToSong    the model -> the session
- *
- * Every conversion reports what it could NOT carry, because the interesting
- * part of an import/export is the part that is lossy (the LOSSY MAPPINGS
- * section below). A suite of conversions rather than one save/load pair is
- * what makes the round trip checkable the way the release contract asks: the
- * MODEL can be compared, which a file hash cannot do.
- *
- * THE FOUR ENTITIES, and where each one lives in the document (all names,
- * attributes and enumerations are the ones Project.xsd declares - quoted in
- * docs/DAWPROJECT-INTERCHANGE.md):
- *
- *   tracks   <Structure>/<Track id name color contentType loaded>, one per
- *            Track in the Song's TrackContainer, in container order.
- *   clips    <Arrangement>/<Lanes timeUnit="beats">/<Lanes track="<id>">/
- *            <Clips>/<Clip time duration playStart>, notes in the clip's own
- *            <Notes>/<Note time duration channel key vel rel>.
- *   tempo    <Transport>/<Tempo> and <Transport>/<TimeSignature> carry the
- *            GLOBAL tempo and metre; the MAP is
- *            <Arrangement>/<TempoAutomation> and <TimeSignatureAutomation>,
- *            whose points are steps (interpolation="hold") because LMMS'
- *            tempo map holds steps and no curve.
- *   mixer    the per-track <Channel id role solo audioChannels> with its
- *            <Volume>, <Mute> and <Pan> children: LMMS' MixerChannel volume,
- *            mute and solo, plus the track's own panning.
+ * below), plus the four conversions a round trip is made of: modelFromSong,
+ * xmlFromModel, modelFromXml and applyModelToSong. Every conversion reports what
+ * it could NOT carry, because the interesting part of an interchange format is
+ * the part that is lossy (the LOSSY MAPPINGS section below). A suite of
+ * conversions rather than one save/load pair is what makes the round trip
+ * checkable the way the release contract asks: the MODEL can be compared, which
+ * a file hash cannot do. The per-attribute mapping tables are in
+ * docs/DAWPROJECT-INTERCHANGE.md.
  *
  * VERSION. The format is version 1.0 and is stable (the project's README.md,
  * "Status"), and Project.xsd declares version="1.0" on its own <xs:schema>.
@@ -60,28 +38,28 @@
  * the release contract asks for when it asks which version was implemented and
  * what it cannot carry. `dawproject.convention` reports the same list as data.
  *
- *   1. IN THE FORMAT, NOT WRITTEN: audio clips and their media (no media is
- *      copied), automation clips and content, device/plugin state and
- *      parameters, sends, fades and clip gain, loop points, scenes and clip
- *      slots. A MidiClip's NOTES are carried; nothing else about it is.
+ *   1. IN THE FORMAT, NOT WRITTEN: audio clips and their media, automation,
+ *      device/plugin state, sends, fades and clip gain, loop points, scenes and
+ *      clip slots. A MidiClip's NOTES are carried; nothing else about it is.
  *   2. IN THIS ENGINE, NOT IN THE FORMAT: take lanes, clip link groups, slide
  *      notes, note probability and detune.
- *   3. A tempo-map event carrying BOTH halves becomes TWO points: the format has
- *      one timeline per half, so it is not a bijection (nothing is lost).
- *   4. FOLDER NESTING: LMMS' track list is flat, so a folder's children are
- *      imported at the container root; the folder MARKER survives.
+ *   3. A map event carrying BOTH halves becomes TWO points (the format has one
+ *      timeline per half), so the mapping is not a bijection. Nothing is lost.
+ *   4. FOLDER NESTING: LMMS' track list is flat, so a folder's children import
+ *      at the container root; the folder MARKER survives.
  *   5. TRACK TYPES: nine LMMS types onto the format's six-value contentType
- *      list (see dawProjectContentTypeForType below for the exact table).
- *   6. MIXER PAN: MixerChannel has no pan, so <Pan> comes from the TRACK's own
- *      panning model - which only InstrumentTrack exposes.
- *   7. MIXER ROUTING AND SHARING: the format's single `destination` IDREF
- *      cannot express LMMS' MixerRoute graph, its pre/post-fader flags, or two
- *      tracks sharing one mixer channel.
- *   8. TEMPO BOUNDS: written as the engine's own 10..999, and a file outside
- *      them is REFUSED rather than clamped.
- *   9. TIME VALUES are beats; LMMS' grid is 48 ticks per beat, so a tick is an
- *      exact 1/48 beat and a FOREIGN time off that grid is rounded onto it and
- *      counted in `rounded_times`.
+ *      list (the exact table is on dawProjectContentTypeForType below).
+ *   6. MIXER PAN, AND TWO VOLUME SCALES: <Pan> comes from the TRACK's panning
+ *      model (only InstrumentTrack exposes one), and the format's one <Volume>
+ *      per Channel must carry LMMS' two - a MixerChannel fader (0..2, unity
+ *      1.0) on the bare <Channel>, the track volume (0..200, unity 100) on the
+ *      track's own, divided by 100.
+ *   7. MIXER ROUTING AND SHARING: `destination` names the strip a track feeds
+ *      (written); LMMS' wider MixerRoute graph, its pre/post-fader flags and
+ *      WHICH other tracks share a strip are not carried.
+ *   8. TEMPO BOUNDS: written as 10..999, and a file outside them is REFUSED.
+ *   9. TIME VALUES are beats; a FOREIGN time off LMMS' 48-per-beat grid is
+ *      rounded onto it and counted in `rounded_times`.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -223,11 +201,41 @@ struct DawProjectClip
 	bool operator!=(const DawProjectClip& other) const { return !(*this == other); }
 };
 
-/*! One <Track> and the <Channel> inside it. The channel fields are the track's
- *  own mixer channel: volume and mute come from MixerChannel, pan from the
- *  TRACK (LOSSY #6). hasPan says whether pan was in the file at all, so a
- *  round trip can tell "centre" from "the format's default because we did not
- *  write one". */
+/*! One bare <Channel> of <Structure> - a MIXER strip in its own right.
+ *
+ * <Structure> is a choice of Track | Channel (Project.xsd), and LMMS'
+ * MixerChannel is a SUMMING STRIP several tracks may feed, not a property of any
+ * one track. `index` is the LMMS MixerChannel index it came from (-1 for a
+ * file), the conversion-time key that joins a track to its strip; the file
+ * itself joins them by IDREF. docs/DAWPROJECT-INTERCHANGE.md section 4. */
+struct DawProjectMixerChannel
+{
+	QString id;              //!< the document's own id (xs:ID), the IDREF target
+	QString name;
+	QString role = QStringLiteral("regular");  //!< "master" for index 0, "submix" for a bus
+	bool solo = false;
+	bool mute = false;
+	double volume = 1.0;     //!< linear, 0..2
+	int audioChannels = 2;
+	int index = -1;          //!< the LMMS MixerChannel index this came from
+
+	bool operator==(const DawProjectMixerChannel& other) const
+	{
+		return id == other.id && name == other.name && role == other.role && solo == other.solo
+			&& mute == other.mute && volume == other.volume
+			&& audioChannels == other.audioChannels;
+	}
+	bool operator!=(const DawProjectMixerChannel& other) const { return !(*this == other); }
+};
+
+/*! One <Track> and the <Channel> inside it - the TRACK's own strip.
+ *
+ * `volume`, `mute`, `solo` and `pan` come from the TRACK's own models, NOT from
+ * a mixer channel: conflating the two would write the master fader onto every
+ * track, because a fresh LMMS track is assigned mixer channel 0.
+ *
+ * `destinationChannelId` is the `destination` IDREF - the mixer strip above that
+ * this track feeds. That is the one routing fact the format CAN express. */
 struct DawProjectTrack
 {
 	QString id;              //!< the document's own id (xs:ID), also its lane's IDREF
@@ -238,19 +246,18 @@ struct DawProjectTrack
 	bool lostContentType = false;  //!< true when no format value matched the type
 
 	QString channelId;
-	QString channelRole = QStringLiteral("regular");  //!< mixerRole, "master" for index 0
 	bool solo = false;
-	int audioChannels = 2;
-	double volume = 1.0;     //!< linear, 0..2
 	bool mute = false;
+	double volume = 1.0;     //!< the TRACK's volume (linear 0..2), when it has one
+	bool hasVolume = false;  //!< false when the track type exposes no volume model
 	double pan = 0.5;        //!< normalized, 0..1
 	bool hasPan = false;     //!< false when the format had no <Pan> for this channel
-	bool audioChannelsExplicit = false;
-	//! The LMMS MixerChannel index the track was assigned to during a session
-	//! conversion (-1 when the track type has no mixer channel, or the model
-	//! came from a file). LOSSY #7: the format's one-Channel-per-Track model has
-	//! no way to say "two tracks share this channel", so the SHARING is not
-	//! carried and the index is a conversion-time note rather than file content.
+	//! The mixer strip this track feeds: the id of a DawProjectMixerChannel.
+	QString destinationChannelId;
+	//! The LMMS MixerChannel index behind destinationChannelId (-1 when none,
+	//! or when the model came from a file). LOSSY #7: the format's
+	//! one-Channel-per-Track model has no way to say "two tracks share this
+	//! strip", so the SHARING is not carried and this is a conversion-time note.
 	int mixerChannelIndex = -1;
 
 	QVector<DawProjectClip> clips;
@@ -293,11 +300,13 @@ struct DawProjectModel
 	int numerator = 4;
 	int denominator = 4;
 
+	QVector<DawProjectMixerChannel> mixerChannels;  //!< bare <Channel> of <Structure>
 	QVector<DawProjectTrack> tracks;         //!< <Structure>, in order
 	QVector<DawProjectPoint> tempoPoints;    //!< <Arrangement>/<TempoAutomation>
 	QVector<DawProjectPoint> meterPoints;    //!< <Arrangement>/<TimeSignatureAutomation>
 
 	int trackCount() const { return tracks.size(); }
+	int mixerChannelCount() const { return mixerChannels.size(); }
 	int clipCount() const;
 	int noteCount() const;
 	//! Points at which a LMMS tempo-map event carried BOTH halves (LOSSY #2).
@@ -361,6 +370,7 @@ struct DawProjectWriteReport
 	qint64 bytes = 0;
 	QString sha256;
 	int trackCount = 0;
+	int mixerChannelCount = 0;
 	int clipCount = 0;
 	int noteCount = 0;
 	int tempoPointCount = 0;
@@ -380,6 +390,7 @@ struct DawProjectReadReport
 	bool hasMetaData = false;
 	QString title;                 //!< <MetaData>/<Title>, when the entry is there
 	int trackCount = 0;
+	int mixerChannelCount = 0;
 	int clipCount = 0;
 	int noteCount = 0;
 	int tempoPointCount = 0;

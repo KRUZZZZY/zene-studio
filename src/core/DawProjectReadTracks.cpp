@@ -219,6 +219,73 @@ void parseLanes(QXmlStreamReader& reader, ReadState& state)
 	state.timeUnit = savedUnit;
 }
 
+/*! The values of one <Channel>, whether it sits inside a <Track> (the track's
+ *  own strip) or directly in <Structure> (a mixer strip). The format gives both
+ *  the same children - Volume, Mute, Pan, Sends, Devices - so one reader serves
+ *  both, and which one it is decides only where the caller puts the result. */
+struct ChannelValues
+{
+	QString id;
+	QString name;
+	QString role;
+	QString destination;
+	bool solo = false;
+	bool mute = false;
+	double volume = 1.0;
+	bool hasVolume = false;
+	bool hasPan = false;
+	double pan = 0.5;
+	int audioChannels = 2;
+};
+
+//! Read the <Channel> element the reader is standing on, through its end tag.
+ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
+{
+	const QXmlStreamAttributes attributes = reader.attributes();
+	ChannelValues values;
+	values.id = attribute(attributes, QStringLiteral("id"));
+	values.name = attribute(attributes, QStringLiteral("name"));
+	values.role = attribute(attributes, QStringLiteral("role"));
+	values.destination = attribute(attributes, QStringLiteral("destination"));
+	values.audioChannels = intAttribute(attributes, QStringLiteral("audioChannels"), 2);
+	values.solo = flagAttribute(attributes, QStringLiteral("solo"));
+
+	while (!reader.atEnd())
+	{
+		reader.readNext();
+		if (reader.isEndElement() && reader.name() == QLatin1String("Channel")) { break; }
+		if (!reader.isStartElement()) { continue; }
+		const QStringView child = reader.name();
+		const QXmlStreamAttributes childAttributes = reader.attributes();
+		if (child == QLatin1String("Volume"))
+		{
+			values.hasVolume = true;
+			values.volume = doubleAttribute(childAttributes, QStringLiteral("value"), 1.0);
+		}
+		else if (child == QLatin1String("Mute"))
+		{
+			values.mute = flagAttribute(childAttributes, QStringLiteral("value"));
+		}
+		else if (child == QLatin1String("Pan"))
+		{
+			values.hasPan = true;
+			values.pan = doubleAttribute(childAttributes, QStringLiteral("value"), 0.5);
+		}
+		else if (child == QLatin1String("Sends"))
+		{
+			state.report->loss.sendsNotWritten++;
+			skipElement(reader);
+		}
+		else if (child == QLatin1String("Devices"))
+		{
+			state.report->loss.devicesNotWritten++;
+			skipElement(reader);
+		}
+		else { skipElement(reader); }
+	}
+	return values;
+}
+
 //! One <Track>, at any depth. NESTED TRACKS ARE READ AT THE ROOT (LOSSY #4):
 //! the format nests and LMMS' container is flat, so the relation is counted
 //! rather than invented.
@@ -247,49 +314,33 @@ void parseTrack(QXmlStreamReader& reader, ReadState& state, int depth)
 		const QStringView element = reader.name();
 		if (element == QLatin1String("Channel"))
 		{
-			const QXmlStreamAttributes channelAttributes = reader.attributes();
-			target.channelId = attribute(channelAttributes, QStringLiteral("id"));
-			target.audioChannels =
-				intAttribute(channelAttributes, QStringLiteral("audioChannels"), 2);
-			target.solo = flagAttribute(channelAttributes, QStringLiteral("solo"));
-			const QString role = attribute(channelAttributes, QStringLiteral("role"));
-			if (!role.isEmpty()) { target.channelRole = role; }
-			while (!reader.atEnd())
-			{
-				reader.readNext();
-				if (reader.isEndElement() && reader.name() == QLatin1String("Channel")) { break; }
-				if (!reader.isStartElement()) { continue; }
-				const QStringView child = reader.name();
-				const QXmlStreamAttributes childAttributes = reader.attributes();
-				if (child == QLatin1String("Volume"))
-				{
-					target.volume = doubleAttribute(childAttributes, QStringLiteral("value"), 1.0);
-				}
-				else if (child == QLatin1String("Mute"))
-				{
-					target.mute = flagAttribute(childAttributes, QStringLiteral("value"));
-				}
-				else if (child == QLatin1String("Pan"))
-				{
-					target.hasPan = true;
-					target.pan = doubleAttribute(childAttributes, QStringLiteral("value"), 0.5);
-				}
-				else if (child == QLatin1String("Sends"))
-				{
-					state.report->loss.sendsNotWritten++;
-					skipElement(reader);
-				}
-				else if (child == QLatin1String("Devices"))
-				{
-					state.report->loss.devicesNotWritten++;
-					skipElement(reader);
-				}
-				else { skipElement(reader); }
-			}
+			const ChannelValues values = parseChannel(reader, state);
+			target.channelId = values.id;
+			target.solo = values.solo;
+			target.destinationChannelId = values.destination;
+			target.hasVolume = values.hasVolume;
+			target.volume = values.volume;
+			target.mute = values.mute;
+			target.hasPan = values.hasPan;
+			target.pan = values.pan;
 		}
 		else if (element == QLatin1String("Track")) { parseTrack(reader, state, depth + 1); }
 		else { skipElement(reader); }
 	}
+}
+
+void parseMixerChannel(QXmlStreamReader& reader, ReadState& state)
+{
+	const ChannelValues values = parseChannel(reader, state);
+	DawProjectMixerChannel channel;
+	channel.id = values.id;
+	channel.name = values.name;
+	channel.role = values.role;
+	channel.solo = values.solo;
+	channel.mute = values.mute;
+	channel.volume = values.volume;
+	channel.audioChannels = values.audioChannels;
+	state.model->mixerChannels.append(channel);
 }
 
 } // namespace readdetail

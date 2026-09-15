@@ -164,6 +164,9 @@ inline qint64 ticksFromBeats(ReadState& state, double beats)
 void parseLanes(QXmlStreamReader& reader, ReadState& state);
 //! One <Track>, at any depth (defined in DawProjectReadTracks.cpp).
 void parseTrack(QXmlStreamReader& reader, ReadState& state, int depth);
+//! One bare <Channel> directly in <Structure> - a MIXER strip, appended to
+//! state.model->mixerChannels (defined in DawProjectReadTracks.cpp).
+void parseMixerChannel(QXmlStreamReader& reader, ReadState& state);
 
 } // namespace readdetail
 } // namespace interchange
