@@ -56,6 +56,7 @@ using RC = ReversibilityClass;
 #define R(id, cls, rev, reason, mechanism, fallback) \
 	{ id, cls, reason, mechanism, fallback, rev, nullptr }
 
+#ifdef LMMS_HAVE_SESSION_VIEW
 const ReversibilityRow kSessionViewRows[] = {
 	// =====================================================================
 	// Follow Actions (task #641, SPEC §4.1 / SPEC-zene-studio A3): the engine
