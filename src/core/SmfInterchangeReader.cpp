@@ -3,34 +3,21 @@
  *                           half of include/SmfInterchange.h.
  *
  * Split out of src/core/SmfInterchange.cpp because the file-length ratchet
- * allows 500 lines and the two halves together are more than that (the same
- * seam tests/src/core/SmfInterchangeTestSupport.h documents for the proofs).
- * The writer is the other file, and the two share nothing but the header's
- * declarations and the convention constants: a writer decides what THIS engine
- * means, a reader has to survive whatever a foreign program meant, so they are
- * two programs that happen to agree on a format.
+ * allows 500 lines. The writer is the other file, and the two share nothing but
+ * the header's declarations and the convention constants: a writer decides what
+ * THIS engine means, a reader has to survive whatever a foreign program meant,
+ * so they are two programs that happen to agree on a format.
  *
- * THE READER'S OWN RULES, stated because they are decisions and not accidents
- * (docs/SMF-INTERCHANGE.md section 1):
- *
- *  - EVERY track is read, not just the first: a foreign file may put its tempo
- *    events anywhere, and format 1's "conductor track at index 0" is a
- *    convention rather than a rule.
- *  - Merging is PER HALF and first-in-file-order wins: a tempo at a tick and a
- *    metre at the same tick from different tracks both survive; a second tempo
- *    at that tick is counted (`superseded_events`) rather than hidden.
- *  - A foreign division is scaled onto LMMS' 48-ticks-per-quarter grid with
- *    round-to-nearest, and every event that had to be rounded is COUNTED
- *    (`rounded_events`) rather than silently moved.
- *  - The whole file is walked with a bounds-checked cursor: running-status
- *    channel events, sysex and unknown meta events are skipped rather than
- *    refused, and no read can leave the buffer. A file that is not a Standard
- *    MIDI File, or whose division is an SMPTE rate, is refused with a reason.
- *  - A track that simply stops (no end-of-track meta event) is tolerated: some
- *    writers omit it, and the events already read are real.
- *
- * The decomposition below is not decoration: the fork's complexity ratchet holds
- * a function to CCN <= 10, and one 60-branch event loop is not reviewable.
+ * The reader's own rules - and why each of them is a decision rather than an
+ * accident - are recorded in docs/SMF-INTERCHANGE.md section 1. In one line:
+ * every track is read, merging is per half with the first in file order winning,
+ * a foreign division is scaled onto LMMS' 48-ticks-per-quarter grid with every
+ * rounded event COUNTED, the walk is bounds-checked (running-status channel
+ * events, sysex and unknown meta events are skipped, not refused), and a file
+ * that is not a Standard MIDI File or whose division is an SMPTE rate is refused
+ * with a reason. The decomposition below is not decoration either: the fork's
+ * complexity ratchet holds a function to CCN <= 10, and one 60-branch event loop
+ * is not reviewable.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -153,27 +140,6 @@ struct Candidate
 //! What one event turned out to be: anything but EndOfTrack keeps reading.
 enum class EventOutcome { Continue, EndOfTrack };
 
-void recordTempo(quint32 smfTick, const unsigned char* payload,
-	std::vector<Candidate>* candidates)
-{
-	Candidate candidate;
-	candidate.smfTick = smfTick;
-	candidate.hasTempo = true;
-	candidate.microseconds = (payload[0] << 16) | (payload[1] << 8) | payload[2];
-	candidates->push_back(candidate);
-}
-
-void recordTimeSignature(quint32 smfTick, const unsigned char* payload,
-	std::vector<Candidate>* candidates)
-{
-	Candidate candidate;
-	candidate.smfTick = smfTick;
-	candidate.hasTimeSignature = true;
-	candidate.numerator = payload[0];
-	candidate.denominator = 1 << (payload[1] & 0x1F);
-	candidates->push_back(candidate);
-}
-
 bool skipVariablePayload(Cursor& track, const char* what, QString* error)
 {
 	quint32 length = 0;
@@ -187,19 +153,15 @@ bool skipVariablePayload(Cursor& track, const char* what, QString* error)
 
 bool skipFixed(Cursor& track, qint64 bytes, const char* what, QString* error)
 {
-	if (!track.skip(bytes))
-	{
-		*error = QStringLiteral("%1 is truncated").arg(QLatin1String(what));
-		return false;
-	}
-	return true;
+	if (track.skip(bytes)) { return true; }
+	*error = QStringLiteral("%1 is truncated").arg(QLatin1String(what));
+	return false;
 }
 
 bool skipChannelEvent(Cursor& track, unsigned char status, QString* error)
 {
 	const int high = status & 0xF0;
-	const qint64 dataBytes = (high == 0xC0 || high == 0xD0) ? 1 : 2;
-	return skipFixed(track, dataBytes, "a channel event", error);
+	return skipFixed(track, (high == 0xC0 || high == 0xD0) ? 1 : 2, "a channel event", error);
 }
 
 /*! Skip the payload of a status that carries no tempo or metre: sysex,
@@ -236,8 +198,23 @@ bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candi
 		*error = QStringLiteral("a meta event's payload runs past the track");
 		return false;
 	}
-	if (type == SmfMetaTempo && length == 3) { recordTempo(smfTick, payload, candidates); }
-	else if (type == SmfMetaTimeSignature && length >= 2) { recordTimeSignature(smfTick, payload, candidates); }
+	if (type == SmfMetaTempo && length == 3)
+	{
+		Candidate candidate;
+		candidate.smfTick = smfTick;
+		candidate.hasTempo = true;
+		candidate.microseconds = (payload[0] << 16) | (payload[1] << 8) | payload[2];
+		candidates->push_back(candidate);
+	}
+	else if (type == SmfMetaTimeSignature && length >= 2)
+	{
+		Candidate candidate;
+		candidate.smfTick = smfTick;
+		candidate.hasTimeSignature = true;
+		candidate.numerator = payload[0];
+		candidate.denominator = 1 << (payload[1] & 0x1F);
+		candidates->push_back(candidate);
+	}
 	else if (type == SmfMetaEndOfTrack) { *outcome = EventOutcome::EndOfTrack; }
 	return true;
 }
