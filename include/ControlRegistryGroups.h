@@ -400,6 +400,17 @@ LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
  *  that outgrew that budget are declared. Called by
  *  registerControlCommands() beside registerRecordingInputCommands(). */
 LMMS_EXPORT void registerRecordingRouteCommands(ControlRegistry& registry);
+/*! automation.ramp_set / automation.ramp_get - the sample-accuracy half of the
+ *  `automation.` group (feature-list row 9, board task #646,
+ *  docs/SAMPLE-ACCURATE-AUTOMATION.md): render one automation clip at SAMPLE
+ *  precision inside each audio block (the clip's own `sample_accurate` flag,
+ *  driven here), and read back the ramp the audio thread published for every
+ *  automated parameter of the song. Declared here rather than beside the other
+ *  automation.* declarations because include/ControlRegistry.h sits at the
+ *  file-length ratchet's limit and this header is where the groups that outgrew
+ *  that budget live. Called by registerControlCommands() beside
+ *  registerAutomationEditCommands(). */
+LMMS_EXPORT void registerAutomationRampCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

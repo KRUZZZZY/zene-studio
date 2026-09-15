@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "AutomationRamp.h"
 #include "AutomationTrack.h"
 #include "AutomationEditor.h"
 #include "ConfigManager.h"
@@ -373,6 +374,15 @@ void Song::processNextBuffer()
 
 	const auto framesPerTick = Engine::framesPerTick();
 	const auto framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
+
+	// Sample-accurate automation (feature row 9). BEFORE the tick loop, because
+	// the whole block's curve has to be in the parameters before the first
+	// sample of it is rendered - that is the difference between a per-sample
+	// ramp and the per-tick writes the loop below makes. It walks only the
+	// clips that opted in (automation.ramp_set) and returns at the first type
+	// test otherwise, so an ordinary project's block is untouched.
+	buildAutomationRamps(trackList, getPlayPos(), framesPerPeriod,
+		static_cast<int>(timeline.frameOffset()));
 
 	f_cnt_t frameOffsetInPeriod = 0;
 
@@ -1085,6 +1095,72 @@ void Song::processModulation()
 	const double frames = static_cast<double>( getPlayPos().getTicks() )
 		* static_cast<double>( Engine::framesPerTick() );
 	applyModulationBlock( runtime, frames / static_cast<double>( rate ) );
+}
+
+
+void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & blockStart,
+	f_cnt_t frames, int frameOffsetInTick )
+{
+	/*! Sample-accurate automation (feature-list row 9,
+	 *  docs/SAMPLE-ACCURATE-AUTOMATION.md). Runs ONCE PER AUDIO BLOCK, at the
+	 *  block's own play position, and only over the automation clips that asked
+	 *  for it (AutomationClip::sampleAccurate(), set through
+	 *  automation.ramp_set): a project that never asked for one pays the two
+	 *  type tests of the loops below and nothing else, which is what keeps
+	 *  every existing project's render byte-identical.
+	 *
+	 *  REALTIME-SAFE by construction, and SampleAccurateAutomationTest measures
+	 *  it over 64 blocks:
+	 *   * the ramp is a stack object of fixed capacity (include/AutomationRamp.h)
+	 *     and is COPIED into each model's own fixed-capacity member - no
+	 *     allocation anywhere on this path;
+	 *   * the traversal iterates the track list, each track's own clip vector
+	 *     and each clip's own object vector by reference - no container is built
+	 *     on the audio thread;
+	 *   * the clip's mutex is taken ONCE per clip per block (already the case on
+	 *     the per-tick path this replaces, and the only lock here);
+	 *   * a block whose curve needs more knots than the capacity holds refuses
+	 *     the extra knots and COUNTS them (`AutomationRamp::refusals()`), so
+	 *     nothing grows with tempo or block size.
+	 */
+	const double framesPerTick = Engine::framesPerTick();
+	if( frames == 0 || framesPerTick <= 0.0 )
+	{
+		return;
+	}
+
+	for( Track* track : trackList )
+	{
+		const auto type = track->type();
+		if( type != Track::Type::Automation && type != Track::Type::HiddenAutomation )
+		{
+			continue;
+		}
+		if( track->isMuted() )
+		{
+			continue;
+		}
+		for( Clip* clip : track->getClips() )
+		{
+			auto* automationClip = dynamic_cast<AutomationClip*>( clip );
+			if( automationClip == nullptr || !automationClip->sampleAccurate()
+				|| !automationClip->hasAutomation() || automationClip->isMuted()
+				|| automationClip->startPosition() > blockStart )
+			{
+				continue;
+			}
+
+			AutomationRamp ramp;
+			automationClip->writeBlockRamp( ramp, blockStart, frames, framesPerTick, frameOffsetInTick );
+			for( const QPointer<AutomatableModel>& model : automationClip->objects() )
+			{
+				if( model != nullptr )
+				{
+					model->publishAutomationRamp( ramp );
+				}
+			}
+		}
+	}
 }
 
 

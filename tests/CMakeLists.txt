@@ -54,6 +54,13 @@ set(LMMS_TESTS
 	src/core/AudioResamplerRatioTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/AutomationModesTest.cpp
+	# Sample-accurate automation (feature-list row 9, board task #646): renders
+	# real blocks through Song::processNextBuffer() and measures the per-sample
+	# buffer the audio path reads against the clip's own curve, frame by frame -
+	# in `sample` mode and in `block` mode, which is the negative control that
+	# makes the measurement non-vacuous - plus a zero-allocation probe over 64
+	# blocks of the ramp path and the ramp's own fixed-capacity refusals.
+	src/core/SampleAccurateAutomationTest.cpp
 	# The browser's engine half (W8 tag/metadata search + the waveform peak
 	# cache): the metadata probe against a byte-written RIFF/WAVE, the tag
 	# store's round-trip through its file, and the peak cache's hit/miss
@@ -396,6 +403,13 @@ set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 # platform for the same reason.
 set_tests_properties(ModulationLayerValueTest ModulationLayerTest
 	ControlModulatorCommandsTest ControlNoteExpressionCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# SampleAccurateAutomationTest (feature row 9) builds a full Engine and the rack
+# fixture's real Mixer channel, renders real audio periods through
+# Song::processNextBuffer() and drives the automation.* group through the
+# registry, so it needs the same headless Qt platform.
+set_tests_properties(SampleAccurateAutomationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts

@@ -125,6 +125,20 @@ public:
 
 	void processNextBuffer();
 
+	/*! Sample-accurate automation (feature-list row 9,
+	 *  docs/SAMPLE-ACCURATE-AUTOMATION.md): publish every opt-in automation
+	 *  clip's curve to the parameters it drives as a per-sample ramp for the
+	 *  block that starts at @a blockStart + @a frameOffsetInTick frames into its
+	 *  tick. Called once per audio block from process() before any track renders
+	 *  a sample of it, and callable directly - SampleAccurateAutomationTest's
+	 *  allocation probe calls THIS entry over 64 blocks, so the probe measures
+	 *  the function the engine runs and not a copy of it.
+	 *
+	 *  Realtime-safe: no allocation, no growth, one lock per clip (the clip's
+	 *  own), and it returns at its first test when no clip has opted in. */
+	void buildAutomationRamps(const TrackList& trackList, const TimePos& blockStart,
+		f_cnt_t frames, int frameOffsetInTick);
+
 	inline int getLoadingTrackCount() const
 	{
 		return m_nLoadingTrack;

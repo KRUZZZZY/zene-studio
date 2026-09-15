@@ -222,6 +222,17 @@ LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
  *  failure in the other direction (ReversibilityContractTest).
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
+/*! The sample-accurate automation GROUP's two rows (0.3.0, feature-list row 9,
+ *  board task #646): `automation.ramp_set` (a live checkpoint on the automation
+ *  clip whose flag it writes) and `automation.ramp_get` (a read of the ramps the
+ *  audio thread published). A GROUP file on the same seam as the mastering,
+ *  meter and recording files - the class comes from each row, not from its file
+ *  - because src/core/ControlReversibilityTable.cpp sits ABOVE the file-length
+ *  ratchet and a new row there would be growth this lane did not measure.
+ *  Joined into reversibilityRowTable(). The file also carries the row's
+ *  limitation line: every place sample accuracy cannot hold, including the
+ *  parameters whose device never reads a per-sample value. */
+LMMS_EXPORT const ReversibilityRow* reversibilityAutomationRampRowTable(int* rowCount);
 
 //! One row of the contract table: what the command is, why, and what the
 //! engine actually provides.

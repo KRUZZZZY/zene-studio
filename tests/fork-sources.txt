@@ -287,6 +287,7 @@ include/AudioPortsModel.h
 include/AudioPortsSettings.h
 include/AudioStretcher.h
 include/AudioWideInputStage.h
+include/AutomationRamp.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
@@ -459,6 +460,7 @@ src/core/AudioInputPath.cpp
 src/core/AudioPortsModel.cpp
 src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
+src/core/AutomationRamp.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserMetadata.cpp
@@ -473,6 +475,7 @@ src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsAutomationRamp.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
@@ -579,6 +582,7 @@ src/core/ControlRegistryRegistrations.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
+src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableMastering.cpp

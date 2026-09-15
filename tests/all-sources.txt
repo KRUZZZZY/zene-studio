@@ -88,6 +88,7 @@ include/AutomationClip.h
 include/AutomationClipView.h
 include/AutomationEditor.h
 include/AutomationNode.h
+include/AutomationRamp.h
 include/AutomationTrack.h
 include/AutomationTrackView.h
 include/BandLimitedWave.h
@@ -920,6 +921,7 @@ src/core/AudioWideInputStage.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationNode.cpp
+src/core/AutomationRamp.cpp
 src/core/BandLimitedWave.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
@@ -940,6 +942,7 @@ src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsAutomationRamp.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
@@ -1046,6 +1049,7 @@ src/core/ControlRegistryRegistrations.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
+src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableMastering.cpp
@@ -1495,6 +1499,7 @@ tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphTest.cpp
+tests/src/core/SampleAccurateAutomationTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptEngineTest.cpp
 tests/src/core/ScriptMemoryBudgetTest.cpp

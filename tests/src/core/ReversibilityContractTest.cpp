@@ -93,24 +93,34 @@ DocumentedHistogram documentedHistogram()
 	 *  merge train. `ReversibilityContractTest` was run against a build of the
 	 *  merged tip and the table measures 265 rows over the four classes: 141
 	 *  true_inverse, 21 snapshot, 7 irreversible, 96 not_mutating. The release
-	 *  configuration has the telemetry client in and no wasmtime, so the base
-	 *  below is 263 / 141 / 21 / 7 / 94 and the telemetry guard adds the two
+	 *  configuration has the telemetry client in and no wasmtime, so THAT tree's
+	 *  base was 263 / 141 / 21 / 7 / 94, with the telemetry guard adding the two
 	 *  telemetry.* rows back at the bottom.
 	 *
-	 *  EVERY FIGURE THE LANES WROTE WHILE THEY WERE LANDING WAS BRANCH-LOCAL,
-	 *  measured on the lane's own base, and none of them is this tree's: 231
+	 *  THE SAMPLE-ACCURATE AUTOMATION LANE ADDED TWO ROWS ON TOP OF THAT
+	 *  (030/sample-accurate-automation, feature row 9, board task #646):
+	 *  automation.ramp_set (true_inverse, a live automation-clip checkpoint) and
+	 *  automation.ramp_get (not_mutating), in
+	 *  src/core/ControlReversibilityTableAutomationRamp.cpp. The base is
+	 *  therefore 265 / 142 / 21 / 7 / 95 - measured the same way, by the merge
+	 *  step's rule, and the number is recorded on this branch's tip rather than
+	 *  summed from the lane's report.
+	 *
+	 *  EVERY FIGURE THE OTHER LANES WROTE WAS BRANCH-LOCAL, measured on each
+	 *  lane's own base, and none of them is this tree's: 231
 	 *  from 030/meter-surface, 231 from 030/linked-clips, 228 from
 	 *  030/telemetry-code, 236 from 030/record-inputs, 228 from
 	 *  030/pitch-stretch, against the 227 / 120 / 18 / 7 / 82 the three-merge
 	 *  tip carried. This constant is not a sum of anybody's report either - it
 	 *  was measured, and the measurement agrees with the lanes' own deltas
 	 *  exactly: 225 base + 1 telemetry + 4 meter + 4 linked-clips + 9
-	 *  record-inputs + 1 pitch-stretch + 4 render-presets + 15 note/scale = 263,
-	 *  and the class columns add up the same way. Each lane's delta is named
-	 *  beside its rows in src/core/ControlReversibilityTable*.cpp. The paragraph
+	 *  record-inputs + 1 pitch-stretch + 4 render-presets + 15 note/scale + 2
+	 *  sample-accurate automation = 265, and the class columns add up the same
+	 *  way. Each lane's delta is named beside its rows in
+	 *  src/core/ControlReversibilityTable*.cpp. The paragraph
 	 *  in docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
 	 *  assertion's job is that the two cannot drift. */
-	DocumentedHistogram out{263, 141, 21, 7, 94};
+	DocumentedHistogram out{265, 142, 21, 7, 95};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

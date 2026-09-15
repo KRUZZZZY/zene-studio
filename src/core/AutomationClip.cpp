@@ -24,6 +24,10 @@
  *
  */
 
+#include <cmath>
+#include <vector>
+
+#include "AutomationRamp.h"
 #include "AutomationClip.h"
 
 #include "AutomationNode.h"
@@ -648,6 +652,138 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 
 
 
+/*! Sample-accurate automation (feature-list row 9,
+ *  docs/SAMPLE-ACCURATE-AUTOMATION.md): the clip's own opt-in, and the ramp
+ *  builder the audio thread calls once per block.
+ *
+ *  WHY ONE KNOT PER TICK BOUNDARY IS THE WHOLE CURVE. A clip's nodes live on
+ *  integer ticks, and the stored value is linear in ticks between two of them,
+ *  so inside one tick the curve is a straight line. An audio block covers a
+ *  handful of ticks and the tick grid does not line up with the block grid: a
+ *  block starts somewhere inside a tick and ends somewhere inside another. So a
+ *  ramp carrying the curve's value at the block's first sample, at every tick
+ *  boundary inside the block and at the block's end reproduces the curve at
+ *  every frame in between.
+ *
+ *  EVERY BOUNDARY GETS TWO KNOTS - the frame just BEFORE it and the frame ON it
+ *  - because the clip's default progression type is Discrete, where the value
+ *  HOLDS for a whole tick and then jumps at the next node. Without the knot at
+ *  `frame - 1` the ramp would ramp into the jump and smear it over the last
+ *  tick. For Linear the two knots are one frame apart and the line between them
+ *  is the curve to within one frame's slope.
+ *
+ *  It is an APPROXIMATION for CubicHermite, whose stored shape inside one tick
+ *  is a cubic: the row's own limitation line says so, and the surface reports
+ *  the progression type rather than implying an exactness it does not have.
+ */
+void AutomationClip::setSampleAccurate( bool on )
+{
+	QMutexLocker m(&m_clipMutex);
+	m_sampleAccurate = on;
+}
+
+
+float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
+{
+	if( m_timeMap.isEmpty() || rel < 0 )
+	{
+		return 0.0f;
+	}
+
+	const int ticks = static_cast<int>( rel.getTicks() );
+	const timeMap::const_iterator last = std::prev( m_timeMap.end() );
+	if( ticks >= POS( last ) )
+	{
+		// At or after the last node the curve holds the last node's out value -
+		// exactly what valueAt(TimePos) returns past the end of the map.
+		return OUTVAL( last );
+	}
+
+	// The segment that starts at the node at or before this tick is the one the
+	// value moves along, so the value at the node itself is its OUT value:
+	// valueAt(v, 0) returns the IN value, which is the limit the PREVIOUS
+	// segment reaches, not the one this one starts from.
+	const timeMap::const_iterator v = std::prev( m_timeMap.upperBound( ticks ) );
+	const int offset = ticks - POS( v );
+	const float start = ( offset == 0 ) ? OUTVAL( v ) : valueAt( v, offset );
+	const float end = valueAt( v, offset + 1 );
+	return start + fraction * ( end - start );
+}
+
+
+void AutomationClip::addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart,
+	int frame, int frameOffsetInTick, double framesPerTick ) const
+{
+	// The knot's own POSITION inside its tick, from the frame it is written on,
+	// so a knot is exactly on the curve rather than at a rounded boundary.
+	const double position = ( static_cast<double>( frameOffsetInTick ) + frame ) / framesPerTick;
+	const int tickOffset = static_cast<int>( std::floor( position ) );
+	const float fraction = static_cast<float>( position - tickOffset );
+
+	TimePos rel = relClipStart + tickOffset;
+	if( !isInPattern() )
+	{
+		rel = std::min( static_cast<int>( rel ), length() - startTimeOffset() );
+	}
+	ramp.addKnot( static_cast<f_cnt_t>( frame ), rampValueAt( rel, fraction ) );
+}
+
+
+void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart,
+	f_cnt_t frames, double framesPerTick, int frameOffsetInTick ) const
+{
+	QMutexLocker m(&m_clipMutex);
+
+	ramp.reset( frames );
+	if( m_timeMap.isEmpty() || frames == 0 || framesPerTick <= 0.0 )
+	{
+		return;
+	}
+
+	const TimePos relStart = blockStart - startPosition() - startTimeOffset();
+	if( relStart < 0 )
+	{
+		return; // the block starts before this clip does
+	}
+
+	// The block's own geometry travels with each knot call.
+	// Knot 0 is the block's first sample, at its own position inside its tick.
+	addRampKnot( ramp, relStart, 0, frameOffsetInTick, framesPerTick );
+
+	// Then one PAIR of knots per tick boundary strictly inside the block: the
+	// frame before the boundary holds the value the curve had coming into it,
+	// the boundary carries the value it takes going out. For a Discrete curve
+	// that pair IS the step; for a Linear one it is two points on the same line.
+	for( int tick = 1; ; ++tick )
+	{
+		const double knotFrame = tick * framesPerTick - frameOffsetInTick;
+		if( knotFrame >= static_cast<double>( frames ) )
+		{
+			break;
+		}
+		// floor/ceil, not round: the frame just BEFORE the boundary carries the
+		// value the curve had coming into it and the first frame ON or after it
+		// carries the value it takes going out, so a Discrete curve's step
+		// lands on the first sample that is past it - never a sample early.
+		const int before = static_cast<int>( std::floor( knotFrame ) );
+		const int after = static_cast<int>( std::ceil( knotFrame ) );
+		if( before > 1 )
+		{
+			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick );
+		}
+		if( after > 0 && after < static_cast<int>( frames ) )
+		{
+			addRampKnot( ramp, relStart, after, frameOffsetInTick, framesPerTick );
+		}
+	}
+
+	// ...and the block's end, so the samples after the last boundary
+	// interpolate to where the curve actually is when the block runs out,
+	// instead of holding the last boundary's value.
+	addRampKnot( ramp, relStart, static_cast<int>( frames ), frameOffsetInTick, framesPerTick );
+}
+
+
 float *AutomationClip::valuesAfter( const TimePos & _time ) const
 {
 	QMutexLocker m(&m_clipMutex);
@@ -794,6 +930,14 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	_this.setAttribute( "mute", QString::number( isMuted() ) );
 	_this.setAttribute("off", startTimeOffset());
 	_this.setAttribute("autoresize", QString::number(getAutoResize()));
+	// Sample-accurate automation (feature row 9): written ONLY when it is on,
+	// so a clip that never asked for it serialises exactly what it always did.
+	// loadSettings resets the flag on absence, which is what lets a journal
+	// checkpoint taken before the first edit take it back.
+	if( m_sampleAccurate )
+	{
+		_this.setAttribute( "sample_accurate", QString::number( 1 ) );
+	}
 
 	if (const auto& c = color())
 	{
@@ -846,6 +990,11 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 	setMuted(_this.attribute( "mute", QString::number( false ) ).toInt() );
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
 	setStartTimeOffset(_this.attribute("off").toInt());
+	// Sample-accurate automation (feature row 9). RESET on absence, not left as
+	// it was: the flag is written only when it is on, so a checkpoint's saved
+	// state (which omits it) has to be able to turn it back off. Without this
+	// line control.undo could not take the first automation.ramp_set back.
+	setSampleAccurate(_this.attribute("sample_accurate").toInt() != 0);
 
 	for( QDomNode node = _this.firstChild(); !node.isNull();
 						node = node.nextSibling() )

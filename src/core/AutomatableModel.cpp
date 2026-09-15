@@ -552,6 +552,32 @@ ValueBuffer * AutomatableModel::valueBuffer()
 			: nullptr;
 	}
 
+	// Sample-accurate automation (feature-list row 9): the automation
+	// evaluation published this parameter's curve for the block being rendered
+	// (one knot per tick boundary - an AutomationRamp), so the per-sample
+	// buffer IS the curve: the block's start value plus the move the curve
+	// makes inside the block, at the frame the curve makes it. Without a
+	// published ramp for this period the model falls through to the
+	// interpolation below, which is the behaviour every existing project has.
+	//
+	// The transform is the one Song::processAutomations() applies to a tick
+	// value - scaledValue() then the automation-mode trim, clamped to the
+	// model's own range - so the per-sample path and the per-tick path agree.
+	if( m_automationRampPeriod == s_periodCounter && m_automationRamp.knotCount() > 0 )
+	{
+		float* nvalues = m_valueBuffer.values();
+		const int length = m_valueBuffer.length();
+		for( int i = 0; i < length; ++i )
+		{
+			nvalues[i] = fittedValue(effectiveAutomationValue(
+				scaledValue(m_automationRamp.valueAt(static_cast<f_cnt_t>(i)))));
+		}
+		m_oldValue = m_value;
+		m_lastUpdatedPeriod = s_periodCounter;
+		m_hasSampleExactData = true;
+		return &m_valueBuffer;
+	}
+
 	float val = m_value; // make sure our m_value doesn't change midway
 
 	// TODO
@@ -632,6 +658,28 @@ ValueBuffer * AutomatableModel::valueBuffer()
 	m_lastUpdatedPeriod = s_periodCounter;
 	m_hasSampleExactData = false;
 	return nullptr;
+}
+
+
+void AutomatableModel::publishAutomationRamp(const AutomationRamp& ramp) noexcept
+{
+	// The period is stamped, not the model's own value: the ramp is valid for
+	// the block the automation evaluation built it for, and a block that
+	// publishes nothing leaves the model on its ordinary path. This is what
+	// keeps the feature per-block opt-in and a project that never asks for it
+	// byte-identical.
+	m_automationRamp = ramp;
+	m_automationRampPeriod = s_periodCounter;
+}
+
+
+const AutomationRamp* AutomatableModel::automationRamp() const noexcept
+{
+	if (m_automationRampPeriod != s_periodCounter || m_automationRamp.knotCount() == 0)
+	{
+		return nullptr;
+	}
+	return &m_automationRamp;
 }
 
 
