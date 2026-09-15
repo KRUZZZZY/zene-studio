@@ -22,3 +22,43 @@ target_link_libraries(clap-test-gain PRIVATE lmms_clap)
 if(NOT MSVC)
 	target_compile_options(clap-test-gain PRIVATE -Wall -Wextra)
 endif()
+
+# ---------------------------------------------------------------------------
+# The ONE-FAULT modules: the test subjects of ClapLoaderErrorTest, the test of
+# the host's typed error path.
+#
+# plugins/ClapEffect/ClapLoader.cpp promises that a failed load returns a CODE
+# ("library not found" is not "not a CLAP module" is not "a version this host
+# cannot host"), and a code can only be proven against a module that fails in
+# exactly that one way. Each fault is structural - the symbol is absent, the
+# declared version is old, init() returns false, the factory is null - so each
+# one is invisible to the other three by construction; that is what makes a
+# wrong code a real defect rather than a fixture artefact.
+#
+# One source, four modules: tests/data/clap-test-plugin/clap-test-broken.c is
+# compiled once per fault with CLAP_TEST_FAULT_<FAULT> defined, and refuses to
+# compile without one (the #error at the end of that file) so a module can never
+# silently carry zero faults or two.
+#
+# The same -Wall/-Wextra guard as clap-test-gain above, for the same reason.
+# ---------------------------------------------------------------------------
+set(LMMS_CLAP_BROKEN_FAULTS no-symbol old-version init-fails no-factory)
+foreach(LMMS_CLAP_BROKEN_FAULT IN LISTS LMMS_CLAP_BROKEN_FAULTS)
+	string(REPLACE "-" "_" LMMS_CLAP_BROKEN_SUFFIX "${LMMS_CLAP_BROKEN_FAULT}")
+	string(TOUPPER "${LMMS_CLAP_BROKEN_SUFFIX}" LMMS_CLAP_BROKEN_SUFFIX)
+	set(LMMS_CLAP_BROKEN_TARGET "clap-test-broken-${LMMS_CLAP_BROKEN_FAULT}")
+
+	add_library(${LMMS_CLAP_BROKEN_TARGET} MODULE clap-test-broken.c)
+	set_target_properties(${LMMS_CLAP_BROKEN_TARGET} PROPERTIES
+		PREFIX ""
+		SUFFIX ".clap"
+		C_STANDARD 11
+		C_STANDARD_REQUIRED ON
+	)
+	target_link_libraries(${LMMS_CLAP_BROKEN_TARGET} PRIVATE lmms_clap)
+	target_compile_definitions(${LMMS_CLAP_BROKEN_TARGET} PRIVATE
+		"CLAP_TEST_FAULT_${LMMS_CLAP_BROKEN_SUFFIX}=1")
+	if(NOT MSVC)
+		target_compile_options(${LMMS_CLAP_BROKEN_TARGET} PRIVATE -Wall -Wextra)
+	endif()
+endforeach()
