@@ -2009,8 +2009,8 @@ file grows as those land; it is not a summary of 0.3.0 and must not be read as o
   whole scene, stops one slot and then all of them, clears a cell and then the grid, and reads each effect
   back - including the SPEC A16 class read out of the running registry (`control.transactions`), so the
   table's registered reference is a measurement too. **No id in the group is a refusal stub:** every one
-  answers `ok:true` for a legal call and changes what it claims to, and all eleven also refuse with a typed
-  `invalid_args` the illegal one. The table is `docs/reports/SESSION-API-PROOF-2026-09-15.md`.
+  answers `ok:true` for a legal call and does what it claims to, and the nine that take an argument also
+  refuse a typed `invalid_args` the illegal one. The table is `docs/reports/SESSION-API-PROOF-2026-09-15.md`.
 
 ## The recording engine surface: an arbitrary input count, a drivable multi-track recorder, and a retro window
 

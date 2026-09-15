@@ -3,9 +3,11 @@
 **Deliverable:** one MEASURED row per id for the group's whole surface, the one-line limitations statement
 for the absent grid UI, and the naming of any id that is only a refusal stub.
 
-**Verdict up front: no id in the `session.*` group is a refusal stub.** All eleven are registered, all eleven
-answer `ok:true` for a legal call, all eleven change what they claim to change, and all eleven also refuse a
-typed `invalid_args` the illegal one. Nothing below is read off the source alone: every row's observed
+**Verdict up front: no id in the `session.*` group is a refusal stub.** All eleven are registered and answer
+`ok:true` for a legal call, and every one whose claim is a change makes it — the eleventh, `session.get_state`,
+is the group's read and returns what it claims to. Nine of the eleven, being every id that takes an argument,
+also refuse a typed `invalid_args` the illegal one (`session.get_state` and `session.stop_all` declare no
+arguments and so have nothing to refuse). Nothing below is read off the source alone: every row's observed
 behaviour is a line in the committed socket transcript.
 
 | | |
