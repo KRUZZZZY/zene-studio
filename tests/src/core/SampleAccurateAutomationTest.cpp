@@ -56,6 +56,7 @@
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "RackTestSupport.h"
 #include "Song.h"
@@ -109,8 +110,32 @@ double curveModelValue(const std::vector<CurveNode>& nodes, double relTicks, boo
 //! "ch-<kChannel>", spelled the way the commands parse it.
 QString channelIdOf() { return QStringLiteral("ch-") + QString::number(kChannel); }
 
-//! The channel's own fx-0 gain parameter: the model the audio path reads and the id
-//! the surface addresses, resolved through the same resolver the commands use.
+//! The channel's own fx-chain device under test: the ONE effect the shared rack
+//! fixture put on the channel's effect chain (RackTestSupport.h,
+//! initRackFixture). nullptr rather than a guess when it is not what the fixture
+//! built.
+Effect* channelDevice()
+{
+	ControlTarget target;
+	ControlResult error;
+	if (!resolveControlTarget(channelIdOf(), &target, &error)) { return nullptr; }
+	if (target.chain == nullptr || target.chain->effects().empty()) { return nullptr; }
+	return target.chain->effects().front();
+}
+
+/*! The channel's own fx-chain Gain parameter: the model the audio path reads and
+ *  the id the surface addresses, resolved through the same resolver the commands
+ *  use.
+ *
+ *  THE DEVICE ID IS ASKED OF THE ENGINE, never spelled "fx-0". An Effect's id is
+ *  `ProjectIds::allocate()`d in its constructor (SPEC-stable-ids.md slice 2,
+ *  src/core/Effect.cpp:56; the counter is shared with the channel, track, clip
+ *  and note ids), so the literal "fx-0" is a property of ONE process's
+ *  allocation order - every channel, track and clip built before this effect
+ *  takes a number - and not a property of the surface. The parameter is pinned
+ *  to that same device's own children as well, so a "Gain" some other device
+ *  exposes could not be mistaken for the fixture's.
+ */
 bool channelGainParameter(control::AutomationParameter* out, QString* why)
 {
 	ControlTarget target;
@@ -120,16 +145,26 @@ bool channelGainParameter(control::AutomationParameter* out, QString* why)
 		*why = error.errorMessage;
 		return false;
 	}
+	Effect* const device = channelDevice();
+	if (device == nullptr)
+	{
+		*why = QStringLiteral("the channel carries no device: the fixture's effect is not there");
+		return false;
+	}
+	const QString deviceId = control::effectIdOf(device);
+	const QList<AutomatableModel*> own =
+		device->findChildren<AutomatableModel*>(QString(), Qt::FindChildrenRecursively);
 	for (const control::AutomationParameter& candidate : control::automationParameters(target))
 	{
-		if (candidate.pluginId == QStringLiteral("fx-0")
-			&& candidate.model->displayName() == QStringLiteral("Gain"))
+		if (candidate.pluginId == deviceId && candidate.model != nullptr
+			&& candidate.model->displayName() == QStringLiteral("Gain")
+			&& own.contains(candidate.model))
 		{
 			*out = candidate;
 			return true;
 		}
 	}
-	*why = QStringLiteral("the channel's fx-0 effect exposes no parameter named Gain");
+	*why = QStringLiteral("the channel's %1 effect exposes no parameter named Gain").arg(deviceId);
 	return false;
 }
 
@@ -475,10 +510,16 @@ private slots:
 	void theRampRefusesRatherThanGrows()
 	{
 		AutomationRamp ramp;
-		ramp.reset(512);
+	ramp.reset(512);
+		// The bound IS the contract (include/AutomationRamp.h: "a knot that does not
+		// fit is refused and COUNTED"): the first MaxKnots knots are accepted, the
+		// rest are refused, so the assertion is on WHICH of the two happened for each
+		// attempt - asserting "all 40 are accepted" would contradict the capacity the
+		// same run then counts.
 		for (int i = 0; i < AutomationRamp::MaxKnots + 8; ++i)
 		{
-			QVERIFY(ramp.addKnot(static_cast<f_cnt_t>(i * 4), static_cast<float>(i)));
+			QCOMPARE(ramp.addKnot(static_cast<f_cnt_t>(i * 4), static_cast<float>(i)),
+				i < AutomationRamp::MaxKnots);
 		}
 		QCOMPARE(ramp.knotCount(), AutomationRamp::MaxKnots);
 		QCOMPARE(ramp.refusals(), std::uint32_t{8});
