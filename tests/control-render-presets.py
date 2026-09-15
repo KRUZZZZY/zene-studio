@@ -3,29 +3,25 @@
 
 THE CLAIM UNDER TEST, in two halves, each MEASURED rather than asserted:
 
-  PRESETS. An agent over the control socket can save a named render/export preset (a
-  sample rate, a bit depth, a stereo mode), read it back, apply it, remove it and
-  reverse every one of those - and the applied preset is real: the next render's own
-  WAV header carries the rate and the depth the preset named, which is checked by
-  parsing the FILE, not by reading the command's answer.
+  PRESETS. Save a named render/export preset (sample rate, bit depth, stereo mode), read
+  it back, apply it, remove it, reverse each - and the applied preset is real: the next
+  render's own WAV header carries the rate and the depth the preset named, checked by
+  parsing the FILE rather than by reading the command's answer.
 
-  RANGE. `render.render` can render a TIME RANGE instead of the whole project, and the
-  range is exact: a span of N ticks produces the frame count N ticks at that tempo and
-  rate implies (Engine::updateFramesPerTick's own expression, recomputed here), two
-  spans of the same start are proportional, and the audio of a rendered span IS the
-  audio of the same span of the whole-project render (byte-compared after the header).
-  Half a range, an empty range and a negative range are typed refusals that write
-  nothing.
+  RANGE. `render.render` renders a TIME RANGE instead of the whole project, and the range
+  is exact: a span of N ticks produces the frame count N ticks at that tempo and rate
+  implies (Engine::updateFramesPerTick's expression, recomputed here), two spans of the
+  same start are proportional, and the audio of a rendered span IS the audio of that span
+  of the whole-project render (byte-compared after the header). Half a range, an empty
+  range and a negative range are typed refusals that write nothing.
 
-WHY IT IS A REGISTERED CTEST AND NOT A UNIT TEST: the release contract (CHARTER 3.1)
-requires the feature to be reachable THROUGH THE SOCKET. So this drives the REAL binary
-(`$<TARGET_FILE:zene>`, offscreen, the shared `control_socket_harness`), whose own temp
-HOME/XDG world is also why the store this test writes is a temporary one.
-
-THE BUDGET, declared rather than hidden: every render runs in a CHILD process and the
-control surface does not answer - not even control.ping - until it finishes
-(docs/RENDER-CHILD-WAIT.md). Each render.render call gets RENDER_TIMEOUT and its
-measured wall time is printed, the way tests/control-stem-export-verb.py does it.
+WHY IT IS A REGISTERED CTEST: the release contract (CHARTER 3.1) requires the feature
+to be reachable THROUGH THE SOCKET, so this drives the REAL binary
+(`$<TARGET_FILE:zene>`, offscreen, the shared `control_socket_harness`) in its own temp
+HOME/XDG world. THE BUDGET is declared rather than hidden: every render runs in a CHILD
+process and the surface does not answer - control.ping included - until it finishes
+(docs/RENDER-CHILD-WAIT.md), so each render.render call gets RENDER_TIMEOUT and its wall
+time is printed, the way tests/control-stem-export-verb.py does it.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-render-presets.py <zene-binary>
 Exit codes: 0 every check held; 1 a check failed (the app log is printed); 2 cannot run.
@@ -44,36 +40,35 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import control_socket_harness as H  # noqa: E402  (path set above)
 
-#: ONE FULL ENGINE START plus the render, not one socket round trip: the same number
-#: the four commands that already render use (tests/control-stem-export-verb.py).
+#: ONE FULL ENGINE START plus the render, the number the four rendering commands use.
 RENDER_TIMEOUT = 180.0
 RENDER_COMMANDS = ("render.render",)
 
 #: The preset this proof stores, and the settings it names.
-PRESET = "socket 24/96"
+PRESET = "socket 24-96"
 PRESET_RATE = 96000
 PRESET_DEPTH = "24"
 PRESET_MODE = "stereo"
 
-#: The tempo the checks DERIVE their frame counts from (pinned with transport.set_tempo)
-#: and the engine's own conversion, src/core/Engine.cpp:140:
-#:   framesPerTick = rate * 60 * 4 / DefaultTicksPerBar / bpm
+#: The tempo the checks DERIVE their frame counts from (transport.set_tempo) and the
+#: engine's own conversion, src/core/Engine.cpp:140: framesPerTick = rate * 60 * 4 /
+#: DefaultTicksPerBar / bpm. DefaultTicksPerBar is the ENGINE's 192 (include/TimePos.h:38),
+#: NOT the 768 ticks a 4/4 bar is worth - reading the bar's length into this expression is
+#: exactly the factor of 4 this test first got wrong (`frames=302336 want=75600`).
 TEMPO = 140
-TICKS_PER_BAR = 768
+DEFAULT_TICKS_PER_BAR = 192
 DEFAULT_RATE = 44100
 DEFAULT_DEPTH = "16"
 
-#: One bar and two bars: the two spans every range check is made of. The song built
-#: below is SONG_BARS bars, and the whole-project render adds the engine's own one-bar
-#: tail (Song's m_exportTailBars), so it is strictly longer than TWO_BARS.
+#: One bar and two bars: the spans the range checks use. The whole-project render adds
+#: Song's own one-bar tail (m_exportTailBars), so it is longer than TWO_BARS.
 ONE_BAR = 768
 TWO_BARS = 1536
 SONG_BARS = 4
 
-#: A frame count can land on the render's period boundary rather than on the tick, so
-#: every expectation is compared with this slack (a whole LMMS period is 256 frames).
-#: The failure this still catches is the one that matters: a range that was IGNORED is
-#: off by a whole bar (75600 frames here), two orders of magnitude outside the slack.
+#: A frame count lands on the render's period boundary rather than on the tick, so every
+#: expectation carries this slack (an LMMS period is 256 frames). A range that was IGNORED
+#: is off by a whole bar (75600 frames), two orders of magnitude outside it.
 FRAME_SLACK = 1024
 
 REQUEST_IDS = itertools.count(1)
@@ -81,11 +76,16 @@ REQUEST_IDS = itertools.count(1)
 
 def frames_per_tick(rate, tempo=TEMPO):
     """The engine's own conversion, at the engine's own rate for the render."""
-    return rate * 60.0 * 4 / TICKS_PER_BAR / tempo
+    return rate * 60.0 * 4 / DEFAULT_TICKS_PER_BAR / tempo
 
 
 def expected_frames(ticks, rate, tempo=TEMPO):
     return int(round(ticks * frames_per_tick(rate, tempo)))
+
+
+def summary(info):
+    """A WAV's header fields WITHOUT the sample data: evidence must stay readable."""
+    return {key: value for key, value in info.items() if key != "data"}
 
 
 def wav_info(path):
@@ -106,8 +106,12 @@ def wav_info(path):
         size = struct.unpack_from("<I", blob, offset + 4)[0]
         body = offset + 8
         if chunk_id == b"fmt " and size >= 16:
-            channels, rate, bits = struct.unpack_from("<H I H", blob, body + 2)
-            info.update(channels=channels, rate=rate, bits=bits)
+            # +2 channels, +4 sample rate, +14 bits per sample: byteRate and
+            # blockAlign sit in between, which is the field this parser first read
+            # by mistake ("bits: 45328" is a byteRate's low half).
+            channels, rate = struct.unpack_from("<H I", blob, body + 2)
+            info.update(channels=channels, rate=rate,
+                        bits=struct.unpack_from("<H", blob, body + 14)[0])
         elif chunk_id == b"data":
             info["data_offset"] = body
             info["data_size"] = min(size, len(blob) - body)
@@ -165,9 +169,9 @@ class Recorder:
 def build_session(session):
     """One instrument track, a clip of SONG_BARS bars and a note on each bar.
 
-    A fresh instance already holds the demo project's tracks, so nothing here assumes
-    this clip is the whole song: the range checks derive their expectations from the
-    SPAN they ask for and the tempo, never from the song's total length.
+    A fresh instance already holds the demo project's tracks, so this clip is not the
+    whole song: the range checks derive their expectations from the SPAN they ask for
+    and the tempo, never from the song's total length.
     """
     session.result("transport.set_tempo", {"bpm": TEMPO})
     track = session.result("track.add", {"type": "instrument", "name": "RenderPresets"})["track"]
@@ -188,33 +192,28 @@ def check_refusals(session, recorder, outdir):
     before = store_list(session)
     recorder.check("the store starts empty in this instance's own world",
                    before.get("count") == 0 and before.get("active") is False, repr(before)[:200])
-    escaped = session.result("export.preset_add", {"name": "..", "sample_rate": 48000,
-                                                   "bit_depth": "16", "stereo_mode": "stereo"})
-    recorder.check("a name that would escape the store is refused typed",
-                   escaped.get("error", {}).get("kind") == "invalid_args", repr(escaped)[:200])
-    low = session.result("export.preset_add", {"name": "too low", "sample_rate": 22050,
-                                               "bit_depth": "16", "stereo_mode": "stereo"})
-    recorder.check("a sample rate the render path cannot honour is refused typed",
-                   low.get("error", {}).get("kind") == "invalid_args", repr(low)[:200])
-    partial = session.result("export.preset_add", {"name": "half", "sample_rate": 48000})
-    recorder.check("a preset missing its bit depth is refused typed",
-                   partial.get("error", {}).get("kind") == "invalid_args", repr(partial)[:200])
+    base = {"sample_rate": 48000, "bit_depth": "16", "stereo_mode": "stereo"}
+    # The store's key is a FILE NAME, so a separator in one would place the document
+    # outside the store - found by this test itself, which first used a name with a slash.
+    for label, args in (("a name that would escape the store", dict(base, name="..")),
+                        ("a name carrying a path separator", dict(base, name="in/out")),
+                        ("a sample rate the render path cannot honour",
+                         dict(base, name="too low", sample_rate=22050)),
+                        ("a preset missing its bit depth",
+                         {"name": "half", "sample_rate": 48000})):
+        reply = session.result("export.preset_add", args)
+        recorder.check("%s is refused typed" % label,
+                       reply.get("error", {}).get("kind") == "invalid_args", repr(reply)[:200])
 
-    whole = os.path.join(outdir, "refused-whole.wav")
-    half_range = session.result("render.render", {"out": whole, "start_ticks": ONE_BAR})
-    recorder.check("half a range is refused typed",
-                   half_range.get("error", {}).get("kind") == "invalid_args",
-                   repr(half_range)[:200])
-    empty = session.result("render.render", {"out": whole, "start_ticks": ONE_BAR,
-                                             "end_ticks": ONE_BAR})
-    recorder.check("an empty range is refused typed",
-                   empty.get("error", {}).get("kind") == "invalid_args", repr(empty)[:200])
-    negative = session.result("render.render", {"out": whole, "start_ticks": -1,
-                                                "end_ticks": ONE_BAR})
-    recorder.check("a negative range is refused typed",
-                   negative.get("error", {}).get("kind") == "invalid_args", repr(negative)[:200])
-    recorder.check("a refused range wrote no file at all",
-                   not os.path.exists(whole), "out=%r exists=%r" % (whole, os.path.exists(whole)))
+    for label, args in (("half a range", {"start_ticks": ONE_BAR}),
+                        ("an empty range", {"start_ticks": ONE_BAR, "end_ticks": ONE_BAR}),
+                        ("a negative range", {"start_ticks": -1, "end_ticks": ONE_BAR})):
+        whole = os.path.join(outdir, "refused-whole.wav")
+        reply = session.result("render.render", dict(args, out=whole))
+        recorder.check("%s is refused typed" % label,
+                       reply.get("error", {}).get("kind") == "invalid_args", repr(reply)[:200])
+    recorder.check("a refused range wrote no file at all", not os.path.exists(whole),
+                   "out=%r" % (whole,))
     recorder.check("the refused store writes left the store empty",
                    store_list(session).get("count") == 0, repr(store_list(session))[:200])
 
@@ -236,10 +235,10 @@ def check_store(session, recorder):
     store = added.get("dir")
     document = os.path.join(store, added.get("name") + ".zrp")
     recorder.check("the document is on disk where the reply says it is",
-                   os.path.isfile(document), "path=%r dir=%r" % (document, store))
+                   os.path.isfile(document), "path=%r" % (document,))
     recorder.check("the reply's three settings are the ones asked for",
                    (added.get("sample_rate"), added.get("bit_depth"), added.get("stereo_mode"))
-                   == (PRESET_RATE, PRESET_DEPTH, PRESET_MODE), repr(added)[:250])
+                   == (PRESET_RATE, PRESET_DEPTH, PRESET_MODE), repr(added)[:200])
     sha = added.get("sha256")
 
     duplicate = add_preset(session)
@@ -251,7 +250,7 @@ def check_store(session, recorder):
                    repr(changed)[:250])
     again = add_preset(session, overwrite=True)
     recorder.check("re-issuing the same settings rebuilds the document byte for byte",
-                   again.get("sha256") == sha, "first=%r again=%r" % (sha, again.get("sha256")))
+                   again.get("sha256") == sha, "first=%r" % (sha,))
 
     listed = store_list(session)
     one = (listed.get("presets") or [{}])[0]
@@ -261,7 +260,7 @@ def check_store(session, recorder):
                    == (1, added.get("name"), PRESET_RATE, PRESET_DEPTH, PRESET_MODE),
                    repr(listed)[:300])
     recorder.check("export.preset_list reports the dir the documents live in",
-                   listed.get("dir") == store, "dir=%r store=%r" % (listed.get("dir"), store))
+                   listed.get("dir") == store, "dir=%r" % (listed.get("dir"),))
     return {"document": document, "sha256": sha}
 
 
@@ -280,7 +279,7 @@ def render(session, recorder, outdir, name, args):
 
 def check_whole_project(session, recorder, outdir):
     """A render with no preset and no range is the render this command always was."""
-    result, info = render(session, recorder, outdir, "whole.wav", {})
+    result, info = render(session, recorder, outdir, "whole.wav", dict())
     if result is None:
         return None
     recorder.check("a whole-project render reports no range and no applied preset",
@@ -293,6 +292,7 @@ def check_whole_project(session, recorder, outdir):
     recorder.check("the whole-project render's frame count is the file's own frame count",
                    result.get("frames") == info["frames"],
                    "reply=%r header=%r" % (result.get("frames"), info["frames"]))
+
     return info
 
 
@@ -350,7 +350,7 @@ def check_apply(session, recorder, outdir, info_one, document):
     recorder.check("the applied preset reaches the FILE: its header is %d Hz / %s bit"
                    % (PRESET_RATE, PRESET_DEPTH),
                    info["rate"] == PRESET_RATE and info["bits"] == int(PRESET_DEPTH),
-                   "header=%r" % (info,))
+                   "header=%r" % (summary(info),))
     want = expected_frames(ONE_BAR, PRESET_RATE)
     recorder.check("the same span at the preset's rate renders the frames it implies (%d)" % want,
                    abs(info["frames"] - want) <= FRAME_SLACK,
@@ -359,24 +359,27 @@ def check_apply(session, recorder, outdir, info_one, document):
                    (result.get("applied_preset"), result.get("sample_rate"))
                    == (PRESET, PRESET_RATE),
                    repr(result)[:250])
-    # The rate is not a report-only field: the 96 kHz file must be longer than the
-    # 44.1 kHz render of the SAME span by the ratio of the two rates.
+    # The rate is not a report-only field: the 96 kHz file must be longer than the 44.1 kHz render of the SAME span by the ratio of the two rates.
     ratio = info["frames"] / float(info_one["frames"])
     recorder.check("96 kHz renders the frame ratio of 44100 and 96000",
                    abs(ratio - PRESET_RATE / float(DEFAULT_RATE)) < 0.01,
                    "ratio=%.4f frames=%r vs %r" % (ratio, info["frames"], info_one["frames"]))
 
     undone = session.result("control.undo")
+    # The journal path of control.undo answers undone / undone_command / mechanism
+    # and carries no "class" key (that one is on the inverse-command path); the class
+    # this verb claims is checked from control.transactions in check_transactions.
     recorder.check("control.undo reverses the apply (it is a recorded step)",
-                   (undone.get("undone_command"), undone.get("class"))
-                   == ("export.preset_apply", "true_inverse"), repr(undone)[:250])
+                   undone.get("undone") is True
+                   and undone.get("undone_command") == "export.preset_apply",
+                   repr(undone)[:250])
     after, info_after = render(session, recorder, outdir, "after-undo.wav",
                                {"start_ticks": 0, "end_ticks": ONE_BAR})
     if after is None:
         return
     recorder.check("after the undo the render is back to the default settings",
                    info_after["rate"] == DEFAULT_RATE and info_after["bits"] == 16,
-                   "header=%r" % (info_after,))
+                   "header=%r" % (summary(info_after),))
     recorder.check("after the undo the SAME span renders the SAME audio, byte for byte",
                    info_after["data"] == info_one["data"],
                    "before=%d after=%d bytes" % (len(info_one["data"]), len(info_after["data"])))
