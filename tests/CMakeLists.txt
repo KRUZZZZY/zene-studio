@@ -194,6 +194,15 @@ set(LMMS_TESTS
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
+	# Import detection (0.3.0, feature row 34; the `detect.*` group's engine half):
+	# a RIFF/WAVE synthesised BYTE BY BYTE at a known answer - click tracks at 128
+	# and 90 BPM, an A major scale over an A bass - read back through the engine's
+	# own SampleDecoder, so the decoder, the arithmetic and the vocabulary are all
+	# on the path. It also asserts the refusals (no transients, no file) and the
+	# detected-key field's XML round trip. Headless: no Engine, no window, no audio
+	# device. Real-world accuracy is NOT measured here - see
+	# docs/IMPORT-DETECTION.md.
+	src/core/ImportDetectionTest.cpp
 	src/core/MathTest.cpp
 	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
 	# `meter.*` group's live half): what an armed tap reads, the three negative
@@ -316,6 +325,11 @@ set(LMMS_TESTS
 	# use are in src/core/ControlVcaTestSupport.h.
 	src/core/ControlVcaEditGroupsTest.cpp
 	src/core/ScriptBindingsTest.cpp
+	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
+	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
+	# control surface addresses from Lua, reads the engine back (not the script's
+	# own buffer), and checks the version surface zene.apiSurface() reports.
+	src/core/ScriptDawBindingTest.cpp
 	src/core/ScriptEngineTest.cpp
 	# CODE-6: the Lua MEMORY budget beside the instruction budget. The same
 	# script completes under the shipping cap and is refused, typed, under one
@@ -483,7 +497,6 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
-
 	# SafeStartTest proves the load-time predicate on the REAL load path: it
 	# copies the built midiexport module into a fixture directory that this build
 	# does not ship from (which is what makes the file third-party), pins the
@@ -556,6 +569,11 @@ set_target_properties(MpePlaybackTest PROPERTIES ENABLE_EXPORTS ON)
 # (D9a/D9b), which needs a Qt platform plugin even though the test is guiless.
 set_tests_properties(RecordingRealtimeTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
+# ProjectJournal) and drives it through the Lua binding, so it needs the same
+# headless Qt platform.
+set_tests_properties(ScriptDawBindingTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a
 # full Engine and drive the mixer's own save/load, so they need the same
@@ -569,7 +587,6 @@ set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 set_tests_properties(ModulationLayerValueTest ModulationLayerTest
 	ControlModulatorCommandsTest ControlNoteExpressionCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-
 # SampleAccurateAutomationTest (feature row 9) builds a full Engine and the rack
 # fixture's real Mixer channel, renders real audio periods through
 # Song::processNextBuffer() and drives the automation.* group through the
@@ -626,7 +643,6 @@ target_compile_definitions(RoutingGraphLiveTest PRIVATE
 # synchronously, the same shape as the Phase D harnesses.
 set_tests_properties(VcaGroupTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-
 # PatcherCommandsTest constructs a full Engine, appends effects to a real mixer
 # channel's chain and drives Mixer::masterMix() to measure that a re-wire changes
 # the render, so it needs a Qt platform plugin for the same reason (guiless
@@ -641,13 +657,15 @@ set_tests_properties(PatcherCommandsTest PROPERTIES
 # 500-line file ratchet.
 set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ImportDetectionTest builds NO Engine and opens no window: it reads WAVs it
+# writes itself and calls the analysis directly, so it needs no Qt platform
+# plugin and deliberately gets no set_tests_properties line here.
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
 # Qt platform plugin even though the test itself is guiless (same reason as
 # PluginScanCacheTest above).
 set_tests_properties(MasteringTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-
 # RevisionTimelineTest drives a real Engine and the `revisions.*` group through
 # the registry, writes real project documents and - where the machine has git -
 # runs real `git` commands, so it needs a Qt platform plugin for the same reason
@@ -1669,6 +1687,24 @@ IF(WIN32)
 ELSE()
 	SET(CONTROL_SUITE_AVAILABLE TRUE)
 ENDIF()
+# ---------------------------------------------------------------------------
+# LuaApiSurface (0.3.0 feature row 50): the version + compatibility policy as a
+# RATCHET. docs/lua-api-surface.txt is the API surface of the version this tree
+# declares, derived from the registration sources by tests/lua-api-surface.py.
+# The test re-derives it and fails on drift in EITHER direction - a removed name
+# (breaking: needs a MAJOR bump) and an added one (additive: needs a MINOR bump)
+# - naming the entries and quoting the policy. It needs no build of the product:
+# the surface is what the sources register, so it runs on every platform and on a
+# machine that cannot build the DAW. docs/LUA-COMPATIBILITY-POLICY.md, section 2.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME LuaApiSurface
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/lua-api-surface.py
+			--check
+			--root ${CMAKE_SOURCE_DIR}
+			--manifest ${CMAKE_SOURCE_DIR}/docs/lua-api-surface.txt
+	)
+endif()
 
 # The Windows half of the control surface (CODE-9): the same JSON-RPC framing, the same
 # command ids and the same typed refusal shapes, over a NAMED PIPE. This smoke test starts
@@ -2216,6 +2252,29 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77
 	)
+	# Import detection (0.3.0, feature row 34 of docs/FEATURE-LIST-0.3.0.md): the
+	# `detect.*` group driven END TO END through --control-socket, which is the
+	# release contract's section 3.1 claim for it. The fixtures are SYNTHESISED by
+	# this test with the standard library's own `wave` writer - a click track at
+	# exactly 128 BPM whose first click is at 0.500 s, an A major scale over an A
+	# bass, and a steady tone for the refusal case. It asserts that detect.analyze
+	# recovers those answers and NAMES its methods, that detect.apply writes the
+	# tempo into the TEMPO MAP (read back through transport.tempo_map_get, a
+	# different verb) and the key into the project's OWN `<detected-key>` field,
+	# that project.save carries both into the file, and that ONE control.undo takes
+	# the whole detection off. What it does NOT prove is stated in its docstring and
+	# in docs/IMPORT-DETECTION.md: a click track is not real music, and no
+	# real-world accuracy was measured on this box. No fixture generator to skip on:
+	# the fixtures come from the standard library, so this test runs everywhere
+	# python3 and the binary do.
+	add_test(NAME ControlDetectCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-detect-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDetectCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
 	# The loudness surface (feature row 24 of docs/FEATURE-LIST-0.3.0.md, "LUFS /
 	# loudness metering"), which is the release contract's section 3.1 claim for
 	# the `meter.*` group: it starts the real binary, arms the PASSIVE master tap
@@ -2653,37 +2712,6 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 else()
 	message(STATUS "python3 not found: ControlCommandsSnapshot is not registered")
 endif()
-
-	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
-	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
-	# control surface addresses from Lua, reads the engine back (not the script's
-	# own buffer), and checks the version surface zene.apiSurface() reports.
-	src/core/ScriptDawBindingTest.cpp
-	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-
-# ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
-# ProjectJournal) and drives it through the Lua binding, so it needs the same
-# headless Qt platform.
-set_tests_properties(ScriptDawBindingTest PROPERTIES
-# ---------------------------------------------------------------------------
-# LuaApiSurface (0.3.0 feature row 50): the version + compatibility policy as a
-# RATCHET. docs/lua-api-surface.txt is the API surface of the version this tree
-# declares, derived from the registration sources by tests/lua-api-surface.py.
-# The test re-derives it and fails on drift in EITHER direction - a removed name
-# (breaking: needs a MAJOR bump) and an added one (additive: needs a MINOR bump)
-# - naming the entries and quoting the policy. It needs no build of the product:
-# the surface is what the sources register, so it runs on every platform and on a
-# machine that cannot build the DAW. docs/LUA-COMPATIBILITY-POLICY.md, section 2.
-if(PYTHON3_EXECUTABLE)
-	add_test(NAME LuaApiSurface
-		COMMAND ${PYTHON3_EXECUTABLE}
-			${CMAKE_CURRENT_SOURCE_DIR}/lua-api-surface.py
-			--check
-			--root ${CMAKE_SOURCE_DIR}
-			--manifest ${CMAKE_SOURCE_DIR}/docs/lua-api-surface.txt
-	)
-endif()
-
 # ---------------------------------------------------------------------------
 # The bridge's GROUP COVERAGE, driven rather than listed:
 # tests/control-mcp-group-coverage.py starts this build's binary, opens a real MCP
@@ -2736,40 +2764,3 @@ if(PYTHON3_EXECUTABLE)
 else()
 	message(STATUS "python3 not found: ControlMcpGroupCoverage is not registered")
 endif()
-
-	# Import detection (0.3.0, feature row 34; the `detect.*` group's engine half):
-	# a RIFF/WAVE synthesised BYTE BY BYTE at a known answer - click tracks at 128
-	# and 90 BPM, an A major scale over an A bass - read back through the engine's
-	# own SampleDecoder, so the decoder, the arithmetic and the vocabulary are all
-	# on the path. It also asserts the refusals (no transients, no file) and the
-	# detected-key field's XML round trip. Headless: no Engine, no window, no audio
-	# device. Real-world accuracy is NOT measured here - see
-	# docs/IMPORT-DETECTION.md.
-	src/core/ImportDetectionTest.cpp
-
-# ImportDetectionTest builds NO Engine and opens no window: it reads WAVs it
-# writes itself and calls the analysis directly, so it needs no Qt platform
-# plugin and deliberately gets no set_tests_properties line here.
-	# Import detection (0.3.0, feature row 34 of docs/FEATURE-LIST-0.3.0.md): the
-	# `detect.*` group driven END TO END through --control-socket, which is the
-	# release contract's section 3.1 claim for it. The fixtures are SYNTHESISED by
-	# this test with the standard library's own `wave` writer - a click track at
-	# exactly 128 BPM whose first click is at 0.500 s, an A major scale over an A
-	# bass, and a steady tone for the refusal case. It asserts that detect.analyze
-	# recovers those answers and NAMES its methods, that detect.apply writes the
-	# tempo into the TEMPO MAP (read back through transport.tempo_map_get, a
-	# different verb) and the key into the project's OWN `<detected-key>` field,
-	# that project.save carries both into the file, and that ONE control.undo takes
-	# the whole detection off. What it does NOT prove is stated in its docstring and
-	# in docs/IMPORT-DETECTION.md: a click track is not real music, and no
-	# real-world accuracy was measured on this box. No fixture generator to skip on:
-	# the fixtures come from the standard library, so this test runs everywhere
-	# python3 and the binary do.
-	add_test(NAME ControlDetectCommands
-		COMMAND ${PYTHON3_EXECUTABLE}
-			${CMAKE_CURRENT_SOURCE_DIR}/control-detect-commands.py
-			$<TARGET_FILE:zene>)
-	set_tests_properties(ControlDetectCommands PROPERTIES
-		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-		TIMEOUT 600
-	)
