@@ -1093,3 +1093,42 @@ feature. **UI absence — one line: the stretch mode is settable through the soc
 interface** — `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/`
 returns **0** hits, there is no clip-context entry, no checkbox and no marker-drag gesture for it, and a
 project file or `warp.stretch` are the only two ways to author it.
+
+## Sample-accurate automation (`automation.ramp_set`, `automation.ramp_get`) — feature row 9
+
+**Automation now reaches the audio path per sample, and here is exactly where it cannot.** Each
+automation clip carries its own `sample_accurate` flag (`automation.ramp_set` with `mode="sample"`, or the
+`sample_accurate="1"` attribute of the clip's own element). With the flag on, `Song::buildAutomationRamps()`
+publishes the clip's curve to every parameter it drives as a per-sample ramp at the start of every audio
+block — `include/AutomationRamp.h`, one knot per tick boundary inside the block plus the block's two ends —
+and the per-sample buffer the audio path multiplies with (`AutomatableModel::valueBuffer()`) carries the
+curve at every frame instead of one value smeared over the whole block from the previous block's value
+(`docs/SAMPLE-ACCURATE-AUTOMATION.md` is the design record; `automation.ramp_get` reports, per parameter,
+the mode, the ramp the render thread built, and how many knots the fixed capacity refused). Stated limits,
+all structural and all measurable through the socket:
+
+* **a device that never reads a per-sample value keeps the block's single value.** The ramp lives in the
+  model and the consumer has to ask for it (`AutomatableModel::valueBuffer()` is the door — the mixer
+  channel fader, the instrument tracks and the fx chains are the consumers that use it), so a parameter
+  whose own `process()` reads `value()` once per block sees the value at the block's start and no
+  per-sample movement at all;
+* `CubicHermite` (**tangent-edited**) curves are **approximated**: their stored shape inside one tick is a
+  cubic and a ramp is piecewise linear, so such a clip is interpolated as one straight segment per tick.
+  `Linear` and `Discrete` (the engine's default, and what `automation.add_point` writes) are reproduced
+  exactly — the surface reports the progression type beside the mode rather than implying otherwise;
+* a block that needs more knots than the ramp's fixed capacity holds (`MaxKnots` 32: about 400 BPM with a
+  512-frame block at 44.1 kHz and 192 ticks per bar) is **refused the surplus knots and counts them**
+  (`refused_knots` in `automation.ramp_get` — never an allocation), so the block interpolates over the
+  knots it kept;
+* a clip **in a pattern** cannot use it at all: `automation.ramp_set` **refuses** it (`Refused`) because a
+  pattern's automation is re-read against the pattern's own tick grid and has no single block timeline;
+* a transport **jump** (loop wrap or seek) that lands inside a block is read with the ramp built for that
+  block's start, so the rest of that one block follows the old position's curve; the next block is exact;
+* the mode is **off by default**, per clip, and a project that never turns it on renders byte-identically
+  (`buildAutomationRamps()` returns at its first type test) — which also means an automation clip that was
+  never opted in still carries the whole-block lag it always had.
+
+**UI absence — one line: the mode is settable through the socket, not from the interface** —
+`grep -rniI 'sampleAccurate\|sample_accurate\|ramp_set\|AutomationRamp' src/gui/` returns **0** hits, there
+is no automation-editor toggle, no clip-context entry and no per-parameter gesture for it, and a project
+file or `automation.ramp_set` are the only two ways to author it.

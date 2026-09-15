@@ -707,18 +707,22 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **265 rows**, measured from the table itself:
-**141 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 96 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **267 rows**, measured from the table itself:
+**142 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 97 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**263 rows / 94 `not_mutating`** - which is the base
+**265 rows / 95 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **This is the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the eight-lane wave-1 merge train's tip and
-reports **265** rows over the four classes named above (141 + 21 + 7 + 96), and its constant is the
-telemetry-off/wasm-off base of **263 / 141 / 21 / 7 / 94**.
+what left one of them stale before. **The 265-row base is the MERGED tree's own measurement, not
+arithmetic:** `ReversibilityContractTest` was run against a build of the eight-lane wave-1 merge
+train's tip and reports **265** rows over the four classes named above (141 + 21 + 7 + 96), and its
+constant was the telemetry-off/wasm-off base of **263 / 141 / 21 / 7 / 94** until this lane landed.
+**The 267 rows above are that measurement PLUS this lane's own two rows,** measured the same way on
+this branch's tip (265 + 1 `true_inverse` for `automation.ramp_set` + 1 `not_mutating` for
+`automation.ramp_get`): the merge step re-runs the test and rewrites this paragraph and that constant
+together, so the number here is the merged measurement and never a sum of anybody's report.
 
 Every other figure of this shape below was measured on the branch that wrote it, or on an earlier
 merge tip, and is kept as that lane's own record rather than as this tree's number:
@@ -730,10 +734,17 @@ here is the merged measurement and never a sum of anybody's report - which is wh
 re-ran the test and rewrote this paragraph and that constant together. The measurement agrees with
 the lanes' own deltas exactly, which is the check that it is a measurement and not a total:
 225 base + 1 (telemetry) + 4 (meter) + 4 (linked clips) + 9 (recording) + 1 (pitch-stretch) +
-4 (render presets) + 15 (note/scale) = 263, and the class columns add up the same way.
+4 (render presets) + 15 (note/scale) + 2 (sample-accurate automation) = 265, and the class columns
+add up the same way.
 
 What the eight lanes added, in each lane's own words:
 
+* **`030/sample-accurate-automation` (feature row 9) - +2 rows, +1 `true_inverse`, +1 `not_mutating`:**
+  `automation.ramp_set` is a `true_inverse` row on a LIVE automation-clip checkpoint (the clip's own
+  `sample_accurate` flag, serialized only when it is on and reset by `loadSettings` on absence, so the
+  checkpoint takes the FIRST ramp_set back too), and `automation.ramp_get` is its `not_mutating`
+  inspector. Their file is `src/core/ControlReversibilityTableAutomationRamp.cpp` - a GROUP file,
+  because `ControlReversibilityTable.cpp` sits above the file-length ratchet.
 * **`030/meter-surface` (feature row 24) - +4 rows, +2 `true_inverse`, +2 `not_mutating`:**
   `meter.arm` and `export.set_loudness_report` as recorded-action `true_inverse` rows,
   `meter.get_state` and `meter.measure_file` as `not_mutating` inspectors.
@@ -1714,6 +1725,68 @@ unchanged for every project; what is new is the second mode.
 * **UI absence — one line: the stretch mode is settable through the socket, not from the interface.**
   `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/` returns **0**
   hits — there is no clip-context entry, no checkbox and no marker-drag gesture for it.
+
+## Sample-accurate automation: a curve that reaches the audio path per sample (`automation.ramp_set` / `automation.ramp_get`, feature row 9) — added 2026-09-15
+
+Automation was evaluated once per TICK (`Song::processAutomations()`), and the per-sample buffer the audio
+path actually multiplies with (`AutomatableModel::valueBuffer()` — the buffer
+`MixerChannel::updatePostFaderBuffer()` and the fx chains read) was filled by interpolating from the value
+the previous block ended on to the value this block's first tick applied. Two things followed, both audible
+on a fast move: the parameter was a whole block **late**, and the move was smeared over the whole block
+whatever the curve's own shape was. `include/AudioEngine.h` says so in its own words — "per-buffer updates
+like **non-sample-accurate automation**". This lane makes the curve reach the audio path at sample
+precision inside the block.
+
+* **The engine.** `include/AutomationRamp.h` is a per-block, per-sample ramp: a **fixed-capacity** array of
+  (frame, value) knots (`MaxKnots` 32 → a 528-byte member of the model), read by
+  `AutomatableModel::valueBuffer()` per sample. `Song::buildAutomationRamps()` publishes it once per audio
+  block — from `Song::process()`, **before** the tick loop, because the whole block's curve has to be in the
+  parameters before the first sample of it renders — and `AutomationClip::writeBlockRamp()` builds it under
+  the clip's own lock **once per block** (rather than once per knot, as the per-tick path does).
+* **Why a knot per tick boundary is the whole curve.** A clip's nodes sit on integer ticks and its stored
+  value is linear in ticks between two of them, so inside one tick the curve is a straight line and an audio
+  block (a handful of ticks, and never aligned to the grid) is reproduced exactly by the curve's value at
+  its first sample, at every tick boundary inside it, and at its end. Every boundary gets **two** knots —
+  the frame just before it and the frame on it — because the clip's default progression type is `Discrete`,
+  which HOLDS a value for a whole tick and then jumps.
+* **Realtime-safe, and measured that way.** No allocation anywhere on the path (the ramp is the caller's own
+  stack object, copied into the model's fixed-capacity member; the traversal iterates the track list, each
+  track's clip vector and each clip's object vector **by reference**), no lock other than the clip's own
+  (once per clip per block), and no unbounded growth: a knot that does not fit is **refused and counted**
+  (`AutomationRamp::refusals()`, reported per parameter as `refused_knots`), so a block whose tempo packs
+  more boundaries than the capacity holds degrades and says so instead of allocating.
+* **Opt-in, per clip, and reversible.** `automation.ramp_set` (`track`, `parameter`, `mode` =
+  `sample` | `block`) sets the clip's own `sample_accurate` flag; `automation.ramp_get` reports the mode and
+  the ramp the **audio thread** built for every automated parameter (knots, frames, whether the value moves
+  inside the block, refusals). The flag is serialized **only when it is on** and `AutomationClip::loadSettings()`
+  **resets it on absence**, so the Clip's live journal checkpoint is a real inverse — including for the FIRST
+  `ramp_set` (A16 row `true_inverse` in `src/core/ControlReversibilityTableAutomationRamp.cpp`). A project
+  that never opts in renders **byte-identically**: `buildAutomationRamps()` returns at its first type test.
+* **The proof.** `SampleAccurateAutomationTest` renders real periods through `Song::processNextBuffer()`
+  (the entry `AudioEngine::renderStageNoteSetup()` calls on the render thread, with the dummy device
+  stopped), measures the per-sample buffer against the clip's own curve at **every frame of every block**,
+  and reports both figures: in `sample` mode the deviation is inside tolerance and the value MOVES inside
+  the block; in `block` mode the same run reports the smear — which is what makes the first claim
+  non-vacuous, so a regression to the block-quantised behaviour fails the suite. The same file measures the
+  ramp builder against the curve for `Discrete` and `Linear` blocks that start inside a tick, and probes the
+  whole ramp path for allocations over 64 blocks (0).
+* **Where sample accuracy cannot hold** (the row's own limitation line, and `docs/KNOWN-LIMITATIONS.md`
+  "Sample-accurate automation"): a parameter whose device reads only the block's single value and never its
+  per-sample buffer gets the block's start value — the ramp is in the model, the device has to ask for it
+  (`AutomatableModel::valueBuffer()` is the door, and the mixer fader, the fx chains and the instrument
+  tracks are the consumers that use it); a clip **in a pattern** has no single block timeline, so
+  `automation.ramp_set` **refuses** it typed; a `CubicHermite` (tangent) clip is interpolated as one
+  straight segment per tick inside the block, so a tangent-edited curve is **approximated** at sample
+  precision (Linear and Discrete are exact); a block that needs more knots than `MaxKnots` holds refuses the
+  surplus and counts it, and the count is readable through `automation.ramp_get`; and a transport jump
+  (loop wrap, seek) that lands inside a block is read with the ramp built for that block's start, so its
+  remaining frames follow the old position's curve - the next block is exact again. The mechanism is
+  approximate for `CubicHermite` and exact for the other two types; the surface reports the progression type
+  beside the mode rather than implying an exactness it does not have.
+* **UI absence — one line: the mode is settable through the socket, not from the interface.**
+  `grep -rniI 'sampleAccurate\|sample_accurate\|ramp_set\|AutomationRamp' src/gui/` returns **0** hits —
+  there is no automation-editor toggle, no clip-context entry and no per-parameter gesture for it; a project
+  file or `automation.ramp_set` are the only two ways to author it.
 
 ## Not in this draft yet
 
