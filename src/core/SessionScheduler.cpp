@@ -373,56 +373,10 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
 }
 
 
-bool SessionScheduler::consumeResetRequest() noexcept
-{
-	const std::uint32_t generation = m_resetGeneration.load( std::memory_order_acquire );
-	if( generation == m_seenGeneration )
-	{
-		return false;
-	}
-	m_seenGeneration = generation;
-	// Arrangement Record: a reset is the END of the performance for every slot
-	// it drops, so each playing slot's stop is recorded first, at the clock the
-	// reset was carried out at. Without this the ring would keep START events
-	// whose stop never came - the open pairs session.arrangement_record_land
-	// refuses to land - and session.back_to_arrangement, whose whole contract is
-	// "the session stops and the performance can still be landed", would produce
-	// exactly that. Audio thread, bounded loop, no allocation.
-	for( const auto& slot : m_active )
-	{
-		if( slot.track >= 0
-			&& ( slot.state.phase == SlotPhase::Playing
-				|| slot.state.phase == SlotPhase::StopPending ) )
-		{
-			m_recorder.recordStop( slot.track, slot.scene, m_positionTicks );
-		}
-	}
-	for( auto& slot : m_active )
-	{
-		slot = ActiveSlot{};
-	}
-	for( auto& installed : m_followPlans )
-	{
-		installed = InstalledFollowPlan{};
-	}
-	m_followArmed.store( 0, std::memory_order_relaxed );
-	m_followArmedMask.store( 0, std::memory_order_relaxed );
-	m_followFires.store( 0, std::memory_order_relaxed );
-	m_lastFollowFire.store( 0, std::memory_order_relaxed );
-	// Arrangement Record's ring is deliberately NOT cleared: the events it
-	// already carries belong to the performance that has just ended, and the
-	// caller lands them (the disarm path). Dropping them here is the data loss
-	// the feature exists to prevent.
-	m_positionTicks = 0;
-	m_freeRunFrames = 0.0;
-	m_wasRunning = false;
-	// A project change starts a fresh session: the launch bookkeeping the
-	// model thread can read goes back to zero with the launch state.
-	m_launches.store( 0, std::memory_order_relaxed );
-	m_lastStartLine.store( 0, std::memory_order_relaxed );
-	m_lastStartObservedTick.store( 0, std::memory_order_relaxed );
-	return true;
-}
+//! consumeResetRequest() is DEFINED in src/core/SessionFollow.cpp: the reset
+//! records the stop of every slot it ends (the engine half of
+//! session.back_to_arrangement) and clears the Follow Action bookkeeping, so it
+//! lives beside the code it feeds. This file is at the file-length ratchet.
 
 
 void SessionScheduler::advanceClock( const SessionClockContext& snapshot,

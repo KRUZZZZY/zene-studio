@@ -302,4 +302,113 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 	}
 }
 
+// ---------------------------------------------------------------------------
+// the published reading: the model thread's whole view of the engine's state
+// ---------------------------------------------------------------------------
+
+/* WHY THESE BODIES ARE HERE AND NOT IN THE HEADER. They were inline accessors
+ * until this task's reset path joined them, and include/SessionScheduler.h is at
+ * the file-length ratchet: the accessors are one atomic load each, so an
+ * out-of-line definition changes nothing a reader of the header needs except the
+ * line budget, and the design they document is in this file and in
+ * include/SessionFollow.h. */
+
+int SessionScheduler::armedFollowCells() const noexcept
+{
+	return m_followArmed.load( std::memory_order_relaxed );
+}
+
+
+std::uint64_t SessionScheduler::armedFollowCellsMask() const noexcept
+{
+	return m_followArmedMask.load( std::memory_order_relaxed );
+}
+
+
+std::uint64_t SessionScheduler::followFires() const noexcept
+{
+	return m_followFires.load( std::memory_order_relaxed );
+}
+
+
+std::uint64_t SessionScheduler::lastFollowFire() const noexcept
+{
+	return m_lastFollowFire.load( std::memory_order_relaxed );
+}
+
+
+SessionArrangementRecorder& SessionScheduler::arrangementRecorder() noexcept
+{
+	return m_recorder;
+}
+
+
+const SessionArrangementRecorder& SessionScheduler::arrangementRecorder() const noexcept
+{
+	return m_recorder;
+}
+
+
+// ---------------------------------------------------------------------------
+// the reset path - the performance's end, and the end of every plan with it
+// ---------------------------------------------------------------------------
+
+/*! DEFINED HERE rather than in src/core/SessionScheduler.cpp, which is at the
+ *  file-length ratchet and where this function used to live. It belongs beside
+ *  the Arrangement Record feed anyway: what this task changed about the reset is
+ *  entirely about the recorder and the Follow Action tables.
+ *
+ *  Audio thread (called at the top of processAudio, before the clock advances),
+ *  bounded loops over fixed storage, no allocation. */
+bool SessionScheduler::consumeResetRequest() noexcept
+{
+	const std::uint32_t generation = m_resetGeneration.load( std::memory_order_acquire );
+	if( generation == m_seenGeneration )
+	{
+		return false;
+	}
+	m_seenGeneration = generation;
+	// Arrangement Record: a reset is the END of the performance for every slot
+	// it drops, so each playing slot's stop is recorded first, at the clock the
+	// reset was carried out at. Without this the ring would keep START events
+	// whose stop never came - the open pairs session.arrangement_record_land
+	// refuses to land - and session.back_to_arrangement, whose whole contract is
+	// "the session stops and the performance can still be landed", would produce
+	// exactly that.
+	for( const auto& slot : m_active )
+	{
+		if( slot.track >= 0
+			&& ( slot.state.phase == SlotPhase::Playing
+				|| slot.state.phase == SlotPhase::StopPending ) )
+		{
+			m_recorder.recordStop( slot.track, slot.scene, m_positionTicks );
+		}
+	}
+	for( auto& slot : m_active )
+	{
+		slot = ActiveSlot{};
+	}
+	for( auto& installed : m_followPlans )
+	{
+		installed = InstalledFollowPlan{};
+	}
+	m_followArmed.store( 0, std::memory_order_relaxed );
+	m_followArmedMask.store( 0, std::memory_order_relaxed );
+	m_followFires.store( 0, std::memory_order_relaxed );
+	m_lastFollowFire.store( 0, std::memory_order_relaxed );
+	// Arrangement Record's ring is deliberately NOT cleared: the events it
+	// already carries belong to the performance that has just ended, and the
+	// caller lands them (the disarm path). Dropping them here is the data loss
+	// the feature exists to prevent.
+	m_positionTicks = 0;
+	m_freeRunFrames = 0.0;
+	m_wasRunning = false;
+	// A project change starts a fresh session: the launch bookkeeping the
+	// model thread can read goes back to zero with the launch state.
+	m_launches.store( 0, std::memory_order_relaxed );
+	m_lastStartLine.store( 0, std::memory_order_relaxed );
+	m_lastStartObservedTick.store( 0, std::memory_order_relaxed );
+	return true;
+}
+
 } // namespace lmms
