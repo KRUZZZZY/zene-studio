@@ -172,7 +172,7 @@ def check_registration(session, recorder):
     recorder.check("the new ids carry their group, description and both schemas",
                    all((entries.get(cid) or {}).get("group") == "record"
                        for cid in NEW_IDS),
-                   "ids=%r" % NEW_IDS)
+                   "ids=%r" % (NEW_IDS,))
     arm = entries.get("track.set_arm") or {}
     recorder.check("track.set_arm no longer describes itself as a refusal",
                    "Refused" not in (arm.get("description") or "")
@@ -416,24 +416,60 @@ def check_retro_audio(session, recorder, shared):
     session.result("record.retro_capture_arm", {"armed": False})
 
 
-def check_transactions(session, recorder):
+def check_transactions(session, recorder, expect_input_set, expect_arms):
+    """The A16 records, read back from the instance that produced them.
+
+    The registry's transaction log is PER INSTANCE, so each half of this test asks
+    only for the records its own instance's calls produced: A ran record.input_set
+    (and got one arm REFUSED, which records nothing), B ran the arm verbs.
+    """
     reply = session.result("control.transactions")
-    by_command = {}
-    for entry in reply.get("transactions", []):
-        by_command[entry.get("command")] = entry
-    for command, expected in (("record.arm_track", "snapshot"),
-                              ("record.input_set", "true_inverse"),
-                              ("track.set_arm", "snapshot")):
-        entry = by_command.get(command)
-        recorder.check("%s is recorded as %s" % (command, expected),
-                       entry is not None and entry.get("cls") == expected,
+    records = reply.get("transactions", [])
+
+    def find(command, reversible=None):
+        for entry in records:
+            if entry.get("command") != command:
+                continue
+            if reversible is None or bool(entry.get("reversible")) is reversible:
+                return entry
+        return None
+
+    if expect_arms:
+        armed = find("record.arm_track", True)
+        recorder.check("record.arm_track's arm is recorded as snapshot, reversible, "
+                       "with a command inverse",
+                       armed is not None and armed.get("class") == "snapshot"
+                       and (armed.get("inverse") or {}).get("applies") == "command"
+                       and (armed.get("inverse") or {}).get("op") == "record.disarm_track",
+                       "record=%r" % armed)
+
+    if expect_input_set:
+        entry = find("record.input_set", True)
+        recorder.check("record.input_set is recorded as true_inverse",
+                       entry is not None and entry.get("class") == "true_inverse",
                        "record=%r" % entry)
+
+    if expect_arms:
+        track_arm = find("track.set_arm", True)
+        recorder.check("track.set_arm's arm is recorded as snapshot with track.set_arm "
+                       "as its inverse",
+                       track_arm is not None and track_arm.get("class") == "snapshot"
+                       and (track_arm.get("inverse") or {}).get("op") == "track.set_arm",
+                       "record=%r" % track_arm)
+
+        # The DISARM records no inverse, and says so rather than claiming one: that
+        # is the honest half of "re-arming writes a NEW take".
+        track_disarm = find("track.set_arm", False)
+        recorder.check("the disarm half records no inverse and says why",
+                       track_disarm is not None
+                       and "no inverse or snapshot" in (track_disarm.get("mechanism") or ""),
+                       "record=%r" % track_disarm)
+
     for command in ("record.get_state", "record.input_get_state",
                     "record.retro_capture_status"):
-        entry = by_command.get(command)
+        entry = find(command)
         recorder.check("%s records no transaction (it reads)" % command,
-                       entry is None or entry.get("cls") == "not_mutating",
-                       "record=%r" % entry)
+                       entry is None, "record=%r" % entry)
 
 
 def check_transcript_is_evidence(transcript, recorder):
@@ -457,6 +493,10 @@ def run_instance_a(binary, recorder, shared, transcript):
     check_registration(session, recorder)
     written_config = check_arbitrary_input_count_instance_a(session, recorder, shared, instance)
     check_input_set_refusals(session, recorder, shared)
+    # A called record.input_set, so ITS records carry the true_inverse row; B did
+    # not, and asking B for a record of a command it never ran would be asking the
+    # per-instance transaction log to describe another process's calls.
+    check_transactions(session, recorder, expect_input_set=True, expect_arms=False)
     reply = session.call("control.quit")
     if reply.get("ok") is not True:
         recorder.check("instance A quits through control.quit", False, "reply=%r" % reply)
@@ -479,7 +519,7 @@ def run_instance_b(binary, recorder, shared, transcript, written_config):
     check_instance_b(session, recorder, shared)
     check_track_set_arm_and_undo(session, recorder, shared)
     check_retro_audio(session, recorder, shared)
-    check_transactions(session, recorder)
+    check_transactions(session, recorder, expect_input_set=False, expect_arms=True)
     check_transcript_is_evidence(transcript, recorder)
     reply = session.call("control.quit")
     if reply.get("ok") is not True:

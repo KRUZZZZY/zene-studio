@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-14T15:30:39Z",
+  "captured_at": "2026-09-15T10:44:15Z",
   "commands": [
     {
       "args_schema": {
@@ -7645,6 +7645,365 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "file": {
+            "type": "string"
+          },
+          "input_channel": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "route": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "route"
+        ],
+        "type": "object"
+      },
+      "description": "Arm one record route: start writing the interleaved input channel it selects into a 24-bit WAV, and journal the take beside it (the take journal is what makes a crashed capture recoverable - record.journal_begin's side file, written here by the recorder's own arm()). 'route' is the route index record.get_state reports; 'input_channel' defaults to the route's own index and must be inside [0, input_channel_capacity) - the FRAMES the route records come from the engine's input path, so with no capture device open and no frames staged the take is silent however the route is armed (record.input_get_state says which of those is true). 'file' must be absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file. Reversible: the recorded inverse is record.disarm_track, which stops the capture and retires the journal; the take file itself is left on disk, like any recording you keep.",
+      "group": "record",
+      "id": "record.arm_track",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_pushed": {
+            "type": "integer"
+          },
+          "frames_recorded": {
+            "type": "integer"
+          },
+          "input_channel": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "overflow_frames": {
+            "type": "integer"
+          },
+          "route": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "write_errors": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop every armed record route in one call and report the whole recorder afterwards. Each route's take is flushed and closed and its journal retired, exactly as record.disarm_track does for one. Not reversible: every route's take is a file that stays on disk, and re-arming starts a new one.",
+      "group": "record",
+      "id": "record.disarm_all",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed_before": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "route_count": {
+            "type": "integer"
+          },
+          "routes": {
+            "type": "array"
+          },
+          "total_overflow_frames": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "route": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop one record route: the disk-writer is drained and joined, the WAV is closed, and the take journal is RETIRED - a clean stop leaves no journal, which is what makes 'there is a journal' and 'the capture died' the same fact (include/RecordingJournal.h). The take file stays on disk. This is record.arm_track's recorded inverse, so control.undo after an arm dispatches it. Not reversible itself: re-arming writes a NEW take rather than restoring this one, and there is nothing the engine could hand back.",
+      "group": "record",
+      "id": "record.disarm_track",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_pushed": {
+            "type": "integer"
+          },
+          "frames_recorded": {
+            "type": "integer"
+          },
+          "input_channel": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "overflow_frames": {
+            "type": "integer"
+          },
+          "route": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "write_errors": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every record route the engine prepared, and the input path that feeds them. A route is one capture stream: an arm flag, the interleaved input channel it reads, the take file it writes, the take JOURNAL beside it, and the frame counters (pushed / recorded / journalled / overflow / write errors). The engine prepares 16 routes, and each may select ANY of the configured input channels - that pair of numbers (route_count and input_channel_capacity) is the 'arbitrary input count / multiple simultaneous inputs' feature row 64 asks for. `input` is record.input_get_state's own report, including `input_frames_staged` and `wide_frames`: both are 0 under a backend with no capture path, which is what 'a record route takes no inputs' measured. Read-only.",
+      "group": "record",
+      "id": "record.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "type": "object"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "route_count": {
+            "type": "integer"
+          },
+          "routes": {
+            "type": "array"
+          },
+          "total_overflow_frames": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The engine's capture-IN path, asked directly: what the configuration asks for (device, channel COUNT, which pair of captured channels rides the stereo bus), what this backend actually did with it (capture_capable, capture_open, capture_reason, the channels and rate the device granted), and what the two input stages hold now (bus_frames on the stereo bus, wide_frames/wide_channels on the N-channel stage, plus the staged and dropped counters). 'capture_capable: false' means this instance's backend has no capture path at all; 'capture_capable: true, capture_open: false' means it has one and the device refused - capture_reason carries the device's own message. Read-only, and the honest place to look before blaming a silent take.",
+      "group": "record",
+      "id": "record.input_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_frames": {
+            "type": "integer"
+          },
+          "capture_capable": {
+            "type": "boolean"
+          },
+          "capture_channels": {
+            "type": "integer"
+          },
+          "capture_device": {
+            "type": "string"
+          },
+          "capture_format": {
+            "type": "string"
+          },
+          "capture_frames": {
+            "type": "integer"
+          },
+          "capture_left": {
+            "type": "integer"
+          },
+          "capture_open": {
+            "type": "boolean"
+          },
+          "capture_overruns": {
+            "type": "integer"
+          },
+          "capture_rate": {
+            "type": "integer"
+          },
+          "capture_reason": {
+            "type": "string"
+          },
+          "capture_right": {
+            "type": "integer"
+          },
+          "configured": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "input_frames_dropped": {
+            "type": "integer"
+          },
+          "input_frames_staged": {
+            "type": "integer"
+          },
+          "max_channels": {
+            "type": "integer"
+          },
+          "recordable_channels": {
+            "type": "integer"
+          },
+          "route_capacity": {
+            "type": "integer"
+          },
+          "wide_channels": {
+            "type": "integer"
+          },
+          "wide_frames": {
+            "type": "integer"
+          },
+          "wide_frames_dropped": {
+            "type": "integer"
+          },
+          "wide_frames_staged": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "left": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "right": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Set the capture input path: 'device' (empty = the playback device), 'channels' (1..32 - the ARBITRARY input count of feature row 64), and 'left'/'right' (which two captured channels the stereo engine bus carries, so an interface's third and fourth input can be what the rest of the engine hears). Fields not given keep their current value. The four keys are written to the config file under `audioinput`, exactly as the settings dialog writes its own, and 'restart_required' is true: the backend opens the device at start and the recorder's routes are built when the engine is, so the next start is when this takes effect - there is no live device swap to pretend about. Reversible: the recorded inverse is this command with the previous plan, and control.undo dispatches it (the settings.set precedent, which records a command inverse for the same kind of config write).",
+      "group": "record",
+      "id": "record.input_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "left": {
+            "type": "integer"
+          },
+          "previous": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "restart_required": {
+            "type": "boolean"
+          },
+          "right": {
+            "type": "integer"
+          },
+          "route_capacity": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channels": {
             "type": "integer"
           },
@@ -8015,6 +8374,161 @@
           },
           "take": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Arm or disarm retrospective AUDIO capture: while armed, the engine keeps the most recent frames of its INPUT BUS in one bounded ring, so the take you did not press record for can still be written with record.retro_capture_to_take. With no 'armed' argument the mode is ARMED; 'armed': false is its disarm. Nothing is recorded while disarmed, and the cost then is one relaxed atomic load per rendered period. The ring is allocated once, when the engine is built ('capacity_frames' in the reply is that allocation, 1048576 frames); a frame that falls out of it is counted in 'overwritten_frames' and cannot be recovered. Mode/engine state, not project state, so no transaction is recorded and control.undo has nothing to reverse (the midi.retro_capture_arm precedent, verb for verb).",
+      "group": "record",
+      "id": "record.retro_capture_arm",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "armed_before": {
+            "type": "boolean"
+          },
+          "capacity_frames": {
+            "type": "integer"
+          },
+          "capacity_seconds": {
+            "type": "number"
+          },
+          "overwritten_frames": {
+            "type": "integer"
+          },
+          "paused_drop_frames": {
+            "type": "integer"
+          },
+          "refused_snapshots": {
+            "type": "integer"
+          },
+          "retained_frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "window_seconds": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "What retrospective AUDIO capture is holding: whether it is armed, the ring's capacity in frames and in SECONDS, how many frames are retained right now and how many seconds that is, how many frames have already been overwritten by later audio (the window's bound, as a measurement), frames dropped because a snapshot was in flight, and the count of copies that could not obtain a consistent window. Read-only.",
+      "group": "record",
+      "id": "record.retro_capture_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "armed_before": {
+            "type": "boolean"
+          },
+          "capacity_frames": {
+            "type": "integer"
+          },
+          "capacity_seconds": {
+            "type": "number"
+          },
+          "overwritten_frames": {
+            "type": "integer"
+          },
+          "paused_drop_frames": {
+            "type": "integer"
+          },
+          "refused_snapshots": {
+            "type": "integer"
+          },
+          "retained_frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "window_seconds": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Write the retained window to a 24-bit STEREO WAV - the take that was already played when this command ran. The window is copied under the ring's publication handshake, so the copy is never torn even with the engine running, and the file is written off the audio thread. Refused, typed, when the window holds no frames: a take with no audio in it is not a take. 'file' must be absolute and defaults to zene-retro-take.wav beside this instance's recovery file. NOT reversible and NOT inserted into the session: the file it writes is yours to keep, and turning it into a clip is the project's own load path, not this command's (docs/KNOWN-LIMITATIONS.md).",
+      "group": "record",
+      "id": "record.retro_capture_to_take",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "capacity_frames": {
+            "type": "integer"
+          },
+          "channels": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_written": {
+            "type": "integer"
+          },
+          "overwritten_frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "seconds_written": {
+            "type": "number"
+          },
+          "window_quiesced": {
+            "type": "boolean"
+          },
+          "window_refused_frames": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -9292,6 +9806,14 @@
           "armed": {
             "type": "boolean"
           },
+          "file": {
+            "type": "string"
+          },
+          "input_channel": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          },
           "track": {
             "type": "string"
           }
@@ -9302,14 +9824,45 @@
         ],
         "type": "object"
       },
-      "description": "Arm or disarm a track for recording. Refused: this tree has no record-arm on a song track.",
+      "description": "Arm or disarm a song track for recording. Arming starts a capture on the record route the track's position in the song maps to: the interleaved input channel named by 'input_channel' (default: the route's own index) is written to a 24-bit WAV and the take is journalled beside it, so a crash mid-take is recoverable (record.recovery_get_state). 'file' must be absolute and defaults to zene-take-trk<N>.wav beside this instance's recovery file. The frames a route records come from the engine's input path, so a route armed while nothing is staged records silence: record.input_get_state reports whether a capture device is open and how many frames are staged ('capture_capable', 'capture_open', 'capture_reason', 'input_frames_staged'). Arming is reversible - the recorded inverse is track.set_arm with armed: false, which stops the capture and retires the journal and leaves the take on disk; disarming is not, and says so in its own record, because re-arming starts a NEW take.",
       "group": "track",
       "id": "track.set_arm",
       "mutating": true,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_pushed": {
+            "type": "integer"
+          },
+          "frames_recorded": {
+            "type": "integer"
+          },
+          "input_channel": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "route": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -11153,16 +11706,16 @@
       }
     }
   ],
-  "count": 227,
+  "count": 236,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 205380680,
-    "binary_sha256": "a0a84b3dfac4e6cf20981d69c2e2b088d607898a6f11863f49f1e8333809c6a0",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "89a5e79429edb00b99f6d6f3a275fa9cd6e8bd08",
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wrec",
+    "lane_head": "68f012a60f64bdb247c67c9b74820cf82535bc55",
     "proto": 1,
-    "source_socket": "/home/kruzzzzy/zene-030-merge2-598d4f5c1/zene-merge2.sock",
-    "version": "0.2.1-alpha.191+6c55700"
+    "source_socket": "/tmp/zctl-run-q_09u2fc/zene.sock",
+    "version": "0.2.1-alpha.197+da8ff31"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
