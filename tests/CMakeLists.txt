@@ -1620,6 +1620,22 @@ IF(WIN32 AND PYTHON3_EXECUTABLE)
 	)
 ENDIF()
 
+# The golden-audio programme's MEASURING INSTRUMENT, controlled on inputs whose answer is
+# known (2026-09-15, lane 030/golden-audio, board task #679). tests/golden_audio_selftest.py
+# synthesises its WAVs in a temp directory - two identical renders, one sample moved by one
+# LSB, a stated -0.5 dB gain, two silent files, a three-render floor - and requires the
+# instrument to report exactly that, including that the deliberate gain change FAILS the
+# comparison and a change below the floor does not. No binary, no engine and no socket: it
+# is registered on every platform a python3 is on, because a comparison whose control only
+# runs on one platform is a claim rather than a control. It is also the only ctest that
+# covers the measurement core itself (tests/golden_audio_lib.py).
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME GoldenAudioSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/golden_audio_selftest.py)
+	set_tests_properties(GoldenAudioSelfTest PROPERTIES TIMEOUT 300)
+endif()
+
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketIntegration
 		COMMAND ${PYTHON3_EXECUTABLE}
@@ -2160,6 +2176,36 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlMeterCommands PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
+	# The golden-audio integration programme (the release's audio evidence; one of
+	# the two verification programmes V0.3-ALPHA-PLAN.md names, the other being the
+	# real-time-safety one; board task #679). It exists because this tree's renders
+	# are NOT bit-reproducible run to run (docs/RENDER-DETERMINISM.md), so sha256
+	# byte-identity is not a test - it fails on a correct build - and a single
+	# before/after number is not one either. It builds an audible fixture through
+	# the commands an agent has, then for EACH headline path - a render
+	# (render.render), a stem export (render.stems) and a freeze/bounce
+	# (bounce.in_place) - renders it RUNS times, measures the same-build run-to-run
+	# FLOOR over EVERY pair of those renders, and judges both that floor and the
+	# candidate's fingerprint against the committed record
+	# (tests/golden-audio-record.tsv). Then it PROVES the comparison can fail: it
+	# moves the fixture track's own fader by a stated dB through mixer.set_volume,
+	# re-renders, and requires the check to catch the change - and sweeps the same
+	# fader to measure which changes it CANNOT distinguish (the bound it records).
+	# It reports ctest *Skipped* (exit 77) - never *Passed* - when this build has no
+	# loadable instrument, because an inaudible fixture could not prove any of it.
+	# TIMEOUT is generous because EVERY render here runs in a CHILD process and
+	# carries the declared RENDER_TIMEOUT budget rather than a raised socket timeout
+	# (docs/RENDER-CHILD-WAIT.md): verify mode is 3 renders per path plus the
+	# control and the bound sweep, each one a whole engine start.
+	add_test(NAME ControlGoldenAudio
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-golden-audio.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlGoldenAudio PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 1800
 		SKIP_RETURN_CODE 77
 	)
 else()
