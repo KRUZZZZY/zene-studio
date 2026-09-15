@@ -367,7 +367,7 @@ ControlResult warpStretch(const QJsonObject& args)
 	// The inverse is this command with the previous mode, and it travels as
 	// the same "warp.stretch" id the caller would re-issue by hand.
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 	inverseArgs.insert(QStringLiteral("mode"), stretchModeName(previous));
 	result.insert(QStringLiteral("__transaction"), transactionPayload(before,
 		QStringLiteral("warp.stretch"), inverseArgs, true,

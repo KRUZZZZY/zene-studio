@@ -90,12 +90,14 @@ bool resolveExpressionTarget(const QJsonObject& args, bool needsNote, Expression
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, error);
 	if (clip == nullptr) { return false; }
 	out->clip = clip;
-	out->clipId = clipId(ref.ordinal);
+	out->clipId = clipId(ref.id);
 	if (!needsNote) { return true; }
 	const QString wanted = args.value(QStringLiteral("note")).toString();
 	out->note = resolveNote(clip, wanted, &out->index, error);
 	if (out->note == nullptr) { return false; }
-	out->noteId = noteId(out->index);
+	// The id on the wire is the note's own (Note::id()); out->index is the
+	// note's POSITION in its clip's list, which callers report but never address.
+	out->noteId = noteIdOf(out->note);
 	return true;
 }
 
@@ -226,7 +228,10 @@ void registerExpressionGet(ControlRegistry& registry)
 		{
 			if (!list[i]->hasMpeExpression()) { continue; }
 			QJsonObject entry = expressionJson(list[i]);
-			entry.insert(QStringLiteral("note"), noteId(i));
+			// The entry carries the note's own id (Note::id(), SPEC-stable-ids.md
+			// slice 2): `i` is a position in the list, and the note it holds is
+			// already in hand, so no id has to be derived from the position.
+			entry.insert(QStringLiteral("note"), noteIdOf(list[i]));
 			notes.append(entry);
 		}
 		result.insert(QStringLiteral("notes"), notes);

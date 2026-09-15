@@ -115,9 +115,30 @@ bool resolveTrackTarget(const QString& id, ControlTarget* target, ControlResult*
 
 bool resolveChannelTarget(const QString& id, ControlTarget* target, ControlResult* error)
 {
-	const int index = control::idToIndex(id, QStringLiteral("ch-"));
+	const int wanted = control::idToIndex(id, QStringLiteral("ch-"));
 	Mixer* mixer = Engine::mixer();
-	if (index < 0 || mixer == nullptr || index >= static_cast<int>(mixer->numChannels()))
+	// By id, not by position (SPEC-stable-ids.md slice 2), the same rule
+	// resolveTrackTarget above applies to a trk-<n>: the number names the
+	// channel OBJECT (MixerChannel::id(), written into the project file as the
+	// <mixerchannel> element's `id` attribute and read back on load), so a
+	// channel's device chain is still addressable after a sibling channel is
+	// deleted or the mixer is reordered. No positional fallback - every channel
+	// carries an id from construction, so one could only ever resolve a stale
+	// position, and the typed not_found below is the honest answer.
+	MixerChannel* channel = nullptr;
+	if (wanted >= 0 && mixer != nullptr)
+	{
+		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+		{
+			MixerChannel* candidate = mixer->mixerChannel(i);
+			if (candidate != nullptr && candidate->id() == wanted)
+			{
+				channel = candidate;
+				break;
+			}
+		}
+	}
+	if (channel == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no mixer channel %1 (the mixer has %2)")
@@ -127,7 +148,7 @@ bool resolveChannelTarget(const QString& id, ControlTarget* target, ControlResul
 	target->id = id;
 	target->kind = QStringLiteral("channel");
 	target->typeName = QStringLiteral("channel");
-	target->chain = &mixer->mixerChannel(index)->m_fxChain;
+	target->chain = &channel->m_fxChain;
 	target->instrumentTrack = nullptr;
 	return true;
 }

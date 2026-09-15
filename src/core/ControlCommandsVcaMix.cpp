@@ -228,7 +228,7 @@ ControlResult assignChannel(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 is already a member of %2")
-				.arg(control::channelId(index), vcaGroupId(group->id())));
+				.arg(control::channelIdOf(channel), vcaGroupId(group->id())));
 	}
 
 	const int id = group->id();
@@ -251,15 +251,15 @@ ControlResult assignChannel(const QJsonObject& args)
 	group->addMember(member);
 
 	QJsonObject result = groupState(group);
-	result.insert(QStringLiteral("assigned"), control::channelId(index));
+	result.insert(QStringLiteral("assigned"), control::channelIdOf(channel));
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("channel"), control::channelId(index)},
+				{QStringLiteral("channel"), control::channelIdOf(channel)},
 				{QStringLiteral("assigned"), false}},
 			QStringLiteral("vca.unassign"),
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("channel"), control::channelId(index)}},
+				{QStringLiteral("channel"), control::channelIdOf(channel)}},
 			true,
 			QStringLiteral("action checkpoint: group membership is a list of channel indices "
 				"on the group and a MixerChannel keeps no back-reference, so the recorded undo "
@@ -291,7 +291,7 @@ ControlResult unassignChannel(const QJsonObject& args)
 		// removing something that was never there hides a wrong id.
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 is not a member of %2")
-				.arg(control::channelId(index), vcaGroupId(group->id())));
+				.arg(control::channelIdOf(channel), vcaGroupId(group->id())));
 	}
 
 	const int id = group->id();
@@ -309,15 +309,15 @@ ControlResult unassignChannel(const QJsonObject& args)
 	group->removeMember(member);
 
 	QJsonObject result = groupState(group);
-	result.insert(QStringLiteral("unassigned"), control::channelId(index));
+	result.insert(QStringLiteral("unassigned"), control::channelIdOf(channel));
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("channel"), control::channelId(index)},
+				{QStringLiteral("channel"), control::channelIdOf(channel)},
 				{QStringLiteral("assigned"), true}},
 			QStringLiteral("vca.assign"),
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("channel"), control::channelId(index)}},
+				{QStringLiteral("channel"), control::channelIdOf(channel)}},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step puts the channel back "
 				"through the same VcaGroup::addMember call the write path uses, which "

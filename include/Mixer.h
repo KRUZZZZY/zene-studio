@@ -136,6 +136,25 @@ public:
 	bool isBus() const { return m_isBus; }
 	void setIsBus(bool bus) { m_isBus = bus; }
 
+	/*! The channel's STABLE ID - the number in `ch-<n>` (SPEC-stable-ids.md
+	 *  slice 2). Handed out once, by the constructor, through ProjectIds - the
+	 *  same project-scoped counter the track, clip, note and effect ids come
+	 *  from, so `next-id` on the project root covers all of them - and
+	 *  replaced by the file's value when Mixer::loadSettings reads the
+	 *  `<mixerchannel>` element's `id` ATTRIBUTE back. It therefore names the
+	 *  OBJECT, not its position: a cached ch-7 still names this channel after
+	 *  a sibling channel is added, deleted or moved, and after a save/open
+	 *  cycle, which the channel's index in the mixer does not survive.
+	 *  A number that has been handed out is never handed out again
+	 *  (ProjectIds::observe), so a retired id cannot be reborn.
+	 */
+	int id() const { return m_id; }
+	//! Overrides the constructor's id with a file's value. A negative value is
+	//! ignored (it is not a number this surface can address, and the
+	//! constructor's id is always a valid answer); the counter is raised past
+	//! \a id so the number can never be allocated again.
+	void setId(int id);
+
 	bool requiresProcessing() const override { return true; }
 	void unmuteForSolo();
 	void unmuteSenderForSolo();
@@ -184,6 +203,13 @@ public:
 private:
 	void doProcessing() override;
 	int m_channelIndex;
+	/*! The channel's stable id: the number in `ch-<n>`. Assigned once, in the
+	 *  constructor, and taken back from the project file by
+	 *  Mixer::loadSettings (see MixerChannel::id()). It is declared
+	 *  immediately after m_channelIndex so the constructor's member-init list
+	 *  stays in declaration order - the release configuration's
+	 *  -Werror=reorder rejects an entry that is out of order. */
+	int m_id;
 	std::optional<QColor> m_color;
 	//! PDC alignment point; see inputLatencyFrames().
 	std::atomic<int> m_inputLatencyFrames{0};

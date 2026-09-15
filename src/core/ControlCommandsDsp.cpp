@@ -103,7 +103,7 @@ void appendChannelChains(QJsonArray* chains, bool withDevicesOnly)
 	{
 		ControlTarget target;
 		ControlResult ignored;
-		if (!resolveControlTarget(control::channelId(i), &target, &ignored)) { continue; }
+		if (!resolveControlTarget(control::channelIdOf(mixer->mixerChannel(i)), &target, &ignored)) { continue; }
 		if (withDevicesOnly && target.chain->effects().empty()) { continue; }
 		chains->append(chainJson(target));
 	}

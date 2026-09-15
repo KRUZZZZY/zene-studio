@@ -51,21 +51,41 @@ using namespace control;
 
 MixerChannel* resolveRackChannel(const QString& id, ControlResult* error)
 {
-	const int index = idToIndex(id, QStringLiteral("ch-"));
-	if (index < 0)
+	const int wanted = idToIndex(id, QStringLiteral("ch-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a channel id of the form ch-<n>").arg(id));
 		return nullptr;
 	}
 	Mixer* mixer = Engine::mixer();
-	if (mixer == nullptr || index >= static_cast<int>(mixer->numChannels()))
+	// By id, not by position (SPEC-stable-ids.md slice 2): the number names the
+	// channel OBJECT (MixerChannel::id()), so the "ch-<n>" strings this group
+	// records in its undo steps (rack.add_chain, rack.remove_chain,
+	// rack.set_selected, the macro and zone halves) still name the same channel
+	// when the step runs after a sibling channel was deleted or the mixer was
+	// reordered. No positional fallback: every channel carries an id from
+	// construction, so a fallback could only ever resolve a stale position.
+	MixerChannel* channel = nullptr;
+	if (mixer != nullptr)
+	{
+		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+		{
+			MixerChannel* candidate = mixer->mixerChannel(i);
+			if (candidate != nullptr && candidate->id() == wanted)
+			{
+				channel = candidate;
+				break;
+			}
+		}
+	}
+	if (channel == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no mixer channel %1").arg(id));
 		return nullptr;
 	}
-	return mixer->mixerChannel(index);
+	return channel;
 }
 
 Rack* resolveRack(const QString& id, ControlResult* error)
@@ -159,7 +179,12 @@ int resolveZoneIndex(const Rack& rack, const QString& id, ControlResult* error)
 void writeMacroAssignments(const MacroRestore& restore)
 {
 	ControlResult ignored;
-	Rack* rack = resolveRack(channelId(restore.channelIndex), &ignored);
+	// restore.channelId is the channel's PERSISTENT id, so the step writes into
+	// the channel it was recorded for even after a sibling channel was deleted
+	// or the mixer was reordered (SPEC-stable-ids.md slice 2); a channel that
+	// is gone makes resolveRack answer nullptr and the step does nothing -
+	// the skip rule this struct's own comment states.
+	Rack* rack = resolveRack(restore.channelId, &ignored);
 	if (rack == nullptr) { return; }
 	rack->macros().setValue(restore.macro, restore.value);
 	for (const std::pair<RackMacroTarget, float>& entry : restore.parameters)
@@ -174,7 +199,7 @@ void writeMacroAssignments(const MacroRestore& restore)
 QJsonObject rackState(MixerChannel* channel, Rack& rack)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("channel"), channelId(channel->index()));
+	out.insert(QStringLiteral("channel"), channelIdOf(channel));
 	out.insert(QStringLiteral("chain_count"), rack.chainCount());
 	out.insert(QStringLiteral("selected"), rack.selectedChain());
 

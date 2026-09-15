@@ -270,7 +270,7 @@ MidiClip* resolveGrooveClip(const QJsonObject& args, ClipRef* ref, ControlResult
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 has no notes: a groove is the timing and velocity feel of a "
 				"note pattern, so there is nothing here to capture or to move")
-				.arg(clipId(ref->ordinal)));
+				.arg(clipId(ref->id)));
 		return nullptr;
 	}
 	return clip;

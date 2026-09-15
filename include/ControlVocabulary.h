@@ -36,6 +36,10 @@
 namespace lmms
 {
 
+class Clip;
+class Effect;
+class MixerChannel;
+class Note;
 class Track;
 
 namespace control
@@ -93,16 +97,38 @@ LMMS_EXPORT QString trackId(int index);
  * A nullptr answers an empty string (an object with no track).
  */
 LMMS_EXPORT QString trackIdOf(const Track* track);
-//! "clip-<n>" for a clip's arrangement ordinal.
-LMMS_EXPORT QString clipId(int ordinal);
-//! "note-<n>" for a note's index in its clip's note list.
-LMMS_EXPORT QString noteId(int index);
-//! "ch-<n>" for a mixer channel index.
-LMMS_EXPORT QString channelId(int index);
-//! "dev-<n>" for an index in the build's device catalogue (plugin.list).
+//! "clip-<n>" for a clip's persistent id (slice 2; was its arrangement ordinal).
+LMMS_EXPORT QString clipId(int id);
+//! "note-<n>" for a note's persistent id (slice 2; was its index in the list).
+LMMS_EXPORT QString noteId(int id);
+//! "ch-<n>" for a mixer channel's persistent id (slice 2; was the channel index).
+LMMS_EXPORT QString channelId(int id);
+//! "dev-<n>" for an index in the build's device catalogue (plugin.list). This
+//! one remains an INDEX on purpose: it names a catalogue entry, not a document
+//! object, so there is nothing in the project for it to be persistent against.
 LMMS_EXPORT QString deviceId(int index);
-//! "fx-<n>" for a device instance's index in its target's chain.
-LMMS_EXPORT QString effectId(int index);
+//! "fx-<n>" for a device instance's persistent id (slice 2; was its index in
+//! the target's chain).
+LMMS_EXPORT QString effectId(int id);
+
+/*! The persistent "<prefix>-<n>" id OF an object - the forms every state
+ *  emitter must use (SPEC-stable-ids.md slice 2; trackIdOf() was slice 1).
+ *
+ *  For `trk-`, `clip-`, `ch-` and `fx-` the number is the object's
+ *  creation-assigned id, written into the project file on the object's own
+ *  element and read back on load, so a cached id names the same object after a
+ *  sibling is inserted, removed, reordered or undone - and after a save/open
+ *  cycle. Deriving any of them from a loop index is the defect the spec exists
+ *  to remove, so the conversion lives in one place and callers pass the object.
+ *  A nullptr answers an empty string.
+ *
+ *  There is deliberately NO deviceIdOf(): `dev-<n>` has no object identity to
+ *  take (see deviceId above).
+ */
+LMMS_EXPORT QString clipIdOf(const Clip* clip);
+LMMS_EXPORT QString noteIdOf(const Note* note);
+LMMS_EXPORT QString channelIdOf(const MixerChannel* channel);
+LMMS_EXPORT QString effectIdOf(const Effect* effect);
 //! Parses "<prefix>-<n>"; returns -1 when malformed.
 LMMS_EXPORT int idToIndex(const QString& id, const QString& prefix);
 

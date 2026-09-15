@@ -115,6 +115,28 @@ public:
 	//! Performs a deep copy and returns an owning raw pointer
 	Note* clone() const;
 
+	/*! The note's stable id, the number in "note-<n>" (SPEC-stable-ids.md
+	 *  slice 2).
+	 *
+	 *  Assigned ONCE, in the constructor, and never changed while the note is
+	 *  alive: it names the object, not its position in its clip's note list -
+	 *  which is the list rearrangeAllNotes() re-sorts after every edit, so an
+	 *  index is the least stable address in the document. The only other writer
+	 *  is loadSettings(), which takes the value the project file carries so a
+	 *  re-save keeps it; a note element with no id leaves the constructor's
+	 *  value in place, which is what makes legacy assignment deterministic
+	 *  (MidiClip::loadSettings recreates the notes in document order).
+	 *
+	 *  A COPY is a NEW note and allocates a FRESH id: Note::clone() is what the
+	 *  clipboard, the piano roll's duplicate and MidiClip's copy constructor
+	 *  use, and two notes wearing one id would make the id an ambiguous address.
+	 */
+	int id() const { return m_id; }
+
+	//! Take \a id from a project file. Raises the project counter above it, so
+	//! the number can never be handed to a new object (see ProjectIds).
+	void setId(int id);
+
 	// Note types
 	enum class Type
 	{
@@ -317,6 +339,12 @@ protected:
 
 
 private:
+	/*! The stable id, the number in "note-<n>" (SPEC-stable-ids.md slice 2).
+	 *  Declared FIRST (and initialised first) so the member-init lists below
+	 *  follow declaration order - the release configuration builds with
+	 *  -Werror=reorder. */
+	int m_id;
+
 	// for piano roll editing
 	bool m_selected;
 	int m_oldKey;

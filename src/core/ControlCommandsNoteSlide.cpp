@@ -98,17 +98,20 @@ ControlResult slideSet(const QJsonObject& args)
 	clip->dataChanged();
 
 	QJsonObject result = noteState(note, index);
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
-	result.insert(QStringLiteral("note"), noteId(index));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
+	// The note's own id (Note::id(), SPEC-stable-ids.md slice 2), not its
+	// position in the clip's note list: `index` is a position here, and a
+	// position is what the next edit's re-sort invalidates.
+	result.insert(QStringLiteral("note"), noteIdOf(note));
 	result.insert(QStringLiteral("slide"), note->slide());
 
 	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.ordinal));
-	before.insert(QStringLiteral("note"), noteId(index));
+	before.insert(QStringLiteral("clip"), clipId(ref.id));
+	before.insert(QStringLiteral("note"), noteIdOf(note));
 	before.insert(QStringLiteral("slide"), previous);
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
-	inverseArgs.insert(QStringLiteral("note"), noteId(index));
+	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
+	inverseArgs.insert(QStringLiteral("note"), noteIdOf(note));
 	inverseArgs.insert(QStringLiteral("slide"), previous);
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(before, QStringLiteral("note.slide_set"), inverseArgs, true,
@@ -132,7 +135,7 @@ ControlResult slideClear(const QJsonObject& args)
 	NoteScope scope = NoteScope::Clip;
 	if (!readScope(args, &scope, &error)) { return error; }
 
-	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.ordinal));
+	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.id));
 	int slidesBefore = 0;
 	for (const Note* note : clip->notes())
 	{
@@ -150,7 +153,7 @@ ControlResult slideClear(const QJsonObject& args)
 	if (cleared > 0) { clip->dataChanged(); }
 
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("scope"), scopeName(scope));
 	result.insert(QStringLiteral("slides_before"), slidesBefore);
@@ -161,11 +164,11 @@ ControlResult slideClear(const QJsonObject& args)
 	result.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 
 	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	before.insert(QStringLiteral("clip"), clipId(ref.id));
 	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	before.insert(QStringLiteral("slides_before"), slidesBefore);
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(before, QStringLiteral("control.undo"), inverseArgs, true,
 			kSlideCheckpoint + QStringLiteral("; every cleared flag is part of the note list the "

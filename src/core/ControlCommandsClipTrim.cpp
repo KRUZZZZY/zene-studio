@@ -86,7 +86,7 @@ const QString ClauseClipEdgeJournalled = QStringLiteral("ProjectJournal (Clip ch
 QJsonObject edgeState(const ClipRef& ref)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	out.insert(QStringLiteral("clip"), clipId(ref.id));
 	out.insert(QStringLiteral("position"), ref.clip->startPosition().getTicks());
 	out.insert(QStringLiteral("length"), ref.clip->length().getTicks());
 	out.insert(QStringLiteral("end"), ref.clip->endPosition().getTicks());
@@ -175,7 +175,7 @@ void registerClipTrim(ControlRegistry& registry)
 
 		QJsonObject result = edgeState(ref);
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("start"), before.value(QStringLiteral("position")));
 		inverseArgs.insert(QStringLiteral("end"), before.value(QStringLiteral("end")));
 		result.insert(QStringLiteral("__transaction"),
@@ -228,7 +228,7 @@ void registerClipSlip(ControlRegistry& registry)
 
 		QJsonObject result = edgeState(ref);
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("offset"), before.value(QStringLiteral("offset")));
 		result.insert(QStringLiteral("__transaction"),
 			transactionPayload(before, QStringLiteral("clip.slip"), inverseArgs, true,

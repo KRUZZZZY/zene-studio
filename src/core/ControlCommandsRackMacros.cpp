@@ -113,7 +113,7 @@ void registerMacroAdd(ControlRegistry& registry)
 		}
 		const float value = static_cast<float>(args.value(QStringLiteral("value")).toDouble(0.0));
 		Rack& rack = channel->m_rack;
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		const int before = rack.macros().macroCount();
 		const int index = rack.macros().addMacro(name, value);
 
@@ -179,7 +179,7 @@ void registerMacroRemove(ControlRegistry& registry)
 		if (index < 0) { return error; }
 
 		const RackMacro captured = *rack.macros().macro(index);
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		rack.macros().removeMacro(index);
 		// A macro is pure data (a name, a scalar and a target list), so
 		// re-inserting the captured one at its own index restores the list -
@@ -270,7 +270,7 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 					.arg(target.parameter, why));
 		}
 
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		const int index = rack.macros().addTarget(macro, target);
 
 		addUndoStep(
@@ -349,7 +349,7 @@ void registerMacroTargetRemove(ControlRegistry& registry)
 		}
 
 		const RackMacroTarget captured = entry->targets[static_cast<std::size_t>(index)];
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		rack.macros().removeTarget(macro, index);
 
 		addUndoStep(
@@ -427,17 +427,17 @@ void registerMacroSet(ControlRegistry& registry)
 		const float previousValue = rack.macros().macro(macro)->value;
 		const float value = static_cast<float>(args.value(QStringLiteral("value")).toDouble());
 		const std::size_t targetCount = rack.macros().macro(macro)->targets.size();
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 
 		rack.macros().setValue(macro, value);
 		const std::vector<RackMacroWrite> writes = rack.macros().apply(macro, rack);
 
 		MacroRestore undo;
-		undo.channelIndex = channel->index();
+		undo.channelId = channelIdText;
 		undo.macro = macro;
 		undo.value = previousValue;
 		MacroRestore redo;
-		redo.channelIndex = channel->index();
+		redo.channelId = channelIdText;
 		redo.macro = macro;
 		redo.value = rack.macros().macro(macro)->value;
 		QJsonArray written;

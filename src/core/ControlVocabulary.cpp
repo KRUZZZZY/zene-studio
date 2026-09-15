@@ -41,6 +41,10 @@
 #include <utility>
 
 #include "ControlRegistry.h"  // ControlErrorKind (controlErrorKindName's own declaration)
+#include "Clip.h"  // clipIdOf(): the id lives on the clip object
+#include "Effect.h"  // effectIdOf()
+#include "Mixer.h"  // channelIdOf(): MixerChannel's own header
+#include "Note.h"  // noteIdOf()
 #include "Track.h"  // trackIdOf(): the id lives on the track object
 
 namespace lmms
@@ -132,19 +136,34 @@ QString trackIdOf(const Track* track)
 	return track == nullptr ? QString() : trackId(track->id());
 }
 
-QString clipId(int ordinal)
+QString clipId(int id)
 {
-	return QStringLiteral("clip-%1").arg(ordinal);
+	return QStringLiteral("clip-%1").arg(id);
 }
 
-QString noteId(int index)
+QString clipIdOf(const Clip* clip)
 {
-	return QStringLiteral("note-%1").arg(index);
+	return clip == nullptr ? QString() : clipId(clip->id());
 }
 
-QString channelId(int index)
+QString noteId(int id)
 {
-	return QStringLiteral("ch-%1").arg(index);
+	return QStringLiteral("note-%1").arg(id);
+}
+
+QString noteIdOf(const Note* note)
+{
+	return note == nullptr ? QString() : noteId(note->id());
+}
+
+QString channelId(int id)
+{
+	return QStringLiteral("ch-%1").arg(id);
+}
+
+QString channelIdOf(const MixerChannel* channel)
+{
+	return channel == nullptr ? QString() : channelId(channel->id());
 }
 
 QString deviceId(int index)
@@ -152,9 +171,14 @@ QString deviceId(int index)
 	return QStringLiteral("dev-%1").arg(index);
 }
 
-QString effectId(int index)
+QString effectId(int id)
 {
-	return QStringLiteral("fx-%1").arg(index);
+	return QStringLiteral("fx-%1").arg(id);
+}
+
+QString effectIdOf(const Effect* effect)
+{
+	return effect == nullptr ? QString() : effectId(effect->id());
 }
 
 int idToIndex(const QString& id, const QString& prefix)

@@ -105,10 +105,10 @@ MidiClip* resolveTransformClip(const QJsonObject& args, ClipRef* ref, NoteVector
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 has no notes: there is nothing to transform")
-				.arg(clipId(ref->ordinal)));
+				.arg(clipId(ref->id)));
 		return nullptr;
 	}
-	*notes = scopeNotes(*clip, *scope, clipId(ref->ordinal));
+	*notes = scopeNotes(*clip, *scope, clipId(ref->id));
 	if (notes->empty())
 	{
 		// A scope of "selection" with nothing selected is refused rather than
@@ -117,7 +117,7 @@ MidiClip* resolveTransformClip(const QJsonObject& args, ClipRef* ref, NoteVector
 		// apart only if the second one is an error.
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 has notes but none is selected, so scope 'selection' would edit "
-				"nothing (note.select chooses them)").arg(clipId(ref->ordinal)));
+				"nothing (note.select chooses them)").arg(clipId(ref->id)));
 		return nullptr;
 	}
 	return clip;
@@ -179,12 +179,12 @@ QJsonObject transformTransaction(const ClipRef& ref, const MidiClip& clip, NoteS
 	const QString& changedKey, int changed, const QJsonObject& inverseArgs)
 {
 	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	before.insert(QStringLiteral("clip"), clipId(ref.id));
 	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	before.insert(QStringLiteral("note_count"), static_cast<int>(clip.notes().size()));
 	before.insert(changedKey, changed);
 	QJsonObject inverse = inverseArgs;
-	inverse.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	inverse.insert(QStringLiteral("clip"), clipId(ref.id));
 	inverse.insert(QStringLiteral("scope"), scopeName(scope));
 	return transactionPayload(before, QStringLiteral("control.undo"), inverse, true,
 		grooveClipMechanism() + QStringLiteral("; no velocity TARGET and no pre-transform key is "
@@ -199,7 +199,7 @@ QJsonObject transformResult(const ClipRef& ref, const MidiClip& clip, NoteScope 
 	int considered, const QJsonObject& arguments)
 {
 	QJsonObject result = arguments;
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("scope"), scopeName(scope));
 	result.insert(QStringLiteral("note_count"), static_cast<int>(clip.notes().size()));

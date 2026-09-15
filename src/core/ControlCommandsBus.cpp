@@ -113,9 +113,14 @@ ControlResult handleBusCreate()
 		[mixer]() { mixer->createBusChannel(); });
 	const int index = mixer->createBusChannel();
 	MixerChannel* channel = mixer->mixerChannel(index);
+	// The new bus's PERSISTENT id (MixerChannel::id()), not its index: the
+	// inverse below names the bus this command created, and a ch-<n> addressed
+	// by position would name a different channel once an earlier one is removed
+	// (SPEC-stable-ids.md slice 2).
+	const QString channelIdText = control::channelIdOf(channel);
 
 	QJsonObject result;
-	result.insert(QStringLiteral("channel"), control::channelId(index));
+	result.insert(QStringLiteral("channel"), channelIdText);
 	result.insert(QStringLiteral("index"), index);
 	result.insert(QStringLiteral("name"), channel->m_name);
 	result.insert(QStringLiteral("is_bus"), channel->isBus());
@@ -125,7 +130,7 @@ ControlResult handleBusCreate()
 	beforeState.insert(QStringLiteral("count"), before);
 	QJsonObject transaction = transactionPayload(beforeState,
 		QStringLiteral("bus.remove"),
-		QJsonObject{{QStringLiteral("channel"), control::channelId(index)}},
+		QJsonObject{{QStringLiteral("channel"), channelIdText}},
 		true,
 		QStringLiteral("action checkpoint: the recorded undo step deletes the bus this command "
 			"created, through the same Mixer::deleteChannel path bus.remove uses; a fresh bus "
@@ -149,17 +154,21 @@ ControlResult handleBusRemove(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("'%1' is not a bus (it has no is_bus flag); remove an ordinary "
 				"channel with mixer.remove_channel")
-				.arg(control::channelId(channel->index())));
+				.arg(control::channelIdOf(channel)));
 	}
 
 	Mixer* mixer = Engine::mixer();
 	const int index = channel->index();
 	const int before = static_cast<int>(mixer->numChannels());
 	const QJsonObject beforeState = channelLatencyJson(*channel);
+	// Read the id BEFORE the delete: after Mixer::deleteChannel the pointer is
+	// gone, and the id is what the caller was told (SPEC-stable-ids.md slice 2
+	// - it survives the delete).
+	const QString removedId = control::channelIdOf(channel);
 	mixer->deleteChannel(index);
 
 	QJsonObject result;
-	result.insert(QStringLiteral("removed"), control::channelId(index));
+	result.insert(QStringLiteral("removed"), removedId);
 	result.insert(QStringLiteral("count"), static_cast<int>(mixer->numChannels()));
 
 	QJsonObject inverseArgs;

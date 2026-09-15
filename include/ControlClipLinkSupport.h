@@ -97,7 +97,7 @@ inline QString clipIdOf(const Clip* clip)
 	if (clip == nullptr) { return QString(); }
 	for (const ClipRef& ref : enumerateClips())
 	{
-		if (ref.clip == clip) { return clipId(ref.ordinal); }
+		if (ref.clip == clip) { return clipId(ref.id); }
 	}
 	return QString();
 }

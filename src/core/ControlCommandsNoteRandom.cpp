@@ -105,7 +105,7 @@ MidiClip* resolveRollClip(const QJsonObject& args, ClipRef* ref, ControlResult* 
 	if (clip->notes().empty())
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("%1 has no notes: there is nothing to roll").arg(clipId(ref->ordinal)));
+			QStringLiteral("%1 has no notes: there is nothing to roll").arg(clipId(ref->id)));
 		return nullptr;
 	}
 	return clip;
@@ -281,7 +281,7 @@ ControlResult randomize(const QJsonObject& args)
 	if (!readSeed(args, &seed, &seedGiven, &error)) { return error; }
 	if (!seedGiven) { seed = song->midiSeed(); }
 
-	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.ordinal));
+	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.id));
 	const NoteSnapshot before = snapshotNotes(*clip);
 	clip->addJournalCheckPoint();
 	for (Note* note : notes)
@@ -314,7 +314,7 @@ ControlResult randomize(const QJsonObject& args)
 	clip->dataChanged();
 
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("scope"), scopeName(scope));
 	result.insert(QStringLiteral("seed"), static_cast<double>(seed));
@@ -327,12 +327,12 @@ ControlResult randomize(const QJsonObject& args)
 	addMoveCounts(before, *clip, &result);
 
 	QJsonObject beforeState;
-	beforeState.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	beforeState.insert(QStringLiteral("clip"), clipId(ref.id));
 	beforeState.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	beforeState.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 	beforeState.insert(QStringLiteral("seed"), static_cast<double>(seed));
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(beforeState, QStringLiteral("control.undo"), inverseArgs, true,
 			grooveClipMechanism() + QStringLiteral("; and because the roll is multiplicative on "

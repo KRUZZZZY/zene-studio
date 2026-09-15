@@ -29,6 +29,7 @@
 
 #include "Note.h"
 #include "DetuningHelper.h"
+#include "ProjectIds.h"
 
 namespace lmms
 {
@@ -37,6 +38,15 @@ namespace lmms
 Note::Note( const TimePos & length, const TimePos & pos,
 		int key, volume_t volume, panning_t panning,
 						std::shared_ptr<DetuningHelper> detuning ) :
+	// The stable id, handed out once, here, at creation (SPEC-stable-ids.md
+	// 2.1). It is the number in note-<n> and it never changes while the note
+	// lives, so a client that was told note-7 keeps note-7 when a sibling note
+	// moves (rearrangeAllNotes re-sorts the list) or is removed.
+	// loadSettings() overrides it with the file's value on a project load, and
+	// a note element with no id keeps this one - which is what makes legacy
+	// assignment deterministic, because MidiClip::loadSettings recreates the
+	// notes in document order.
+	m_id( ProjectIds::allocate() ),
 	m_selected( false ),
 	m_oldKey(std::clamp(key, 0, NumKeys)),
 	m_oldPos( pos ),
@@ -56,6 +66,12 @@ Note::Note( const TimePos & length, const TimePos & pos,
 
 Note::Note( const Note & note ) :
 	SerializingObject( note ),
+	// A COPY is a NEW note, so it allocates a FRESH id and does NOT inherit the
+	// source's (SPEC-stable-ids.md 2.1: an id names one object). Every copy path
+	// goes through here - Note::clone() is what the clipboard, the piano roll's
+	// duplicate and MidiClip's copy constructor use - and two notes wearing one
+	// id would make the id an ambiguous address.
+	m_id( ProjectIds::allocate() ),
 	m_selected( note.m_selected ),
 	m_oldKey( note.m_oldKey ),
 	m_oldPos( note.m_oldPos ),
@@ -112,6 +128,24 @@ Note* Note::clone() const
 		newNote->m_detuning = std::make_shared<DetuningHelper>(*newNote->m_detuning);
 	}
 	return newNote;
+}
+
+
+
+
+void Note::setId(int id)
+{
+	if (id < 0)
+	{
+		// A file claiming a negative id is not naming a note this build made:
+		// keep the number the constructor handed out rather than putting a
+		// "-1" on the wire. The load counts this as an assignment.
+		return;
+	}
+	m_id = id;
+	// Never let the counter hand this number to anything else, even if the file
+	// that carried it had no (or a stale) next-id.
+	ProjectIds::observe(id);
 }
 
 
@@ -268,6 +302,21 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 	parent.setAttribute( "pos", m_pos );
 	parent.setAttribute("type", static_cast<int>(m_type));
 
+	// The note's stable id (SPEC-stable-ids.md slice 2, the slice-1 pattern of
+	// Track::saveTrack). An ATTRIBUTE on the note's own element, never a child
+	// element: Note::loadSettings treats ANY child of this element as detuning
+	// info (_this.hasChildNodes() -> createDetuning()), so an id child would
+	// make every note grow an automation clip on load, in every project.
+	//
+	// NOT optional, unlike every other attribute below: it is written
+	// unconditionally, "0" included, because a note's id is what makes the note
+	// addressable at all - the house rule "an optional attribute is written
+	// ONLY when it is not the default" exists so projects that do not use a
+	// feature stay byte-identical, and an identity is not a feature that can be
+	// switched off. A build without this feature ignores the attribute; this
+	// build reads it back in loadSettings().
+	parent.setAttribute( "id", m_id );
+
 	// Slide (portamento) flag - only written when set, so notes (and whole
 	// projects) saved before slide notes existed serialize byte-identically
 	// (SPEC-slide-notes D-1: optional attribute, no DataFile version bump).
@@ -321,6 +370,26 @@ void Note::loadSettings( const QDomElement & _this )
 	m_type = static_cast<Type>(_this.attribute("type", "0").toInt());
 	// Absent attribute means a regular note (all projects predating slide notes)
 	m_slide = _this.attribute( "slide" ).toInt();
+
+	// The note's stable id (SPEC-stable-ids.md slice 2; the slice-1 pattern of
+	// Track::loadTrack). A file that carries one keeps it; a file that does not
+	// - every project saved before notes had ids - leaves the number the
+	// constructor already handed out, which is deterministic because
+	// MidiClip::loadSettings recreates the notes in document order. Either way
+	// ProjectIds::loadAssignments() counts it, and project.open reports the
+	// count as `ids_assigned`, so a legacy file's one-time upgrade is stated
+	// rather than silent.
+	if( _this.hasAttribute( "id" ) )
+	{
+		bool ok = false;
+		const int stored = _this.attribute( "id" ).toInt( &ok );
+		if( ok && stored >= 0 ) { setId( stored ); }
+		else { ProjectIds::noteLoadAssignment(); }
+	}
+	else
+	{
+		ProjectIds::noteLoadAssignment();
+	}
 
 	// Absent attributes mean the neutral MIDI-depth values: the note always
 	// plays and its velocity is untouched, which is what every project saved

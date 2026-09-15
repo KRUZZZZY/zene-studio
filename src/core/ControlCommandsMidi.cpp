@@ -133,7 +133,7 @@ int ordinalOf(const Clip* clip)
 {
 	for (const ClipRef& ref : enumerateClips())
 	{
-		if (ref.clip == clip) { return ref.ordinal; }
+		if (ref.clip == clip) { return ref.id; }
 	}
 	return -1;
 }

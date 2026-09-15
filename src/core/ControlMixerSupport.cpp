@@ -44,22 +44,43 @@ namespace control
 
 MixerChannel* resolveMixerChannel(const QString& id, ControlResult* error)
 {
-	const int index = idToIndex(id, QStringLiteral("ch-"));
-	if (index < 0)
+	const int wanted = idToIndex(id, QStringLiteral("ch-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a channel id of the form ch-<n>").arg(id));
 		return nullptr;
 	}
 	Mixer* mixer = Engine::mixer();
-	if (mixer == nullptr || index >= static_cast<int>(mixer->numChannels()))
+	// By id, not by position (SPEC-stable-ids.md slice 2): the number names the
+	// channel OBJECT (MixerChannel::id(), written into the project as the
+	// <mixerchannel> element's `id` attribute and read back on load), so a
+	// cached ch-<n> still names the same channel after a sibling channel is
+	// added, removed or moved. There is deliberately NO positional fallback:
+	// every channel carries an id from construction, so a fallback could only
+	// ever resolve a stale position. A well-formed id naming no live channel is
+	// the typed not_found below.
+	MixerChannel* channel = nullptr;
+	if (mixer != nullptr)
+	{
+		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+		{
+			MixerChannel* candidate = mixer->mixerChannel(i);
+			if (candidate != nullptr && candidate->id() == wanted)
+			{
+				channel = candidate;
+				break;
+			}
+		}
+	}
+	if (channel == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no mixer channel %1 (the mixer has %2)")
 				.arg(id).arg(mixer == nullptr ? 0 : static_cast<int>(mixer->numChannels())));
 		return nullptr;
 	}
-	return mixer->mixerChannel(index);
+	return channel;
 }
 
 QString sidechainTapPointName(SidechainTapPoint point)
@@ -96,8 +117,8 @@ bool sidechainTapPointFromName(const QString& name, SidechainTapPoint* point)
 QJsonObject routeJson(MixerRoute& route)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("from"), channelId(route.senderIndex()));
-	out.insert(QStringLiteral("to"), channelId(route.receiverIndex()));
+	out.insert(QStringLiteral("from"), channelIdOf(route.sender()));
+	out.insert(QStringLiteral("to"), channelIdOf(route.receiver()));
 	out.insert(QStringLiteral("amount"), static_cast<double>(route.amount()->value()));
 	out.insert(QStringLiteral("pre_fader"), route.preFader());
 	// The delay this edge applies at the receiver so the sender's path lands on
@@ -109,8 +130,8 @@ QJsonObject routeJson(MixerRoute& route)
 QJsonObject sidechainRouteJson(MixerSidechainRoute& route)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("from"), channelId(route.senderIndex()));
-	out.insert(QStringLiteral("to"), channelId(route.receiverIndex()));
+	out.insert(QStringLiteral("from"), channelIdOf(route.sender()));
+	out.insert(QStringLiteral("to"), channelIdOf(route.receiver()));
 	out.insert(QStringLiteral("amount"), static_cast<double>(route.amount()->value()));
 	out.insert(QStringLiteral("tap_point"), sidechainTapPointName(route.mode()));
 	// A deferred route closes a cycle through at least one regular send, so it
@@ -123,7 +144,7 @@ QJsonObject sidechainRouteJson(MixerSidechainRoute& route)
 QJsonObject channelLatencyJson(MixerChannel& channel)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("id"), channelId(channel.index()));
+	out.insert(QStringLiteral("id"), channelIdOf(&channel));
 	out.insert(QStringLiteral("index"), channel.index());
 	out.insert(QStringLiteral("name"), channel.m_name);
 	out.insert(QStringLiteral("is_master"), channel.isMaster());
@@ -188,7 +209,7 @@ bool resolveRoutingEnds(const QJsonObject& args, RoutingEnds* ends, ControlResul
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("routing %1 to %2 would close a feedback path (the mixer refuses it)")
-				.arg(channelId(ends->from->index()), channelId(ends->to->index())));
+				.arg(channelIdOf(ends->from), channelIdOf(ends->to)));
 		return false;
 	}
 	return true;
@@ -267,8 +288,8 @@ QJsonObject mixerRouteResult(const RoutingEnds& ends, MixerRoute* route,
 	const QJsonObject& before)
 {
 	QJsonObject result;
-	result.insert(QStringLiteral("from"), channelId(ends.from->index()));
-	result.insert(QStringLiteral("to"), channelId(ends.to->index()));
+	result.insert(QStringLiteral("from"), channelIdOf(ends.from));
+	result.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	result.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
 	result.insert(QStringLiteral("pre_fader"), route->preFader());
 	result.insert(QStringLiteral("created"), !before.value(QStringLiteral("existed")).toBool());
