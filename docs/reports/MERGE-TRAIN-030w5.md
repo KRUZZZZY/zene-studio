@@ -87,8 +87,10 @@ each fixed at its cause — **no assertion relaxed, no expectation edited to mat
 ### (b) GATE 6 — GREEN (was: 1 violation, that one the artefact the parent ruled on) · `76d5a251b`
 
 `bash tests/no-upstream-regression-gate.sh` → **EXIT=0**, "PASS: every change to upstream-inherited
-code since `01148947ea4d…` is declared" (`gate6-after-rename.log`). **The gate is untouched; the
-files moved.** Three classes were reported as *"undeclared change to upstream-inherited code"*:
+code since `01148947ea4d…` is declared (421 changed path(s) declared; the ledger holds 457 entries)"
+(`gate6-after-rename.log`; re-run once more at the final commit `a47d074c0` — still EXIT=0). **The
+gate is untouched; the files moved.** Three classes were reported as *"undeclared change to
+upstream-inherited code"*:
 
 1. **`docs/lua-api-surface.txt` → `docs/LUA-API-SURFACE.md`** (the parent's ruling (i)), with every
    reader updated in the same commit: `tests/CMakeLists.txt` (the `--manifest` argument, 2 refs),
@@ -255,7 +257,22 @@ appends a clause to the same paths' reasons. It is at 673 lines and its `tests/C
 reason is now ~6 000 characters of concatenated lane clauses. It still reproduces and the gate reads
 it, but the next train should consider a per-wave companion file rather than one ever-growing clause.
 
-## 6 · The single next action
+## 6 · Final-state verification at the merged tip
+
+```
+cd build && make -j2                     # FINAL BUILD EXIT=0  (build-w5-3-final.log)
+bash tests/no-upstream-regression-gate.sh # EXIT=0, 421 declared paths, 457 ledger entries
+git status --short                        # clean (no tracked change, nothing left by the gates)
+pgrep -a zene                             # empty: no instance left running, none killed broadly
+sha256sum build/zene                      # c870d693999a07b1… - the binary the snapshot was
+                                          # regenerated from, unchanged after the final relink
+```
+
+The A16 histogram's corroborating ctest, the golden-audio record decision and the eight new ctests
+were all run against this tree. Nothing in this train was pushed: `release/0.3.0` is local-only, and
+`git log` above shows the whole train.
+
+## 7 · The single next action
 
 **Fix `automation.ramp_get`'s enumeration (item 1 in §4) and re-run `SampleAccurateAutomationTest`** —
 it is the only newly-reachable proof in this train that still fails on a defect the run exposed, it is
