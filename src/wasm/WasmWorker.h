@@ -41,7 +41,7 @@ namespace lmms::wasm
 
 //! Runs one WasmSandbox on a lane of the shared WasmWorkerPool.
 //!
-//! Threading contract (specs/SPEC-wasm-sandbox.md section 4): modules NEVER run
+//! Threading contract (docs/specs/SPEC-wasm-sandbox.md section 4): modules NEVER run
 //! on the audio thread. The audio thread calls submit()/collect(), which only
 //! touch pre-allocated slot memory and lock-free SPSC queues - no allocation,
 //! no locks. submit() additionally asks the pool for a wake-up, and that call

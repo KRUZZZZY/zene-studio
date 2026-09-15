@@ -356,7 +356,11 @@ Different numbering, and not a problem: the 0.2.0-alpha release-gate items **are
   with the release options — but no CI run of them has been read yet, and the other six jobs do not run them. Also
   open: whether a `WANT_SESSION_VIEW=ON` or `WANT_STEM_SPLIT=ON` build compiles at all.
 - The **`specs/` citations**: several docs cite `specs/SPEC-lua-api-v0.md` and `specs/SPEC-two-track-recording.md`,
-  but no `specs/` directory is tracked — those paths are not here.
+  but no `specs/` directory is tracked — those paths are not here. **Closed 2026-09-15 (DOC-5).** The
+  specifications are pinned snapshots under `docs/specs/`, and every live citation now names
+  `docs/specs/`; `tools/doc5-citations.py --specs` is the measurement and `docs/specs/README.md` is the
+  record, including the citations left frozen inside the pinned snapshots and the two flags this note
+  named as open.
 - **Runtime behaviour** of audition, drag-and-drop, MIDI learn, racks, warp and stem export: not exercised in a
   running binary. **Windows and macOS** behaviour is inferred from `build.yml` options and committed logs, never
   compiled on this box. "Reachable in release" is derived from CMake option declarations, the release jobs'

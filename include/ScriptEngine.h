@@ -136,7 +136,7 @@ struct ScriptMidiEvent
 	std::int32_t noteOn{};
 };
 
-/*! \brief Embedded Lua scripting engine (spec: specs/SPEC-lua-api-v0.md).
+/*! \brief Embedded Lua scripting engine (spec: docs/specs/SPEC-lua-api-v0.md).
  *
  * Threading model (spec section 4): scripts always execute on a dedicated
  * worker thread, never on the audio thread. All engine mutations are turned

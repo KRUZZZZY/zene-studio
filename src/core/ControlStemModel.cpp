@@ -11,7 +11,7 @@
  * The store's own rules are not repeated here: include/StemSeparation/
  * StemModelStore.h holds them ("Models are NEVER bundled with LMMS: they are
  * optional downloads, HTTPS-only, with a pinned SHA-256 checksum"), and this
- * file only reports them and drives them. docs/STEM-SPLIT.md, "Model handling",
+ * file only reports them and drives them. doc/STEM-SPLIT.md, "Model handling",
  * is the engine-side document.
  *
  * Copyright (c) 2026 Zene Studio contributors

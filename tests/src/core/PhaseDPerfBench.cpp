@@ -23,7 +23,7 @@
  *
  */
 
-// Metric (spec v1.2, decision D3, mixer/SPEC-dynamic-routing.md):
+// Metric (spec v1.2, decision D3, docs/specs/SPEC-dynamic-routing.md):
 //   "<5% single-core CPU per ACTIVE sidechain send, measured against the
 //    baseline cost of a regular send, at 48 kHz / 256-frame buffer."
 //

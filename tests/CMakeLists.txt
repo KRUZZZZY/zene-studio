@@ -1952,7 +1952,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# routing.get_state on a MEASURED graph - load effects and read the node set,
 	# the connections, the cached topological order and the output node back off
 	# the wire - plus mixer.route_to / mixer.send_to / mixer.sidechain_to /
-	# mixer.route_remove, which ableton-gap/AGENT-TOOLING.md:186 names and the
+	# mixer.route_remove, which docs/specs/AGENT-TOOLING.md:186 names and the
 	# 0.3.0 tip did not register. It asserts the engine's own pre-fader rule for a
 	# send into a bus, that the feedback rule is the refusal, and that each verb
 	# records a true_inverse transaction. No fixture and no compile-time switch.

@@ -38,7 +38,7 @@ namespace lmms
 /*!
  * The module never runs on the audio thread: processImpl() hands interleaved
  * blocks to a WasmWorker, which owns the wasmtime instance on its own thread
- * (specs/SPEC-wasm-sandbox.md section 4). This class adds the plugin-side
+ * (docs/specs/SPEC-wasm-sandbox.md section 4). This class adds the plugin-side
  * pieces on top of the sandbox: registration, the control dialog, project
  * save/load of the module path and parameter values, sample-rate handling and
  * latency compensation.

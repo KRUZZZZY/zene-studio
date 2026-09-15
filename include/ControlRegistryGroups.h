@@ -229,7 +229,7 @@ LMMS_EXPORT void registerExportPresetCommands(ControlRegistry& registry);
  * mixer.sidechain_to / mixer.route_remove - in their own translation unit. They
  * are part of the mixer group (the ids keep the `mixer.` prefix); the file
  * is separate because ControlCommandsMixer.cpp is near gate 7's file-length cap,
- * the automation and warp groups' split. ableton-gap/AGENT-TOOLING.md:186 names
+ * the automation and warp groups' split. docs/specs/AGENT-TOOLING.md:186 names
  * route_to / send_to as part of this release's mixer surface, and the sidechain
  * half of feature row 27 ("PDC and sidechain") is here.
  */
@@ -296,7 +296,7 @@ LMMS_EXPORT void registerPatcherEditCommands(ControlRegistry& registry);
  * include/PluginScanCache.h; this group is what makes it drivable, and it is
  * what retires the "hand-editing a JSON file" route the audit's row names.
  * A quarantined file is hidden from discovery, and plugin.rescan (the id
- * ableton-gap/AGENT-TOOLING.md:269 boards) is the scan the factory already has.
+ * docs/specs/AGENT-TOOLING.md:269 boards) is the scan the factory already has.
  */
 LMMS_EXPORT void registerPluginScanCommands(ControlRegistry& registry);
 //! plugin.scan_cache_quarantine_add / plugin.scan_cache_quarantine_remove /
@@ -316,7 +316,7 @@ LMMS_EXPORT void registerPluginHostChunkingCommands(ControlRegistry& registry);
 /*! crash.list_reports / crash.acknowledge_report / crash.discard_report /
  * crash.upload_report - the crash reporter's agent surface (feature row 54).
  * The engine half is include/CrashReporter.h, installed from main() before this
- * socket exists; crash.list_reports is the read ableton-gap/AGENT-TOOLING.md:194
+ * socket exists; crash.list_reports is the read docs/specs/AGENT-TOOLING.md:194
  * names, the two writers are the module's acknowledge/discard operations, and
  * crash.upload_report is registered and REFUSES because this build has no
  * network code at all (the automation.mode_set shape).
@@ -384,7 +384,7 @@ LMMS_EXPORT void registerDetectApplyCommands(ControlRegistry& registry);
  *    positions, NoteRandom's pure function of the seed and each note's identity).
  *  - registerNoteSlideCommands: note.slide_set / note.slide_clear - the FL-style
  *    slide (portamento) flag, which the engine has carried since
- *    docs/specs/SPEC-slide-notes and never had an id for.
+ *    docs/specs/SPEC-slide-notes.md and never had an id for.
  *  - registerNoteTransformCommands: note.transpose / note.velocity_offset /
  *    note.velocity_scale - NoteTransform's three transforms. The grid quantise is
  *    deliberately NOT re-wrapped: groove.quantize already drives

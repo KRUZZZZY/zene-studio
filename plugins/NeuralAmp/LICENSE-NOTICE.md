@@ -76,6 +76,6 @@ no component carries a "no secondary licences" restriction.
 
 No `.nam` model file is committed to this repository (`models/*.nam` is gitignored).
 `.nam` captures carry their own licences (often CC BY-NC-ND) and are loaded at
-runtime from user-provided files, per `specs/SPEC-neural-amp.md` §4. The four files
+runtime from user-provided files, per `docs/specs/SPEC-neural-amp.md` §4. The four files
 used for testing are unmodified upstream example models (MIT); provenance and
 checksums in `models/README.md`.

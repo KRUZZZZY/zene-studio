@@ -14,7 +14,7 @@ on today's architecture, and the two cheap-looking versions are both dishonest:
 * **Audio-rate `process(buffer, frames)` callback** — forbidden. The v0 spec
   excludes it by name: *"no direct audio-thread scripting (command queue only);
   … no audio-buffer DSP in Lua (that's the WASM track)"*
-  (`specs/SPEC-lua-api-v0.md` §1). It would also break the realtime rule: Lua
+  (`docs/specs/SPEC-lua-api-v0.md` §1). It would also break the realtime rule: Lua
   allocates, and the tree's rule is no allocation, locking or unbounded growth on
   audio-thread paths.
 * **A device that is really "run this script again"** — the engine has no way to

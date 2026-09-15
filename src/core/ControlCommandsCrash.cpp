@@ -8,7 +8,7 @@
  * exists (src/core/main.cpp: crashreporter::install() / beginSession()), with
  * the registered ctest CrashReporterTest. The audit's row 54 says "no command
  * group" - this file registers one, and the id the boarded list names for the
- * read is crash.list_reports (ableton-gap/AGENT-TOOLING.md:194).
+ * read is crash.list_reports (docs/specs/AGENT-TOOLING.md:194).
  *
  * WHAT THE ENGINE ACTUALLY SUPPORTS, read off the header rather than assumed:
  *   isInstalled, hasPendingReport, pendingReportPath, acknowledgePendingReport,

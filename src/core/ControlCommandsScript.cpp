@@ -340,7 +340,7 @@ void registerScriptCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("script.run");
 		cmd.group = QStringLiteral("script");
 		cmd.verb = QStringLiteral("run");
-		cmd.description = QStringLiteral("Run a Lua script (specs/SPEC-lua-api-v0.md) in this "
+		cmd.description = QStringLiteral("Run a Lua script (docs/specs/SPEC-lua-api-v0.md) in this "
 			"running instance - the same ScriptEngine the run-and-exit `--run-script` CLI flag "
 			"drives, on its own worker thread with the engine apply side pumped on the UI thread. "
 			"Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the "

@@ -141,7 +141,7 @@ driven by them.
   position argument anywhere on the capture path: `processInput(const SampleFrame* input, f_cnt_t frames)`
   (`include/TrackRecorder.h:92-94`, `src/core/audio/TrackRecorder.cpp:130`). No punch region, no
   pre-roll, no sample-accurate start. The prototype's own record says arm time only:
-  `projects/lmms-fl-research/RECORDING-PROTOTYPE.md:59` (quoted **[sweep]**),
+  `docs/specs/RECORDING-PROTOTYPE.md:59` (quoted **[sweep]**),
   "`arm()` allocates the ring + opens the file + spawns T4 … `disarm()` sets a stop flag, T4 drains and closes".
 - The other, older recorder is the destructive one: `SampleRecordHandle` accumulates
   `new SampleFrame[_frames]` blocks (`src/core/SampleRecordHandle.cpp:131`) and, on destruction,
@@ -197,7 +197,7 @@ driven by them.
   `docs/KNOWN-LIMITATIONS.md:70-74` — "in the app the audio input only reaches it through the JACK
   and SDL backends. The ALSA backend has no capture path, so under ALSA hardware input records
   silence. There is no arbitrary input count and no input monitoring."; and
-  `specs/SPEC-two-track-recording.md:13` — "**Out of scope:** full recording UI (transport/arm
+  `docs/specs/SPEC-two-track-recording.md:13` — "**Out of scope:** full recording UI (transport/arm
   toolbar), punch regions, take management, monitoring paths". The prototype's backlog item is
   `RECORDING-PROTOTYPE.md:739-743` **[sweep]**: "add a capture path to the ALSA backend
   (`snd_pcm_readi` → `AudioEngine::pushInputFrames()`) — or run under a JACK server … Until then,
@@ -282,7 +282,7 @@ armed state, monitor state), and a recording transport controller coordinates co
 regions on the timeline, and take management. … Phase 2 adds the editor: waveform display with
 slip/trim/fade … plus per-clip pitch/time-stretch hooks." Its success criteria name the same four
 channels this wave is measured at ("No dropouts at 48kHz/24-bit with 4 simultaneous input channels").
-`specs/SPEC-two-track-recording.md:31-32` flags the input router as a **PROPOSAL**
+`docs/specs/SPEC-two-track-recording.md:31-32` flags the input router as a **PROPOSAL**
 (`include/InputRouter.h`, "the mixer-mission's per-channel input routing generalizes it later") —
 i.e. the generalisation is planned but unbuilt.
 
@@ -758,7 +758,7 @@ other choice now.**
 `include/Track.h`, `src/core/DataFile.cpp:67-70, 127-151, 2087-2205`, `docs/STATUS.md`,
 `docs/CONVENTIONS.md`, `docs/KNOWN-LIMITATIONS.md`, `tests/src/core/RecordRingBufferTest.cpp:236-258`,
 `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `POST-ALPHA-PLAN.md`,
-`specs/SPEC-two-track-recording.md`, `RECORDING-PROTOTYPE.md:836-860, 736-746`, KB articles
+`docs/specs/SPEC-two-track-recording.md`, `RECORDING-PROTOTYPE.md:836-860, 736-746`, KB articles
 `lmms-recording-mission` (read) and `lmms-complete-daw-program` (search hit), board specs for
 #611/#597/#598/#600.
 

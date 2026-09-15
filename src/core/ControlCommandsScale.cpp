@@ -7,7 +7,7 @@
  * THE ITEM THIS CLOSES. Row 66 of docs/FEATURE-LIST-0.3.0.md: "no `scale.` id exists
  * at either base; the engine (the scale + key vocabulary) is pre-existing, so the
  * work is the group and its proofs". The boarded-gaps list names two of the group's
- * ids by name - `scale.root_set` and `scale.set` (ableton-gap/AGENT-TOOLING.md,
+ * ids by name - `scale.root_set` and `scale.set` (docs/specs/AGENT-TOOLING.md,
  * "Boarded gaps / don't have list"). scale.snap_notes, the one verb here that EDITS
  * a clip, is in ControlCommandsScaleEdit.cpp (the read/edit split every recent group
  * in this fork uses, because Gate 7 measures a file and the group is one group).

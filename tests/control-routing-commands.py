@@ -9,7 +9,7 @@ THE CLAIM UNDER TEST (docs/FEATURE-LIST-0.3.0.md rows 27-28). Two halves:
     connections and the cached topological order the audio thread walks are read
     back off the wire.
   * `mixer.route_to` / `mixer.send_to` / `mixer.sidechain_to` /
-    `mixer.route_remove` - ableton-gap/AGENT-TOOLING.md:186 names route_to and
+    `mixer.route_remove` - docs/specs/AGENT-TOOLING.md:186 names route_to and
     send_to, and the tip registered neither. This is their transcript: the mixer
     group's other five ids live in control-socket-integration.py, and these four
     are here because they ARE the routing surface routing.get_state reads.

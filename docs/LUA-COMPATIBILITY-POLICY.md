@@ -6,7 +6,7 @@
 > `src/core/ScriptApiVersion.cpp`, `ScriptEngine::parseVersionHeader` /
 > `isCompatibleVersion`, and the `lmms.version` / `lmms.apiVersion` bindings.
 > **NOT authoritative for:** what the API contains (that is
-> `specs/SPEC-lua-api-v0.md`) or the release schedule.
+> `docs/specs/SPEC-lua-api-v0.md`) or the release schedule.
 
 ## 1. Where the version comes from
 

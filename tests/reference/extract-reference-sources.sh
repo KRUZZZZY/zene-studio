@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Part C behaviour-preservation harness: extract the pre-migration plugin
 # sources used as the reference renderer. Every file is written verbatim from
-# the git object named in tests/reference/ORIGIN.md, so `git hash-object` on
+# the git object named in tests/reference/ORIGIN.tsv, so `git hash-object` on
 # the extracted file equals the recorded blob id.
 #
 # Usage: tests/reference/extract-reference-sources.sh [<commit>]

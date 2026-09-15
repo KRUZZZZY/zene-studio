@@ -29,7 +29,7 @@ binaries.
 | Command enum + queue | `include/ScriptEngine.h:62-92` (`ScriptCommand`), `:51` (capacity 1024), `src/core/ScriptEngine.cpp:438` (`applyCommand`) | The single engine-mutation path; failed pushes are dropped and counted |
 | Bindings surface | `include/ScriptBindings.h` (406 lines), `src/core/ScriptBindings.cpp:276` (`registerAll`) | 14 Lua classes + the `lmms` namespace |
 | Tests (the contract that must not break) | `tests/src/core/ScriptEngineTest.cpp` (592), `tests/src/core/ScriptBindingsTest.cpp` (741) | Header gate, sandbox, budget, file sandbox, apply-side threading, queue overflow, all bindings |
-| Spec | `specs/SPEC-lua-api-v0.md` | §6 promises the `--! lmms-api` header gate; §1 excludes audio-thread scripting; §11 defers idle-triggered scripts (OQ-1) |
+| Spec | `docs/specs/SPEC-lua-api-v0.md` | §6 promises the `--! lmms-api` header gate; §1 excludes audio-thread scripting; §11 defers idle-triggered scripts (OQ-1) |
 
 **The three gaps, with evidence:**
 
