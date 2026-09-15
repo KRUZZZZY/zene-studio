@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-15T12:50:32Z",
+  "captured_at": "2026-09-15T12:56:22Z",
   "commands": [
     {
       "args_schema": {
@@ -14695,13 +14695,13 @@
   "count": 283,
   "instance": {
     "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 227673624,
-    "binary_sha256": "29548efc7d8c34d3b25ecdf0d29cc640a33d0a5f4119f0f68dce49544dabc663",
+    "binary_bytes": 227684472,
+    "binary_sha256": "e59b59e4d6489115f1fbd2edcfd426919188608c55c5e920319e497e51f3916f",
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "7cc7d5c7c5ea15eedee5427362bc200ba2091b02",
+    "lane_head": "a4f5d4b9e0914c831edb6d44b646bf4ab6010137",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-i3_zwfh1/zene.sock",
-    "version": "0.2.1-alpha.268+b2227b2"
+    "source_socket": "/tmp/zctl-run-cnwu6k1i/zene.sock",
+    "version": "0.2.1-alpha.269+7cc7d5c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
