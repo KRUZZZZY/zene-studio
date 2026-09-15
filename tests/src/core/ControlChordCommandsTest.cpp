@@ -232,7 +232,7 @@ private slots:
 
 		// The same position REPLACES, and the track does not grow.
 		const ControlResult replaced = run(QStringLiteral("chord.set"),
-			{{QStringLiteral("pos"), 0}, {QStringLiteral("chord"), QStringLiteral("major")},
+			{{QStringLiteral("pos"), 0}, {QStringLiteral("chord"), QStringLiteral("minor")},
 				{QStringLiteral("root"), 2}, {QStringLiteral("octave"), 3},
 				{QStringLiteral("length"), 48}});
 		QVERIFY2(replaced.ok, qPrintable(replaced.errorMessage));
@@ -345,10 +345,16 @@ private slots:
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 		QCOMPARE(trackOf().size(), 2);
 
-		// APPEND adds to what is there, instead of replacing it.
+		// APPEND adds what the track does not already hold AT THOSE POSITIONS.
+		// The POSITION is the key, so re-detecting the same clip replaces the
+		// two events it wrote a moment ago rather than duplicating them: a
+		// chord track cannot hold two chords at one tick. That is the engine's
+		// rule, asserted here rather than assumed.
 		QVERIFY(run(QStringLiteral("chord.detect_to_track"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("append"), true}}).ok);
-		QCOMPARE(trackOf().size(), 4);
+		QCOMPARE(trackOf().size(), 2);
+		QCOMPARE(trackOf()[0].pos, 0);
+		QCOMPARE(trackOf()[1].pos, 192);
 	}
 
 	/*! THE GENERATOR'S REPEATABILITY PAIR, through the surface: two clips, one

@@ -116,7 +116,8 @@ const ReversibilityRow kChordRows[] = {
 	R("chord.detect_to_track", RC::TrueInverse, true,
 		"writes the detection onto the track and, by default, REPLACES what was there - so "
 		"the previous chords are destroyed and the track is not journalled",
-		"action checkpoint: the track's element is captured before the write; when NOTHING "
+		"action checkpoint: the track's <chord-track> element is captured before the write; when "
+		"NOTHING "
 		"could be written the track is put back from that capture and the call is refused "
 		"BEFORE any step is recorded, so a refused call leaves no undo entry behind",
 		""),

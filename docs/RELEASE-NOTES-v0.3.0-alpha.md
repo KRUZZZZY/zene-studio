@@ -644,18 +644,23 @@ bound in its own description and contract row instead of pretending to a timeout
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **227 rows**, measured from the table itself:
-**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **236 rows**, measured from the table itself:
+**126 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 85 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**234 rows / 83 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
-four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this tip and reports 236 rows over the
+four classes named above (126 + 18 + 7 + 85), and its constant is the telemetry-off/wasm-off base of
+234 / 126 / 18 / 7 / 83. The nine rows the chord-track train added (feature row 35: `chord.get_state`,
+`chord.detect`, `chord.progression_list` - `not_mutating`; `chord.set`, `chord.remove`, `chord.clear`,
+`chord.detect_to_track` - `true_inverse` through a recorded action checkpoint, the track being project
+state no Song checkpoint carries; `chord.track_write`, `chord.progression_generate` - `true_inverse`
+through the CLIP's own journal checkpoint) are `+6 true_inverse / +3 not_mutating`, and the group
+carries no compile-time switch, so they are in BOTH figures. The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash

@@ -162,10 +162,12 @@ private slots:
 
 		// A progression this engine does not have is refused BEFORE anything is
 		// written, and records no undo step (the five undos below are exactly
-		// the five generations).
+		// the five generations). The kind is invalid_args and not not_found
+		// because the ARGUMENTS SCHEMA's enum refuses the name first - the
+		// shape every enumerated argument in this surface has.
 		QCOMPARE(run(QStringLiteral("chord.progression_generate"),
 			{{QStringLiteral("clip"), first}, {QStringLiteral("progression"), QStringLiteral("it")}})
-			.errorKind, ControlErrorKind::NotFound);
+			.errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(notesOf(first).size(), 12);
 
 		// THE CLIP'S OWN CHECKPOINT is the A16 inverse: undo the generations in
@@ -212,16 +214,20 @@ private slots:
 
 		const QVector<NoteAt> notes = notesOf(clip);
 		QCOMPARE(notes.size(), 6);
-		// The C major triad at 0, held until the next chord (192 ticks).
-		QCOMPARE(notes[0].key, 60);
+		// The clip's own order is position ascending, then key DESCENDING
+		// (Note::lessThan), so the C major triad at 0 reads back 67, 64, 60 -
+		// held until the next chord, 192 ticks.
 		QCOMPARE(notes[0].position, 0);
 		QCOMPARE(notes[0].length, 192);
+		QCOMPARE(notes[0].key, 67);
 		QCOMPARE(notes[1].key, 64);
-		QCOMPARE(notes[2].key, 67);
-		// The A minor triad at 192, held for the fallback step.
-		QCOMPARE(notes[3].key, 57);  // A3
+		QCOMPARE(notes[2].key, 60);
+		// The A minor triad at 192 (A3, C4, E4), held for the fallback step.
 		QCOMPARE(notes[3].position, 192);
 		QCOMPARE(notes[3].length, DefaultTicksPerBar);
+		QCOMPARE(notes[3].key, 64);
+		QCOMPARE(notes[4].key, 60);
+		QCOMPARE(notes[5].key, 57);
 
 		// ... and an EMPTY chord track has nothing to write: refused, typed.
 		QVERIFY(run(QStringLiteral("chord.clear")).ok);
@@ -315,11 +321,13 @@ private slots:
 			{{QStringLiteral("name"), QStringLiteral("nope")}}).errorKind,
 			ControlErrorKind::NotFound);
 
-		// A generation that names a progression this engine does not have.
+		// A generation that names a progression this engine does not have: the
+		// schema's enum is the first gate, so the kind is invalid_args (the
+		// listing above is what a caller reads to get a name right).
 		QCOMPARE(run(QStringLiteral("chord.progression_generate"),
 			{{QStringLiteral("clip"), makeClip()},
 				{QStringLiteral("progression"), QStringLiteral("nope")}}).errorKind,
-			ControlErrorKind::NotFound);
+			ControlErrorKind::InvalidArgs);
 	}
 };
 

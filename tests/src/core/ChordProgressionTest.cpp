@@ -53,6 +53,12 @@ QString nameOf(const QString& progression, const QString& scale, int root, int o
 	request.scale = scale;
 	request.root = root;
 	request.octave = octave;
+	// ONE PASS of the walk: `steps` defaults to 4 in the struct, which would
+	// repeat a three-chord progression's first chord.
+	if (const Entry* entry = find(progression))
+	{
+		request.steps = static_cast<int>(entry->degrees.size());
+	}
 	std::vector<ChordStep> chords;
 	QString error;
 	if (!chordsFor(request, &chords, &error)) { return QStringLiteral("<%1>").arg(error); }

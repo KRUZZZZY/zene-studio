@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-14T15:30:39Z",
+  "captured_at": "2026-09-15T12:22:01Z",
   "commands": [
     {
       "args_schema": {
@@ -1188,6 +1188,766 @@
             "type": "boolean"
           },
           "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Empty the project's chord track, reporting how many chords went. An already-empty track is REFUSED, typed: a clear that would change nothing must not leave an undo step behind. Reversible: one recorded action checkpoint holding the whole <chord-track> element as it was.",
+      "group": "chord",
+      "id": "chord.clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "min_pitch_classes": {
+            "maximum": 13,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "window_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "What chords a MIDI clip's notes spell. The notes are grouped into slices - by default notes that start at the SAME tick; 'window_ticks' widens that for a strummed or humanised take, measured from each slice's first note so a run of sixteenths cannot chain into one huge slice - and each slice is named from this engine's chord vocabulary. Every slice reports the nearest entry with 'missing' (chord tones the slice does not sound) and 'extra' (tones the chord does not contain), so 'exact' false is visible rather than rounded to a name, and the whole clip's key is reported too. Read-only: nothing is written to the clip or the track (write a detection with chord.detect_to_track).",
+      "group": "chord",
+      "id": "chord.detect",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "type": "array"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "additionalProperties": false,
+            "properties": {
+              "complete": {
+                "type": "boolean"
+              },
+              "key": {
+                "maximum": 127,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "pitch_classes": {
+                "maximum": 12,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "root": {
+                "maximum": 11,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "scale": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "min_pitch_classes": {
+            "maximum": 13,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "window_ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "append": {
+            "type": "boolean"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "min_pitch_classes": {
+            "maximum": 13,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "window_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Detect the chords a MIDI clip's notes spell (the same detection chord.detect reports) and write them onto the project's chord track. By default the track is REPLACED; 'append' adds to what is there. A slice with no name in this engine's vocabulary cannot be a chord-track event and is reported as `skipped` - and if nothing at all could be written the track is left EXACTLY as it was and the call is refused, typed, rather than half-written. Reversible: one recorded action checkpoint.",
+      "group": "chord",
+      "id": "chord.detect_to_track",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "appended": {
+            "type": "boolean"
+          },
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "clip_track": {
+            "type": "string"
+          },
+          "detected": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "written": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The project's CHORD TRACK: every chord with its position, length, root pitch class, the octave the root sounds in, the root's absolute MIDI key, the chord's name and the key (scale) it was written in, plus the track's own bounds. Read-only. The track is project state saved inside <song> as one <chord-track> element (written only when it holds a chord, so a project that never used one is byte-identical to before), and it is what chord.track_write turns into notes. Chord and scale names come from the piano roll's own vocabulary - see chord.progression_list.",
+      "group": "chord",
+      "id": "chord.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "pattern": {
+            "enum": [
+              "block",
+              "arpeggio_up",
+              "arpeggio_down",
+              "broken"
+            ],
+            "type": "string"
+          },
+          "progression": {
+            "enum": [
+              "I-V-vi-IV",
+              "I-vi-IV-V",
+              "vi-IV-I-V",
+              "ii-V-I",
+              "I-vi-ii-V",
+              "I-IV-V-I",
+              "i-VI-III-VII",
+              "i-iv-v-i"
+            ],
+            "type": "string"
+          },
+          "replace": {
+            "type": "boolean"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "enum": [
+              "Major",
+              "Harmonic minor",
+              "Melodic minor",
+              "Diminished",
+              "Major bebop",
+              "Dominant bebop",
+              "Arabic",
+              "Enigmatic",
+              "Neopolitan",
+              "Neopolitan minor",
+              "Hungarian minor",
+              "Dorian",
+              "Phrygian",
+              "Lydian",
+              "Mixolydian",
+              "Aeolian",
+              "Locrian",
+              "Minor",
+              "Chromatic",
+              "Half-Whole Diminished",
+              "Phrygian dominant",
+              "Persian"
+            ],
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tick": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "variation": {
+            "type": "number"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "progression"
+        ],
+        "type": "object"
+      },
+      "description": "GENERATE a named progression into a MIDI clip as notes. The walk and the key are the pre-existing vocabulary's: each step of the progression is the chord on that SCALE DEGREE, built by stacking the scale's own tones in thirds and named by this engine's chord table (a stack the table cannot name comes back with an empty 'chord' and is still written). 'pattern' is block, arpeggio_up, arpeggio_down or broken; 'step_ticks' is how long each chord lasts (default one 4/4 bar); 'steps' defaults to one pass of the walk. SEEDED AND REPEATABLE: 'variation' (0..1, default 0) opens the draws - each chord's voicing, its position and its velocity - and every draw is a pure function of 'seed' and that chord's own identity, so the same request reproduces the same take note for note and a different seed gives a different one. With 'variation' 0 nothing is drawn and the seed decides nothing. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "chord",
+      "id": "chord.progression_generate",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "type": "array"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_replaced": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_written": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "progression": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tick": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "variation": {
+            "type": "number"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "What this engine can be asked for: the named PROGRESSIONS the generator walks (each a name and the scale degrees it steps through), the SCALES a key may name, the CHORDS a chord-track event may name, the patterns a generation can lay a chord out with, and the group's bounds. Every one of those vocabularies is the piano roll's own (InstrumentFunctionNoteStacking::ChordTable, the table behind its chord and scale selectors) - this group adds no names of its own. Read-only; with 'name' one progression is reported on its own.",
+      "group": "chord",
+      "id": "chord.progression_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "type": "array"
+          },
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_degree_count": {
+            "maximum": 8,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "patterns": {
+            "type": "array"
+          },
+          "progression": {
+            "additionalProperties": false,
+            "properties": {
+              "degrees": {
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "steps": {
+                "maximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "progressions": {
+            "type": "array"
+          },
+          "scales": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "pos": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pos"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the chord at an absolute tick from the project's chord track, reporting the event that went. A tick that holds no chord is a typed not_found, never a silent success. Reversible: one recorded action checkpoint, and the recorded inverse names chord.set with the removed event's own arguments.",
+      "group": "chord",
+      "id": "chord.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "event": {
+            "additionalProperties": false,
+            "properties": {
+              "chord": {
+                "type": "string"
+              },
+              "key": {
+                "maximum": 127,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "length": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "octave": {
+                "maximum": 9,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "pos": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "root": {
+                "maximum": 11,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "scale": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chord": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "pos": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pos",
+          "chord"
+        ],
+        "type": "object"
+      },
+      "description": "Write ONE chord into the project's chord track at an absolute tick: the chord's name (a chord of this engine's vocabulary - chord.progression_list lists them), its root pitch class, the octave the root sounds in, and optionally its length. The POSITION is the key: a set at a tick that already holds a chord REPLACES it (the command reports `replaced`), so a track cannot hold two chords at once. 'length' 0 (the default) means HOLD - the chord sounds until the next one, which is what a chord track means. Reversible: one recorded action checkpoint (the track is project state the Song's journal checkpoint does not carry), so one control.undo takes the write back.",
+      "group": "chord",
+      "id": "chord.set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "event": {
+            "additionalProperties": false,
+            "properties": {
+              "chord": {
+                "type": "string"
+              },
+              "key": {
+                "maximum": 127,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "length": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "octave": {
+                "maximum": 9,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "pos": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "root": {
+                "maximum": 11,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "scale": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "replaced": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pattern": {
+            "enum": [
+              "block",
+              "arpeggio_up",
+              "arpeggio_down",
+              "broken"
+            ],
+            "type": "string"
+          },
+          "replace": {
+            "type": "boolean"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Write the CHORD TRACK's own chords into a MIDI clip as notes: every event's chord is voiced from its root and laid out under 'pattern' (block, arpeggio_up, arpeggio_down, broken), each event starting where the track says and sounding for as long as the track says (the distance to the next chord, or 'length' for the last one). 'replace' (default true) clears the clip's notes first and reports how many went; false adds to them. Reversible through the ProjectJournal (MidiClip checkpoint). An empty chord track is refused, typed: there is nothing to write.",
+      "group": "chord",
+      "id": "chord.track_write",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords_written": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_replaced": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_written": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "track": {
             "type": "string"
           }
         },
@@ -11153,16 +11913,16 @@
       }
     }
   ],
-  "count": 227,
+  "count": 236,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 205380680,
-    "binary_sha256": "a0a84b3dfac4e6cf20981d69c2e2b088d607898a6f11863f49f1e8333809c6a0",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "89a5e79429edb00b99f6d6f3a275fa9cd6e8bd08",
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wchord/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_socket": "/home/kruzzzzy/zene-030-merge2-598d4f5c1/zene-merge2.sock",
-    "version": "0.2.1-alpha.191+6c55700"
+    "source_socket": "/tmp/wchord-snap.sock",
+    "version": "0.2.1-alpha.197+4611ffb"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
