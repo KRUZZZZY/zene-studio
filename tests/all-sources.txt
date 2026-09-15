@@ -1554,6 +1554,7 @@ tests/src/core/ControlVcaTestSupport.h
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControllerSurfaceTest.cpp
+tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp

@@ -144,6 +144,41 @@ struct CrashInfo
 // No-op on Windows.
 bool install(const std::string& workingDirectory);
 
+// --- arming and disarming (crash.enable / crash.disable, board task #643) ---
+// install() is the ARM half and this is its inverse.  It restores the default
+// disposition for exactly the signals install() claimed (one shared list in the
+// .cpp, so the two directions cannot drift), drops the report-directory fd, and
+// leaves s_installed false.  It does NOT delete anything and does NOT touch the
+// remembered directory - so crash.enable can re-arm to the same place with no
+// arguments.  The handler's alternate stack stays registered and is inert once
+// no handler is installed with SA_ONSTACK.
+//
+// Returns false when the reporter was not installed: that is not a state
+// change, and the caller says so rather than reporting a success.
+// No-op on Windows.
+bool uninstall();
+
+// Is the handler ACTUALLY armed?  Reads the kernel's own dispositions
+// (sigaction(sig, nullptr, &current)) and asks whether every signal install()
+// claims is set to the crash handler - not whether a flag says it should be.
+// False after uninstall(), false if a later install overwrote one signal with
+// something else.  No-op on Windows (always false).
+bool handlersArmed();
+
+// The working directory the reporter was last handed, or empty when it has
+// never been installed.  Never creates anything.  This is what lets a caller
+// re-arm with no arguments; crash.list_reports exposes the report paths
+// derived from the same value.
+std::string reportDirectory();
+
+// The signals the reporter claims, as text, in the order install() sets them:
+// "SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE" (SIGFPE absent under the debug-only
+// LMMS_DEBUG_FPE build flag, whose handler owns it).  Built from the same list
+// install()/uninstall()/handlersArmed() read, so an agent asking "what does
+// arming mean?" is answered from the one definition rather than from a second
+// copy at the call site.  Empty on Windows, where nothing is ever installed.
+std::string handledSignalList();
+
 // Re-point the working directory (main thread, safe points only, after the
 // user's real working directory is known).  Does not create anything.
 bool setReportDirectory(const std::string& workingDirectory);

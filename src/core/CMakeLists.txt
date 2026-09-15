@@ -140,6 +140,12 @@ set(LMMS_SRCS
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
 	core/CrashReporter.cpp
+	# The arm/disarm path (crash.enable / crash.disable, board task #643) pays
+	# for its room in core/CrashReporter.cpp (zero-line tolerance in the file-length
+	# baseline) by splitting that file: the async-signal-safe formatters and the
+	# Windows no-op half live in their own translation units.
+	core/CrashReporterFormat.cpp
+	core/CrashReporterWindows.cpp
 	# Safe-start mode after a crash (feature row 77, board task #666): the crash
 	# MARKER and the load-time predicate. Beside the crash reporter because it is
 	# the same shape of module - a small C API over files in the working directory
@@ -275,6 +281,9 @@ set(LMMS_SRCS
 	# half). Separate translation units for the reason the automation and warp
 	# groups are split - gate 7 measures a file, not a group.
 	core/ControlCommandsCrash.cpp
+	# The reporter's ARM pair (crash.enable / crash.disable, feature row 54, board
+	# task #643), in its own TU: ControlCommandsCrash.cpp is at 476 lines.
+	core/ControlCommandsCrashControl.cpp
 	core/ControlCommandsPluginScan.cpp
 	core/ControlCommandsPluginScanEdit.cpp
 	# Safe-start mode's surface (feature row 77, board task #666): the marker, the

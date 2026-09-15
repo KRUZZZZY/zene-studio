@@ -18,13 +18,11 @@
  * "stop offering this report" (acknowledgePendingReport: writes the `offered`
  * sentinel and keeps the file) and "clear it" (discardPendingReport: unlinks
  * both), and there is no third: nothing in the module uploads, disables or
- * deletes anything else. install()/endSession()/writeReportIfIdle() are NOT
- * registered, and that is a decision rather than an omission - install() runs
- * from main() BEFORE the control socket exists (so a command that called it
- * could only re-point an already-installed reporter, and could never undo the
- * handlers it installed), endSession() would unlink another process's marker
- * semantics on the clean path, and writeReportIfIdle() would let a caller FABRICATE
- * a crash report, which is a false artifact rather than a control of one.
+ * deletes anything else. endSession() and writeReportIfIdle() are NOT
+ * registered, and that is a decision rather than an omission - endSession()
+ * would unlink another process's marker semantics on the clean path, and
+ * writeReportIfIdle() would let a caller FABRICATE a crash report, which is a
+ * false artifact rather than a control of one.
  *
  * THE VERBS THAT DO NOT EXIST ARE REFUSED, NOT OMITTED. `crash.upload_report` is
  * registered and REFUSES every call, by name, because the absence is a stated
@@ -33,9 +31,19 @@
  * the shape automation.mode_set uses for a capability that is not there
  * (src/core/ControlCommandsAutomation.cpp: "registered, and refused by name"), so
  * a client that asks to send a report is told why not and where the file is
- * instead of getting a bare not_found. There is no crash.enable / crash.disable
- * for the same reason install() is not registered: the reporter is installed by
- * main() before this surface is reachable, and it has no uninstall.
+ * instead of getting a bare not_found.
+ *
+ * WHICH FILE REGISTERS WHAT, and why it is two files. install() is the module's
+ * arm half; from 0.3.0 it IS registered, as crash.enable / crash.disable in
+ * src/core/ControlCommandsCrashControl.cpp - this file used to say those two
+ * could not exist because "the reporter is installed by main() before this
+ * surface is reachable, and it has no uninstall". The first half of that is
+ * still true and still why main() arms it (a crash before the socket exists must
+ * be reported); the second stopped being true when the module grew
+ * crashreporter::uninstall()/handlersArmed(), which is what the pair needs. The
+ * arm pair lives in its own translation unit rather than here because this file
+ * is at 476 lines of a 500-line ratchet and the pair is a different subject
+ * (process state, not report files).
  *
  * A16: the two writers are `irreversible`, and each says so with the fallback
  * the engine leaves. The module is a plain C API over files (it is not a
@@ -199,6 +207,14 @@ ControlResult handleListReports()
 
 	QJsonObject result;
 	result.insert(QStringLiteral("installed"), crashreporter::isInstalled());
+	// The HONEST half, from the same predicate crash.enable/crash.disable report:
+	// handlersArmed() asks the kernel's own dispositions. `installed` is the
+	// module's flag; the two can only disagree if something replaced the handler
+	// we installed, so `agree` says whether they do rather than hiding it.
+	const bool installedFlag = crashreporter::isInstalled();
+	const bool armedNow = crashreporter::handlersArmed();
+	result.insert(QStringLiteral("armed"), armedNow);
+	result.insert(QStringLiteral("agree"), armedNow == installedFlag);
 	result.insert(QStringLiteral("report_directory"), wire(paths.reportDirectory));
 	result.insert(QStringLiteral("report_path"), wire(paths.report));
 	result.insert(QStringLiteral("offered_marker_path"), wire(paths.offered));
@@ -235,9 +251,11 @@ ControlResult handleListReports()
 		QStringLiteral("the reporter writes ONE bounded report file (crash-reports/zene-crash-report.txt "
 			"under the working directory), created at crash time and never by a clean run; the next start "
 			"offers it and then writes the `offered` sentinel so it is not offered twice. `pending` is the "
-			"module's own predicate for that offer (hasPendingReport). Nothing here is project state and no "
-			"command installs or disables the reporter: main() installs it before this surface is reachable, "
-			"and the module has no uninstall"));
+			"module's own predicate for that offer (hasPendingReport). Nothing here is project state: "
+			"`installed` is the module's flag and `armed` is read off the kernel's own signal "
+			"dispositions (handlersArmed). crash.enable / crash.disable are the two commands that change "
+			"that state; disarming deletes NOTHING, so the report, its directory and the session marker "
+			"below are named in either state"));
 	return ControlResult::success(result);
 }
 
@@ -387,6 +405,8 @@ void registerCrashReporterCommands(ControlRegistry& registry)
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("installed"), booleanProperty()},
+			{QStringLiteral("armed"), booleanProperty()},
+			{QStringLiteral("agree"), booleanProperty()},
 			{QStringLiteral("report_directory"), stringProperty()},
 			{QStringLiteral("report_path"), stringProperty()},
 			{QStringLiteral("offered_marker_path"), stringProperty()},

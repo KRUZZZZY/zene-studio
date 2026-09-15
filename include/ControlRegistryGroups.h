@@ -322,6 +322,18 @@ LMMS_EXPORT void registerPluginHostChunkingCommands(ControlRegistry& registry);
  * network code at all (the automation.mode_set shape).
  */
 LMMS_EXPORT void registerCrashReporterCommands(ControlRegistry& registry);
+/*! crash.enable / crash.disable - the crash reporter's ARM pair (feature row 54,
+ * board task #643), in its own translation unit
+ * (src/core/ControlCommandsCrashControl.cpp). main() still arms the reporter
+ * before this socket exists - a crash with no socket must still be reported -
+ * but arming is now reversible at the engine (crashreporter::uninstall /
+ * handlersArmed / reportDirectory, include/CrashReporter.h), so the two verbs
+ * exist: enable arms (to the remembered directory, or an explicit one) and
+ * disable disarms, deleting nothing. Both report `armed` from the kernel's own
+ * dispositions rather than from a flag, and both are A16 `snapshot` rows whose
+ * recorded inverse is the paired command.
+ */
+LMMS_EXPORT void registerCrashControlCommands(ControlRegistry& registry);
 /*! The `mastering.*` group's READ half - mastering.list_candidates (the candidate
  * set auto-mastering wave 1 generates: MasteringJob::defaultCandidates, with each
  * candidate's named target, the standard its numbers come from, the dynamics
