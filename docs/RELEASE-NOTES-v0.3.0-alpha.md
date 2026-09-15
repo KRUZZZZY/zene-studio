@@ -546,7 +546,7 @@ that marker is published as-is, and no unverified claim is published without one
 - **The mixer's routing verbs exist at last.** `mixer.route_to` writes a channel's output path at unity,
   `mixer.send_to` writes an auxiliary send with an amount, `mixer.sidechain_to` writes a sidechain send with
   a tap point (`post_fader`, `pre_fx`, `pre_fader`, `post_fader_no_gain`), and `mixer.route_remove` removes
-  either kind. `ableton-gap/AGENT-TOOLING.md` §7 names `route_to` and `send_to` as part of this release's
+  either kind. `docs/specs/AGENT-TOOLING.md` §7 names `route_to` and `send_to` as part of this release's
   mixer surface and the 0.3.0 tip registered neither. The engine's own rules are the refusals and the
   defaults: a send **into a bus** comes back pre-fader without being asked (`Mixer::createChannelSend`), a
   route that would close a **feedback path** is refused by `Mixer::isInfiniteLoop` before anything is

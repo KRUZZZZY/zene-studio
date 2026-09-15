@@ -3,7 +3,7 @@
  *                                  A11-A16): mixer.route_to, mixer.send_to,
  *                                  mixer.sidechain_to, mixer.route_remove.
  *
- * ableton-gap/AGENT-TOOLING.md:186 names `mixer.route_to` / `mixer.send_to` as
+ * docs/specs/AGENT-TOOLING.md:186 names `mixer.route_to` / `mixer.send_to` as
  * part of the mixer/routing surface this release must tool; at the 0.3.0 tip the
  * mixer group registered only five ids (add_channel, get_state, remove_channel,
  * set_pan, set_volume), so both were missing. The sidechain half of feature row

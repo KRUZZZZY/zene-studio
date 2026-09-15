@@ -5,7 +5,7 @@
  * THE ITEM THIS CLOSES. Row 81 of docs/FEATURE-LIST-0.3.0.md: "`device.mpe_set` -
  * the MPE device verb the boarded-gaps list names. `note.expression_*` (3 ids) is
  * the MPE surface that landed; the device-side verb was never delivered"
- * (ableton-gap/AGENT-TOOLING.md, "Boarded gaps / don't have list"). This file is the
+ * (docs/specs/AGENT-TOOLING.md, "Boarded gaps / don't have list"). This file is the
  * first `device.*` group in the registry: until now `note.expression_*` could store
  * and clear PER-NOTE expression, but nothing could switch MPE INPUT on, which is the
  * flag that decides whether the input path reads expression at all.

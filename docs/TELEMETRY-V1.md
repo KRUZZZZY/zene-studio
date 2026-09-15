@@ -118,7 +118,7 @@ by the gate. See `docs/TELEMETRY-KILL-SWITCH.md` §3 and §5.)**
 ### 2.6 Row 85 closed by decision: there is no `telemetry.consent_set`
 
 The 0.3.0 feature list's row 85 carries the boarded gap `telemetry.consent_set`
-(`ableton-gap/AGENT-TOOLING.md` §5, "Boarded gaps"). **The id is deliberately not added**, and the row
+(`docs/specs/AGENT-TOOLING.md` §5, "Boarded gaps"). **The id is deliberately not added**, and the row
 is closed by this decision rather than by a third command. The reasons, in the order they bind:
 
 1. **`telemetry.consent` IS the consent verb.** It opens the one consent screen, and that screen's
