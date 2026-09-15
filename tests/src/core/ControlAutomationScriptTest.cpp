@@ -78,6 +78,7 @@ private slots:
 			{qstr("automation.remove_point"), true},
 			{qstr("automation.clear"), true},
 			{qstr("automation.mode_set"), true},
+			{qstr("automation.record_mode_set"), true},
 		};
 		for (const auto& entry : required)
 		{
@@ -172,6 +173,14 @@ private slots:
 			{qstr("automation.mode_set"), {{qstr("track"), qstr("trk-9999")},
 				{qstr("parameter"), qstr("inst/0")}, {qstr("mode"), qstr("write")}},
 				ControlErrorKind::NotFound},
+			// record_mode_set's closed enum is real, so a bogus mode never reaches the handler
+			{qstr("automation.record_mode_set"), {{qstr("track"), qstr("trk-9999")},
+				{qstr("parameter"), qstr("inst/0")}, {qstr("mode"), qstr("scribble")}},
+				ControlErrorKind::InvalidArgs},
+			// record_mode_set on a non-existent track resolves the target first
+			{qstr("automation.record_mode_set"), {{qstr("track"), qstr("trk-9999")},
+				{qstr("parameter"), qstr("inst/0")}, {qstr("mode"), qstr("on")}},
+				ControlErrorKind::NotFound},
 			// an unknown command is not_found too
 			{qstr("automation.no_such_verb"), {}, ControlErrorKind::NotFound},
 		};
@@ -185,6 +194,79 @@ private slots:
 						controlErrorKindName(result.errorKind), result.errorMessage)));
 			QVERIFY(!result.errorMessage.isEmpty());
 		}
+	}
+
+	//! mode_set on a valid track+parameter but with no automation clip still
+	//! succeeds: the mode is per-model, not per-clip, and it can be set before
+	//! any automation exists.
+	void automationModeSetSucceedsOnABareParameter()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		// A fresh song has at least one track with parameters; find one.
+		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"));
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		const QJsonArray tracks = state.result.value(QStringLiteral("tracks")).toArray();
+		QVERIFY(!tracks.isEmpty());
+		QString trackId;
+		QString paramId;
+		for (const QJsonValue& t : tracks)
+		{
+			const QJsonArray params = t.toObject().value(QStringLiteral("parameters")).toArray();
+			if (!params.isEmpty())
+			{
+				trackId = t.toObject().value(QStringLiteral("id")).toString();
+				paramId = params.first().toObject().value(QStringLiteral("id")).toString();
+				break;
+			}
+		}
+		QVERIFY2(!trackId.isEmpty(), "no track with parameters in the fresh song");
+		QVERIFY2(!paramId.isEmpty(), "no parameter found");
+
+		for (const QString& mode : {qstr("off"), qstr("read"), qstr("touch"), qstr("latch"), qstr("write")})
+		{
+			const ControlResult result = registry->invoke(QStringLiteral("automation.mode_set"),
+				QJsonObject{{QStringLiteral("track"), trackId},
+					{QStringLiteral("parameter"), paramId},
+					{QStringLiteral("mode"), mode}});
+			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			QCOMPARE(result.result.value(QStringLiteral("track")).toString(), trackId);
+			QCOMPARE(result.result.value(QStringLiteral("parameter")).toString(), paramId);
+			QCOMPARE(result.result.value(QStringLiteral("mode")).toString(), mode);
+		}
+	}
+
+	//! record_mode_set requires an existing automation clip, because the record
+	//! flag lives on the clip, not on the parameter.
+	void automationRecordModeSetRequiresAClip()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"));
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		const QJsonArray tracks = state.result.value(QStringLiteral("tracks")).toArray();
+		QVERIFY(!tracks.isEmpty());
+		QString trackId;
+		QString paramId;
+		for (const QJsonValue& t : tracks)
+		{
+			const QJsonArray params = t.toObject().value(QStringLiteral("parameters")).toArray();
+			if (!params.isEmpty())
+			{
+				trackId = t.toObject().value(QStringLiteral("id")).toString();
+				paramId = params.first().toObject().value(QStringLiteral("id")).toString();
+				break;
+			}
+		}
+		QVERIFY2(!trackId.isEmpty(), "no track with parameters in the fresh song");
+		QVERIFY2(!paramId.isEmpty(), "no parameter found");
+
+		const ControlResult result = registry->invoke(QStringLiteral("automation.record_mode_set"),
+			QJsonObject{{QStringLiteral("track"), trackId},
+				{QStringLiteral("parameter"), paramId},
+				{QStringLiteral("mode"), qstr("on")}});
+		QVERIFY2(!result.ok, "record_mode_set succeeded without a clip");
+		QCOMPARE(result.errorKind, ControlErrorKind::NotFound);
+		QVERIFY2(result.errorMessage.contains(QStringLiteral("no automation clip")),
+			qPrintable(result.errorMessage));
 	}
 
 	void scriptListShowsTheShippedScripts()

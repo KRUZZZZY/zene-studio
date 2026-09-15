@@ -408,6 +408,12 @@ LMMS_EXPORT void addUndoStep(const QVector<JournallingObject*>& journallingObjec
  */
 LMMS_EXPORT void addStructuralUndoStep(std::function<void()> undo,
 	std::function<void()> redo, qint64 payloadBytes);
+/*! The automation-mode group's two rows (feature-list rows 10 and 63, board
+ *  task #647): automation.mode_set (irreversible - runtime state with no
+ *  persistence or undo) and automation.record_mode_set (true_inverse - the
+ *  clip is a JournallingObject and the flag is restored by a live checkpoint).
+ *  Joined into reversibilityRowTable(). */
+LMMS_EXPORT const ReversibilityRow* reversibilityAutomationModesRowTable(int* rowCount);
 
 } // namespace control
 

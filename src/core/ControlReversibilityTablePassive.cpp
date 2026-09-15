@@ -146,12 +146,6 @@ const ReversibilityRow kPassiveRows[] = {
 		"not blocked by it",
 		"none needed: the command is a typed refusal, use track panning "
 		"(InstrumentTrack/SampleTrack panningModel) or per-note panning"),
-	R("automation.mode_set", RC::NotMutating, false,
-		"declared mutating, but the handler REFUSES every call: this build has "
-		"automation modes in the engine but no way to select or persist one "
-		"(docs/KNOWN-LIMITATIONS.md)",
-		"no write happens, so no transaction is recorded",
-		"use automation.add_point to write a curve instead"),
 	R("control.undo", RC::NotMutating, false,
 		"it IS the inverse applier: it is the thing that reverses another "
 		"command, so classifying it as a command to be reversed would recurse",

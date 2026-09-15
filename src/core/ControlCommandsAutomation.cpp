@@ -139,15 +139,13 @@ ControlResult automationGetState(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
-/*! automation.mode_set - registered, and refused by name.
+/*! automation.mode_set - set a parameter's automation mode.
  *
- * The modes exist in the engine (AutomatableModel's Read/Touch/Latch/Write enum, with the
- * touch state machine and a test) but nothing can SELECT or PERSIST one: setAutomationMode
- * has no caller outside its own test, the mode is not serialised, and the interface does not
- * offer it - docs/KNOWN-LIMITATIONS.md. The engine has the modes; the product cannot
- * select or persist one, which is the limitation this refusal reports.
- * The command is registered with its full schema and asks for nothing it cannot read, the
- * shape mixer.set_pan and track.set_arm use.
+ * The engine's mode state machine (AutomatableModel::AutomationMode, Read / Touch /
+ * Latch / Write) is driven from this surface. The mode is runtime state: it is not
+ * persisted in the project file and it is not journalled, so a mode change has no
+ * undo - docs/KNOWN-LIMITATIONS.md. The default is Read (follow automation, never
+ * write), which is what every existing project already behaves as.
  */
 ControlResult automationModeSet(const QJsonObject& args)
 {
@@ -164,11 +162,103 @@ ControlResult automationModeSet(const QJsonObject& args)
 		return error;
 	}
 
-	return ControlResult::failure(ControlErrorKind::Refused,
-		QStringLiteral("this build has automation modes in the engine (Read/Touch/Latch/Write, "
-			"AutomatableModel) but no way to select or persist one: the mode is not saved with "
-			"the project and neither the interface nor this surface can set it "
-			"(docs/KNOWN-LIMITATIONS.md). Use automation.add_point to write a curve instead."));
+	const QString modeName = args.value(QStringLiteral("mode")).toString();
+	AutomatableModel::AutomationMode mode;
+	if (modeName == QStringLiteral("off") || modeName == QStringLiteral("read"))
+	{
+		mode = AutomatableModel::AutomationMode::Read;
+	}
+	else if (modeName == QStringLiteral("touch"))
+	{
+		mode = AutomatableModel::AutomationMode::Touch;
+	}
+	else if (modeName == QStringLiteral("latch"))
+	{
+		mode = AutomatableModel::AutomationMode::Latch;
+	}
+	else if (modeName == QStringLiteral("write"))
+	{
+		mode = AutomatableModel::AutomationMode::Write;
+	}
+	else
+	{
+		// The schema's closed enum should have caught this, but the handler
+		// must still be honest for every string that reaches it.
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("mode must be one of off/read/touch/latch/write, not '%1'").arg(modeName));
+	}
+
+	parameter.model->setAutomationMode(mode);
+
+	QJsonObject result;
+	result.insert(QStringLiteral("track"), target.id);
+	result.insert(QStringLiteral("parameter"), parameter.id());
+	result.insert(QStringLiteral("mode"), modeName);
+	return ControlResult::success(result);
+}
+
+/*! automation.record_mode_set - set a parameter's automation CLIP record flag.
+ *
+ * Every automated parameter has AT MOST ONE clip that drives it. When that clip's
+ * record flag is on, the manual value of the control is written into the clip at
+ * every tick the transport runs - the legacy per-clip record path that predates
+ * the mode state machine. This command toggles that flag. The clip is a
+ * JournallingObject, so the inverse is a live checkpoint.
+ */
+ControlResult automationRecordModeSet(const QJsonObject& args)
+{
+	ControlTarget target;
+	AutomationParameter parameter;
+	ControlResult error;
+	if (!resolveControlTarget(args.value(QStringLiteral("track")).toString(), &target, &error))
+	{
+		return error;
+	}
+	if (!control::findAutomationParameter(target,
+		args.value(QStringLiteral("parameter")).toString(), &parameter, &error))
+	{
+		return error;
+	}
+
+	AutomationClip* clip = control::existingAutomationClip(parameter.model);
+	if (clip == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("%1 has no automation clip on %2, so there is no record flag to set. "
+				"Write an automation point with automation.add_point first.").arg(parameter.id(), target.id));
+	}
+
+	const QString modeName = args.value(QStringLiteral("mode")).toString();
+	bool recording;
+	if (modeName == QStringLiteral("on"))
+	{
+		recording = true;
+	}
+	else if (modeName == QStringLiteral("off"))
+	{
+		recording = false;
+	}
+	else
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("mode must be 'on' or 'off', not '%1'").arg(modeName));
+	}
+
+	const bool before = clip->isRecording();
+	const bool changed = before != recording;
+	if (changed)
+	{
+		clip->addJournalCheckPoint();
+		clip->setRecording(recording);
+	}
+
+	QJsonObject result;
+	result.insert(QStringLiteral("track"), target.id);
+	result.insert(QStringLiteral("parameter"), parameter.id());
+	result.insert(QStringLiteral("mode"), modeName);
+	result.insert(QStringLiteral("mode_before"), before ? QStringLiteral("on") : QStringLiteral("off"));
+	result.insert(QStringLiteral("changed"), changed);
+	return ControlResult::success(result);
 }
 
 } // namespace
@@ -204,9 +294,11 @@ void registerAutomationCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("automation.mode_set");
 		cmd.group = QStringLiteral("automation");
 		cmd.verb = QStringLiteral("mode_set");
-		cmd.description = QStringLiteral("Set a parameter's automation mode. Refused: this build "
-			"has automation modes in the engine but no way to select or persist one "
-			"(docs/KNOWN-LIMITATIONS.md), so no write is faked.");
+		cmd.description = QStringLiteral("Set a parameter's automation mode: off/read (follow the "
+			"curve, never write), touch (write while the control is held, then return to reading), "
+			"latch (write from the first touch until the transport run ends), or write (overwrite "
+			"the pass while the transport runs). The mode is runtime state: not persisted and not "
+			"journalled, so it has no undo.");
 		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
@@ -214,9 +306,39 @@ void registerAutomationCommands(ControlRegistry& registry)
 				{QStringLiteral("enum"), QJsonArray{QStringLiteral("off"), QStringLiteral("read"),
 					QStringLiteral("touch"), QStringLiteral("latch"), QStringLiteral("write")}}}},
 		}, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("mode")});
-		cmd.resultSchema = control::objectSchema({});
+		cmd.resultSchema = control::objectSchema({
+			{QStringLiteral("track"), control::stringProperty()},
+			{QStringLiteral("parameter"), control::stringProperty()},
+			{QStringLiteral("mode"), control::stringProperty()},
+		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return automationModeSet(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("automation.record_mode_set");
+		cmd.group = QStringLiteral("automation");
+		cmd.verb = QStringLiteral("record_mode_set");
+		cmd.description = QStringLiteral("Set a parameter's automation clip record flag: 'on' to "
+			"write the control's manual value into the clip at every tick the transport runs, "
+			"'off' to stop. The clip is a JournallingObject, so the inverse is a live checkpoint.");
+		cmd.argsSchema = control::objectSchema({
+			{QStringLiteral("track"), control::stringProperty()},
+			{QStringLiteral("parameter"), control::stringProperty()},
+			{QStringLiteral("mode"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+				{QStringLiteral("enum"), QJsonArray{QStringLiteral("on"), QStringLiteral("off")}}}},
+		}, {QStringLiteral("track"), QStringLiteral("parameter"), QStringLiteral("mode")});
+		cmd.resultSchema = control::objectSchema({
+			{QStringLiteral("track"), control::stringProperty()},
+			{QStringLiteral("parameter"), control::stringProperty()},
+			{QStringLiteral("mode"), control::stringProperty()},
+			{QStringLiteral("mode_before"), control::stringProperty()},
+			{QStringLiteral("changed"), control::booleanProperty()},
+		});
+		cmd.mutating = true;
+		cmd.handler = [](const QJsonObject& args) { return automationRecordModeSet(args); };
 		registry.registerCommand(cmd);
 	}
 }

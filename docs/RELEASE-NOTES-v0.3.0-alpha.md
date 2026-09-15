@@ -965,7 +965,7 @@ class, and `reversibilityRowTable()` joins them exactly as it joins the folder-t
 The ten rows the scan-cache + crash-reporter lane added are the `plugin.*` scan group (feature row 46) and the
 `crash.*` group (row 54): `plugin.scan_cache_get_state`, `plugin.scan_cache_list`, `plugin.scan_cache_lookup`,
 `crash.list_reports` and `crash.upload_report` are `not_mutating` (`crash.upload_report` is the
-`automation.mode_set` shape - declared mutating, refused by name, so no write and no transaction);
+`crash.upload_report` shape - declared mutating, refused by name, so no write and no transaction);
 `plugin.scan_cache_quarantine_add` and `plugin.scan_cache_quarantine_remove` are `snapshot` rows whose inverse
 **is** a command (the scan cache is a JSON file outside the project and is not a `JournallingObject`, so the
 recorded inverse is the paired verb with `applies: command`, exactly as `browser.tag.add` /
@@ -1033,6 +1033,21 @@ joins the routing surface's: the passive block and the live block are both at th
   gain or an instrument's parameters in this release; and while a modulator is active the parameter's
   own control is taken over — the value you see is the base, and the modulator's offset is on top of
   it until the modulator is deactivated, removed or `control.undo` takes the edit back.
+
+## Automation modes: Read / Touch / Latch / Write, made drivable (`automation.mode_set`, `automation.record_mode_set`) — added 2026-09-15
+
+The engine's mode state machine (`AutomatableModel::AutomationMode`, `include/AutomatableModel.h:342-405`,
+`src/core/AutomatableModel.cpp:762-946`) is now selectable through the control surface:
+`automation.mode_set` sets a parameter's mode (off/read/touch/latch/write) and
+`automation.record_mode_set` toggles its clip's record flag. The default is Read, which is what every
+existing project already behaves as. The no-destruction property is pinned by `AutomationModesTest`
+(`tests/src/core/AutomationModesTest.cpp`, registered at `tests/CMakeLists.txt:56`): riding a control
+in Read leaves the recorded automation bit-identical, paired with a Touch run that must observe a
+change so the assertion cannot pass by being blind. The mode is runtime state: not persisted in the
+project file and not journalled, so a reload resets every control to Read with no trim and a mode
+change has no undo. Only the mixer fader is wired to a touch gesture; pan, sends and
+plugin-parameter knobs would each need widget hooks. Write mode does not erase the un-passed
+remainder of the clip.
 
 ## Session sync: two instances on one tempo and one beat (`link.*`) — added 2026-09-13
 
