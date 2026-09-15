@@ -99,12 +99,6 @@ const control::ReversibilityEntry* contractRow(const QString& id)
 	return control::ReversibilityTable::instance().lookup(id);
 }
 
-bool isTrueInverse(const QString& id)
-{
-	const control::ReversibilityEntry* row = contractRow(id);
-	return row != nullptr && row->cls == control::ReversibilityClass::TrueInverse;
-}
-
 struct Fixture
 {
 	QString track;
