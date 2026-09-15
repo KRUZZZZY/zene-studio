@@ -488,6 +488,14 @@ that is this page's fault — report it and it gets added.
   `tempo_map_set_active`), but **nothing in `src/gui/` draws, edits or reads a tempo map**: drivable through
   the socket, not from the interface. With an empty or inactive map the tempo is the single project value it
   has always been, so a project that never used one renders byte-for-byte what it did.
+- **Standard MIDI File tempo-map interchange has no interface — added 2026-09-15.** The tempo map can be
+  written as a conductor track in a Standard MIDI File another DAW reads, and a file's tempo and
+  time-signature events can be read back and imported, through `--control-socket`
+  (`interchange.smf_convention` / `smf_export` / `smf_read` / `smf_import`) — but **nothing in `src/gui/` writes
+  or reads one**: drivable through the socket, not from the interface, and the File menu's "Export MIDI" is
+  the pre-existing note export, neither changed by nor wired to these ids. `docs/SMF-INTERCHANGE.md` records
+  the tick/PPQ and time-signature convention and the stated limits — events are steps, so no tempo curve is
+  written, and only the conductor track is (no notes, clips or automation).
 - **Session sync has no interface, and it is not Ableton Link — added 2026-09-13.** Two Zene instances on
   one machine (or one network segment, over UDP multicast on `224.76.78.75:20808`) can join one session and
   agree on a tempo and a shared beat phase — drivable through `--control-socket`

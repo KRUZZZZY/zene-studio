@@ -241,6 +241,16 @@ set(LMMS_TESTS
 	src/core/ScriptMemoryBudgetTest.cpp
 	src/core/ScriptStabilisationTest.cpp
 	src/core/SlideNotesTest.cpp
+	# The Standard MIDI File conductor track (feature row 33: tempo-map export /
+	# SMF cross-DAW interchange): the four interchange.* ids, their schemas and
+	# their typed refusals, and the round trip that reads the FILE back and
+	# compares the MAP - a tempo-and-metre map exported, the session's map
+	# cleared, the file imported, and the map read off the wire again - with the
+	# file's own bytes checked against the format independently of the reader.
+	# The two halves are separate executables so each file stays inside the
+	# new-file cap; the fixtures both use are in SmfInterchangeTestSupport.h.
+	src/core/SmfInterchangeTest.cpp
+	src/core/SmfInterchangeRoundTripTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
@@ -2050,6 +2060,13 @@ set_tests_properties(ControlChainPresetTest PROPERTIES
 # above. TempoMapTest additionally drives Song::processNextBuffer() itself, so it
 # needs the same headless platform.
 set_tests_properties(ControlTempoMapCommandsTest TempoMapPersistenceTest TempoMapTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The Standard MIDI File conductor interchange constructs a full Engine, drives
+# the tempo map through the registry and writes and reads real files in a
+# temporary directory, so it wants a real Qt platform plugin even though nothing
+# opens a window - the same reason as the tempo-map group above. Both halves of
+# the proof need it.
+set_tests_properties(SmfInterchangeTest SmfInterchangeRoundTripTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a

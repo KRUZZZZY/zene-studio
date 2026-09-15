@@ -220,6 +220,13 @@ void registerControlCommands(ControlRegistry& registry)
 	// group's four ids are two translation units (the read/repair half is
 	// registered by the same call chain, at its declaration).
 	registerClipLinkCommands(registry);
+	// Standard MIDI File conductor interchange (feature row 33 of
+	// docs/FEATURE-LIST-0.3.0.md): the tempo map written as, and read back
+	// from, a format-1 conductor track another DAW can read. No compile-time
+	// switch - the encoder and the reader are plain value code over Song's
+	// tempo map and a file, both of which exist in every configuration, so
+	// its ids are honest in every one.
+	registerInterchangeCommands(registry);
 }
 
 } // namespace lmms
