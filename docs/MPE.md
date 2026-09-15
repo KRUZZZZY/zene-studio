@@ -398,9 +398,22 @@ registered ctest with a purpose-built subject.
   fixture's mapping is its own; what is proven is delivery — the two axes, with their values, on the
   note's own channel, into the instrument's MIDI entry point, and a block that measurably differs
   because of them.
-- **Status on the 030/mpe-playback branch:** the ctest is registered and the fixture builds into its
-  own directory; this lane's provider window ended before a build was taken, so the suite's own
-  transcript for it is the fix-up pass's to produce. (The commits are named in §7.)
+- **Status on the 030/mpe-playback branch (measured 2026-09-15, provider window ended before a
+  build):** `cmake -S . -B build -DUSE_WERROR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON -DWANT_QT6=ON
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` → **configure EXIT=0** (the module target, the test target and
+  the `LMMS_MPE_CONSUMER_DIR`/`LMMS_PLUGIN_DIR` wiring are valid CMake against this tree). The four
+  translation units this change adds or touches were then compiled with each one's own command out of
+  `build/compile_commands.json` and `-fsyntax-only` — and with `-Werror`, which the tree's CI opts set:
+  `src/core/NotePlayHandle.cpp` **EXIT=0**, `src/tracks/InstrumentTrack.cpp` **EXIT=0**,
+  `tests/src/plugins/MpeTestConsumer.cpp` **EXIT=0**, `tests/src/core/MpePlaybackTest.cpp`
+  **EXIT=0** (that one with the AUTOMOC `#include` stripped from a copy, since the `.moc` is generated
+  by the real build). Two real errors were found and fixed this way: the fixture's `lmms_plugin_main`
+  was outside `namespace lmms`, and the fixture had not implemented the three pure virtuals it
+  inherits (`nodeName`/`saveSettings`/`loadSettings`). **No link and no ctest run was taken** — the
+  test binary needs all of `lmmsobjs`, and the lane's window did not allow a full build — so the
+  suite's transcript for `MpePlaybackTest`, and the `MPE_EVIDENCE` numbers it prints, are the
+  fix-up pass's to produce and record. (The commits are named in §7.)
 
 
 ---

@@ -176,6 +176,15 @@ public:
 		}
 	}
 
+	//! Instrument (a SerializingObject) requires the three serialization
+	//! entry points. A test subject has no state of its own to persist: the
+	//! expression it consumes belongs to the NOTE and is saved with it
+	//! (Note::saveSettings writes mpepitch/mpepressure/mpetimbre), so these
+	//! are deliberately no-ops rather than a second store.
+	QString nodeName() const override { return QStringLiteral( "mpetestconsumer" ); }
+	void saveSettings( QDomDocument&, QDomElement& ) override {}
+	void loadSettings( const QDomElement& ) override {}
+
 protected:
 	void playNoteImpl( NotePlayHandle* nph, std::span<SampleFrame> out ) override
 	{
@@ -211,8 +220,6 @@ private:
 
 } // namespace
 
-} // namespace lmms
-
 extern "C"
 {
 
@@ -221,4 +228,6 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main( Model* parent, void* )
 	return new MpeTestConsumer( static_cast<InstrumentTrack*>( parent ) );
 }
 
-}
+} // extern "C"
+
+} // namespace lmms
