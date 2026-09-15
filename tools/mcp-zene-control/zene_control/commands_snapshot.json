@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-15T10:57:06Z",
+  "captured_at": "2026-09-15T11:53:59Z",
   "commands": [
     {
       "args_schema": {
@@ -1382,6 +1382,166 @@
           },
           "source": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "clips": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "clips"
+        ],
+        "type": "object"
+      },
+      "description": "Link clips to a clip so they share its content: an edit to the note list of any member is seen by every member (linked / smart clips). 'clip' is the content source and the group's anchor - if it is already linked, the named clips join ITS group; otherwise a new group is created and 'clip' joins it. The new members ADOPT 'clip'\"s notes (the group starts in sync), while their own position, length, source offset, fades, gain and take lane stay their own: a link shares content, not placement. Reversible through the ProjectJournal (one Clip checkpoint per member written, merged into one undo step). See docs/LINKED-CLIPS.md.",
+      "group": "clip",
+      "id": "clip.link_create",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "group": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "notes": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read the link groups: every group with its members, the content channel it shares ('notes'), the note count, which member is the reference (the group's first member in arrangement order) and - per member - whether its content still matches the reference (`in_sync`) or has drifted (`divergent`). With 'clip', the report is that clip's group only; without it, every group in the song. Read-only.",
+      "group": "clip",
+      "id": "clip.link_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "groups": {
+            "type": "array"
+          },
+          "linked": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Unlink a clip: it leaves its link group and keeps the content it has, but stops following - and stops being followed by - the other members. This is the operation that detaches (there is no detach-on-edit: an edit to a member propagates). When the group is left with a single member that member's link is dissolved too, so no group of one outlives its last pair; a clip that is not linked is refused, typed. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.link_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dissolved": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "integer"
+          },
+          "remaining": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Force the group to agree: every other member of 'clip'\"s link group is given this clip's content, and the members that had to be rewritten are named in `written`. An edit through the note.* verbs already propagates on its own - this is the REPAIR verb for the edit kinds that do not (a piano-roll gesture the engine's note entry points do not see, a hand-edited project file), and it is what makes a disagreement fixable instead of permanent. Reversible through the ProjectJournal (one Clip checkpoint per member written).",
+      "group": "clip",
+      "id": "clip.link_sync",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "divergent_before": {
+            "type": "array"
+          },
+          "group": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "written_count": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -2872,6 +3032,109 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Whether MIDI Polyphonic Expression input is on, and what that means in this engine: the flag itself, which axes reach PLAYBACK (pitch yes - the engine applies it as a frequency ratio; pressure and timbre are stored per note and consumed by nothing yet), how a note stores its capture (the optional mpepitch / mpepressure / mpetimbre attributes), the channel count and master channel the model assumes, the default bend range and the MPE+ cap on notes per channel. Read-only. 'per_stream_settings_reachable' is false and the result says why: the master channel and bend range live on a MIDI input stream's own MpeExpression, which no object the control surface holds owns.",
+      "group": "device",
+      "id": "device.mpe_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "applies_to": {
+            "type": "string"
+          },
+          "axes": {
+            "type": "object"
+          },
+          "channels": {
+            "type": "integer"
+          },
+          "default_bend_range_semitones": {
+            "type": "integer"
+          },
+          "default_master_channel": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_active_notes_per_channel": {
+            "type": "integer"
+          },
+          "max_pitch_cents": {
+            "type": "integer"
+          },
+          "per_stream_settings": {
+            "type": "string"
+          },
+          "per_stream_settings_reachable": {
+            "type": "boolean"
+          },
+          "storage": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Turn MIDI Polyphonic Expression INPUT on or off. While it is on, a bend / channel pressure / CC74 arriving on a note's own MPE member channel is that note's expression and is consumed instead of bending the whole instrument; while it is off the input path is exactly what it was before MPE existed (the engine's own flag is deliberately NOT serialized, so a project never changes meaning because of it). What reaches playback is the pitch axis only - pressure and timbre are stored on the note and consumed by nothing yet (feature-list row 12). Switching it off does NOT clear what is already stored on the notes: note.expression_get still reads it, and note.expression_clear is the verb that removes it. Reversible: a recorded action step restores the previous flag, so control.undo and Ctrl+Z are one history.",
+      "group": "device",
+      "id": "device.mpe_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "axes": {
+            "type": "object"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "note_expressions_unchanged": {
+            "type": "boolean"
+          },
+          "per_stream_settings": {
+            "type": "string"
+          },
+          "per_stream_settings_reachable": {
+            "type": "boolean"
+          },
+          "previous_enabled": {
+            "type": "boolean"
+          },
+          "storage": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "target": {
             "type": "string"
@@ -2928,6 +3191,220 @@
           },
           "src_quality_choices": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bit_depth": {
+            "enum": [
+              "16",
+              "24",
+              "32"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "sample_rate": {
+            "maximum": 192000,
+            "minimum": 44100,
+            "type": "integer"
+          },
+          "stereo_mode": {
+            "enum": [
+              "mono",
+              "stereo",
+              "jointstereo"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "sample_rate",
+          "bit_depth",
+          "stereo_mode"
+        ],
+        "type": "object"
+      },
+      "description": "Save a named render/export preset: the sample rate, the bit depth and the stereo mode a render is launched with. Writes ONE document in the store (renderpresets/<name>.zrp), outside the project, so the preset can be applied to another project and project.save/project.open cannot lose it. sample_rate must be inside the window the render path accepts (44100 to 192000 Hz - the shipped CLI's own check), bit_depth is one of 16, 24 or 32 and stereo_mode one of mono, stereo or jointstereo; a value nothing could honour is refused here rather than discovered by a failed render. An existing preset of that name is refused unless \"overwrite\":true. Reversible through a recorded action checkpoint that removes the document - or writes back the revision it replaced.",
+      "group": "export",
+      "id": "export.preset_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bit_depth": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "stereo_mode": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Put the render path on a saved preset: the next render (render.render) is started with that preset's sample rate, bit depth and stereo mode. Passing no \"name\" - or an empty one - returns the render path to its OWN defaults (44100 Hz, 16-bit, joint stereo), which is what a render with no apply uses. The selection is process-wide and NOT project state: it is not saved with the project and project.open does not change it, exactly like export.set_dither beside it. Reversible: one control.undo restores the selection this call replaced. A render already performed is not undone by that: its file stays where it was written, so the fallback for a render made under the wrong preset is to apply the right one and render again.",
+      "group": "export",
+      "id": "export.preset_apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "applied_preset": {
+            "type": "string"
+          },
+          "bit_depth": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "object"
+          },
+          "previous_preset": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "stereo_mode": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every saved render/export preset in the store and the settings the NEXT render will be started with. A preset is a name plus the three OutputSettings fields a render can be told - sample_rate, bit_depth, stereo_mode - and passing \"name\" returns one of them in full. The store lives OUTSIDE the project (the user preset tree's renderpresets/, one JSON document per preset), so the presets are the same ones whichever project is open, which is what makes them presets. Reports \"active\" (the applied preset, null when none is) and the settings in force. Writes nothing.",
+      "group": "export",
+      "id": "export.preset_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "applied_preset": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "presets": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Delete one render/export preset from the store. The document's bytes are captured before the removal, so one control.undo writes the preset back byte for byte. Removing a preset that is currently APPLIED leaves the render path on the settings it already has - the applied selection is a copy, and what goes is the store entry, not the render settings (use export.preset_apply with no name to go back to the defaults). A name the store does not hold is a typed not_found and changes nothing.",
+      "group": "export",
+      "id": "export.preset_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
           }
         },
         "required": [],
@@ -5882,6 +6359,156 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The project's MIDI seed: the number every seeded roll of this project draws from, persisted in the project header as the \"midiseed\" attribute and written only when it is not 0. Read-only. A seed of 0 is the default of every project saved before MIDI depth existed and of every project that never touched it, so 0 means \"this project rolls from the default\", not \"unset\".",
+      "group": "note",
+      "id": "note.random_seed_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "default_is_zero": {
+            "type": "boolean"
+          },
+          "seed": {
+            "type": "number"
+          },
+          "stored_in": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seed"
+        ],
+        "type": "object"
+      },
+      "description": "Set the project's MIDI seed: the PERSISTED half of the seed pair. Every later note.randomize that names no seed rolls from this value, and the save path writes it into the project header, so a take you liked is reproducible after a save and a re-open. The seed travels as a whole number in 0..2147483647 (the engine's is a 32-bit unsigned; a larger one cannot be spelled in this schema subset and is refused rather than truncated). Reversible: a recorded action step on the engine's own undo stack restores the previous seed, so Ctrl+Z and control.undo are one history.",
+      "group": "note",
+      "id": "note.random_seed_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "persisted": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "number"
+          },
+          "seed": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "position_jitter": {
+            "type": "number"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "velocity_jitter": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip",
+          "velocity_jitter"
+        ],
+        "type": "object"
+      },
+      "description": "Roll a clip's notes with the engine's SEEDED randomisation: 'velocity_jitter' (0..1) multiplies each note's velocity by a factor in [1-j, 1+j] and 'position_jitter' (ticks, optional) moves each note by up to that many ticks, never before tick 0. Both draws are pure functions of the seed and the note's own identity (key, position, length at entry), so the SAME seed on the same starting notes reproduces the same take and a DIFFERENT seed produces a different one. The seed defaults to the project's persisted one; naming a 'seed' argument rolls from it without writing it to the project (note.random_seed_set is the verb that persists one). 'scope' is 'clip' (default) or 'selection'. The roll is multiplicative and drawn at entry, so a second call rolls on top of the first - the inverse is the clip's checkpoint, not another call. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.randomize",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "notes_moved": {
+            "type": "integer"
+          },
+          "notes_rolled": {
+            "type": "integer"
+          },
+          "position_jitter": {
+            "type": "number"
+          },
+          "positions_moved": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "number"
+          },
+          "seed_source": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "velocities_moved": {
+            "type": "integer"
+          },
+          "velocity_jitter": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "clip": {
             "type": "string"
@@ -6003,6 +6630,317 @@
           },
           "selected_notes": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Clear every slide flag in a clip (or in the current selection) as ONE edit and ONE undo step, and report how many were cleared and how many slide notes remain OUTSIDE the scope. Clearing is not deleting: the notes stay exactly where they are and become regular notes. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.slide_clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "slides_before": {
+            "type": "integer"
+          },
+          "slides_cleared": {
+            "type": "integer"
+          },
+          "slides_remaining": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "slide": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip",
+          "note",
+          "slide"
+        ],
+        "type": "object"
+      },
+      "description": "Mark one note as a SLIDE note (FL-style portamento: its pitch glides from the previous note's key to its own over its length) or clear the flag. The flag is serialized per note as the optional \"slide\" attribute, so it survives save/load and a project that has none stays byte-identical to how it serialized before slide notes existed. What the flag does at play time is the engine's (NotePlayHandle::hasSlideGlide / slidePitchOffset); this verb only edits the note. Reversible through the ProjectJournal (MidiClip checkpoint), INCLUDING a first edit back to a regular note.",
+      "group": "note",
+      "id": "note.slide_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "midi_velocity": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pan": {
+            "type": "number"
+          },
+          "position": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "slide": {
+            "type": "boolean"
+          },
+          "velocity": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          },
+          "semitones": {
+            "maximum": 127,
+            "minimum": -127,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "semitones"
+        ],
+        "type": "object"
+      },
+      "description": "Move every note of a clip (or of the current selection) by 'semitones'. A note whose target is outside the engine's 0..127 MIDI range is clamped there and is not counted as changed, which is NoteTransform::transpose's own documented rule; a 'semitones' value beyond +/-127 is refused rather than clamped to a no-op. 'scope' is 'clip' (default) or 'selection' - and a 'selection' scope with nothing selected is refused, because \"I edited nothing\" and \"there was nothing to edit\" are different answers. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.transpose",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "notes_changed": {
+            "type": "integer"
+          },
+          "notes_considered": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "semitones": {
+            "maximum": 127,
+            "minimum": -127,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "delta": {
+            "maximum": 200,
+            "minimum": -200,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "delta"
+        ],
+        "type": "object"
+      },
+      "description": "Add 'delta' to every note's velocity in scope, clamped to the engine's own 0..200 volume range (a note already at a bound does not move and is not counted as changed). The note the delta is added to is the CURRENT velocity, so applying it twice adds twice - there is no stored pre-edit velocity, and the inverse is the clip's checkpoint. 'scope' is 'clip' (default) or 'selection'. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.velocity_offset",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "delta": {
+            "maximum": 200,
+            "minimum": -200,
+            "type": "integer"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "notes_changed": {
+            "type": "integer"
+          },
+          "notes_considered": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "factor": {
+            "type": "number"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "factor"
+        ],
+        "type": "object"
+      },
+      "description": "Multiply every note's velocity in scope by 'factor' (0..8), rounded and clamped to the engine's own 0..200 volume range. A factor above 1 is a crescendo, below 1 a diminuendo, and 0 silences the notes without deleting them; a note already at a bound is not counted as changed. It is multiplicative on the CURRENT velocity, so applying it twice multiplies twice. 'scope' is 'clip' (default) or 'selection'. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.velocity_scale",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "factor": {
+            "type": "number"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "notes_changed": {
+            "type": "integer"
+          },
+          "notes_considered": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
           }
         },
         "required": [],
@@ -7854,6 +8792,365 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "file": {
+            "type": "string"
+          },
+          "input_channel": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "route": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "route"
+        ],
+        "type": "object"
+      },
+      "description": "Arm one record route: start writing the interleaved input channel it selects into a 24-bit WAV, and journal the take beside it (the take journal is what makes a crashed capture recoverable - record.journal_begin's side file, written here by the recorder's own arm()). 'route' is the route index record.get_state reports; 'input_channel' defaults to the route's own index and must be inside [0, input_channel_capacity) - the FRAMES the route records come from the engine's input path, so with no capture device open and no frames staged the take is silent however the route is armed (record.input_get_state says which of those is true). 'file' must be absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file. Reversible: the recorded inverse is record.disarm_track, which stops the capture and retires the journal; the take file itself is left on disk, like any recording you keep.",
+      "group": "record",
+      "id": "record.arm_track",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_pushed": {
+            "type": "integer"
+          },
+          "frames_recorded": {
+            "type": "integer"
+          },
+          "input_channel": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "overflow_frames": {
+            "type": "integer"
+          },
+          "route": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "write_errors": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop every armed record route in one call and report the whole recorder afterwards. Each route's take is flushed and closed and its journal retired, exactly as record.disarm_track does for one. Not reversible: every route's take is a file that stays on disk, and re-arming starts a new one.",
+      "group": "record",
+      "id": "record.disarm_all",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed_before": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "route_count": {
+            "type": "integer"
+          },
+          "routes": {
+            "type": "array"
+          },
+          "total_overflow_frames": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "route": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop one record route: the disk-writer is drained and joined, the WAV is closed, and the take journal is RETIRED - a clean stop leaves no journal, which is what makes 'there is a journal' and 'the capture died' the same fact (include/RecordingJournal.h). The take file stays on disk. This is record.arm_track's recorded inverse, so control.undo after an arm dispatches it. Not reversible itself: re-arming writes a NEW take rather than restoring this one, and there is nothing the engine could hand back.",
+      "group": "record",
+      "id": "record.disarm_track",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_pushed": {
+            "type": "integer"
+          },
+          "frames_recorded": {
+            "type": "integer"
+          },
+          "input_channel": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "overflow_frames": {
+            "type": "integer"
+          },
+          "route": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "write_errors": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every record route the engine prepared, and the input path that feeds them. A route is one capture stream: an arm flag, the interleaved input channel it reads, the take file it writes, the take JOURNAL beside it, and the frame counters (pushed / recorded / journalled / overflow / write errors). The engine prepares 16 routes, and each may select ANY of the configured input channels - that pair of numbers (route_count and input_channel_capacity) is the 'arbitrary input count / multiple simultaneous inputs' feature row 64 asks for. `input` is record.input_get_state's own report, including `input_frames_staged` and `wide_frames`: both are 0 under a backend with no capture path, which is what 'a record route takes no inputs' measured. Read-only.",
+      "group": "record",
+      "id": "record.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "type": "object"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "route_count": {
+            "type": "integer"
+          },
+          "routes": {
+            "type": "array"
+          },
+          "total_overflow_frames": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The engine's capture-IN path, asked directly: what the configuration asks for (device, channel COUNT, which pair of captured channels rides the stereo bus), what this backend actually did with it (capture_capable, capture_open, capture_reason, the channels and rate the device granted), and what the two input stages hold now (bus_frames on the stereo bus, wide_frames/wide_channels on the N-channel stage, plus the staged and dropped counters). 'capture_capable: false' means this instance's backend has no capture path at all; 'capture_capable: true, capture_open: false' means it has one and the device refused - capture_reason carries the device's own message. Read-only, and the honest place to look before blaming a silent take.",
+      "group": "record",
+      "id": "record.input_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_frames": {
+            "type": "integer"
+          },
+          "capture_capable": {
+            "type": "boolean"
+          },
+          "capture_channels": {
+            "type": "integer"
+          },
+          "capture_device": {
+            "type": "string"
+          },
+          "capture_format": {
+            "type": "string"
+          },
+          "capture_frames": {
+            "type": "integer"
+          },
+          "capture_left": {
+            "type": "integer"
+          },
+          "capture_open": {
+            "type": "boolean"
+          },
+          "capture_overruns": {
+            "type": "integer"
+          },
+          "capture_rate": {
+            "type": "integer"
+          },
+          "capture_reason": {
+            "type": "string"
+          },
+          "capture_right": {
+            "type": "integer"
+          },
+          "configured": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "input_frames_dropped": {
+            "type": "integer"
+          },
+          "input_frames_staged": {
+            "type": "integer"
+          },
+          "max_channels": {
+            "type": "integer"
+          },
+          "recordable_channels": {
+            "type": "integer"
+          },
+          "route_capacity": {
+            "type": "integer"
+          },
+          "wide_channels": {
+            "type": "integer"
+          },
+          "wide_frames": {
+            "type": "integer"
+          },
+          "wide_frames_dropped": {
+            "type": "integer"
+          },
+          "wide_frames_staged": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "left": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "right": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Set the capture input path: 'device' (empty = the playback device), 'channels' (1..32 - the ARBITRARY input count of feature row 64), and 'left'/'right' (which two captured channels the stereo engine bus carries, so an interface's third and fourth input can be what the rest of the engine hears). Fields not given keep their current value. The four keys are written to the config file under `audioinput`, exactly as the settings dialog writes its own, and 'restart_required' is true: the backend opens the device at start and the recorder's routes are built when the engine is, so the next start is when this takes effect - there is no live device swap to pretend about. Reversible: the recorded inverse is this command with the previous plan, and control.undo dispatches it (the settings.set precedent, which records a command inverse for the same kind of config write).",
+      "group": "record",
+      "id": "record.input_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "left": {
+            "type": "integer"
+          },
+          "previous": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "restart_required": {
+            "type": "boolean"
+          },
+          "right": {
+            "type": "integer"
+          },
+          "route_capacity": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channels": {
             "type": "integer"
           },
@@ -8234,6 +9531,166 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "armed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Arm or disarm retrospective AUDIO capture: while armed, the engine keeps the most recent frames of its INPUT BUS in one bounded ring, so the take you did not press record for can still be written with record.retro_capture_to_take. With no 'armed' argument the mode is ARMED; 'armed': false is its disarm. Nothing is recorded while disarmed, and the cost then is one relaxed atomic load per rendered period. The ring is allocated once, when the engine is built ('capacity_frames' in the reply is that allocation, 1048576 frames); a frame that falls out of it is counted in 'overwritten_frames' and cannot be recovered. Mode/engine state, not project state, so no transaction is recorded and control.undo has nothing to reverse (the midi.retro_capture_arm precedent, verb for verb).",
+      "group": "record",
+      "id": "record.retro_capture_arm",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "armed_before": {
+            "type": "boolean"
+          },
+          "capacity_frames": {
+            "type": "integer"
+          },
+          "capacity_seconds": {
+            "type": "number"
+          },
+          "overwritten_frames": {
+            "type": "integer"
+          },
+          "paused_drop_frames": {
+            "type": "integer"
+          },
+          "refused_snapshots": {
+            "type": "integer"
+          },
+          "retained_frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "window_seconds": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "What retrospective AUDIO capture is holding: whether it is armed, the ring's capacity in frames and in SECONDS, how many frames are retained right now and how many seconds that is, how many frames have already been overwritten by later audio (the window's bound, as a measurement), frames dropped because a snapshot was in flight, and the count of copies that could not obtain a consistent window. Read-only.",
+      "group": "record",
+      "id": "record.retro_capture_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "armed_before": {
+            "type": "boolean"
+          },
+          "capacity_frames": {
+            "type": "integer"
+          },
+          "capacity_seconds": {
+            "type": "number"
+          },
+          "overwritten_frames": {
+            "type": "integer"
+          },
+          "paused_drop_frames": {
+            "type": "integer"
+          },
+          "refused_snapshots": {
+            "type": "integer"
+          },
+          "retained_frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "window_seconds": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Write the retained window to a 24-bit STEREO WAV - the take that was already played when this command ran. The window is copied under the ring's publication handshake, so the copy is never torn even with the engine running, and the file is written off the audio thread. Refused, typed, when the window holds no frames: a take with no audio in it is not a take. 'file' must be absolute and defaults to zene-retro-take.wav beside this instance's recovery file. NOT reversible and NOT inserted into the session: the file it writes is yours to keep, and turning it into a clip is the project's own load path, not this command's (docs/KNOWN-LIMITATIONS.md).",
+      "group": "record",
+      "id": "record.retro_capture_to_take",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "capacity_frames": {
+            "type": "integer"
+          },
+          "channels": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_written": {
+            "type": "integer"
+          },
+          "overwritten_frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "seconds_written": {
+            "type": "number"
+          },
+          "window_quiesced": {
+            "type": "boolean"
+          },
+          "window_refused_frames": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "end_ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
           "format": {
             "enum": [
               "wav",
@@ -8245,6 +9702,11 @@
           },
           "out": {
             "type": "string"
+          },
+          "start_ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -8252,7 +9714,7 @@
         ],
         "type": "object"
       },
-      "description": "Render the current session to a file and return its hash (headless).",
+      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.render",
       "mutating": false,
@@ -8260,13 +9722,28 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "applied_preset": {
+            "type": "string"
+          },
+          "bit_depth": {
+            "type": "string"
+          },
           "frames": {
             "type": "integer"
           },
           "path": {
             "type": "string"
           },
+          "range": {
+            "type": "object"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
           "sha256": {
+            "type": "string"
+          },
+          "stereo_mode": {
             "type": "string"
           }
         },
@@ -8416,6 +9893,341 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "What this group is resolving against: the context's root, scale name, degrees, pitch classes and mask. Naming 'root' and/or 'scale' answers for those instead and says so ('resolved_from_arguments'), without changing the context. A 'clip' argument adds the analysis an arranging caller wants - how many of its notes are in the scale and how many are out, counted with the engine's own predicate (NoteTransform::matches) - so \"this part is in key\" is a measurement. A context with no scale set yet reports an empty 'scale', an empty mask and scale_set:false. Read-only.",
+      "group": "scale",
+      "id": "scale.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "degrees": {
+            "type": "array"
+          },
+          "mask": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "notes_in_scale": {
+            "type": "integer"
+          },
+          "notes_out_of_scale": {
+            "type": "integer"
+          },
+          "pitch_classes": {
+            "type": "array"
+          },
+          "resolved_from_arguments": {
+            "type": "boolean"
+          },
+          "resolved_root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "resolved_root_name": {
+            "type": "string"
+          },
+          "resolved_scale": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_set": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_chords": {
+            "type": "boolean"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every scale this engine knows and the twelve keys, with each scale's degrees (semitone offsets from the root), its pitch classes, its twelve-character membership mask (index 0 = C, so \"101010110101\" is the major scale) and its size. The vocabulary is ChordTable's own - 95 named entries, of which the scales are the ones with more than six degrees; 'include_chords' adds the chord entries too. 'root' (a key index 0..11 or a name such as \"C#\"/\"Db\") shifts every pitch class and every mask; absent, the group's own context root answers. Read-only.",
+      "group": "scale",
+      "id": "scale.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "degrees": {
+            "type": "array"
+          },
+          "include_chords": {
+            "type": "boolean"
+          },
+          "mask": {
+            "type": "string"
+          },
+          "pitch_classes": {
+            "type": "array"
+          },
+          "resolved_root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "resolved_root_name": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "roots": {
+            "type": "array"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_set": {
+            "type": "boolean"
+          },
+          "scales": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          }
+        },
+        "required": [
+          "root"
+        ],
+        "type": "object"
+      },
+      "description": "Set the CONTEXT's root - the key every later scale.snap_notes and every scale.get_state resolves against when it names no root. Accepts a key index 0..11 or a name (\"C\", \"c\", \"C#\", \"Db\", \"D\u266d\", or the piano roll's \"C# / Db\" spelling; an octave suffix is ignored, because a root here is a pitch class). An unknown name is refused rather than defaulted to C. Reversible: a recorded action step restores the previous root. The context is this group's own process state and is deliberately not serialized - it is NOT the piano roll's key selector (docs/KNOWN-LIMITATIONS.md).",
+      "group": "scale",
+      "id": "scale.root_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "degrees": {
+            "type": "array"
+          },
+          "mask": {
+            "type": "string"
+          },
+          "pitch_classes": {
+            "type": "array"
+          },
+          "previous_root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_set": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "scale": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scale"
+        ],
+        "type": "object"
+      },
+      "description": "Set the CONTEXT's scale by NAME - a scale this engine knows, from scale.list (e.g. \"Major\", \"Minor\", \"Major pentatonic\"). An empty string CLEARS the context's scale, after which scale.snap_notes refuses instead of guessing. A name ChordTable does not carry is refused typed (NotFound), not resolved to an empty scale. Reversible: a recorded action step restores the previous scale. The context is this group's own process state and is deliberately not serialized - it is NOT the piano roll's scale selector (docs/KNOWN-LIMITATIONS.md).",
+      "group": "scale",
+      "id": "scale.set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "degrees": {
+            "type": "array"
+          },
+          "mask": {
+            "type": "string"
+          },
+          "pitch_classes": {
+            "type": "array"
+          },
+          "previous_scale": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_set": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Move every note of a clip (or of the current selection) whose pitch class is OUTSIDE the scale to the nearest in-scale pitch, clamped to the MIDI range, with a tie resolving downward; notes already in the scale are left alone (NoteTransform::snapToScale, the engine's own rule). The scale is the CONTEXT's unless this call names 'root' and/or 'scale', and a call with no scale anywhere is REFUSED rather than snapped to a guessed key. The report says how many notes moved and how many are still out of scale afterwards, so \"it is in key now\" is a measurement. Reversible through the ProjectJournal (MidiClip checkpoint) - and NOT by re-running the snap, which is why the checkpoint is the inverse. 'scope' is 'clip' (default) or 'selection'.",
+      "group": "scale",
+      "id": "scale.snap_notes",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "mask": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "notes_considered": {
+            "type": "integer"
+          },
+          "notes_in_scale_after": {
+            "type": "integer"
+          },
+          "notes_moved": {
+            "type": "integer"
+          },
+          "notes_out_of_scale_after": {
+            "type": "integer"
+          },
+          "pitch_classes": {
+            "type": "array"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -8487,11 +10299,64 @@
           "log_lines": {
             "type": "integer"
           },
+          "memory_budget": {
+            "type": "integer"
+          },
+          "memory_live_bytes": {
+            "type": "integer"
+          },
+          "memory_peak_bytes": {
+            "type": "integer"
+          },
+          "memory_refusals": {
+            "type": "integer"
+          },
           "path": {
             "type": "string"
           },
           "ran": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "maximum": 1073741824,
+            "minimum": 524288,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Set the block of memory a script run may hold, in bytes (CODE-6): the budget beside the instruction budget. The Lua state is opened with an allocator that refuses any allocation past this cap, so a runaway script fails with 'memory budget exceeded' and its run is aborted - it cannot grow until the machine kills the process. Refuses a value outside [min_memory_budget, max_memory_budget]; there is no 'unlimited' through this surface. Reversible: one control.undo restores the previous cap (script.run reports the budget and what the last run measured).",
+      "group": "script",
+      "id": "script.set_memory_budget",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "max_memory_budget": {
+            "type": "integer"
+          },
+          "memory_budget": {
+            "type": "integer"
+          },
+          "min_memory_budget": {
+            "type": "integer"
+          },
+          "previous_memory_budget": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -9189,6 +11054,21 @@
           },
           "payload_schema_version": {
             "type": "integer"
+          },
+          "transport_blocking": {
+            "type": "boolean"
+          },
+          "transport_endpoint": {
+            "type": "string"
+          },
+          "transport_endpoint_allowed": {
+            "type": "boolean"
+          },
+          "transport_endpoint_reason": {
+            "type": "string"
+          },
+          "transport_policy": {
+            "type": "string"
           }
         },
         "required": [],
@@ -9501,6 +11381,14 @@
           "armed": {
             "type": "boolean"
           },
+          "file": {
+            "type": "string"
+          },
+          "input_channel": {
+            "maximum": 31,
+            "minimum": 0,
+            "type": "integer"
+          },
           "track": {
             "type": "string"
           }
@@ -9511,14 +11399,45 @@
         ],
         "type": "object"
       },
-      "description": "Arm or disarm a track for recording. Refused: this tree has no record-arm on a song track.",
+      "description": "Arm or disarm a song track for recording. Arming starts a capture on the record route the track's position in the song maps to: the interleaved input channel named by 'input_channel' (default: the route's own index) is written to a 24-bit WAV and the take is journalled beside it, so a crash mid-take is recoverable (record.recovery_get_state). 'file' must be absolute and defaults to zene-take-trk<N>.wav beside this instance's recovery file. The frames a route records come from the engine's input path, so a route armed while nothing is staged records silence: record.input_get_state reports whether a capture device is open and how many frames are staged ('capture_capable', 'capture_open', 'capture_reason', 'input_frames_staged'). Arming is reversible - the recorded inverse is track.set_arm with armed: false, which stops the capture and retires the journal and leaves the take on disk; disarming is not, and says so in its own record, because re-arming starts a NEW take.",
       "group": "track",
       "id": "track.set_arm",
       "mutating": true,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "frames_pushed": {
+            "type": "integer"
+          },
+          "frames_recorded": {
+            "type": "integer"
+          },
+          "input_channel": {
+            "type": "integer"
+          },
+          "input_channel_capacity": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "route": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -11085,8 +13004,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "renders_linearly": {
+            "type": "boolean"
+          },
           "source_tempo": {
             "type": "number"
+          },
+          "stretch": {
+            "type": "string"
+          },
+          "stretch_algorithm": {
+            "type": "string"
           },
           "tempo_mode": {
             "type": "string"
@@ -11139,8 +13067,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "renders_linearly": {
+            "type": "boolean"
+          },
           "source_tempo": {
             "type": "number"
+          },
+          "stretch": {
+            "type": "string"
+          },
+          "stretch_algorithm": {
+            "type": "string"
           },
           "tempo_mode": {
             "type": "string"
@@ -11208,8 +13145,17 @@
           "moved": {
             "type": "object"
           },
+          "renders_linearly": {
+            "type": "boolean"
+          },
           "source_tempo": {
             "type": "number"
+          },
+          "stretch": {
+            "type": "string"
+          },
+          "stretch_algorithm": {
+            "type": "string"
           },
           "tempo_mode": {
             "type": "string"
@@ -11271,8 +13217,17 @@
           "removed": {
             "type": "object"
           },
+          "renders_linearly": {
+            "type": "boolean"
+          },
           "source_tempo": {
             "type": "number"
+          },
+          "stretch": {
+            "type": "string"
+          },
+          "stretch_algorithm": {
+            "type": "string"
           },
           "tempo_mode": {
             "type": "string"
@@ -11344,8 +13299,94 @@
             "minimum": 0,
             "type": "integer"
           },
+          "renders_linearly": {
+            "type": "boolean"
+          },
           "source_tempo": {
             "type": "number"
+          },
+          "stretch": {
+            "type": "string"
+          },
+          "stretch_algorithm": {
+            "type": "string"
+          },
+          "tempo_mode": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "warped": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "resample",
+              "preserve_pitch"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Choose how a warped sample clip renders its rate change: 'resample' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up) or 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long as the mapping says and keeps its own pitch). Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "warp",
+      "id": "warp.stretch",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "marker_count": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "type": "array"
+          },
+          "max_markers": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "previous_mode": {
+            "type": "string"
+          },
+          "renders_linearly": {
+            "type": "boolean"
+          },
+          "source_tempo": {
+            "type": "number"
+          },
+          "stretch": {
+            "type": "string"
+          },
+          "stretch_algorithm": {
+            "type": "string"
           },
           "tempo_mode": {
             "type": "string"
@@ -11362,16 +13403,16 @@
       }
     }
   ],
-  "count": 231,
+  "count": 265,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wmeter/build/zene",
-    "binary_bytes": 206737744,
-    "binary_sha256": "1b436715a0ea44b00682a3906a8fa3e476c68ff391b6e01e52881c4d4cdae21e",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wmeter",
-    "lane_head": "28a9246aa11d7aaac1cc9bc6103c3e52aebbdcfb",
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
+    "binary_bytes": 217948952,
+    "binary_sha256": "0c3d0a322666430aea3b634e8e1af7eb8cdf197fc2dc4c10b99fd5200cbf814a",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
+    "lane_head": "cb3c730e9bf7223c12266b0ca8755ab04db781d3",
     "proto": 1,
-    "source_socket": "/tmp/meter-snap/zene.sock",
-    "version": "0.2.1-alpha.198+28a9246"
+    "source_socket": "/tmp/zctl-run-7pdpmfo6/zene.sock",
+    "version": "0.2.1-alpha.240+e72cb8c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

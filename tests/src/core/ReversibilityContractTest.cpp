@@ -89,15 +89,28 @@ DocumentedHistogram documentedHistogram()
 {
 	/*! telemetry-off, wasm-off base; the guards add the rest.
 	 *
-	 *  THE BASE MOVED ONCE since the merge train's 225 / 120 / 18 / 7 / 80, and the
-	 *  growth is named rather than absorbed: the loudness surface (feature row 24,
-	 *  030/meter-surface) added four rows - meter.arm and export.set_loudness_report
-	 *  as recorded-action true_inverse rows, meter.get_state and meter.measure_file as
-	 *  not_mutating inspectors - so the base is 229 / 122 / 18 / 7 / 82 and a
-	 *  telemetry-on build reads 231 / 122 / 18 / 7 / 84. The paragraph in
-	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this assertion's
-	 *  job is that the two cannot drift. */
-	DocumentedHistogram out{229, 122, 18, 7, 82};
+	 *  THE MERGED TREE'S OWN MEASUREMENT - the 0.3.0-alpha wave-1 eight-lane
+	 *  merge train. `ReversibilityContractTest` was run against a build of the
+	 *  merged tip and the table measures 265 rows over the four classes: 141
+	 *  true_inverse, 21 snapshot, 7 irreversible, 96 not_mutating. The release
+	 *  configuration has the telemetry client in and no wasmtime, so the base
+	 *  below is 263 / 141 / 21 / 7 / 94 and the telemetry guard adds the two
+	 *  telemetry.* rows back at the bottom.
+	 *
+	 *  EVERY FIGURE THE LANES WROTE WHILE THEY WERE LANDING WAS BRANCH-LOCAL,
+	 *  measured on the lane's own base, and none of them is this tree's: 231
+	 *  from 030/meter-surface, 231 from 030/linked-clips, 228 from
+	 *  030/telemetry-code, 236 from 030/record-inputs, 228 from
+	 *  030/pitch-stretch, against the 227 / 120 / 18 / 7 / 82 the three-merge
+	 *  tip carried. This constant is not a sum of anybody's report either - it
+	 *  was measured, and the measurement agrees with the lanes' own deltas
+	 *  exactly: 225 base + 1 telemetry + 4 meter + 4 linked-clips + 9
+	 *  record-inputs + 1 pitch-stretch + 4 render-presets + 15 note/scale = 263,
+	 *  and the class columns add up the same way. Each lane's delta is named
+	 *  beside its rows in src/core/ControlReversibilityTable*.cpp. The paragraph
+	 *  in docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
+	 *  assertion's job is that the two cannot drift. */
+	DocumentedHistogram out{263, 141, 21, 7, 94};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

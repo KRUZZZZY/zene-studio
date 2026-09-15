@@ -707,75 +707,65 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **231 rows**, measured from the table itself:
-**123 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 83 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **265 rows**, measured from the table itself:
+**141 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 96 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**229 rows / 81 `not_mutating`** - which is the base
-The SPEC A16 classification table holds **228 rows**, measured from the table itself:
-**120 `true_inverse`, 19 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
-build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
-compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-The SPEC A16 classification table holds **228 rows**, measured from the table itself:
-**121 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
-build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
-compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**226 rows / 80 `not_mutating`** - which is the base
+**263 rows / 94 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports **231** rows over the
-four classes named above (122 + 18 + 7 + 84), and its constant is the telemetry-off/wasm-off base of
-229 / 122 / 18 / 7 / 82. The four rows this page's earlier 227 did not have are the loudness surface's
-(feature row 24, `030/meter-surface`): `meter.arm` and `export.set_loudness_report` as recorded-action
-`true_inverse` rows, `meter.get_state` and `meter.measure_file` as `not_mutating` inspectors — the **+2
-true_inverse / +2 not_mutating** growth against the base this page carried before that lane. The seventeen rows this train's three merges added are the verb wave's four
-`ReversibilityContractTest` was run against a build of this merge tip and reports 231 rows over the
-four classes named above (123 + 18 + 7 + 83), and its constant is the telemetry-off/wasm-off base of
-229 / 123 / 18 / 7 / 81.
-**The last four rows are the linked / smart clip group (feature row 6, 2026-09-15):** `clip.link_create`,
-`clip.link_remove` and `clip.link_sync` are `true_inverse` on LIVE `Clip` / `MidiClip` checkpoints - the
-relation is the `link` attribute the clip's own element carries, written only when the clip is a member and
-reset to 0 by `Clip::loadClipEdits` when the attribute is absent, so a checkpoint taken before a *first*
-link restores "unlinked" exactly and one taken before a mirror restores the members' note lists - and
-`clip.link_get_state` is `not_mutating` (it reads the groups, their members and each member's content
-verdict, and writes nothing) - `+3 true_inverse / +1 not_mutating` against the 227 this page carried
-before them. `docs/LINKED-CLIPS.md` §4 is the argument, and the one `control.undo` that takes the whole
-group back is asserted by `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
-The seventeen rows this train's three merges added are the verb wave's four
-`ReversibilityContractTest` was run against a build of this merge tip and reports 228 rows over the
-four classes named above (120 + 19 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-226 / 120 / 19 / 7 / 80. The eighteen rows this train's merges added are the verb wave's four
-The SPEC A16 classification table holds **236 rows**, measured from the table itself:
-**121 `true_inverse`, 20 `snapshot`, 7 `irreversible`, 88 `not_mutating`**, in the configuration this
-build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
-compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**234 rows / 86 `not_mutating`** - which is the base
-`ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
-telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
-wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **These are MEASUREMENTS, and the figures above are the ones this
-lane's own tree measures** (the recording engine surface, feature rows 14/16/64): its ten rows are
-`record.arm_track` and the re-classified `track.set_arm` (`snapshot`, each with a paired-command
-inverse), `record.input_set` (`true_inverse`, the config write's previous plan) and seven
-`not_mutating` rows (`record.get_state`, `record.disarm_track`, `record.disarm_all`,
-`record.input_get_state`, `record.retro_capture_arm`, `record.retro_capture_status`,
-`record.retro_capture_to_take`), while `track.set_arm` LEAVES `not_mutating` because it is no longer
-one of the refusals. Net for this lane: **+9 rows, +1 `true_inverse`, +2 `snapshot`, +6
-`not_mutating`**, on top of the 227 / 120 / 18 / 7 / 82 the merge tip measured before it. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
-four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80 - **234 / 121 / 20 / 7 / 86 after the recording engine surface's ten rows
-above, which is the constant this tree now carries.** The seventeen rows this train's three merges added are the verb wave's four
-225 / 120 / 18 / 7 / 80.
-**Lane note (2026-09-15, `030/pitch-stretch`, feature-list row 30):** `warp.stretch` is row **228**
-(`+1 true_inverse`, mechanism = the clip's own journal checkpoint, because the stretch mode is the
-`stretch` attribute of the clip's `<warp>` element). The two figures at the top of this paragraph are
-that lane's own branch measurement - **228 rows / 121 `true_inverse`** compiled-in, and a
-**226 / 121 / 18 / 7 / 80** base - and the **merge tip must re-count**: this page's rule is that the
-number here is the merged measurement and never a sum of anybody's report, so the parent's merge step
-re-runs `ReversibilityContractTest` and updates this paragraph and that constant together.
+what left one of them stale before. **This is the MERGED tree's own measurement, not arithmetic:**
+`ReversibilityContractTest` was run against a build of the eight-lane wave-1 merge train's tip and
+reports **265** rows over the four classes named above (141 + 21 + 7 + 96), and its constant is the
+telemetry-off/wasm-off base of **263 / 141 / 21 / 7 / 94**.
+
+Every other figure of this shape below was measured on the branch that wrote it, or on an earlier
+merge tip, and is kept as that lane's own record rather than as this tree's number:
+`030/meter-surface` 231 (122 + 18 + 7 + 84), `030/linked-clips` 231 (123 + 18 + 7 + 83),
+`030/telemetry-code` 228 (120 + 19 + 7 + 82), `030/record-inputs` 236 (121 + 20 + 7 + 88),
+`030/pitch-stretch` 228 (121 + 18 + 7 + 82), and the three-merge tip this wave started from
+227 (120 + 18 + 7 + 82) over the base 225 / 120 / 18 / 7 / 80. This page's rule is that the number
+here is the merged measurement and never a sum of anybody's report - which is why the merge step
+re-ran the test and rewrote this paragraph and that constant together. The measurement agrees with
+the lanes' own deltas exactly, which is the check that it is a measurement and not a total:
+225 base + 1 (telemetry) + 4 (meter) + 4 (linked clips) + 9 (recording) + 1 (pitch-stretch) +
+4 (render presets) + 15 (note/scale) = 263, and the class columns add up the same way.
+
+What the eight lanes added, in each lane's own words:
+
+* **`030/meter-surface` (feature row 24) - +4 rows, +2 `true_inverse`, +2 `not_mutating`:**
+  `meter.arm` and `export.set_loudness_report` as recorded-action `true_inverse` rows,
+  `meter.get_state` and `meter.measure_file` as `not_mutating` inspectors.
+* **`030/linked-clips` (feature row 6) - +4 rows, +3 `true_inverse`, +1 `not_mutating`:**
+  `clip.link_create`, `clip.link_remove` and `clip.link_sync` are `true_inverse` on LIVE `Clip` /
+  `MidiClip` checkpoints - the relation is the `link` attribute the clip's own element carries,
+  written only when the clip is a member and reset to 0 by `Clip::loadClipEdits` when the attribute
+  is absent, so a checkpoint taken before a *first* link restores "unlinked" exactly and one taken
+  before a mirror restores the members' note lists - and `clip.link_get_state` is `not_mutating` (it
+  reads the groups, their members and each member's content verdict, and writes nothing).
+  `docs/LINKED-CLIPS.md` §4 is the argument, and the one `control.undo` that takes the whole group
+  back is asserted by `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
+* **`030/record-inputs` (feature rows 14/16/64) - +9 rows, +1 `true_inverse`, +2 `snapshot`,
+  +6 `not_mutating`:** `record.arm_track` and the re-classified `track.set_arm` (`snapshot`, each
+  with a paired-command inverse), `record.input_set` (`true_inverse`, the config write's previous
+  plan) and seven `not_mutating` rows (`record.get_state`, `record.disarm_track`,
+  `record.disarm_all`, `record.input_get_state`, `record.retro_capture_arm`,
+  `record.retro_capture_status`, `record.retro_capture_to_take`), while `track.set_arm` LEAVES
+  `not_mutating` because it is no longer one of the refusals.
+* **`030/telemetry-code` (CODE-6) - +1 row, +1 `snapshot`:** `script.set_memory_budget`.
+* **`030/pitch-stretch` (feature row 30) - +1 row, +1 `true_inverse`:** `warp.stretch`, mechanism =
+  the clip's own journal checkpoint, because the stretch mode is the `stretch` attribute of the
+  clip's `<warp>` element.
+* **`030/render-presets` (feature rows 70/71) - +4 rows, +3 `true_inverse`, +1 `not_mutating`:**
+  the render/export preset store's three recorded-action rows and its one read.
+* **`030/note-scale-verbs` (board task #648) - +15 rows, +11 `true_inverse`, +4 `not_mutating`:**
+  the note random/slide/transform verbs, the `scale.*` group and the registry's first `device.*`
+  group. The classes are stated on each row in `src/core/ControlReversibilityTableNoteScale.cpp`,
+  which holds exactly those fifteen.
+* **`030/stem-surface` (feature row 26) - +0 rows in this configuration:** its seven
+  `not_mutating` rows are guarded by `WANT_STEM_SPLIT` and the release does not ship them; see
+  below.
 
 The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
@@ -802,16 +792,16 @@ because that window has no reset-on-absence) and `note.probability_set` (`true_i
 per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
 touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
 and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
-**The seven `stem.*` rows are NOT in the 227 above, and that is the point:** the offline
+**The seven `stem.*` rows are NOT in the 265 above, and that is the point:** the offline
 stem-separation group (feature row 26, board task #653) is compiled only when `WANT_STEM_SPLIT=ON` -
 **OFF in the default release configuration** this page describes - so its seven `not_mutating` rows
 (`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
 `stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
 which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
-on carries **234 rows / 89 `not_mutating`** - measured, not derived: the seven-row guard was added to
+on carries **272 rows / 103 `not_mutating`** - measured, not derived: the seven-row guard was added to
 `ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
 against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
-227 + 7 rows and 82 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
+265 + 7 rows and 96 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
 configuration the release does not ship. All seven drive one offline engine, write output artefacts
 (four stem WAVs and a checksum-verified model file) and record no project state: a job is not a
 document, and a written stem is an output.
