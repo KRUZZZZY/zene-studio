@@ -299,6 +299,28 @@ private slots:
 		QVERIFY(!refused.ok);
 		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(digest(mapEvents()), digest(before));
+
+		// A tempo outside the ENGINE's own bounds is refused by the import (the
+		// reader reports it, the engine decides), and the map is untouched.
+		const QString slow = path(m_directory, QStringLiteral("too-slow.mid"));
+		QByteArray slowBytes = plainFile(480, {{0, 120, 4, 4}});
+		// 0xFFFFFF microseconds per quarter is 4 bpm - below MinTempo (10).
+		const int usOffset = slowBytes.indexOf(QByteArrayLiteral("\xFF\x51\x03"));
+		QVERIFY(usOffset > 0);
+		slowBytes[usOffset + 3] = static_cast<char>(0xFF);
+		slowBytes[usOffset + 4] = static_cast<char>(0xFF);
+		slowBytes[usOffset + 5] = static_cast<char>(0xFF);
+		QVERIFY(writeFile(slow, slowBytes));
+		const QJsonObject slowRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), slow}}).result;
+		QCOMPARE(slowRead.value(QStringLiteral("events")).toArray().at(0).toObject()
+			.value(QStringLiteral("bpm")).toInt(), 4);
+		const ControlResult tooFast = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), slow}});
+		QVERIFY(!tooFast.ok);
+		QCOMPARE(tooFast.errorKind, ControlErrorKind::Refused);
+		QVERIFY(tooFast.errorMessage.contains(QStringLiteral("tick 0")));
+		QCOMPARE(digest(mapEvents()), digest(before));
 	}
 
 private:

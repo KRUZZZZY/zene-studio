@@ -62,6 +62,11 @@
 namespace smfsupport
 {
 
+// The engine's vocabulary lives in namespace lmms; the tests that include this
+// header all `using namespace lmms` themselves, and the header cannot rely on
+// that (it is included before their using-directive), so it says so here.
+using namespace lmms;
+
 //! Invoke a command through the registry, exactly as the socket does.
 inline ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {

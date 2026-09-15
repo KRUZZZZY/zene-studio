@@ -221,7 +221,13 @@ QByteArray trackBody(const std::vector<SmfInterchangeEvent>& events)
 	quint32 cursor = first;
 	for (const SmfInterchangeEvent& event : events)
 	{
-		const quint32 tick = static_cast<quint32>(event.tick);
+		// A LMMS tick is 1/48 of a quarter note and the file declares 480 per
+		// quarter, so the file's tick of a LMMS tick is exactly ten times it
+		// (SmfTicksPerLmmsTick) - the conversion this whole module exists to
+		// record. 64-bit in the middle: tick_t is 32-bit and a tick near its
+		// ceiling would otherwise wrap.
+		const quint32 tick = static_cast<quint32>(
+			static_cast<qint64>(event.tick) * SmfTicksPerLmmsTick);
 		if (event.hasTimeSignature)
 		{
 			appendVlq(body, tick - cursor);

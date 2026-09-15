@@ -1,0 +1,127 @@
+Standard MIDI File conductor interchange - evidence for feature row 33
+======================================================================
+
+Lane 030/smf-tempo-export, base release/0.3.0 @ f611c888b.
+
+WHAT IS PROVEN HERE, AND WHAT IS NOT
+------------------------------------
+The ENGINE half (include/SmfInterchange.h + src/core/SmfInterchange.cpp writer +
+src/core/SmfInterchangeReader.cpp reader) is proven at RUNTIME by a scratch
+harness that links those two translation units plus src/core/TempoMap.cpp against
+Qt6 - no application build, no Engine, no display. 29 checks, 0 failures: the
+map is written, the FILE is read back, the events are compared (tempo AND metre),
+and the file's events are imported into a TempoMap that compares EQUAL to the
+authored one.
+
+The registered proofs (the ctests SmfInterchangeTest and
+SmfInterchangeRoundTripTest) COMPILE - both test translation units were built
+against this tree - but were NOT RUN in this pass: running them needs a full
+application build (all of lmmsobjs), which did not fit the lane's window. That is
+the next action, and it is stated rather than implied.
+
+THE HARNESS RUN
+---------------
+The harness is scratch code (it lives outside the repo on purpose: the registered
+proof is the ctest, and this file records what was measured). It compiled with:
+
+  g++ -std=c++20 -fPIC -O0 -I include -I build -I build/src \
+      $(pkg-config --cflags Qt6Core Qt6Xml Qt6Gui Qt6Widgets) \
+      /tmp/smfcheck/main.cpp src/core/SmfInterchange.cpp \
+      src/core/SmfInterchangeReader.cpp src/core/TempoMap.cpp \
+      -o /tmp/smfcheck/smfcheck \
+      $(pkg-config --libs Qt6Core Qt6Xml Qt6Gui Qt6Widgets)
+  -> BUILD_EXIT=0
+
+and ran with  ./smfcheck > run.log 2>&1 ; echo RUN_EXIT=$?  -> RUN_EXIT=0
+
+Output (verbatim, both runs after the fix recorded below):
+
+  authored: tick 0 = 140 bpm 4/4                                   OK
+  authored: tick 384 = 3/4                                         OK
+  authored: tick 768 = 90 bpm                                      OK
+  authored: tick 1344 = 180 bpm 7/8                                OK
+  export: no seed needed (both halves at tick 0)                   OK
+  export: 3 tempo events                                           OK
+  export: 3 metre events                                           OK
+  export: last tick 1344                                           OK
+       bytes=99 sha256=7d221e6ab1985ff6ff480e4aa110dea36ebff4e638bdbeb769021627ecae0074
+  read: format 1                                                   OK
+  read: one track                                                  OK
+  read: division 480                                               OK
+  read: nothing rounded                                            OK
+  read: fits the map                                               OK
+  read: nothing superseded                                         OK
+       read events=4 (tempo 3, metre 3)
+  round trip: the file has the map's tick count                    OK
+  round trip: every event identical (tempo AND metre)              OK
+  import: the file's events build a map                            OK
+  import: the imported map EQUALS the authored map                 OK
+  step: 140 bpm before 384                                         OK
+  step: metre at 384 does not change the tempo; 90 from 768        OK
+  step: 180 from 1344 and past the last event                      OK
+  step: 3/4 from 384                                               OK
+  step: 7/8 from 1344                                              OK
+  seed: both halves seeded                                         OK
+  seed: the file's first tick is 0                                 OK
+  seed: two events read back                                       OK
+  seed: tick 0 carries the global 120 bpm and the global metre     OK
+  seed: the seeded file imports                                    OK
+  seed: every sampled tempo is what the session answered           OK
+
+  ALL CHECKS PASSED (0 failure(s))
+
+THE DEFECT IT FOUND (and the fix that is in this branch)
+--------------------------------------------------------
+The FIRST run of the same harness failed 7 of 29 checks: the reader returned the
+events at ticks 38, 77 and 134 instead of 384, 768 and 1344, and the imported map
+therefore did not equal the authored one. The reader was right and the WRITER was
+wrong: it wrote the LMMS tick into the file unscaled. The file's division is 480
+ticks per QUARTER note while LMMS' grid is 48 per quarter, so a LMMS tick is ten
+file ticks (SmfTicksPerLmmsTick) and the writer never applied the factor - the
+convention it documents in include/SmfInterchange.h was not the convention it
+implemented. trackBody() now multiplies through a 64-bit intermediate. The
+registered ctest SmfInterchangeTest asserts the tempo meta event's tick is 3840
+for LMMS tick 384, so the same defect fails the registered proof; it was the
+scratch harness that found it first.
+
+THE FILE'S OWN BYTES
+--------------------
+xxd of the file the harness wrote (LMMS ticks 0, 384, 768, 1344):
+
+  00000000: 4d54 6864 0000 0006 0001 0001 01e0 4d54  MThd..........MT
+  00000010: 726b 0000 004d 00ff 0315 5a65 6e65 2053  rk...M....Zene S
+  00000020: 7475 6469 6f20 7465 6d70 6f20 6d61 7000  tudio tempo map.
+  00000030: ff58 0404 0218 0800 ff51 0306 8a1b 9e00  .X.......Q......
+  00000040: ff58 0403 0218 089e 00ff 5103 0a2c 2bad  .X........Q..,+.
+  00000050: 00ff 5804 0703 1808 00ff 5103 0516 1500  ..X.......Q.....
+  00000060: ff2f 00                                  ./.
+
+Read as a Standard MIDI File:
+
+  MThd 00000006 0001 0001 01E0   header: format 1, one track, division 0x01E0
+                                 = 480 ticks per quarter note
+  MTrk 0000004D                   one track chunk, 0x4D = 77 bytes (14 + 8 + 77
+                                 = 99 = the whole file)
+  00 FF 03 15 "Zene Studio tempo map"   track name (delta 0)
+  00 FF 58 04 04 02 18 08         time signature 4/4 at tick 0 (dd=2 -> 4,
+                                 cc=24 MIDI clocks per click, bb=8 32nds)
+  00 FF 51 03 06 8A 1B            tempo at tick 0: 0x068A1B = 428571 us per
+                                 quarter = 140 bpm
+  9E 00                            delta 0x9E00 = 3840 file ticks = LMMS 384
+  FF 58 04 03 02 18 08            time signature 3/4
+  9E 00 FF 51 03 0A 2C 2B         delta 3840: 0x0A2C2B = 666667 us = 90 bpm
+  9E 00 FF 58 04 07 03 18 08      delta 3840: time signature 7/8 (dd=3 -> 8)
+  00 FF 51 03 05 16 15            delta 0 (same tick): 0x051615 = 333333 us
+                                 = 180 bpm
+  00 FF 2F 00                     end of track
+
+Both multi-byte delta times are variable-length quantities (0x9E00 = 3840), the
+metre is written BEFORE the tempo at a shared tick, and everything above is the
+format's own arithmetic rather than this module's report of it.
+
+WHAT THE SCRATCH HARNESS DOES NOT COVER
+---------------------------------------
+The command surface (the four interchange.* ids, their schemas, the typed
+refusals, the A16 rows, control.undo after an import) and the file's byte-level
+validation by the test's own parser are the registered proofs' job and were not
+run here. Nothing above is a claim about them.
