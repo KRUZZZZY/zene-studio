@@ -137,6 +137,35 @@ def python_with_onnxruntime():
     return None
 
 
+def onnxruntime_site_dir(python):
+    """The site-packages root that carries onnxruntime, or None.
+
+    The shared harness launches the instance with HOME (and XDG_*) redirected
+    into its own temp directory - the headless recipe of AGENT-TOOLING.md
+    section 4 - and that hides a USER-SITE onnxruntime: an interpreter probed
+    from this script's own environment imports it, while the same interpreter
+    inside the sandboxed instance does not. Measured on the box this test was
+    written on (`HOME=<tmp> /usr/bin/python3 -c "import onnxruntime"` ->
+    ModuleNotFoundError, with the module installed under the real HOME's
+    ~/.local/lib/python3.x/site-packages), and it is why this function exists.
+
+    Passing the directory through PYTHONPATH keeps the instance's interpreter
+    and this script's on the SAME installation, which is the thing the test is
+    about; nothing here pretends a missing dependency is present. A host that
+    has no onnxruntime anywhere still reaches the SKIP below.
+    """
+    try:
+        done = subprocess.run(
+            [python, "-c", "import onnxruntime, os; "
+                           "print(os.path.dirname(os.path.dirname(onnxruntime.__file__)))"],
+            capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return done.stdout.strip() or None
+
+
 def write_source_wav(path, seconds=SOURCE_SECONDS, rate=SAMPLE_RATE, freq=220.0):
     """A stereo PCM16 WAV at the model's own rate - what render.render writes."""
     frames = rate * seconds
@@ -205,6 +234,17 @@ class Session:
             return reply.get("result") or {}
         return {"error": reply.get("error") or reply}
 
+    def ok_and_result(self, command, args=None):
+        """(ok, result) of a reply.
+
+        Distinct from result() because a stem job OBJECT carries its own `error`
+        field (empty unless the job failed), so "the reply has no `error` key" is
+        the wrong question for the verbs that return one - the reply's own `ok`
+        flag is the right one.
+        """
+        reply = self.call(command, args)
+        return reply.get("ok") is True, (reply.get("result") or {})
+
     def timed(self, command, args=None):
         started = time.time()
         result = self.result(command, args)
@@ -229,15 +269,26 @@ def error_kind(result):
     return error.get("kind") if isinstance(error, dict) else None
 
 
+def job_state(status):
+    """The state of the FIRST job in a stem.job_status result.
+
+    stem.job_status returns one shape for both asks - `{count, running, jobs[]}`
+    - so a single-job poll reads `jobs[0]`, and an empty list means the id was
+    refused (the caller sees the typed error, not a state).
+    """
+    jobs = status.get("jobs") or []
+    return jobs[0].get("state") if jobs else None
+
+
 def error_message(result):
     error = result.get("error")
     return (error.get("message") or "") if isinstance(error, dict) else repr(result)[:200]
 
 
 def check_get_state(session, recorder):
-    state = session.result("stem.get_state")
-    recorder.check("stem.get_state answers", "error" not in state, repr(state)[:200])
-    if "error" in state:
+    ok, state = session.ok_and_result("stem.get_state")
+    recorder.check("stem.get_state answers", ok, repr(state)[:200])
+    if not ok:
         return state
     recorder.check("the engine reports itself available (stub model + CLI + python)",
                    state.get("available") is True, "available=%r error=%r"
@@ -296,11 +347,11 @@ def check_refusals(session, recorder, outdir):
 
 
 def start_job(session, recorder, source, label):
-    started = session.result("stem.job_start", {"source": source})
-    ok = "error" not in started and isinstance(started.get("job_id"), int)
-    recorder.check("%s: stem.job_start returns an id immediately" % label, ok,
+    ok, started = session.ok_and_result("stem.job_start", {"source": source})
+    accepted = ok and isinstance(started.get("job_id"), int)
+    recorder.check("%s: stem.job_start returns an id immediately" % label, accepted,
                    repr(started)[:200])
-    if not ok:
+    if not accepted:
         return None
     recorder.check("%s: the job reports the mix it was given" % label,
                    started.get("frames") == SOURCE_SECONDS * SAMPLE_RATE
@@ -316,7 +367,7 @@ def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
     started = time.time()
     while time.time() < deadline:
         status = session.result("stem.job_status", {"job_id": job_id})
-        state = status.get("state")
+        state = job_state(status)
         if state not in seen:
             seen.append(state)
         if state in wanted:
@@ -328,10 +379,10 @@ def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
 def check_a_job_does_not_hold_the_surface(session, recorder, job_id):
     """The point of the whole design: a long job must not freeze the control surface."""
     status = session.result("stem.job_status", {"job_id": job_id})
-    running = status.get("state") in ("queued", "running", "cancel_requested")
+    running = job_state(status) in ("queued", "running", "cancel_requested")
     pong, elapsed = session.timed("control.ping")
     recorder.check("the job is outstanding while the surface is pinged", running,
-                   "state=%r" % (status.get("state"),))
+                   "state=%r" % (job_state(status),))
     recorder.check("control.ping answers WHILE a separation job is outstanding",
                    pong.get("pong") is True and elapsed < 5.0,
                    "ping=%r after %.2fs" % (pong, elapsed))
@@ -396,11 +447,10 @@ def check_cancel(session, recorder, source, outdir):
     state, seen, _ = poll_until(session, job_id, ("running",), timeout=60.0)
     recorder.check("the slowed job reaches `running` (the cancel has a subject)",
                    state == "running", "state=%r seen=%r" % (state, seen))
-    cancelled = session.result("stem.job_cancel", {"job_id": job_id})
+    accepted, cancelled = session.ok_and_result("stem.job_cancel", {"job_id": job_id})
     recorder.check("stem.job_cancel answers with the job's state",
-                   "error" not in cancelled
-                   and cancelled.get("state") in ("cancel_requested", "cancelled"),
-                   repr(cancelled)[:200])
+                   accepted and cancelled.get("state") in ("cancel_requested", "cancelled"),
+                   "accepted=%r state=%r" % (accepted, cancelled.get("state")))
     final, seen_after, seconds = poll_until(session, job_id, ("cancelled", "failed"), timeout=120.0)
     recorder.check("the job settles as cancelled",
                    final == "cancelled", "final=%r seen=%r after %.1fs" % (final, seen_after, seconds))
@@ -415,9 +465,9 @@ def check_cancel(session, recorder, source, outdir):
 
 
 def check_model_store(session, recorder, model_dir):
-    state = session.result("stem.model_get_state")
-    recorder.check("stem.model_get_state answers", "error" not in state, repr(state)[:200])
-    if "error" in state:
+    ok, state = session.ok_and_result("stem.model_get_state")
+    recorder.check("stem.model_get_state answers", ok, repr(state)[:200])
+    if not ok:
         return
     recorder.check("the store resolves the model the environment pins",
                    state.get("path") == STUB_MODEL and state.get("present") is True,
@@ -534,6 +584,13 @@ def main(argv):
             "LMMS_STEM_PYTHON": python,
             "LMMS_STEM_CHUNK_DELAY_MS": str(CHUNK_DELAY_MS),
         }
+        # The instance's HOME is redirected into its own temp directory, so a
+        # user-site onnxruntime is invisible to it unless its directory travels
+        # in PYTHONPATH (see onnxruntime_site_dir).
+        site_dir = onnxruntime_site_dir(python)
+        if site_dir:
+            existing = os.environ.get("PYTHONPATH")
+            env["PYTHONPATH"] = site_dir if not existing else site_dir + os.pathsep + existing
         instance = H.Instance(argv[1], extra_env=env)
         # The store's own directory, sandboxed: the default model directory is
         # read from the environment before anything else, so the real one is
@@ -549,9 +606,25 @@ def main(argv):
         print("model:    %s" % STUB_MODEL)
         print("cli:      %s" % CLI_PATH)
         print("python:   %s" % python)
+        print("site:     %s" % (os.environ.get("PYTHONPATH") or site_dir or "(none)"))
         session.result("control.version")
-        run_checks(session, instance, recorder, workdir)
-        check_quit(session, instance, recorder)
+        try:
+            run_checks(session, instance, recorder, workdir)
+            check_quit(session, instance, recorder)
+        except (H.Timeout, H.Blocked) as error:
+            # A hang or a dead instance is a FAILURE, never a skip (the harness's
+            # own rule). Print what the instance itself says before the traceback
+            # so a reader of this transcript gets the diagnosis, not just the
+            # exception - the harness's own diagnosis printer only covers its
+            # bounded reads.
+            print("")
+            print("---- the instance stopped answering ----")
+            print("alive:      %r" % (instance.alive(),))
+            print("returncode: %r" % (instance.process.returncode if instance.process else None,))
+            print("stderr tail:")
+            print(instance.stderr_text()[-3000:])
+            print("---- end ----")
+            raise
     finally:
         if instance is not None and instance.alive():
             instance.kill()

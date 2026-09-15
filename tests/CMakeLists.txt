@@ -2135,6 +2135,14 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	if(WANT_WASM)
 		list(APPEND ZENE_SNAPSHOT_COMPILED_IN --compiled-in wasm.)
 	endif()
+	# The stem.* group (feature row 26, board task #653) is the second
+	# option-gated group in this direction: WANT_STEM_SPLIT=ON compiles the
+	# offline stem engine in and registers its seven ids, which the release
+	# snapshot cannot carry (the snapshot is one file and a configuration is
+	# not). Same two-way check as wasm. above, so the flag cannot blindfold.
+	if(LMMS_HAVE_STEM_SPLIT)
+		list(APPEND ZENE_SNAPSHOT_COMPILED_IN --compiled-in stem.)
+	endif()
 	add_test(NAME ControlCommandsSnapshot
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-commands-snapshot.py
