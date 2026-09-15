@@ -385,6 +385,16 @@ void InstrumentTrack::loadMpeExpressionOntoChannelNotes( int channel )
 
 		note->setMpeExpression( expression );
 		note->setFrequencyUpdate();
+
+		// MPE pressure and timbre routing (task #649): send the updated
+		// expression as MIDI events so the instrument receives it in real
+		// time, the same way pitch bend already reaches playback through
+		// updateFrequency().
+		if( m_instrument != nullptr )
+		{
+			processOutEvent( MidiEvent( MidiChannelPressure, channel, expression.pressure ) );
+			processOutEvent( MidiEvent( MidiControlChange, channel, MpeTimbreController, expression.timbre ) );
+		}
 	}
 }
 

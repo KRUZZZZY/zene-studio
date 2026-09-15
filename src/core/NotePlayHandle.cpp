@@ -236,6 +236,21 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 			MidiEvent( MidiNoteOn, midiChannel(), midiKey(), midiVelocity( baseVelocity ) ),
 			TimePos::fromFrames( offset(), Engine::framesPerTick() ),
 			offset() );
+
+		// MPE pressure and timbre routing (task #649): if the note carries
+		// expression, send the pressure and timbre axes as MIDI events so
+		// plugin instruments receive them on the same channel as the note-on.
+		if( hasMpeExpression() )
+		{
+			m_instrumentTrack->processOutEvent(
+				MidiEvent( MidiChannelPressure, midiChannel(), mpePressure() ),
+				TimePos::fromFrames( offset(), Engine::framesPerTick() ),
+				offset() );
+			m_instrumentTrack->processOutEvent(
+				MidiEvent( MidiControlChange, midiChannel(), MpeTimbreController, mpeTimbre() ),
+				TimePos::fromFrames( offset(), Engine::framesPerTick() ),
+				offset() );
+		}
 	}
 
 	if( m_frequencyNeedsUpdate || hasSlideGlide() )

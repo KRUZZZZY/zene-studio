@@ -267,8 +267,8 @@ that is this page's fault — report it and it gets added.
   base it is modulated around rather than the modulated value.*
   Per-note expression was **not** a new store: `note.expression_set` / `get` / `clear` read and write the fields
   task `#601` already put on a `Note` (`mpepitch` / `mpepressure` / `mpetimbre`), so `docs/MPE.md` §4's limit
-  stands unchanged — **only the pitch axis is applied by playback**; pressure and timbre are stored and editable
-  and reach no instrument.
+  is now lifted — **all three axes reach playback**: pitch as a frequency ratio, pressure and timbre as MIDI
+  events on the note's own member channel (task #649). There is still no per-note expression editor.
 - **No plugin-scanning interface worth the name.** A scan cache and a quarantine list exist; the user-facing
   surface is thin or absent. Verified against this tree: the cache is JSON on disk and the documented way to
   quarantine a plugin is a `{"path": …, "reason": …}` entry in that file; `docs/PLUGIN-SCAN-CACHE.md` §5
@@ -440,15 +440,15 @@ that is this page's fault — report it and it gets added.
   and a registered ctest plus a committed transcript cover them — but nothing in `src/gui/` draws a marker,
   drags one, snaps one to the grid or places the first one, so an interface-only user cannot warp a clip at
   all. Warp marker editing is drivable through the socket, not from the interface.
-- **MPE applies pitch only.** Per-note expression is captured from MPE input, stored on the note and editable;
-  **pitch is applied on playback, while pressure and timbre are captured, stored and readable but not applied.**
-  There is no per-note expression editor.
+- **MPE: all three axes reach playback.** Per-note expression is captured from MPE input, stored on the note
+  and editable; **pitch, pressure and timbre are all applied on playback** — pitch as a frequency ratio,
+  pressure and timbre as MIDI events on the note's own member channel (task #649). There is still no per-note
+  expression editor.
   Verified in the tree: `docs/MPE.md` §0 is the implementing lane's verdict — expression is captured from
   MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
-  and editable through a headless API, with pitch applied by the playback path (`src/core/NotePlayHandle.cpp`)
-  and pressure/timbre captured, stored and readable but not applied; the document names the exact lines that
-  block a pressure/timbre path rather than inventing one. `src/core/midi/MpeExpression.cpp` is in the tree, and
-  the lane `post-alpha/mpe` is an ancestor of this tip.
+  and editable through a headless API, with all three axes reaching the instrument through the playback path
+  (`src/core/NotePlayHandle.cpp`). `src/core/midi/MpeExpression.cpp` is in the tree, and the lane
+  `post-alpha/mpe` is an ancestor of this tip.
 - **Recording is a two-track prototype.** Two input channels captured into two tracks, with the capture path
   hardware-verified. Arbitrary input counts and input monitoring are not implemented, and the default Linux
   ALSA backend has **no capture path at all** — recording needs JACK or SDL.
@@ -944,12 +944,12 @@ line each, because the scope contract asks for one each:
   setting reaches the MPE input switch and none shows its state; the per-note expression editor
   `docs/MPE.md` names is still absent (this page's MPE entry above stands). What it gates, exactly: while it
   is off the MIDI input path is what it was before MPE existed; while it is on, a bend / pressure / CC74 on a
-  note's own member channel is that note's expression instead of a channel-wide bend. **Pitch is the only
-  axis playback applies** (the row-12 bound above); pressure and timbre stay stored and readable. Switching
-  the flag off does **not** clear expression already stored on notes — `note.expression_clear` is the verb
-  for that. The master channel and the bend range are per-MIDI-stream **instance** settings with no object
-  the control surface can reach, so `device.mpe_get_state` reports the engine's defaults rather than writing
-  a copy nothing reads.
+  note's own member channel is that note's expression instead of a channel-wide bend. **All three axes reach
+  playback** (pitch as a frequency ratio, pressure and timbre as MIDI events on the note's own member channel,
+  task #649); pressure and timbre no longer stay stored-only. Switching the flag off does **not** clear
+  expression already stored on notes — `note.expression_clear` is the verb for that. The master channel and
+  the bend range are per-MIDI-stream **instance** settings with no object the control surface can reach, so
+  `device.mpe_get_state` reports the engine's defaults rather than writing a copy nothing reads.
 ## Offline stem separation (`stem.*`, feature row 26) — socket-only, opt-in, and it needs the model
 
 The engine (HTDemucs over ONNX Runtime, one job at a time) was already in the tree with five registered

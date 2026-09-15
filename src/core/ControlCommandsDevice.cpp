@@ -86,15 +86,13 @@ QJsonObject mpeState()
 {
 	QJsonObject axes;
 	axes.insert(QStringLiteral("pitch"), true);
-	// The bound, stated where a caller reads it: stored per note, consumed by
-	// nothing in the playback path yet (docs/MPE.md; feature-list row 12).
-	axes.insert(QStringLiteral("pressure"), false);
-	axes.insert(QStringLiteral("timbre"), false);
+	axes.insert(QStringLiteral("pressure"), true);
+	axes.insert(QStringLiteral("timbre"), true);
 
 	QJsonObject storage;
 	storage.insert(QStringLiteral("per_note"),
 		QStringLiteral("mpepitch / mpepressure / mpetimbre, written only when a note carries one"));
-	storage.insert(QStringLiteral("pressures_consumed_by_playback"), false);
+	storage.insert(QStringLiteral("pressures_consumed_by_playback"), true);
 
 	QJsonObject out;
 	out.insert(QStringLiteral("enabled"), MpeExpression::isEnabled());
@@ -180,9 +178,9 @@ void registerDeviceCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("device");
 		cmd.verb = QStringLiteral("mpe_get_state");
 		cmd.description = QStringLiteral("Whether MIDI Polyphonic Expression input is on, and "
-			"what that means in this engine: the flag itself, which axes reach PLAYBACK (pitch "
-			"yes - the engine applies it as a frequency ratio; pressure and timbre are stored per "
-			"note and consumed by nothing yet), how a note stores its capture (the optional "
+			"what that means in this engine: the flag itself, which axes reach PLAYBACK (pitch, "
+			"pressure and timbre — all three are sent to the instrument as MIDI events on the note's "
+			"own member channel), how a note stores its capture (the optional "
 			"mpepitch / mpepressure / mpetimbre attributes), the channel count and master channel "
 			"the model assumes, the default bend range and the MPE+ cap on notes per channel. "
 			"Read-only. 'per_stream_settings_reachable' is false and the result says why: the "
@@ -217,12 +215,11 @@ void registerDeviceCommands(ControlRegistry& registry)
 			"channel is that note's expression and is consumed instead of bending the whole "
 			"instrument; while it is off the input path is exactly what it was before MPE existed "
 			"(the engine's own flag is deliberately NOT serialized, so a project never changes "
-			"meaning because of it). What reaches playback is the pitch axis only - pressure and "
-			"timbre are stored on the note and consumed by nothing yet (feature-list row 12). "
-			"Switching it off does NOT clear what is already stored on the notes: note.expression_get "
-			"still reads it, and note.expression_clear is the verb that removes it. Reversible: a "
-			"recorded action step restores the previous flag, so control.undo and Ctrl+Z are one "
-			"history.");
+			"meaning because of it). All three axes reach playback: pitch as a frequency ratio, "
+			"pressure and timbre as MIDI events on the note's own member channel. Switching it off "
+			"does NOT clear what is already stored on the notes: note.expression_get still reads it, "
+			"and note.expression_clear is the verb that removes it. Reversible: a recorded action step "
+			"restores the previous flag, so control.undo and Ctrl+Z are one history.");
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("enabled"), booleanProperty()},
 		}, {QStringLiteral("enabled")});
