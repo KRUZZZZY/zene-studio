@@ -434,6 +434,41 @@ four counts were 30 / 5 / 3 / 36 over 74 rows
   entry is re-pointed at this tree's `tools/mcp-zene-control`, the session's offline list is the stale 70.
   See `docs/KNOWN-LIMITATIONS.md`.
 
+## MCP tooling: the ten invisible groups are driven, and a stale offline copy now says so — added 2026-09-15
+
+- **Ten command groups had no MCP tool at all** (`browser`, `comp`, `export`, `link`, `modulator`, `rack`,
+  `session`, `telemetry`, `warp`, `wasm` — **74 ids** invisible, feature-list row 49), because the registered
+  bridge served a stale 70-id 0.1.0-alpha list while the tree's snapshot already carried 144. Nothing in the
+  bridge needed a per-feature fix — it generates a tool per id it reads from a live instance
+  (`zene_control/registry.py`) — so what was missing was the measurement. The registered ctest
+  **`ControlMcpGroupCoverage`** (`tests/control-mcp-group-coverage.py`) now starts the real binary, opens a
+  real MCP stdio session over its socket, and drives **one command from each of the ten groups**, with the
+  arguments each command's own schema requires filled from the instance's own state through further MCP calls
+  (`track.list`/`track.add`, `mixer.get_state`/`mixer.add_channel`, `arrangement.get_state`/`clip.add`).
+  Measured against a build of the integration tip: **265 ids across 43 groups reachable live** (267 tools with
+  the two bridge-owned ones) against the snapshot's **144 ids across 27 groups**, with nine of the ten groups
+  driven end to end (`browser.query`, `comp.lane_list`, `export.get_settings`, `link.get_state`,
+  `modulator.get_state`, `rack.get_state`, `session.get_state`, `telemetry.status`, `warp.list`). `wasm.` is
+  excused by a `--compiled-out` flag checked in **both** directions (a flag describing a group the binary
+  *does* register is a failure), because no configuration on this machine compiles the wasmtime sandbox in;
+  a wasm-enabled build receives no flag and must drive the group against the binary, and the bridge's own
+  half — a declared group becomes tools and forwards verbatim — is
+  `tools/mcp-zene-control/tests/test_declared_surface.py` (3 tests, stand-in socket, ids read from
+  `src/core/ControlCommandsWasm*.cpp`).
+- **An offline copy's staleness is now detectable instead of silent.** Every command-list bundle records the
+  surface it describes — `id_count`, `group_count`, `ids_sha256` (`registry.surface_fingerprint`) — and
+  `registry.surface_drift` measures a copy against a live list, naming the ids that differ.
+  `zene_status` and `zene_commands` carry that as `offline_drift` whenever an instance is answering, so the
+  question "is the list I would be served with nothing running still current?" has an answer at the point of
+  use; `snapshot_commands.py` prints the surface it just captured. The flag is checked in **both** directions:
+  `tests/control-mcp-group-coverage.py` asserts it equals the truth the script computes for itself, and
+  `tools/mcp-zene-control/tests/test_offline_staleness.py` (12 tests, no socket needed) pins the four cases —
+  a missing live id, an id the instance does not register, an identical surface (must NOT be stale, or the
+  check becomes a permanent red light), and a gap longer than the report's sample limit, which is counted in
+  full and listed to the limit.
+- **UI absence — one line:** none of this is in the interface either; the drift report exists only through the
+  MCP bridge (and `snapshot_commands.py`), and the deployment limit above is unchanged.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
