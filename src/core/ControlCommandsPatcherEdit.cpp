@@ -217,15 +217,10 @@ auto wiringPortsFit(const EffectChain& chain, const RoutingGraph& graph, const P
 	return true;
 }
 
-} // namespace
-
-namespace control
+//! True when this chain HAS every node a wiring names - the effect list is the
+//! node set, so an index past its end is a reference to a node that is gone.
+auto wiringRefsExist(const EffectChain& chain, const PatchWiring& wiring, QString* reason) -> bool
 {
-
-bool validateWiring(const EffectChain& chain, const PatchWiring& wiring, QString* reason)
-{
-	if (wiring.isEmpty()) { return true; }  // "the derived wiring" is always valid
-
 	const int effectCount = static_cast<int>(chain.effects().size());
 	for (const PatchEdge& edge : wiring.edges())
 	{
@@ -238,14 +233,41 @@ bool validateWiring(const EffectChain& chain, const PatchWiring& wiring, QString
 			return false;
 		}
 	}
-	if (!wiring.output().isInput()
-		&& (wiring.output().index() < 0 || wiring.output().index() >= effectCount))
+	return true;
+}
+
+//! True when a wiring names the node the host block leaves the graph through.
+//! An unset output is refused by name: it is the state a wiring parsed from an
+//! `edges` array without an `output` is in, and the alternative - defaulting to
+//! effect 0 - would route through a node the caller never named.
+auto wiringOutputExists(const EffectChain& chain, const PatchWiring& wiring, QString* reason) -> bool
+{
+	if (!wiring.output().isSet())
 	{
-		*reason = QStringLiteral("the output node %1 names no node of this chain: it has %2 effect(s)")
-			.arg(wiring.output().toString()).arg(effectCount);
+		*reason = QStringLiteral("the wiring names no output node: `output` is the node the host block "
+			"leaves the graph through (%1)").arg(PatchRef::effect(0).toString());
 		return false;
 	}
-	if (!wiringEdgesAreDistinct(wiring, reason)) { return false; }
+	if (wiring.output().isInput()) { return true; }
+
+	const int effectCount = static_cast<int>(chain.effects().size());
+	if (wiring.output().index() >= 0 && wiring.output().index() < effectCount) { return true; }
+
+	*reason = QStringLiteral("the output node %1 names no node of this chain: it has %2 effect(s)")
+		.arg(wiring.output().toString()).arg(effectCount);
+	return false;
+}
+
+} // namespace
+
+namespace control
+{
+
+bool validateWiring(const EffectChain& chain, const PatchWiring& wiring, QString* reason)
+{
+	if (wiring.isEmpty()) { return true; }  // "the derived wiring" is always valid
+	if (!wiringRefsExist(chain, wiring, reason)) { return false; }
+	if (!wiringOutputExists(chain, wiring, reason)) { return false; }
 
 	const RoutingGraph& graph = chain.routingGraph();
 	if (!wiringPortsFit(chain, graph, wiring, reason)) { return false; }

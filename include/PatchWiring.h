@@ -72,6 +72,8 @@ namespace lmms
 class LMMS_EXPORT PatchRef
 {
 public:
+	//! UNSET: names no node at all. What a PatchWiring's output is until it is
+	//! set, and never what PatchRef::parse() returns.
 	PatchRef() = default;
 
 	//! The chain graph's source node
@@ -79,10 +81,11 @@ public:
 	//! The node of effect @a index, in chain order
 	static auto effect(int index) -> PatchRef;
 
+	auto isSet() const -> bool { return !m_none; }
 	auto isInput() const -> bool { return m_input; }
 	auto index() const -> int { return m_index; }
 
-	//! "input", or "effect:<index>"
+	//! "input", "effect:<index>", or the empty string for an unset reference
 	auto toString() const -> QString;
 	/**
 	 * Parses those two forms. @returns false and sets @a error (if given) for
@@ -93,6 +96,7 @@ public:
 	auto equals(const PatchRef& other) const -> bool;
 
 private:
+	bool m_none = true;
 	bool m_input = false;
 	int m_index = 0;
 };

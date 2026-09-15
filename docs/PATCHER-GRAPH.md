@@ -65,6 +65,11 @@ A `PatchWiring` is the edge list plus the output node, with its JSON form.
 * A wiring the current effect list cannot take (an effect removed under an index-addressed edge) is
   **dropped**, `patch_dropped: true` is reported by the read, and the chain falls back to its
   derivation - never a half-wired graph.
+* **An `edges` array does not carry the output node**, and a reference is *unset* until it is named:
+  `PatchRef()` names nothing (`toString()` is the empty string), `PatchRef::parse` never produces that
+  state, and a wiring with an unset output is **refused by name** rather than defaulted - the trap a
+  round-trip test caught during this lane is that "unset" must not degrade to `effect:0`, which would
+  route through a node the caller never named.
 
 ## 4. The group on the wire
 
@@ -116,6 +121,13 @@ graph those rows already cover); histogram moved with them
   restoring the derived wiring and the render with it; every refusal typed with the state unchanged;
   and one block through the patched graph allocating **0** bytes on the audio thread
   (`tests/src/core/AllocationProbe.h`).
+* **A throwaway runtime driver over the wiring type** (compiled from the tree's own
+  `compile_commands.json` flags, run in this lane, not committed): 21 checks, all passing -
+  `PatchRef::parse`/`toString` round-trip and its refusals (`"bogus"`, `"effect:-1"`, `"effect:x"`),
+  `linear(3)`'s three edges and output node, `linear(0)` empty, `toJson`/`fromJson` round-trip,
+  `fromJson`'s refusals (a non-object entry, a bad reference), and the unset-output rule above. It is
+  what found the unset-output trap; it is NOT the registered proof (the ctest is), and `PatchWiring`'s
+  numeric behaviour inside a graph is the ctest's to measure.
 * **The socket half is automatic and needs no per-feature work:** the MCP bridge derives one tool
   per registered id from a live instance's `control.commands_list` (row 28's spine), so
   `patcher.get_state` and `patcher.set_wiring` are tools as soon as an instance of this build is
@@ -147,7 +159,16 @@ QT_QPA_PLATFORM=offscreen build/zene --control-socket /tmp/z.sock &
 * **No build was run to completion in this lane.** The owner directive for this pass puts the
   feature first and the build second; the code was checked by `-fsyntax-only` compiles of every
   touched translation unit with the tree's own configure flags (`-DWANT_QT6=ON -DUSE_WERROR=ON
-  -DRelWithDebInfo -DTARGET_UARCH=official`) plus the three gates above, and `PatcherCommandsTest`
-  itself has **not been executed**. A green build is the next lane's first step, not a claim here.
+  -DRelWithDebInfo -DTARGET_UARCH=official`) - 7 source translation units plus the two test files,
+  all clean - and `PatcherCommandsTest` itself has **not been executed**. A green build is the next
+  lane's first step, not a claim here.
+* **Gates run (all read-only):** `file-length-gate --check` (fork scope) exit 0, `complexity-gate
+  --check` exit 0, `fork-sources-gate` exit 0, `no-upstream-regression-gate` exit 0,
+  `duplication-gate --check` exit 0 (0.31 % against a 5 % budget). `file-length-gate --check --scope
+  all` exits 1 on this tree, but on **inherited** violations that are present at the base
+  (`src/core/MidiAlsaSeq.cpp`, `src/core/Mixer.cpp`, `src/core/Song.cpp`, `src/gui/MainWindow.cpp`,
+  `tests/src/core/PluginScanCacheTest.cpp`, `tests/src/core/RetroMidiCaptureCommandsTest.cpp`); the
+  one entry this lane moves in that scope is `improved: src/core/EffectChain.cpp is now at or below
+  500 lines`.
 * The bridge's live tool list, the snapshot regeneration and the patcher's behaviour under a real
   audio device are the integration lane's to measure.

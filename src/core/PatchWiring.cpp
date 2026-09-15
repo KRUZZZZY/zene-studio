@@ -44,6 +44,7 @@ constexpr auto EFFECT_PREFIX = "effect:";
 auto PatchRef::input() -> PatchRef
 {
 	PatchRef ref;
+	ref.m_none = false;
 	ref.m_input = true;
 	return ref;
 }
@@ -51,12 +52,14 @@ auto PatchRef::input() -> PatchRef
 auto PatchRef::effect(int index) -> PatchRef
 {
 	PatchRef ref;
+	ref.m_none = false;
 	ref.m_index = index;
 	return ref;
 }
 
 auto PatchRef::toString() const -> QString
 {
+	if (m_none) { return QString(); }
 	if (m_input) { return QString::fromLatin1(INPUT_TEXT); }
 	return QString::fromLatin1(EFFECT_PREFIX) + QString::number(m_index);
 }
@@ -94,6 +97,9 @@ auto PatchRef::parse(const QString& text, PatchRef* ref, QString* error) -> bool
 
 auto PatchRef::equals(const PatchRef& other) const -> bool
 {
+	// An unset reference equals only another unset one: "names no node" is a
+	// state, not "effect 0".
+	if (m_none || other.m_none) { return m_none == other.m_none; }
 	if (m_input != other.m_input) { return false; }
 	return m_input || m_index == other.m_index;
 }

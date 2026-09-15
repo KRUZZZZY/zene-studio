@@ -66,6 +66,10 @@ namespace
 //! ids[0] = the chain's input node, ids[k] = the node of effect k-1, or -1.
 auto nodeIdFor(const PatchRef& ref, const std::vector<int>& ids) -> int
 {
+	// An unset reference names no node, and a wiring that reaches this point
+	// with one fails the wiring (and is reported as dropped) rather than
+	// silently routing through effect 0.
+	if (!ref.isSet()) { return -1; }
 	if (ref.isInput()) { return ids.empty() ? -1 : ids.front(); }
 
 	const std::size_t index = static_cast<std::size_t>(ref.index()) + 1;
@@ -95,6 +99,19 @@ auto wireGraph(RoutingGraph& graph, const PatchWiring& wiring, const std::vector
 	const int output = nodeIdFor(wiring.output(), ids);
 	if (output < 0) { return false; }
 	return graph.setOutputNode(output);
+}
+
+//! Why a wiring was not applied, in the two cases a caller can tell apart.
+void reportPatchWiringRefusal(bool hasGraph, QString* error)
+{
+	if (error == nullptr) { return; }
+	*error = hasGraph
+		? QStringLiteral("the wiring could not be applied to this chain's graph - a reference or "
+			"a port the graph refuses - so the chain is back on its derived wiring")
+		: QStringLiteral("this chain does not render through its routing graph, so it has no "
+			"wiring to replace: the graph is built for a chain whose effects have no "
+			"audio-ports model, and it is empty when the chain has no effects, when the block "
+			"size is not known yet, or when a device routes its own audio ports");
 }
 
 } // namespace
@@ -198,32 +215,22 @@ auto EffectChain::patchNodeId(const PatchRef& ref) const -> int
 auto EffectChain::setPatchWiring(const PatchWiring& wiring, QString* error) -> bool
 {
 	auto* engine = Engine::audioEngine();
-
-	if (wiring.isEmpty())
-	{
-		// "No patch" is the derived wiring, and a chain can always be put back
-		// on it - there is nothing to refuse and nothing to validate.
-		if (engine != nullptr) { engine->requestChangeInModel(); }
-		m_patch.clear();
-		rebuildRoutingGraph();
-		if (engine != nullptr) { engine->doneChangeInModel(); }
-		return true;
-	}
+	const PatchWiring previous = m_patch;
 
 	// The new wiring is built off the audio thread (rebuildRoutingGraph()
 	// allocates every node's buffers) and published under the model-change
 	// guard the audio thread takes for a whole render period, so the edit is
 	// never concurrent with process() - RoutingGraph.h's threading contract.
-	const PatchWiring previous = m_patch;
 	if (engine != nullptr) { engine->requestChangeInModel(); }
 	m_patch = wiring;
 	rebuildRoutingGraph();
-	// applied == the chain renders through its graph AND the graph took the
-	// wiring. Either half can fail: a chain with nothing routable has no graph
-	// at all, and a wiring the current effect list cannot take is dropped by
-	// rebuildRoutingGraph().
-	const bool applied = m_graphActive && !m_patchDropped;
+	// Applied == the chain renders through its graph AND the graph took the
+	// wiring - except for "no patch at all", which is the derivation and is
+	// applicable to any chain. A graph that did not take the wiring says so
+	// through m_patchDropped, and rebuildRoutingGraph() has already put the
+	// chain back on its derivation when that happens.
 	const bool hasGraph = m_graphActive;
+	const bool applied = wiring.isEmpty() || (m_graphActive && !m_patchDropped);
 	if (!applied)
 	{
 		// Nothing is written: the previous wiring is rebuilt in place, so a
@@ -233,21 +240,9 @@ auto EffectChain::setPatchWiring(const PatchWiring& wiring, QString* error) -> b
 	}
 	if (engine != nullptr) { engine->doneChangeInModel(); }
 
-	if (!applied)
-	{
-		if (error != nullptr)
-		{
-			*error = hasGraph
-				? QStringLiteral("the wiring could not be applied to this chain's graph - a reference or "
-					"a port the graph refuses - so the chain is back on its derived wiring")
-				: QStringLiteral("this chain does not render through its routing graph, so it has no "
-					"wiring to replace: the graph is built for a chain whose effects have no "
-					"audio-ports model, and it is empty when the chain has no effects, when the block "
-					"size is not known yet, or when a device routes its own audio ports");
-		}
-		return false;
-	}
-	return true;
+	if (applied) { return true; }
+	reportPatchWiringRefusal(hasGraph, error);
+	return false;
 }
 
 } // namespace lmms
