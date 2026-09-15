@@ -383,8 +383,19 @@ void InstrumentTrack::loadMpeExpressionOntoChannelNotes( int channel )
 			continue;
 		}
 
+		const MpeNoteExpression before = note->mpeExpression();
 		note->setMpeExpression( expression );
 		note->setFrequencyUpdate();
+
+		// MPE (task #649): the pitch axis reaches playback through the
+		// frequency above. Pressure and timbre have no frequency to ride on,
+		// so they are sent to the instrument as MIDI on the note's own
+		// channel - but only when they actually changed: a bend-only update
+		// (every pitch gesture, and the common case) sends nothing extra.
+		if( before.pressure != expression.pressure || before.timbre != expression.timbre )
+		{
+			note->sendMpeExpressionMidi();
+		}
 	}
 }
 

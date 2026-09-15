@@ -1520,6 +1520,7 @@ tests/src/core/ModulationTestSupport.h
 tests/src/core/MpeExpressionTest.cpp
 tests/src/core/MpeInputPathTest.cpp
 tests/src/core/MpeNoteStorageTest.cpp
+tests/src/core/MpePlaybackTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
@@ -1592,6 +1593,7 @@ tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
+tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/PluginPortsHarness.h
 tests/src/plugins/PluginPortsMigrationReference.cpp
 tests/src/plugins/PluginPortsMigrationTest.cpp

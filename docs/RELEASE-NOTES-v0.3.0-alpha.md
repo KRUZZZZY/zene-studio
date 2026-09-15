@@ -1066,8 +1066,14 @@ joins the routing surface's: the passive block and the live block are both at th
 - **Per-note expression is now reachable.** `note.expression_set` / `get` / `clear` drive the per-note
   MPE fields `#601` already stores on a `Note` and serializes as the optional `mpepitch` /
   `mpepressure` / `mpetimbre` attributes — they are not a second expression store, and the inverse is
-  a `MidiClip` checkpoint. **Only the pitch axis is applied by playback**, which is `#601`'s own
-  stated limit (`docs/MPE.md` §4), not a new one.
+  a `MidiClip` checkpoint. **All three axes are applied by playback** (pitch as a frequency ratio,
+  pressure and timbre as MIDI events on the note's own member channel, task #649) — a note that
+  carries no expression sends neither event, so nothing that did not use MPE changes. **Proof:**
+  `MpePlaybackTest` (registered ctest) renders ONE audio block of a note through the real playback
+  path with the expression and the same block without it and asserts the level moves by the ratio
+  the expression asks for — its subject is the in-tree MIT test instrument
+  `tests/src/plugins/MpeTestConsumer.cpp`, because no built-in synthesiser consumes channel
+  pressure or CC74; a hosted instrument or a MIDI output port is where a musician would hear them.
 - **UI absence — one line: modulators and per-note expression are drivable through the socket, not
   from the interface.** Nothing in `src/gui/` creates, draws or edits a modulator or a note's
   expression. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.

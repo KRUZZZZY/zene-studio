@@ -30,6 +30,7 @@
 #include "InstrumentSoundShaping.h"
 #include "InstrumentTrack.h"
 #include "Instrument.h"
+#include "MpeExpression.h"
 #include "Song.h"
 #include "lmms_math.h"
 
@@ -171,6 +172,31 @@ void NotePlayHandle::setVolume( volume_t _volume )
 
 
 
+void NotePlayHandle::sendMpeExpressionMidi( const TimePos& time, f_cnt_t offset )
+{
+	if( !hasMpeExpression() )
+	{
+		// Nothing was captured on this note: the instrument is left exactly as
+		// it was before this feature existed (no event, and no reset of
+		// whatever the instrument's own channel state already is).
+		return;
+	}
+
+	// The note's own channel is the channel its note-on took: for a note
+	// captured from an MPE controller that is the note's member channel, so
+	// the instrument can tell this note's expression from any other note's.
+	m_instrumentTrack->processOutEvent(
+		MidiEvent( MidiChannelPressure, midiChannel(), mpePressure() ), time, offset );
+
+	// CC74 is MPE's timbre ("Y") axis, the same controller number the capture
+	// path consumes (MpeTimbreController, include/MpeExpression.h).
+	m_instrumentTrack->processOutEvent(
+		MidiEvent( MidiControlChange, midiChannel(), MpeTimbreController, mpeTimbre() ), time, offset );
+}
+
+
+
+
 void NotePlayHandle::setPanning( panning_t panning )
 {
 	Note::setPanning( panning );
@@ -236,6 +262,11 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 			MidiEvent( MidiNoteOn, midiChannel(), midiKey(), midiVelocity( baseVelocity ) ),
 			TimePos::fromFrames( offset(), Engine::framesPerTick() ),
 			offset() );
+
+		// MPE (task #649): the note's captured pressure and timbre follow its
+		// note-on to the instrument, on the note's own channel, at the note's
+		// own offset inside this period.
+		sendMpeExpressionMidi( TimePos::fromFrames( offset(), Engine::framesPerTick() ), offset() );
 	}
 
 	if( m_frequencyNeedsUpdate || hasSlideGlide() )

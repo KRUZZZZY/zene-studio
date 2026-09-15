@@ -202,6 +202,15 @@ set(LMMS_TESTS
 	src/core/MpeExpressionTest.cpp
 	src/core/MpeInputPathTest.cpp
 	src/core/MpeNoteStorageTest.cpp
+	# Per-note MPE pressure and timbre REACH PLAYBACK (0.3.0 feature-list row 8,
+	# task #649): one block rendered through the real note path with the
+	# expression against the same block without it, through an in-tree MIT test
+	# instrument (tests/src/plugins/MpeTestConsumer.cpp) that turns the two axes
+	# it consumes into its own output level - plus the live half, a channel
+	# pressure event arriving on the sounding note's own member channel. Without
+	# the route every measured ratio is exactly 1.0 and the test fails;
+	# docs/MPE.md §4 and docs/KNOWN-LIMITATIONS.md carry the claim it backs.
+	src/core/MpePlaybackTest.cpp
 	# The #602 modulation layer: the ENGINE half (the LFO arithmetic, the target
 	# resolver, the per-block relative write and the persistence round trip) and
 	# the SURFACE half (the ten modulator.*/note.expression.* commands, their
@@ -440,6 +449,54 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# ---------------------------------------------------------------------------
+# The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
+#
+# tests/src/plugins/MpeTestConsumer.cpp is an in-tree MIT instrument that
+# CONSUMES per-note MPE channel pressure and CC74 and turns what it consumed
+# into its own output level, so MpePlaybackTest can measure one audio block
+# with the expression against the same block without it. Nothing else in the
+# tree can be that subject: the built-in synthesisers never see MIDI at all
+# (Instrument::handleMidiEvent is the base no-op; they are driven by a note's
+# frequency and volume), and every instrument that WOULD consume the two axes
+# (Vestige, Lv2Instrument, ClapEffect, CarlaBase, a hardware MIDI port) is a
+# hosted binary that is not installed here. Without a subject the only honest
+# claim would be "the events left the engine" - the drivable-but-inert shape
+# this project has already paid for twice.
+#
+# A MODULE in its own output directory, never installed, not in the product's
+# plug-in set: the test points PluginFactory at that directory through
+# LMMS_PLUGIN_DIR, and nothing else scans it.
+# ---------------------------------------------------------------------------
+add_library(mpe_test_consumer MODULE src/plugins/MpeTestConsumer.cpp)
+target_include_directories(mpe_test_consumer PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(mpe_test_consumer PRIVATE PLUGIN_NAME=mpe_test_consumer)
+target_compile_features(mpe_test_consumer PRIVATE cxx_std_20)
+# The fixture subclasses lmms::Instrument, so its object code references LMMS
+# symbols (Plugin's moc, Model's vtable, JournallingObject's dtor ...). Unix
+# shared modules tolerate unresolved symbols; macOS, mingw and MSVC do not, so
+# it links the same zene target every real plugin links
+# (cmake/modules/BuildPlugin.cmake) - the same fix synthetic_audio_plugin and
+# the partc_ref_* modules carry.
+target_link_libraries(mpe_test_consumer PRIVATE zene ${QT_LIBRARIES})
+set_target_properties(mpe_test_consumer PROPERTIES
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer"
+)
+
+# The proof's own wiring: the fixture directory it points LMMS_PLUGIN_DIR at,
+# the module built before ctest runs, and the exports a plug-in module
+# resolves its LMMS symbols from at load time (the zene executable and the
+# test binaries share that requirement - src/CMakeLists.txt sets the same
+# property on zene).
+target_compile_definitions(MpePlaybackTest PRIVATE
+	LMMS_MPE_CONSUMER_DIR="${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer")
+add_dependencies(MpePlaybackTest mpe_test_consumer)
+set_target_properties(MpePlaybackTest PROPERTIES ENABLE_EXPORTS ON)
+
 
 # RecordingRealtimeTest constructs a real Engine to measure the capture path
 # (D9a/D9b), which needs a Qt platform plugin even though the test is guiless.

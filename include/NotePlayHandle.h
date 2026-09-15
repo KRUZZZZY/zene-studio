@@ -80,6 +80,25 @@ public:
 	void setVolume( volume_t volume ) override;
 	void setPanning( panning_t panning ) override;
 
+	/*! Sends this note's captured MPE pressure and timbre to the instrument.
+	 *
+	 *  Task #649. Pitch was already applied by the engine itself (a frequency
+	 *  ratio in updateFrequency(), docs/MPE.md §2.4); pressure and timbre have
+	 *  no frequency to ride on, so they leave the engine the way every other
+	 *  per-note MIDI gesture does: as MIDI events on the channel this note's
+	 *  note-on took (midiChannel()), which for a note captured from an MPE
+	 *  controller is the note's own member channel.
+	 *
+	 *  Channel pressure followed by CC74 (MpeTimbreController) - the two axes
+	 *  an MPE controller sends per note. A note that carries no expression
+	 *  sends nothing at all, so a project that never captured expression
+	 *  reaches the instrument exactly as it did before.
+	 *
+	 *  Realtime rule: two MidiEvents and a virtual call, no allocation and no
+	 *  lock, exactly like the note-on it is sent with.
+	 */
+	void sendMpeExpressionMidi( const TimePos& time = TimePos(), f_cnt_t offset = 0 );
+
 	int midiKey() const;
 	int midiChannel() const
 	{
