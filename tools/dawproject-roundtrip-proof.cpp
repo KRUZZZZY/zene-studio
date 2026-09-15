@@ -194,29 +194,23 @@ static int refusals(DawProjectModel* model)
 	return failures;
 }
 
-int main(int argc, char** argv)
+//! Write the model, read it back, and report the counts and the version the file
+//! carries. Returns the failures so far, or -1 when the file could not be
+//! written or read at all (there is nothing to compare in that case).
+static int writeAndRead(const DawProjectModel& authored, const QString& file,
+	DawProjectModel* read)
 {
-	QCoreApplication app(argc, argv);
-	int failures = 0;
-
-	const QString file = QDir::tempPath() + QStringLiteral("/dawp-proof.dawproject");
-	QFile::remove(file);
-
-	const DawProjectModel authored = authoredModel();
-	out << "authored: tracks=" << authored.trackCount() << " clips=" << authored.clipCount()
-		<< " notes=" << authored.noteCount() << " mixer=" << authored.mixerChannelCount()
-		<< " tempoPoints=" << authored.tempoPoints.size()
-		<< " meterPoints=" << authored.meterPoints.size() << "\n";
-
 	DawProjectWriteReport writeReport;
 	QString error;
 	if (!writeDawProject(file, authored, &writeReport, &error))
 	{
 		out << "FAIL write: " << error << "\n";
-		return 2;
+		return -1;
 	}
 	out << "wrote: path=" << writeReport.path << " bytes=" << writeReport.bytes
 		<< " sha256=" << writeReport.sha256.left(16) << "...\n";
+
+	int failures = 0;
 	if (writeReport.trackCount != 2 || writeReport.clipCount != 2 || writeReport.noteCount != 2
 		|| writeReport.mixerChannelCount != 2 || writeReport.tempoPointCount != 1
 		|| writeReport.meterPointCount != 1)
@@ -225,12 +219,11 @@ int main(int argc, char** argv)
 		failures++;
 	}
 
-	DawProjectModel read;
 	DawProjectReadReport readReport;
-	if (!readDawProject(file, &read, &readReport, &error))
+	if (!readDawProject(file, read, &readReport, &error))
 	{
 		out << "FAIL read: " << error << "\n";
-		return 3;
+		return -1;
 	}
 	out << "read: formatVersion=" << readReport.formatVersion
 		<< " application=" << readReport.applicationName << " " << readReport.applicationVersion
@@ -239,15 +232,25 @@ int main(int argc, char** argv)
 		<< " notes=" << readReport.noteCount << " mixer=" << readReport.mixerChannelCount
 		<< " tempoPoints=" << readReport.tempoPointCount
 		<< " meterPoints=" << readReport.meterPointCount << "\n";
-
 	if (readReport.formatVersion != QStringLiteral("1.0"))
 	{
 		out << "FAIL format version: " << readReport.formatVersion << "\n";
 		failures++;
 	}
+	return failures;
+}
 
-	// THE MODEL COMPARISON - not the file, not its hash.
-	if (read == authored) { out << "MODEL EQUAL: operator== says the read model is the authored model\n"; }
+//! THE MODEL COMPARISON - not the file, not its hash - and the two digest
+//! properties that make it mean something: stable across the trip, and MOVING
+//! when the model moves. A digest blind to a changed note would satisfy "the
+//! models are equal" for two blanks.
+static int compareModels(const DawProjectModel& authored, const DawProjectModel& read)
+{
+	int failures = 0;
+	if (read == authored)
+	{
+		out << "MODEL EQUAL: operator== says the read model is the authored model\n";
+	}
 	else
 	{
 		out << "MODEL DIFFERS\n--- authored ---\n" << dawProjectModelDigest(authored)
@@ -255,35 +258,40 @@ int main(int argc, char** argv)
 		failures++;
 	}
 
-	// The digest is the comparison the control command reports, so it must be
-	// stable across the round trip AND must MOVE when the model moves - a digest
-	// blind to a changed note would satisfy "the models are equal" for two blanks.
 	if (dawProjectModelDigest(read) != dawProjectModelDigest(authored))
 	{
 		out << "FAIL digest instability across the round trip\n";
 		failures++;
 	}
+
 	DawProjectModel noteMoved = authored;
 	noteMoved.tracks[0].clips[0].notes[1].key = 65;
-	if (dawProjectModelDigest(noteMoved) == dawProjectModelDigest(authored))
-	{
-		out << "FAIL: the digest is blind to a changed note key\n";
-		failures++;
-	}
-	else { out << "DIGEST SENSITIVE: a changed note key moves the digest\n"; }
 	DawProjectModel tempoMoved = authored;
 	tempoMoved.tempo = 141.0;
-	if (dawProjectModelDigest(tempoMoved) == dawProjectModelDigest(authored))
+	const struct { const char* what; const DawProjectModel* model; } probes[] = {
+		{ "a changed note key", &noteMoved },
+		{ "the tempo", &tempoMoved },
+	};
+	for (const auto& probe : probes)
 	{
-		out << "FAIL: the digest is blind to a tempo change\n";
-		failures++;
+		if (dawProjectModelDigest(*probe.model) == dawProjectModelDigest(authored))
+		{
+			out << "FAIL: the digest is blind to " << probe.what << "\n";
+			failures++;
+		}
+		else { out << "DIGEST SENSITIVE: " << probe.what << " moves the digest\n"; }
 	}
-	else { out << "DIGEST SENSITIVE: tempo moves the digest\n"; }
+	return failures;
+}
 
-	// The ids the model carries ARE the document's ids, and every IDREF points at
-	// them (LOSSY #11) - asserted by name, so a renumbered document fails here.
-	const QStringList ids{QStringLiteral("mixer0"), QStringLiteral("mixer1"),
-		QStringLiteral("track0"), QStringLiteral("track1")};
+//! The ids the model carries ARE the document's ids and every IDREF points at
+//! them (LOSSY #11) - asserted by name, so a document that gets renumbered fails
+//! here rather than only in the blanket comparison - then the three refusals.
+static int idsAndRefusals(const DawProjectModel& read)
+{
+	int failures = 0;
+	const QStringList ids{ QStringLiteral("mixer0"), QStringLiteral("mixer1"),
+		QStringLiteral("track0"), QStringLiteral("track1") };
 	for (const QString& wanted : ids)
 	{
 		bool found = false;
@@ -301,16 +309,42 @@ int main(int argc, char** argv)
 			failures++;
 		}
 	}
-	if (read.tracks.size() > 0 && read.tracks[0].destinationChannelId != QStringLiteral("mixer0"))
+	if (!read.tracks.isEmpty() && read.tracks[0].destinationChannelId != QStringLiteral("mixer0"))
 	{
-		out << "FAIL: the track-to-strip IDREF became '"
-			<< (read.tracks.isEmpty() ? QString() : read.tracks[0].destinationChannelId) << "'\n";
+		out << "FAIL: the track-to-strip IDREF became '" << read.tracks[0].destinationChannelId
+			<< "'\n";
 		failures++;
 	}
 	else { out << "IDS AND IDREF: the model's own ids and destination survived\n"; }
 
 	DawProjectModel scratch;
 	failures += refusals(&scratch);
+	return failures;
+}
+
+int main(int argc, char** argv)
+{
+	QCoreApplication app(argc, argv);
+
+	const QString file = QDir::tempPath() + QStringLiteral("/dawp-proof.dawproject");
+	QFile::remove(file);
+
+	const DawProjectModel authored = authoredModel();
+	out << "authored: tracks=" << authored.trackCount() << " clips=" << authored.clipCount()
+		<< " notes=" << authored.noteCount() << " mixer=" << authored.mixerChannelCount()
+		<< " tempoPoints=" << authored.tempoPoints.size()
+		<< " meterPoints=" << authored.meterPoints.size() << "\n";
+
+	DawProjectModel read;
+	int failures = writeAndRead(authored, file, &read);
+	if (failures < 0)
+	{
+		out << "failures=1\n";
+		out.flush();
+		return 1;
+	}
+	failures += compareModels(authored, read);
+	failures += idsAndRefusals(read);
 
 	out << "failures=" << failures << "\n";
 	out.flush();
