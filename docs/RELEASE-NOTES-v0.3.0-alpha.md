@@ -653,9 +653,12 @@ compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with thei
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
-four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this merge tip and reports **231** rows over the
+four classes named above (122 + 18 + 7 + 84), and its constant is the telemetry-off/wasm-off base of
+229 / 122 / 18 / 7 / 82. The four rows this page's earlier 227 did not have are the loudness surface's
+(feature row 24, `030/meter-surface`): `meter.arm` and `export.set_loudness_report` as recorded-action
+`true_inverse` rows, `meter.get_state` and `meter.measure_file` as `not_mutating` inspectors — the **+2
+true_inverse / +2 not_mutating** growth against the base this page carried before that lane. The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
