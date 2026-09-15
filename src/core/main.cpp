@@ -60,6 +60,7 @@
 
 #include "MainApplication.h"
 #include "CrashReporter.h"
+#include "SafeStart.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "NotePlayHandle.h"
@@ -301,6 +302,32 @@ int usageError(const QString& message)
 int noInputFileError()
 {
 	return usageError( "No input file specified" );
+}
+
+
+// Safe-start mode (docs/FEATURE-LIST-0.3.0.md row 77, board task #666): after a
+// session that did not exit cleanly, the next launch loads with THIRD-PARTY
+// plugin instances skipped, and this is the OFFER of the normal start. There is
+// no dialog for it in this release: the offer is reported here, on stderr, and
+// held on the control surface (safestart.get_state carries it, and
+// safestart.acknowledge accepts it) - the absence docs/KNOWN-LIMITATIONS.md and
+// docs/RELEASE-NOTES-v0.3.0-alpha.md both state.
+void announceSafeStart()
+{
+	if( !lmms::safestart::safeStartActive() )
+	{
+		return;
+	}
+	fprintf( stderr, "Safe-start mode: the previous session did not exit cleanly, so this "
+		"launch skips THIRD-PARTY plugin instances (the engine's dummy plugin stands in for "
+		"each one). Accept the normal start with safestart.acknowledge - the NEXT launch loads "
+		"them again - or clear the marker with safestart.clear.\n" );
+	const lmms::safestart::SessionRecord previous = lmms::safestart::lastSession();
+	if( !previous.projectPath.empty() )
+	{
+		fprintf( stderr, "Safe-start mode: the project that was open was %s\n",
+			previous.projectPath.c_str() );
+	}
 }
 
 
@@ -975,6 +1002,12 @@ int main( int argc, char * * argv )
 	// include/CrashReporter.h and docs/CRASH-REPORTER.md).
 	crashreporter::install( ConfigManager::inst()->workingDir().toStdString() );
 	crashreporter::beginSession();
+	// Safe-start mode's crash marker, read and rewritten in the same place and for
+	// the same reason: the working directory is known here, and the marker has to
+	// be on disk before anything can die (feature row 77, board task #666).
+	safestart::install( ConfigManager::inst()->workingDir().toStdString() );
+	safestart::beginSession();
+	announceSafeStart();
 	if( coreOnly && crashreporter::hasPendingReport() )
 	{
 		// A headless run (render / --run-script) cannot show a dialog; offer
@@ -1050,10 +1083,13 @@ int main( int argc, char * * argv )
 		Engine::getSong()->loadProject( fileToLoad );
 		crashreporter::setProjectPath(
 			Engine::getSong()->projectFileName().toStdString() );
+		safestart::setProjectPath(
+			Engine::getSong()->projectFileName().toStdString() );
 		if( Engine::getSong()->isEmpty() )
 		{
 			printf("The project %s is empty, aborting!\n", fileToLoad.toUtf8().constData() );
 			crashreporter::endSession();
+			safestart::endSession();
 			exit( EXIT_FAILURE );
 		}
 		printf( "Done\n" );
@@ -1174,6 +1210,8 @@ int main( int argc, char * * argv )
 			Engine::getSong()->loadProject( fileToLoad );
 			crashreporter::setProjectPath(
 				Engine::getSong()->projectFileName().toStdString() );
+			safestart::setProjectPath(
+				Engine::getSong()->projectFileName().toStdString() );
 		}
 
 		QString error;
@@ -1208,6 +1246,12 @@ int main( int argc, char * * argv )
 		// still does not exist the reporter stays off for this session.
 		crashreporter::install( ConfigManager::inst()->workingDir().toStdString() );
 		crashreporter::beginSession();
+		// Safe-start mode's marker, for the reason above and with the same
+		// lifecycle: beginSession() reads what the last run left and writes this
+		// session's own marker (feature row 77, board task #666).
+		safestart::install( ConfigManager::inst()->workingDir().toStdString() );
+		safestart::beginSession();
+		announceSafeStart();
 
 		// Offer a crash report written by a previous session, if one is
 		// pending.  This is the whole reporting UX: the user is given the file
@@ -1366,6 +1410,7 @@ int main( int argc, char * * argv )
 			else // Exit
 			{
 				crashreporter::endSession();
+				safestart::endSession();
 				return EXIT_SUCCESS;
 			}
 		}
@@ -1401,6 +1446,8 @@ int main( int argc, char * * argv )
 				// call, and a crash at that moment should still name the file.
 				crashreporter::setProjectPath(
 					Engine::getSong()->projectFileName().toStdString() );
+				safestart::setProjectPath(
+					Engine::getSong()->projectFileName().toStdString() );
 			}
 		}
 		else if( !fileToImport.isEmpty() )
@@ -1409,6 +1456,7 @@ int main( int argc, char * * argv )
 			if( exitAfterImport )
 			{
 				crashreporter::endSession();
+				safestart::endSession();
 				return EXIT_SUCCESS;
 			}
 		}
@@ -1444,10 +1492,16 @@ int main( int argc, char * * argv )
 		// Save As, New) so a crash names the file the user was working on.
 		crashreporter::setProjectPath(
 			Engine::getSong()->projectFileName().toStdString() );
+		// The safe-start marker carries the same hint, so a crash names the file
+		// the user was working on in the next launch's report as well.
+		safestart::setProjectPath(
+			Engine::getSong()->projectFileName().toStdString() );
 		QObject::connect( Engine::getSong(), &Song::projectFileNameChanged,
 			Engine::getSong(),
 			[](){ crashreporter::setProjectPath(
-				Engine::getSong()->projectFileName().toStdString() ); } );
+				Engine::getSong()->projectFileName().toStdString() );
+				safestart::setProjectPath(
+					Engine::getSong()->projectFileName().toStdString() ); } );
 
 		// Finally we start the auto save timer and also trigger the
 		// autosave one time as recover.mmp is a signal to possible other
@@ -1487,6 +1541,9 @@ int main( int argc, char * * argv )
 	// A clean exit: clear the "session was open" marker so the next launch
 	// knows the difference between a crash and a deliberate quit.
 	crashreporter::endSession();
+	// ... and the safe-start marker with it: a clean exit is exactly what clears
+	// it, so the next launch is a normal one (feature row 77, board task #666).
+	safestart::endSession();
 	delete app;
 
 	if( destroyEngine )

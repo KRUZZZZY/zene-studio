@@ -2492,3 +2492,51 @@ accepts — never applied silently").
   suggestion or accepts one; `grep -rniI 'detect\.' src/gui/` finds no call site of these commands, and the piano
   roll's own key/scale combo is not moved by this feature. `docs/KNOWN-LIMITATIONS.md` carries the sentence with
   the bounds above; `docs/IMPORT-DETECTION.md` is the full record.
+
+## Safe-start mode after a crash (`safestart.*`, feature row 77 / board task #666) — added 2026-09-15
+
+A DAW whose last session died often dies again on the next launch, because the thing that killed it
+is loaded during start-up: a third-party plugin a saved project references. The two prerequisites
+were already in the tree — the crash reporter (row 54) and the plugin scan cache with its quarantine
+list (row 46) — and neither covered that case: a quarantined file is hidden from *discovery*, and a
+plugin that loads fine and then kills the process cannot be quarantined by a scan that never came
+back. Safe-start mode covers it, with a MARKER and one load-time predicate:
+
+- **The crash marker** (`include/SafeStart.h`, `src/core/SafeStart.cpp`) is written when a session
+  BEGINS and unlinked on the clean-exit path, which is the only construction that survives a
+  SIGKILL or a power cut — no handler can run on the way out. A marker found at launch is therefore
+  exactly "the previous run did not exit cleanly", and the file records the session it belonged to
+  (its pid, its time, the project it had open). It is deliberately separate from the crash reporter's
+  own session marker: that one is a diagnostic kept for the report, this one is the input to a
+  decision, and `safestart.clear` must not unlink a file another module owns.
+- **The load-time predicate** — `Plugin::instantiate()` consults
+  `safestart::shouldSkipPluginInstance()` and hands back the engine's own `DummyPlugin` for a
+  third-party module file (exactly what a *missing* plugin already gets), so a crash-causing plugin
+  cannot kill the next session before the project is up. One call site, because that function is the
+  single funnel every instrument, effect, tool, import filter and exporter is created through.
+  "Third-party" is a definition and not a vibe: a module is third-party when it is not a file this
+  build ships — not under the application's own plugin directories, nor under a directory a packager
+  pointed the build at (`PLUGIN_DIR`, `LMMS_PLUGIN_DIR`) — which is the set whose version and origin
+  this build does not control (`safestart.get_state` reports the directories it uses).
+- **Four ids.** `safestart.get_state` (the marker, the acknowledgement, the previous session's own
+  record, this session's skipped instances, the classification's own inputs and the offer),
+  `safestart.acknowledge` (accept the offer: the NEXT launch is a normal one — the acknowledgement is
+  **consumed** by that launch, so a decision taken about one crash cannot mask a second),
+  `safestart.clear` (the marker cleared now, and this session out of safe-start mode) and
+  `safestart.set_skip` (the session-scoped half of the predicate: with it off, a project loaded now
+  loads its third-party plugins while the marker stays). All three writers are `irreversible` and
+  each names its fallback — nothing here is a `JournallingObject` and no command writes a crash
+  marker from a caller's bytes; `src/core/ControlReversibilityTableSafeStart.cpp` is the argument.
+- **UI absence — one line:** safe-start mode is drivable through the socket and **nothing in the
+  interface shows, offers, accepts or clears it** — an unclean exit skips third-party plugin
+  instances on the next launch, the offer of a normal start is printed on stderr and held on the
+  control surface, and there is no dialog, banner, menu item or toolbar button for any of it.
+  `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
+- **The proof is registered, in two binaries:** `SafeStartTest` (`tests/src/core/SafeStartTest.cpp`)
+  raises a REAL signal in a forked child (and SIGKILL, which no handler can catch) and shows the next
+  launch reading the crashed session's own record, with the negative control that a clean exit leaves
+  no marker, no acknowledgement, no skipped instance and no safe start offered;
+  `SafeStartLoadPathTest` (`tests/src/core/SafeStartLoadPathTest.cpp`) drives the real
+  `Plugin::instantiate()` against a third-party module copy and asserts the `DummyPlugin`, then really
+  loads that module once the session switch is off — two binaries because the file-length ratchet is
+  not moved for a new feature.

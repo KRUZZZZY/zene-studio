@@ -164,6 +164,19 @@ set(LMMS_TESTS
 	src/core/GrooveTemplateTest.cpp
 	src/core/ControlGrooveCommandsTest.cpp
 	src/core/CrashReporterTest.cpp
+	# Safe-start mode after a crash (feature row 77, board task #666): the crash
+	# MARKER the next launch reads, the acknowledgement that makes the launch
+	# after that a normal one, and the load-time PREDICATE - proven against a
+	# REAL signal in a forked child and against the real Plugin::instantiate()
+	# with a third-party module copy.
+	src/core/SafeStartTest.cpp
+	# The same feature's load-path half, in its own binary (the file-length
+	# ratchet is not moved for a new feature - the ClipLinkTest /
+	# ClipLinkPersistenceTest arrangement): a real plugin module copy, the plugin
+	# search path pinned to it, and the real Plugin::instantiate() asserted to
+	# hand back the DummyPlugin while safe-start is active and to load the module
+	# once the session switch is off.
+	src/core/SafeStartLoadPathTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
 	# The export dither (TPDF) and the explicit SRC quality: the statistical
@@ -460,6 +473,25 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+
+	# SafeStartTest proves the load-time predicate on the REAL load path: it
+	# copies the built midiexport module into a fixture directory that this build
+	# does not ship from (which is what makes the file third-party), pins the
+	# plugin search path to it, and then asserts that Plugin::instantiate()
+	# hands back the engine's DummyPlugin while safe-start mode is active - and
+	# really loads the module once the session switch is off. The module resolves
+	# LMMS core symbols from its host, so the test binary must export its symbols
+	# exactly like the zene executable does (the same setup PluginScanCacheTest
+	# and PhaseDSidechainTest need). It also needs a Qt platform plugin, even
+	# though it is guiless.
+	if(LMMS_TEST_NAME STREQUAL "SafeStartTest" OR LMMS_TEST_NAME STREQUAL "SafeStartLoadPathTest")
+		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_SAFE_START_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+		add_dependencies(${LMMS_TEST_NAME} midiexport)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()

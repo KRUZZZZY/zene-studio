@@ -130,6 +130,12 @@ set(LMMS_SRCS
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
 	core/CrashReporter.cpp
+	# Safe-start mode after a crash (feature row 77, board task #666): the crash
+	# MARKER and the load-time predicate. Beside the crash reporter because it is
+	# the same shape of module - a small C API over files in the working directory
+	# on the main thread only - and the two lifecycles are driven together from
+	# main.cpp.
+	core/SafeStart.cpp
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsClipEdits.cpp
@@ -260,6 +266,16 @@ set(LMMS_SRCS
 	core/ControlCommandsCrash.cpp
 	core/ControlCommandsPluginScan.cpp
 	core/ControlCommandsPluginScanEdit.cpp
+	# Safe-start mode's surface (feature row 77, board task #666): the marker, the
+	# acknowledgement and the session-scoped half of the load-time predicate. Its
+	# own translation unit for the reason the crash and scan groups have theirs -
+	# gate 7 measures a file, not a group - and because the group is one group.
+	core/ControlCommandsSafeStart.cpp
+	# Its edit half (safestart.acknowledge / clear / set_skip), in its own
+	# translation unit along the seam ControlCommandsAutomation.cpp /
+	# ...AutomationEdit.cpp established: the read half and the pair's shared header
+	# are the other two files of the same split.
+	core/ControlCommandsSafeStartEdit.cpp
 	# plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
 	# host paths keep and the counters their audio paths increment. In the core
 	# because the hosts are plugin modules: this is what makes the property
@@ -425,6 +441,12 @@ set(LMMS_SRCS
 	# and 54), in their own file for the reason the routing surface's rows are:
 	# the passive block and the live block are both at the file-length cap.
 	core/ControlReversibilityTableScanAndCrash.cpp
+	# The safestart.* group's four rows (feature row 77, board task #666): one
+	# not_mutating read and the group's three irreversible writers. A GROUP file on
+	# the same seam as the scan-and-crash rows above - the class comes from each
+	# row, not from the file - and its own TU because the files it would otherwise
+	# join are both at the file-length ratchet.
+	core/ControlReversibilityTableSafeStart.cpp
 	# The auto-mastering group's three rows (feature rows 25 and 72): one
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
