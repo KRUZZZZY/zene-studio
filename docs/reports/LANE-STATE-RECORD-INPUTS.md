@@ -1,5 +1,14 @@
 # LANE STATE — `030/record-inputs` (recording engine surface: rows 64 / 14 / 16, board task 650)
 
+> **Location (2026-09-15).** Moved from the repository root to `docs/reports/LANE-STATE-RECORD-INPUTS.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"), the second pass —
+> the 2026-09-13 pass moved `DOCS-NAMING.md`, `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` and
+> left the rule in `docs/reports/README.md`. It is a lane report, not `docs/RECORD-INPUTS.md`.
+> The lane's own text is unchanged: it is a record of what the lane measured, and editing a
+> record is how a record stops being evidence. A citation that names it by bare name still
+> resolves to this file; the rule is recorded in `docs/reports/README.md` and
+> `docs/CONVENTIONS.md`.
+
 **Worktree:** `zene-030/wrec` · **Branch:** `030/record-inputs` · **Base:** `release/0.3.0` @ `f611c888b`
 **Do not merge yet** — see §4. The parent re-runs the build, the suite and the gates on the merged tip before
 accepting anything here. Nothing was pushed; nothing was merged; `release/0.3.0` and `zene-030` were not

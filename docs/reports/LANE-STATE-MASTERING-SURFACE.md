@@ -1,5 +1,15 @@
 # LANE-STATE — `030/mastering-surface` (feature rows 25 and 72)
 
+> **Location (2026-09-15).** Moved from the repository root to `docs/reports/LANE-STATE-MASTERING-SURFACE.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"), the second pass —
+> the 2026-09-13 pass moved `DOCS-NAMING.md`, `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` and
+> left the rule in `docs/reports/README.md`. The `LANE-STATE.md` this file tells the reader to prefer over itself moved in the same
+> change, so the pair is still a pair and the instruction still resolves.
+> The lane's own text is unchanged: it is a record of what the lane measured, and editing a
+> record is how a record stops being evidence. A citation that names it by bare name still
+> resolves to this file; the rule is recorded in `docs/reports/README.md` and
+> `docs/CONVENTIONS.md`.
+
 **Read this file, not `LANE-STATE.md`.** `LANE-STATE.md` at this tip is **not mine**: it is the
 `030/folder-tracks` lane's state doc (711 lines) that the release tree already carried at the base
 tip `598d4f5c1`. I restored it byte for byte (sha256 `b3cf4967…`) after accidentally overwriting it in

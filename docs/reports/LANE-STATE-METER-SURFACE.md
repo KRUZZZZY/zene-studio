@@ -1,5 +1,15 @@
 # LANE STATE — `030/meter-surface` (loudness metering, feature row 24, board task 654)
 
+> **Location (2026-09-15).** Moved from the repository root to `docs/reports/LANE-STATE-METER-SURFACE.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"), the second pass —
+> the 2026-09-13 pass moved `DOCS-NAMING.md`, `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` and
+> left the rule in `docs/reports/README.md`. `docs/METER-SURFACE.md` — the design document this file's build/test state belongs to —
+> carries the new path in the same change.
+> The lane's own text is unchanged: it is a record of what the lane measured, and editing a
+> record is how a record stops being evidence. A citation that names it by bare name still
+> resolves to this file; the rule is recorded in `docs/reports/README.md` and
+> `docs/CONVENTIONS.md`.
+
 **Worktree:** `zene-030/wmeter` · **Branch:** `030/meter-surface` · **Base:** `release/0.3.0` @ `f611c888b`
 **Do not merge yet** — see §4 (`what the parent must run`). The parent re-runs the build, the suite and the
 gates on the merged tip before accepting anything here.

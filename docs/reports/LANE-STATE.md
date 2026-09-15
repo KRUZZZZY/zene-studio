@@ -1,5 +1,16 @@
 # LANE-STATE — `030/folder-tracks` in `zene-030/wft`
 
+> **Location (2026-09-15).** Moved from the repository root to `docs/reports/LANE-STATE.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"), the second pass —
+> the 2026-09-13 pass moved `DOCS-NAMING.md`, `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` and
+> left the rule in `docs/reports/README.md`. It is not one lane's report but four, concatenated in the order the lanes landed
+> (`030/folder-tracks`, `030/retro-capture`, `030/vca-editgroups`, `030/pitch-stretch`);
+> each section keeps its own header and its own measurements.
+> The lane's own text is unchanged: it is a record of what the lane measured, and editing a
+> record is how a record stops being evidence. A citation that names it by bare name still
+> resolves to this file; the rule is recorded in `docs/reports/README.md` and
+> `docs/CONVENTIONS.md`.
+
 Owner items **3+20+21** (folder tracks; the layout/workspace-presets half is 0.5.0 and is NOT built).
 Base: `334790219` (the tip of `release/0.3.0` this lane branched from). **Nothing is merged anywhere** —
 the integration branch was mid-CI for the whole session, and this lane only commits on its own branch.
