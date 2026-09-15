@@ -220,6 +220,14 @@ void registerControlCommands(ControlRegistry& registry)
 	// group's four ids are two translation units (the read/repair half is
 	// registered by the same call chain, at its declaration).
 	registerClipLinkCommands(registry);
+	// Safe-start mode after a crash (feature row 77, board task #666): the crash
+	// marker, the acknowledgement that says the next launch is the normal one, and
+	// the load-time predicate Plugin::instantiate consults to skip third-party
+	// plugin instances for the session that follows an unclean exit. Registered
+	// beside the crash reporter and the scan cache because it is built on both -
+	// and no compile-time switch: the module is a plain C API over files in the
+	// working directory, so its ids are honest in every configuration.
+	registerSafeStartCommands(registry);
 }
 
 } // namespace lmms

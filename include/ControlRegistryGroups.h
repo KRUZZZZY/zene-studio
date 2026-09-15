@@ -400,6 +400,18 @@ LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
  *  that outgrew that budget are declared. Called by
  *  registerControlCommands() beside registerRecordingInputCommands(). */
 LMMS_EXPORT void registerRecordingRouteCommands(ControlRegistry& registry);
+/*! safestart.get_state / acknowledge / clear / set_skip - safe-start mode after a
+ *  crash (feature row 77 of docs/FEATURE-LIST-0.3.0.md, OWNER-31 item 31, board
+ *  task #666). The engine half is include/SafeStart.h: the crash MARKER (written
+ *  when a session begins, unlinked on the clean-exit path, so a marker found at
+ *  launch means the previous run died), the acknowledgement that says the NEXT
+ *  launch is the normal one, and the load-time PREDICATE
+ *  (safestart::shouldSkipPluginInstance) that Plugin::instantiate consults, so a
+ *  third-party plugin instance is replaced by the engine's DummyPlugin for the
+ *  session that follows an unclean exit. This group is the ONLY way it is
+ *  operated in 0.3.0: there is no dialog, no banner and no toolbar button for
+ *  it (docs/KNOWN-LIMITATIONS.md carries the absence line). */
+LMMS_EXPORT void registerSafeStartCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

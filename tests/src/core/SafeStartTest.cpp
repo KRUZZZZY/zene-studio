@@ -1,0 +1,523 @@
+/*
+ * SafeStartTest.cpp - safe-start mode after a crash, end to end.
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of Zene Studio (an LMMS-derived product).
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+// Acceptance proofs for safe-start mode (feature row 77 of
+// docs/FEATURE-LIST-0.3.0.md, OWNER-31 item 31, board task #666):
+//
+//   * a CHILD process that really dies by a signal leaves the crash MARKER
+//     behind, and the next launch - a fresh beginSession() over the same working
+//     directory - reads the record the crashed session wrote (its pid) and comes
+//     up in safe-start mode;
+//   * the same holds for SIGKILL, which no handler can catch: the design is
+//     "written at session start, unlinked on the clean path", and this is the
+//     case that proves why that is the only construction that works;
+//   * the PREDICATE is wired into the real load path: with safe-start active,
+//     Plugin::instantiate() really returns the engine's DummyPlugin for a
+//     THIRD-PARTY module file, and with the session switch off the SAME call
+//     really loads the module - so the skip is the mode's doing and not a plugin
+//     that failed to load;
+//   * the NEGATIVE CONTROL holds: a session that exits cleanly leaves no marker,
+//     no acknowledgement, no skipped instance and no safe start offered;
+//   * the acknowledgement makes the launch AFTER the next one normal, and it is
+//     consumed by that launch, so a second crash cannot be masked by a decision
+//     taken about the first;
+//   * the marker stays within its byte cap even for absurd input.
+//
+// The signal half is POSIX-only; on Windows the fork-and-signal cases are
+// skipped with the reason the suite's other plugin-module tests give, and the
+// state machine half still runs.
+
+#include "SafeStart.h"
+
+#include "DummyPlugin.h"
+#include "Plugin.h"
+#include "PluginFactory.h"
+
+#include <QtTest>
+#include <QByteArray>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QStringList>
+#include <QTemporaryDir>
+
+#ifndef Q_OS_WIN
+#include <algorithm>
+#include <csignal>
+#include <cstdlib>
+#include <string>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
+//! Build-tree plugin directory, injected by tests/CMakeLists.txt: the module
+//! this suite copies into a fixture so it can prove the load path skips
+//! THIRD-PARTY files (a fixture directory is a file the build does not ship,
+//! which is exactly what the predicate classifies as third-party).
+#ifndef LMMS_TEST_SAFE_START_PLUGIN_DIR
+#define LMMS_TEST_SAFE_START_PLUGIN_DIR "plugins"
+#endif
+
+namespace
+{
+
+using namespace lmms::safestart;
+
+//! A path no test machine owns, used for the classification assertions. The
+//! file need not exist: the predicate resolves what a path really is when it
+//! can and falls back to its absolute form.
+const std::string ThirdPartyPath = "/tmp/some-user-drop-in/libtotallythirdparty.so";
+
+#ifndef Q_OS_WIN
+
+//! The module file name the scanner looks for on this platform (PluginFactory's
+//! candidate filter is "*.dll" on Windows and "lib*.so" elsewhere).
+constexpr auto moduleFileName() -> const char*
+{
+	return "libmidiexport.so";
+}
+
+//! Wait for a child, bounded. A timeout is a HANG, which this module must never
+//! cause, and every caller asserts on it. (The CrashReporterTest helper, which
+//! this suite copies because it is the same child-process pattern.)
+bool waitBounded(pid_t pid, int timeoutMs, int& status)
+{
+	for (int waited = 0; waited < timeoutMs; waited += 20)
+	{
+		const pid_t r = ::waitpid(pid, &status, WNOHANG);
+		if (r == pid) { return true; }
+		if (r < 0) { return false; }
+		usleep(20000);
+	}
+	return false;
+}
+
+#endif // !Q_OS_WIN
+
+} // namespace
+
+
+class SafeStartTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+
+	// -----------------------------------------------------------------------
+	// 1. THE NEGATIVE CONTROL. A session that exits cleanly leaves nothing:
+	//    no marker, no acknowledgement, no skipped instance, no safe start.
+	// -----------------------------------------------------------------------
+	void cleanExitLeavesNoMarkerAndNoStaleState()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+		QVERIFY(isInstalled());
+
+		beginSession();
+		QVERIFY2(markerExists(), "beginSession() must write the marker, or the whole "
+			"detection rests on a file that is never created");
+		QVERIFY2(!safeStartActive(), "a session with no marker behind it must NOT start safe");
+		// The predicate is false in a normal session: this is the proof that
+		// the feature is inert unless a crash marker was found.
+		QVERIFY(!shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath));
+
+		endSession();
+		QVERIFY2(!markerExists(), "a clean exit must clear the crash marker");
+		QVERIFY2(!acknowledged(), "a clean exit must leave no acknowledgement behind");
+		QVERIFY(previousRunExitedCleanly());
+		QVERIFY(!safeStartActive());
+		QCOMPARE(skippedCount(), 0);
+		QVERIFY2(!shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath),
+			"a clean run must not skip anything");
+		QVERIFY2(QDir(dir.path()).entryList(QDir::Files).isEmpty(),
+			"a clean run must leave no file of ours in the working directory");
+	}
+
+	// -----------------------------------------------------------------------
+	// 2. THE KEY ARTEFACT. A child that REALLY faults leaves the marker for the
+	//    next launch, which reads the crashed session's own record and starts
+	//    safe - and the predicate follows it.
+	// -----------------------------------------------------------------------
+	void realSignalLeavesTheMarkerAndTheNextLaunchStartsSafe()
+	{
+#ifdef Q_OS_WIN
+		QSKIP("a Windows test host cannot load plugin modules, and this case is "
+			"about the POSIX signal path (the module is a documented no-op there)");
+#else
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		const std::string workDir = dir.path().toStdString();
+		const std::string project = "/tmp/safe start test.mmp";
+
+		// The session BEFORE the crash: clean, and it does not skip anything.
+		QVERIFY(install(workDir));
+		beginSession();
+		QVERIFY(!safeStartActive());
+		QVERIFY(!shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath));
+		// The open project, recorded the way main() records it - so the marker
+		// the crash leaves behind names the file the user was working on.
+		setProjectPath(project);
+		QCOMPARE(QString::fromStdString(projectPath()), QString::fromStdString(project));
+		// ... and it dies abnormally, exactly as the product would: the child
+		// installs over the same working directory, begins its own session
+		// (which rewrites the marker with ITS pid) and then really faults.
+		::fflush(nullptr);
+		const pid_t pid = ::fork();
+		QVERIFY2(pid >= 0, "fork failed");
+		if (pid == 0)
+		{
+			// CHILD - the session that crashes.
+			install(workDir);
+			beginSession();
+			volatile int* p = reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1));
+			*p = 1;                       // SIGSEGV with si_addr == 0x1
+			::_exit(80);                  // must not be reached
+		}
+		int status = 0;
+		QVERIFY2(waitBounded(pid, 15000, status),
+			"the crashing child hung: safe-start mode must not deadlock a dying process");
+		QVERIFY2(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV,
+			"the child must still die by SIGSEGV, as it would without any of this");
+
+		// THE NEXT LAUNCH: a fresh install + beginSession over the same working
+		// directory, which is exactly what main() does at startup.
+		QVERIFY(install(workDir));
+		beginSession();
+		QVERIFY2(!previousRunExitedCleanly(),
+			"a signal death must leave the marker, so the next launch can tell it from a quit");
+		QVERIFY2(safeStartActive(), "the launch after a crash must start safe");
+		QCOMPARE(safeStartRunCount(), 1ULL);
+		const SessionRecord previous = lastSession();
+		QVERIFY2(previous.present, "the marker's own record must be readable");
+		QVERIFY2(previous.processId == static_cast<unsigned long long>(pid),
+			"the record must be the CRASHED session's, not a leftover of the test process");
+		QCOMPARE(QString::fromStdString(previous.projectPath), QString::fromStdString(project));
+
+		// THE PREDICATE, in the state the feature actually creates: a
+		// third-party module file is skipped, and the mode's own record proves
+		// it was the mode and not a load failure.
+		QVERIFY2(shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath),
+			"the launch after a crash must skip third-party plugin instances");
+		noteSkippedInstance("totallythirdparty", ThirdPartyPath, "test");
+		QCOMPARE(skippedCount(), 1);
+		QCOMPARE(QString::fromStdString(skippedInstances().front().pluginName),
+			QStringLiteral("totallythirdparty"));
+
+		// A clean exit from the safe session clears everything, so the launch
+		// after it is a normal one.
+		endSession();
+		QVERIFY(!markerExists());
+		QVERIFY(!safeStartActive());
+#endif
+	}
+
+	// -----------------------------------------------------------------------
+	// 3. SIGKILL: the case that decides the marker's design. Nothing can run on
+	//    the way out, so the file has to have been written at session START -
+	//    and it is therefore still there for the next launch.
+	// -----------------------------------------------------------------------
+	void sigkillAlsoLeavesTheMarker()
+	{
+#ifdef Q_OS_WIN
+		QSKIP("POSIX signal path; the module is a documented no-op on Windows");
+#else
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		const std::string workDir = dir.path().toStdString();
+		QVERIFY(install(workDir));
+		beginSession();
+
+		::fflush(nullptr);
+		const pid_t pid = ::fork();
+		QVERIFY2(pid >= 0, "fork failed");
+		if (pid == 0)
+		{
+			install(workDir);
+			beginSession();
+			::kill(::getpid(), SIGKILL);  // uncatchable by construction
+			::_exit(81);                  // unreachable
+		}
+		int status = 0;
+		QVERIFY2(waitBounded(pid, 15000, status), "the killed child hung");
+		QVERIFY2(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL, "the child must die by SIGKILL");
+
+		QVERIFY(install(workDir));
+		beginSession();
+		QVERIFY2(safeStartActive(),
+			"an uncatchable death must still leave the marker: it was written at session start");
+		QCOMPARE(lastSession().processId, static_cast<unsigned long long>(pid));
+		endSession();
+#endif
+	}
+
+	// -----------------------------------------------------------------------
+	// 4. The acknowledgement: "the NEXT launch is the normal one", consumed by
+	//    that launch so a second crash cannot be masked by the first decision.
+	// -----------------------------------------------------------------------
+	void acknowledgeMakesTheNextLaunchNormal()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		// A marker left by a previous run, written the way a crashed session
+		// would have written it (the child-process cases above prove that path
+		// for real; this one needs the state, not the signal).
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4242\ntime_unix=1700000000\n"
+				"safe_start_runs=0\nproject=/tmp/a crashed session.mmp\n");
+		}
+
+		beginSession();
+		QVERIFY(safeStartActive());
+		QCOMPARE(lastSession().processId, 4242ULL);
+		QCOMPARE(QString::fromStdString(lastSession().projectPath),
+			QStringLiteral("/tmp/a crashed session.mmp"));
+
+		// The offer is accepted.
+		acknowledge();
+		QVERIFY2(acknowledged(), "accepting the offer must write the acknowledgement");
+		QVERIFY2(markerExists(), "accepting the offer must NOT delete the marker");
+		QVERIFY2(safeStartActive(), "the CURRENT session is still the safe one");
+		endSession();
+
+		// The NEXT launch consumes it and is a normal one - and it does so even
+		// though the marker is there again, because the definition of a safe
+		// start is "a marker and no acknowledgement".
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4243\ntime_unix=1700000001\n");
+		}
+		acknowledge();
+		QVERIFY(acknowledged());
+		beginSession();
+		QVERIFY2(!acknowledged(),
+			"the acknowledgement must be CONSUMED by the launch it was written for");
+		QVERIFY2(!safeStartActive(), "the acknowledged launch must be a normal one");
+		QVERIFY2(!shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath),
+			"a normal launch must not skip third-party plugin instances");
+		// A crash of that normal launch is still a crash: the marker stays.
+		QVERIFY(markerExists());
+
+		// clear() is the "the cause is fixed" verb.
+		clear();
+		QVERIFY(!markerExists());
+		QVERIFY(!acknowledged());
+		QVERIFY(!safeStartActive());
+	}
+
+	// -----------------------------------------------------------------------
+	// 5. THE PREDICATE'S CLASSIFICATION. "Third-party" is a definition, so it is
+	//    asserted rather than assumed: a file under a directory this build ships
+	//    from is NOT third-party (LMMS_PLUGIN_DIR names such a directory, which
+	//    is how the product's own tests point at the build tree), anything else
+	//    is, and an empty path is not (a missing plugin is not this feature's
+	//    business).
+	// -----------------------------------------------------------------------
+	void thePredicateOnlySkipsThirdPartyFiles()
+	{
+		QTemporaryDir ownDirectory;   // stands in for the packager's plugin directory
+		QVERIFY2(ownDirectory.isValid(), "could not create a temporary own-plugin directory");
+		const std::string own = ownDirectory.path().toStdString();
+
+		// The environment override the product honours, used exactly as a
+		// packager or the build tree uses it.
+		const QByteArray saved = qgetenv("LMMS_PLUGIN_DIR");
+		qputenv("LMMS_PLUGIN_DIR", QByteArray::fromStdString(own));
+		const std::vector<std::string> ownDirectories = ownPluginDirectories();
+		const bool known = std::find(ownDirectories.begin(), ownDirectories.end(), own)
+			!= ownDirectories.end();
+		QVERIFY2(known, "LMMS_PLUGIN_DIR must be one of the directories treated as this build's own");
+
+		QVERIFY2(!isThirdPartyPluginFile(own + "/libtripleoscillator.so"),
+			"a module this build ships is not third-party");
+		QVERIFY2(isThirdPartyPluginFile(ThirdPartyPath),
+			"a module outside every directory this build ships is third-party");
+		QVERIFY2(!isThirdPartyPluginFile(""),
+			"an empty path is not third-party: a plugin that resolved to no file at all is the "
+			"missing-plugin case Plugin::instantiate already handles");
+		// The component-wise rule: a SIBLING with a shared prefix is not inside.
+		QVERIFY2(isThirdPartyPluginFile(own + "/sibling/libtripleoscillator.so"),
+			"a subdirectory of an own directory is not itself an own directory");
+
+		if (saved.isEmpty()) { qunsetenv("LMMS_PLUGIN_DIR"); }
+		else { qputenv("LMMS_PLUGIN_DIR", saved); }
+	}
+
+	// -----------------------------------------------------------------------
+	// 6. The session-scoped switch, and the fact that it is the ONLY cause of a
+	//    skip in this state.
+	// -----------------------------------------------------------------------
+	void setSkipTurnsThePredicateOffForThisSession()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4244\n");
+		}
+		beginSession();
+		QVERIFY(safeStartActive());
+		QVERIFY2(skipEnabled(), "the skip is armed by the session, not by the caller");
+		QVERIFY(shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath));
+
+		setSkipEnabled(false);
+		QVERIFY(!skipEnabled());
+		QVERIFY2(!shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath),
+			"with the session switch off, nothing is skipped");
+		QVERIFY2(safeStartActive(), "the switch does not end the safe-start state, it lifts one half of it");
+		QVERIFY(markerExists());
+
+		// A new session re-arms it: the switch is session-scoped.
+		beginSession();
+		QVERIFY(skipEnabled());
+		QVERIFY(shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath));
+		endSession();
+	}
+
+	// -----------------------------------------------------------------------
+	// 7. Bounds: the marker cannot be grown past its cap by anything.
+	// -----------------------------------------------------------------------
+	void boundsTheMarkerCannotExceedItsCap()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		// A marker written by something else, with an absurd project path: the
+		// reader must bound it too, and the marker this session writes must stay
+		// inside the cap.
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=1\nproject=");
+			marker.write(QByteArray(8192, 'A'));
+			marker.write("\n");
+		}
+
+		beginSession();
+		QVERIFY(safeStartActive());
+		const QFileInfo written(QString::fromStdString(markerPath()));
+		QVERIFY(written.exists());
+		QVERIFY2(static_cast<unsigned long>(written.size()) <= kMaxMarkerBytes,
+			"the marker exceeded kMaxMarkerBytes");
+		QVERIFY2(lastSession().projectPath.size() <= kMaxProjectPathBytes,
+			"the project hint exceeded kMaxProjectPathBytes");
+		endSession();
+	}
+
+	// -----------------------------------------------------------------------
+	// 8. THE LOAD PATH. The predicate is not a claim about a helper: the real
+	//    Plugin::instantiate() returns the engine's DummyPlugin for a
+	//    third-party module while safe-start is active, and the SAME call really
+	//    loads that module once the session switch is off. Without the second
+	//    half the first would be indistinguishable from a module that simply
+	//    fails to load.
+	// -----------------------------------------------------------------------
+	void theLoadPathReallySkipsAThirdPartyInstance()
+	{
+#ifdef Q_OS_WIN
+		QSKIP("a Windows test host cannot load plugin MODULE libraries: plugin modules link the "
+			"zene executable, so their import descriptor names zene.exe and a test host cannot "
+			"satisfy it (the same reason ScriptEngineTest and PluginScanCacheTest skip here)");
+#else
+		QTemporaryDir fixture;
+		QVERIFY2(fixture.isValid(), "could not create the plugin directory fixture");
+		const QFileInfo module(QDir(QStringLiteral(LMMS_TEST_SAFE_START_PLUGIN_DIR))
+			.filePath(QString::fromUtf8(moduleFileName())));
+		QVERIFY2(module.exists(),
+			qPrintable(QStringLiteral("the build's own plugin module is missing: %1")
+				.arg(module.absoluteFilePath())));
+		QVERIFY2(QFile::copy(module.absoluteFilePath(),
+				fixture.filePath(QString::fromUtf8(moduleFileName()))),
+			"cannot copy the module into the fixture");
+
+		// The fixture is a directory this build does not ship from, which is
+		// exactly what makes the file third-party for the predicate - and it is
+		// the ONLY plugin directory in the search path, so the name below
+		// resolves to it.
+		QVERIFY(isThirdPartyPluginFile(fixture.filePath(QString::fromUtf8(moduleFileName()))
+			.toStdString()));
+		// The fixture must be the ONLY plugin directory in the search path, or
+		// the name below could resolve to a module this build ships and the case
+		// would prove nothing. LMMS_PLUGIN_DIR is the one other way the build's
+		// own modules get in, so it is cleared here.
+		qunsetenv("LMMS_PLUGIN_DIR");
+		QDir::setSearchPaths(QStringLiteral("plugins"), QStringList{fixture.path()});
+
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4245\n");
+		}
+		beginSession();
+		QVERIFY(safeStartActive());
+		resetSkippedInstances();
+
+		// 1) SAFE: the instance is NOT created, and the module is still in the
+		//    factory's catalogue - so the skip is the mode's doing.
+		lmms::PluginFactory* factory = lmms::getPluginFactory();
+		QVERIFY2(!factory->pluginInfo("midiexport").isNull(),
+			"the fixture module was not discovered, so this case would prove nothing");
+		QCOMPARE(factory->pluginInfo("midiexport").file.absoluteFilePath(),
+			fixture.filePath(QString::fromUtf8(moduleFileName())),
+			"the name must resolve to the FIXTURE copy: that is what makes it third-party");
+		lmms::Plugin* skipped = lmms::Plugin::instantiate(QStringLiteral("midiexport"),
+			nullptr, nullptr);
+		QVERIFY2(skipped != nullptr, "Plugin::instantiate must still return an object");
+		QVERIFY2(dynamic_cast<lmms::DummyPlugin*>(skipped) != nullptr,
+			"safe-start mode must hand back the engine's DummyPlugin for a third-party module");
+		QCOMPARE(skippedCount(), 1);
+		delete skipped;
+
+		// 2) THE CONTROL: the same call, with the session switch off, really
+		//    loads the module (not a DummyPlugin).
+		setSkipEnabled(false);
+		lmms::Plugin* loaded = lmms::Plugin::instantiate(QStringLiteral("midiexport"),
+			nullptr, nullptr);
+		QVERIFY2(loaded != nullptr, "Plugin::instantiate must return an object");
+		QVERIFY2(dynamic_cast<lmms::DummyPlugin*>(loaded) == nullptr,
+			"with the session switch off the module must really load, or the skip above proves "
+			"nothing about safe-start mode");
+		delete loaded;
+		QCOMPARE(skippedCount(), 1);   // the control added no record
+
+		endSession();
+		QDir::setSearchPaths(QStringLiteral("plugins"), QStringList{});
+#endif
+	}
+};
+
+QTEST_GUILESS_MAIN(SafeStartTest)
+#include "SafeStartTest.moc"

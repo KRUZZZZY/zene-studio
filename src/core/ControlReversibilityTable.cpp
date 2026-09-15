@@ -493,7 +493,10 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityActionRowTable,
 				reversibilityTrackFolderRowTable, reversibilityVcaRowTable, reversibilityRoutingRowTable,
 				reversibilityVerbRowTable, reversibilityScanAndCrashRowTable, reversibilityMasteringRowTable,
-				reversibilityNoteScaleRowTable, reversibilityMeterRowTable, reversibilityExportPresetRowTable, reversibilityRecordingRowTable})
+				reversibilityNoteScaleRowTable, reversibilityMeterRowTable, reversibilityExportPresetRowTable, reversibilityRecordingRowTable,
+				// feature row 77 (board task #666): the safestart.* group's four rows,
+				// one not_mutating read and its three irreversible writers.
+				reversibilitySafeStartRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

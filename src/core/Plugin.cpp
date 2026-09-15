@@ -37,6 +37,7 @@
 #include "UnattendedRun.h"
 #include "GuiApplication.h"
 #include "DummyPlugin.h"
+#include "SafeStart.h"
 #include "AutomatableModel.h"
 #include "Song.h"
 #include "PluginFactory.h"
@@ -214,6 +215,31 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 								void *data)
 {
 	const PluginFactory::PluginInfo& pi = getPluginFactory()->pluginInfo(pluginName.toUtf8());
+
+	// Safe-start mode (docs/FEATURE-LIST-0.3.0.md row 77, board task #666): after
+	// an abnormal exit the next session loads with third-party plugin INSTANCES
+	// skipped, so a plugin that killed the previous run cannot kill this one
+	// before the project is up. This is the single funnel every instrument,
+	// effect, tool, import filter and exporter is created through, so "skipped"
+	// cannot mean one thing for a track and another for an effect. The predicate
+	// is false unless a crash marker was found at launch (include/SafeStart.h),
+	// so a normal session's behaviour is unchanged - and a plugin that resolved
+	// to no file at all (pi.isNull(), below) is not third-party, because it is
+	// the missing-plugin case this function already handles.
+	const QString pluginFile = pi.file.absoluteFilePath();
+	if (lmms::safestart::shouldSkipPluginInstance(pluginName.toStdString(),
+			pluginFile.toStdString()))
+	{
+		lmms::safestart::noteSkippedInstance(pluginName.toStdString(),
+			pluginFile.toStdString(),
+			QStringLiteral("safe-start mode: third-party plugin instance skipped because the previous "
+				"session did not exit cleanly").toStdString());
+		qWarning() << "Safe-start mode: skipping the third-party plugin" << pluginName
+			<< "from" << pluginFile
+			<< "- the previous session did not exit cleanly. Restart normally"
+			<< "(safestart.acknowledge) to load it again.";
+		return new DummyPlugin();
+	}
 
 	Plugin* inst;
 	if( pi.isNull() )

@@ -366,6 +366,7 @@ include/RoutingChainNodes.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
+include/SafeStart.h
 include/SampleFrameRingBuffer.h
 include/SampleRecordAccumulator.h
 include/SampleWindow.h
@@ -534,6 +535,7 @@ src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRouting.cpp
+src/core/ControlCommandsSafeStart.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScript.cpp
@@ -587,6 +589,7 @@ src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp
 src/core/ControlReversibilityTableRouting.cpp
+src/core/ControlReversibilityTableSafeStart.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableStems.cpp
@@ -647,6 +650,7 @@ src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
+src/core/SafeStart.cpp
 src/core/ScriptApiVersion.cpp
 src/core/ScriptBindings.cpp
 src/core/ScriptCommandQueue.cpp
@@ -755,6 +759,7 @@ tests/src/core/RackZonesTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/SafeStartTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp

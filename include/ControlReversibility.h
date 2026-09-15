@@ -222,6 +222,17 @@ LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
  *  failure in the other direction (ReversibilityContractTest).
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
+/*! The `safestart.*` group's four rows (feature row 77, board task #666):
+ *  `safestart.get_state` (not_mutating: it reads the marker, the acknowledgement
+ *  and the session's own skipped instances, none of which is project state) and
+ *  the group's three IRREVERSIBLE writers - acknowledge, clear and set_skip -
+ *  each naming the fallback the engine leaves, because nothing here is a
+ *  JournallingObject and no command writes a crash marker from a caller's bytes.
+ *  A GROUP file on the same seam as the scan-and-crash, mastering and recording
+ *  files: the class comes from each row, not from the file. Joined into
+ *  reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilitySafeStartRowTable(int* rowCount);
 
 //! One row of the contract table: what the command is, why, and what the
 //! engine actually provides.

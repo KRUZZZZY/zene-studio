@@ -109,8 +109,19 @@ DocumentedHistogram documentedHistogram()
 	 *  and the class columns add up the same way. Each lane's delta is named
 	 *  beside its rows in src/core/ControlReversibilityTable*.cpp. The paragraph
 	 *  in docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
-	 *  assertion's job is that the two cannot drift. */
-	DocumentedHistogram out{263, 141, 21, 7, 94};
+	 *  assertion's job is that the two cannot drift.
+	 *
+	 *  LANE 030/safe-start (feature row 77, board task #666) ADDED FOUR ROWS to
+	 *  that measured base - safestart.get_state (not_mutating) and the group's
+	 *  three IRREVERSIBLE writers, safestart.acknowledge / clear / set_skip -
+	 *  and moves the constant to 267 / 141 / 21 / 10 / 95. THIS IS A DELTA ON A
+	 *  MEASUREMENT, NOT A MEASUREMENT: the lane landed the code without a build
+	 *  of its own (the wave's owner directive), so the merged tip's figure has to
+	 *  be re-measured by whoever integrates this branch, exactly as the wave-1
+	 *  train re-measured all eight lanes. The lane's four rows are named in
+	 *  src/core/ControlReversibilityTableSafeStart.cpp, and the release notes
+	 *  carry the same figures with the same caveat. */
+	DocumentedHistogram out{267, 141, 21, 10, 95};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
