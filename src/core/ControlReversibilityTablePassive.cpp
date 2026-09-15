@@ -179,7 +179,12 @@ const ReversibilityRow kPassiveRows[] = {
 	R("control.quit", RC::NotMutating, false,
 		"process lifecycle, not a project edit; the response reports whether "
 		"unsaved changes were discarded so the caller is not surprised",
-		"no project state is written",
+		"no project state is written. CODE-8 is the half of this row that is "
+		"about the SOCKET rather than the session: the socket is unlinked by a "
+		"shutdown hook that ControlServer registers and un-registers with "
+		"itself, and by the server's own destructor, so the contract \"the "
+		"socket file is removed on exit\" holds on the normal route, on the "
+		"last-resort guard's route, and when the owner dies first",
 		""),
 	R("transport.play", RC::NotMutating, false,
 		"the transport run state is engine state, not project state, and the "
@@ -300,7 +305,12 @@ const ReversibilityRow kPassiveRows[] = {
 	R("settings.get", RC::NotMutating, false, "reads one config value", "no write", ""),
 #ifdef ZENE_TELEMETRY_ENABLED
 	R("telemetry.status", RC::NotMutating, false,
-		"reads the consent record and the payload builder", "no write", ""),
+		"reads the consent record, the payload builder and - CODE-7 - the "
+		"transport's own policy and the verdict on the endpoint that is "
+		"configured (transport_policy, transport_endpoint_allowed, "
+		"transport_endpoint_reason, transport_blocking). Reporting a policy is "
+		"not writing one: nothing here can change the endpoint or the scheme, "
+		"and the endpoint is not project state", "no write", ""),
 #endif // ZENE_TELEMETRY_ENABLED
 	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
 	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
