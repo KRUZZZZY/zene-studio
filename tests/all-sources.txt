@@ -18,14 +18,19 @@
 #   plugins/RnnoiseDenoiser/rnnoise, and tests/reference (verbatim copies of upstream plugin
 #   sources kept for A/B comparison - real sources, but duplicates by construction).
 # Regenerate with (the whole command - no remote state, no arguments):
-#   git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
-#     | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#     | LC_ALL=C sort
+#   { git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
+#       | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; \
+#     git ls-files tests/control-detect-commands.py ; } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/all-sources.txt) \
-#        <(git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
-#            | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' \
-#            | LC_ALL=C sort) && echo REPRODUCES
+#        <({ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
+#              | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; \
+#            git ls-files tests/control-detect-commands.py ; } | LC_ALL=C sort -u) && echo REPRODUCES
+#   Running it by hand is how the list was checked; it is NOT the check any more. Since
+#   2026-09-15 tests/all-sources-reproduce.sh IS this diff, `bash tests/fork-sources-gate.sh`
+#   (Gate 9) runs it on every run, and tests/all-sources-reproduce.sh --self-test proves the
+#   control (a copy with one path deleted must FAIL). The recipe's output and this file are
+#   therefore compared on every gate run rather than whenever someone remembered to look.
 # On 2026-09-12 that check printed 20 paths (the Lua console / MIDI-learn / Session View /
 # LUFS + loudness-report / script-package sources): every one of them fork-NEW, every one of
 # them already registered in tests/fork-sources.txt, and none of them here. Nothing caught it,
@@ -44,6 +49,17 @@
 # green) while the whole-tree scope measured neither it nor its entries. Regenerating is what
 # found it; the file has no over-target function and is under 500 lines, so this adds a
 # measured file and moves no baseline.
+
+# 2026-09-15 (030/ratchet-decision, the whole-tree ratchet decision). The entry list below is
+# the recipe's output again, which it was not: FIVE tracked C/C++ sources were missing from it
+# - include/CrashReporterFormat.h, src/core/CrashReporterFormat.cpp, src/core/CrashReporterWindows.cpp,
+# src/core/ControlCommandsCrashControl.cpp (all four fork-NEW, all four registered in
+# tests/fork-sources.txt, so Gate 9 was green while the whole-tree scope measured none of them)
+# and tools/import-detection-proof.cpp. Nothing detected it: this manifest's recipe had no
+# runner. The .py that the recipe could not derive is now a named pathspec in the recipe itself
+# (tests/control-detect-commands.py, added by 69123e2f1 so the whole-tree complexity ratchet
+# measures it - it carries run_checks, CCN 75) rather than an entry the command cannot
+# reproduce. tests/all-sources-reproduce.sh and Gate 9 are what stop the next silent loss.
 include/AboutDialog.h
 include/ActionGroup.h
 include/ArrayVector.h
@@ -154,6 +170,7 @@ include/ControllerSurface.h
 include/ControllerView.h
 include/Controls.h
 include/CrashReporter.h
+include/CrashReporterFormat.h
 include/DataFile.h
 include/DawProjectInterchange.h
 include/Delay.h
@@ -992,6 +1009,7 @@ src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
+src/core/ControlCommandsCrashControl.cpp
 src/core/ControlCommandsDawProject.cpp
 src/core/ControlCommandsDetect.cpp
 src/core/ControlCommandsDetectApply.cpp
@@ -1160,6 +1178,8 @@ src/core/Controller.cpp
 src/core/ControllerConnection.cpp
 src/core/ControllerSurface.cpp
 src/core/CrashReporter.cpp
+src/core/CrashReporterFormat.cpp
+src/core/CrashReporterWindows.cpp
 src/core/DataFile.cpp
 src/core/DawProjectModel.cpp
 src/core/DawProjectRead.cpp
@@ -1672,7 +1692,6 @@ tests/src/core/WarpMarkersTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
-
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
@@ -1689,19 +1708,17 @@ tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
-
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
-
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tests/src/wasm/WasmWorkerPoolTest.cpp
 tools/dawproject-a16-histogram.cpp
-
 tools/dawproject-roundtrip-proof.cpp
+tools/import-detection-proof.cpp
 tools/mmpz-git/scratch/qtesc.cpp
 tools/mmpz-git/scratch/qtroundtrip.cpp
 tools/mmpz-git/scratch/qtsave.cpp
