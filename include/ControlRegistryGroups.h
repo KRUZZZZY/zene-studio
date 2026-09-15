@@ -283,6 +283,41 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+
+/*! The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
+ *  81) - six registration points, each its own translation unit because Gate 7
+ *  measures a file and the groups are one group each:
+ *
+ *  - registerNoteRandomCommands: note.random_seed_get / random_seed_set (the seeded
+ *    AND persisted pair - the project's MIDI seed, Song::midiSeed, serialized in the
+ *    header) and note.randomize (the seeded roll over a clip's velocities and
+ *    positions, NoteRandom's pure function of the seed and each note's identity).
+ *  - registerNoteSlideCommands: note.slide_set / note.slide_clear - the FL-style
+ *    slide (portamento) flag, which the engine has carried since
+ *    docs/specs/SPEC-slide-notes and never had an id for.
+ *  - registerNoteTransformCommands: note.transpose / note.velocity_offset /
+ *    note.velocity_scale - NoteTransform's three transforms. The grid quantise is
+ *    deliberately NOT re-wrapped: groove.quantize already drives
+ *    NoteTransform::quantizeNotes with a strength, a humanise amount and a seed.
+ *  - registerScaleCommands / registerScaleEditCommands: the `scale.*` group - the
+ *    scale and key vocabulary of ChordTable as commands (the read half, the two
+ *    context writers scale.root_set / scale.set, and the one clip-editing verb
+ *    scale.snap_notes). The context is the group's own process state and is
+ *    deliberately not serialized; the piano roll's key/scale selector is NOT wired
+ *    to it (docs/KNOWN-LIMITATIONS.md).
+ *  - registerDeviceCommands: the registry's first `device.*` group -
+ *    device.mpe_get_state / device.mpe_set, the MPE input switch and the axes that
+ *    do and do not reach playback.
+ *
+ *  No compile-time switch: NoteRandom, NoteTransform, ChordTable and MpeExpression
+ *  are in src/core in every configuration, so these ids are honest in every one.
+ */
+LMMS_EXPORT void registerNoteRandomCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerNoteSlideCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerNoteTransformCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerScaleCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerScaleEditCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerDeviceCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

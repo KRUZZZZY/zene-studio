@@ -483,7 +483,8 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		// repeated id is OVERWRITTEN, so the order is part of the contract.
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityActionRowTable,
 				reversibilityTrackFolderRowTable, reversibilityVcaRowTable, reversibilityRoutingRowTable,
-				reversibilityVerbRowTable, reversibilityScanAndCrashRowTable, reversibilityMasteringRowTable})
+				reversibilityVerbRowTable, reversibilityScanAndCrashRowTable, reversibilityMasteringRowTable,
+				reversibilityNoteScaleRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

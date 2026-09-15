@@ -172,6 +172,18 @@ void registerControlCommands(ControlRegistry& registry)
 	// meter are in every configuration, so its ids are honest in every one.
 	registerMasteringCommands(registry);
 	registerMasteringRunCommands(registry);
+	// The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
+	// 81): the note randomisation, transform and slide verbs, the scale.* group (read
+	// half, the two context writers and the one clip-editing verb) and the registry's
+	// first device.* group. No compile-time switch - every engine they drive
+	// (NoteRandom, NoteTransform, ChordTable, MpeExpression) is in src/core in every
+	// configuration, so their ids are honest in every one.
+	registerNoteRandomCommands(registry);
+	registerNoteSlideCommands(registry);
+	registerNoteTransformCommands(registry);
+	registerScaleCommands(registry);
+	registerScaleEditCommands(registry);
+	registerDeviceCommands(registry);
 }
 
 } // namespace lmms

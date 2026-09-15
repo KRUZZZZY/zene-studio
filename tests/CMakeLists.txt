@@ -86,6 +86,13 @@ set(LMMS_TESTS
 	# argument contract is proved without running a render. The end-to-end stem
 	# export is the ControlStemExportVerb ctest below, which drives the real binary.
 	src/core/ControlVerbInverseTest.cpp
+	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
+	# 81): the fifteen ids, their contract rows and the REAL inverses - the seed pair
+	# (persisted + undone), the repeatability pair of the seeded roll (same seed ->
+	# identical take, different seed -> a different one), the three note transforms,
+	# the slide verbs from the DEFAULT-flag trap state, the scale vocabulary and
+	# context, scale.snap_notes with both of its inverse answers, and the MPE switch.
+	src/core/ControlNoteScaleVerbsTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
 	# half (the extraction and application arithmetic and the pool's XML form,

@@ -143,6 +143,14 @@ LMMS_EXPORT const ReversibilityRow* reversibilityVcaRowTable(int* rowCount);
 //! ratchet. render.stems is NOT here: it is not_mutating and lives with the
 //! other not_mutating rows in ControlReversibilityTablePassive.cpp.
 LMMS_EXPORT const ReversibilityRow* reversibilityVerbRowTable(int* rowCount);
+//! The 0.3.0 note/scale/device wave's fifteen rows (board task #648; feature-list
+//! rows 11, 66 and 81): seven LIVE-checkpoint rows (the note randomisation, transform
+//! and slide verbs, and scale.snap_notes), four recorded-ACTION rows (the Song's MIDI
+//! seed, the scale group's root/scale context and the MPE input flag - none of them a
+//! JournallingObject) and four not_mutating readers. Joined into
+//! reversibilityRowTable() for the same reason the routing and scan-and-crash rows are:
+//! the block's class comes from each row, not from its file.
+LMMS_EXPORT const ReversibilityRow* reversibilityNoteScaleRowTable(int* rowCount);
 //! The chain-preset GROUP's four recorded-action rows (OWNER-31 item 2: the
 //! preset store is a file tree outside the project, so each command records the
 //! undo step for its own file operation). Joined into the action half by

@@ -278,11 +278,13 @@ include/ControlGrooveSupport.h
 include/ControlMasteringSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
+include/ControlNoteShared.h
 include/ControlRackSupport.h
 include/ControlRecordingSupport.h
 include/ControlRegistry.h
 include/ControlRegistryGroups.h
 include/ControlReversibility.h
+include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
@@ -447,6 +449,7 @@ src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsCrash.cpp
+src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsFreeze.cpp
@@ -463,6 +466,9 @@ src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
+src/core/ControlCommandsNoteRandom.cpp
+src/core/ControlCommandsNoteSlide.cpp
+src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPlugin.cpp
@@ -483,6 +489,8 @@ src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRouting.cpp
+src/core/ControlCommandsScale.cpp
+src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
@@ -515,6 +523,7 @@ src/core/ControlGrooveSupport.cpp
 src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
+src/core/ControlNoteShared.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
@@ -524,6 +533,7 @@ src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableMastering.cpp
+src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
@@ -531,6 +541,7 @@ src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
