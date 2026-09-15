@@ -27,6 +27,10 @@
 #                                       tests/test-package-upload-guard.sh
 #          checks.yml/yamllint          yamllint over `git ls-files '*.yml'`
 #          quality-gates.yml/static-gates  gates 3, 4, 6, 7, 8, 9, 11 of tests/run-all-gates.sh
+#          quality-gates.yml/mcp-bridge-python-tests
+#                                       the bridge's two no-build unittest modules, with the
+#                                       job's own "0 tests is an error" count check - the one
+#                                       leg that runs a real test suite without a build
 #
 #        and one leg this fork's release path needs and no upstream job runs:
 #
@@ -127,6 +131,7 @@ LEGS=(
 	"g8-duplication-tools|quality-gates.yml/static-gates|bash tests/duplication-gate.sh --scope tools"
 	"g9-fork-sources|quality-gates.yml/static-gates|bash tests/fork-sources-gate.sh"
 	"g11-evidence|quality-gates.yml/static-gates|bash tests/evidence-gate.sh"
+	"mcp-bridge-python-tests|quality-gates.yml/mcp-bridge-python-tests|bash tests/release-mcp-bridge-leg.sh"
 	"staging-path|(this fork: REL-2 staging sanction)|bash tests/release-staging-path-gate.sh"
 )
 
