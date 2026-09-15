@@ -125,6 +125,27 @@ QJsonObject pointJson(const AutomationClip::TimemapIterator& it, const Automatab
 
 } // namespace
 
+/*! The surface spelling of a mode. Both directions of the mode feature go
+ *  through this one function: automation.mode_set parses exactly these strings
+ *  and automation.get_state reports exactly these strings back, so "the mode I
+ *  set is the mode I read" is a property of the code and not of two hand-kept
+ *  copies of the vocabulary. */
+QString automationModeName(const AutomatableModel::AutomationMode& mode)
+{
+	switch (mode)
+	{
+		case AutomatableModel::AutomationMode::Read:  return QStringLiteral("read");
+		case AutomatableModel::AutomationMode::Touch: return QStringLiteral("touch");
+		case AutomatableModel::AutomationMode::Latch: return QStringLiteral("latch");
+		case AutomatableModel::AutomationMode::Write: return QStringLiteral("write");
+		case AutomatableModel::AutomationMode::Off:   return QStringLiteral("off");
+	}
+	// Unreachable for every enumerator the enum has; the fallback exists so a
+	// future enumerator added without a spelling is visible as "unknown" in the
+	// read-back instead of being reported as some existing mode.
+	return QStringLiteral("unknown");
+}
+
 QList<AutomationParameter> automationParameters(const ControlTarget& target)
 {
 	QList<AutomationParameter> out;
@@ -277,6 +298,10 @@ QJsonObject automationJson(AutomationClip* clip, const AutomatableModel* model)
 	out.insert(QStringLiteral("clip_index"), clipIndexInTrack(clip));
 	out.insert(QStringLiteral("clip_type"), clip->nodeName());
 	out.insert(QStringLiteral("progression"), progressionName(clip->progressionType()));
+	// The clip's own record flag, i.e. what automation.record_mode_set toggles:
+	// reported here so the flag is observable through the socket as well as
+	// settable (the set result also carries mode_before and changed).
+	out.insert(QStringLiteral("recording"), clip->isRecording());
 	out.insert(QStringLiteral("point_count"), points.size());
 	out.insert(QStringLiteral("points"), points);
 	return out;
@@ -293,6 +318,10 @@ QJsonObject automationParameterJson(const AutomationParameter& parameter)
 	entry.insert(QStringLiteral("value"), static_cast<double>(parameter.model->value<float>()));
 	entry.insert(QStringLiteral("min"), static_cast<double>(parameter.model->minValue<float>()));
 	entry.insert(QStringLiteral("max"), static_cast<double>(parameter.model->maxValue<float>()));
+	// The mode automation.mode_set sets, reported back so a mode change is
+	// OBSERVABLE through the socket and not only driveable (the read-back the
+	// acceptance contract asks for). "off" means the control ignores the curve.
+	entry.insert(QStringLiteral("mode"), automationModeName(parameter.model->automationMode()));
 
 	AutomationClip* clip = existingAutomationClip(parameter.model);
 	const bool automated = clip != nullptr && clip->hasAutomation();

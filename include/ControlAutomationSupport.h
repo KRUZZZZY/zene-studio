@@ -30,6 +30,7 @@
 #include <QList>
 #include <QString>
 
+#include "AutomatableModel.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "lmms_export.h"
@@ -113,6 +114,18 @@ LMMS_EXPORT QJsonObject automationJson(AutomationClip* clip, const AutomatableMo
 
 //! One parameter: its id, its range, its value and its automation.
 LMMS_EXPORT QJsonObject automationParameterJson(const AutomationParameter& parameter);
+
+/*! The control-surface spelling of an automation mode: the closed enum
+ *  automation.mode_set accepts, and exactly the string
+ *  automation.get_state reports back per parameter ("read", "touch", "latch",
+ *  "write", "off"). ONE definition for both directions, so the command that
+ *  sets a mode and the read that observes it cannot drift apart (the round trip
+ *  is asserted in tests/src/core/ControlAutomationScriptTest.cpp).
+ *
+ *  This header includes AutomatableModel.h for the enum, which is why it is
+ *  not forward-declared here the way the clip is.
+ */
+LMMS_EXPORT QString automationModeName(const AutomatableModel::AutomationMode& mode);
 
 // ---------------------------------------------------------------------------
 // A16 transactions

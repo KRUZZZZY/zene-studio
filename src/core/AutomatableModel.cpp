@@ -922,6 +922,12 @@ bool AutomatableModel::automationWantsWrite( quint64 transportRun, qint64 nowNs 
 	case AutomationMode::Write:
 		// Overwrites the pass for as long as the transport runs.
 		return true;
+	case AutomationMode::Off:
+		// Off: the control neither follows its automation nor writes one. The
+		// reading half is enforced where the values are APPLIED - Song's apply
+		// pass skips an Off model (Song::processAutomations) - so this side is
+		// the same "no write" Read gives.
+		return false;
 	}
 	return false;
 }

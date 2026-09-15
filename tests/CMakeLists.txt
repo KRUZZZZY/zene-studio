@@ -388,12 +388,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# device catalogue is real rather than empty.  PluginScanCacheTest drives the
 	# scan cache against a copy of the built tripleoscillator module;
 	# ReversibilityContractTest/ReversibilityUndoTest load the real binary's
-	# plugins to prove the A16 inverses (#623).
+	# plugins to prove the A16 inverses (#623). ControlAutomationScriptTest needs
+	# them so the automation-mode commands have a real parameter to drive: the
+	# no-destruction proof (feature-list rows 10 and 63, board task #647) rides an
+	# instrument parameter through plugin.param_set, and without the modules the
+	# song's track holds a parameterless DummyInstrument.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlAutomationScriptTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE

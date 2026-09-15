@@ -27,6 +27,7 @@
 #include <QString>
 
 #include "AutomatableModel.h"
+#include "AutomationClip.h"
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
@@ -141,11 +142,16 @@ ControlResult automationGetState(const QJsonObject& args)
 
 /*! automation.mode_set - set a parameter's automation mode.
  *
- * The engine's mode state machine (AutomatableModel::AutomationMode, Read / Touch /
- * Latch / Write) is driven from this surface. The mode is runtime state: it is not
- * persisted in the project file and it is not journalled, so a mode change has no
- * undo - docs/KNOWN-LIMITATIONS.md. The default is Read (follow automation, never
- * write), which is what every existing project already behaves as.
+ * The engine's mode state machine (AutomatableModel::AutomationMode) is driven
+ * from this surface, all five modes: off (ignore the curve: the manual value
+ * stands and nothing is written), read (follow the curve, never write), touch,
+ * latch, write. The mode is runtime state: it is not persisted in the project
+ * file and it is not journalled, so a mode change has no undo -
+ * docs/KNOWN-LIMITATIONS.md. The default is Read (follow automation, never
+ * write), which is what every existing project already behaves as. The mode is
+ * reported back per parameter by automation.get_state, through the same
+ * spelling function this handler parses (control::automationModeName), so a set
+ * can be observed and not only issued.
  */
 ControlResult automationModeSet(const QJsonObject& args)
 {
@@ -164,7 +170,11 @@ ControlResult automationModeSet(const QJsonObject& args)
 
 	const QString modeName = args.value(QStringLiteral("mode")).toString();
 	AutomatableModel::AutomationMode mode;
-	if (modeName == QStringLiteral("off") || modeName == QStringLiteral("read"))
+	if (modeName == QStringLiteral("off"))
+	{
+		mode = AutomatableModel::AutomationMode::Off;
+	}
+	else if (modeName == QStringLiteral("read"))
 	{
 		mode = AutomatableModel::AutomationMode::Read;
 	}
@@ -188,12 +198,16 @@ ControlResult automationModeSet(const QJsonObject& args)
 			QStringLiteral("mode must be one of off/read/touch/latch/write, not '%1'").arg(modeName));
 	}
 
+	const QString before = control::automationModeName(parameter.model->automationMode());
+	const bool changed = before != modeName;
 	parameter.model->setAutomationMode(mode);
 
 	QJsonObject result;
 	result.insert(QStringLiteral("track"), target.id);
 	result.insert(QStringLiteral("parameter"), parameter.id());
-	result.insert(QStringLiteral("mode"), modeName);
+	result.insert(QStringLiteral("mode"), control::automationModeName(parameter.model->automationMode()));
+	result.insert(QStringLiteral("mode_before"), before);
+	result.insert(QStringLiteral("changed"), changed);
 	return ControlResult::success(result);
 }
 
@@ -271,8 +285,9 @@ void registerAutomationCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("automation");
 		cmd.verb = QStringLiteral("get_state");
 		cmd.description = QStringLiteral("Per track, every automatable device parameter with its "
-			"stable '<plugin>/<index>' id and, for each automated one, its clip's points. A "
-			"point's 'value' is the model's own unit (what plugin.param_get reports); "
+			"stable '<plugin>/<index>' id, its current automation 'mode' (what "
+			"automation.mode_set sets) and, for each automated one, its clip's points and record "
+			"flag. A point's 'value' is the model's own unit (what plugin.param_get reports); "
 			"'raw_value' is what the clip stores. 'automated_only' trims the inventory.");
 		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
@@ -294,11 +309,13 @@ void registerAutomationCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("automation.mode_set");
 		cmd.group = QStringLiteral("automation");
 		cmd.verb = QStringLiteral("mode_set");
-		cmd.description = QStringLiteral("Set a parameter's automation mode: off/read (follow the "
-			"curve, never write), touch (write while the control is held, then return to reading), "
+		cmd.description = QStringLiteral("Set a parameter's automation mode: off (ignore the "
+			"curve - the manual value stands and nothing is written), read (follow the curve, "
+			"never write), touch (write while the control is held, then return to reading), "
 			"latch (write from the first touch until the transport run ends), or write (overwrite "
 			"the pass while the transport runs). The mode is runtime state: not persisted and not "
-			"journalled, so it has no undo.");
+			"journalled, so it has no undo. automation.get_state reports each parameter's mode, so "
+			"the change can be observed and not only issued.");
 		cmd.argsSchema = control::objectSchema({
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
@@ -310,6 +327,8 @@ void registerAutomationCommands(ControlRegistry& registry)
 			{QStringLiteral("track"), control::stringProperty()},
 			{QStringLiteral("parameter"), control::stringProperty()},
 			{QStringLiteral("mode"), control::stringProperty()},
+			{QStringLiteral("mode_before"), control::stringProperty()},
+			{QStringLiteral("changed"), control::booleanProperty()},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return automationModeSet(args); };

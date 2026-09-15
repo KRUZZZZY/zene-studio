@@ -32,15 +32,20 @@
 #include "ControlReversibility.h"
 
 /*! Automation modes (feature-list rows 10 and 63; board task #647): the
- *  Read/Touch/Latch/Write mode state machine and the per-clip record flag.
+ *  off/read/touch/latch/write mode state machine and the per-clip record flag.
  *
- *  The engine half is include/AutomatableModel.h (the mode enum, the atomic
- *  state, the decision function automationWantsWrite) and
+ *  The engine half is include/AutomatableModel.h (the mode enum - Off included,
+ *  appended last - the atomic state, the decision function automationWantsWrite
+ *  and the note that Off's read-path half lives in Song's apply pass) and
  *  src/core/AutomatableModel.cpp (the state-machine implementation), proven
- *  by AutomationModesTest (the no-destruction property: ride a control in Read
- *  and assert the recorded automation is bit-identical, paired with a Touch
- *  run that must observe a change so the comparison cannot pass by being
- *  blind).
+ *  by AutomationModesTest: the no-destruction property (ride a control in Read
+ *  and assert the recorded automation is bit-identical, paired with a Touch run
+ *  that must observe a change so the comparison cannot pass by being blind), the
+ *  Off-vs-Read difference in the READ path (with a Read leg as its sensitivity
+ *  control), and the mode-decision table. The command surface's own proof is
+ *  ControlAutomationScriptTest::modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation
+ *  (the same property through automation.add_point / automation.mode_set /
+ *  plugin.param_set, with a write-mode leg that must change the clip).
  *
  *  WHERE THE MODES CANNOT HOLD, in the row rather than in a code comment:
  *
@@ -48,9 +53,11 @@
  *      is not journalled, so a mode change has no undo and a reload resets
  *      every control to Read with no trim. Persistence is the first follow-up.
  *   2. Only the mixer fader is wired to a touch gesture (press/move/release).
- *      Pan, sends and plugin-parameter knobs would each need widget hooks. The
- *      mode state machine is per-AutomatableModel, so the missing piece is the
- *      widget hook, not the semantics.
+ *      Pan, sends and plugin-parameter knobs would each need widget hooks - so
+ *      Touch and Latch have nothing to take hold of through the socket yet;
+ *      Write needs no gesture and is fully drivable. The mode state machine is
+ *      per-AutomatableModel, so the missing piece is the widget hook, not the
+ *      semantics.
  *   3. Write mode does not erase the un-passed remainder of the clip: it
  *      overwrites where the playhead reaches and leaves the automation ahead
  *      of it untouched. That is the safe direction.
@@ -77,14 +84,19 @@ using RC = ReversibilityClass;
 
 const ReversibilityRow kAutomationModesRows[] = {
 	R("automation.mode_set", RC::Irreversible, false,
-		"it writes ONE atomic scalar - the AutomatableModel's automation mode - and that "
+		"it writes ONE atomic scalar - the AutomatableModel's automation mode (off / read / touch / "
+		"latch / write) - and that "
 		"model does NOT call addJournalCheckPoint() on a mode change: the mode is runtime "
 		"state, not persisted in the project file and not reversable through the undo stack. "
 		"The design decision (docs/AUTOMATION-MODES.md) is that the alpha's project files "
 		"must keep loading unchanged, so saveSettings/loadSettings were deliberately not "
-		"touched, and a mode change is therefore irreversible in this engine",
+		"touched, and a mode change is therefore irreversible in this engine. The mode is never "
+		"a way to edit automation either: off, read and an idle touch/latch pass leave the clip "
+		"bit-identical (AutomationModesTest; ControlAutomationScriptTest through the socket), and "
+		"the clip itself has its own row below",
 		"no inverse: the mode is runtime state. Re-set it to the desired mode with a second "
-		"automation.mode_set call",
+		"automation.mode_set call. The mode a parameter is IN is reported by "
+		"automation.get_state, so the state to restore is readable",
 		"none needed: the mode is runtime state and can be changed again at any time"),
 	R("automation.record_mode_set", RC::TrueInverse, true,
 		"it writes ONE bounded boolean - the AutomationClip's isRecording flag - and the "

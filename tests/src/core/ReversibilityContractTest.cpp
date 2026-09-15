@@ -118,8 +118,23 @@ DocumentedHistogram documentedHistogram()
 	 *  one row count. Each lane's delta is named beside its rows in
 	 *  src/core/ControlReversibilityTable*.cpp. The paragraph in
 	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
-	 *  assertion's job is that the two cannot drift. */
-	DocumentedHistogram out{281, 151, 21, 6, 103};
+	 *  assertion's job is that the two cannot drift.
+	 *
+	 *  +1 ROW (030/automation-modes, feature rows 10/63, board task #647),
+	 *  measured on THIS tree from the diff itself: the stale refusal row for
+	 *  automation.mode_set leaves ControlReversibilityTablePassive.cpp (-1
+	 *  not_mutating, the command is a working verb now) and two rows take its
+	 *  place in their own TU, src/core/ControlReversibilityTableAutomationModes.cpp,
+	 *  joined with ONE entry: mode_set is irreversible (the mode is runtime
+	 *  state - not persisted, not journalled) and record_mode_set is
+	 *  true_inverse (the clip is a JournallingObject). So the base below moves
+	 *  281/151/21/6/103 -> 282/152/21/7/102 and the telemetry configuration
+	 *  reads 284 rows over 152/21/7/104. MEASURED ON THIS BRANCH ONLY: the merge
+	 *  tip must re-measure it, because a sibling lane
+	 *  (030/sample-accurate-automation, which adds its own
+	 *  ControlReversibilityTableAutomationRamp.cpp) carries rows this tree does
+	 *  not, and only the merged tip's own run is the release's figure. */
+	DocumentedHistogram out{282, 152, 21, 7, 102};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
@@ -278,12 +293,16 @@ private slots:
 		const QStringList documentedRefusals = {
 			QStringLiteral("mixer.set_pan"),
 			QStringLiteral("track.set_arm"),
-			QStringLiteral("automation.mode_set"),
 			// Declared mutating and refused on every call: this build has no
 			// upload and no network code of any kind in the crash reporter
 			// (include/CrashReporter.h), so no send is faked.
 			QStringLiteral("crash.upload_report"),
 		};
+		// automation.mode_set USED to be a member of this list, as a typed
+		// refusal with no modes behind it. It is a working verb since
+		// 030/automation-modes (it sets AutomatableModel::AutomationMode) and its
+		// row moved to ControlReversibilityTableAutomationModes.cpp, so listing
+		// it here now would be a claim about a refusal that no longer exists.
 		for (const control::ReversibilityEntry& entry : table.entries())
 		{
 			const ControlCommand* cmd = registry->command(entry.command);

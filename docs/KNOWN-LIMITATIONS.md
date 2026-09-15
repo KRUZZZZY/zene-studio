@@ -415,14 +415,20 @@ that is this page's fault — report it and it gets added.
   states that automation is evaluated once per tick and names the line that stands between that and a
   per-frame read.
 - **Automation modes are drivable through the socket but not from the interface — added 2026-09-15.**
-  `automation.mode_set` (Read / Touch / Latch / Write) and `automation.record_mode_set` (per-clip record flag)
-  are registered, have schemas, and are proven (`AutomationModesTest` pins the no-destruction property:
-  riding a control in Read cannot alter written automation, with a sensitivity control so the comparison
-  cannot pass by being blind). The mode is runtime state: it is not persisted in the project file and is not
-  journalled, so a reload resets every control to Read with no trim and a mode change has no undo. Only the
-  mixer fader is wired to a touch gesture; pan, sends and plugin-parameter knobs would each need widget hooks.
-  Write mode does not erase the un-passed remainder of the clip — it overwrites where the playhead reaches
-  and leaves the automation ahead of it untouched.
+  `automation.mode_set` (off / read / touch / latch / write) and `automation.record_mode_set` (per-clip record
+  flag) are registered, have schemas, are reported back per parameter (`automation.get_state` carries each
+  parameter's `mode` and each clip's `recording` flag, so a set is observable and not only issuable), and are
+  proven (`AutomationModesTest` pins the no-destruction property: riding a control in Read cannot alter written
+  automation, with a sensitivity control so the comparison cannot pass by being blind;
+  `ControlAutomationScriptTest::modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation` repeats it through
+  the command surface with a write-mode leg that must change the clip). `off` is a mode of its own and not a
+  second name for `read`: an off control ignores its written curve — the manual value stands — and writes
+  nothing. The mode is runtime state: it is not persisted in the project file and is not journalled, so a reload
+  resets every control to Read with no trim and a mode change has no undo. Only the mixer fader is wired to a
+  touch gesture; pan, sends and plugin-parameter knobs would each need widget hooks, so Touch and Latch have
+  nothing to take hold of through the socket yet (Write needs no gesture and is fully drivable). Write mode does
+  not erase the un-passed remainder of the clip — it overwrites where the playhead reaches and leaves the
+  automation ahead of it untouched.
 - **Warping changes pitch.** The warp engine attaches markers and lets a clip follow or lead the project tempo,
   but the time-stretch is done by resampling: a 2× stretch is an octave up. Pitch-preserving stretch is not
   built.

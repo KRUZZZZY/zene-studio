@@ -749,20 +749,30 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **283 rows**, measured from the table itself:
-**151 `true_inverse`, 21 `snapshot`, 6 `irreversible`, 105 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **284 rows** as this branch measures it:
+**152 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 104 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**281 rows / 103 `not_mutating`** - which is the base
+**282 rows / 102 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **This is the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the five-lane **wave-2** merge train's tip and
-reports **283** rows over the four classes named above (151 + 21 + 6 + 105), and its constant is the
-telemetry-off/wasm-off base of **281 / 151 / 21 / 6 / 103**. The same build's live `control.commands`
-list answers **283** commands, which is the second and independent instrument: the registry and the
-contract table are the same size, and no row names a command that is not there.
+what left one of them stale before. **The last figure a MERGED tree measured here was 283 rows**
+(151 `true_inverse` / 21 / 6 / 105, the five-lane **wave-2** merge train's tip).
+`030/automation-modes` moves it by its own delta, stated so the merge step can check it rather than
+trust it: `automation.mode_set`'s stale refusal row leaves
+`src/core/ControlReversibilityTablePassive.cpp` (-1 `not_mutating` - the command is a working verb
+now, not a typed refusal) and two rows take its place in their own TU,
+`src/core/ControlReversibilityTableAutomationModes.cpp`, joined with ONE entry (mode_set
+`irreversible` - the mode is runtime state, not persisted and not journalled; record_mode_set
+`true_inverse` - the clip is a `JournallingObject`). That is **+1 row / +1 `true_inverse` / +1
+`irreversible` / -1 `not_mutating`** over the wave-2 measurement, and the merge tip re-takes the
+measurement because the sibling lane `030/sample-accurate-automation` carries rows this branch does
+not. The same build's live `control.commands` list answers **284** commands, which is the second and
+independent instrument: the registry and the contract table are the same size, and no row names a
+command that is not there. (284 = the wave-2 tip's 283 + `automation.record_mode_set`, the one command
+this lane registers; `automation.mode_set` was already registered - as a refusal - and is the same id
+working now.)
 
 What the five wave-2 lanes added - each figure stated beside its own rows, and all five summing to
 the measurement exactly:
@@ -867,13 +877,13 @@ because that window has no reset-on-absence) and `note.probability_set` (`true_i
 per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
 touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
 and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
-**The seven `stem.*` rows are NOT in the 283 above, and that is the point:** the offline
+**The seven `stem.*` rows are NOT in the 284 above, and that is the point:** the offline
 stem-separation group (feature row 26, board task #653) is compiled only when `WANT_STEM_SPLIT=ON` -
 **OFF in the default release configuration** this page describes - so its seven `not_mutating` rows
 (`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
 `stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
 which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
-on carries **290 rows / 112 `not_mutating`** - measured, not derived: the seven-row guard was added to
+on carries **291 rows / 111 `not_mutating`** - measured, not derived: the seven-row guard was added to
 `ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
 against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
 283 + 7 rows and 105 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
@@ -1034,20 +1044,37 @@ joins the routing surface's: the passive block and the live block are both at th
   own control is taken over — the value you see is the base, and the modulator's offset is on top of
   it until the modulator is deactivated, removed or `control.undo` takes the edit back.
 
-## Automation modes: Read / Touch / Latch / Write, made drivable (`automation.mode_set`, `automation.record_mode_set`) — added 2026-09-15
+## Automation modes: off / read / touch / latch / write, made drivable and observable (`automation.mode_set`, `automation.record_mode_set`) — added 2026-09-15
 
-The engine's mode state machine (`AutomatableModel::AutomationMode`, `include/AutomatableModel.h:342-405`,
-`src/core/AutomatableModel.cpp:762-946`) is now selectable through the control surface:
-`automation.mode_set` sets a parameter's mode (off/read/touch/latch/write) and
+The engine's mode state machine (`AutomatableModel::AutomationMode`) is now selectable through the control
+surface: `automation.mode_set` sets a parameter's mode (off / read / touch / latch / write) and
 `automation.record_mode_set` toggles its clip's record flag. The default is Read, which is what every
-existing project already behaves as. The no-destruction property is pinned by `AutomationModesTest`
-(`tests/src/core/AutomationModesTest.cpp`, registered at `tests/CMakeLists.txt:56`): riding a control
-in Read leaves the recorded automation bit-identical, paired with a Touch run that must observe a
-change so the assertion cannot pass by being blind. The mode is runtime state: not persisted in the
-project file and not journalled, so a reload resets every control to Read with no trim and a mode
-change has no undo. Only the mixer fader is wired to a touch gesture; pan, sends and
-plugin-parameter knobs would each need widget hooks. Write mode does not erase the un-passed
-remainder of the clip.
+existing project already behaves as. `off` is a mode of its own, not a second spelling of `read`: an off
+control ignores its written curve (the engine's apply pass skips it, so the manual value stands) and writes
+nothing — `AutomationModesTest::testOffIgnoresTheAutomationAndWritesNothing` pins that difference, with a
+Read leg as its sensitivity control. A mode change is **observable, not only issuable**: `automation.get_state`
+reports each parameter's `mode` (one spelling function serves both directions,
+`control::automationModeName`) and each clip's `recording` flag, and `automation.mode_set` answers with
+`mode`, `mode_before` and `changed`.
+
+The no-destruction property is pinned twice, in `tests/src/core/AutomationModesTest.cpp` (registered at
+`tests/CMakeLists.txt:56`) and through the command surface in
+`tests/src/core/ControlAutomationScriptTest.cpp::modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation`
+— a curve recorded with `automation.add_point`, the mode set to `read`, the control ridden with
+`plugin.param_set` while the harness drives `Song::processNextBuffer()`, and the clip compared node for node
+afterwards — each paired with a leg that runs the identical harness where a write IS expected (a Touch pass
+in the engine test; `write` mode through the socket), so the comparison cannot pass by the harness never
+writing anything. The socket test binary is on `tests/CMakeLists.txt`'s `LMMS_TEST_PLUGIN_DIR` list, because
+the ride needs a real instrument parameter and a build without the modules falls back to a parameterless
+`DummyInstrument`.
+
+The mode is runtime state: not persisted in the project file and not journalled, so a reload resets every
+control to Read with no trim and a mode change has no undo. Only the mixer fader is wired to a touch
+gesture; pan, sends and plugin-parameter knobs would each need widget hooks, so touch and latch have nothing
+to take hold of through the socket yet (write needs no gesture and is fully drivable). Write mode does not
+erase the un-passed remainder of the clip. The Read render's byte-identity (the status quo this feature must
+not move) is held separately by `tests/automation-modes-render-check.sh`, which re-renders a demo project and
+compares the data chunk against a base-commit binary or a recorded hash.
 
 ## Session sync: two instances on one tempo and one beat (`link.*`) — added 2026-09-13
 
