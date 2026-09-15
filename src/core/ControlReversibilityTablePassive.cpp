@@ -235,9 +235,17 @@ const ReversibilityRow kPassiveRows[] = {
 #endif // ZENE_TELEMETRY_ENABLED
 	R("render.render", RC::NotMutating, false,
 		"it writes an OUTPUT ARTEFACT; the session it renders is not modified "
-		"(it serialises to a temp file and removes it)",
+		"(it serialises to a temp file and removes it). A render RANGE "
+		"(start_ticks/end_ticks, feature row 71) is an ARGUMENT of this same "
+		"command, not a second verb, and it changes nothing about that: the loop "
+		"points the range rides are set in the render's own CHILD process, which "
+		"then exits, so this instance's timeline is untouched",
 		"the project is unchanged; the rendered file is an output, not project "
-		"state, and overwriting it is the caller's decision",
+		"state, and overwriting it is the caller's decision. A render already "
+		"performed is not undone by undoing anything here - not by the apply whose "
+		"preset shaped its options either (export.preset_apply's row) - so the "
+		"fallback for a render made with the wrong span or settings is to render "
+		"again",
 		""),
 	R("render.stems", RC::NotMutating, false,
 		"it writes OUTPUT ARTEFACTS - one file per unmuted track - and nothing "

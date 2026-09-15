@@ -196,6 +196,14 @@ LMMS_EXPORT void registerChainReadCommands(ControlRegistry& registry);
 //! chain.apply / chain.rename / chain.remove - the EDIT half, in its own
 //! translation unit (the automation and warp groups' split).
 LMMS_EXPORT void registerChainEditCommands(ControlRegistry& registry);
+/*! The SAVED-STORE half of the export group (feature row 70): export.preset_list
+ * / export.preset_add / export.preset_apply / export.preset_remove - the render
+ * and export presets themselves, and the settings the NEXT render is started
+ * with. The engine half is include/ControlExportPresetSupport.h; the applied
+ * preset reaches the render as the child process's own command line (see
+ * controlExportPresetRenderArgs), never as a second render path.
+ */
+LMMS_EXPORT void registerExportPresetCommands(ControlRegistry& registry);
 /*! The mixer group's ROUTING verbs - mixer.route_to / mixer.send_to /
  * mixer.sidechain_to / mixer.route_remove - in their own translation unit. They
  * are part of the mixer group (the ids keep the `mixer.` prefix); the file

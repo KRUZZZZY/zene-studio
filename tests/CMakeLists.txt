@@ -1708,6 +1708,25 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# The render/export presets and the ranged render (feature rows 70 and 71),
+	# end to end through --control-socket: the four store verbs with their typed
+	# refusals, an applied preset MEASURED in the next render's own WAV header
+	# (96000 Hz / 24 bit parsed out of the file, never out of the reply), and the
+	# time range measured in frame counts against the tempo's own arithmetic
+	# (Engine::updateFramesPerTick's expression, recomputed here) plus a byte
+	# comparison of a rendered span against the same span of a whole-project
+	# render. It starts the REAL binary, so the store it writes lives in the
+	# instance's own temp HOME and never the developer's. Each render.render call
+	# carries the declared RENDER_TIMEOUT budget instead of a raised socket
+	# timeout (docs/RENDER-CHILD-WAIT.md).
+	add_test(NAME ControlRenderPresets
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-render-presets.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRenderPresets PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+	)
 	# Session sync, two real instances (D11 "Ableton Link sync", the
 	# two-instance proof the brief names): both join one session and one drives
 	# the other's tempo and beat phase with no relay between them, through

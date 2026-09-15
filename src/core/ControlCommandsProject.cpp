@@ -33,6 +33,7 @@
 #include <QProcess>
 #include <QtEndian>
 
+#include "ControlExportPresetSupport.h"
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
@@ -278,7 +279,7 @@ void registerProjectOpen(ControlRegistry& registry)
 
 //! Validates the render args; empty string means they are usable.
 QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatName,
-	ProjectRenderer::ExportFileFormat* format)
+	ProjectRenderer::ExportFileFormat* format, ControlExportPreset* settings)
 {
 	*out = args.value(QStringLiteral("out")).toString();
 	if (!out->startsWith(QLatin1Char('/')))
@@ -290,18 +291,71 @@ QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatNa
 	{
 		return QStringLiteral("unsupported format '%1'").arg(*formatName);
 	}
+	// The settings this render is started with: the preset that was applied
+	// through export.preset_apply, or the render path's own defaults (44100 Hz,
+	// 16-bit, joint stereo) when none was. Read HERE and passed to the child as
+	// its own command line, so an apply changes the render's OPTIONS rather than
+	// its renderer.
+	*settings = ControlExportPresetSettings::effective();
+	return QString();
+}
+
+/*! The render RANGE (feature row 71): both ends in ticks, or neither.
+ *
+ *  There is deliberately no "half a range" form: one end alone is a span with a
+ *  missing side, and a caller that gets it wrong is told which end it is missing
+ *  rather than being handed a render of something it did not select. The refusal
+ *  is typed and happens before the session is serialised, so a bad range writes
+ *  no temp project, spawns no child and leaves no file behind.
+ */
+QString parseRenderRange(const QJsonObject& args, int* begin, int* end)
+{
+	const bool hasBegin = args.contains(QStringLiteral("start_ticks"));
+	const bool hasEnd = args.contains(QStringLiteral("end_ticks"));
+	if (!hasBegin && !hasEnd)
+	{
+		*begin = -1;
+		*end = -1;
+		return QString();
+	}
+	if (hasBegin != hasEnd)
+	{
+		return QStringLiteral("a render range needs BOTH start_ticks and end_ticks ('%1' was "
+			"given alone); a selection render is a span, not a start")
+			.arg(hasBegin ? QStringLiteral("start_ticks") : QStringLiteral("end_ticks"));
+	}
+	*begin = args.value(QStringLiteral("start_ticks")).toInt();
+	*end = args.value(QStringLiteral("end_ticks")).toInt();
+	if (*begin < 0 || *end < 0)
+	{
+		return QStringLiteral("start_ticks and end_ticks are positions in the song, so they "
+			"cannot be negative (got %1 and %2)").arg(*begin).arg(*end);
+	}
+	if (*end <= *begin)
+	{
+		return QStringLiteral("empty render range: start_ticks %1 is not before end_ticks %2")
+			.arg(*begin).arg(*end);
+	}
 	return QString();
 }
 
 //! Runs the shipped CLI render path as a child process.
-bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName, int* exitCode)
+bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName,
+	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode)
 {
+	QStringList arguments{QStringLiteral("render"), projectPath, QStringLiteral("-o"), out,
+		QStringLiteral("-f"), formatName};
+	arguments += controlExportPresetRenderArgs(settings);
+	if (rangeBegin >= 0)
+	{
+		arguments << QStringLiteral("--range-start") << QString::number(rangeBegin)
+			<< QStringLiteral("--range-end") << QString::number(rangeEnd);
+	}
+
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
 	renderer.setStandardErrorFile(QProcess::nullDevice());
-	renderer.start(QCoreApplication::applicationFilePath(),
-		{QStringLiteral("render"), projectPath, QStringLiteral("-o"), out,
-			QStringLiteral("-f"), formatName, QStringLiteral("-s"), QStringLiteral("44100")});
+	renderer.start(QCoreApplication::applicationFilePath(), arguments);
 	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;
@@ -313,10 +367,18 @@ ControlResult renderSession(const QJsonObject& args)
 	QString out;
 	QString formatName;
 	ProjectRenderer::ExportFileFormat format = ProjectRenderer::ExportFileFormat::Wave;
-	const QString invalid = parseRenderArgs(args, &out, &formatName, &format);
+	ControlExportPreset settings;
+	const QString invalid = parseRenderArgs(args, &out, &formatName, &format, &settings);
 	if (!invalid.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
+	}
+	int rangeBegin = -1;
+	int rangeEnd = -1;
+	const QString badRange = parseRenderRange(args, &rangeBegin, &rangeEnd);
+	if (!badRange.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, badRange);
 	}
 	if (Engine::getSong()->isEmpty())
 	{
@@ -341,7 +403,8 @@ ControlResult renderSession(const QJsonObject& args)
 	}
 
 	int exitCode = -1;
-	const bool finished = runCliRender(tempProject, out, formatName, &exitCode);
+	const bool finished = runCliRender(tempProject, out, formatName, settings, rangeBegin,
+		rangeEnd, &exitCode);
 	QFile::remove(tempProject);
 
 	QFileInfo info(out);
@@ -354,10 +417,32 @@ ControlResult renderSession(const QJsonObject& args)
 	QJsonObject result;
 	result.insert(QStringLiteral("path"), out);
 	result.insert(QStringLiteral("format"), formatName);
-	result.insert(QStringLiteral("sample_rate"), 44100);
+	result.insert(QStringLiteral("sample_rate"), static_cast<int>(settings.sampleRate));
+	result.insert(QStringLiteral("bit_depth"),
+		QString::fromLatin1(controlExportPresetBitDepthName(settings.bitDepth)));
+	result.insert(QStringLiteral("stereo_mode"),
+		QString::fromLatin1(controlExportPresetStereoModeName(settings.stereoMode)));
+	result.insert(QStringLiteral("applied_preset"),
+		ControlExportPresetSettings::activeName());
 	result.insert(QStringLiteral("bytes"), static_cast<qint64>(info.size()));
 	const bool wave = format == ProjectRenderer::ExportFileFormat::Wave;
 	result.insert(QStringLiteral("frames"), wave ? wavFrameCount(out) : -1);
+	// The range is reported back as it was applied, so a caller compares the
+	// frames it got against the span it asked for without a second round trip.
+	// `range` is null for a whole-project render, which is the render this
+	// command has always been.
+	if (rangeBegin >= 0)
+	{
+		QJsonObject range;
+		range.insert(QStringLiteral("start_ticks"), rangeBegin);
+		range.insert(QStringLiteral("end_ticks"), rangeEnd);
+		range.insert(QStringLiteral("ticks"), rangeEnd - rangeBegin);
+		result.insert(QStringLiteral("range"), range);
+	}
+	else
+	{
+		result.insert(QStringLiteral("range"), QJsonValue());
+	}
 	result.insert(QStringLiteral("sha256"), sha256OfFile(out));
 	return ControlResult::success(result);
 }
@@ -368,17 +453,32 @@ void registerRenderRender(ControlRegistry& registry)
 	cmd.id = QStringLiteral("render.render");
 	cmd.group = QStringLiteral("render");
 	cmd.verb = QStringLiteral("render");
-	cmd.description = QStringLiteral("Render the current session to a file and return its hash (headless).");
+	cmd.description = QStringLiteral("Render the current session to a file and return its hash "
+		"(headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render "
+		"only that span of the song (a selection), in which case the span is rendered exactly - "
+		"no tail bar and no loop repetition - and the reply reports the range and the frame "
+		"count. The render is started with the export settings in force: the preset applied "
+		"through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's "
+		"own defaults when none is applied. Runs in a CHILD process, so the declared bound "
+		"applies: this surface does not answer - not even control.ping - until it finishes "
+		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("out"), stringProperty()},
 			{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 				{QStringLiteral("enum"), QJsonArray{QStringLiteral("wav"), QStringLiteral("flac"),
-					QStringLiteral("ogg"), QStringLiteral("mp3")}}}}},
+					QStringLiteral("ogg"), QStringLiteral("mp3")}}}},
+			{QStringLiteral("start_ticks"), tickProperty()},
+			{QStringLiteral("end_ticks"), tickProperty()}},
 		{QStringLiteral("out")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("frames"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("sha256"), stringProperty()},
+		{QStringLiteral("sample_rate"), integerProperty()},
+		{QStringLiteral("bit_depth"), stringProperty()},
+		{QStringLiteral("stereo_mode"), stringProperty()},
+		{QStringLiteral("applied_preset"), stringProperty()},
+		{QStringLiteral("range"), objectProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return renderSession(args); };
 	registry.registerCommand(cmd);

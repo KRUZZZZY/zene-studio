@@ -173,6 +173,16 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The render/export preset store's four rows (feature rows 70 and 71): three
+ *  recorded-action true_inverse rows (the store and the applied selection are
+ *  both outside the project, so each command records the checkpoint for its own
+ *  file/DEFAULT operation) and the group's one not_mutating read. A GROUP file on
+ *  the same seam as the folder, vca, routing and mastering files - the class
+ *  comes from each row, not from its file. NONE of the four is typed-irreversible;
+ *  the file states that and names the verbs' manual fallbacks for the bounded
+ *  undo stack. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityExportPresetRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

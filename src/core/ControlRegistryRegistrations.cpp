@@ -101,6 +101,11 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSessionLaunchCommands(registry);
 #endif // LMMS_HAVE_SESSION_VIEW
 	registerExportCommands(registry);
+	// The render/export presets (feature row 70) - the saved store and the
+	// selection the next render is started with. No compile-time switch: the
+	// store is a directory in the user preset tree and the applied selection is
+	// a plain value, so its ids are honest in every configuration.
+	registerExportPresetCommands(registry);
 	registerRackCommands(registry);
 	// The chain-preset group: the store and its read/capture half, then the
 	// edit half (chain.apply / rename / remove), each its own translation unit.
