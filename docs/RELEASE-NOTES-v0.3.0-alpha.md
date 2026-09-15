@@ -2200,3 +2200,47 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   thread per connection, retained until the listener closes), no equivalent of the POSIX write
   notifier (a peer that stops reading a reply blocks that connection's thread on the pipe buffer
   instead of queueing), and — for this lane — **no local execution of the Windows half at all**.
+
+## CLAP hosting on Windows, and a load failure that says which failure it was (task #667, row `clap-hosting`) — added 2026-09-15
+
+- **CLAP effect hosting is built on Windows.** The row in `tests/advertised-features.tsv` is `*` again and all
+  three Windows jobs (`mingw`, `msvc`, `msys2`) pass `-DWANT_CLAP=ON`. The loader's Windows half is
+  `LoadLibraryW` / `GetProcAddress` / `FreeLibrary`, opened through the wide path so an install directory with
+  non-ASCII characters works; the UTF-8 path is still what `clap_entry.init()` is handed, as the CLAP spec
+  requires. Until 0.2.1-alpha the host used `dlopen`/`dlsym` (`<dlfcn.h>`) and the Windows jobs passed
+  `-DWANT_CLAP=OFF`, which is why the row was scoped `linux,macos` for that release.
+- **Every load failure is typed.** `plugins/ClapEffect/ClapLoader.h` answers with one of eleven
+  `loader::Code` values and a stable machine token —
+  `library-unavailable`, `symbol-missing`, `version-unsupported`, `entry-init-failed`, `factory-missing`,
+  `plugin-not-found`, `plugin-create-failed`, `plugin-init-failed`, `extension-missing`, `no-audio-ports` —
+  so "the file is not there", "it is not a CLAP module", "it is a CLAP version we cannot host" and "its
+  init() refused" are four different answers instead of one sentence. The scan path (`listClasses`) reports
+  the same code as a load attempt for the same module, both are reachable from a caller, and the enum cannot
+  grow without a token: a table row per code is enforced by a `static_assert`.
+- **The sentence a user sees did not change.** The typed work added a type to the failures, it did not reword
+  them: `'<path>' does not export clap_entry`, `'<path>' is a CLAP 0.0 plug-in, which is not compatible`,
+  `clap_entry.init() failed for '<path>'`, `'<path>' has no clap.plugin-factory factory`,
+  `'<path>' has no plug-in with id '<id>'`, and `Could not load CLAP module '<path>': <platform error>` are
+  all asserted verbatim by the new test.
+- **Proof — and its shape.** `ClapLoaderErrorTest` (`tests/src/plugins/ClapLoaderErrorTest.cpp`) drives the
+  typed path against **real modules that fail in exactly one way each** — the four fault modules built from
+  `tests/data/clap-test-plugin/clap-test-broken.c` (no `clap_entry`; a CLAP 0.x version; an `init()` that
+  returns false; no factory) plus `clap-test-gain` as the control that says the typed path does not fire on a
+  good module. It asserts each code, the six failures are distinct as a set, the whole token/summary table is
+  one-to-one, and the scan and instance paths agree. It needs no audio device, no widgets and no engine.
+  Locally: `ClapLoaderErrorTest` 14 passed / 0 failed, and the pre-existing `ClapHostTest` 12 passed /
+  0 failed against the refactored loader (it runs against the same fixture).
+- **This half's verdict on Windows is CI-only evidence.** There is no MinGW and no MSVC toolchain on the
+  development box, so the `#ifdef _WIN32` branch has never been compiled here: the three Windows jobs are
+  where it is compiled, and `msvc-x64` — the only one of the three that runs `ctest` — is where a real module
+  is loaded through it and the typed codes are asserted on Windows. What is proven locally is that the POSIX
+  path is **byte-for-byte unchanged** — `tests/prove-clap-loader-unchanged.sh` compares the five lines that
+  are the POSIX loader as whole lines against `release/0.3.0`, shows `clap_entry` is looked up in exactly one
+  file, and shows the Windows half contributes 0 lines to a POSIX build (`PASS (0 skipped) EXIT=0`).
+- **UI absence — one line: a failed load is drivable and observable through the log and the device's error
+  path, not from the interface.** No plug-in-error dialog, no scan-report page, no CLAP preference entry:
+  `grep -rniI 'lastLoadFailure|ClapLoader|ClapHost|loader::Code' src/gui/` returns 0 hits.
+- **What this does NOT have, stated rather than implied:** no third-party CLAP plug-in has been loaded on
+  Windows (the only witness is our own MIT fixture), no plug-in editor (unchanged — the parameters surface as
+  the generated grid, see the 0.2.1 limitations page), no CLAP instrument hosting, and no local execution of
+  the Windows half at all.

@@ -1285,3 +1285,47 @@ interface.** There is no pipe-name field, no control-surface page and no Windows
 `grep -rniI 'control-socket\|ControlServer\|controlSocket' src/gui/` returns **2** hits, both
 comments about *unattended* runs (`GuiApplication.cpp`, `MainWindow.cpp`) and neither a widget, a
 dialog nor a menu entry.
+
+## CLAP hosting on Windows, and a load failure that says WHICH failure it was (task #667, advertised-features row `clap-hosting`)
+
+**CLAP effect hosting is built on all three platforms in 0.3.0-alpha.** It could not be until now: the host
+opened its plug-ins with `dlopen`/`dlsym` (`<dlfcn.h>`), which neither MSVC nor MinGW provides, so the three
+Windows jobs were configured `-DWANT_CLAP=OFF` and `tests/advertised-features.tsv` scoped the row to
+`linux,macos`. The loader now has a Windows half (`LoadLibraryW` / `GetProcAddress` / `FreeLibrary`, opened
+through the wide path so an install directory with non-ASCII characters works) and that row says `*` again.
+The guard asserts the **inverse** on any platform a row does not list, so the row and the jobs cannot drift
+apart in either direction without the release job failing.
+
+**A load failure now has a type, not only a sentence.** The loader
+(`plugins/ClapEffect/ClapLoader.h`) answers with one of eleven `loader::Code` values — the file could not be
+opened, the module exports no `clap_entry`, the module declares a CLAP version this host cannot host,
+`clap_entry.init()` failed, the module has no plugin factory, the plug-in id is not in the module, the
+plug-in could not be created or could not be initialized, a required extension is missing, the audio-ports
+description is unusable — each with a stable machine token (`symbol-missing`, `version-unsupported`, …) that
+a log reader or an agent can match on. Before this, four different failures arrived as the same prose and a
+directory scan called three of them "'<path>' is not a usable CLAP module". The sentence a user sees is
+**unchanged**, and the file that opens a module or looks up `clap_entry` is now exactly one:
+`grep -rlI '"clap_entry"' plugins/ src/ include/` returns `plugins/ClapEffect/ClapLoader.cpp` and nothing else.
+
+Two bounds, stated rather than implied.
+
+- **The Windows half's verdict is CI-only evidence.** The lane that landed this port had no Windows
+  toolchain: the `#ifdef _WIN32` branch has never been compiled on this box. It is compiled by all three
+  Windows jobs of `.github/workflows/build.yml` (`mingw`/mingw64, `msvc`/msvc-x64, `msys2`/windows-arm64),
+  all three of which pass `-DWANT_CLAP=ON`, and — of those three — **only msvc-x64 runs `ctest`**, so that is
+  the job where a broken module is actually put through the loader on Windows; mingw64 and windows-arm64
+  build the module and their release-honesty guard asserts it exists in their artifacts. Nothing on Linux
+  compiles it. What IS proven locally is that the POSIX loader is **untouched**
+  — the five lines that are the POSIX loader (`dlopen` with `RTLD_NOW | RTLD_LOCAL`, `dlsym`, `dlclose`,
+  `dlerror`, `fromLocal8Bit`) are compared as whole lines against `release/0.3.0`, the Windows half
+  contributes 0 lines to a POSIX build, and the typed path itself is driven by five real modules on Linux —
+  `bash tests/prove-clap-loader-unchanged.sh`, and the per-claim output is in the lane's report.
+- **No third-party CLAP plug-in has been loaded on Windows** — or on any platform. The only CLAP module this
+  release has been proven against is our own MIT fixture (`tests/data/clap-test-plugin/`, built from the
+  pinned CLAP 1.2.10 headers), which the msvc-x64 job loads under CI and which the four one-fault modules
+  beside it deliberately break in one way each so that a wrong error code is a test failure. A third-party
+  module that misbehaves in a way the fixtures do not model is untested, not claimed.
+
+**UI absence — one line: a failed load is drivable and observable through the log and the device's error
+path, not from the interface.** There is no plug-in-error dialog, no scan-report page and no CLAP-specific
+preference entry: `grep -rniI 'lastLoadFailure|ClapLoader|ClapHost|loader::Code' src/gui/` returns **0** hits.

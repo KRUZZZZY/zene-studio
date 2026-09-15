@@ -94,6 +94,17 @@
 # runs green, the Windows half is unverified, and the honest reading of this row is
 # "the documents claim it everywhere; CI is what proves the Windows claim."
 #
+# 2026-09-15 (task #667) - the row is unchanged; two notes were added, because the loader
+# it names now says WHICH failure it had as well as that it failed. The codes and their
+# stable tokens live in plugins/ClapEffect/ClapLoader.h, which is also where the platform
+# boundary and the load ladder moved to (it is the only file in the tree that looks up
+# `clap_entry`), and ClapLoaderErrorTest drives them against four modules built to fail in
+# exactly one way each (tests/data/clap-test-plugin/clap-test-broken.c). The CI side of
+# this row did not change: all three Windows jobs still pass -DWANT_CLAP=ON, and of those
+# three the msvc-x64 job is the one that runs ctest, so it is where that test - and the
+# Windows half of the loader - is exercised. Nothing here is claimed as locally verified:
+# see tests/prove-clap-loader-unchanged.sh for exactly what the Linux box does prove.
+#
 # A feature documented as ABSENT is a row too (required OFF). If a build turns one
 # on, the documents understate that build and the release is dishonest in the other
 # direction, so the gate fails on it as well.

@@ -1174,9 +1174,15 @@ if(TARGET lmms_clap)
 	# clap-test-gain as the control that says the typed path does not fire on a
 	# module that is fine. Nothing here needs an audio device or the engine.
 	#
-	# It runs wherever the fixtures build, the Windows jobs included: the loader
-	# it proves is the Windows port's (LoadLibraryW/GetProcAddress), and the
-	# faults it asserts on are the platform-independent half of that contract.
+	# WHERE IT RUNS (checked against .github/workflows/build.yml, not assumed).
+	# Every job that provisions the CLAP headers builds it; of the three Windows
+	# jobs, msvc-x64 is the one that runs `ctest`, so that is the job where the
+	# typed path is exercised on Windows -- against the Windows half of the
+	# loader (LoadLibraryW/GetProcAddress). mingw64 and windows-arm64 configure
+	# with -DWANT_CLAP=ON and build the module, but run no ctest, so for them the
+	# proof is that it compiles and that the release-honesty guard finds the
+	# clapeffect module in their artifacts. On Linux and macOS it runs with the
+	# rest of the suite.
 	add_executable(ClapLoaderErrorTest
 		src/plugins/ClapLoaderErrorTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
