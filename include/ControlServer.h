@@ -30,6 +30,17 @@
 #include <QString>
 #include <QVector>
 
+// The Windows named-pipe transport (CODE-9) runs one thread per accepted
+// connection, so the server needs the threading and shared-state primitives the
+// POSIX half gets from QSocketNotifier and the kernel.  Guarded: on POSIX this
+// header is what it always was.
+#if defined(Q_OS_WIN)
+#include <QMutex>
+#include <atomic>
+#include <thread>
+#include <vector>
+#endif
+
 #include "ControlRegistry.h"
 
 class QSocketNotifier;
@@ -37,16 +48,16 @@ class QSocketNotifier;
 namespace lmms
 {
 
-//! A local (AF_UNIX) socket speaking line-delimited JSON-RPC, one request and
-//! one response per line:
+//! A local (AF_UNIX on POSIX, named pipe on Windows) socket speaking
+//! line-delimited JSON-RPC, one request and one response per line:
 //!
 //!   -> {"id":1,"cmd":"mixer.get_state","args":{},"proto":1}
 //!   <- {"id":1,"ok":true,"result":{...}}
 //!   <- {"id":1,"ok":false,"error":{"kind":"invalid_args","message":"..."}}
 //!
-//! Off unless the instance is started with --control-socket <path>. The socket
-//! file is mode 0600, is unlinked on exit, and the listener is AF_UNIX only:
-//! nothing ever listens on the network (SPEC A12 / AGENT-TOOLING.md #9.1).
+//! Off unless the instance is started with --control-socket <path>. The POSIX
+//! socket file is mode 0600, is unlinked on exit, and the listener is AF_UNIX
+//! only: nothing ever listens on the network (SPEC A12 / AGENT-TOOLING.md #9.1).
 //!
 //! The bind is destructive to the path it uses, so it is refused rather than
 //! performed when the path already holds something that is not a socket, or
@@ -55,7 +66,8 @@ namespace lmms
 //! only the socket THIS instance bound. See docs/CONTROL-SOCKET-PATH-SAFETY.md.
 //!
 //! Implemented with POSIX sockets plus QSocketNotifier rather than Qt Network,
-//! so the audio application gains no new Qt module dependency.
+//! so the audio application gains no new Qt module dependency.  The Windows
+//! half uses a named pipe behind the same JSON-RPC contract (CODE-9).
 class ControlServer : public QObject
 {
 	Q_OBJECT
@@ -77,7 +89,8 @@ public:
 	explicit ControlServer(ControlRegistry* registry, QObject* parent = nullptr);
 	~ControlServer() override;
 
-	//! Listen on \p path (must be absolute). Returns false and sets \p error on failure.
+	//! Listen on \p path (must be absolute on POSIX, or a \\.\pipe\ name on
+	//! Windows). Returns false and sets \p error on failure.
 	bool listen(const QString& path, QString* error);
 
 	//! The typed error kind of the last listen() that FAILED; ControlErrorKind::None
@@ -89,7 +102,11 @@ public:
 	//! Stop listening, drop every client and unlink the socket file. Idempotent.
 	void close();
 
+#if defined(Q_OS_WIN)
+	bool isListening() const { return m_win32Listening.load(); }
+#else
 	bool isListening() const { return m_listenFd >= 0; }
+#endif
 	QString socketPath() const { return m_path; }
 	ControlRegistry* registry() const { return m_registry; }
 
@@ -102,6 +119,8 @@ signals:
 	void exchanged(const QByteArray& request, const QByteArray& response);
 
 private:
+	//! One POSIX connection.  Windows keeps no per-connection struct here: its
+	//! transport (below) is a thread per accepted pipe and needs no fd map.
 	struct Client
 	{
 		int fd = -1;
@@ -156,8 +175,64 @@ private:
 	bool adoptListener(int fd, const QString& path, const QByteArray& nativePath);
 
 	ControlRegistry* m_registry;
+#if defined(Q_OS_WIN)
+	//! The Windows transport: a named pipe behind the SAME JSON-RPC contract -
+	//! the same framing, the same command ids, the same refusal shapes
+	//! (CODE-9).  Defined in ControlServerWin32.cpp.
+	//!
+	//! listenWin32() creates the pipe namespace and the event the transport is
+	//! cancellable through, registers the shutdown hook and starts the accept
+	//! loop.  It returns the typed error KIND rather than reporting it, so the
+	//! caller (listen(), in ControlServerSocket.cpp) reports it through the same
+	//! `fail` lambda the POSIX path uses and a launcher reads the same refusal
+	//! shape on both platforms.  closeWin32() stops the acceptor and joins every
+	//! client thread: those joins are what make `this` safe to destroy.
+	ControlErrorKind listenWin32(const QString& path, QString* detail);
+	void closeWin32();
+	//! Create the next pipe instance and wait for a client.  The wait is on a
+	//! ConnectNamedPipe wait-handle and m_win32QuitEvent, never on a blocking
+	//! ConnectNamedPipe: that is what lets closeWin32() stop this loop without
+	//! closing a handle a thread is inside.
+	void win32AcceptLoop();
+	//! Serve ONE accepted connection to its end: read lines, dispatch each
+	//! complete one on the server's thread (win32Dispatch) and write its reply
+	//! back.  Owns its pipe handle; does NOT remove its own entry from
+	//! m_win32ClientThreads (a thread cannot join itself) - that entry is joined
+	//! by closeWin32().
+	void win32ClientLoop(void* hPipe);
+	//! Run dispatchLine() for one request line on the SERVER's thread and wait
+	//! for the answer, bounded.  Empty when the instance started closing before
+	//! the request could be answered.
+	QByteArray win32Dispatch(const QByteArray& line);
+	//! Serve every COMPLETE line already in \p buffer, in wire order: dispatch it
+	//! on the server's thread and write its reply back.  Returns false when the
+	//! connection is over (the peer is gone, or the instance is closing).  The
+	//! 1 MiB cap is applied here too, because a line that never ends is exactly
+	//! what is left once every complete one is gone: \p overCap is set once that
+	//! refusal has been sent, and the caller then reads and discards the rest.
+	bool win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEvent, QByteArray& buffer,
+		bool* overCap);
+
+	//! The full \\.\pipe\<name> this instance listens on; empty when it is not.
+	QString m_pipeName;
+	//! Set by closeWin32() and watched by every thread in the transport: it is
+	//! how the acceptor and each client thread learn to stop, with no handle
+	//! closed underneath them.
+	std::atomic<bool> m_win32Quit{false};
+	//! Non-null between listenWin32() and closeWin32(): what isListening()
+	//! answers on this platform.
+	std::atomic<bool> m_win32Listening{false};
+	void* m_win32QuitEvent = nullptr;    // HANDLE, manual-reset
+	void* m_win32ConnectEvent = nullptr; // HANDLE, manual-reset, the accept wait
+	std::thread m_acceptThread;
+	//! One entry per accepted connection, in connection order.  Joined by
+	//! closeWin32() (which runs after the acceptor has been joined, so nothing
+	//! appends while this is read) - the only reason the transport keeps them.
+	std::vector<std::thread> m_win32ClientThreads;
+#else
 	int m_listenFd = -1;
 	QSocketNotifier* m_notifier = nullptr;
+#endif
 	QString m_path;
 	ControlErrorKind m_lastErrorKind = ControlErrorKind::None;
 	//! The (device, inode) this instance bound with listen(), so close() can tell

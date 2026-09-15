@@ -463,6 +463,12 @@ set(LMMS_SRCS
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
 	core/ControlServerSocket.cpp
+	# The Windows half of the control transport: the same JSON-RPC contract, the
+	# same command ids, served over a named pipe (CODE-9, feature row 83). Named
+	# here because LMMS_SRCS is an explicit list rather than a glob; on POSIX the
+	# file preprocesses to nothing and the listener stays the AF_UNIX socket
+	# ControlServerSocket.cpp binds.
+	core/ControlServerWin32.cpp
 	core/ControlSession.cpp
 	# The inverse of a STRUCTURAL operation - a deleted track (with its clips), a
 	# reordered track, a removed device (task #664, feature row 75). Its own TU:

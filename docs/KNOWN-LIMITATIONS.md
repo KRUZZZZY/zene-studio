@@ -1250,3 +1250,38 @@ What is bounded, stated rather than implied:
 - **A mapping template is files outside the project** (`<userConfig>/controller-templates/<name>.json`).
   It is not carried in the project file, it is not shared by saving a project, and deleting one has no
   undo. A binding whose target model is absent is skipped and reported, never invented.
+
+## The control socket on Windows is a named pipe, and that half's verdict is CI-only evidence (CODE-9, feature row 83)
+
+The agent control surface (`--control-socket`) is the **same surface** on Windows: the same
+line-delimited JSON-RPC framing (one request line in, one response line out), the same command ids,
+the same typed refusal shapes, the same `control socket listening on <path>` start line. What differs
+is the kernel object underneath. On POSIX it is an AF_UNIX socket, mode 0600, unlinked on exit. On
+Windows it is a **named pipe** (`\\.\pipe\<name>`) created with `PIPE_REJECT_REMOTE_CLIENTS`, so a
+client cannot reach it over `\\<host>\pipe\...` — the one route by which a named pipe could ever be
+reached from off the machine (SPEC A12 / AGENT-TOOLING.md #9.1). Windows has **no `chmod` and no
+inode here**: the pipe carries the process's default DACL (the creating user and local
+administrators) rather than an explicitly owner-only descriptor, and the POSIX rule "unlink only the
+socket THIS instance bound" has no counterpart — the pipe name simply ceases to exist with the
+process, so a stale name can never be bound by mistake.
+
+Two bounds, stated rather than implied. **One thread per accepted connection**, and a finished
+thread's entry is retained until the listener closes: connections are served and closed promptly, but
+an instance that accepts hundreds of connections in one session accumulates that many
+joined-at-close thread entries (bounded by the number of connections, never by their size or
+duration). If a client stops reading a reply, that connection's thread blocks on the pipe buffer
+until the instance closes — the POSIX path queues the tail and keeps its event loop free instead.
+
+**This half's verdict is CI-only evidence.** The lane that built it had no Windows toolchain: the
+transport is compiled and exercised by the `msvc-x64` CI job's `ControlNamedPipeSmoke` ctest (which
+starts the real binary on a pipe, drives the wire and checks the framing, the ids, the refusal shapes,
+the 1 MiB line cap and the shutdown) and by nothing on a Linux box. What *is* proven locally is that
+the POSIX transport is **untouched**: the three control translation units preprocess token-for-token
+to the `release/0.3.0` revision, and the Windows TU preprocesses to nothing on POSIX. Both proofs and
+their exact commands are in `docs/CONTROL-NAMED-PIPE.md`.
+
+**UI absence — one line: the Windows transport is drivable through the socket, not from the
+interface.** There is no pipe-name field, no control-surface page and no Windows-specific menu entry;
+`grep -rniI 'control-socket\|ControlServer\|controlSocket' src/gui/` returns **2** hits, both
+comments about *unattended* runs (`GuiApplication.cpp`, `MainWindow.cpp`) and neither a widget, a
+dialog nor a menu entry.

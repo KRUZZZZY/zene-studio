@@ -2152,3 +2152,51 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   when this was written**, so the LED half's strongest claim is a measured write reaching the output
   client (the dummy client's `sendByte()` is a no-op) and nothing here proves a lamp lit or a motor
   moved; and no motorised-fader return path is proved at all.
+
+## The control socket on Windows: the same contract over a named pipe (CODE-9, feature row 83) — added 2026-09-15
+
+- **Same contract, different kernel object.** On Windows `--control-socket <path>` now listens on a
+  **named pipe** (`\\.\pipe\<name>`) instead of refusing, and it serves the **identical**
+  line-delimited JSON-RPC surface: one request line in / one response line out, the same command ids,
+  the same typed refusals (`invalid_args`, `not_found`, …), the same `control socket listening on
+  <path>` start line, the same 1 MiB request-line cap and the same over-cap refusal sentence. Nothing
+  on the wire tells a client which kernel object it is talking to. **No new command ids and no new
+  A16 rows**: this is the same surface over a second transport, so the surface's ids and the
+  reversibility table are exactly what they were — the smoke test reads the id list off the pipe and
+  checks it against the ids the surface has always carried.
+- **Where the code is.** `src/core/ControlServerWin32.cpp` (new, every line inside
+  `#if defined(Q_OS_WIN)`) implements `listenWin32`/`closeWin32`/the accept loop/per-connection
+  thread/the dispatch bridge; `ControlServerSocket.cpp`'s platform branches hand the Windows case to
+  it and report its refusal through the same `fail` lambda the POSIX path uses; the POSIX
+  transport itself is **unchanged** (see the proof below).
+- **The design, in one sentence each.** A thread per accepted connection, so no blocking pipe call
+  ever runs on the server's thread; **every** wait is on an event this code owns and every pipe
+  operation is OVERLAPPED, so `close()` can stop any thread without closing a handle a thread is
+  inside; `dispatchLine()` **always** runs on the server's thread (a queued call), because the
+  control surface, the engine and the journal are single-threaded by construction on POSIX too; and
+  the client thread's wait for that answer is **bounded**, so a closing instance can always finish
+  joining its threads.
+- **Local-only by construction.** The pipe is created with `PIPE_REJECT_REMOTE_CLIENTS`: a client
+  cannot reach it over `\\<host>\pipe\...`. Windows has no `chmod`/inode equivalent, so the POSIX
+  rules "mode 0600" and "unlink only the socket this instance bound" are **stated as absent** in
+  `docs/KNOWN-LIMITATIONS.md` rather than pretended.
+- **Proof — and its shape.** `ControlNamedPipeSmoke` (`tests/control-named-pipe-smoke.py`, registered
+  under `if(WIN32 AND PYTHON3_EXECUTABLE)` in `tests/CMakeLists.txt`) starts the real binary on a
+  pipe, connects with `CreateFileW`, and checks the framing (two requests in one write → two whole
+  reply lines, in order), the ids the surface carries over the pipe, the malformed-line and
+  unknown-command refusals, the 1 MiB cap (and that the listener survives that connection), the
+  launcher-visible refusal for a path that is not a pipe name, and the shutdown (`control.quit`
+  answers, the process exits, the name is gone). **This is CI-only evidence**: the transport was
+  written on a box with no Windows toolchain, and the `msvc-x64` job is where it is compiled and run.
+  What is proven locally instead is that the **POSIX path is byte-for-byte unchanged**: the three
+  control translation units preprocess token-for-token to `release/0.3.0`, and the new Windows TU
+  preprocesses to nothing on POSIX (`docs/CONTROL-NAMED-PIPE.md` carries the exact commands).
+- **UI absence — one line: the Windows transport is drivable through the socket, not from the
+  interface.** `grep -rniI 'control-socket\|ControlServer\|controlSocket' src/gui/` returns 2 hits,
+  both comments about unattended runs; there is no pipe-name field, no control-surface page and no
+  Windows-specific menu entry. `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds.
+- **What this does NOT have, stated rather than implied:** no Windows-side path-safety rules beyond
+  the name check (there is no filesystem object to protect), no per-connection thread pool (one
+  thread per connection, retained until the listener closes), no equivalent of the POSIX write
+  notifier (a peer that stops reading a reply blocks that connection's thread on the pipe buffer
+  instead of queueing), and — for this lane — **no local execution of the Windows half at all**.

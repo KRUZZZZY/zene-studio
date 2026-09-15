@@ -330,6 +330,9 @@ void reportTypedError(ControlErrorKind kind, const QString& message)
 //! The invalid_args refusal for a path listen() cannot accept, or an empty
 //! string when the path is usable. \p listening is whether this instance already
 //! holds a listener, and \p bound is the path it holds.
+//!
+//! POSIX only: on Windows the path names a pipe, validated by listenWin32().
+#if !defined(Q_OS_WIN)
 QString pathValidationError(const QString& path, bool listening, const QString& bound)
 {
 	if (path.isEmpty() || !path.startsWith(QLatin1Char('/')))
@@ -339,6 +342,7 @@ QString pathValidationError(const QString& path, bool listening, const QString& 
 	if (listening) { return QStringLiteral("already listening on %1").arg(bound); }
 	return QString();
 }
+#endif
 
 } // namespace
 
@@ -356,6 +360,15 @@ bool ControlServer::listen(const QString& path, QString* error)
 		return false;
 	};
 
+#if defined(Q_OS_WIN)
+	// The Windows transport is a named pipe behind the same contract (CODE-9):
+	// listenWin32() validates the name and returns the refusal as a KIND, so the
+	// `fail` lambda above reports it - the same typed line on both platforms.
+	QString win32Detail;
+	const ControlErrorKind win32Kind = listenWin32(path, &win32Detail);
+	if (win32Kind != ControlErrorKind::None) { return fail(win32Kind, win32Detail); }
+	return true;
+#else
 	const QString pathError = pathValidationError(path, isListening(), m_path);
 	if (!pathError.isEmpty())
 	{
@@ -402,7 +415,8 @@ bool ControlServer::listen(const QString& path, QString* error)
 		return fail(ControlErrorKind::Refused, detail);
 	}
 	return adoptListener(fd, path, nativePath);
-#endif
+#endif // !defined(Q_OS_UNIX)
+#endif // defined(Q_OS_WIN)
 }
 
 bool ControlServer::adoptListener(int fd, const QString& path, const QByteArray& nativePath)
@@ -440,7 +454,8 @@ bool ControlServer::adoptListener(int fd, const QString& path, const QByteArray&
 void ControlServer::close()
 {
 #if !defined(Q_OS_UNIX)
-	m_path.clear();
+	// Windows: stop the transport - acceptor, then every client thread.
+	closeWin32();
 #else
 	for (const Client& client : m_clients)
 	{
