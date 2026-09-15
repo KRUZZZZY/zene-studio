@@ -1615,6 +1615,39 @@ transposes a clip or a selection as a command, marks a slide note, snaps notes t
 group's context or reaches the MPE switch — and the piano roll's own key/scale combo boxes are **not wired**
 to `scale.*` in either direction. `docs/KNOWN-LIMITATIONS.md` carries the sentences, and the bounds above
 with them.
+
+## Scale-aware root-note highlighting (feature row 65) — deferred to the interface phase, 2026-09-15
+
+**Row 65 is not in 0.3.0, and this section is the decision that says so rather than an omission.** The row's
+own sources name its deliverable: draw the **root note distinctly** from the other in-scale degrees, and expose
+the colours as **theme values** (`BACKLOG` OWNER-31 item 6; `ui-research/UI-DIRECTION-RECONCILED.md` item 5 —
+"highlighting already ships; the remaining piece is drawing the root note distinctly + theme values"). Both
+artefacts are the interface: the highlight is one draw loop — `src/gui/editors/PianoRoll.cpp:3659-3670` paints
+every marked semitone with the single colour `m_markedSemitoneColor` — the state behind it is the piano-roll
+**window's** own (`m_keyModel` / `m_scaleModel` / `m_markedSemiTones`, written by
+`PianoRollWindow::saveSettings`, not by the project), and a theme value is a `Q_PROPERTY` plus a
+`data/themes/*/style.css` entry. The in-scale colour's theme value exists already
+(`qproperty-markedSemitoneColor`); the missing one is a second, **root-note** colour and the draw that uses it.
+
+**Nothing socket-observable is left to land, which is why this is a deferral and not an unfinished feature.**
+The non-UI half the scope contract asks for — a scale and root-note fact the view could read, drivable through
+the socket with ids, schemas, an A16 row and a registered proof — is **row 66's** `scale.*` group, and it is
+already in the tree at this base: `scale.list`, `scale.get_state`, `scale.root_set`, `scale.set` and
+`scale.snap_notes`, landed in the note/scale/device wave at `c1282f6c7` (an ancestor of `release/0.3.0`), with
+A16 rows in `src/core/ControlReversibilityTableNoteScale.cpp` and the registered ctest
+`ControlNoteScaleVerbsTest` as the proof. `docs/MIDI-DEPTH.md` §1.1 names the same missing half — "a
+scale-aware edit operation (snap the notes that are out of key)" — and that is exactly this group's
+`scale.snap_notes`, so the engine side of scale awareness is complete and drivable. What no command can carry
+is a colour: a drawing and a style-sheet value can neither be driven nor observed through the socket, so by the
+scope contract's own rule (charter §3.1, "if it cannot be driven or observed through the socket, it is not in
+this release") row 65 leaves 0.3.0 for the **interface phase** — the phase the ladder does not place, and the
+one this page's own *shape* section already carries as deferred.
+
+**Where else this is written down:** `docs/FEATURE-LIST-0.3.0.md` row 65 (its status cell carries the
+decision and its group column records that it owes no group of its own) and `docs/KNOWN-LIMITATIONS.md` (the
+same one line). Nothing was weakened to record it: no gate, baseline, manifest or test changed, and no engine
+work is owed by this row.
+
 ## Loudness metering — the live master and any rendered file, drivable (2026-09-15)
 
 - **The BS.1770-4 meter is reachable, live and offline.** Feature row 24 of `docs/FEATURE-LIST-0.3.0.md` was

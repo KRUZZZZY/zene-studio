@@ -958,6 +958,17 @@ line each, because the scope contract asks for one each:
   scale combo boxes are unchanged and are neither read nor written by any of these ids, so an interface-only
   user can neither see nor set what the group resolves against. `scale.snap_notes` **refuses** rather than
   guessing a scale when the context holds none.
+- **Scale-aware root-note highlighting is deferred to the interface phase — it is not in 0.3.0** (feature row
+  65, recorded 2026-09-15). Its deliverable is the interface's: the **root note drawn distinctly** from the
+  other in-scale degrees, and that root colour exposed as a **theme value** (`BACKLOG` OWNER-31 item 6;
+  `ui-research/UI-DIRECTION-RECONCILED.md` item 5). What exists is a single-colour highlight — one draw loop,
+  `src/gui/editors/PianoRoll.cpp:3659-3670`, painting every marked semitone with `m_markedSemitoneColor`
+  (themed by `qproperty-markedSemitoneColor` in `data/themes/*/style.css`) — over the piano-roll **window's**
+  own state (`m_keyModel` / `m_scaleModel` / `m_markedSemiTones`, written by `PianoRollWindow::saveSettings`),
+  so none of it is drivable or observable through the socket. No engine half is owed by this row either: the
+  socket-side scale and root-note facts are the `scale.*` group's (row 66, already in the tree), and the
+  scale-aware edit operation `docs/MIDI-DEPTH.md` §1.1 asked for is that group's `scale.snap_notes`. The
+  decision is also stated in `docs/FEATURE-LIST-0.3.0.md` row 65 and in `docs/RELEASE-NOTES-v0.3.0-alpha.md`.
 - **`device.mpe_set` is drivable through the socket, not from the interface.** No checkbox, menu entry or
   setting reaches the MPE input switch and none shows its state; the per-note expression editor
   `docs/MPE.md` names is still absent (this page's MPE entry above stands). What it gates, exactly: while it
