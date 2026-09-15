@@ -28,12 +28,18 @@
 
 #include "AudioEngine.h"
 
+#include "ControlDeviceSupport.h"
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "Effect.h"
+#include "EffectChain.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "Mixer.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "Track.h"
 #include "lmmsversion.h"
 
 namespace lmms
@@ -410,6 +416,111 @@ void registerQuitCommand(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerIdContractCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("control.id_contract");
+	cmd.group = QStringLiteral("control");
+	cmd.verb = QStringLiteral("id_contract");
+	cmd.description = QStringLiteral("The stable-id contract: every id family, its persistence, "
+		"its form, the document element it lives on, and the current count.");
+	cmd.requiresEngine = false;
+	cmd.argsSchema = objectSchema();
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("families"), arrayProperty()},
+		{QStringLiteral("count"), integerProperty()},
+		{QStringLiteral("persistent"), integerProperty()},
+		{QStringLiteral("index_derived"), integerProperty()},
+	});
+	cmd.handler = [](const QJsonObject&) {
+		int clipCount = 0;
+		int noteCount = 0;
+		int fxCount = 0;
+		Song* song = Engine::getSong();
+		if (song != nullptr)
+		{
+			for (Track* track : song->tracks())
+			{
+				clipCount += static_cast<int>(track->getClips().size());
+				for (Clip* clip : track->getClips())
+				{
+					if (auto midiClip = dynamic_cast<MidiClip*>(clip))
+					{
+						noteCount += static_cast<int>(midiClip->notes().size());
+					}
+				}
+				if (track->audioPort() != nullptr && track->audioPort()->effects() != nullptr)
+				{
+					fxCount += static_cast<int>(track->audioPort()->effects()->effects().size());
+				}
+			}
+		}
+		Mixer* mixer = Engine::mixer();
+		if (mixer != nullptr)
+		{
+			for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+			{
+				fxCount += static_cast<int>(mixer->mixerChannel(i)->audioPort()->effects()->effects().size());
+			}
+		}
+		const int trackCount = song != nullptr ? static_cast<int>(song->tracks().size()) : 0;
+		const int channelCount = mixer != nullptr ? static_cast<int>(mixer->numChannels()) : 0;
+		const int deviceCount = controlDeviceCatalogue().size();
+
+		QJsonArray families;
+		families.append(QJsonObject{
+			{QStringLiteral("prefix"), QStringLiteral("trk-")},
+			{QStringLiteral("persistence"), QStringLiteral("persistent")},
+			{QStringLiteral("form"), QStringLiteral("trk-<n>")},
+			{QStringLiteral("document"), QStringLiteral("track element id attribute")},
+			{QStringLiteral("count"), trackCount},
+		});
+		families.append(QJsonObject{
+			{QStringLiteral("prefix"), QStringLiteral("clip-")},
+			{QStringLiteral("persistence"), QStringLiteral("persistent")},
+			{QStringLiteral("form"), QStringLiteral("clip-<n>")},
+			{QStringLiteral("document"), QStringLiteral("clip element id attribute")},
+			{QStringLiteral("count"), clipCount},
+		});
+		families.append(QJsonObject{
+			{QStringLiteral("prefix"), QStringLiteral("note-")},
+			{QStringLiteral("persistence"), QStringLiteral("persistent")},
+			{QStringLiteral("form"), QStringLiteral("note-<n>")},
+			{QStringLiteral("document"), QStringLiteral("note element id attribute")},
+			{QStringLiteral("count"), noteCount},
+		});
+		families.append(QJsonObject{
+			{QStringLiteral("prefix"), QStringLiteral("ch-")},
+			{QStringLiteral("persistence"), QStringLiteral("persistent")},
+			{QStringLiteral("form"), QStringLiteral("ch-<n>")},
+			{QStringLiteral("document"), QStringLiteral("mixerchannel element id attribute")},
+			{QStringLiteral("count"), channelCount},
+		});
+		families.append(QJsonObject{
+			{QStringLiteral("prefix"), QStringLiteral("fx-")},
+			{QStringLiteral("persistence"), QStringLiteral("persistent")},
+			{QStringLiteral("form"), QStringLiteral("fx-<n>")},
+			{QStringLiteral("document"), QStringLiteral("effect element id attribute")},
+			{QStringLiteral("count"), fxCount},
+		});
+		families.append(QJsonObject{
+			{QStringLiteral("prefix"), QStringLiteral("dev-")},
+			{QStringLiteral("persistence"), QStringLiteral("catalogue")},
+			{QStringLiteral("form"), QStringLiteral("dev-<n>")},
+			{QStringLiteral("document"), QStringLiteral("not a document identity: build catalogue selector")},
+			{QStringLiteral("count"), deviceCount},
+		});
+
+		QJsonObject result;
+		result.insert(QStringLiteral("families"), families);
+		result.insert(QStringLiteral("count"), families.size());
+		result.insert(QStringLiteral("persistent"), 5);
+		result.insert(QStringLiteral("index_derived"), 1);
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerControlGroupCommands(ControlRegistry& registry)
@@ -421,6 +532,7 @@ void registerControlGroupCommands(ControlRegistry& registry)
 	registerUndoCommand(registry);
 	registerRedoCommand(registry);
 	registerQuitCommand(registry);
+	registerIdContractCommand(registry);
 	// The bounded-undo slice (task #623): the depth, the two caps and the
 	// coalescing window. Its own translation unit because this file is at the
 	// file-length ratchet's limit; the same group either way.

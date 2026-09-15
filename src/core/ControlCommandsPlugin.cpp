@@ -167,7 +167,7 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 	QJsonObject result;
 	result.insert(QStringLiteral("target"), target.id);
 	result.insert(QStringLiteral("kind"), QStringLiteral("effect"));
-	result.insert(QStringLiteral("id"), control::effectId(index));
+	result.insert(QStringLiteral("id"), control::effectIdOf(effect));
 	result.insert(QStringLiteral("index"), index);
 	result.insert(QStringLiteral("device"), control::deviceId(deviceIndex));
 	result.insert(QStringLiteral("plugin"), QString::fromUtf8(effect->descriptor()->name));
@@ -182,7 +182,7 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 		QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.unload")},
 			{QStringLiteral("args"),
 				QJsonObject{{QStringLiteral("target"), target.id},
-					{QStringLiteral("plugin"), control::effectId(index)}}}});
+					{QStringLiteral("plugin"), control::effectIdOf(effect)}}}});
 	transaction.insert(QStringLiteral("reversible"), true);
 	transaction.insert(QStringLiteral("mechanism"),
 		QStringLiteral("action checkpoint: the recorded undo step unloads the device this command "
@@ -333,7 +333,9 @@ void registerPluginUnload(ControlRegistry& registry)
 		Effect* effect = resolveControlEffect(target, pluginId, &error);
 		if (effect == nullptr) { return error; }
 		const QString pluginName = QString::fromUtf8(effect->descriptor()->name);
-		const int index = control::idToIndex(pluginId, QStringLiteral("fx-"));
+		const std::vector<Effect*>& effects = target.chain->effects();
+		const auto it = std::find(effects.begin(), effects.end(), effect);
+		const int index = static_cast<int>(std::distance(effects.begin(), it));
 		QJsonObject snapshot = stateSnapshot(effect);
 		snapshot.insert(QStringLiteral("target"), target.id);
 		snapshot.insert(QStringLiteral("index"), index);

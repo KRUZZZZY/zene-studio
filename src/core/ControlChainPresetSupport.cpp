@@ -391,7 +391,7 @@ ControlResult controlApplyChainPreset(EffectChain* chain, const ControlChainPres
 		}
 
 		QJsonObject entry = controlChainPresetDeviceJson(preset.devices.at(i), i);
-		entry.insert(QStringLiteral("id"), control::effectId(i));
+		entry.insert(QStringLiteral("id"), control::effectIdOf(target.chain->effects()[static_cast<std::size_t>(i)]));
 		entry.insert(QStringLiteral("device"), control::deviceId(catalogueIndexes.at(i)));
 		devices.append(entry);
 	}

@@ -2099,10 +2099,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
 			$<TARGET_FILE:zene>
 	)
+	add_test(NAME ControlStableIdsSlice2
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-stable-ids-slice2.py
+			$<TARGET_FILE:zene>
+	)
 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
-		ControlNegativeControl PROPERTIES
+		ControlNegativeControl ControlStableIdsSlice2 PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 420
+		SKIP_RETURN_CODE 77
 	)
 else()
 	message(STATUS "python3 not found: the #626 shutdown/readiness tests are not registered")

@@ -67,6 +67,18 @@ public:
 		return "effect";
 	}
 
+	/*! The effect's STABLE ID - the number in `fx-<n>` (SPEC-stable-ids.md
+	 *  slice 2). Assigned once, in the constructor, and never changed while the
+	 *  effect is alive; written to the project file as an `id` ATTRIBUTE on the
+	 *  effect's own element and taken back by loadSettings, so a cached `fx-<n>`
+	 *  still names this effect after a sibling effect is inserted, deleted,
+	 *  reordered or undone - and after a save/open cycle.
+	 */
+	int id() const { return m_id; }
+	//! Overrides the constructor's id with a file's value. Raises the project
+	//! counter past \a id so a retired number is never handed out again.
+	void setId(int id);
+
 	//! Returns true if audio was processed and should continue being processed
 	bool processAudioBuffer(AudioBuffer& inOut);
 
@@ -239,6 +251,13 @@ protected:
 
 private:
 	EffectChain * m_parent;
+
+	/*! The effect's stable id: the number in `fx-<n>`. Assigned once, in the
+	 *  constructor, through ProjectIds - the same project-scoped counter the
+	 *  track, clip, note and channel ids come from, so `next-id` on the project
+	 *  root covers all of them - and replaced by the file's value on a project
+	 *  load (see saveSettings / loadSettings). */
+	int m_id;
 
 	bool m_okay;
 	bool m_noRun;

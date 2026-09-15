@@ -245,6 +245,7 @@ const ReversibilityRow kRows[] = {
 	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
 	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
 	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
+	R("control.id_contract", RC::NotMutating, false, "reads the stable-id contract", "no write", ""),
 	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
 	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),
 	R("control.transactions", RC::NotMutating, false, "reads the transaction record", "no write", ""),

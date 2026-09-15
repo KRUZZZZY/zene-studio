@@ -224,8 +224,8 @@ Effect* resolveControlEffect(const ControlTarget& target, const QString& pluginI
 				"plugin.param_set and save it with plugin.preset_save / plugin.state_save"));
 		return nullptr;
 	}
-	const int index = control::idToIndex(pluginId, QStringLiteral("fx-"));
-	if (index < 0)
+	const int id = control::idToIndex(pluginId, QStringLiteral("fx-"));
+	if (id < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a device instance id of the form fx-<n> (or 'inst')")
@@ -233,14 +233,14 @@ Effect* resolveControlEffect(const ControlTarget& target, const QString& pluginI
 		return nullptr;
 	}
 	const std::vector<Effect*>& effects = target.chain->effects();
-	if (index >= static_cast<int>(effects.size()))
+	for (Effect* effect : effects)
 	{
-		*error = ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("no device %1 on %2 (it carries %3)")
-				.arg(pluginId, target.id).arg(effects.size()));
-		return nullptr;
+		if (effect->id() == id) { return effect; }
 	}
-	return effects[static_cast<std::size_t>(index)];
+	*error = ControlResult::failure(ControlErrorKind::NotFound,
+		QStringLiteral("no device %1 on %2 (it carries %3)")
+			.arg(pluginId, target.id).arg(effects.size()));
+	return nullptr;
 }
 
 QList<AutomatableModel*> controlEffectParameters(Effect* effect)
@@ -377,7 +377,7 @@ AutomatableModel* controlResolveParameter(Effect* effect, const QString& name, i
 QJsonObject controlEffectJson(Effect* effect, int index)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("id"), control::effectId(index));
+	out.insert(QStringLiteral("id"), control::effectIdOf(effect));
 	out.insert(QStringLiteral("index"), index);
 	out.insert(QStringLiteral("plugin"), QString::fromUtf8(effect->descriptor()->name));
 	out.insert(QStringLiteral("display_name"), QString::fromUtf8(effect->descriptor()->displayName));

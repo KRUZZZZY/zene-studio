@@ -820,5 +820,6 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
+tests/control-stable-ids-slice2.py
 tools/local-ci.sh
 tools/ncpu-shim.c
