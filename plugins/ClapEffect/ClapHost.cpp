@@ -24,6 +24,7 @@
 
 #include "ClapHost.h"
 
+#include "ClapLoader.h"
 #include "PluginHostChunking.h"
 
 #include <algorithm>
@@ -32,23 +33,6 @@
 #include <cstring>
 #include <memory>
 #include <thread>
-
-#ifdef _WIN32
-// The Windows half of the module loader: LoadLibraryW/GetProcAddress. Neither
-// MinGW nor MSVC ships <dlfcn.h>, so CLAP hosting could not be built for
-// Windows while the loader was dlopen/dlsym only (the v0.2.1-alpha tag run
-// failed at this include). NOMINMAX/WIN32_LEAN_AND_MEAN keep <windows.h> from
-// defining the min/max macros this file uses std::min/std::max for.
-#	ifndef WIN32_LEAN_AND_MEAN
-#		define WIN32_LEAN_AND_MEAN
-#	endif
-#	ifndef NOMINMAX
-#		define NOMINMAX
-#	endif
-#	include <windows.h>
-#else
-#	include <dlfcn.h>
-#endif
 
 #include <clap/clap.h>
 
@@ -70,71 +54,6 @@ void setError(QString* error, const QString& message)
 {
 	if (error) { *error = message; }
 }
-
-// --- module loading ---------------------------------------------------------
-// The one place the host touches the platform's dynamic loader. The Windows
-// branch is LoadLibraryW/GetProcAddress; the POSIX branch is dlopen/dlsym. The
-// module is opened through the wide path on Windows so an install directory
-// with non-ASCII characters works, while the UTF-8 path (modulePathUtf8) is
-// still what clap_entry.init() is handed, as the CLAP spec requires.
-#ifdef _WIN32
-using ModuleHandle = HMODULE;
-
-auto openModule(const QString& path) -> ModuleHandle
-{
-	return ::LoadLibraryW(reinterpret_cast<LPCWSTR>(path.utf16()));
-}
-
-auto moduleSymbol(ModuleHandle module, const char* name) -> void*
-{
-	return reinterpret_cast<void*>(::GetProcAddress(module, name));
-}
-
-void closeModule(ModuleHandle module)
-{
-	if (module) { ::FreeLibrary(module); }
-}
-
-//! The Win32 equivalent of dlerror(): the message for the last loader failure.
-auto moduleError() -> QString
-{
-	const auto code = ::GetLastError();
-	if (code == 0) { return QStringLiteral("unknown error"); }
-	LPWSTR buffer = nullptr;
-	const auto length = ::FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		reinterpret_cast<LPWSTR>(&buffer), 0, nullptr);
-	const auto message = length > 0
-		? QString::fromWCharArray(buffer, static_cast<int>(length)).trimmed()
-		: QStringLiteral("error %1").arg(code);
-	if (buffer) { ::LocalFree(buffer); }
-	return message;
-}
-#else
-using ModuleHandle = void*;
-
-auto openModule(const QString& path) -> ModuleHandle
-{
-	return dlopen(QFile::encodeName(path).constData(), RTLD_NOW | RTLD_LOCAL);
-}
-
-auto moduleSymbol(ModuleHandle module, const char* name) -> void*
-{
-	return dlsym(module, name);
-}
-
-void closeModule(ModuleHandle module)
-{
-	if (module) { dlclose(module); }
-}
-
-auto moduleError() -> QString
-{
-	const auto* message = dlerror();
-	return QString::fromLocal8Bit(message ? message : "unknown error");
-}
-#endif
 
 //! Value of a parameter mapped into 0..1; 0 for degenerate ranges.
 auto normalize(const ParamDescriptor& descriptor, double value) -> float
@@ -186,12 +105,14 @@ struct HostedPlugin::Impl
 	};
 
 	// --- module -----------------------------------------------------------
-	ModuleHandle library = nullptr;
-	const clap_plugin_entry_t* entry = nullptr;
-	bool entryInitialized = false;
-	const clap_plugin_factory_t* factory = nullptr;
+	//! The module, the clap_entry inside it and its factory. Their lifetime is
+	//! owned by Library::reset() (ClapLoader.h), which is also what releases
+	//! them in unload(). `status` is the TYPED answer of the last load():
+	//! "library not found" / "no clap_entry" / "version incompatible" are
+	//! distinct codes, not one prose string (see ClapLoader.h).
+	loader::Library loaded;
+	loader::Status status;
 	const clap_plugin_t* plugin = nullptr;
-	QByteArray modulePathUtf8;
 
 	// --- plug-in description ---------------------------------------------
 	ClassInfo info;
@@ -400,6 +321,11 @@ HostedPlugin::~HostedPlugin() { unload(); }
 
 auto HostedPlugin::isLoaded() const -> bool { return m_impl->plugin != nullptr; }
 
+//! The typed answer of the last load(): which failure it was, not just its
+//! sentence. Code::None after a successful load, and it survives the unload()
+//! every failure path calls, so a caller can read it after load() returns false.
+auto HostedPlugin::lastLoadFailure() const -> const loader::Status& { return m_impl->status; }
+
 auto HostedPlugin::classInfo() const -> const ClassInfo& { return m_impl->info; }
 
 auto HostedPlugin::className() const -> QString { return m_impl->info.name; }
@@ -560,55 +486,23 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	t_isMainThread = true;
 	unload();
 	auto& impl = *m_impl;
-	impl.modulePathUtf8 = QFile::encodeName(modulePath);
 
-	impl.library = openModule(modulePath);
-	if (!impl.library)
+	// The module ladder (open -> clap_entry -> version -> init -> factory) is
+	// ClapLoader.cpp's job now, and every step of it leaves a TYPED answer in
+	// impl.status: LibraryUnavailable / SymbolMissing / VersionUnsupported /
+	// EntryInitFailed / FactoryMissing. The sentence it carries is unchanged.
+	if (!loader::load(modulePath, impl.loaded, impl.status))
 	{
-		setError(error, QStringLiteral("Could not load CLAP module '%1': %2")
-			.arg(modulePath, moduleError()));
-		return false;
-	}
-
-	const auto* entry = static_cast<const clap_plugin_entry_t*>(moduleSymbol(impl.library, "clap_entry"));
-	if (!entry)
-	{
-		setError(error, QStringLiteral("'%1' does not export clap_entry").arg(modulePath));
-		unload();
-		return false;
-	}
-	// CLAP 0.x was a development series and is explicitly not compatible.
-	if (entry->clap_version.major < 1)
-	{
-		setError(error, QStringLiteral("'%1' is a CLAP %2.%3 plug-in, which is not compatible")
-			.arg(modulePath)
-			.arg(entry->clap_version.major)
-			.arg(entry->clap_version.minor));
-		unload();
-		return false;
-	}
-	if (!entry->init(impl.modulePathUtf8.constData()))
-	{
-		setError(error, QStringLiteral("clap_entry.init() failed for '%1'").arg(modulePath));
-		unload();
-		return false;
-	}
-	impl.entry = entry;
-	impl.entryInitialized = true;
-
-	impl.factory = static_cast<const clap_plugin_factory_t*>(entry->get_factory(CLAP_PLUGIN_FACTORY_ID));
-	if (!impl.factory)
-	{
-		setError(error, QStringLiteral("'%1' has no %2 factory").arg(modulePath, CLAP_PLUGIN_FACTORY_ID));
+		setError(error, impl.status.message());
 		unload();
 		return false;
 	}
 
 	const clap_plugin_descriptor_t* descriptor = nullptr;
-	const auto count = impl.factory->get_plugin_count(impl.factory);
+	const auto count = impl.loaded.factory->get_plugin_count(impl.loaded.factory);
 	for (std::uint32_t i = 0; i < count && !descriptor; ++i)
 	{
-		const auto* candidate = impl.factory->get_plugin_descriptor(impl.factory, i);
+		const auto* candidate = impl.loaded.factory->get_plugin_descriptor(impl.loaded.factory, i);
 		if (!candidate || !candidate->id) { continue; }
 		if (pluginId.isEmpty() || pluginId == QString::fromUtf8(candidate->id) ||
 			pluginId == QString::fromUtf8(candidate->name ? candidate->name : ""))
@@ -618,23 +512,29 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	}
 	if (!descriptor)
 	{
-		setError(error, QStringLiteral("'%1' has no plug-in with id '%2'").arg(modulePath, pluginId));
+		impl.status = {loader::Code::PluginNotFound,
+			QStringLiteral("'%1' has no plug-in with id '%2'").arg(modulePath, pluginId)};
+		setError(error, impl.status.message());
 		unload();
 		return false;
 	}
 	impl.info = describe(*descriptor);
 
 	const QByteArray idUtf8{descriptor->id};
-	impl.plugin = impl.factory->create_plugin(impl.factory, &impl.host, idUtf8.constData());
+	impl.plugin = impl.loaded.factory->create_plugin(impl.loaded.factory, &impl.host, idUtf8.constData());
 	if (!impl.plugin)
 	{
-		setError(error, QStringLiteral("create_plugin() failed for '%1'").arg(pluginId));
+		impl.status = {loader::Code::PluginCreateFailed,
+			QStringLiteral("create_plugin() failed for '%1'").arg(pluginId)};
+		setError(error, impl.status.message());
 		unload();
 		return false;
 	}
 	if (!impl.plugin->init(impl.plugin))
 	{
-		setError(error, QStringLiteral("clap_plugin.init() failed for '%1'").arg(pluginId));
+		impl.status = {loader::Code::PluginInitFailed,
+			QStringLiteral("clap_plugin.init() failed for '%1'").arg(pluginId)};
+		setError(error, impl.status.message());
 		unload();
 		return false;
 	}
@@ -650,7 +550,9 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 
 	if (!impl.audioPortsExt)
 	{
-		setError(error, QStringLiteral("'%1' does not implement %2").arg(pluginId, CLAP_EXT_AUDIO_PORTS));
+		impl.status = {loader::Code::ExtensionMissing,
+			QStringLiteral("'%1' does not implement %2").arg(pluginId, CLAP_EXT_AUDIO_PORTS)};
+		setError(error, impl.status.message());
 		unload();
 		return false;
 	}
@@ -674,7 +576,9 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	impl.layout = mapPorts(impl.ports);
 	if (!impl.layout.isValid())
 	{
-		setError(error, QStringLiteral("'%1' has no usable audio ports").arg(pluginId));
+		impl.status = {loader::Code::NoAudioPorts,
+			QStringLiteral("'%1' has no usable audio ports").arg(pluginId)};
+		setError(error, impl.status.message());
 		unload();
 		return false;
 	}
@@ -732,18 +636,9 @@ void HostedPlugin::unload()
 		impl.plugin->destroy(impl.plugin);
 		impl.plugin = nullptr;
 	}
-	if (impl.entryInitialized && impl.entry)
-	{
-		impl.entry->deinit();
-		impl.entryInitialized = false;
-	}
-	if (impl.library)
-	{
-		closeModule(impl.library);
-		impl.library = nullptr;
-	}
-	impl.entry = nullptr;
-	impl.factory = nullptr;
+	// deinit() (when init() succeeded) then close the module: one call, so the
+	// two cannot drift apart here and in the loader's own failure paths.
+	impl.loaded.reset();
 	impl.paramsExt = nullptr;
 	impl.audioPortsExt = nullptr;
 	impl.stateExt = nullptr;
@@ -955,42 +850,36 @@ auto HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 	return status != CLAP_PROCESS_ERROR;
 }
 
-auto listClasses(const QString& modulePath, QString* error) -> std::vector<ClassInfo>
+auto listClasses(const QString& modulePath, loader::Status* status, QString* error) -> std::vector<ClassInfo>
 {
 	std::vector<ClassInfo> classes;
-	const auto pathUtf8 = QFile::encodeName(modulePath);
-	auto library = openModule(modulePath);
-	if (!library)
+	// The same ladder load() uses, so a scan reports the SAME typed reason an
+	// instance would: a module with no clap_entry, a CLAP 0.x module and a
+	// module whose init() fails are three different answers here too, not one
+	// "not a usable CLAP module" (which is what this function used to say).
+	loader::Library library;
+	loader::Status failure;
+	if (!loader::load(modulePath, library, failure))
 	{
-		setError(error, QStringLiteral("Could not load CLAP module '%1': %2")
-			.arg(modulePath, moduleError()));
+		if (status) { *status = failure; }
+		setError(error, failure.message());
 		return classes;
 	}
-	const auto* entry = static_cast<const clap_plugin_entry_t*>(moduleSymbol(library, "clap_entry"));
-	if (!entry || entry->clap_version.major < 1 || !entry->init(pathUtf8.constData()))
+	const auto* factory = library.factory;
+	const auto count = factory->get_plugin_count(factory);
+	for (std::uint32_t i = 0; i < count; ++i)
 	{
-		setError(error, QStringLiteral("'%1' is not a usable CLAP module").arg(modulePath));
-		closeModule(library);
-		return classes;
+		const auto* descriptor = factory->get_plugin_descriptor(factory, i);
+		if (descriptor) { classes.push_back(describe(*descriptor)); }
 	}
-	const auto* factory =
-		static_cast<const clap_plugin_factory_t*>(entry->get_factory(CLAP_PLUGIN_FACTORY_ID));
-	if (factory)
-	{
-		const auto count = factory->get_plugin_count(factory);
-		for (std::uint32_t i = 0; i < count; ++i)
-		{
-			const auto* descriptor = factory->get_plugin_descriptor(factory, i);
-			if (descriptor) { classes.push_back(describe(*descriptor)); }
-		}
-	}
-	else
-	{
-		setError(error, QStringLiteral("'%1' has no %2 factory").arg(modulePath, CLAP_PLUGIN_FACTORY_ID));
-	}
-	entry->deinit();
-	closeModule(library);
+	if (status) { *status = {}; }
+	library.reset();
 	return classes;
+}
+
+auto listClasses(const QString& modulePath, QString* error) -> std::vector<ClassInfo>
+{
+	return listClasses(modulePath, nullptr, error);
 }
 
 auto hostChunkingStats() -> HostChunkingStats

@@ -25,6 +25,7 @@ SET(LMMS_CLAP_EFFECT_SOURCES
 	ClapEffectControlDialog.cpp
 	ClapEffectControls.cpp
 	ClapHost.cpp
+	ClapLoader.cpp
 	ClapParameter.cpp
 	ClapSubPluginFeatures.cpp
 )
