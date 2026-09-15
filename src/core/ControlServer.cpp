@@ -116,6 +116,17 @@ ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
 
 ControlServer::~ControlServer()
 {
+	// CODE-8: the shutdown hook holds a raw `this` and calls close() on it, so
+	// it must not survive this object. Un-register BEFORE the members it
+	// touches are gone, then close() here as well: whichever of the two runs
+	// first removes the socket file, and close() is idempotent. A hook left
+	// behind is a call on freed memory on the forced-exit path - the one route
+	// where it is the ONLY thing that removes the file.
+	if (m_registry != nullptr)
+	{
+		m_registry->removeShutdownHook(m_shutdownHookId);
+		m_shutdownHookId = 0;
+	}
 	close();
 }
 

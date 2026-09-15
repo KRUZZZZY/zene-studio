@@ -165,6 +165,10 @@ private:
 	//! dev_t/ino_t: this header is cross-platform and those types are POSIX.
 	quint64 m_boundDevice = 0;
 	quint64 m_boundInode = 0;
+	//! The id of the shutdown hook this instance registered (0 = none), so the
+	//! destructor can un-register it: the hook closes THIS object's socket and
+	//! must never outlive it (CODE-8).
+	ControlRegistry::ShutdownHookId m_shutdownHookId = 0;
 	QHash<int, Client> m_clients;
 };
 

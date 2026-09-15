@@ -473,6 +473,7 @@ private slots:
 		QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
 		QCOMPARE(controlErrorKindName(refused.errorKind), QStringLiteral("requires"));
 	}
+
 #else
 	//! The same contract from the other side: with the packager kill switch off
 	//! the client is not compiled, so the group must not be in the registry at
@@ -486,11 +487,11 @@ private slots:
 		{
 			QVERIFY2(!id.startsWith(QStringLiteral("telemetry.")), qPrintable(id));
 		}
-		// 84 is the product surface a running instance reports in this
-		// configuration (86 with the telemetry.* pair); this binary adds the
-		// five synthetic commands its slots above declare. The 12 rack.* ids
-		// (#599) are in the 84 and the five transport.tempo_map_* ids (D11) are new.
-		QCOMPARE(registry->commandCount(), 84 + 5 + 5);
+		// 85 is the product surface this instance reports here (87 with the
+		// telemetry.* pair), plus the five synthetic commands the slots above
+		// declare. rack.* (#599) and transport.tempo_map_* (D11) are in the 85;
+		// script.set_memory_budget (CODE-6) is new.
+		QCOMPARE(registry->commandCount(), 85 + 5 + 5);
 	}
 #endif
 };

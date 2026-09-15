@@ -88,6 +88,13 @@ set(LMMS_TESTS
 	# peer's announcement implies. docs/LINK-SYNC.md.
 	src/core/ControlLinkCommandsTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# CODE-8: the shutdown-hook lifetime. The hook that unlinks the control
+	# socket must survive a registry instance it was not registered on, and
+	# must NOT outlive the ControlServer that registered it - both halves are
+	# asserted here, and the second one fails on the pre-CODE-8 behaviour
+	# (a hook left behind on a destroyed server, and a re-created registry
+	# running an empty list on exactly the route the socket must be unlinked by).
+	src/core/ControlShutdownHookTest.cpp
 	src/core/ControlTempoMapCommandsTest.cpp
 	# The 0.3.0 verb wave's four ids (clip.trim, clip.slip, note.probability_set,
 	# render.stems): the three EDIT verbs' inverses are exercised for real -
@@ -211,11 +218,23 @@ set(LMMS_TESTS
 	src/core/ControlVcaEditGroupsTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	src/core/ScriptEngineTest.cpp
+	# CODE-6: the Lua MEMORY budget beside the instruction budget. The same
+	# script completes under the shipping cap and is refused, typed, under one
+	# it cannot fit in - the pair is the proof, because a refusal on its own is
+	# also what a broken sandbox looks like. Also asserts the surface verb
+	# (script.set_memory_budget) and the measurements script.run reports.
+	src/core/ScriptMemoryBudgetTest.cpp
 	src/core/ScriptStabilisationTest.cpp
 	src/core/SlideNotesTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
+	# CODE-7: the telemetry transport's two structural properties - https only
+	# (a plain-http endpoint is refused before the delivery seam is reached, so
+	# nothing was handed over) and never blocking (a send to TEST-NET-1, which
+	# never answers, returns at once; the pre-CODE-7 transport waited ten
+	# seconds in a nested event loop there).
+	src/core/TelemetryTransportTest.cpp
 	src/core/TempoMapPersistenceTest.cpp
 	src/core/TempoMapTest.cpp
 	src/core/TimelineTest.cpp
@@ -322,6 +341,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# plugins to prove the A16 inverses (#623).
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
+		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest")

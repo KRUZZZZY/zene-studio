@@ -24,6 +24,13 @@
 
 #include "ScriptApiVersion.h"
 
+// The class whose members are defined below, and the string/QRegularExpression
+// pieces parseVersionHeader() reads the header with.
+#include "ScriptEngine.h"
+
+#include <QRegularExpression>
+#include <QStringList>
+
 namespace lmms
 {
 namespace ScriptApi
@@ -58,4 +65,69 @@ QString stability()
 }
 
 } // namespace ScriptApi
+
+/*! \brief The `--! zene-api <major>.<minor>` header's parser and
+ *  compatibility check.
+ *
+ * These two are ScriptEngine members, and they live here because this is
+ * the Lua API VERSION's translation unit: the number they compare against
+ * is this file's own. Moved verbatim out of ScriptEngine.cpp, whose size
+ * the 500-line ratchet grandfathers at 880 lines - the file may not grow
+ * for code that belongs to the version it is compared against
+ * (tests/file-length-gate.sh).
+ */
+QString ScriptEngine::parseVersionHeader(const QString& source)
+{
+	static const QRegularExpression header(
+		QStringLiteral("^--!\\s*(?:zene|lmms)-api\\s+(\\d+\\.\\d+)\\s*$"),
+		QRegularExpression::MultilineOption);
+	const QRegularExpressionMatch match = header.match(source.left(4096));
+	return match.hasMatch() ? match.captured(1) : QString();
+}
+
+
+bool ScriptEngine::isCompatibleVersion(const QString& version, QString* reason)
+{
+	const QStringList parts = version.split(QLatin1Char('.'));
+	if (parts.size() != 2)
+	{
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("malformed version '%1'").arg(version);
+		}
+		return false;
+	}
+	bool okMajor = false;
+	bool okMinor = false;
+	const int major = parts[0].toInt(&okMajor);
+	const int minor = parts[1].toInt(&okMinor);
+	if (!okMajor || !okMinor)
+	{
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("malformed version '%1'").arg(version);
+		}
+		return false;
+	}
+	if (major != ScriptApi::major())
+	{
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("API major version %1 is not supported by this build"
+					" (implements %2)").arg(major).arg(ScriptApi::version());
+		}
+		return false;
+	}
+	if (minor > ScriptApi::minor())
+	{
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("API version %1.%2 is newer than this build supports"
+					" (%3)").arg(major).arg(minor).arg(ScriptApi::version());
+		}
+		return false;
+	}
+	return true;
+}
+
 } // namespace lmms

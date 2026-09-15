@@ -62,10 +62,12 @@
 #include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QUrl>
 #ifdef ZENE_TELEMETRY_ENABLED  // the packager kill switch: this whole file is the client
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Telemetry.h"
+#include "TelemetryNetworkTransport.h"  // CODE-7: the transport policy telemetry.status reports
 #include "UnattendedRun.h"
 
 // The consent screen, its host window and the app singleton: the GUI half of the client.
@@ -128,6 +130,14 @@ QJsonObject statusSchema()
 	properties.insert(QStringLiteral("payload_fields"), arrayProperty());
 	properties.insert(QStringLiteral("payload_schema_version"), integerProperty());
 	properties.insert(QStringLiteral("notice_version"), integerProperty());
+	// CODE-7: the transport's policy and whether the CONFIGURED endpoint would
+	// actually be posted to. An endpoint is deployment configuration, and this
+	// is where a client can see the verdict on it instead of guessing.
+	properties.insert(QStringLiteral("transport_endpoint"), stringProperty());
+	properties.insert(QStringLiteral("transport_endpoint_allowed"), booleanProperty());
+	properties.insert(QStringLiteral("transport_endpoint_reason"), stringProperty());
+	properties.insert(QStringLiteral("transport_policy"), stringProperty());
+	properties.insert(QStringLiteral("transport_blocking"), booleanProperty());
 	// Present only in a build with the kill switch off, where it says so. A
 	// property is optional unless it is listed in "required", and none is.
 	properties.insert(QStringLiteral("note"), stringProperty());
@@ -159,6 +169,22 @@ ControlResult telemetryStatus()
 	result.insert(QStringLiteral("payload_fields"), QJsonArray::fromStringList(payload.presentFields()));
 	result.insert(QStringLiteral("payload_schema_version"), Telemetry::PayloadSchemaVersion);
 	result.insert(QStringLiteral("notice_version"), Telemetry::ConsentVersion);
+
+	// CODE-7: the transport's own policy, and the verdict on the endpoint that
+	// is actually configured. Reported here rather than left to the reader of
+	// the config file, because "an endpoint is set" and "this build would post
+	// to it" are different statements and only one of them is safe to assume.
+	const QString endpoint = TelemetryNetworkTransport::configuredEndpoint();
+	QString endpointReason;
+	const bool endpointAllowed =
+		TelemetryNetworkTransport::isAllowedEndpoint(QUrl(endpoint), &endpointReason);
+	result.insert(QStringLiteral("transport_endpoint"), endpoint);
+	result.insert(QStringLiteral("transport_endpoint_allowed"), endpointAllowed);
+	result.insert(QStringLiteral("transport_endpoint_reason"), endpointReason);
+	result.insert(QStringLiteral("transport_policy"), TelemetryNetworkTransport::endpointPolicy());
+	// Not a setting: the transport has no wait in it (CODE-7), so this is the
+	// constant the property exists to make checkable from a client.
+	result.insert(QStringLiteral("transport_blocking"), false);
 #else
 	// The kill switch removes the consent store and the payload builder with the
 	// rest of the client, so there is no state to read. Every other key is still
@@ -174,6 +200,16 @@ ControlResult telemetryStatus()
 	result.insert(QStringLiteral("payload_fields"), QJsonArray());
 	result.insert(QStringLiteral("payload_schema_version"), Telemetry::PayloadSchemaVersion);
 	result.insert(QStringLiteral("notice_version"), Telemetry::ConsentVersion);
+	// CODE-7: no client means no transport, so the policy is reported as
+	// absent rather than as a setting. The keys are still present, so the
+	// result does not change shape with how the package was configured.
+	result.insert(QStringLiteral("transport_endpoint"), QString());
+	result.insert(QStringLiteral("transport_endpoint_allowed"), false);
+	result.insert(QStringLiteral("transport_endpoint_reason"),
+		QStringLiteral("this build has no telemetry transport at all"));
+	result.insert(QStringLiteral("transport_policy"),
+		QStringLiteral("https-only, non-blocking (no transport in this build)"));
+	result.insert(QStringLiteral("transport_blocking"), false);
 	result.insert(QStringLiteral("note"),
 		QStringLiteral("this package was compiled with -DZENE_TELEMETRY=OFF: the consent store "
 			"and the payload builder are not in this binary, so there is no telemetry state to "

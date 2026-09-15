@@ -1027,3 +1027,35 @@ plus a write-through mirror — not a shared content object, not copy-on-write),
 bounds are `docs/LINKED-CLIPS.md`; the proof is the registered ctest **ClipLinkTest** (the propagation, the
 unlink, the A16 rows, and a save/reload round trip that shows the link is still there and still propagates
 after `loadProject`).
+**CODE-6/CODE-7/CODE-8 — the change-plan code rows: what each of them does NOT do.** Four absences,
+each one line, because each is a bound rather than a bug:
+- **The Lua memory budget has no interface.** `script.set_memory_budget` sets the cap and
+  `script.run` reports what a run measured against it; **no dialog shows live Lua bytes and nothing in
+  the window lets a user set a budget**. The default is 64 MiB
+  (`ScriptEngine::DefaultMemoryBudgetBytes`), the surface accepts `[512 KiB, 1 GiB]` and refuses
+  anything outside that rather than clamping it, and the budget bounds **Lua memory** — what the script
+  asks the Lua allocator for — **not** the C++ heap the bindings allocate, and not the process's total
+  footprint. A run already executing keeps the budget it opened its state with, so raising the cap does
+  not rescue a script that is mid-allocation.
+- **The telemetry transport's policy has no interface.** The consent screen describes **what** would be
+  sent; it does not show the endpoint, the scheme or whether this build would post to it. That verdict
+  is reachable only through `telemetry.status` (`transport_policy`, `transport_endpoint_allowed`,
+  `transport_endpoint_reason`, `transport_blocking`). And the transport is **not wired to any code path
+  that sends** — the endpoint ships empty in this release, no ingest service exists, so an
+  https-only, non-blocking transport still delivers nothing. A reply that never arrives is an attempt
+  that is never counted as a send: `send()` returning true means "queued", not "delivered".
+- **The control-server shutdown hook has no interface.** It is process machinery on the exit path:
+  nothing in the window shows it, no command reports it, and `runShutdownHooks()` is neither
+  thread-safe nor meant to be (it is the UI thread's exit path). It is a process-lifetime store, so
+  **nothing about it survives a `SIGKILL`** — the socket file is removed by the hook, by
+  `ControlServer::~ControlServer()`, or by `main()`'s own `close()` on the normal route, and a process
+  that dies without running any of them leaves the file for the next start's stale-socket handling
+  (`docs/CONTROL-SOCKET-PATH-SAFETY.md`).
+- **There is no `telemetry.consent_set`.** Row 85 of the 0.3.0 feature list is closed by a recorded
+  decision, not by a command (`docs/TELEMETRY-V1.md` §2.6): `telemetry.consent` is the consent verb,
+  it declares `requires: display, human` so no automated caller can consent, and a second
+  agent-reachable consent setter would be a command that turns telemetry on on the user's behalf —
+  which the feature's design forbids. Nothing was built, so there is nothing in the interface, and the
+  decision is pinned by `ControlRegistryTest::noAutomatedCallerCanReachAConsentVerb` rather than by
+  this sentence.
+

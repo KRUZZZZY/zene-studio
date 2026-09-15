@@ -20,21 +20,84 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301 USA.
  *
+ * CODE-7. Two properties this file exists to enforce, and neither is a matter
+ * of configuration:
+ *
+ *   https only  - the scheme is checked on EVERY send (isAllowedEndpoint),
+ *                 before a socket exists. The previous revision posted to
+ *                 QUrl(m_endpoint) whatever scheme it had, so an endpoint
+ *                 configured as http:// would have put the payload on the wire
+ *                 in clear - and the consent notice says "over TLS", not
+ *                 "whatever the config file says".
+ *
+ *   never block - the POST is handed to Qt and the call returns. The previous
+ *                 revision ran QEventLoop::exec() with a 10 s single-shot
+ *                 timer and waited for reply->finished(): a slow endpoint
+ *                 parked the calling thread for ten seconds. A telemetry
+ *                 attempt must never be able to do that to a session.
  */
 
 #include "TelemetryNetworkTransport.h"
 
 #include "ConfigManager.h"
 
-#include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QTimer>
-#include <QUrl>
 
 namespace lmms
 {
+
+bool TelemetryNetworkTransport::isAllowedEndpoint(const QUrl & endpoint, QString * reason)
+{
+	if (endpoint.isEmpty())
+	{
+		// The shipped default: no ingest service exists yet, so an enabled
+		// build still refuses to open a socket.
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("no endpoint is configured (the telemetry/endpoint config "
+				"key is empty)");
+		}
+		return false;
+	}
+
+	// The scheme is checked BEFORE the host, because it is the reason a
+	// configured-but-wrong endpoint is wrong: "file:///tmp/x", "ftp://…" and a
+	// scheme-less string are all non-https, and a client that reads only "no
+	// host" would go looking in the wrong place.
+	const QString scheme = endpoint.scheme().toLower();
+	if (scheme != QLatin1String("https"))
+	{
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("the endpoint's scheme is '%1' and this transport posts over "
+				"https only: a payload sent in clear is not something the consent notice covers, "
+				"so it is refused rather than downgraded")
+				.arg(scheme.isEmpty() ? QStringLiteral("none") : scheme);
+		}
+		return false;
+	}
+
+	if (endpoint.host().isEmpty())
+	{
+		if (reason != nullptr)
+		{
+			*reason = QStringLiteral("the https endpoint names no host, so there is nowhere to "
+				"post to");
+		}
+		return false;
+	}
+	return true;
+}
+
+
+QString TelemetryNetworkTransport::endpointPolicy()
+{
+	return QStringLiteral("https-only, non-blocking: an endpoint that is not https is refused "
+		"before a socket exists, and a send hands the POST to Qt without waiting for the reply");
+}
+
 
 QString TelemetryNetworkTransport::configuredEndpoint()
 {
@@ -46,43 +109,70 @@ QString TelemetryNetworkTransport::configuredEndpoint()
 			QStringLiteral("endpoint"), QString());
 }
 
+
 TelemetryNetworkTransport::TelemetryNetworkTransport(const QString & endpointUrl) :
 	m_endpoint(endpointUrl)
 {
 }
 
+
+TelemetryNetworkTransport::~TelemetryNetworkTransport() = default;
+
+
+void TelemetryNetworkTransport::setDeliverer(Deliverer deliverer)
+{
+	m_deliverer = std::move(deliverer);
+}
+
+
 bool TelemetryNetworkTransport::send(const QByteArray & payload)
 {
-	if(m_endpoint.isEmpty())
+	m_lastRefusal.clear();
+
+	const QUrl endpoint(m_endpoint);
+	if (!isAllowedEndpoint(endpoint, &m_lastRefusal))
 	{
-		// Nothing is configured to receive it. Refusing here is what keeps a
-		// build with no endpoint from opening a socket for a preview.
+		// Refused BEFORE the deliverer and before any socket: this is the
+		// branch a plain-http endpoint takes, and it takes it instantly.
 		return false;
 	}
 
-	QNetworkAccessManager manager;
-	QNetworkRequest request{QUrl(m_endpoint)};
+	if (m_deliverer)
+	{
+		return m_deliverer(endpoint, payload);
+	}
+
+	if (m_manager == nullptr)
+	{
+		m_manager = std::make_unique<QNetworkAccessManager>();
+	}
+	QNetworkRequest request{endpoint};
 	request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-	QNetworkReply * reply = manager.post(request, payload);
-
-	QEventLoop loop;
-	QTimer timeout;
-	timeout.setSingleShot(true);
-	QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
-	QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-	timeout.start(10000);
-	loop.exec();
-
-	const bool ok = reply->error() == QNetworkReply::NoError;
-	reply->deleteLater();
-	return ok;
+	QNetworkReply * reply = m_manager->post(request, payload);
+	// No wait, no nested event loop, no timeout timer: the reply deletes itself
+	// when it finally finishes, and until then the caller has already returned.
+	// A reply that never finishes is an attempt that never becomes a send, which
+	// is the honest reading of a non-blocking transport.
+	QObject::connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+	return true;
 }
+
 
 QString TelemetryNetworkTransport::describe() const
 {
-	return m_endpoint.isEmpty()
-		? QStringLiteral("no endpoint configured")
-		: QStringLiteral("https POST to ") + m_endpoint;
+	if (m_endpoint.isEmpty())
+	{
+		return QStringLiteral("no endpoint configured");
+	}
+
+	QString reason;
+	if (!isAllowedEndpoint(QUrl(m_endpoint), &reason))
+	{
+		// The endpoint is set but this transport will not post to it. Say so
+		// where a human reads it, not only in lastRefusal() after a send.
+		return QStringLiteral("endpoint refused: ") + reason;
+	}
+	return QStringLiteral("https POST to ") + m_endpoint;
 }
 
 } // namespace lmms

@@ -167,6 +167,14 @@ QJsonObject scriptRunResultJson(ScriptEngine::RunResult result, const QStringLis
 	out.insert(QStringLiteral("log_lines"), logs.size());
 	out.insert(QStringLiteral("instruction_budget"), static_cast<qint64>(budget));
 	out.insert(QStringLiteral("budget_overridden"), budgetOverridden);
+	// CODE-6: the memory budget and what THIS run measured against it. Read
+	// from the engine, not recomputed here: the numbers are the allocator's own
+	// count, so the report cannot drift into a second opinion about them.
+	ScriptEngine* engine = ScriptEngine::instance();
+	out.insert(QStringLiteral("memory_budget"), static_cast<qint64>(engine->memoryBudget()));
+	out.insert(QStringLiteral("memory_live_bytes"), static_cast<qint64>(engine->lastRunMemoryBytes()));
+	out.insert(QStringLiteral("memory_peak_bytes"), static_cast<qint64>(engine->lastRunMemoryPeakBytes()));
+	out.insert(QStringLiteral("memory_refusals"), static_cast<qint64>(engine->lastRunMemoryRefusals()));
 	return out;
 }
 
@@ -249,6 +257,80 @@ ControlResult scriptRun(const QJsonObject& args)
 	return ControlResult::success(out);
 }
 
+/*! script.set_memory_budget (CODE-6): set the cap the Lua allocator refuses past.
+ *
+ * Why a command and not only a C++ setter: the budget is a bound on what a
+ * SCRIPT may hold, and the release's contract is that anything the release does
+ * must be drivable through the surface (charter 3.1). The alternative - a fixed
+ * constant nobody can measure - is exactly the state `ScriptEngine.cpp`'s
+ * luaL_newstate() left the instruction budget's sibling in.
+ *
+ * The budget is a process bound, not project state, so its A16 class is the
+ * `control.set_undo_depth` precedent: a SNAPSHOT row whose before-state holds
+ * the previous value and whose inverse is this command with that value, so one
+ * control.undo restores the cap. A run already in flight keeps the budget it
+ * read when it opened its state, and a refusal it already hit is not undone by
+ * putting the cap back - the transaction says both.
+ */
+ControlResult scriptSetMemoryBudget(const QJsonObject& args)
+{
+	if (!args.contains(QStringLiteral("bytes")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("script.set_memory_budget needs 'bytes': the cap the Lua allocator "
+				"refuses past, in [%1, %2]")
+				.arg(ScriptEngine::MinMemoryBudgetBytes)
+				.arg(ScriptEngine::MaxMemoryBudgetBytes));
+	}
+
+	const double requested = args.value(QStringLiteral("bytes")).toDouble();
+	if (requested < static_cast<double>(ScriptEngine::MinMemoryBudgetBytes)
+		|| requested > static_cast<double>(ScriptEngine::MaxMemoryBudgetBytes))
+	{
+		// A refusal, not a clamp: a client that asks for 4 bytes must be told
+		// no, not silently given 512 KiB and a different experiment than the
+		// one it designed.
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("script.set_memory_budget: %1 bytes is outside [%2, %3]. Below the "
+				"floor a Lua state cannot even open (the run would fail with 'could not create "
+				"a Lua state' rather than with a budget refusal), and this command never removes "
+				"the cap: a budget the surface cannot set is a budget the surface cannot promise.")
+				.arg(requested)
+				.arg(ScriptEngine::MinMemoryBudgetBytes)
+				.arg(ScriptEngine::MaxMemoryBudgetBytes));
+	}
+
+	ScriptEngine* engine = ScriptEngine::instance();
+	const quint64 previous = engine->memoryBudget();
+	const quint64 bytes = static_cast<quint64>(requested);
+	engine->setMemoryBudget(bytes);
+
+	QJsonObject out;
+	out.insert(QStringLiteral("memory_budget"), static_cast<qint64>(bytes));
+	out.insert(QStringLiteral("previous_memory_budget"), static_cast<qint64>(previous));
+	out.insert(QStringLiteral("changed"), previous != bytes);
+	out.insert(QStringLiteral("min_memory_budget"),
+		static_cast<qint64>(ScriptEngine::MinMemoryBudgetBytes));
+	out.insert(QStringLiteral("max_memory_budget"),
+		static_cast<qint64>(ScriptEngine::MaxMemoryBudgetBytes));
+	out.insert(QStringLiteral("__transaction"),
+		QJsonObject{{QStringLiteral("before"),
+						QJsonObject{{QStringLiteral("memory_budget"), static_cast<qint64>(previous)}}},
+			{QStringLiteral("inverse"),
+				QJsonObject{{QStringLiteral("op"), QStringLiteral("script.set_memory_budget")},
+					{QStringLiteral("applies"), QStringLiteral("command")},
+					{QStringLiteral("args"),
+						QJsonObject{{QStringLiteral("bytes"), static_cast<qint64>(previous)}}}}},
+			{QStringLiteral("reversible"), true},
+			{QStringLiteral("mechanism"),
+				QStringLiteral("snapshot: the previous budget is in before and the recorded "
+					"inverse is this command with that value, so one control.undo puts the cap "
+					"back. What the inverse does NOT do is re-run a script the old budget "
+					"refused: that run happened under the cap in force then, and re-running it "
+					"is a new run under the restored cap")}});
+	return ControlResult::success(out);
+}
+
 } // namespace
 
 void registerScriptCommands(ControlRegistry& registry)
@@ -277,6 +359,15 @@ void registerScriptCommands(ControlRegistry& registry)
 			{QStringLiteral("instruction_budget"),
 				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 			{QStringLiteral("budget_overridden"), control::booleanProperty()},
+			// CODE-6: the memory budget beside it, and what this run measured.
+			{QStringLiteral("memory_budget"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("memory_live_bytes"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("memory_peak_bytes"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("memory_refusals"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return scriptRun(args); };
@@ -300,6 +391,39 @@ void registerScriptCommands(ControlRegistry& registry)
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
 		cmd.handler = [](const QJsonObject&) { return scriptList(); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("script.set_memory_budget");
+		cmd.group = QStringLiteral("script");
+		cmd.verb = QStringLiteral("set_memory_budget");
+		cmd.description = QStringLiteral("Set the block of memory a script run may hold, in bytes "
+			"(CODE-6): the budget beside the instruction budget. The Lua state is opened with an "
+			"allocator that refuses any allocation past this cap, so a runaway script fails with "
+			"'memory budget exceeded' and its run is aborted - it cannot grow until the machine "
+			"kills the process. Refuses a value outside [min_memory_budget, max_memory_budget]; "
+			"there is no 'unlimited' through this surface. Reversible: one control.undo restores "
+			"the previous cap (script.run reports the budget and what the last run measured).");
+		cmd.mutating = true;
+		cmd.argsSchema = control::objectSchema({
+			{QStringLiteral("bytes"),
+				control::integerProperty(static_cast<int>(ScriptEngine::MinMemoryBudgetBytes),
+					static_cast<int>(ScriptEngine::MaxMemoryBudgetBytes))},
+		});
+		cmd.resultSchema = control::objectSchema({
+			{QStringLiteral("memory_budget"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("previous_memory_budget"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("changed"), control::booleanProperty()},
+			{QStringLiteral("min_memory_budget"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("max_memory_budget"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		});
+		cmd.handler = [](const QJsonObject& args) { return scriptSetMemoryBudget(args); };
 		registry.registerCommand(cmd);
 	}
 }

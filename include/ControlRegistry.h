@@ -123,16 +123,14 @@ public:
 		//! quantity MaxTransactionBytes bounds.
 		int bytes = 0;
 		/*! How many commands this ONE record covers. 1 normally; more when the
-		 *  coalescing rule merged a same-command-same-target run into a single
-		 *  undo step - a 200-step drag is one step, so it is one record with
-		 *  commands == 200. `before` and `inverse` describe the state BEFORE the
-		 *  run and still revert the whole of it. */
+		 *  coalescing rule merged a same-command-same-target run into one undo
+		 *  step - a 200-step drag is one step, so one record with commands ==
+		 *  200. `before`/`inverse` describe the state BEFORE the run. */
 		int commands = 1;
-		/*! The serial of the journal step this record describes, 0 when the
-		 *  record's inverse is a command rather than a step (a file revision).
+		/*! The serial of the journal step this record describes, 0 when its
+		 *  inverse is a command rather than a step (a file revision).
 		 *  control.undo compares it against the stack's oldest retained serial:
-		 *  a record whose step a bound has evicted must REFUSE, typed, instead
-		 *  of unwinding an older step the caller never asked about. */
+		 *  a record whose step a bound evicted must REFUSE, typed. */
 		quint64 step = 0;
 	};
 
@@ -174,17 +172,13 @@ public:
 
 	//! What a client needs to understand a `busy` answer (task #626): whether the
 	//! engine is addressable, and when it is not, WHY. `code` is a stable reason
-	//! code and `message` is actionable. The audio fields are filled from the
-	//! engine's own device state, so "the configured device failed to open" can
-	//! never be reported as a bare false.
-	//!
-	//! Reason codes (closed set):
-	//!   engine_starting      - startup has not finished; poll control.ping
-	//!   audio_device_failed  - the configured device could not open; the engine
-	//!                          fell back to the dummy device and will be
-	//!                          addressable, but nothing is audible
-	//!   engine_missing       - startup finished without an engine (fatal)
-	//!   control_unsupported  - the instance was not started with a usable config
+	//! code and `message` is actionable. The audio fields come from the engine's
+	//! own device state, so "the configured device failed to open" is never a
+	//! bare false. Reason codes (closed set): engine_starting (poll
+	//! control.ping) · audio_device_failed (the device could not open; the
+	//! engine fell back to the dummy device and is addressable, but silent) ·
+	//! engine_missing (startup finished without an engine - fatal) ·
+	//! control_unsupported (not started with a usable config).
 	struct ReadinessReport
 	{
 		bool ready = false;
@@ -207,10 +201,10 @@ public:
 	};
 
 	//! Record the shutdown intent and, once the instance is ready, ask the
-	//! application to quit through its normal path. A request that arrives while
-	//! the application is still starting up is remembered: main() applies it
-	//! after startup with applyPendingQuit(), so a client that connects at once
-	//! and quits still stops the process.
+	//! application to quit through its normal path. A request that arrives
+	//! before the application is ready is remembered: main() applies it after
+	//! startup with applyPendingQuit(), so a client that connects at once and
+	//! quits still stops the process.
 	static void requestQuit(QuitPromptAnswer answer);
 	static bool quitPending();
 	static QuitPromptAnswer quitPromptAnswer();
@@ -239,9 +233,8 @@ public:
 	QJsonObject transactionsReport() const;
 	/*! The most recent transaction, or nullptr when there is none.
 	 *
-	 * control.undo reads this: it is the record of the LAST agent command, and
-	 * the contract is "undo the last agent command, or refuse, typed" - never
-	 * "silently undo an older one because this one could not be reversed".
+	 * control.undo reads this: the contract is "undo the LAST agent command, or
+	 * refuse, typed" - never "silently undo an older one".
 	 */
 	const Transaction* lastTransaction() const;
 	//! Retained records evicted by the two-sided cap since the last clear.
@@ -250,10 +243,24 @@ public:
 	int retainedTransactionBytes() const { return m_recordedBytes; }
 	void clearTransactions();
 
-	//! Run by the shutdown path (and by the last-resort guard) so the control
-	//! socket unlinks itself whatever route the process leaves by: the shutdown
-	//! contract is "the socket file is removed on exit".
-	void addShutdownHook(std::function<void()> hook);
+	//! Identifies one registered shutdown hook; 0 is "no hook".
+	using ShutdownHookId = quint64;
+
+	/*! Register a hook the shutdown path runs so the control socket unlinks
+	 *  itself whatever route the process leaves by ("the socket file is removed
+	 *  on exit"). HOLD THE ID: a hook captures the object that registered it, and
+	 *  an object destroyed before shutdown must un-register it rather than leave
+	 *  a call on freed memory behind (CODE-8; ControlServer's destructor is the
+	 *  only production caller). Hooks live in a PROCESS-lifetime store, not in
+	 *  the registry instance, so they survive a destroyed-and-recreated one.
+	 */
+	ShutdownHookId addShutdownHook(std::function<void()> hook);
+	//! Un-register \p id; false when unknown (including 0), so a caller may
+	//! un-register unconditionally.
+	bool removeShutdownHook(ShutdownHookId id);
+	//! How many hooks are registered right now.
+	int shutdownHookCount() const;
+	//! Runs every registered hook once, in registration order, and clears them.
 	void runShutdownHooks();
 
 private:
@@ -308,7 +315,6 @@ private:
 	//! The coalescing state of the control surface: the run in flight, and the
 	//! window it is grouped in (control.set_undo_coalescing).
 	control::UndoCoalescer m_coalescer;
-	QVector<std::function<void()>> m_shutdownHooks;
 	int m_recordedBytes = 0;
 	int m_evicted = 0;
 	bool m_headless;
@@ -472,11 +478,7 @@ LMMS_EXPORT void registerRackZoneCommands(ControlRegistry& registry);
 //! chain-preset lane in - are declared in include/ControlRegistryGroups.h, which
 //! this header includes. Same namespace and the same signatures: a caller
 //! includes this header exactly as before.
-//!
-//! They are split out because this header is new-ish product surface that
-//! Gate 7's 500-line ratchet measures, and the thirty group merges had pushed
-//! it to 506 lines. The seam is the block those merges appended, taken
-//! verbatim - no declaration was rewritten, renamed or moved by area.
+//! They are the block those merges appended, taken verbatim.
 
 //! Shared helpers for the command groups.
 namespace control

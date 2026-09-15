@@ -426,7 +426,11 @@ bool ControlServer::adoptListener(int fd, const QString& path, const QByteArray&
 		m_boundDevice = static_cast<quint64>(bound.st_dev);
 		m_boundInode = static_cast<quint64>(bound.st_ino);
 	}
-	m_registry->addShutdownHook([this]() { close(); });
+	// CODE-8: the hook closes THIS object's socket, so it captures `this` and
+	// the object must be able to take the hook back out. The id is what makes
+	// that possible: the hook must not outlive its owner (see
+	// ControlServer::~ControlServer()).
+	m_shutdownHookId = m_registry->addShutdownHook([this]() { close(); });
 	m_notifier = new QSocketNotifier(m_listenFd, QSocketNotifier::Read, this);
 	connect(m_notifier, &QSocketNotifier::activated, this, &ControlServer::onNewConnection);
 	return true;

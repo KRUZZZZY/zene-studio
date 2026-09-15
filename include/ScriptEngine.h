@@ -179,6 +179,58 @@ public:
 	void setInstructionBudget(quint64 instructions);
 	quint64 instructionBudget() const;
 
+	/*! Memory budget per script invocation, in bytes - the budget that sits
+	 *  BESIDE the instruction budget (CODE-6).
+	 *
+	 *  The Lua state is created through lua_newstate() with this engine's own
+	 *  allocator rather than luaL_newstate()'s, so every byte the script asks
+	 *  Lua to hold is counted, and a request that would cross this cap is
+	 *  REFUSED (the allocator returns NULL, Lua raises its memory error, and
+	 *  the run fails with "memory budget exceeded"). An unbounded allocation is
+	 *  therefore a script error the caller reads, not an OOM kill of the
+	 *  process: the instruction budget bounds time, this bounds space, and
+	 *  neither bounds the other.
+	 *
+	 *  0 means "no cap" and is only reachable from C++ - the control surface's
+	 *  script.set_memory_budget refuses anything outside
+	 *  [MinMemoryBudgetBytes, MaxMemoryBudgetBytes].
+	 */
+	//! The budget itself. Defined here rather than in ScriptEngine.cpp: the
+	//! file-length ratchet grandfathers that file at its current size, and the
+	//! budget's three accessors must not be the reason the number moves.
+	void setMemoryBudget(quint64 bytes) { m_memoryBudget.store(bytes, std::memory_order_relaxed); }
+	quint64 memoryBudget() const { return m_memoryBudget.load(std::memory_order_relaxed); }
+
+	//! Live bytes the last run's Lua state held when it finished (0 after a
+	//! run that could not open a state).
+	quint64 lastRunMemoryBytes() const { return m_lastRunMemory.load(std::memory_order_relaxed); }
+	//! Peak live bytes during the last run - the number that says how close a
+	//! script came to the cap.
+	quint64 lastRunMemoryPeakBytes() const
+	{
+		return m_lastRunMemoryPeak.load(std::memory_order_relaxed);
+	}
+	//! Allocations the allocator refused during the last run (0 = the cap was
+	//! never reached). Non-zero is what a refused run reports.
+	quint64 lastRunMemoryRefusals() const
+	{
+		return m_lastRunMemoryRefusals.load(std::memory_order_relaxed);
+	}
+
+	//! Default memory budget: 64 MiB, i.e. far above any shipped script's
+	//! working set and far below a machine's patience for a runaway one.
+	static constexpr quint64 DefaultMemoryBudgetBytes = 64ull * 1024ull * 1024ull;
+	//! Smallest budget the control surface accepts. A Lua state plus the
+	//! sandbox's libraries need a floor to exist at all; below it the failure
+	//! would be "could not create a Lua state" rather than a budget refusal.
+	static constexpr quint64 MinMemoryBudgetBytes = 512ull * 1024ull;
+	//! Largest budget the control surface accepts: 1 GiB. It is deliberately
+	//! the largest value the wire's integer property can carry (INT32_MAX), so
+	//! the command's schema and its handler bound the same range and a client
+	//! can read the limit out of control.commands_list instead of discovering
+	//! it by refusal.
+	static constexpr quint64 MaxMemoryBudgetBytes = 1024ull * 1024ull * 1024ull;
+
 	//! The dedicated worker thread scripts execute on (never the audio thread).
 	QThread* workerThread() const;
 
@@ -252,6 +304,22 @@ private:
 	std::atomic<bool> m_running{false};
 	std::atomic<bool> m_autoApply{true};
 	std::atomic<quint64> m_instructionBudget{5000000};
+
+	//! CODE-6: the memory budget and what the last run measured against it.
+	//! Written by the worker thread, read by any thread - the same atomic
+	//! discipline the instruction budget uses.
+	std::atomic<quint64> m_memoryBudget{DefaultMemoryBudgetBytes};
+	std::atomic<quint64> m_lastRunMemory{0};
+	std::atomic<quint64> m_lastRunMemoryPeak{0};
+	std::atomic<quint64> m_lastRunMemoryRefusals{0};
+
+	//! Publish one run's memory measurements (worker thread -> everyone).
+	void recordRunMemory(quint64 live, quint64 peak, quint64 refusals)
+	{
+		m_lastRunMemory.store(live, std::memory_order_relaxed);
+		m_lastRunMemoryPeak.store(peak, std::memory_order_relaxed);
+		m_lastRunMemoryRefusals.store(refusals, std::memory_order_relaxed);
+	}
 
 	//! Apply-side pump state: while a script runs, runOnWorker() serves the
 	//! worker's flushCommandsForRead() requests on the apply-side thread.

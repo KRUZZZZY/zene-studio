@@ -712,6 +712,11 @@ The SPEC A16 classification table holds **231 rows**, measured from the table it
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
 **229 rows / 81 `not_mutating`** - which is the base
+The SPEC A16 classification table holds **228 rows**, measured from the table itself:
+**120 `true_inverse`, 19 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
+compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
+**226 rows / 80 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
@@ -735,6 +740,9 @@ verdict, and writes nothing) - `+3 true_inverse / +1 not_mutating` against the 2
 before them. `docs/LINKED-CLIPS.md` §4 is the argument, and the one `control.undo` that takes the whole
 group back is asserted by `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
 The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this merge tip and reports 228 rows over the
+four classes named above (120 + 19 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
+226 / 120 / 19 / 7 / 80. The eighteen rows this train's merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
@@ -1557,6 +1565,85 @@ another, so an edit to one is seen by all.** The engine half is `include/ClipLin
   command path a GUI gesture that calls the note entry points directly takes one checkpoint per object the
   journal sees, so a human's Ctrl+Z there may need more than one press — the pre-existing behaviour of a
   gesture that is not one command.
+## The change-plan code rows: a Lua memory budget, an https-only non-blocking telemetry transport, and a shutdown hook that survives its owner (CODE-6, CODE-7, CODE-8)
+
+Three rows of the change-plan register (`BACKLOG.md` § Change-plan register), built together because
+they are all bounds on things the tree already had: a script that could allocate without limit, a
+transport that could post in clear and wait for it, and a shutdown hook whose lifetime nobody owned.
+
+**CODE-6 — the Lua memory budget beside the instruction budget.** `src/core/ScriptEngine.cpp` opened
+its Lua state with `luaL_newstate()`, whose allocator is a bare `realloc()` with no accounting: the
+instruction budget bounds how long a script may run (a count hook), and nothing bounded how much it
+may hold. The state is now opened with `lua_newstate()` and the engine's own allocator, which counts
+live bytes against an engine-held budget (default **64 MiB**, `ScriptEngine::DefaultMemoryBudgetBytes`)
+and **refuses** an allocation that would cross it — so a runaway script fails with
+`memory budget exceeded (… budget N, M refused allocation(s))` and its run is aborted, instead of
+growing until the OOM killer takes the process. It is drivable and observable through the surface:
+the new verb **`script.set_memory_budget`** sets the cap (refusing anything outside
+`[512 KiB, 1 GiB]` rather than clamping it, and recording the previous value for `control.undo`), and
+**`script.run`** reports the budget in force and what the run measured against it
+(`memory_live_bytes`, `memory_peak_bytes`, `memory_refusals`). A16 class: `snapshot`, the
+`control.set_undo_depth` shape. Proof: the registered ctest **`ScriptMemoryBudgetTest`** — the same
+script completes under the shipping budget and is refused under one it cannot fit in, which is the
+pair that makes a refusal mean something. Limits: the budget bounds **Lua memory** (what the script
+asks the allocator for), not the C++ heap the bindings use; a run already executing keeps the budget
+it opened its state with; and the cap does not make a script cheaper, it makes a runaway one
+survivable.
+
+**CODE-7 — the telemetry transport is https-only and never blocks the caller.**
+`TelemetryNetworkTransport::send()` posted to `QUrl(m_endpoint)` whatever scheme the config file held,
+and then waited in a nested `QEventLoop` behind a 10 s timer for the reply — so an endpoint configured
+as `http://` would have put the payload on the wire in clear, and a slow or blackholed one parked the
+**calling thread** (the GUI thread) for ten seconds. Both are now structural: the scheme is checked on
+**every** send (`TelemetryNetworkTransport::isAllowedEndpoint()`, one definition, https only, with the
+refusal in words) and a send **hands the POST to Qt and returns** — `true` means "queued", not
+"delivered", and the reply deletes itself when it finishes. `telemetry.status` reports the policy and
+the verdict on the configured endpoint (`transport_policy`, `transport_endpoint_allowed`,
+`transport_endpoint_reason`, `transport_blocking`), so a client can see whether what is configured
+would actually be posted to. Proof: the registered ctest **`TelemetryTransportTest`** — a plain-http
+endpoint is refused **before the delivery seam is reached** (the recorder standing in for the network
+is never called, which is the measurable form of "before a socket exists"), and a send to TEST-NET-1
+(192.0.2.0/24, RFC 5737 — never answers) returns at once, which the ten-second version could not do on
+any machine. The consent model is untouched, as the change plan requires. Limits: the transport is
+**still not wired to any code path that sends** (the endpoint ships empty and no ingest service
+exists), so this fixes the transport's properties rather than delivering telemetry; and "non-blocking"
+is a property of the transport, not a promise about a reply that never arrives — an attempt that never
+finishes is never counted as a send.
+
+**CODE-8 — the control-server shutdown hook survives its owner.** The hook that unlinks the control
+socket was `m_registry->addShutdownHook([this]() { close(); })`: it captured a raw pointer, and it was
+held in a member of a **singleton that can be destroyed and re-created** — `ControlSession.cpp`'s
+last-resort guard calls `ControlRegistry::instance()->runShutdownHooks()`, and `instance()` builds a
+new, empty registry if the old one is gone. So a hook registered before a `destroy()` died with the
+first instance, and the guard ran an empty list on exactly the route the socket must be unlinked by;
+and in the other direction a `ControlServer` destroyed before shutdown left a call on freed memory
+behind. Hooks now live in a **process-lifetime store** (survive the instance), ids identify them, and
+`ControlServer::~ControlServer()` **un-registers its hook** so the hook can never outlive the object it
+closes over — the socket file is removed either way, by the hook or by the destructor's own `close()`.
+Proof: the registered ctest **`ControlShutdownHookTest`**, whose two lifetime cases fail on the
+pre-CODE-8 behaviour. Limits: `runShutdownHooks()` is not thread-safe and is not meant to be (it is
+the UI thread's exit path); and the hooks are process state, so nothing here survives a `SIGKILL`.
+
+**The boarded `telemetry.consent_set` (row 85) is closed by decision, not by a second id.**
+`telemetry.consent` **is** the consent verb: it opens the one consent screen, the screen's Save is the
+only writer of the consent record, and the command declares `requires: display, human` so no automated
+caller can consent at all. A `telemetry.consent_set` an agent could call would be a command that turns
+telemetry **on** on the user's behalf — the one thing the feature's recorded design forbids
+(`docs/TELEMETRY-V1.md` §2.5, `docs/AGENT-SURFACE-TELEMETRY-FIX.md`) — and adding it with the same
+`requires` would be a second id for an act the surface already names. The decision, the argument and
+the condition that would reopen it are recorded in **`docs/TELEMETRY-V1.md` §2.6**, and the invariant
+is pinned by a test rather than by prose: `ControlRegistryTest`'s telemetry slots refuse the id's
+existence, assert that no reachable `telemetry.*` command is mutating, and assert that the only
+consent verb is `requires: display, human`.
+
+**UI absence, one line each** (the same sentences are in `docs/KNOWN-LIMITATIONS.md`): the Lua memory
+budget has **no interface** — no dialog shows live Lua bytes or sets a cap, and the budget is
+drivable only through `script.set_memory_budget` and visible only in `script.run`'s report; the
+telemetry transport's policy has **no interface** — the consent screen describes what would be sent,
+not where or over what, and whether the configured endpoint is acceptable is visible only through
+`telemetry.status`; the shutdown hook has **no interface** — it is process machinery on the exit path,
+and nothing in the window shows it; and the `telemetry.consent_set` decision has **no interface** to
+be absent from, because nothing was built.
 
 ## Not in this draft yet
 
