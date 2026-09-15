@@ -155,6 +155,21 @@ set(LMMS_SRCS
 	# note.probability_set (0.3.0 verb wave): the MIDI-depth probability verb the
 	# engine has carried since docs/MIDI-DEPTH.md and never got an id for.
 	core/ControlCommandsNoteProbability.cpp
+	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
+	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
+	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,
+	# the scale.* group (its shared vocabulary, its read half and its one clip-editing
+	# verb) and the registry's first device.* group. Separate translation units for the
+	# reason the automation, warp and mastering groups are split - Gate 7 measures a
+	# file, not a group.
+	core/ControlNoteShared.cpp
+	core/ControlCommandsNoteRandom.cpp
+	core/ControlCommandsNoteSlide.cpp
+	core/ControlCommandsNoteTransform.cpp
+	core/ControlScaleSupport.cpp
+	core/ControlCommandsScale.cpp
+	core/ControlCommandsScaleEdit.cpp
+	core/ControlCommandsDevice.cpp
 	core/ControlCommandsPlugin.cpp
 	core/ControlCommandsPluginParams.cpp
 	core/ControlCommandsPluginPreset.cpp
@@ -272,6 +287,10 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	# The 0.3.0 note/scale/device wave's A16 rows (board task #648): a GROUP file on the
+	# same seam as the folder, vca, routing, scan-and-crash and mastering files - the
+	# class comes from each row, not from the file.
+	core/ControlReversibilityTableNoteScale.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp
