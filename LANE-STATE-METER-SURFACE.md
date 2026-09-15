@@ -23,7 +23,11 @@ through `LoudnessReport`).
 | SHA | What |
 |---|---|
 | `69c39078e` | `feat(meter)`: the group, the tap, the export exposure, the A16 rows, the registration, the ledgers |
-| (this commit) | the two registered proofs, the docs, this file |
+| `28a9246aa` | the two registered proofs (MeterTapTest, ControlMeterCommands), the split that keeps every file under the 500-line ratchet, the docs and this file |
+| `8a4a9cec5` | `fix(meter)`: a re-arm always starts a fresh measurement (found by the socket proof), the surface snapshot regenerated from a live instance, the LANE-STATE/METER-SURFACE evidence |
+| `d216c0131` | the loudness surface's four rows in the documented A16 histogram (base 229 / 122 / 18 / 7 / 82), named in `docs/RELEASE-NOTES-v0.3.0-alpha.md` too |
+
+All four are on `030/meter-surface` on top of `f611c888b`; nothing was pushed and nothing was merged.
 
 ## 3. What was RUN here, and what it returned
 
@@ -42,6 +46,10 @@ $ python3 tools/mcp-zene-control/snapshot_commands.py --socket <own instance> > 
 EXIT=0                      # 231 commands, including meter.arm / meter.get_state / meter.measure_file / export.set_loudness_report
 $ cd build/tests && ctest -R ControlCommandsSnapshot --output-on-failure > /tmp/meter-snap-ctest.log 2>&1; echo EXIT=$?
 EXIT=0                      # 1/1 Passed 3.09 sec (the surface snapshot now carries the four new ids)
+$ cd build/tests && ./ReversibilityContractTest > /tmp/meter-rev2.log 2>&1; echo EXIT=$?
+EXIT=0                      # 8 passed, 0 failed - the A16 table and the registry agree in both directions
+$ cd build/tests && ctest -R "MeterTapTest|ControlMeterCommands|ControlCommandsSnapshot|ReversibilityContractTest|LufsMeterTest|LoudnessReportTest|ControlExportSettings"
+EXIT=0                      # 100% tests passed, 0 tests failed out of 7 (24.47 sec)
 ```
 
 The three negative controls the task names are asserted in **both** proofs, and both pass:
