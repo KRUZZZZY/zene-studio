@@ -1,0 +1,268 @@
+---
+name: release
+# THE RELEASE PATH (REL-2, 2026-09-15). A ref is cut a tag only after this workflow has
+# judged it FIT, and this workflow is the only sanctioned way to stage artefacts.
+#
+# WHAT WAS WRONG BEFORE THIS FILE EXISTED (measured, not assumed)
+# --------------------------------------------------------------
+#   * `build.yml`'s `release-gate` job was `if: startsWith(github.ref, 'refs/tags/')`, so
+#     the gate only ran AFTER a tag was pushed. A gate that runs after the tag cannot keep
+#     the tag off a red commit; the tag already exists by the time it speaks. There was no
+#     pre-tag path at all - nothing to run against a branch or a candidate commit.
+#   * it was `needs:` every build job with no `if: always()`. On a red matrix GitHub SKIPS
+#     a `needs`-dependent job, so the gate recorded `skipped` and no refusal was ever
+#     expressed. Measured on the product repo, build run 34870198514 @ f611c888b
+#     (`release/0.3.0`): linux-x86_64, linux-arm64, macos-x86_64, macos-arm64 and
+#     msvc-x64 red (5 of the 7 platforms), and `release gate (green matrix required)` =
+#     `skipped`. Its own first step refuses a `failure`/`cancelled`/`skipped` entry in
+#     `${{ toJSON(needs) }}` - a step that cannot run in the only case it was written for.
+#   * the six package-upload steps in build.yml staged on `workflow_dispatch` as well as
+#     on a tag, so a dispatch on any branch staged release packages with no fitness
+#     verdict anywhere in the run.
+#
+# HOW THIS WORKFLOW CLOSES THEM
+# -----------------------------
+#   * `on: workflow_run` on the three workflows that run on every push gives the release
+#     job its DEPENDENCIES at workflow level - the seven-platform matrix (build), the
+#     scripted checks (checks) and the static gates (quality-gates) - which `needs:`
+#     cannot express across files.
+#   * the fitness job has NO `if:`. The obvious idiom here -
+#       if: github.event.workflow_run.conclusion == 'success'
+#     - is the defect: it makes a red upstream produce a GREEN no-op, because a skipped
+#     job is not a failure. This job always runs and REFUSES, so the conclusion of the
+#     release job is `failure` and not `skipped`. That is what makes the refusal readable
+#     by anything downstream (and by a human reading the run).
+#   * `workflow_dispatch` gives the PRE-TAG path: point it at a candidate ref (a branch, a
+#     merge tip, a commit) and it answers "may this be tagged?". This is the "before any
+#     tag" half - `REL-2` is the item that says a tag is cut only from a commit whose own
+#     CI run is green, and this is the job that says so as a command rather than a memory.
+#   * the refusal is two independent measures, both required:
+#       1. tests/release-ci-evidence-gate.sh  - this commit's own push runs, at JOB
+#          granularity: the 7 platform jobs + checks.yml's 3 + static-gates. A missing,
+#          in-flight or red job refuses the ref.
+#       2. tests/release-ref-fitness.sh       - the ref's CONTENT, measured locally by
+#          re-running the build-free commands of those same jobs against a temporary
+#          worktree of the ref, plus the staging-path policy. This is the leg that can
+#          fail before a commit has any CI at all.
+#   * `stage-artefacts` `needs:` the fitness job, so nothing is staged until the ref has
+#     been judged, and it refuses unless the tag run carries the full seven-package set
+#     with digests. `tests/release-staging-path-gate.sh` asserts all of this shape on
+#     every push (it is leg `staging-path` of the fitness oracle), so it cannot be edited
+#     away without a red gate.
+#
+# Nothing here pushes, tags, or publishes. The publish path stays `~/.local/bin/zene-release`
+# (guards 3-5 of that script re-check the tag run's jobs and artefact digests); this
+# workflow is what makes the ORDER checkable instead of remembered.
+'on':
+  workflow_run:
+    workflows: [build, checks, quality-gates]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit or ref to judge before any tag is cut (default: the default branch)"
+        type: string
+        required: false
+      stage:
+        description: "Also stage the release bundle (only meaningful for a v* tag ref)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha || inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-fitness:
+    name: release fitness (7 platforms + checks + static gates)
+    # NO `if:` HERE, and that is the whole point of this job. See the header: an `if:` that
+    # reads `github.event.workflow_run.conclusion` turns a red upstream into a skipped job,
+    # which is a green no-op. A red upstream must be a FAILURE of this job.
+    runs-on: ubuntu-latest
+    steps:
+      - name: The upstream run that triggered this job, whatever it concluded
+        # This step exists so that a red upstream is a failure of THIS job. It reads the
+        # triggering run's conclusion and refuses unless it is exactly `success` - a
+        # `failure`, `cancelled`, `skipped`, `timed_out`, `neutral`, `action_required` or
+        # `stale` upstream all stop here, and so does an empty conclusion (which would mean
+        # a shape GitHub does not produce).
+        #
+        # A `workflow_dispatch` has no triggering run; that is not a skip, because the API
+        # step below asks the same question of all three workflows at job granularity and
+        # a missing answer there is a refusal.
+        env:
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER_WORKFLOW: ${{ github.event.workflow_run.name }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -uo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            echo "triggering run : ${TRIGGER_WORKFLOW:-?} @ ${TRIGGER_SHA:-?}"
+            echo "its conclusion : ${TRIGGER_CONCLUSION:-<empty>}"
+            case "${TRIGGER_CONCLUSION:-}" in
+              success) echo "upstream is green; the ref may be judged." ;;
+              failure|cancelled|skipped|timed_out|neutral|action_required|stale)
+                echo "release: the upstream run concluded '${TRIGGER_CONCLUSION}'." >&2
+                echo "A release is cut only from a commit whose own build, checks and" >&2
+                echo "quality-gates runs are green. Refusing; re-run the upstream first." >&2
+                exit 1 ;;
+              *)
+                echo "release: the upstream run's conclusion is '${TRIGGER_CONCLUSION:-<empty>}'," >&2
+                echo "which is not a result a release may be cut from. Refusing." >&2
+                exit 1 ;;
+            esac
+          else
+            echo "trigger: ${GITHUB_EVENT_NAME} (no upstream run to judge; the evidence"
+            echo "step below asserts all three workflows for this commit instead)."
+          fi
+
+      - name: Check out the commit under judgement
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.ref || github.sha }}
+          # Full history: the fitness oracle's Gate 6 and the manifests need upstream's
+          # base commit, exactly as quality-gates.yml's static-gates job does.
+          fetch-depth: 0
+
+      - name: Install the tools the fitness legs use
+        # Same two the upstream jobs install (quality-gates.yml installs lizard; the
+        # static-gates job runs gates 3,4,6,7,8,9,11). A missing tool is exit 3 from the
+        # oracle - a refusal, never a pass - but installing them keeps the refusal about
+        # the ref rather than about this runner.
+        run: pip install lizard
+
+      - name: The ref's own CI evidence, at job granularity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          SHA='${{ github.event.workflow_run.head_sha || github.sha }}'
+          bash tests/release-ci-evidence-gate.sh --sha "$SHA" --repo "$GITHUB_REPOSITORY"
+
+      - name: The ref is fit to release (content + staging-path policy)
+        run: |
+          set -uo pipefail
+          SHA='${{ github.event.workflow_run.head_sha || github.sha }}'
+          bash tests/release-ref-fitness.sh --ref "$SHA"
+
+      - name: The verdict, restated where a human reads it
+        # Evidence only: the two steps above are the gate. `always()` here would be wrong -
+        # the step must not paper over their failure - so it runs only on success and its
+        # only job is to put the verdict in the run summary.
+        run: |
+          {
+            echo "### release fitness: FIT"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${{ github.event.workflow_run.head_sha || github.sha }}\` |"
+            echo "| ref | \`${{ github.event.workflow_run.head_branch || inputs.ref || github.ref_name }}\` |"
+            echo "| seven-platform matrix | every platform job concluded success |"
+            echo "| checks.yml | scripted-checks, shellcheck, yamllint concluded success |"
+            echo "| quality-gates.yml | static gates (3, 4, 6, 7, 8, 9, 11) concluded success |"
+            echo "| local fitness legs | all legs ran and passed |"
+            echo
+            echo "This ref may be tagged. Nothing was staged by this job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  stage-artefacts:
+    name: stage artefacts (only after the ref is fit)
+    # Two conditions, both load-bearing:
+    #   * `needs:` makes the staging downstream of the refusal - a red upstream skips this
+    #     job, which is the CORRECT direction (nothing staged) and the opposite of the
+    #     defect the fitness job exists to avoid.
+    #   * the tag condition keeps the staged set tied to a tag, which is the only ref the
+    #     package uploads in build.yml can fire on (tests/release-staging-path-gate.sh A1).
+    #     `github.ref` is the default branch under `workflow_run`, so the TAG lives in the
+    #     triggering run's head_branch.
+    needs: [release-fitness]
+    if: ${{ startsWith(github.event.workflow_run.head_branch, 'v') || inputs.stage == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: The tag run carries the full seven-package set, with digests
+        # The staging set is only as good as what the tag run uploaded. This mirrors
+        # guards 4 and 5 of ~/.local/bin/zene-release: an expired artefact, a missing
+        # digest, or fewer than seven packages is a refusal here rather than a surprise
+        # at publish time.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          RID='${{ github.event.workflow_run.id }}'
+          if [ -z "$RID" ] || [ "$RID" = "null" ]; then
+            echo "release: no triggering run id - a dispatch cannot stage a release bundle." >&2
+            echo "Push the v* tag and let its own build run be judged." >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RID/artifacts?per_page=100" \
+            --jq '"total=" + (.total_count|tostring),
+                  (.artifacts[] | [.name, (.expired|tostring), (.digest // "-")] | @tsv)' \
+            > staging-artefacts.tsv
+          cat staging-artefacts.tsv
+          total="$(sed -n 's/^total=//p' staging-artefacts.tsv)"
+          rows="$(grep -vc '^total=' staging-artefacts.tsv || true)"
+          rc=0
+          if [ "${total:-0}" -lt 7 ]; then
+            echo "release: the tag run uploaded ${total:-0} artefact(s); the release notes" >&2
+            echo "describe seven platforms. Refusing to stage a partial set." >&2
+            rc=1
+          fi
+          if [ "$rows" -ne "${total:-0}" ]; then
+            echo "release: the artefact list is truncated (${rows} enumerated of ${total:-0}) -" >&2
+            echo "staging a truncated set would silently drop a platform. Refusing." >&2
+            rc=1
+          fi
+          if grep -q '	true	' staging-artefacts.tsv; then
+            echo "release: at least one artefact has expired and can no longer be downloaded." >&2
+            rc=1
+          fi
+          if grep -qE '	-$' staging-artefacts.tsv; then
+            echo "release: at least one artefact carries no digest; the release notes tell" >&2
+            echo "users to verify a download against one. Refusing." >&2
+            rc=1
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          echo "release: the tag run's staged set is complete ($total artefact(s), all with digests)."
+
+      - name: The sanctioned staging record
+        # This is what "the release job is the only sanctioned way to stage artefacts"
+        # means mechanically: packages are only ever uploaded on a tag (A1), a tag is only
+        # cut from a ref the fitness job judged FIT (this job `needs:` it), and this is the
+        # only place that emits the release's staging record for the publish path.
+        run: |
+          {
+            echo "release-staging-manifest"
+            echo "commit      : ${{ github.event.workflow_run.head_sha }}"
+            echo "tag         : ${{ github.event.workflow_run.head_branch }}"
+            echo "tag run     : ${{ github.event.workflow_run.id }}"
+            echo "judged by   : release fitness (job release-fitness of this workflow)"
+            echo "verdict     : FIT"
+            echo
+            echo "artefacts (name, expired, digest) as the tag run uploaded them:"
+            cat staging-artefacts.tsv
+          } > release-staging-manifest.txt
+          cat release-staging-manifest.txt
+          echo "The publish path is ~/.local/bin/zene-release, which re-applies its own"
+          echo "guards 3-5 (jobs green, digests present, byte counts matched) before it"
+          echo "prints the gh release create command."
+
+      - name: Upload the staging manifest
+        # A text manifest, not a package: the packages are the tag run's own uploads (see
+        # build.yml). Tag-guarded so this step also satisfies
+        # tests/release-staging-path-gate.sh A1 if it ever names a package path.
+        if: ${{ startsWith(github.event.workflow_run.head_branch, 'v') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-staging-manifest
+          path: release-staging-manifest.txt
+          retention-days: 14
+          if-no-files-found: error
