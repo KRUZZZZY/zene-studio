@@ -1258,6 +1258,55 @@ joins the routing surface's: the passive block and the live block are both at th
   renders in this tree are **not bit-reproducible** run to run, so two runs of the same master are equal only
   to the meter's tolerance (≤ 0.05 LU / 0.01 dB), never byte for byte.
 
+## Linked / smart clips: two clips, one source (`clip.link_*`) — added 2026-09-15
+
+Feature-list row 6 (section 1), board task #645: **a linked clip is a clip that shares its source with
+another, so an edit to one is seen by all.** The engine half is `include/ClipLinks.h` plus
+`Clip::linkId()`; the surface is four ids in the `clip.` group (`clip.link_create`, `clip.link_remove`,
+`clip.link_get_state`, `clip.link_sync` — not `link.*`, which is session tempo/beat sync, `docs/LINK-SYNC.md`).
+
+- **The decision this row asked for: a persisted group id plus a WRITE-THROUGH MIRROR — not a shared content
+  object, and not copy-on-write.** The relation is an int on the clip (`0` = unlinked) written to the clip's
+  OWN element as `link="<n>"` only when the clip is a member, and read back with the same reset-on-absence rule
+  the take lane already follows. An edit to a member copies that member's note list onto every other member of
+  the group in the same step. Aliasing one `NoteVector` across N clips was rejected because it needs a
+  load-order re-linking pass (the very thing a save/reload round trip has to prove), because the note list is
+  read as a value by the play handle, the piano roll, the comp lanes and the serialiser, and because a
+  disagreement would then be impossible by construction — and therefore unreportable. Copy-on-write in its
+  strict sense (share until someone edits, then DETACH) is the opposite of the feature: a write fans OUT, and
+  the detach is its own command. `docs/LINKED-CLIPS.md` §1–2 is the full argument.
+- **The relation survives a save/reload**, and that is the registered proof's centrepiece: the `link`
+  attribute rides each member's own element, so a reload rebuilds the group from the clips with no second
+  registry in the file and no repair step. `ClipLinkTest::theLinkSurvivesSaveAndReload()` writes a project,
+  asserts the attribute is in the file, reloads it, asserts the group is still there with both members in
+  sync, and then **edits one reloaded member and asserts the other one changes** — the round trip and the
+  propagation together, which is what makes it a smart clip and not a session hack.
+- **`clip.link_remove` is the unlink, and it is the only detach.** A group needs two ends: an unlink that
+  leaves one member dissolves the relation entirely, so no group of one outlives its last pair. Merging two
+  groups by naming a member of another is refused typed (`refused`) instead of silently overwriting one
+  group's content with the other's.
+- **Reversibility (SPEC A16): `true_inverse` for the three writers, `not_mutating` for the read**, rows in
+  `src/core/ControlReversibilityTableVerbs.cpp` beside `clip.trim`'s. The checkpoint is taken over EVERY
+  member a command writes (`ProjectJournal`'s multi-object overload) and the registry's
+  `mergeCheckpointsFrom()` folds those into the command's one undo step, so **one `control.undo` takes the
+  whole group back** — asserted, not asserted-about: `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
+- **UI absence — one line:** the four ids are drivable through the socket and not from the interface — no
+  link badge, no "edit shared source" gesture, no group colour; and of the edit kinds, `note.add` /
+  `note.remove` / `note.move` / `note.resize` / `note.velocity_set` propagate while `clip.move` /
+  `resize` / `trim` / `slip` / `set_fade` / `set_gain` / `crossfade`, mute/solo, name, colour and take lane
+  stay per-member, and an audio clip cannot be a member at all (the group's content channel is a note list, so
+  `clip.link_create` refuses a `SampleClip` typed). `docs/KNOWN-LIMITATIONS.md` carries the same sentence; the
+  ctest `ClipLinkTest::theOneLineUiAbsenceIsWrittenDown()` reads both files from the built tree and fails if
+  either loses it.
+- **What is NOT here, stated rather than implied:** no UI (§ above); no audio-clip linking; the mirror writes
+  the WHOLE note list rather than a delta (so a one-note edit to a member of a large group rewrites every
+  member's list — unconditional by design, because a delta-based mirror is where divergence would come from);
+  a member with auto-resize on re-sizes to the propagated content, because that is the engine's own rule for a
+  clip whose notes changed, while a manually resized member (`autoresize=0`) keeps its length; and outside the
+  command path a GUI gesture that calls the note entry points directly takes one checkpoint per object the
+  journal sees, so a human's Ctrl+Z there may need more than one press — the pre-existing behaviour of a
+  gesture that is not one command.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the

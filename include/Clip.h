@@ -142,6 +142,19 @@ public:
 	int laneIndex() const { return m_laneIndex; }
 	void setLaneIndex(int laneIndex) { m_laneIndex = laneIndex < 0 ? 0 : laneIndex; }
 
+	/*! The link group this clip is a member of (linked / smart clips, row 6),
+	 *  0 when it is not linked.
+	 *
+	 *  The relation is the clip's OWN attribute, written with the clip's other
+	 *  non-default attributes (Clip::saveClipEdits) and reset to 0 when the
+	 *  attribute is absent, so a group is rebuilt from its members on load with
+	 *  no second registry in the file. What a group shares is the clip's
+	 *  CONTENT (its note list - see include/ClipLinks.h and
+	 *  docs/LINKED-CLIPS.md); position, length, offset, fades, gain and the rest
+	 *  stay per-member. */
+	int linkId() const { return m_linkId; }
+	void setLinkId(int linkId) { m_linkId = linkId < 0 ? 0 : linkId; }
+
 	virtual void movePosition( const TimePos & pos );
 	virtual void changeLength( const TimePos & length );
 	virtual void updateLength() {};
@@ -234,6 +247,9 @@ private:
 
 	//! The take lane this clip is a take of (comping; docs/COMPING.md).
 	int m_laneIndex = 0;
+
+	//! The link group this clip shares its content with (row 6; 0 = unlinked).
+	int m_linkId = 0;
 
 	friend class ClipView;
 

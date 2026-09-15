@@ -29,6 +29,7 @@
 #include <QDomElement>
 
 #include "GuiApplication.h"
+#include "ClipLinks.h"
 #include "InstrumentTrack.h"
 #include "MidiClipView.h"
 #include "PatternStore.h"
@@ -194,6 +195,12 @@ Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 
 	emit dataChanged();
 
+	// A note was added to a linked clip's content (row 6): the other members of
+	// its group see it, in the same step. No-op for an unlinked clip, and the
+	// nested call this makes on each member cannot mirror back (ClipLinks
+	// guards the recursion).
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
+
 	return new_note;
 }
 
@@ -211,6 +218,9 @@ NoteVector::const_iterator MidiClip::removeNote(NoteVector::const_iterator it)
 	updateLength();
 
 	emit dataChanged();
+	// A note was removed from a linked clip's content: the other members lose it
+	// too (row 6). See MidiClip::addNote for why this cannot recurse.
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
 	return new_it;
 }
 
@@ -231,6 +241,7 @@ NoteVector::const_iterator MidiClip::removeNote(Note* note)
 	updateLength();
 
 	emit dataChanged();
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
 	return it;
 }
 
@@ -455,6 +466,11 @@ void MidiClip::exportToXML(QDomDocument& doc, QDomElement& midiClipElement, bool
 	midiClipElement.setAttribute("steps", m_steps);
 	midiClipElement.setAttribute("len", length());
 
+	// The clip's non-default attributes: the take lane, the link group (row 6)
+	// and the fades/gain. Additive by construction - a clip with none of them
+	// writes exactly the attribute set this method wrote before (invariant I9).
+	saveClipEdits(midiClipElement);
+
 	// now save settings of all notes
 	for (auto& note : m_notes)
 	{
@@ -476,6 +492,14 @@ void MidiClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void MidiClip::loadSettings( const QDomElement & _this )
 {
+	/* A load pass must not PROPAGATE (row 6). Each clip is re-created in turn and
+	 * a member's note list is only its own once its own element has been read, so
+	 * a mirror that ran here would write half-loaded content into siblings; and a
+	 * group is written in sync, so the file already carries the shared content in
+	 * every member. MidiClip::loadSettings clears the note list (see below), which
+	 * is why the suspension is taken before anything is read. */
+	ClipLinks::MirroringSuspension noMirroring;
+
 	m_clipType = static_cast<Type>( _this.attribute( "type"
 								).toInt() );
 	setName( _this.attribute( "name" ) );
@@ -530,6 +554,11 @@ void MidiClip::loadSettings( const QDomElement & _this )
 	
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
 	setStartTimeOffset(_this.attribute("off").toInt());
+
+	// The clip's non-default attributes, read back on the reset-on-absence rule:
+	// the take lane and - row 6 - the link group, which is what rebuilds a link
+	// group out of the members' own elements with no second registry in the file.
+	loadClipEdits(_this);
 
 	emit dataChanged();
 }
