@@ -59,6 +59,7 @@
 #include <QDir>
 #include <QFile>
 #include <QString>
+#include <QDomElement>
 #include <QTemporaryDir>
 
 #include "ImportDetection.h"
@@ -316,6 +317,14 @@ private slots:
 		QVERIFY(cleared.empty());
 		QVERIFY(cleared.tonicName().isEmpty());
 	}
+
+private:
+	QTemporaryDir m_dir;
+	QString m_clickA;
+	QString m_clickB;
+	QString m_major;
+	QString m_tone;
+	QString m_missing;
 };
 
 QTEST_MAIN(ImportDetectionTest)

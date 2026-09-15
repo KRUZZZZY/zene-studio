@@ -85,9 +85,7 @@ void ProjectKey::set(const QString& tonicName, int tonicPitchClass, const QStrin
 
 void ProjectKey::saveSettings(QDomDocument& doc, QDomElement& parent) const
 {
-	QDomDocument holder;
-	holder.appendChild(toElement(holder, *this));
-	parent.appendChild(doc.importNode(holder.documentElement(), true));
+	parent.appendChild(toElement(doc, *this));
 }
 
 
