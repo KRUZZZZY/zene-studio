@@ -207,11 +207,7 @@ declare -a RED_LEGS=() INCOMPLETE_LEGS=()
 printf '%-24s %-34s %s\n' "leg" "mirrors" "verdict"
 
 # A leg whose tool is absent from the PATH cannot run: that is INCOMPLETE (exit 3),
-# never a pass. `command -v bash` is not checked — the caller is bash.
-leg_tool() { # leg_tool <command-string> -> first word, unless it is bash -c
-	:
-}
-
+# never a pass.
 for row in "${LEGS[@]}"; do
 	name="${row%%|*}"; rest="${row#*|}"; mirrors="${rest%%|*}"; cmd="${rest#*|}"
 	[ -n "$ONLY" ] && [ "$name" != "$ONLY" ] && continue
