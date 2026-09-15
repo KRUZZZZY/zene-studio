@@ -93,22 +93,28 @@ bool dawProjectUsableDocumentId(const QString& id)
 QString dawProjectContentTypeForType(const QString& typeName, bool* lost)
 {
 	if (lost != nullptr) { *lost = false; }
-	// LMMS' own type names are the lowercase ones control::trackTypeNameOf emits,
-	// but a model built by hand may spell one differently, so the comparison is
-	// case-insensitive: "Instrument" and "instrument" are one type here. The
-	// run-together spelling of hidden automation is tolerated for the same reason.
-	const auto is = [&typeName](const char* name)
-	{
-		return typeName.compare(QLatin1String(name), Qt::CaseInsensitive) == 0;
+	// The table, not a chain of tests: LMMS' own type names are the lowercase
+	// ones control::trackTypeNameOf emits, the comparison is case-insensitive so a
+	// model built by hand that spells one differently maps the same way, and the
+	// run-together spelling of hidden automation is tolerated. `lost` is set for a
+	// type with no counterpart at all.
+	static const struct { const char* engine; const char* format; } kTypes[] = {
+		{ "instrument", "notes" },
+		{ "pattern", "notes" },
+		{ "sample", "audio" },
+		{ "automation", "automation" },
+		{ "hidden_automation", "automation" },
+		{ "hiddenautomation", "automation" },
+		{ "video", "video" },
+		{ "folder", "tracks" },
 	};
-	if (is("instrument") || is("pattern")) { return QStringLiteral("notes"); }
-	if (is("sample")) { return QStringLiteral("audio"); }
-	if (is("automation") || is("hidden_automation") || is("hiddenautomation"))
+	for (const auto& entry : kTypes)
 	{
-		return QStringLiteral("automation");
+		if (typeName.compare(QLatin1String(entry.engine), Qt::CaseInsensitive) == 0)
+		{
+			return QString::fromLatin1(entry.format);
+		}
 	}
-	if (is("video")) { return QStringLiteral("video"); }
-	if (is("folder")) { return QStringLiteral("tracks"); }
 	if (lost != nullptr) { *lost = true; }
 	return QString();
 }
@@ -270,10 +276,17 @@ QJsonObject DawProjectLossReport::toJson() const
 
 bool DawProjectLossReport::clean() const
 {
-	return audioClipsSkipped == 0 && automationClipsSkipped == 0 && unmappedTrackTypes == 0
-		&& folderChildrenLost == 0 && panNotWritten == 0 && routingLost == 0
-		&& mixerSharingLost == 0 && roundedTimes == 0 && devicesNotWritten == 0
-		&& sendsNotWritten == 0 && fadesNotWritten == 0 && splitMapEvents == 0;
+	// One list of every count in the report, read in a loop rather than a chain of
+	// `&&`: the chain grew one branch per field and put this function over the
+	// per-function complexity target for no reader's benefit.
+	const int counts[] = { audioClipsSkipped, automationClipsSkipped, unmappedTrackTypes,
+		folderChildrenLost, panNotWritten, routingLost, mixerSharingLost, roundedTimes,
+		devicesNotWritten, sendsNotWritten, fadesNotWritten, splitMapEvents };
+	for (const int count : counts)
+	{
+		if (count != 0) { return false; }
+	}
+	return true;
 }
 
 QJsonObject dawProjectModelJson(const DawProjectModel& model)

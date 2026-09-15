@@ -211,12 +211,22 @@ static int writeAndRead(const DawProjectModel& authored, const QString& file,
 		<< " sha256=" << writeReport.sha256.left(16) << "...\n";
 
 	int failures = 0;
-	if (writeReport.trackCount != 2 || writeReport.clipCount != 2 || writeReport.noteCount != 2
-		|| writeReport.mixerChannelCount != 2 || writeReport.tempoPointCount != 1
-		|| writeReport.meterPointCount != 1)
+	const struct { const char* name; int got; int want; } counts[] = {
+		{ "track_count", writeReport.trackCount, 2 },
+		{ "clip_count", writeReport.clipCount, 2 },
+		{ "note_count", writeReport.noteCount, 2 },
+		{ "mixer_channel_count", writeReport.mixerChannelCount, 2 },
+		{ "tempo_point_count", writeReport.tempoPointCount, 1 },
+		{ "meter_point_count", writeReport.meterPointCount, 1 },
+	};
+	for (const auto& entry : counts)
 	{
-		out << "FAIL write report counts\n";
-		failures++;
+		if (entry.got != entry.want)
+		{
+			out << "FAIL write report " << entry.name << ": " << entry.got << " != " << entry.want
+				<< "\n";
+			failures++;
+		}
 	}
 
 	DawProjectReadReport readReport;
