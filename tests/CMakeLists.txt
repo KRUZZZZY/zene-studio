@@ -925,10 +925,14 @@ if(TARGET lmms_clap)
 		src/plugins/ClapHostTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		# the host path's chunking counters (CODE-4), core-owned
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
 	add_test(NAME ClapHostTest COMMAND ClapHostTest)
 	target_include_directories(ClapHostTest PRIVATE
 		${CMAKE_BINARY_DIR}
+		# the generated lmms_export.h, which the core headers carry
+		${CMAKE_BINARY_DIR}/src
 		${CMAKE_SOURCE_DIR}/include
 		${LMMS_CLAP_EFFECT_DIR}
 	)
@@ -1036,10 +1040,14 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		# the host path's chunking counters (CODE-4), core-owned
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
 	add_test(NAME Vst3HostTest COMMAND Vst3HostTest)
 	target_include_directories(Vst3HostTest PRIVATE
 		${CMAKE_BINARY_DIR}
+		# the generated lmms_export.h, which the core headers carry
+		${CMAKE_BINARY_DIR}/src
 		${CMAKE_SOURCE_DIR}/include
 		${LMMS_VST3_EFFECT_DIR}
 	)
@@ -1053,6 +1061,41 @@ if(TARGET lmms_vst3_sdk)
 	target_compile_definitions(Vst3HostTest PRIVATE
 		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}")
 	add_dependencies(Vst3HostTest vst3-test-effect)
+
+	# CODE-4: the chunking contract on the audio path, proven against a
+	# purpose-built in-tree MIT fixture (tests/data/vst3-chunk-probe) that
+	# records the block sizes the host asked it for and any call that exceeded
+	# the block size setupProcessing() declared. The SDK's sample plugin is the
+	# wrong subject for this: its identity and parameter shape are asserted by
+	# Vst3HostTest, and it cannot report what it was asked for.
+	add_subdirectory(data/vst3-chunk-probe)
+
+	add_executable(Vst3ChunkProbeTest
+		src/plugins/Vst3ChunkProbeTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		# the host path's chunking counters (CODE-4), core-owned
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
+	)
+	add_test(NAME Vst3ChunkProbeTest COMMAND Vst3ChunkProbeTest)
+	target_include_directories(Vst3ChunkProbeTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		# the generated lmms_export.h, which the core headers carry
+		${CMAKE_BINARY_DIR}/src
+		${CMAKE_SOURCE_DIR}/include
+		${LMMS_VST3_EFFECT_DIR}
+	)
+	target_compile_features(Vst3ChunkProbeTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3ChunkProbeTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(Vst3ChunkProbeTest PRIVATE
+		VST3_CHUNK_PROBE_PATH="${LMMS_VST3_CHUNK_PROBE_BUNDLE_DIR}")
+	add_dependencies(Vst3ChunkProbeTest vst3-chunk-probe)
 
 	# Product-level proof: the effect is loaded into an EffectChain on an
 	# AudioBus and driven through the engine, its state round-trips through the
@@ -1114,7 +1157,7 @@ endif()
 # PluginPortsMigrationReference is deliberately left un-instrumented: the
 # reference side of the behaviour comparison must stay plain.
 foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapEffectIntegrationTest
-		Vst3BusMapTest Vst3HostTest Vst3EffectIntegrationTest
+		Vst3BusMapTest Vst3HostTest Vst3EffectIntegrationTest Vst3ChunkProbeTest
 		WasmSandboxTest PluginPortsMigrationTest AudioPluginTest
 		synthetic_audio_plugin)
 	if(TARGET ${LMMS_GATE_TEST})
@@ -1244,9 +1287,13 @@ if(TARGET lmms_vst3_sdk)
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
+			# the host path's chunking counters (CODE-4), core-owned
+			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 		)
 		add_test(NAME Vst3InstrumentTest COMMAND Vst3InstrumentTest)
 		target_include_directories(Vst3InstrumentTest PRIVATE
+			# the generated lmms_export.h, which the core headers carry
+			${CMAKE_BINARY_DIR}/src
 			${CMAKE_SOURCE_DIR}/include
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect
 			# tests/src/core/AllocationProbe.h - the allocation counter the

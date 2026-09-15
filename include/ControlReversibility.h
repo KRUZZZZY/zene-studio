@@ -173,6 +173,14 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The `plugin.host_chunking` row (feature row 82, CODE-4): the chunking
+ *  contract both plugin host paths keep, and the counters the audio path
+ *  increments. A single not_mutating row in its own file so the plugin group's
+ *  rows can land where their own lane has room; the class comes from each row,
+ *  not from its file, exactly as reversibilityScanAndCrashRowTable's do.
+ *  Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityHostChunkingRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

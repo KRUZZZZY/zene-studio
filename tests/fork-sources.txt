@@ -313,6 +313,7 @@ include/NoteRandom.h
 include/NoteTransform.h
 include/PinConnector.h
 include/PluginAudioPorts.h
+include/PluginHostChunking.h
 include/PluginScanCache.h
 include/ProjectIds.h
 include/ProjectRecovery.h
@@ -453,6 +454,7 @@ src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
+src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
@@ -523,6 +525,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableHostChunking.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
@@ -562,6 +565,7 @@ src/core/ModulationLayer.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/PluginHostChunking.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournalBounds.cpp

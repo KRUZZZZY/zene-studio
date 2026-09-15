@@ -34,6 +34,7 @@
 
 #include "ClapBusMap.h"
 #include "ClapParamDescriptor.h"
+#include "PluginHostChunking.h"
 
 namespace lmms::clap
 {
@@ -58,6 +59,15 @@ struct ClassInfo
  * clap.plugin-factory extension and unloads it again. Main thread only.
  */
 auto listClasses(const QString& modulePath, QString* error) -> std::vector<ClassInfo>;
+
+/*! The counters behind HostedPlugin::process(), shared with the control
+ * surface: the engine half is include/PluginHostChunking.h (core), because the
+ * host is a plugin module and the `plugin.host_chunking` command is not.
+ */
+using HostChunkingStats = control::PluginHostChunkingStats;
+
+//! Process-wide counters behind HostedPlugin::process(). Any thread.
+auto hostChunkingStats() -> HostChunkingStats;
 
 /*!
  * In-process host for one CLAP plug-in instance. Mirrors the VST3 lane's
@@ -121,6 +131,30 @@ public:
 	 * channels beyond the plug-in's port layout are ignored on input and left
 	 * untouched on output, missing channels are fed silence. Real-time safe:
 	 * no allocation, no locking, no I/O.
+	 *
+	 * OVER-RUN AND TAIL RULE. The host processes EXACTLY `frames` frames of
+	 * every channel the caller supplies, and never asks the plug-in for more
+	 * than the block size it was activated with:
+	 *  - the request is split into chunks of at most that block size; every
+	 *    chunk but the last is exactly that long and the last carries the
+	 *    remainder, so a request that is not a multiple of the prepared block
+	 *    is processed whole rather than truncated (which is what the
+	 *    `frames = min(frames, maxFrames)` clamp used to do: it silently left
+	 *    the tail of the caller's buffers holding whatever was there before) ;
+	 *  - before the call returns, every frame of [0, frames) has been written
+	 *    on every channel the caller passed, and on no other memory: a channel
+	 *    the caller does not supply reads from a zeroed block and writes to a
+	 *    scratch block sized per channel as the prepared block, and a chunk's
+	 *    window into them is never longer than that;
+	 *  - the plug-in sees one process() call per chunk with
+	 *    clap_process_t::frames_count == that chunk's length;
+	 *  - parameter changes are delivered with the chunk that starts the
+	 *    request, and with that chunk only.
+	 *
+	 * A request of 0 frames is a no-op and returns true. A chunk that returns
+	 * CLAP_PROCESS_ERROR stops the request: the remaining frames are left
+	 * untouched and the call returns false, so the caller can fall back to dry
+	 * audio for the whole block it asked for.
 	 */
 	auto process(const float* const* inputs, float* const* outputs, int inputChannels,
 		int outputChannels, int frames) -> bool;

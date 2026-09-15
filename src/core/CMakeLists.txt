@@ -166,6 +166,14 @@ set(LMMS_SRCS
 	core/ControlCommandsCrash.cpp
 	core/ControlCommandsPluginScan.cpp
 	core/ControlCommandsPluginScanEdit.cpp
+	# plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
+	# host paths keep and the counters their audio paths increment. In the core
+	# because the hosts are plugin modules: this is what makes the property
+	# observable from --control-socket. Two files on the usual seam - the
+	# counters (no engine dependency, so the host tests compile them next to the
+	# host sources) and the command itself.
+	core/PluginHostChunking.cpp
+	core/ControlCommandsHostChunking.cpp
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
@@ -272,6 +280,9 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	# The plugin.host_chunking row (feature row 82, CODE-4). One row in its own
+	# file for the same reason: a file-length cap, not a group boundary.
+	core/ControlReversibilityTableHostChunking.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

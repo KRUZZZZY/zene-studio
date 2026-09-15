@@ -253,6 +253,16 @@ LMMS_EXPORT void registerPluginScanCommands(ControlRegistry& registry);
 //! plugin.rescan - the mutating half of the scan-cache group, in its own
 //! translation unit (the automation and warp groups' split).
 LMMS_EXPORT void registerPluginScanEditCommands(ControlRegistry& registry);
+/*! plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
+ * plugin host paths keep - "a request larger than the prepared block is split
+ * into chunks of at most that block" - together with the counters the audio
+ * path increments, so the property is observable on a running instance and not
+ * only in a unit test. The engine half is include/PluginHostChunking.h; the
+ * counters live in the core because the hosts are plugin modules
+ * (plugins/Vst3Effect/Vst3Host.cpp and plugins/ClapEffect/ClapHost.cpp write
+ * into them). Read-only: one not_mutating A16 row.
+ */
+LMMS_EXPORT void registerPluginHostChunkingCommands(ControlRegistry& registry);
 /*! crash.list_reports / crash.acknowledge_report / crash.discard_report /
  * crash.upload_report - the crash reporter's agent surface (feature row 54).
  * The engine half is include/CrashReporter.h, installed from main() before this

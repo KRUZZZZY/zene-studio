@@ -160,6 +160,11 @@ void registerControlCommands(ControlRegistry& registry)
 	// half, then the edit half, each its own translation unit.
 	registerPluginScanCommands(registry);
 	registerPluginScanEditCommands(registry);
+	// CODE-4 (feature row 82): the chunking contract both plugin host paths
+	// keep, and the counters their audio paths increment. The hosts are plugin
+	// modules, so the counters and the command live in the core
+	// (src/core/PluginHostChunking.cpp) and the modules write into them.
+	registerPluginHostChunkingCommands(registry);
 	// The crash reporter (feature row 54). No compile-time switch: the module is
 	// a no-op on Windows rather than compiled out, and its read answers in every
 	// configuration (reporting no directory there), so the ids are honest either

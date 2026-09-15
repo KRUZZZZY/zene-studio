@@ -18,6 +18,13 @@
 
 #define TEST_PLUGIN_ID "org.lmms.test.clap-gain"
 #define TEST_PLUGIN_MAGIC 0x4C4D4741u /* "LMGA" */
+/* Bump when the state layout below changes; the host stores the bytes opaquely. */
+#define TEST_PLUGIN_STATE_VERSION 2u
+/* How many per-call block sizes the fixture records, for the chunking test
+   (ClapHostTest::testChunkedProcessing). The recorded sequence is what the
+   host actually asked the plug-in to process, so a test can assert the exact
+   chunk shape rather than infer it from the audio. */
+#define TEST_PLUGIN_MAX_RECORDED_BLOCKS 16
 
 enum
 {
@@ -28,6 +35,13 @@ enum
 typedef struct gain_state
 {
 	uint32_t magic;
+	uint32_t version;
+	uint32_t declared_max_frames; /* what activate() was told */
+	uint32_t blocks;              /* process() calls since activate() */
+	uint32_t max_block;           /* largest frames_count seen */
+	uint32_t oversized_calls;     /* calls with frames_count > declared_max_frames */
+	uint32_t recorded_count;
+	uint32_t recorded[TEST_PLUGIN_MAX_RECORDED_BLOCKS];
 	double gain;
 	double bypass;
 	double frames_processed;
@@ -41,6 +55,12 @@ typedef struct gain_plugin
 	double gain;
 	double bypass;
 	double frames_processed;
+	uint32_t declared_max_frames;
+	uint32_t blocks;
+	uint32_t max_block;
+	uint32_t oversized_calls;
+	uint32_t recorded_count;
+	uint32_t recorded[TEST_PLUGIN_MAX_RECORDED_BLOCKS];
 } gain_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -199,6 +219,13 @@ static bool gain_state_save(const clap_plugin_t* plugin, const clap_ostream_t* s
 	   would make two saves of the same musical state differ byte-wise */
 	memset(&state, 0, sizeof(state));
 	state.magic = TEST_PLUGIN_MAGIC;
+	state.version = TEST_PLUGIN_STATE_VERSION;
+	state.declared_max_frames = self->declared_max_frames;
+	state.blocks = self->blocks;
+	state.max_block = self->max_block;
+	state.oversized_calls = self->oversized_calls;
+	state.recorded_count = self->recorded_count;
+	memcpy(state.recorded, self->recorded, sizeof(state.recorded));
 	state.gain = self->gain;
 	state.bypass = self->bypass;
 	state.frames_processed = self->frames_processed;
@@ -208,12 +235,25 @@ static bool gain_state_save(const clap_plugin_t* plugin, const clap_ostream_t* s
 static bool gain_state_load(const clap_plugin_t* plugin, const clap_istream_t* stream)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
-	gain_state_t state = {};
+	gain_state_t state;
+	memset(&state, 0, sizeof(state));
 	if (stream->read(stream, &state, sizeof(state)) != (int64_t)sizeof(state)) { return false; }
 	if (state.magic != TEST_PLUGIN_MAGIC) { return false; }
+	if (state.version != TEST_PLUGIN_STATE_VERSION) { return false; }
 	self->gain = state.gain;
 	self->bypass = state.bypass;
 	self->frames_processed = state.frames_processed;
+	/* The counters are part of the saved state, so restoring a state restores
+	   what the fixture reports as well: two saves of one state round-trip
+	   byte-wise (ClapHostTest::testStateRoundTrip). */
+	self->declared_max_frames = state.declared_max_frames;
+	self->blocks = state.blocks;
+	self->max_block = state.max_block;
+	self->oversized_calls = state.oversized_calls;
+	self->recorded_count =
+		state.recorded_count <= TEST_PLUGIN_MAX_RECORDED_BLOCKS ? state.recorded_count
+																: TEST_PLUGIN_MAX_RECORDED_BLOCKS;
+	memcpy(self->recorded, state.recorded, sizeof(self->recorded));
 	return true;
 }
 
@@ -250,10 +290,18 @@ static void gain_destroy(const clap_plugin_t* plugin)
 static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint32_t min_frames_count,
 	uint32_t max_frames_count)
 {
-	(void)plugin;
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
 	(void)sample_rate;
 	(void)min_frames_count;
-	(void)max_frames_count;
+	/* The host tells the plug-in the largest block it will ever be asked for.
+	   That number is what makes an over-run observable: process() records any
+	   call that asks for more than this. */
+	self->declared_max_frames = max_frames_count;
+	self->blocks = 0;
+	self->max_block = 0;
+	self->oversized_calls = 0;
+	self->recorded_count = 0;
+	memset(self->recorded, 0, sizeof(self->recorded));
 	return true;
 }
 
@@ -271,6 +319,11 @@ static void gain_reset(const clap_plugin_t* plugin)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
 	self->frames_processed = 0.0;
+	self->blocks = 0;
+	self->max_block = 0;
+	self->oversized_calls = 0;
+	self->recorded_count = 0;
+	memset(self->recorded, 0, sizeof(self->recorded));
 }
 
 static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_process_t* process)
@@ -298,7 +351,22 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 			}
 		}
 	}
+	/* The chunking witnesses. `oversized_calls` counts calls that asked for
+	   more frames than activate() declared - an over-run at the plug-in's
+	   boundary; `recorded` is the exact sequence of chunk sizes the host asked
+	   for, so a test can assert the shape and not just the total. */
+	self->blocks += 1;
 	self->frames_processed += frames;
+	if (frames > self->max_block) { self->max_block = frames; }
+	if (self->declared_max_frames != 0 && frames > self->declared_max_frames)
+	{
+		self->oversized_calls += 1;
+	}
+	if (self->recorded_count < TEST_PLUGIN_MAX_RECORDED_BLOCKS)
+	{
+		self->recorded[self->recorded_count] = frames;
+		self->recorded_count += 1;
+	}
 	return CLAP_PROCESS_CONTINUE;
 }
 
