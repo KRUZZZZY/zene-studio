@@ -107,7 +107,7 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 				reversibilityWasmRenderRowTable, reversibilityDawProjectRowTable, reversibilityMmpzGitRowTable,
 				reversibilityAutomationModesRowTable, reversibilityControllerRowTable,
 				reversibilityRevisionsRowTable, reversibilityDetectRowTable, reversibilitySafeStartRowTable,
-				reversibilityAutomationRampRowTable})
+				reversibilityAutomationRampRowTable, reversibilitySessionViewRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

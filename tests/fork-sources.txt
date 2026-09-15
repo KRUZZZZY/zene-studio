@@ -437,6 +437,8 @@ include/ScriptEngine.h
 include/ScriptLuaQtTypes.h
 include/ScriptMemoryBudget.h
 include/ScriptPackage.h
+include/SessionArrangementRecorder.h
+include/SessionFollow.h
 include/SessionModel.h
 include/SessionScheduler.h
 include/SmfInterchange.h
@@ -627,7 +629,11 @@ src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSession.cpp
+src/core/ControlCommandsSessionFollow.cpp
 src/core/ControlCommandsSessionLaunch.cpp
+src/core/ControlCommandsSessionRecord.cpp
+src/core/ControlCommandsSessionRecordInternal.h
+src/core/ControlCommandsSessionRecordLand.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsStemModel.cpp
@@ -696,6 +702,7 @@ src/core/ControlReversibilityTableRevisions.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableSafeStart.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
+src/core/ControlReversibilityTableSessionView.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableStems.cpp
 src/core/ControlReversibilityTableStructure.cpp
@@ -792,6 +799,7 @@ src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptPackage.cpp
 src/core/SessionClip.cpp
+src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
 src/core/SessionScheduler.cpp

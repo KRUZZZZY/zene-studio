@@ -124,6 +124,12 @@ void registerControlCommands(ControlRegistry& registry)
 	// same #ifdef, so the two stay consistent in both directions.
 	registerSessionCommands(registry);
 	registerSessionLaunchCommands(registry);
+	// The Session View's completion halves (board task #641): the Follow Action
+	// evaluation and the Arrangement Record ring, each with its own ids
+	// (src/core/ControlCommandsSessionFollow.cpp, ...SessionRecord.cpp). They
+	// travel with the same flag and for the same reason as the two above.
+	registerSessionFollowCommands(registry);
+	registerSessionRecordCommands(registry);
 #endif // LMMS_HAVE_SESSION_VIEW
 	registerExportCommands(registry);
 	// The render/export presets (feature row 70) - the saved store and the

@@ -31,6 +31,8 @@
 #include <cstdint>
 
 #include "LmmsTypes.h"
+#include "SessionArrangementRecorder.h"
+#include "SessionFollow.h"
 #include "SessionModel.h"
 #include "lmms_export.h"
 
@@ -117,7 +119,12 @@ enum class LaunchCommandType : std::uint8_t
 {
 	Press = 0,
 	Release,
-	Stop
+	Stop,
+	/*! Installs a Follow Action plan (or clears one, with `enabled` false) on a
+	 *  cell. It touches no launch state: the plan is stored and the slot's own
+	 *  state machine consults it while it plays (task #641). Same queue, same
+	 *  producer, same POD rule as the three above. */
+	Follow
 };
 
 //! Where a slot is in its launch life cycle.
@@ -297,6 +304,31 @@ public:
 	//! thread.
 	tick_t positionTicks() const noexcept { return m_positionTicks; }
 
+	// ---- Follow Actions and Arrangement Record (task #641, SPEC §4.1) ---
+
+	/*! Installs a cell's Follow Action plan, or clears it when
+	 *  `plan.enabled` is false. Model thread; one queue push, no allocation.
+	 *  False when the queue is full (dropped, counted), like the launches.
+	 *
+	 *  The accessors below are the model thread's WHOLE view of the engine's
+	 *  Follow Action state, because the installed plans are audio-thread
+	 *  storage: the armed cells as a count and as a bitmask (bit
+	 *  `track * 8 + scene`, for track < 8 and scene < 8 - the count cannot
+	 *  answer WHICH cell), the fires since the last reset(), and the newest fire
+	 *  packed as ONE 64-bit word, so a reader can never pair a new outcome with
+	 *  the previous tick. Their bodies are in src/core/SessionFollow.cpp with
+	 *  the rest of the feature, so this header stays inside the ratchet. */
+	bool requestFollowPlan( int track, int scene, const FollowPlan& plan ) noexcept;
+	int armedFollowCells() const noexcept;
+	std::uint64_t armedFollowCellsMask() const noexcept;
+	std::uint64_t followFires() const noexcept;
+	std::uint64_t lastFollowFire() const noexcept;
+
+	//! Arrangement Record's event ring (task #641): the model thread consumes it
+	//! (ControlCommandsSessionRecord.cpp); the audio thread feeds it while armed.
+	SessionArrangementRecorder& arrangementRecorder() noexcept;
+	const SessionArrangementRecorder& arrangementRecorder() const noexcept;
+
 private:
 	struct Command
 	{
@@ -305,6 +337,9 @@ private:
 		LaunchCommandType type = LaunchCommandType::Press;
 		LaunchMode mode = LaunchMode::Trigger;
 		LaunchQuantisation quantisation = LaunchQuantisation::Bar;
+		//! Only read for LaunchCommandType::Follow; a POD payload, so the queue
+		//! stays a fixed array of trivially copyable elements.
+		FollowPlan plan;
 	};
 
 	/*! Fixed-capacity single-producer/single-consumer queue. The model thread
@@ -354,6 +389,20 @@ private:
 		LaunchMode mode = LaunchMode::Trigger;
 		LaunchQuantisation quantisation = LaunchQuantisation::Bar;
 		SlotLaunchState state;
+		//! Follow Actions: the action time this slot waits for, and whether it
+		//! has been initialised for the playback running now. Audio thread.
+		bool followScheduled = false;
+		tick_t followNextTick = 0;
+	};
+
+	/*! One installed plan. A separate fixed table rather than a member of
+	 *  ActiveSlot, because a plan outlives the playback it was installed for and
+	 *  a cell that has never launched has no ActiveSlot to hang it on. */
+	struct InstalledFollowPlan
+	{
+		int track = -1;
+		int scene = -1;
+		FollowPlan plan;
 	};
 
 	bool enqueue( const Command& command ) noexcept;
@@ -385,7 +434,31 @@ private:
 	//! Fires whatever the clock has reached, one pass over the active slots.
 	void advanceSlots( const SessionClockContext& ctx ) noexcept;
 
+	// ---- Follow Actions, audio thread (bodies in SessionFollow.cpp) -----
+	//! Stores (or clears) one cell's plan; false when the fixed table is full.
+	bool installFollowPlan( int track, int scene, const FollowPlan& plan ) noexcept;
+	//! The plan installed for a cell, or nullptr. Audio thread.
+	const FollowPlan* planFor( int track, int scene ) const noexcept;
+	/*! Evaluates one playing slot's chain against the clock, firing at most one
+	 *  action per action time. Audio thread; the rules are in SessionFollow.h. */
+	void evaluateFollow( ActiveSlot& slot, const SessionClockContext& ctx ) noexcept;
+	/*! Everything the launch state machine's events imply for this task: the
+	 *  launch counters and the start-line publication, the slot's schedule, and
+	 *  the Arrangement Record's ring. One place, so they cannot disagree about
+	 *  what happened this period. Audio thread. */
+	void afterLaunchEvents( ActiveSlot& slot, const SessionClockContext& ctx,
+		LaunchEvent event ) noexcept;
+	//! Publishes a fire for the model thread. Audio thread; one relaxed store.
+	void publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept
+	{
+		m_lastFollowFire.store( packFollowFire( fire.outcome, fire.chosenIndex,
+			fire.targetScene, tick ), std::memory_order_relaxed );
+	}
+	//! Audio thread: how many installed cells have an ENABLED plan.
+	void recountArmedFollowCells() noexcept;
+
 	std::array<ActiveSlot, MaxActiveSlots> m_active{};
+	std::array<InstalledFollowPlan, MaxFollowPlans> m_followPlans{};
 	CommandQueue m_queue;
 	std::atomic<std::uint64_t> m_dropped{ 0 };
 	std::atomic<std::uint64_t> m_launches{ 0 };
@@ -400,6 +473,21 @@ private:
 	//! active slot on its next period (see reset()).
 	std::atomic<std::uint32_t> m_resetGeneration{ 0 };
 	std::uint32_t m_seenGeneration = 0;
+
+	// ---- Follow Actions and Arrangement Record (task #641) --------------
+	//! Newest fire, packed; see lastFollowFire().
+	std::atomic<std::uint64_t> m_lastFollowFire{ 0 };
+	std::atomic<std::uint64_t> m_followFires{ 0 };
+	//! Cells with an enabled plan installed; see armedFollowCells().
+	std::atomic<int> m_followArmed{ 0 };
+	//! The same set as a bitmask, bit (track * 8 + scene); same store as the
+	//! count. See armedFollowCellsMask().
+	std::atomic<std::uint64_t> m_followArmedMask{ 0 };
+	//! The audio thread's Follow Action RNG (xorshift32); needs no atomic.
+	std::uint32_t m_followRng = 0x2545f491u;
+	//! Arrangement Record's ring: fed by the audio thread, drained by the model
+	//! thread (include/SessionArrangementRecorder.h).
+	SessionArrangementRecorder m_recorder;
 
 	// ---- audio-thread-only session clock (SPEC A2) ---------------------
 	tick_t m_positionTicks = 0;

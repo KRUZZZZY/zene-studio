@@ -398,6 +398,20 @@ IF(LMMS_HAVE_SESSION_VIEW)
 		# Behaviour-preservation proof: a real headless render is byte-identical
 		# with nothing launched, and differs with a launched clip.
 		src/core/SessionSchedulerRenderTest.cpp
+		# Follow Actions + Arrangement Record (task #641, the #596 engine
+		# halves). Two files, because they measured 667 lines as one and the
+		# file-length ratchet is not moved for a new feature:
+		#   - SessionFollowTest: the ten action types driven exhaustively as
+		#     pure decisions, chance weighting at its boundaries, the packed
+		#     fire, the plan/arming rules and the allocation probe on the audio
+		#     path this feature added;
+		#   - SessionArrangementRecordTest: the ring (arming, bounded drop,
+		#     non-destructive snapshot, disarm-keeps-the-performance) and the
+		#     scheduler-driven behaviour that feeds it - a chain running
+		#     HANDS-FREE across four clips, a stop, a refused action firing once
+		#     per action time, and the reset that records the stops it ends.
+		src/core/SessionFollowTest.cpp
+		src/core/SessionArrangementRecordTest.cpp
 	)
 ENDIF()
 

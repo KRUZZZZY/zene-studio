@@ -309,6 +309,26 @@ LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
  *  failure in the other direction (ReversibilityContractTest).
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
+/*! The Session View completion halves' six rows (board task #641, the #596
+ *  work): Follow Actions (session.follow_set / follow_get_state - the engine
+ *  evaluates the chain a cell carries while it plays) and Arrangement Record
+ *  (session.arrangement_record_arm / _status / _land, and the
+ *  session.back_to_arrangement switch). Five are not_mutating - a plan install,
+ *  two reads, an arm/disarm and one atomic reset request, none of which writes
+ *  project state - and session.arrangement_record_land is a live-checkpoint
+ *  true_inverse row: it creates arrangement clips over one Track journal
+ *  checkpoint per touched track, the clip.add and midi.retro_capture_to_clip
+ *  mechanism.
+ *
+ *  A GROUP file on the same seam as the recording, folder, vca and routing
+ *  files - the class comes from each row, not from its file - and it exists
+ *  because the two files the other session.* rows live in are at the
+ *  file-length ratchet (include/ControlRegistry.h at 502 lines, and the passive
+ *  block at its limit). Joined into reversibilityRowTable() by ONE entry.
+ *  The array is EMPTY without LMMS_HAVE_SESSION_VIEW: the ids do not exist in
+ *  that configuration, and a row naming an unregistered command is a failure in
+ *  the other direction (ReversibilityContractTest). */
+LMMS_EXPORT const ReversibilityRow* reversibilitySessionViewRowTable(int* rowCount);
 /*! The sample-accurate automation GROUP's two rows (0.3.0, feature-list row 9,
  *  board task #646): `automation.ramp_set` (a live checkpoint on the automation
  *  clip whose flag it writes) and `automation.ramp_get` (a read of the ramps the
