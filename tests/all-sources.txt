@@ -88,6 +88,7 @@ include/AutomationClip.h
 include/AutomationClipView.h
 include/AutomationEditor.h
 include/AutomationNode.h
+include/AutomationRamp.h
 include/AutomationTrack.h
 include/AutomationTrackView.h
 include/BandLimitedWave.h
@@ -939,6 +940,7 @@ src/core/AudioWideInputStage.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationNode.cpp
+src/core/AutomationRamp.cpp
 src/core/BandLimitedWave.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
@@ -964,6 +966,7 @@ src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsAutomationRamp.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
@@ -1098,6 +1101,7 @@ src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableArchive.cpp
 src/core/ControlReversibilityTableAutomationModes.cpp
+src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableController.cpp
@@ -1611,6 +1615,7 @@ tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
+tests/src/core/SampleAccurateAutomationTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/ScriptEngineTest.cpp
@@ -1656,12 +1661,12 @@ tests/src/plugins/PluginPortsMigrationTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3ChunkProbeTest.cpp
+
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
 tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
-
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
@@ -1673,6 +1678,7 @@ tests/src/wasm/WasmWorkerPoolTest.cpp
 tools/dawproject-a16-histogram.cpp
 tools/dawproject-roundtrip-proof.cpp
 tools/mmpz-git/scratch/qtesc.cpp
+
 tools/mmpz-git/scratch/qtroundtrip.cpp
 tools/mmpz-git/scratch/qtsave.cpp
 tools/mmpz-git/scratch/qtsave2.cpp

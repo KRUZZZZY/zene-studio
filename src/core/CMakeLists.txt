@@ -107,6 +107,7 @@ set(LMMS_SRCS
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp
 	core/AutomationNode.cpp
+	core/AutomationRamp.cpp
 	core/BandLimitedWave.cpp
 	core/base64.cpp
 	core/BrowserCatalog.cpp
@@ -164,6 +165,7 @@ set(LMMS_SRCS
 	core/ControlBrowserSupport.cpp
 	core/ControlCommandsAutomation.cpp
 	core/ControlCommandsAutomationEdit.cpp
+	core/ControlCommandsAutomationRamp.cpp
 	core/ControlCommandsBrowser.cpp
 	core/ControlCommandsBrowserTags.cpp
 	core/ControlCommandsControl.cpp
@@ -419,6 +421,9 @@ set(LMMS_SRCS
 	# join entries took it to the file-length ratchet (a move, not a rewrite).
 	core/ControlReversibilityTableLive.cpp
 	core/ControlReversibilityTableAction.cpp
+	# The sample-accurate automation group's two rows (feature row 9, board task
+	# #646): a live-checkpoint row and a read, joined into reversibilityRowTable().
+	core/ControlReversibilityTableAutomationRamp.cpp
 	core/ControlReversibilityTableChain.cpp
 	# The STRUCTURAL group's four action rows - created / reordered / deleted
 	# track, removed device (task #664, feature row 75). Its own TU for the same

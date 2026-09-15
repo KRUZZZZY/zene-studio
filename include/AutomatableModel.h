@@ -33,6 +33,7 @@
 #include "JournallingObject.h"
 #include "Model.h"
 #include "TimePos.h"
+#include "AutomationRamp.h"
 #include "ValueBuffer.h"
 #include "ModelVisitor.h"
 
@@ -177,6 +178,34 @@ public:
 	//! @brief Function that returns sample-exact data as a ValueBuffer
 	//! @return pointer to model's valueBuffer when s.ex.data exists, NULL otherwise
 	ValueBuffer * valueBuffer();
+
+	// -----------------------------------------------------------------------
+	// Sample-accurate automation (feature-list row 9,
+	// docs/SAMPLE-ACCURATE-AUTOMATION.md).
+	//
+	// The automation evaluation publishes, once per audio block and for the
+	// parameters whose own clip asked for it, the curve's value AT EVERY FRAME
+	// of the block being rendered (an AutomationRamp - one knot per tick
+	// boundary). valueBuffer() then fills its per-sample buffer from that ramp
+	// instead of interpolating from the previous block's value, so what the
+	// audio path multiplies with is the curve and not a whole-block smear of
+	// it. A model with no ramp published for the current period behaves
+	// exactly as it always has, which is the property every existing project's
+	// render rests on.
+	//
+	// Allocated once, with the model (the ramp is a fixed-capacity member), so
+	// publishing and reading it allocates nothing, takes no lock and cannot
+	// grow.
+	// -----------------------------------------------------------------------
+
+	/*! Publish @a ramp as this parameter's per-sample source for the period
+	 *  being rendered. Called by the automation evaluation on the audio thread;
+	 *  a fixed-size copy, no allocation, no lock. */
+	void publishAutomationRamp(const AutomationRamp& ramp) noexcept;
+
+	/*! The ramp published for the period being rendered, or nullptr when this
+	 *  parameter is not sample-accurately automated right now. */
+	const AutomationRamp* automationRamp() const noexcept;
 
 	template<class T>
 	T initValue() const
@@ -515,6 +544,13 @@ private:
 	ValueBuffer m_valueBuffer;
 	long m_lastUpdatedPeriod;
 	static long s_periodCounter;
+
+	//! The sample-accurate ramp published for the period in
+	//! m_automationRampPeriod (feature row 9). Fixed capacity, so it is part of
+	//! the model's own footprint and never allocates on the audio thread.
+	AutomationRamp m_automationRamp;
+	//! The period m_automationRamp belongs to; -1 = nothing published.
+	long m_automationRampPeriod = -1;
 
 	bool m_hasSampleExactData;
 

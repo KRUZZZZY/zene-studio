@@ -169,6 +169,41 @@ public:
 	float valueAt( const TimePos & _time ) const;
 	float *valuesAfter( const TimePos & _time ) const;
 
+	// -----------------------------------------------------------------------
+	// Sample-accurate automation (feature-list row 9,
+	// docs/SAMPLE-ACCURATE-AUTOMATION.md).
+	//
+	// A clip's curve is stored as nodes on integer ticks and is linear in ticks
+	// between two nodes, so inside one audio block the curve has no more shape
+	// than one straight line per tick. OFF by default (a project that never
+	// asked for it renders byte-identically to before); when ON, the automation
+	// evaluation writes the curve into an AutomationRamp at the start of every
+	// audio block and the parameters this clip drives read their per-sample
+	// buffer from that ramp instead of from the previous block's value.
+	// -----------------------------------------------------------------------
+
+	//! Is this clip rendered at sample precision inside a block?
+	bool sampleAccurate() const { return m_sampleAccurate; }
+	//! Turn it on or off. Journalled like any other clip edit (the flag is
+	//! serialized, and loadSettings resets it on absence, so a checkpoint
+	//! taken before the first edit takes it back).
+	void setSampleAccurate( bool on );
+
+	/*! Write this clip's curve into @a ramp for the block of @a frames frames
+	 *  whose first sample sits at global tick @a blockStart + @a frameOffsetInTick
+	 *  frames (the audio block grid and the tick grid do not line up, so a block
+	 *  usually starts inside a tick).
+	 *
+	 *  One knot per tick boundary inside the block plus the block's two ends:
+	 *  that is the curve itself at every frame, because the curve is linear
+	 *  between two nodes and a node sits on a tick. REALTIME-SAFE: called from
+	 *  the audio thread, allocates nothing (the ramp is the caller's own
+	 *  fixed-capacity object), and takes the clip's own mutex ONCE for the whole
+	 *  block rather than once per evaluation.
+	 */
+	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
+		double framesPerTick, int frameOffsetInTick ) const;
+
 	QString name() const;
 
 	// settings-management
@@ -215,6 +250,16 @@ private:
 	void generateTangents(timeMap::iterator it, int numToGenerate);
 	float valueAt( timeMap::const_iterator v, int offset ) const;
 
+	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
+	 *  segment that starts there) - the segment, not the node, so a node whose
+	 *  in- and out-values differ does not make the ramp step early. Caller
+	 *  holds m_clipMutex. Allocates nothing. */
+	float rampValueAt( const TimePos & rel, float fraction ) const;
+	//! One knot: the curve at @a frame of the block (whose first sample sits
+	//! @a frameOffsetInTick frames into its tick). Caller holds m_clipMutex.
+	void addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart, int frame,
+		int frameOffsetInTick, double framesPerTick ) const;
+
 	/**
 	 * @brief
 	 * This function combines the song tracks, pattern store tracks,
@@ -236,6 +281,11 @@ private:
 	float m_tension;
 	bool m_hasAutomation;
 	ProgressionType m_progressionType;
+
+	//! Sample-accurate rendering of this clip's curve (feature-list row 9).
+	//! Serialized only when it is ON, so a project that never asked for it
+	//! saves the bytes it always saved; loadSettings resets it on absence.
+	bool m_sampleAccurate = false;
 
 	bool m_dragging;
 	bool m_dragKeepOutValue; // Should we keep the current dragged node's outValue?

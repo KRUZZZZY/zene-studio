@@ -1030,6 +1030,7 @@ one back; nothing removes the reporter's `offered` sentinel; nothing writes a re
 the rows as one group, whatever their class, and `reversibilityRowTable()` joins them for the same reason it
 joins the routing surface's: the passive block and the live block are both at the file-length cap.
 * **`030/revision-timeline` (feature row 76, OWNER-31 item 30) - +3 rows, +1 `true_inverse`,
+* **`030/sample-accurate-automation` (feature row 9) - +2 rows, +1 `true_inverse`, +1 `not_mutating`:**
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 
@@ -2540,3 +2541,65 @@ back. Safe-start mode covers it, with a MARKER and one load-time predicate:
   `Plugin::instantiate()` against a third-party module copy and asserts the `DummyPlugin`, then really
   loads that module once the session switch is off — two binaries because the file-length ratchet is
   not moved for a new feature.
+
+## Sample-accurate automation: a curve that reaches the audio path per sample (`automation.ramp_set` / `automation.ramp_get`, feature row 9) — added 2026-09-15
+
+Automation was evaluated once per TICK (`Song::processAutomations()`), and the per-sample buffer the audio
+path actually multiplies with (`AutomatableModel::valueBuffer()` — the buffer
+`MixerChannel::updatePostFaderBuffer()` and the fx chains read) was filled by interpolating from the value
+the previous block ended on to the value this block's first tick applied. Two things followed, both audible
+on a fast move: the parameter was a whole block **late**, and the move was smeared over the whole block
+whatever the curve's own shape was. `include/AudioEngine.h` says so in its own words — "per-buffer updates
+like **non-sample-accurate automation**". This lane makes the curve reach the audio path at sample
+precision inside the block.
+
+* **The engine.** `include/AutomationRamp.h` is a per-block, per-sample ramp: a **fixed-capacity** array of
+  (frame, value) knots (`MaxKnots` 32 → a 528-byte member of the model), read by
+  `AutomatableModel::valueBuffer()` per sample. `Song::buildAutomationRamps()` publishes it once per audio
+  block — from `Song::process()`, **before** the tick loop, because the whole block's curve has to be in the
+  parameters before the first sample of it renders — and `AutomationClip::writeBlockRamp()` builds it under
+  the clip's own lock **once per block** (rather than once per knot, as the per-tick path does).
+* **Why a knot per tick boundary is the whole curve.** A clip's nodes sit on integer ticks and its stored
+  value is linear in ticks between two of them, so inside one tick the curve is a straight line and an audio
+  block (a handful of ticks, and never aligned to the grid) is reproduced exactly by the curve's value at
+  its first sample, at every tick boundary inside it, and at its end. Every boundary gets **two** knots —
+  the frame just before it and the frame on it — because the clip's default progression type is `Discrete`,
+  which HOLDS a value for a whole tick and then jumps.
+* **Realtime-safe, and measured that way.** No allocation anywhere on the path (the ramp is the caller's own
+  stack object, copied into the model's fixed-capacity member; the traversal iterates the track list, each
+  track's clip vector and each clip's object vector **by reference**), no lock other than the clip's own
+  (once per clip per block), and no unbounded growth: a knot that does not fit is **refused and counted**
+  (`AutomationRamp::refusals()`, reported per parameter as `refused_knots`), so a block whose tempo packs
+  more boundaries than the capacity holds degrades and says so instead of allocating.
+* **Opt-in, per clip, and reversible.** `automation.ramp_set` (`track`, `parameter`, `mode` =
+  `sample` | `block`) sets the clip's own `sample_accurate` flag; `automation.ramp_get` reports the mode and
+  the ramp the **audio thread** built for every automated parameter (knots, frames, whether the value moves
+  inside the block, refusals). The flag is serialized **only when it is on** and `AutomationClip::loadSettings()`
+  **resets it on absence**, so the Clip's live journal checkpoint is a real inverse — including for the FIRST
+  `ramp_set` (A16 row `true_inverse` in `src/core/ControlReversibilityTableAutomationRamp.cpp`). A project
+  that never opts in renders **byte-identically**: `buildAutomationRamps()` returns at its first type test.
+* **The proof.** `SampleAccurateAutomationTest` renders real periods through `Song::processNextBuffer()`
+  (the entry `AudioEngine::renderStageNoteSetup()` calls on the render thread, with the dummy device
+  stopped), measures the per-sample buffer against the clip's own curve at **every frame of every block**,
+  and reports both figures: in `sample` mode the deviation is inside tolerance and the value MOVES inside
+  the block; in `block` mode the same run reports the smear — which is what makes the first claim
+  non-vacuous, so a regression to the block-quantised behaviour fails the suite. The same file measures the
+  ramp builder against the curve for `Discrete` and `Linear` blocks that start inside a tick, and probes the
+  whole ramp path for allocations over 64 blocks (0).
+* **Where sample accuracy cannot hold** (the row's own limitation line, and `docs/KNOWN-LIMITATIONS.md`
+  "Sample-accurate automation"): a parameter whose device reads only the block's single value and never its
+  per-sample buffer gets the block's start value — the ramp is in the model, the device has to ask for it
+  (`AutomatableModel::valueBuffer()` is the door, and the mixer fader, the fx chains and the instrument
+  tracks are the consumers that use it); a clip **in a pattern** has no single block timeline, so
+  `automation.ramp_set` **refuses** it typed; a `CubicHermite` (tangent) clip is interpolated as one
+  straight segment per tick inside the block, so a tangent-edited curve is **approximated** at sample
+  precision (Linear and Discrete are exact); a block that needs more knots than `MaxKnots` holds refuses the
+  surplus and counts it, and the count is readable through `automation.ramp_get`; and a transport jump
+  (loop wrap, seek) that lands inside a block is read with the ramp built for that block's start, so its
+  remaining frames follow the old position's curve - the next block is exact again. The mechanism is
+  approximate for `CubicHermite` and exact for the other two types; the surface reports the progression type
+  beside the mode rather than implying an exactness it does not have.
+* **UI absence — one line: the mode is settable through the socket, not from the interface.**
+  `grep -rniI 'sampleAccurate\|sample_accurate\|ramp_set\|AutomationRamp' src/gui/` returns **0** hits —
+  there is no automation-editor toggle, no clip-context entry and no per-parameter gesture for it; a project
+  file or `automation.ramp_set` are the only two ways to author it.

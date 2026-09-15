@@ -108,6 +108,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerControllerSurfaceCommands(registry);
 	registerAutomationCommands(registry);
 	registerAutomationEditCommands(registry);
+	registerAutomationRampCommands(registry);
 	registerWarpCommands(registry);
 	// The groove pool and quantise surface (docs/GROOVE-POOL.md): no
 	// compile-time switch, because the pool is a plain value on Song and the
