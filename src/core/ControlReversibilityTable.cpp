@@ -484,7 +484,7 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityActionRowTable,
 				reversibilityTrackFolderRowTable, reversibilityVcaRowTable, reversibilityRoutingRowTable,
 				reversibilityVerbRowTable, reversibilityScanAndCrashRowTable, reversibilityMasteringRowTable,
-				reversibilityNoteScaleRowTable, reversibilityMeterRowTable, reversibilityExportPresetRowTable})
+				reversibilityNoteScaleRowTable, reversibilityMeterRowTable, reversibilityExportPresetRowTable, reversibilityRecordingRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

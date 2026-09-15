@@ -156,11 +156,6 @@ const ReversibilityRow kPassiveRows[] = {
 		"not blocked by it",
 		"none needed: the command is a typed refusal, use track panning "
 		"(InstrumentTrack/SampleTrack panningModel) or per-note panning"),
-	R("track.set_arm", RC::NotMutating, false,
-		"declared mutating, but the handler REFUSES every call: arm state "
-		"lives on the prototype MultiTrackRecorder, not on lmms::Track",
-		"no write happens, so no transaction is recorded",
-		"none needed: the command is a typed refusal"),
 	R("automation.mode_set", RC::NotMutating, false,
 		"declared mutating, but the handler REFUSES every call: this build has "
 		"automation modes in the engine but no way to select or persist one "

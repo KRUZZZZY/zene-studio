@@ -30,6 +30,7 @@
 
 #include "AudioEngineWorkerThread.h"
 #include "AudioBusHandle.h"
+#include "AudioInputPath.h"
 #include "Hardware.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -78,6 +79,14 @@ AudioEngine::AudioEngine(bool renderOnly)
 		std::max(ConfigManager::inst()->value("audioengine", "samplerate").toInt(), SUPPORTED_SAMPLERATES.front()))
 	, m_inputBufferRead(0)
 	, m_inputBufferWrite(1)
+	// The recorder's width follows the CONFIGURED input count (feature row 64):
+	// every route can select any of the configured input channels - that is the
+	// arbitrary input count - while the number of ROUTES is its own bound
+	// (MultiTrackRecorder::MaxRoutes), because a route is a file and several
+	// routes may record one channel. Read from the config file here because it
+	// needs no device to be open: the routes exist whether or not an interface
+	// is plugged in.
+	, m_recorder(MultiTrackRecorder::MaxRoutes, AudioInputPath::configuredChannelCount())
 	, m_outputBufferRead(nullptr)
 	, m_outputBufferWrite(nullptr)
 	, m_outputBufferReadIndex(0)
@@ -109,6 +118,13 @@ AudioEngine::AudioEngine(bool renderOnly)
 	// whatever rate the audio device then resamples to. Nothing allocates it
 	// later and nothing replaces it, so arming it can never race a render.
 	m_masterLoudness = std::make_unique<MasterLoudnessTap>(m_baseSampleRate, DEFAULT_CHANNELS);
+	// The N-CHANNEL capture staging stage (0.3.0, feature row 64). Same rule as
+	// the stereo ring above: allocated once, here, and drained once per rendered
+	// period. Its width is the widest block the path will accept, and its
+	// capacity is the same bound the stereo stage uses, so the two input paths
+	// hold the same amount of audio at most.
+	m_wideInputStage = std::make_unique<AudioWideInputStage>(AudioInputPath::MaxChannels,
+		InputStageCapacityFrames);
 
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
@@ -232,6 +248,77 @@ void AudioEngine::drainInputStage() noexcept
 		static_cast<std::size_t>( m_inputBufferSize[ m_inputBufferRead ] ) );
 	m_inputStage->read( m_inputBuffer[ m_inputBufferRead ], frames );
 	m_inputBufferFrames[ m_inputBufferRead ] = static_cast<f_cnt_t>( frames );
+}
+
+
+
+
+void AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
+	const f_cnt_t _frames ) noexcept
+{
+	// The N-CHANNEL sibling of pushInputFrames() (0.3.0, feature row 64). It
+	// runs on the same backend capture thread and keeps the same contract: the
+	// frames go into one fixed-capacity ring that swapBuffers() drains once per
+	// rendered period, so it can neither lock, nor allocate, nor grow, and a
+	// full ring drops the newest frames and counts them.
+	if( m_wideInputStage == nullptr )
+	{
+		return;
+	}
+	m_wideInputStage->push( _interleaved, _channels, _frames );
+}
+
+
+
+
+void AudioEngine::drainWideInputStage() noexcept
+{
+	// Render thread only: it double-buffers, so a drain never writes the period
+	// a consumer is reading, and it is bounded on both sides.
+	if( m_wideInputStage != nullptr )
+	{
+		m_wideInputStage->drain();
+	}
+}
+
+
+
+
+const float* AudioEngine::inputWideBuffer() const noexcept
+{
+	return m_wideInputStage != nullptr ? m_wideInputStage->data() : nullptr;
+}
+
+
+
+
+f_cnt_t AudioEngine::inputWideFrames() const noexcept
+{
+	return m_wideInputStage != nullptr ? m_wideInputStage->frames() : 0;
+}
+
+
+
+
+int AudioEngine::inputWideChannels() const noexcept
+{
+	return m_wideInputStage != nullptr ? m_wideInputStage->channels() : 0;
+}
+
+
+
+
+std::size_t AudioEngine::inputWideFramesStaged() const noexcept
+{
+	return m_wideInputStage != nullptr ? m_wideInputStage->stagedFrames() : 0u;
+}
+
+
+
+
+std::uint64_t AudioEngine::inputWideFramesDropped() const noexcept
+{
+	return m_wideInputStage != nullptr ? m_wideInputStage->droppedFrames() : 0u;
 }
 
 
@@ -394,12 +481,35 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	renderStageEffects();       // STAGE 2: process effects of all instrument- and sampletracks
 	renderStageMix();           // STAGE 3: do master mix in mixer
 
-	// STAGE 4 (prototype, task #556): demux the engine input buffer into the
-	// armed per-track recorders. Realtime-safe by contract: the recorders only
-	// touch pre-allocated SPSC ring buffers here. Under the ALSA backend
-	// inputBufferFrames() is always 0 (no capture path in AudioAlsa);
-	// JACK/SDL backends push input frames via pushInputFrames().
-	m_recorder.processInput(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
+	// STAGE 4 (prototype, task #556; N-channel since 0.3.0): demux the engine
+	// input buffer into the armed per-route recorders. Realtime-safe by
+	// contract: the recorders only touch pre-allocated SPSC ring buffers here.
+	//
+	// WHICH BUFFER. When the backend delivers an N-CHANNEL block (feature row
+	// 64 - AudioAlsa's capture path, or the JACK and SDL backends, each of which
+	// only has the wide path when the configuration asks for more than the
+	// stereo bus), the recorders read that: it is what lets a route select an
+	// input channel above 1. Otherwise the stereo bus is what they read, which
+	// is the shape every route had before the wide path existed. Under a backend
+	// with NO capture path at all the stereo bus is empty
+	// (inputBufferFrames() == 0) and every armed route records nothing, which is
+	// exactly the state docs/RECORDING-REALTIME-FIXES.md describes.
+	if (m_wideInputStage != nullptr && m_wideInputStage->frames() > 0
+		&& m_wideInputStage->channels() > 0)
+	{
+		m_recorder.processInputInterleaved(m_wideInputStage->data(),
+			m_wideInputStage->channels(), m_wideInputStage->frames());
+	}
+	else
+	{
+		m_recorder.processInput(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
+	}
+
+	// STAGE 4b: the retrospective AUDIO window (feature row 16, the audio
+	// counterpart of the MIDI capture in include/RetroMidiCapture.h). It records
+	// the ENGINE'S STEREO INPUT BUS - the same frames STAGE 1's play handles
+	// read - and while it is disarmed this is one relaxed atomic load. Realtime-safe.
+	m_retroCapture.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
 
 	s_renderingThread = false;
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
@@ -419,6 +529,10 @@ void AudioEngine::swapBuffers()
 	// inputBuffer() (STAGE 1) or the recorder demuxes it (STAGE 4) - so the
 	// capture thread never touches m_inputBuffer and needs no lock for it.
 	drainInputStage();
+
+	// And the same for the N-CHANNEL path (0.3.0, feature row 64): one drain
+	// per rendered period, on this thread, beside the stereo one above.
+	drainWideInputStage();
 
 	std::swap(m_outputBufferRead, m_outputBufferWrite);
 	zeroSampleFrames(m_outputBufferWrite.get(), m_framesPerPeriod);

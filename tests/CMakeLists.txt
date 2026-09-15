@@ -166,6 +166,16 @@ set(LMMS_TESTS
 	src/core/ControlModulatorCommandsTest.cpp
 	src/core/ControlNoteExpressionCommandsTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
+	# The recording ENGINE surface (0.3.0, feature rows 14/16/64): the arbitrary
+	# input count proved with real takes (N routes, N channels, each take
+	# sample-exactly its own channel of the interleaved block), the stereo-bus
+	# entry point unchanged, and the retrospective AUDIO window - off by default,
+	# bounded, drop-oldest, non-allocating on the producer path, and a take that
+	# holds exactly the retained frames. No sound card: the device's own answer is
+	# reported by record.input_get_state and asserted over the socket in
+	# ControlRecordInputs below.
+	src/core/RecordingInputPathTest.cpp
+	src/core/RetroAudioCaptureTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
 	src/core/PhaseDSidechainTest.cpp
@@ -1643,6 +1653,24 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-recording-recovery.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlRecordingRecovery PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# record.* recording ENGINE surface (0.3.0, feature rows 64/14/16): the
+	# arbitrary input count proved ACROSS A RESTART through --control-socket - the
+	# real binary writes the new count, the second instance reports it and accepts
+	# a route armed for an input channel the first instance had to refuse - plus
+	# the arm verbs over the multi-track recorder, track.set_arm's real capture
+	# with control.undo taking it back, the retrospective AUDIO window, and the
+	# typed refusals of every one of them. No sound card is needed: what the DEVICE
+	# did is asserted for internal consistency (capture_capable / capture_open /
+	# capture_reason), never for a particular value, because this box's answer is
+	# not a property of the feature.
+	add_test(NAME ControlRecordInputs
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-record-inputs.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRecordInputs PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)

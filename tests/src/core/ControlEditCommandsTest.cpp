@@ -24,8 +24,10 @@
 
 #include <QtTest>
 
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTemporaryDir>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -212,19 +214,61 @@ private slots:
 		QVERIFY(sawNoteRemove);
 	}
 
-	//! track.set_arm is an honest typed refusal: this tree has no arm on a Track.
-	void trackSetArmRefusesTyped()
+	//! track.set_arm is a REAL arm verb now (0.3.0, feature row 14): it starts a
+	//! capture on the record route the track's position maps to, writes the take
+	//! and journals it. This replaces the old "honest typed refusal" assertion
+	//! that used to sit here - the refusal was correct about the tree it
+	//! described and was itself the defect the feature list recorded.
+	void trackSetArmStartsARealCapture()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
 		const ControlResult added = registry->invoke(QStringLiteral("track.add"),
 			QJsonObject{{QStringLiteral("type"), QStringLiteral("instrument")}});
-		QVERIFY(added.ok);
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString track = added.result.value(QStringLiteral("track")).toString();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath(QStringLiteral("unit-take.wav"));
+
 		const ControlResult armed = registry->invoke(QStringLiteral("track.set_arm"),
-			QJsonObject{{QStringLiteral("track"), added.result.value(QStringLiteral("track")).toString()},
+			QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("armed"), true},
+				{QStringLiteral("file"), take}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		QCOMPARE(armed.result.value(QStringLiteral("armed")).toBool(), true);
+		QVERIFY(armed.result.value(QStringLiteral("route")).toInt() >= 0);
+		// The take file and its journal are on disk: arming is a real capture,
+		// not a flag.
+		QVERIFY(QFileInfo::exists(take));
+		QCOMPARE(armed.result.value(QStringLiteral("journal")).toString(),
+			QString(take + QStringLiteral(".rec-journal")));
+		QVERIFY(QFileInfo::exists(armed.result.value(QStringLiteral("journal")).toString()));
+
+		// A second arm of the same route is a typed busy, not a second take.
+		const ControlResult again = registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("armed"), true},
+				{QStringLiteral("file"), dir.filePath(QStringLiteral("second.wav"))}});
+		QVERIFY(!again.ok);
+		QCOMPARE(again.errorKind, ControlErrorKind::Busy);
+
+		// Disarming retires the journal - a clean stop leaves none - and the take
+		// itself stays.
+		const ControlResult disarmed = registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("armed"), false}});
+		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
+		QCOMPARE(disarmed.result.value(QStringLiteral("armed")).toBool(), false);
+		QCOMPARE(disarmed.result.value(QStringLiteral("journal")).toString(), QString());
+		QVERIFY(QFileInfo::exists(take));
+
+		// An unknown track is still a typed not_found.
+		const ControlResult missing = registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), QStringLiteral("trk-99999")},
 				{QStringLiteral("armed"), true}});
-		QVERIFY(!armed.ok);
-		QCOMPARE(armed.errorKind, ControlErrorKind::Refused);
-		QVERIFY(armed.errorMessage.contains(QStringLiteral("MultiTrackRecorder")));
+		QVERIFY(!missing.ok);
+		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
 	}
 	//! track.set_mute is a plain model write; track.set_solo is the product's whole
 	//! solo action, so it unmutes the soloed track (Track::toggleSolo). Asserting

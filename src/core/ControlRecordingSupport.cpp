@@ -31,8 +31,13 @@
 #include <QJsonArray>
 
 #include "ConfigManager.h"
+#include "AudioEngine.h"
+#include "AudioInputPath.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
+#include "MultiTrackRecorder.h"
+#include "TrackRecorder.h"
 
 namespace lmms
 {
@@ -169,6 +174,121 @@ QJsonObject recoveryResultSchema()
 		{QStringLiteral("track"), stringProperty()},
 		{QStringLiteral("start_ticks"), integerProperty()},
 	});
+}
+
+// ---------------------------------------------------------------------------
+// The recording engine surface's shared helpers (see the header).
+// ---------------------------------------------------------------------------
+
+QJsonObject routeJson(const TrackRecorder& route, int index)
+{
+	QJsonObject entry;
+	entry.insert(QStringLiteral("route"), index);
+	entry.insert(QStringLiteral("armed"), route.isArmed());
+	entry.insert(QStringLiteral("input_channel"), route.inputChannel());
+	entry.insert(QStringLiteral("input_channel_capacity"), route.inputChannelCapacity());
+	entry.insert(QStringLiteral("file"), QString::fromStdString(route.filePath()));
+	entry.insert(QStringLiteral("journal"), QString::fromStdString(route.journalPath()));
+	entry.insert(QStringLiteral("frames_pushed"), static_cast<qint64>(route.framesPushed()));
+	entry.insert(QStringLiteral("frames_recorded"), static_cast<qint64>(route.framesRecorded()));
+	entry.insert(QStringLiteral("frames_journalled"), static_cast<qint64>(route.journalledFrames()));
+	entry.insert(QStringLiteral("overflow_frames"), static_cast<qint64>(route.overflowCount()));
+	entry.insert(QStringLiteral("write_errors"), static_cast<qint64>(route.writeErrorCount()));
+	return entry;
+}
+
+QJsonObject recorderJson(const MultiTrackRecorder& recorder)
+{
+	QJsonArray routes;
+	for (int i = 0; i < recorder.trackCount(); ++i)
+	{
+		routes.append(routeJson(recorder.track(i), i));
+	}
+
+	QJsonObject result;
+	result.insert(QStringLiteral("route_count"), recorder.trackCount());
+	result.insert(QStringLiteral("input_channel_capacity"), recorder.inputChannelCapacity());
+	result.insert(QStringLiteral("routes"), routes);
+	result.insert(QStringLiteral("total_overflow_frames"),
+		static_cast<qint64>(recorder.totalOverflowCount()));
+	return result;
+}
+
+QJsonObject inputPathJson()
+{
+	const AudioInputPath::Plan plan = AudioInputPath::configuredPlan();
+	const AudioInputPath::Live live = AudioInputPath::live();
+
+	QJsonObject configured;
+	configured.insert(QStringLiteral("device"), plan.device);
+	configured.insert(QStringLiteral("channels"), plan.channels);
+	configured.insert(QStringLiteral("left"), plan.left);
+	configured.insert(QStringLiteral("right"), plan.right);
+
+	QJsonObject result;
+	result.insert(QStringLiteral("configured"), configured);
+	result.insert(QStringLiteral("capture_capable"), live.captureCapable);
+	result.insert(QStringLiteral("capture_open"), live.open);
+	result.insert(QStringLiteral("capture_device"), live.device);
+	result.insert(QStringLiteral("capture_reason"), live.reason);
+	result.insert(QStringLiteral("capture_channels"), live.channels);
+	result.insert(QStringLiteral("capture_rate"), live.rate);
+	result.insert(QStringLiteral("capture_left"), live.left);
+	result.insert(QStringLiteral("capture_right"), live.right);
+	result.insert(QStringLiteral("capture_format"), live.sampleFormat);
+	result.insert(QStringLiteral("capture_frames"), static_cast<qint64>(live.framesCaptured));
+	result.insert(QStringLiteral("capture_overruns"), static_cast<qint64>(live.overruns));
+	result.insert(QStringLiteral("recordable_channels"), AudioInputPath::recordableChannelCount());
+	result.insert(QStringLiteral("max_channels"), AudioInputPath::MaxChannels);
+	result.insert(QStringLiteral("route_capacity"), AudioInputPath::recordRouteCapacity());
+
+	// The engine's own view: the stereo bus and the wide stage the recorders
+	// read. A null engine reports zeroes rather than pretending.
+	const AudioEngine* engine = Engine::audioEngine();
+	result.insert(QStringLiteral("input_frames_staged"),
+		static_cast<qint64>(engine != nullptr ? engine->inputFramesStaged() : 0u));
+	result.insert(QStringLiteral("input_frames_dropped"),
+		static_cast<qint64>(engine != nullptr ? engine->inputFramesDropped() : 0u));
+	result.insert(QStringLiteral("bus_frames"),
+		static_cast<qint64>(engine != nullptr ? engine->inputBufferFrames() : 0));
+	result.insert(QStringLiteral("wide_frames"),
+		static_cast<qint64>(engine != nullptr ? engine->inputWideFrames() : 0));
+	result.insert(QStringLiteral("wide_channels"),
+		engine != nullptr ? engine->inputWideChannels() : 0);
+	result.insert(QStringLiteral("wide_frames_staged"),
+		static_cast<qint64>(engine != nullptr ? engine->inputWideFramesStaged() : 0u));
+	result.insert(QStringLiteral("wide_frames_dropped"),
+		static_cast<qint64>(engine != nullptr ? engine->inputWideFramesDropped() : 0u));
+	return result;
+}
+
+int engineSampleRate()
+{
+	const AudioEngine* engine = Engine::audioEngine();
+	return engine != nullptr ? static_cast<int>(engine->baseSampleRate()) : 44100;
+}
+
+int routeArg(const QJsonObject& args)
+{
+	return args.contains(QStringLiteral("route")) ? args.value(QStringLiteral("route")).toInt() : -1;
+}
+
+QString takePathArg(const QJsonObject& args, int route, ControlResult* error)
+{
+	const QString file = args.value(QStringLiteral("file")).toString();
+	if (!file.isEmpty())
+	{
+		if (!QFileInfo(file).isAbsolute())
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'file' must be absolute: a relative path names a different file "
+					"in the next process, and the take journal beside it does too"));
+			return QString();
+		}
+		return file;
+	}
+	return QDir(defaultRecoveryDir()).absoluteFilePath(
+		QStringLiteral("zene-take-route%1.wav").arg(route));
 }
 
 } // namespace control

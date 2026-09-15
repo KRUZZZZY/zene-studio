@@ -2142,8 +2142,28 @@ def main():
             {"clip": copy_roll["clip"], "key": 300, "position": 0, "length": 12}), 56, "invalid_args")
         typed_error(client.call(57, "note.velocity_set",
             {"clip": copy_roll["clip"], "note": "note-0", "velocity": 9999}), 57, "invalid_args")
-        # track.set_arm is an honest refusal: no arm flag exists on a Track here.
-        typed_error(client.call(58, "track.set_arm", {"track": track, "armed": True}), 58, "refused")
+        # track.set_arm is a REAL arm verb since 0.3.0 (feature row 14): it starts a
+        # capture on the record route the track's position maps to, writes the take
+        # and journals it (the take journal is what record.recovery_get_state reads).
+        # The old assertion here was that it REFUSED; the refusal was the defect
+        # FEATURE-LIST-0.3.0.md row 14 records, and this is the other side of it.
+        take_dir = tempfile.mkdtemp(prefix="zctl-take-", dir="/tmp")
+        armed = ok_result(client.call(58, "track.set_arm",
+            {"track": track, "armed": True, "file": os.path.join(take_dir, "socket-take.wav")}), 58)
+        if not armed.get("armed") or not armed.get("file", "").endswith("socket-take.wav"):
+            fail("track.set_arm did not start a capture: %r" % armed, process, log_path)
+        if not os.path.exists(armed["file"]):
+            fail("track.set_arm reported %r but no take file exists" % armed["file"], process, log_path)
+        if not armed.get("journal") or not os.path.exists(armed["journal"]):
+            fail("track.set_arm did not journal the take: %r" % armed, process, log_path)
+        # Disarming retires the journal and leaves the take.
+        disarmed = ok_result(client.call(58, "track.set_arm", {"track": track, "armed": False}), 58)
+        if disarmed.get("armed") or disarmed.get("journal"):
+            fail("track.set_arm did not stop the capture cleanly: %r" % disarmed, process, log_path)
+        # A route past the last one the engine prepared is a typed refusal, not a fake
+        # success (the route bound is MultiTrackRecorder::MaxRoutes).
+        typed_error(client.call(58, "track.set_arm",
+            {"track": track, "armed": True, "input_channel": 4095}), 58, "invalid_args")
 
         # --- the transaction split, printed as evidence --------------------
         transactions = ok_result(client.call(59, "control.transactions"), 59).get("transactions", [])

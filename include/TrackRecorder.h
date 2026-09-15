@@ -41,6 +41,7 @@
 
 #include "LmmsTypes.h"
 #include "RecordRingBuffer.h"
+#include "lmms_constants.h"  // DEFAULT_CHANNELS: the engine bus's own width
 
 namespace lmms
 {
@@ -76,13 +77,25 @@ public:
 	TrackRecorder& operator=(const TrackRecorder&) = delete;
 
 	//! Select which interleaved input channel (0-based) this track records.
-	//! Clamped to [0, DEFAULT_CHANNELS). Only meaningful while disarmed.
+	//! Clamped to [0, inputChannelCapacity()). Only meaningful while disarmed.
 	void setInputChannel(int channel) noexcept;
 	int inputChannel() const noexcept;
 
+	//! How many interleaved input channels this route may select from (0.3.0,
+	//! feature row 64 "Arbitrary input count"). With no capture device open the
+	//! engine's bus is two channels wide, so that is the default; an N-channel
+	//! interface raises it. Off the audio thread.
+	void setInputChannelCapacity(int channels) noexcept;
+	int inputChannelCapacity() const noexcept;
+	//! True when \a channel can be selected: the check arm() makes, exposed so
+	//! the control surface can refuse a bad channel with the range in the
+	//! message instead of reporting a bare false.
+	bool inputChannelSelectable(int channel) const noexcept;
+
 	//! Off the audio thread: reset the ring, open \a filePath as a 24-bit WAV
 	//! at \a sampleRate and start the disk-writer thread. Returns false when
-	//! already armed or the file cannot be opened.
+	//! already armed, when \a inputChannel is not selectable, or when the file
+	//! cannot be opened.
 	bool arm(const std::string& filePath, int sampleRate, int inputChannel);
 	//! Off the audio thread: stop the writer, drain the ring and close the
 	//! file. Idempotent.
@@ -94,6 +107,14 @@ public:
 	//! Audio-thread entry point. Demuxes one channel of the interleaved input
 	//! period into the ring buffer. Realtime-safe.
 	void processInput(const SampleFrame* input, f_cnt_t frames) noexcept;
+
+	//! Audio-thread entry point for an ARBITRARY input width (0.3.0, feature
+	//! row 64): \a interleaved holds \a frames frames of \a channels channels
+	//! each, and this route reads channel inputChannel() from it. The
+	//! SampleFrame overload is exactly this call with DEFAULT_CHANNELS.
+	//! Realtime-safe: one ring-buffer store and one relaxed atomic add.
+	void processInputInterleaved(const sample_t* interleaved, int channels,
+		f_cnt_t frames) noexcept;
 
 	//! Frames accepted by the ring buffer (audio thread).
 	std::uint64_t framesPushed() const noexcept { return m_framesPushed.load(std::memory_order_relaxed); }
@@ -136,6 +157,10 @@ private:
 	std::atomic<bool> m_stopRequested{false};
 	std::atomic<bool> m_writerRunning{false};
 	std::atomic<int> m_inputChannel{0};
+	//! How many interleaved input channels a route may select from (0.3.0).
+	//! DEFAULT_CHANNELS is the engine's own bus width and the value a capture
+	//! path that delivers nothing else leaves it at.
+	std::atomic<int> m_inputChannelCapacity{static_cast<int>(DEFAULT_CHANNELS)};
 	std::atomic<std::uint64_t> m_framesPushed{0};
 	std::atomic<std::uint64_t> m_framesRecorded{0};
 	std::atomic<std::uint64_t> m_writeErrors{0};

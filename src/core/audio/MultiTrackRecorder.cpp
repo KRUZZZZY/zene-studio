@@ -1,6 +1,5 @@
 /*
- * MultiTrackRecorder.cpp - owns the hardcoded two-track capture streams of the
- *                          two-track recording prototype
+ * MultiTrackRecorder.cpp - the N-route multi-track capture owner (0.3.0)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -25,23 +24,34 @@
 
 #include "MultiTrackRecorder.h"
 
+#include <algorithm>
+
 #include "SampleFrame.h"
 
 namespace lmms
 {
 
 
-MultiTrackRecorder::MultiTrackRecorder()
+MultiTrackRecorder::MultiTrackRecorder(int routeCapacity, int inputChannelCapacity)
 {
-	// Hardcoded prototype mapping: track 0 <- input channel 0,
-	// track 1 <- input channel 1.
-	for (int i = 0; i < NumTracks; ++i)
+	// Built once, here, off the audio thread: from now on the route list never
+	// changes size, which is what lets processInput() walk it without a lock.
+	const auto routes = std::max(1, routeCapacity);
+	m_tracks.reserve(static_cast<std::size_t>(routes));
+	for (int i = 0; i < routes; ++i)
 	{
-		m_tracks[i].setInputChannel(i);
+		m_tracks.push_back(std::make_unique<TrackRecorder>());
+	}
+	setInputChannelCapacity(inputChannelCapacity);
+
+	// The prototype's default mapping survives: route k starts on channel k
+	// when the selectable range reaches that far, and on the last selectable
+	// channel when it does not (a 2-route recorder over a 1-channel input).
+	for (int i = 0; i < routes; ++i)
+	{
+		m_tracks[static_cast<std::size_t>(i)]->setInputChannel(i);
 	}
 }
-
-
 
 
 MultiTrackRecorder::~MultiTrackRecorder()
@@ -50,41 +60,74 @@ MultiTrackRecorder::~MultiTrackRecorder()
 }
 
 
+int MultiTrackRecorder::inputChannelCapacity() const noexcept
+{
+	if (m_tracks.empty()) { return 1; }
+	return m_tracks.front()->inputChannelCapacity();
+}
 
 
-void MultiTrackRecorder::processInput(const SampleFrame* input, f_cnt_t frames) noexcept
+void MultiTrackRecorder::setInputChannelCapacity(int channels) noexcept
 {
 	for (auto& track : m_tracks)
 	{
-		track.processInput(input, frames);
+		track->setInputChannelCapacity(channels);
 	}
 }
 
 
+void MultiTrackRecorder::processInput(const SampleFrame* input, f_cnt_t frames) noexcept
+{
+	if (input == nullptr)
+	{
+		return;
+	}
+	// The stereo bus is an interleaved buffer of DEFAULT_CHANNELS channels;
+	// SampleFrame's two floats are adjacent, which is the same layout
+	// TrackRecorder::processInput has always relied on.
+	processInputInterleaved(input->data(), static_cast<int>(DEFAULT_CHANNELS), frames);
+}
+
+
+void MultiTrackRecorder::processInputInterleaved(const sample_t* interleaved, int channels,
+	f_cnt_t frames) noexcept
+{
+	if (interleaved == nullptr || channels < 1)
+	{
+		return;
+	}
+	for (auto& track : m_tracks)
+	{
+		track->processInputInterleaved(interleaved, channels, frames);
+	}
+}
 
 
 bool MultiTrackRecorder::armTrack(int index, const std::string& filePath,
 	int sampleRate, int inputChannel)
 {
-	if (index < 0 || index >= NumTracks)
+	if (index < 0 || index >= trackCount())
 	{
 		return false;
 	}
-	return m_tracks[index].arm(filePath, sampleRate, inputChannel);
+	TrackRecorder& target = *m_tracks[static_cast<std::size_t>(index)];
+	if (!target.inputChannelSelectable(inputChannel))
+	{
+		// Refused BEFORE the file is opened: a route that cannot be fed the
+		// channel it was asked for must not leave a take file behind.
+		return false;
+	}
+	return target.arm(filePath, sampleRate, inputChannel);
 }
-
-
 
 
 void MultiTrackRecorder::disarmAll()
 {
 	for (auto& track : m_tracks)
 	{
-		track.disarm();
+		track->disarm();
 	}
 }
-
-
 
 
 std::uint64_t MultiTrackRecorder::totalOverflowCount() const noexcept
@@ -92,7 +135,7 @@ std::uint64_t MultiTrackRecorder::totalOverflowCount() const noexcept
 	std::uint64_t total = 0;
 	for (const auto& track : m_tracks)
 	{
-		total += track.overflowCount();
+		total += track->overflowCount();
 	}
 	return total;
 }

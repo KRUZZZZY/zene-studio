@@ -41,7 +41,9 @@
 #include "AudioEngineProfiler.h"
 #include "MasterLoudnessTap.h"
 #include "PlayHandle.h"
+#include "AudioWideInputStage.h"
 #include "MultiTrackRecorder.h"
+#include "RetroAudioCapture.h"
 #include "SampleFrameRingBuffer.h"
 
 
@@ -297,6 +299,33 @@ public:
 	MultiTrackRecorder& recorder() { return m_recorder; }
 	const MultiTrackRecorder& recorder() const { return m_recorder; }
 
+	// -----------------------------------------------------------------------
+	// The N-CHANNEL capture IN path (0.3.0, feature row 64 "Arbitrary input
+	// count / multiple simultaneous inputs") and the retrospective AUDIO window
+	// that rides on it (feature row 16). Both are fed from the audio thread in
+	// renderNextPeriod(); the staging stage itself is
+	// include/AudioWideInputStage.h. With no capture backend the wide path is
+	// empty (inputWideFrames() == 0) and the stereo path stays the one that is
+	// used, which is the state every consumer was in before this existed.
+	// -----------------------------------------------------------------------
+	//! Capture thread: stage one interleaved N-channel block. Realtime-safe. A
+	//! block wider than AudioInputPath::MaxChannels, or of a different width
+	//! than the one already staged, is refused whole and counted.
+	void pushInputFramesWide(const float* interleaved, int channels, f_cnt_t frames) noexcept;
+	//! Render thread: the N-channel input of the most recently rendered period.
+	const float* inputWideBuffer() const noexcept;
+	f_cnt_t inputWideFrames() const noexcept;
+	int inputWideChannels() const noexcept;
+	//! Frames staged by the capture path and not yet drained by a render.
+	std::size_t inputWideFramesStaged() const noexcept;
+	//! Frames the wide path refused (width mismatch) or dropped (stage full).
+	std::uint64_t inputWideFramesDropped() const noexcept;
+
+	//! Retrospective AUDIO capture (feature row 16): the last N frames of the
+	//! engine's input, kept only while armed. Off by default.
+	RetroAudioCapture& retroCapture() noexcept { return m_retroCapture; }
+	const RetroAudioCapture& retroCapture() const noexcept { return m_retroCapture; }
+
 	/**
 	 * @returns The internal buffer size used by audio plugins and other processing done within the audio engine.
 	 * Its value is @ref DEFAULT_BUFFER_SIZE or @ref framesPerAudioBuffer(), whichever is lower.
@@ -447,8 +476,20 @@ private:
 	std::unique_ptr<SampleFrameRingBuffer> m_inputStage;
 	void drainInputStage() noexcept;
 
-	// prototype: hardcoded two-track capture (task #556)
+	//! The N-CHANNEL capture stage (0.3.0, feature row 64; see
+	//! include/AudioWideInputStage.h). Allocated once in the constructor, off
+	//! every realtime thread, and drained once per rendered period beside
+	//! m_inputStage. May be null only before the constructor has run.
+	std::unique_ptr<AudioWideInputStage> m_wideInputStage;
+	void drainWideInputStage() noexcept;
+
+	//! prototype: N-route capture (task #556; N-wide since 0.3.0)
 	MultiTrackRecorder m_recorder;
+
+	//! Retrospective AUDIO capture (feature row 16). Its ring is allocated in
+	//! this object's constructor - i.e. off the audio thread - and the audio
+	//! thread's cost while it is disarmed is one relaxed atomic load per period.
+	RetroAudioCapture m_retroCapture;
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;

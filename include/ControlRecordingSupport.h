@@ -46,6 +46,10 @@ namespace lmms
 
 struct ControlResult;
 
+class TrackRecorder;
+
+class MultiTrackRecorder;
+
 namespace control
 {
 
@@ -87,6 +91,36 @@ QJsonObject journalArgsSchema(bool requireTake);
 
 //! The result schema of a take read-back.
 QJsonObject recoveryResultSchema();
+
+// ---------------------------------------------------------------------------
+// The recording engine surface's shared helpers (0.3.0, feature rows 14/16/64).
+// They live here for the reason this unit exists at all: the group's two new
+// halves (the input-path verbs and the route verbs) are separate translation
+// units for the file-length ratchet, and both of them report the same facts in
+// the same shape. One definition, so a route's state cannot be reported two ways.
+// ---------------------------------------------------------------------------
+
+//! One record route as every verb of the group reports it.
+QJsonObject routeJson(const TrackRecorder& route, int index);
+
+//! The whole recorder: the route count, the selectable input width, every route.
+QJsonObject recorderJson(const MultiTrackRecorder& recorder);
+
+//! The input path: the configured plan, the published device state and the
+//! engine's two input stages. THE MEASUREMENT "a record route can take more than
+//! zero inputs" is read from this: `bus_frames` and `wide_frames` are 0 forever
+//! under a backend with no capture path.
+QJsonObject inputPathJson();
+
+//! The engine's own sample rate - the rate a take must be written at.
+int engineSampleRate();
+
+//! The `route` argument, already range-checked by the schema; -1 when absent.
+int routeArg(const QJsonObject& args);
+
+//! The take file: the caller's absolute path, or one this instance derives from
+//! the directory its own recovery file lives in.
+QString takePathArg(const QJsonObject& args, int route, ControlResult* error);
 
 } // namespace control
 
