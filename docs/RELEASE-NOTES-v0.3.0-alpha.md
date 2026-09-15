@@ -644,18 +644,28 @@ bound in its own description and contract row instead of pretending to a timeout
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **227 rows**, measured from the table itself:
-**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **231 rows**, measured from the table itself:
+**123 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 83 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**229 rows / 81 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
-four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this merge tip and reports 231 rows over the
+four classes named above (123 + 18 + 7 + 83), and its constant is the telemetry-off/wasm-off base of
+229 / 123 / 18 / 7 / 81.
+**The last four rows are the linked / smart clip group (feature row 6, 2026-09-15):** `clip.link_create`,
+`clip.link_remove` and `clip.link_sync` are `true_inverse` on LIVE `Clip` / `MidiClip` checkpoints - the
+relation is the `link` attribute the clip's own element carries, written only when the clip is a member and
+reset to 0 by `Clip::loadClipEdits` when the attribute is absent, so a checkpoint taken before a *first*
+link restores "unlinked" exactly and one taken before a mirror restores the members' note lists - and
+`clip.link_get_state` is `not_mutating` (it reads the groups, their members and each member's content
+verdict, and writes nothing) - `+3 true_inverse / +1 not_mutating` against the 227 this page carried
+before them. `docs/LINKED-CLIPS.md` §4 is the argument, and the one `control.undo` that takes the whole
+group back is asserted by `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
+The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
