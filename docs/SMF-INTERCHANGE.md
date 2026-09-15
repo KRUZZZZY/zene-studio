@@ -1,10 +1,12 @@
 # Standard MIDI File tempo-map interchange (`interchange.*`)
 
 Feature row 33 of `docs/FEATURE-LIST-0.3.0.md` (section 6, tempo/meter/groove): **tempo-map export /
-SMF cross-DAW interchange**. The engine half is `include/SmfInterchange.h` +
-`src/core/SmfInterchange.cpp`, the surface is `src/core/ControlCommandsInterchange.cpp`, the A16 rows are
+SMF cross-DAW interchange**. The engine half is `include/SmfInterchange.h`, `src/core/SmfInterchange.cpp`
+(the writer) and `src/core/SmfInterchangeReader.cpp` (the reader), the surface is
+`src/core/ControlCommandsInterchange.cpp`, the A16 rows are
 `src/core/ControlReversibilityTableInterchange.cpp`, and the proofs are the ctests `SmfInterchangeTest`
-and `SmfInterchangeRoundTripTest`.
+and `SmfInterchangeRoundTripTest` (`tests/evidence/smf-interchange/transcript.txt` is a runtime run of the
+engine half through a scratch harness, with the file's own bytes).
 
 The feature is one sentence: **another DAW can read this session's tempo and metre steps, at the same
 ticks, from a Standard MIDI File — and this session can read them back.**
