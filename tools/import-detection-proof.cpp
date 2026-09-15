@@ -143,8 +143,10 @@ std::vector<std::uint32_t> candidateMasks()
 int main()
 {
 	std::printf("import-detection-proof: DSP unit %s, %s\n", TempoMethodName, KeyMethodName);
-	std::printf("sample rate %d Hz, tempo band %.0f..%.0f BPM, chroma band %.0f..%.0f Hz\n",
-		kSampleRate, MinDetectionBpm, MaxDetectionBpm, ChromaMinHz, ChromaMaxHz);
+	std::printf("sample rate %d Hz, tempo band %.0f..%.0f BPM, chroma band %.0f..%.0f Hz "
+		"(full weight %.0f..%.0f Hz, ramped edges)\n",
+		kSampleRate, MinDetectionBpm, MaxDetectionBpm, ChromaBandLowHz, ChromaBandHighHz,
+		ChromaBandFullLowHz, ChromaBandFullHighHz);
 
 	// --- tempo, two known answers ------------------------------------------
 	const struct { const char* name; double bpm; } clicks[] = {

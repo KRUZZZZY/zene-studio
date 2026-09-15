@@ -91,7 +91,7 @@ public:
 	//! score's units, not a probability (see ImportDetectionDsp.h).
 	double confidence() const { return m_confidence; }
 	double margin() const { return m_margin; }
-	//! The method that produced it ("chroma-tonic-weighted-set-match"), so a
+	//! The method that produced it ("chroma-tonic-weighted-template-correlation"), so a
 	//! project read years later can say how the key was guessed.
 	const QString& method() const { return m_method; }
 	//! The file the detection read. Absolute when the caller named an absolute

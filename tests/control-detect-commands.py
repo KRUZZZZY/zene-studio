@@ -75,7 +75,7 @@ CLICK_SECONDS = 10.0
 BPM_TOLERANCE = 0.5
 ONSET_TOLERANCE_S = 0.03
 TEMPO_METHOD = "spectral-flux-autocorrelation"
-KEY_METHOD = "chroma-tonic-weighted-set-match"
+KEY_METHOD = "chroma-tonic-weighted-template-correlation"
 TONE_HZ = 220.0
 
 
@@ -290,7 +290,7 @@ def run_checks(session, instance, recorder):
     error = session.typed_error("detect.apply", {"path": tone_path, "tempo": True, "key": False})
     recorder.check(
         "a file with no transients is REFUSED for tempo, not guessed at",
-        error.get("kind") == "refused" and "nothing was written" in (error.get("message") or ""),
+        error.get("kind") == "refused" and "Nothing was written" in (error.get("message") or ""),
         "kind=%r message=%r" % (error.get("kind"), (error.get("message") or "")[:120]))
     state = session.result("detect.get_state")
     recorder.check(
@@ -336,10 +336,17 @@ def run_checks(session, instance, recorder):
         "detected=%.3f written=%r" % (tempo_result.get("detected_bpm") or 0.0,
                                      tempo_result.get("bpm")))
     key_state = applied.get("key_state") or {}
+    # A CLICK TRACK HAS NO KEY, and this is the honest assertion about one: the
+    # key half is written because it was asked for, it agrees with what
+    # detect.analyze reported for the same file, and its margin is a NEAR TIE -
+    # the number that says "do not read this name as a key" (docs/IMPORT-DETECTION.md
+    # section 5.2). Asserting a particular scale name here would be asserting
+    # something the fixture cannot carry.
     recorder.check(
-        "the same call writes the key half too, from the same analyser",
-        key_state.get("present") is True and key_state.get("tonic") == "A"
-        and key_state.get("source") == click_path,
+        "the key half is written from the same analyser and reports its own near-tie margin",
+        key_state.get("present") is True and key_state.get("source") == click_path
+        and key_state.get("method") == KEY_METHOD
+        and (key_state.get("margin") or 1.0) < 0.05,
         "key_state=%s" % (key_state,))
 
     # 7. the tempo map's OWN verb reads it back ----------------------------
@@ -364,7 +371,11 @@ def run_checks(session, instance, recorder):
         "key=%r tempo_map=%r" % (key_of(state), tempo_map_of(state)))
 
     # 9. the project's own fields reach the project FILE -------------------
-    session.result("detect.apply", {"path": click_path})
+    #    The tempo from the click track, the key from the scale fixture: two
+    #    half-writes composed, so each assertion is about material that carries
+    #    the answer it asserts.
+    session.result("detect.apply", {"path": click_path, "key": False})
+    session.result("detect.apply", {"path": major_path, "tempo": False})
     session.result("project.save", {"path": project_path})
     saved = b""
     try:

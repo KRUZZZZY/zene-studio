@@ -644,18 +644,24 @@ bound in its own description and contract row instead of pretending to a timeout
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **227 rows**, measured from the table itself:
-**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **230 rows**, measured from the table itself:
+**121 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 84 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**228 rows / 82 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
-four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this merge tip and reports 230 rows over the
+four classes named above (121 + 18 + 7 + 84), and its constant is the telemetry-off/wasm-off base of
+228 / 121 / 18 / 7 / 82. The three rows import detection added (`030/import-detection`) are `detect.apply` (`true_inverse`
+through a recorded ACTION checkpoint: it writes the tempo map AND the project's own `<detected-key>`
+field, and neither is reachable by a live checkpoint - the tempo map is not a `JournallingObject` and
+is not in the Song's own checkpoint, and the key is a plain value on the Song) and its two
+`not_mutating` inspectors `detect.analyze` and `detect.get_state` - `+1 true_inverse / +2
+not_mutating`, measured green on that lane's own build (`ctest -R ReversibilityContractTest` after
+this page moved with it). The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
@@ -1280,8 +1286,10 @@ accepts — never applied silently").
 - **The method is named, and there is no new dependency.** Tempo: `spectral-flux-autocorrelation` — a
   spectral-flux onset envelope, a local-mean subtraction, an autocorrelation over the declared 40–240 BPM band
   with a log-Gaussian prior centred at 120 BPM and a refinement against the longest in-band harmonic of the
-  winning lag. Key: `chroma-tonic-weighted-set-match` — a 12-bin chroma over 110 Hz–3 kHz scored against the
-  caller's templates by the chroma mass on the tonic plus half the mean mass on the template's other degrees. The
+  winning lag. Key: `chroma-tonic-weighted-template-correlation` — a 12-bin chroma over 80 Hz–4 kHz with ramped band
+  edges (full weight 180 Hz–2.5 kHz), scored against the caller's templates by the Pearson correlation with
+  the template's tonic-weighted degree pattern (tonic 2, other degrees 1) — a template is rewarded for the
+  notes it explains and penalised for the ones it expects and the recording does not have. The
   FFT is a hand-rolled iterative radix-2 transform, which is how `BACKLOG.md` item 10's licence question ("aubio
   is GPL-2.0-or-later, Essentia is AGPL-3.0 — a blocker, and a hand-rolled spectral-flux detector needs no
   dependency at all. **Choose explicitly**") is answered: the feature adds no library, so there is no licence to
@@ -1297,23 +1305,35 @@ accepts — never applied silently").
   `JournallingObject` and is not in the Song's own checkpoint; the key is a plain value on the Song). Both states
   are captured before the first write, so **one `control.undo` takes a whole detection off**, and the record
   carries the key XML whole.
+- **Two measurement-driven corrections are recorded rather than hidden** (`docs/IMPORT-DETECTION.md` §4.1),
+  both found by RUNNING the registered test: a mean-of-degrees score named an A major fixture "Neopolitan"
+  with a 0.003 margin (the template correlation replaced it), and a hard 110 Hz chroma-band edge made a
+  110 Hz sine read as A# = 1.000 > A = 0.712 (the ramped edges replaced it).
+- **A pre-existing defect on the refusal path was found and fixed in the same change:**
+  `SampleDecoder`'s DrumSynth fallback dereferenced a null `AudioEngine` for ANY file libsndfile cannot
+  read in a process with no audio subsystem up (measured: the registered test segfaulted at 0x288 before
+  the one-line guard; declared in `tests/upstream-modifications.txt`).
 - **Proof, all registered:** the QTest `ImportDetectionTest` (registered in `tests/CMakeLists.txt`) writes
   RIFF/WAVE fixtures **byte by byte**, reads them back through the engine's own decoder, and asserts the answers,
   the method names, the vocabulary link and the refusals; the socket transcript `ControlDetectCommands`
   (`tests/control-detect-commands.py`) synthesises the same fixtures with the standard library, drives the real
   binary over `--control-socket`, and checks that `detect.apply` lands the tempo in the **tempo map** (read back
   through `transport.tempo_map_get`, a different verb) and the key in the project's own field, that
-  `project.save` carries both into the file, and that ONE `control.undo` takes both off. Both are registered in
-  the tree; the compile evidence this lane measured is per-translation-unit (see the lane report), because the
-  whole-product build for this line is the integration pass's.
+  `project.save` carries both into the file, and that ONE `control.undo` takes both off. **Both were run on this box, green**,
+  after a whole-product build here (`cmake -DWANT_QT6=ON` — Qt5 is not installed; `make -j2`) — see the lane
+  report for the exact commands, the exit codes and the per-TU compile list.
 - **The arithmetic is ALSO provable without the product:** `tools/import-detection-proof.cpp` compiles the
   Qt-free unit with one `g++` command and runs the same synthesised fixtures. Measured on this box, `EXIT=0`: a
   **128 BPM** click track → **128.131 BPM**; a **90 BPM** click track → **89.878 BPM**; the first transient at
-  **0.499 s** (synthesised at 0.500 s); an **A major** scale over an A bass → tonic **A**, major (score 1.160,
-  margin 0.060); silence, a steady tone and an empty vocabulary all report **nothing**.
+  **0.499 s** (synthesised at 0.500 s); an **A major** scale over an A bass → tonic **A**, scale **Major** — and the registered QTest
+  measures the same fixture at **0.839 correlation, 0.077 margin** against the full ChordTable vocabulary
+  while the driver's two-template vocabulary gives 0.381; a single 110 Hz sine reports tonic A. Silence, a
+  steady tone and an empty vocabulary all report **nothing**.
 - **ACCURACY, honestly — the sentence the release has to carry:** what is measured above is **synthesised input
   with a known answer**, and a click track is the easy case for an onset/autocorrelation estimate. **Real-world
-  detection accuracy is unverified on this box.** No real-music corpus was analysed, the confidence numbers are
+  detection accuracy is unverified on this box** — and the measured behaviour of that limit is visible: a
+  click track (no pitched content) still gets a best-scoring key with a **0.018 margin**, which the
+  registered transcript asserts as a near-tie rather than hiding. No real-music corpus was analysed, the confidence numbers are
   the detector's own scores (periodicity at the chosen lag; a rank margin for the key) and **not probabilities**,
   no accuracy figure for real music is quoted anywhere, the 40–240 BPM band's half/double ambiguity is resolved
   only by a 120 BPM-centred prior (which biases toward the centre by construction), the map holds an integer bpm

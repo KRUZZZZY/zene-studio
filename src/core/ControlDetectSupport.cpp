@@ -66,8 +66,10 @@ QJsonObject detectBoundsJson()
 	bounds.insert(QStringLiteral("max_bpm"), detection::MaxDetectionBpm);
 	bounds.insert(QStringLiteral("default_seconds"), detection::DefaultAnalysisSeconds);
 	bounds.insert(QStringLiteral("max_seconds"), detection::MaxAnalysisSeconds);
-	bounds.insert(QStringLiteral("chroma_min_hz"), detection::ChromaMinHz);
-	bounds.insert(QStringLiteral("chroma_max_hz"), detection::ChromaMaxHz);
+	bounds.insert(QStringLiteral("chroma_band_low_hz"), detection::ChromaBandLowHz);
+	bounds.insert(QStringLiteral("chroma_band_full_low_hz"), detection::ChromaBandFullLowHz);
+	bounds.insert(QStringLiteral("chroma_band_full_high_hz"), detection::ChromaBandFullHighHz);
+	bounds.insert(QStringLiteral("chroma_band_high_hz"), detection::ChromaBandHighHz);
 	bounds.insert(QStringLiteral("max_template_degrees"), detection::MaxTemplateDegrees);
 	bounds.insert(QStringLiteral("tempo_event_tick"), static_cast<qint64>(DetectAppliedEventTick));
 	bounds.insert(QStringLiteral("tempo_rounding"),

@@ -42,9 +42,9 @@ key, max_seconds}`; `detect.get_state {}`. Result schemas are declared in the tw
 
 | proof | registered as | state |
 |---|---|---|
-| `tests/src/core/ImportDetectionTest.cpp` | ctest `ImportDetectionTest` (`tests/CMakeLists.txt`, LMMS_TESTS list) | registered; NOT RUN on this box (it needs the whole product linked — see below) |
-| `tests/control-detect-commands.py` | ctest `ControlDetectCommands` (`tests/CMakeLists.txt`) | registered; NOT RUN on this box (needs the `zene` binary) |
-| `tools/import-detection-proof.cpp` | fork tooling, `tests/tools-sources.txt` | **BUILT AND RUN on this box** — the measured numbers below |
+| `tests/src/core/ImportDetectionTest.cpp` | ctest `ImportDetectionTest` (`tests/CMakeLists.txt`, LMMS_TESTS list) | **RUN GREEN on this box: `Passed`, 7/7 checks** |
+| `tests/control-detect-commands.py` | ctest `ControlDetectCommands` (`tests/CMakeLists.txt`) | **RUN GREEN on this box: `Passed`, 22/22 checks** |
+| `tools/import-detection-proof.cpp` | fork tooling, `tests/tools-sources.txt` | **BUILT AND RUN: EXIT=0, 7/7 checks** |
 
 ### Measured here (synthesised input with a known answer)
 
@@ -78,19 +78,47 @@ core/Song.cpp.o                                        -> all EXIT=0
 One real defect was found this way and fixed: Qt6's `QJsonValue` is ambiguous for `std::int64_t`,
 so `first_onset_frame` needed an explicit `qint64` cast.
 
+## The build and the two registered proofs, verbatim
+
+```
+cmake -B build -DWANT_QT6=ON -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_CARLA=OFF -DWANT_WASM=OFF \
+      -DWANT_SDL=OFF -DWANT_LV2=OFF -DWANT_JACK=OFF -DWANT_PULSEAUDIO=OFF \
+      -DWANT_STEM_SPLIT=OFF -DWANT_ONNX=OFF -DWANT_VST2=OFF -DCMAKE_BUILD_TYPE=Release
+make -j2 ImportDetectionTest        # EXIT=0
+make -j2 zene                       # EXIT=0
+ctest -R ImportDetectionTest   --output-on-failure   # EXIT=0, Passed      (7/7 checks)
+ctest -R ControlDetectCommands --output-on-failure   # EXIT=0, Passed      (22/22 checks)
+```
+
+Measured by the socket transcript (`ControlDetectCommands`, 22/22): `detect.apply` wrote
+**bpm 128 (detected 128.131, `rounded: true`) as ONE event at tick 0 with the map switched on**;
+`transport.tempo_map_get` read it back independently (`tempo_at_position: 128`); `control.undo`
+reported `undone_command: "detect.apply"` and took **both** halves off; `project.save` wrote a file
+whose XML carries `<detected-key tonic="A" … >` and `<tempo-map … bpm="128">`; four typed refusals
+(a missing `path`, a path that is not a file, `max_seconds: 0`, a file with no transients — the last
+with "Nothing was written") each left the project untouched.
+
 ## What is NOT verified on this box (stated, not implied)
 
-* **The two registered proofs have not been RUN.** `ImportDetectionTest` and `ControlDetectCommands`
-  need the product built and linked; the whole-product build was started (`make -j2
-  ImportDetectionTest`, `-DWANT_QT6=ON`) and its outcome is recorded in the lane report — the
-  registered proofs are in the tree but their green/red state on this box is whatever that build
-  produced, and nothing here claims they pass.
 * **Real-world detection accuracy is unverified.** Everything measured is synthesised input with a
   known answer; a click track is the easy case for an onset/autocorrelation estimate. No real-music
   corpus was analysed, the confidence numbers are the detector's own scores (periodicity at the
   chosen lag; a rank margin for the key) and not probabilities, and **no accuracy figure for real
   music is quoted anywhere**. The half/double-time ambiguity inside the 40–240 BPM band is resolved
   only by the declared 120 BPM-centred prior, which biases toward the centre by construction.
+* **Two defects were found by running, and fixed in this lane** — recorded because they are the point of
+  measuring rather than asserting: (1) the key score was a mean of the template's degrees, which named an
+  A major fixture "Neopolitan" with a 0.003 margin; it is now a tonic-weighted template CORRELATION
+  (same fixture: "Major", 0.839, margin 0.077). (2) A hard 110 Hz chroma-band edge made a **110 Hz sine
+  read as A# (1.000) over A (0.712)** — a tuning fork a semitone sharp; the edges are now raised-cosine
+  ramps (80..4000 Hz, full weight 180..2500 Hz) and the same sine reports A = 1.000. (3) A PRE-EXISTING
+  defect on the refusal path: `SampleDecoder`'s DrumSynth fallback dereferenced a null `AudioEngine`, so
+  ANY file libsndfile cannot read SIGSEGVs in a process with no audio subsystem — one guard added, and
+  declared in `tests/upstream-modifications.txt`.
+* **A percussion-only fixture still gets a key**, with a near-tie margin (measured: click track →
+  tonic B, "Enigmatic", correlation 0.646, **margin 0.018**). The registered transcript asserts that
+  margin rather than a scale name, and no margin threshold suppresses the report: none was calibrated
+  on real music, and none could be here.
 * Nothing in the UI was touched: there is no import hook, no suggestion panel and no accept button,
   and the piano roll's own key/scale combo is not moved. `grep -rniI 'detect\.' src/gui/` finds no
   call site of these commands.
@@ -134,6 +162,9 @@ regenerated from a live instance of the merge tip, which this lane did not have.
 
 ## Next action
 
-Re-run `make -j2 ImportDetectionTest` (and the `zene` binary) to completion, then run
+Hand this lane to the integration lane: the build tree is deleted (disk discipline), and the merged tip
+must re-run the two registered proofs itself —
+`cmake -B build -DWANT_QT6=ON … && make -j2 zene ImportDetectionTest` then
 `ctest -R 'ImportDetectionTest|ControlDetectCommands' --output-on-failure` **from `<build>/tests`** —
-the two registered proofs have never been executed by this lane.
+plus `tests/run-all-gates.sh` on the merged tip (expect exit 3, not 1). The whole-tree file-length
+scope stays red until someone reconciles the pre-existing overruns named above.

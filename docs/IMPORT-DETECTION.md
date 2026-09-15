@@ -95,25 +95,46 @@ does not move them** (§8).
 
 ## 4. The method: key
 
-**Named: `chroma-tonic-weighted-set-match`.** Same file:
+**Named: `chroma-tonic-weighted-template-correlation`.** Same file:
 
-1. 8192-frame Hann frames, 4096-frame hop; every bin in **110 Hz – 3 kHz** is mapped to its nearest
-   pitch class with a triangular weight over the half semitone either side, and each frame's chroma
-   is normalised to unit sum before accumulation (so the loudest section of a track does not decide
-   the key on its own).
+1. 8192-frame Hann frames, 4096-frame hop; every bin is mapped to its nearest pitch class with a
+   triangular weight over the half semitone either side, and each frame's chroma is normalised to
+   unit sum before accumulation (so the loudest section of a track does not decide the key on its
+   own). The band is **80 Hz – 4 kHz with RAMPED edges** (full weight 180 Hz – 2.5 kHz): a raised
+   cosine across each edge, not a step.
 2. The final chroma is normalised so its largest bin is 1.
-3. Every **(template, tonic)** pair in the caller's vocabulary is scored by
-   `templateScore()`: **the chroma mass on the tonic plus half the mean chroma mass on the
-   template's other degrees**, with ties broken by the first candidate in the caller's order and then
-   the lowest tonic (so the same input always reports the same key).
+3. Every **(template, tonic)** pair in the caller's vocabulary is scored by `templateScore()`: the
+   **Pearson correlation between the chroma and the template's tonic-weighted degree pattern**
+   (the tonic counts `TonicWeight` = 2, its other degrees 1, everything else 0), so the score is in
+   −1..1 and a template is rewarded for the notes it explains **and penalised for the ones it
+   expects and the recording does not have**. Ties are broken by the first candidate in the caller's
+   order and then the lowest tonic, so the same input always reports the same key; a winner whose
+   correlation is not positive is **not reported at all** (`found: false`).
 4. The tonic is weighted for a reason that is measurable: a template's degree SET cannot tell
    relative keys apart — C major and A aeolian are the same seven pitch classes — so a plain set
    match ties on exactly the question a key estimate exists to answer. The chroma mass on the tonic
-   breaks that tie. The **half** is this project's own choice and is declared here rather than
+   breaks that tie. The weights are this project's own choice and are declared here rather than
    borrowed: **no published key-profile constant (Krumhansl–Kessler or otherwise) is copied into this
    feature**, because a borrowed profile would carry a claim about real music this lane cannot
    measure (§5).
 5. `margin` is `best − runner-up` in the score's own units: a **rank margin**, not a probability.
+
+### 4.1 Two things the measurements changed (kept here, because they are the point)
+
+Both were found by **running** the registered test rather than by reading the code, and both are
+recorded because a reader deserves to know what the numbers were before:
+
+* **A mean of the degrees is the wrong score.** The first version scored
+  `chroma[tonic] + 0.5 × mean(chroma over the template's other degrees)`. The mean is diluted by
+  every degree the recording does not play, so a *smaller* template wins on material it does not
+  describe: the A major fixture came back as **“Neopolitan”, margin 0.003** over the right answer
+  (the wrong name, all but tied). The correlation above replaced it the same day, and the same
+  fixture now reports **Major, score 0.839, margin 0.077** against the whole vocabulary.
+* **A step edge on the chroma band votes for the wrong pitch class.** With a hard 110 Hz floor, a
+  **110 Hz sine produced a chroma of A# = 1.000, A = 0.712, B = 0.325** — the lower half of the
+  note's main lobe was cut off, and the surviving energy was all on the upper side, so a tuning fork
+  read a semitone sharp (the same tone an octave up, where no edge is near it, mapped correctly).
+  The ramped edges above fixed it: the same 110 Hz sine now reports **A = 1.000** with A# = 0.383.
 
 ## 5. Accuracy: what is MEASURED here, and what is NOT
 
@@ -134,14 +155,51 @@ g++ -std=c++20 -O2 -Wall -Wextra -Iinclude tools/import-detection-proof.cpp \
 |---|---|---|
 | click track at **128 BPM**, first click at 0.500 s | **128.131 BPM**, 21 transients, first transient **0.499 s** | ±0.5 BPM, ±30 ms |
 | click track at **90 BPM**, first click at 0.500 s | **89.878 BPM**, 15 transients, first transient **0.499 s** | ±0.5 BPM, ±30 ms |
-| A major scale (A B C# D E F# G# A) over an A bass, rooted at 220 Hz | tonic **A** (pitch class 9), template **major**, score **1.160**, margin **0.060** | tonic + template exact |
+| A major scale (A B C# D E F# G# A) over an A bass, rooted at 220 Hz | tonic **A** (pitch class 9), template **major**, score **0.839**, margin **0.381** against the driver's two-template vocabulary / **0.077** against the full ChordTable vocabulary (the registered test) | tonic + template exact |
+| a single 110 Hz sine (a tuning fork) | tonic **A** at pitch class 9, score 0.561 — and **not** the A# the pre-fix band edge voted for | tonic exact |
 | silence | tempo **not found** | must refuse |
 | steady 440 Hz tone, no transients | tempo **not found** (0 transients) | must refuse |
 | an empty vocabulary | key **not found** | must refuse |
 
 The confidence values that ride with those numbers are the detector's own scores (0.667 and 0.565 for
-the two click tracks); they are reported because they are what the algorithm has, not because they
-were calibrated against anything.
+the two click tracks; 0.839 for the key fixture's correlation); they are reported because they are
+what the algorithm has, not because they were calibrated against anything.
+**Nothing above was tuned on real music** — the constants that changed (§4.1) changed because a
+synthesised fixture with a KNOWN answer disagreed with them, which is the only tuning signal this box
+has.
+
+### 5.1b What the two REGISTERED proofs measured, running for real
+
+The whole product was built on this box (`cmake -DWANT_QT6=ON …`, `make -j2 ImportDetectionTest
+zene` → both EXIT=0) and both registered proofs were then run **from `<build>/tests`**:
+
+```
+ctest -R ImportDetectionTest   --output-on-failure   -> Passed   (7/7 checks)
+ctest -R ControlDetectCommands --output-on-failure   -> Passed   (22/22 checks)
+```
+
+The QTest reported, through the engine's own decoder: **128.131 BPM** and **89.878 BPM** for the two
+click tracks (tolerance 0.5), the first transient at **0.499 s**, and the A major fixture as **tonic A,
+scale Major, correlation 0.839, margin 0.077** against the whole ChordTable vocabulary. The socket
+transcript reported, over the real binary: `detect.apply` writing **bpm 128 (from a detected 128.131,
+rounded true) as ONE event at tick 0 with the map switched on**, `transport.tempo_map_get` reading that
+event back independently (`tempo_at_position` 128), `control.undo` reporting
+`undone_command: "detect.apply"` and taking **both** halves off, `project.save` writing a file whose
+XML carries `<detected-key tonic="A" … method="…template-correlation">` and `<tempo-map … bpm="128">`,
+and four typed refusals (a missing `path`, a path that is not a file, `max_seconds: 0`, and a file with
+no transients) each leaving the project untouched.
+
+### 5.1c The honest side of the same run: a click track gets a NEAR-TIE key
+
+The transcript's click-track fixture has no pitched content, and the estimator still reports a
+best-scoring key for it — **tonic B, scale "Enigmatic", correlation 0.646, margin 0.018** — because
+"which of these templates fits this chroma best" always has an answer. That is the feature's real
+behaviour, and the number that matters is the **margin**: 0.018 is a near-tie and says "do not read
+this name as a key". The registered transcript asserts exactly that property (a margin below 0.05 for
+the percussion-only fixture) rather than a scale name the fixture cannot carry. **No margin threshold
+is applied to suppress the report**, because no real-music corpus was measured to calibrate one: the
+suggestion is reported with the evidence against it, and `detect.apply` writes it only when a caller
+asks for that half by name.
 
 ### 5.2 What is NOT measured — stated plainly
 
@@ -162,6 +220,10 @@ measured, and no accuracy figure for real music is quoted anywhere in this relea
 * anything about tuning, microtonality or material outside 12-tone equal temperament (the chroma is
   built on 12 equal-tempered pitch classes by definition).
 
+* how a **real** track's key would be reported: the only key fixtures measured are a synthesised scale
+  over its own tonic and a single sine, and the near-tie behaviour in §5.1c shows the estimator will
+  name something for material that has no key at all. The `margin` is the only warning it offers, and
+  that margin is an uncalibrated rank difference;
 The same sentence is on the wire: `detect.get_state` returns it as `method.accuracy_note`, so an
 agent reading the surface cannot mistake a suggestion for a measurement, and every `detect.analyze`
 reply carries the same two method names beside the numbers.
@@ -232,7 +294,7 @@ ctest -R ImportDetectionTest --output-on-failure        # from <build>/tests
 ctest -R ControlDetectCommands --output-on-failure      # from <build>/tests
 ```
 
-`ImportDetectionTest` writes its fixtures byte by byte (its own RIFF/WAVE writer — not libsndfile,
+**Both registered proofs were RUN on this box** (§5.1b); `ImportDetectionTest` writes its fixtures byte by byte (its own RIFF/WAVE writer — not libsndfile,
 so the decoder is not validated by its own library) and reads them back through the engine's own
 `SampleDecoder`, which is also the path an import takes. `ControlDetectCommands` synthesises the same
 fixtures with the Python standard library's `wave` module, drives the **real binary** over

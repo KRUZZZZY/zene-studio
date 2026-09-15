@@ -120,6 +120,24 @@ std::vector<float> hannWindow(int size)
 	return window;
 }
 
+//! The band's weight at \a hz: 0 outside, 1 inside the full band, a
+//! raised-cosine ramp across each edge (see ChromaBandLowHz in the header for
+//! why a step edge is wrong).
+double chromaBandWeight(double hz)
+{
+	auto ramp = [](double value) { return 0.5 * (1.0 - std::cos(std::numbers::pi * value)); };
+	if (hz <= ChromaBandLowHz || hz >= ChromaBandHighHz) { return 0.0; }
+	if (hz < ChromaBandFullLowHz)
+	{
+		return ramp((hz - ChromaBandLowHz) / (ChromaBandFullLowHz - ChromaBandLowHz));
+	}
+	if (hz > ChromaBandFullHighHz)
+	{
+		return ramp((ChromaBandHighHz - hz) / (ChromaBandHighHz - ChromaBandFullHighHz));
+	}
+	return 1.0;
+}
+
 //! How many frames of \a frameSize with \a hop fit into \a frames samples.
 std::size_t frameCountFor(std::size_t frames, int frameSize, int hop)
 {
@@ -256,20 +274,64 @@ int maskDegreeCount(std::uint32_t mask)
 	return count;
 }
 
+/*! The score of one candidate: the PEARSON CORRELATION between the chroma vector
+ *  and the template's tonic-weighted degree pattern.
+ *
+ *  WHY THE TONIC IS WEIGHTED. The template's degree SET alone cannot tell
+ *  relative keys apart - C major and A aeolian are the same seven pitch classes
+ *  - so a plain set match ties on exactly the question a key estimate exists to
+ *  answer. The chroma mass on the tonic breaks that tie, and it is the same
+ *  signal the ear uses: music in C major sits on C.
+ *
+ *  WHY A CORRELATION AND NOT A MEAN OF THE DEGREES. The first version of this
+ *  scored `chroma[tonic] + 0.5 * mean(chroma over the other degrees)`, and the
+ *  registered test measured what that does: the mean is diluted by every degree
+ *  the recording does not play, so a SMALLER template wins on a fixture it does
+ *  not describe - an A major scale over an A bass was reported as "Neopolitan"
+ *  with a 0.003 margin over the right answer. A correlation over all twelve
+ *  pitch classes is scale-free with respect to the degree count: a template is
+ *  rewarded for the notes it explains AND penalised for the ones it expects and
+ *  the recording does not have, which is the whole question.
+ *
+ *  The weights (tonic 2, other degrees 1, everything else 0) are this project's
+ *  own and DECLARED rather than borrowed: no published key-profile constant
+ *  (Krumhansl-Kessler or otherwise) is copied into this file, because a borrowed
+ *  profile would carry a claim about real music this lane cannot measure. See
+ *  docs/IMPORT-DETECTION.md section 4. */
 double templateScore(const std::array<double, 12>& chroma, std::uint32_t mask, int tonic)
 {
-	const int degrees = maskDegreeCount(mask);
-	if (degrees == 0) { return 0.0; }
-	double tonicMass = chroma[static_cast<std::size_t>(((tonic % 12) + 12) % 12)];
-	double others = 0.0;
-	int otherCount = 0;
+	if (maskDegreeCount(mask) == 0) { return 0.0; }
+	std::array<double, 12> weights{};
 	for (int degree = 0; degree < 12; ++degree)
 	{
-		if ((mask & (1u << degree)) == 0u || degree == 0) { continue; }
-		others += chroma[static_cast<std::size_t>(((tonic + degree) % 12 + 12) % 12)];
-		++otherCount;
+		if ((mask & (1u << degree)) == 0u) { continue; }
+		weights[static_cast<std::size_t>(((tonic + degree) % 12 + 12) % 12)] =
+			degree == 0 ? TonicWeight : 1.0;
 	}
-	return tonicMass + 0.5 * (otherCount > 0 ? others / otherCount : 0.0);
+
+	double meanChroma = 0.0;
+	double meanWeight = 0.0;
+	for (std::size_t pc = 0; pc < 12; ++pc)
+	{
+		meanChroma += chroma[pc];
+		meanWeight += weights[pc];
+	}
+	meanChroma /= 12.0;
+	meanWeight /= 12.0;
+
+	double covariance = 0.0;
+	double chromaVariance = 0.0;
+	double weightVariance = 0.0;
+	for (std::size_t pc = 0; pc < 12; ++pc)
+	{
+		const double chromaDeviation = chroma[pc] - meanChroma;
+		const double weightDeviation = weights[pc] - meanWeight;
+		covariance += chromaDeviation * weightDeviation;
+		chromaVariance += chromaDeviation * chromaDeviation;
+		weightVariance += weightDeviation * weightDeviation;
+	}
+	if (chromaVariance <= 0.0 || weightVariance <= 0.0) { return 0.0; }
+	return covariance / std::sqrt(chromaVariance * weightVariance);
 }
 
 TempoEstimate estimateTempo(const float* mono, std::size_t frames, int sampleRate, double maxSeconds)
@@ -408,12 +470,13 @@ KeyEstimate estimateKey(const float* mono, std::size_t frames, int sampleRate,
 		for (std::size_t k = 1; k < magnitudes.size(); ++k)
 		{
 			const double frequency = static_cast<double>(k) * sampleRate / ChromaFrameSize;
-			if (frequency < ChromaMinHz || frequency > ChromaMaxHz) { continue; }
+			const double band = chromaBandWeight(frequency);
+			if (band <= 0.0) { continue; }
 			const double midi = 69.0 + 12.0 * std::log2(frequency / 440.0);
 			const double nearest = std::round(midi);
 			// A triangular weight over the half semitone either side: a bin
 			// between two notes contributes to both rather than to the nearer one.
-			const double weight = std::max(0.0, 1.0 - 2.0 * std::abs(midi - nearest));
+			const double weight = band * std::max(0.0, 1.0 - 2.0 * std::abs(midi - nearest));
 			if (weight <= 0.0) { continue; }
 			const int pitchClass = ((static_cast<int>(nearest) % 12) + 12) % 12;
 			frameChroma[static_cast<std::size_t>(pitchClass)] += magnitudes[k] * weight;
@@ -456,7 +519,11 @@ KeyEstimate estimateKey(const float* mono, std::size_t frames, int sampleRate,
 		}
 	}
 
-	if (bestIndex < 0) { return estimate; }
+	// A key is reported only when the winning template correlates POSITIVELY with
+	// the chroma. This is a FLOOR, not a calibrated threshold: it says "the
+	// recording looks more like this scale than like no scale", and it is stated
+	// rather than tuned because no real-music corpus was measured to tune it on.
+	if (bestIndex < 0 || bestScore <= 0.0) { return estimate; }
 	estimate.found = true;
 	estimate.candidateIndex = bestIndex;
 	estimate.tonicPitchClass = bestTonic;

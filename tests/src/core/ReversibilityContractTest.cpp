@@ -60,9 +60,9 @@ namespace
  * on/off x sandbox on/off), and a full set per configuration is how one of them
  * gets left stale.
  *
- * The release notes quote the RELEASE configuration's figures - 227 rows /
- * 120 / 18 / 7 / 82 with the telemetry client compiled in and no wasmtime,
- * 225 / 120 / 18 / 7 / 80 with the client out - which these reduce to. The six
+ * The release notes quote the RELEASE configuration's figures - 230 rows /
+ * 121 / 18 / 7 / 84 with the telemetry client compiled in and no wasmtime,
+ * 228 / 121 / 18 / 7 / 82 with the client out - which these reduce to. The six
  * `wasm.*` rows (item #614: three snapshot, three not_mutating) are present
  * exactly when the wasmtime C API is: without it WANT_WASM degrades to OFF, the
  * group's sources are not compiled, ControlRegistry.cpp's #ifdef removes its
@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{225, 120, 18, 7, 80};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{228, 121, 18, 7, 82};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

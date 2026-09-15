@@ -213,6 +213,9 @@ private slots:
 			QVERIFY2(std::abs(analysis.tempo.bpm - pair.first) <= kBpmTolerance,
 				qPrintable(QStringLiteral("a click track at %1 BPM was measured at %2 BPM")
 					.arg(pair.first).arg(analysis.tempo.bpm, 0, 'f', 3)));
+			qInfo("%s click track measured %.3f BPM (confidence %.3f, %d transients)",
+				qPrintable(QString::number(pair.first)), analysis.tempo.bpm,
+				analysis.tempo.confidence, analysis.tempo.onsets);
 			QCOMPARE(analysis.tempoMethod, QString::fromLatin1(detection::TempoMethodName));
 			QVERIFY2(analysis.tempo.confidence > 0.2,
 				"the reported correlation is below the floor the estimate promises");
@@ -239,6 +242,9 @@ private slots:
 		QVERIFY2(analysis.ok, qPrintable(analysis.error));
 		QVERIFY2(analysis.key.found, "no key was found in a scale fixture");
 		QCOMPARE(analysis.key.tonicPitchClass, kExpectedTonic);
+		qInfo("A major fixture measured tonic %s, scale %s (score %.3f, margin %.3f)",
+			qPrintable(analysis.tonicName), qPrintable(analysis.scaleName),
+			analysis.key.score, analysis.key.margin);
 		QCOMPARE(analysis.tonicName, QStringLiteral("A"));
 		QVERIFY(analysis.scaleKnown);
 		QVERIFY2(scaleNameIsKnown(analysis.scaleName),
@@ -271,6 +277,7 @@ private slots:
 
 		const ImportDetectionResult missing = analyseAudioFile(m_missing);
 		QVERIFY2(!missing.ok, "a path that does not exist was reported as analysed");
+		qInfo("a path that does not exist is refused: %s", qPrintable(missing.error));
 		QVERIFY2(!missing.error.isEmpty(), "the refusal carries no message");
 
 		const ImportDetectionResult unnamed = analyseAudioFile(QString());

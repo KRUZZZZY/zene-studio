@@ -99,8 +99,17 @@ auto decodeSampleDS(const QString& audioFile) -> std::optional<SampleDecoder::Re
 	// Populated by DrumSynth::GetDSFileSamples
 	int_sample_t* dataPtr = nullptr;
 
+	// A DS file is SYNTHESISED, and it is synthesised at the audio engine's own
+	// rate, so with no engine there is nothing to synthesise at: refuse rather
+	// than dereference a null engine. This is reachable in a process that never
+	// brought the audio subsystem up (a headless test, a tool) for ANY file the
+	// decoders before this one cannot read, and it was a SIGSEGV until the import
+	// detector's refusal path found it (ImportDetectionTest, 2026-09-15).
+	AudioEngine* engine = Engine::audioEngine();
+	if (engine == nullptr) { return std::nullopt; }
+
 	auto ds = DrumSynth{};
-	const auto engineRate = Engine::audioEngine()->outputSampleRate();
+	const auto engineRate = engine->outputSampleRate();
 	const auto frames = ds.GetDSFileSamples(audioFile, dataPtr, DEFAULT_CHANNELS, engineRate);
 	const auto data = std::unique_ptr<int_sample_t[]>{dataPtr}; // NOLINT, we have to use a C-style array here
 

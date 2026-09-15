@@ -73,10 +73,28 @@ constexpr int TempoHopSize = 512;
  *  below ChromaMinHz is EXCLUDED rather than guessed at). */
 constexpr int ChromaFrameSize = 8192;
 constexpr int ChromaHopSize = 4096;
-//! The band a chroma bin is filled from. Below it a semitone is narrower than a
-//! bin; above it the harmonic series of everything has already piled up.
-constexpr double ChromaMinHz = 110.0;
-constexpr double ChromaMaxHz = 3000.0;
+/*! The band a chroma bin is filled from, with RAMPED edges: nothing below
+ *  ChromaBandLowHz, weight 1 between ChromaBandFullLowHz and
+ *  ChromaBandFullHighHz, nothing above ChromaBandHighHz, and a raised-cosine
+ *  ramp across each edge.
+ *
+ *  WHY THE EDGES ARE RAMPS AND NOT STEPS. A step edge at the bottom of the band
+ *  truncates the LOWER half of the main lobe of any note sitting on it, and the
+ *  energy that survives is then all on the upper side - so the note is
+ *  attributed to the pitch class ABOVE it. Measured, before this was changed: a
+ *  110 Hz sine with a hard 110 Hz edge produced a chroma of A# = 1.000 > A =
+ *  0.712 with B = 0.325 trailing behind, i.e. a tuning fork read as a key a
+ *  semitone sharp; the same tone one octave up (where no edge is near it) mapped
+ *  correctly. A ramp spread over an octave attenuates both sides of the lobe
+ *  together, so the edge cannot vote.
+ *
+ *  Below ChromaBandLowHz a semitone is narrower than a bin of the 8192-point
+ *  transform, so nothing there is resolvable; above ChromaBandHighHz the
+ *  harmonic series of everything has piled up. */
+constexpr double ChromaBandLowHz = 80.0;
+constexpr double ChromaBandFullLowHz = 180.0;
+constexpr double ChromaBandFullHighHz = 2500.0;
+constexpr double ChromaBandHighHz = 4000.0;
 
 /*! The band the tempo estimate may land in. 40..240 BPM is the range this
  *  project DECLARES: outside it a "tempo" is either a subdivision or a
@@ -98,6 +116,13 @@ constexpr double DefaultAnalysisSeconds = 60.0;
  *  than hidden: the filter is what keeps a noisy recording from "detecting"
  *  Chromatic. */
 constexpr int MaxTemplateDegrees = 9;
+
+/*! How much more the TONIC of a candidate template counts than its other
+ *  degrees in templateScore(). DECLARED: the weighting is this project's own (no
+ *  published key profile is copied in), and it is what breaks the relative-key
+ *  tie a plain set match cannot - C major and A aeolian are the same seven pitch
+ *  classes, and only the chroma mass on the tonic tells them apart. */
+constexpr double TonicWeight = 2.0;
 
 //! One tempo estimate.
 struct TempoEstimate
@@ -145,7 +170,7 @@ struct KeyEstimate
 //! The name of the tempo method, as the control surface reports it.
 constexpr const char* TempoMethodName = "spectral-flux-autocorrelation";
 //! The name of the key method, as the control surface reports it.
-constexpr const char* KeyMethodName = "chroma-tonic-weighted-set-match";
+constexpr const char* KeyMethodName = "chroma-tonic-weighted-template-correlation";
 
 //! "C", "C#", "D", ... for 0..11; "" outside that range.
 const char* pitchClassName(int pitchClass);
@@ -153,8 +178,11 @@ const char* pitchClassName(int pitchClass);
 //! How many bits of \a mask are set (the template's degree count).
 int maskDegreeCount(std::uint32_t mask);
 
-/*! The score of one candidate: the chroma mass sitting on the TONIC of the
- *  template plus half the mean chroma mass sitting on its other degrees.
+/*! The score of one candidate: the Pearson correlation between the chroma vector
+ *  and the template's tonic-weighted degree pattern (TonicWeight for the tonic,
+ *  1 for its other degrees, 0 elsewhere). So the score is in -1..1: a template
+ *  is rewarded for the notes it explains and penalised for the ones it expects
+ *  and the recording does not have.
  *
  *  WHY THE TONIC IS WEIGHTED. The template's degree SET alone cannot tell
  *  relative keys apart - C major and A aeolian are the same seven pitch classes
@@ -162,7 +190,13 @@ int maskDegreeCount(std::uint32_t mask);
  *  answer. The chroma mass on the tonic breaks that tie, and it is the same
  *  signal the ear uses: music in C major sits on C.
  *
- *  The half-weight is this project's own, DECLARED rather than borrowed: no
+ *  WHY A CORRELATION RATHER THAN A MEAN OF THE DEGREES: a mean over the
+ *  template's degrees is diluted by every degree the recording does not play, so
+ *  a SMALLER template wins on material it does not describe - measured: an A
+ *  major scale came back as "Neopolitan" with a 0.003 margin before this was
+ *  changed, which is what the registered test is for.
+ *
+ *  The weights are this project's own, DECLARED rather than borrowed: no
  *  published key-profile constant (Krumhansl-Kessler or otherwise) is copied
  *  into this file, because a borrowed profile would carry a claim about real
  *  music this lane cannot measure. See docs/IMPORT-DETECTION.md section 4. */

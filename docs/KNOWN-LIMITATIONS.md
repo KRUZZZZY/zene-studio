@@ -890,7 +890,7 @@ mastering mode, no candidate list panel and no A/B player.
 with the map switched on, the key into the project's `<detected-key>` element under a name the pre-existing
 ChordTable scale vocabulary already answers to. **Its accuracy is measured only on synthesised input with a known
 answer** (a click track at 128 BPM and one at 90 BPM — 128.131 and 89.878 BPM measured; an A major scale over an
-A bass — tonic A, major, score 1.160, margin 0.060): **real-world detection accuracy is unverified on this box**,
+A bass — tonic A, scale Major, correlation 0.839, margin 0.077): **real-world detection accuracy is unverified on this box**,
 no real-music corpus was analysed, and the confidence numbers the commands return are the detector's own scores
 (the envelope's periodicity at the chosen lag; a rank margin for the key) — **not probabilities, and no accuracy
 figure for real music is quoted anywhere in this release.** The bounds, stated because each one is a way the
