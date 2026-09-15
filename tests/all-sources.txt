@@ -523,6 +523,8 @@ plugins/ClapEffect/ClapEffectControls.cpp
 plugins/ClapEffect/ClapEffectControls.h
 plugins/ClapEffect/ClapHost.cpp
 plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapLoader.cpp
+plugins/ClapEffect/ClapLoader.h
 plugins/ClapEffect/ClapParamDescriptor.h
 plugins/ClapEffect/ClapParameter.cpp
 plugins/ClapEffect/ClapParameter.h
@@ -1451,6 +1453,7 @@ src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 src/wasm/WasmWorkerPool.cpp
 src/wasm/WasmWorkerPool.h
+tests/data/clap-test-plugin/clap-test-broken.c
 tests/data/clap-test-plugin/clap-test-gain.c
 tests/data/gigproof/make_gig.cpp
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
@@ -1604,6 +1607,7 @@ tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
+tests/src/plugins/ClapLoaderErrorTest.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/PluginPortsHarness.h
