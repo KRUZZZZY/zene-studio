@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""The golden-audio RECORD: the measured floor, the golden fingerprint, the provenance.
+
+tests/evidence-gate.sh refuses committed renders (a WAV beside a test is a run's output,
+and the durable value of a render is its measurement, not its megabytes - the same owner
+decision that produced tests/evidence-manifest.tsv).  So the golden reference this
+programme ships is this file: one row per (fixture, render path) carrying
+
+  * the SAME-BUILD run-to-run floor, measured by rendering the fixture N times in one build
+    and comparing EVERY pair - max |delta| in LSB and dBFS, the differing frames, the worst
+    level and envelope deltas, and whether any pair was byte-identical;
+  * the golden render's own fingerprint - the per-window RMS and peak envelopes and the
+    whole-file numbers - which is what a later build is compared against;
+  * the identity of the build it was measured on (the binary's sha256) and when.
+
+A row's floor IS its tolerance source: `record_tolerance` rebuilds the tolerance dict from
+the row's own numbers, so a verify run cannot accidentally use a tolerance that belongs to
+another fixture or another build.
+
+CLI (so every number here can be re-derived by hand):
+
+    python3 tests/golden_audio_record.py compare a.wav b.wav [c.wav ...]
+    python3 tests/golden_audio_record.py floor a.wav b.wav c.wav      # the run-to-run floor
+    python3 tests/golden_audio_record.py fingerprint x.wav
+    python3 tests/golden_audio_record.py record                       # what is committed
+"""
+
+import argparse
+import json
+import os
+import sys
+
+import golden_audio_lib as G
+
+RECORD_COLUMNS = (
+    "fixture", "path", "command", "runs", "frames", "samplerate", "channels", "bits",
+    "floor_max_lsb", "floor_max_dbfs", "floor_differing_frames", "floor_level_db",
+    "floor_env_db", "floor_identical_bytes", "rms_dbfs", "peak_dbfs", "window_frames",
+    "env_dbfs", "peak_env", "binary_sha256", "measured_utc",
+)
+
+RECORD_FILE = "golden-audio-record.tsv"
+
+
+def default_record_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), RECORD_FILE)
+
+
+def read_record(path=None):
+    """({ (fixture, path): row }, [comment lines]) from the committed record."""
+    path = path or default_record_path()
+    rows, comments = {}, []
+    if not os.path.exists(path):
+        return rows, comments
+    with open(path) as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            if line.startswith("#"):
+                comments.append(line)
+                continue
+            fields = line.split("\t")
+            if fields[0] == RECORD_COLUMNS[0]:
+                continue                       # the column header
+            if len(fields) != len(RECORD_COLUMNS):
+                raise G.WavError("%s: %d fields, expected %d: %r"
+                                 % (path, len(fields), len(RECORD_COLUMNS), line[:120]))
+            row = dict(zip(RECORD_COLUMNS, fields))
+            rows[(row["fixture"], row["path"])] = row
+    return rows, comments
+
+
+def row_from(fixture, path, command, floor, print_, measured_utc):
+    """One record row: the measured floor, the golden fingerprint, the build identity."""
+    return {
+        "fixture": fixture,
+        "path": path,
+        "command": command,
+        "runs": str(floor["runs"]),
+        "frames": str(print_["frames"]),
+        "samplerate": str(print_["samplerate"]),
+        "channels": str(print_["channels"]),
+        "bits": str(print_["bits"]),
+        "floor_max_lsb": "%.6f" % floor["max_delta_lsb"],
+        "floor_max_dbfs": "%.4f" % floor["max_delta_dbfs"],
+        "floor_differing_frames": str(floor["differing_frames"]),
+        "floor_level_db": "%.6f" % (floor["level_delta_db"] or 0.0),
+        "floor_env_db": "%.6f" % floor["envelope"]["max_delta_db"],
+        "floor_identical_bytes": "yes" if floor["identical_bytes"] else "no",
+        "rms_dbfs": "%.4f" % print_["rms_dbfs"],
+        "peak_dbfs": "%.4f" % print_["peak_dbfs"],
+        "window_frames": str(print_["window_frames"]),
+        "env_dbfs": ",".join("%.4f" % v for v in print_["env_dbfs"]),
+        "peak_env": ",".join("%.6f" % v for v in print_["peak_env"]),
+        "binary_sha256": print_.get("binary_sha256", ""),
+        "measured_utc": measured_utc,
+    }
+
+
+def write_record(rows, provenance, path=None):
+    """Write the record.  Sorted by (fixture, path) so a re-measure diffs as a diff."""
+    path = path or default_record_path()
+    with open(path, "w") as handle:
+        for line in provenance:
+            handle.write("# %s\n" % line)
+        handle.write("\t".join(RECORD_COLUMNS) + "\n")
+        for row in sorted(rows, key=lambda r: (r["fixture"], r["path"])):
+            handle.write("\t".join(row[column] for column in RECORD_COLUMNS) + "\n")
+    return path
+
+
+def record_tolerance(row):
+    """The tolerance a record row declares, as the same dict `G.tolerance()` builds."""
+    return G.tolerance({
+        "max_delta_lsb": float(row["floor_max_lsb"]),
+        "level_delta_db": float(row["floor_level_db"]),
+        "envelope": {"max_delta_db": float(row["floor_env_db"])},
+    })
+
+
+def compare_fingerprints(print_, row):
+    """The golden term: an envelope comparison of one render against a record row.
+
+    Terms: the per-window RMS envelope (the level answer at a fixed window length), the
+    per-window peak envelope (so a shape change that preserves window energy is not
+    invisible) and the whole-file level.  The tolerance is the row's own measured floor.
+    """
+    tol = record_tolerance(row)
+    record_env = [float(v) for v in row["env_dbfs"].split(",")]
+    record_peak = [float(v) for v in row["peak_env"].split(",")]
+    now_env = [v for v in print_["env_dbfs"]]
+    worst_env = 0.0
+    for index in range(min(len(record_env), len(now_env))):
+        if record_env[index] == float("-inf") or now_env[index] == float("-inf"):
+            continue
+        worst_env = max(worst_env, abs(record_env[index] - now_env[index]))
+    worst_peak = 0.0
+    for index in range(min(len(record_peak), len(now_env))):
+        if record_peak[index] <= 0.0:
+            continue
+        worst_peak = max(worst_peak, abs(G.dbfs(record_peak[index])
+                                         - G.dbfs(print_["peak_env"][index])))
+    level = None
+    if float(row["rms_dbfs"]) != float("-inf") and print_["rms_dbfs"] != float("-inf"):
+        level = print_["rms_dbfs"] - float(row["rms_dbfs"])
+    checks = [
+        ("frames", "%d vs %s" % (print_["frames"], row["frames"]),
+         abs(print_["frames"] - int(row["frames"])), 0),
+        ("window count", "%d vs %d" % (len(now_env), len(record_env)),
+         abs(len(now_env) - len(record_env)), 0),
+        ("envelope delta", "%.6f dB" % worst_env, worst_env, tol["envelope_db"]),
+        ("peak envelope delta", "%.6f dB" % worst_peak, worst_peak, tol["envelope_db"]),
+        ("level delta", "undefined (silent file)" if level is None else "%+.6f dB" % level,
+         None if level is None else abs(level), tol["db"]),
+    ]
+    lines, passed = [], True
+    for name, shown, value, limit in checks:
+        if value is None:
+            lines.append("  %-20s %-24s limit %-12.6g n/a" % (name, shown, limit))
+            continue
+        ok = value <= limit
+        passed = passed and ok
+        lines.append("  %-20s %-24s limit %-12.6g %s"
+                     % (name, shown, limit, "ok" if ok else "FAIL"))
+    return passed, lines
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(
+        description="the golden-audio record: floors, fingerprints and provenance")
+    sub = parser.add_subparsers(dest="what", required=True)
+    sub.add_parser("compare", help="every measured term of one pair").add_argument(
+        "wavs", nargs="+")
+    sub.add_parser("fingerprint", help="a committable measurement of one render").add_argument(
+        "wav")
+    floor = sub.add_parser("floor", help="the same-build run-to-run floor over N renders")
+    floor.add_argument("wavs", nargs="+")
+    floor.add_argument("--json", action="store_true")
+    record = sub.add_parser("record", help="print the committed record, one term per line")
+    record.add_argument("--record", default=None)
+    args = parser.parse_args(argv)
+    try:
+        if args.what == "compare":
+            for other in args.wavs[1:]:
+                show_comparison(G.compare(args.wavs[0], other))
+                print("")
+            return 0
+        if args.what == "fingerprint":
+            print(json.dumps(G.fingerprint(args.wav), indent=2))
+            return 0
+        if args.what == "floor":
+            measured = G.measure_floor(args.wavs)
+            if measured is None:
+                raise G.WavError("the floor needs at least two renders, got %d"
+                                 % len(args.wavs))
+            if args.json:
+                print(json.dumps(measured, indent=2))
+            else:
+                show_floor(measured)
+            return 0
+        rows, comments = read_record(args.record)
+        for line in comments:
+            print(line)
+        print("")
+        for key in sorted(rows):
+            show_row(rows[key])
+        return 0
+    except (G.WavError, OSError) as error:
+        print("ERROR: %s" % error, file=sys.stderr)
+        return 1
+
+
+def show_comparison(measured):
+    print("%s  vs  %s" % (measured["wav_a"], measured["wav_b"]))
+    print("  frames compared      : %d (x %d ch)" % (measured["frames_compared"],
+                                                     measured["channels_compared"]))
+    print("  differing frames     : %d (1 LSB counts)" % measured["differing_frames"])
+    print("  first differing frame: %s" % measured["first_diff_frame"])
+    print("  max |delta|          : %.3f LSB (%.2f dBFS)"
+          % (measured["max_delta_lsb"], measured["max_delta_dbfs"]))
+    print("  mean |delta|         : %.3f LSB" % measured["mean_abs_delta_lsb"])
+    print("  delta RMS            : %.2f dBFS" % measured["delta_rms_dbfs"])
+    if measured["level_delta_db"] is None:
+        print("  level delta          : undefined (silent file)")
+    else:
+        print("  level delta          : %+.6f dB (a %.4f vs b %.4f dBFS)"
+              % (measured["level_delta_db"], measured["dbfs_a"], measured["dbfs_b"]))
+    print("  envelope max delta   : %.6f dB over %d windows of %d frames"
+          % (measured["envelope"]["max_delta_db"], measured["envelope"]["windows"],
+             measured["envelope"]["window_frames"]))
+    print("  data chunks identical: %s" % measured["identical_bytes"])
+
+
+def show_floor(measured):
+    print("floor over %d runs (%d pairs):" % (measured["runs"], measured["pairs"]))
+    print("  max |delta|          : %.3f LSB (%.2f dBFS)"
+          % (measured["max_delta_lsb"], measured["max_delta_dbfs"]))
+    print("  differing frames     : %d" % measured["differing_frames"])
+    print("  level delta          : %+.6f dB" % (measured["level_delta_db"] or 0.0))
+    print("  envelope max delta   : %.6f dB" % measured["envelope"]["max_delta_db"])
+    print("  byte-identical pairs : %s" % measured["identical_bytes"])
+    for pair in measured["per_pair"]:
+        print("    runs %s: %.3f LSB, %d frames, level %+.6f dB, envelope %.6f dB"
+              % (pair["pair"], pair["max_delta_lsb"], pair["differing_frames"],
+                 pair["level_delta_db"] or 0.0, pair["envelope_db"]))
+
+
+def show_row(row):
+    print("%s / %s  (%s, %s run(s))" % (row["fixture"], row["path"], row["command"],
+                                        row["runs"]))
+    print("  floor               : %s LSB, %s frames differ, level %s dB, envelope %s dB, "
+          "byte-identical=%s" % (row["floor_max_lsb"], row["floor_differing_frames"],
+                                 row["floor_level_db"], row["floor_env_db"],
+                                 row["floor_identical_bytes"]))
+    print("  golden              : %.4f dBFS rms, %.4f dBFS peak, %s frames, %s window(s)"
+          % (float(row["rms_dbfs"]), float(row["peak_dbfs"]), row["frames"],
+             len(row["env_dbfs"].split(","))))
+    print("  build               : %s at %s" % (row["binary_sha256"][:16] or "unrecorded",
+                                               row["measured_utc"]))
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
