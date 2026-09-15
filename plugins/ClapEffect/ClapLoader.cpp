@@ -26,6 +26,7 @@
 
 #include <QFile>
 
+#include <iterator>
 #include <utility>
 
 #ifdef _WIN32
@@ -53,10 +54,13 @@ namespace lmms::clap::loader
 namespace
 {
 
+// --- the platform boundary ---------------------------------------------------
+// The two bodies below are the loader the host has always used: the POSIX half
+// is dlopen/dlsym/dlclose/dlerror exactly as it was in ClapHost.cpp before this
+// file existed (same call text, same RTLD_NOW | RTLD_LOCAL), and the Windows
+// half is the port, opening the module through the wide path so an install
+// directory with non-ASCII characters works.
 #ifdef _WIN32
-//! Opens the module through the wide path, so an install directory with
-//! non-ASCII characters works. The UTF-8 path is still what clap_entry.init()
-//! is handed (see load()), as the CLAP spec requires.
 auto openPlatform(const QString& path) -> void*
 {
 	return static_cast<void*>(::LoadLibraryW(reinterpret_cast<LPCWSTR>(path.utf16())));
@@ -111,46 +115,51 @@ auto platformError() -> QString
 }
 #endif
 
+// --- the code table ----------------------------------------------------------
+/*!
+ * The published table behind token() and summary(): one row per Code, in
+ * declaration order. A table rather than a switch for two reasons -- the
+ * compiler checks the row COUNT against the enum (a new code with no row does
+ * not compile), and neither lookup is a 12-way branch, which the complexity
+ * ratchet counts.
+ */
+struct CodeText
+{
+	const char* token;
+	const char* summary;
+};
+
+constexpr CodeText kCodes[] = {
+	{"none", "no failure"},
+	{"library-unavailable", "the module file could not be loaded"},
+	{"symbol-missing", "the module does not export clap_entry"},
+	{"version-unsupported", "the module is a CLAP version this host cannot host"},
+	{"entry-init-failed", "clap_entry.init() failed"},
+	{"factory-missing", "the module has no clap.plugin-factory"},
+	{"plugin-not-found", "the module has no plug-in with that id"},
+	{"plugin-create-failed", "the plug-in could not be created"},
+	{"plugin-init-failed", "clap_plugin.init() failed"},
+	{"extension-missing", "the plug-in does not implement a required extension"},
+	{"no-audio-ports", "the plug-in has no usable audio ports"},
+};
+
+//! One row per code, and Code::Count is the row count: adding a code without a
+//! token is a compile error here rather than an "unknown" at a call site.
+static_assert(std::size(kCodes) == static_cast<std::size_t>(Code::Count),
+	"every loader::Code needs a row in kCodes (token + summary)");
+
 } // namespace
 
 auto token(Code code) -> const char*
 {
-	switch (code)
-	{
-	case Code::None:                return "none";
-	case Code::LibraryUnavailable:  return "library-unavailable";
-	case Code::SymbolMissing:       return "symbol-missing";
-	case Code::VersionUnsupported:  return "version-unsupported";
-	case Code::EntryInitFailed:     return "entry-init-failed";
-	case Code::FactoryMissing:      return "factory-missing";
-	case Code::PluginNotFound:      return "plugin-not-found";
-	case Code::PluginCreateFailed:  return "plugin-create-failed";
-	case Code::PluginInitFailed:    return "plugin-init-failed";
-	case Code::ExtensionMissing:    return "extension-missing";
-	case Code::NoAudioPorts:        return "no-audio-ports";
-	case Code::Count:               break;
-	}
-	return "unknown";
+	const auto index = static_cast<std::size_t>(code);
+	return index < std::size(kCodes) ? kCodes[index].token : "unknown";
 }
 
 auto summary(Code code) -> const char*
 {
-	switch (code)
-	{
-	case Code::None:                return "no failure";
-	case Code::LibraryUnavailable:  return "the module file could not be loaded";
-	case Code::SymbolMissing:       return "the module does not export clap_entry";
-	case Code::VersionUnsupported:  return "the module is a CLAP version this host cannot host";
-	case Code::EntryInitFailed:     return "clap_entry.init() failed";
-	case Code::FactoryMissing:      return "the module has no clap.plugin-factory";
-	case Code::PluginNotFound:      return "the module has no plug-in with that id";
-	case Code::PluginCreateFailed:  return "the plug-in could not be created";
-	case Code::PluginInitFailed:    return "clap_plugin.init() failed";
-	case Code::ExtensionMissing:    return "the plug-in does not implement a required extension";
-	case Code::NoAudioPorts:        return "the plug-in has no usable audio ports";
-	case Code::Count:               break;
-	}
-	return "unknown failure";
+	const auto index = static_cast<std::size_t>(code);
+	return index < std::size(kCodes) ? kCodes[index].summary : "unknown failure";
 }
 
 auto Status::message() const -> QString
