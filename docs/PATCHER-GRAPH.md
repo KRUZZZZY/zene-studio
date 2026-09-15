@@ -134,11 +134,13 @@ graph those rows already cover); histogram moved with them
   answering. The committed offline snapshot
   (`tools/mcp-zene-control/zene_control/commands_snapshot.json`) is regenerated once by the
   integration lane after the last group merge - never hand-edited.
-* **Gates run in this lane:** `file-length-gate.sh --check` (fork scope) exit 0 (the fork's four
-  new files are 253 / 320 / 431 / 83 lines, all under the 500-line ratchet);
+* **Gates run in this lane:** `file-length-gate.sh --check` (fork scope) exit 0 (every file this lane
+  adds is under the 500-line ratchet: `EffectChainPatcher.cpp` 248, `ControlCommandsPatcher.cpp` 322,
+  `ControlCommandsPatcherEdit.cpp` 455, `ControlCommandsPatcherShared.h` 83, `PatchWiring.h` 161,
+  `PatchWiring.cpp` 194, `PatcherCommandsTest.cpp` 497);
   `fork-sources-gate.sh` exit 0; `no-upstream-regression-gate.sh` exit 0 (the two inherited files
   it edits, `include/EffectChain.h` and `src/core/EffectChain.cpp`, are declared in
-  `tests/upstream-modifications.txt` in the same commit).
+  `tests/upstream-modifications.txt` in the same commit); `complexity-gate.sh --check` exit 0.
 
 ## 7. Reproduction
 
