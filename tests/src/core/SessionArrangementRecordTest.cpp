@@ -206,24 +206,31 @@ private slots:
 	}
 
 	//! THE #596 ACCEPTANCE, in miniature: one launch request, then nothing but
-	//! the clock. The armed cell's `next` chain walks its column scene 0 -> 1 ->
-	//! 2 -> 3, and the ring carries one stop/start pair per move - which is what
-	//! "launches, moves" means in SPEC §4.1.
+	//! the clock. EVERY cell of the column carries the same `next` chain (which
+	//! is the per-CLIP model Live uses and the data layer persists: the chain
+	//! belongs to the clip that is playing, so the next clip's own action takes
+	//! over when the column moves), and the armed column walks scene 0 -> 1 ->
+	//! 2 -> 3 with the ring carrying one stop/start pair per move - which is
+	//! what "launches, moves" means in SPEC §4.1.
 	void followChainRunsHandsFreeAcrossClips()
 	{
 		SessionScheduler scheduler;
 		scheduler.arrangementRecorder().setArmed(true);
 
-		QVERIFY(scheduler.requestFollowPlan(0, 0,
-			single(action(FollowAction::Type::Next, 1.0, false, 1.0, 0), kSceneCount)));
+		for (int scene = 0; scene < kSceneCount; ++scene)
+		{
+			QVERIFY(scheduler.requestFollowPlan(0, scene,
+				single(action(FollowAction::Type::Next, 1.0, false, 1.0, 0), kSceneCount)));
+		}
 		// One launch, and no other request for the rest of the test.
 		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
 
 		SessionClockContext ctx = clock(0);
-		// Install the plan and start the clip.
+		// Install the plans and start the clip.
 		scheduler.processAudio(ctx, kFramesPerPeriod);
-		QCOMPARE(scheduler.armedFollowCells(), 1);
-		QCOMPARE(scheduler.armedFollowCellsMask(), std::uint64_t(1)); // bit (0 * 8 + 0)
+		QCOMPARE(scheduler.armedFollowCells(), 4);
+		// bits (0 * 8 + 0) .. (0 * 8 + 3)
+		QCOMPARE(scheduler.armedFollowCellsMask(), std::uint64_t(0xf));
 		QVERIFY(scheduler.trackIsSessionActive(0));
 
 		// Four bars of periods: the chain fires at 192, 384, 576 and 768.
@@ -235,7 +242,9 @@ private slots:
 			static_cast<int>(FollowOutcome::SwitchScene));
 		QCOMPARE(followFireIndex(last), 0);
 		QCOMPARE(followFireTargetScene(last), 0); // 3 -> next wraps to 0
-		QCOMPARE(static_cast<int>(followFireTick(last)), 3 * kTicksPerBar);
+		// The LAST fire's action time is the fourth bar line: a fire reports the
+		// tick it was SCHEDULED for, not the period that noticed it.
+		QCOMPARE(static_cast<int>(followFireTick(last)), 4 * kTicksPerBar);
 		QVERIFY(scheduler.trackIsSessionActive(0));
 
 		// The recorded performance: start(0) stop(0) start(1) stop(1) start(2)
@@ -267,6 +276,26 @@ private slots:
 			QVERIFY(!events[i + 1].started);
 			QCOMPARE(events[i].scene, events[i + 1].scene);
 		}
+	}
+
+	//! The chain belongs to the CLIP that is playing: a column whose NEXT cell
+	//! carries no plan stops following there. This semantic decides how many
+	//! cells a chain has to be armed on, and it was MEASURED rather than assumed
+	//! - the first revision of followChainRunsHandsFreeAcrossClips armed one
+	//! cell and the column stopped after the first move.
+	void aCellWithNoPlanDoesNotFollow()
+	{
+		SessionScheduler scheduler;
+		QVERIFY(scheduler.requestFollowPlan(0, 0,
+			single(action(FollowAction::Type::Next, 1.0, false, 1.0, 0), kSceneCount)));
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		SessionClockContext ctx = clock(0);
+		scheduler.processAudio(ctx, kFramesPerPeriod);
+		drive(scheduler, ctx, kTickStep, 4 * kTicksPerBar);
+		// One move - into the cell that has no plan - and nothing after it.
+		QCOMPARE(static_cast<int>(scheduler.followFires()), 1);
+		QCOMPARE(followFireTargetScene(scheduler.lastFollowFire()), 1);
+		QVERIFY(scheduler.trackIsSessionActive(0));
 	}
 
 	//! A `stop` chain ends the cell (and records only its stop: the start that

@@ -792,16 +792,25 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **284 rows** as this branch measures it:
-**152 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 104 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **306 rows** as this branch measures it:
+**154 `true_inverse`, 26 `snapshot`, 7 `irreversible`, 119 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**282 rows / 102 `not_mutating`** - which is the base
+**304 rows / 117 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **The last figure a MERGED tree measured here was 283 rows**
 (151 `true_inverse` / 21 / 6 / 105, the five-lane **wave-2** merge train's tip).
+**Session View completion (`030/session-completion`, board task #641): +6 rows - 5 `not_mutating`
+(`session.follow_set`, `session.follow_get_state`, `session.arrangement_record_arm`,
+`session.arrangement_record_status`, `session.back_to_arrangement`) and 1 `true_inverse`
+(`session.arrangement_record_land`, whose inverse is the Track journal checkpoint its clips are
+created over), all six in `src/core/ControlReversibilityTableSessionView.cpp`, joined with ONE entry.**
+That lane also RE-MEASURED the whole table rather than adding its delta to the paragraph above, and
+found the figures this section carried were 22 rows short of the branch's real table (other lanes had
+merged rows without moving them) - hence 306/304 above rather than 284/282. The measurement came from
+running `ReversibilityContractTest` on the lane's own build; the merge tip must re-take it.
 `030/automation-modes` moves it by its own delta, stated so the merge step can check it rather than
 trust it: `automation.mode_set`'s stale refusal row leaves
 `src/core/ControlReversibilityTablePassive.cpp` (-1 `not_mutating` - the command is a working verb
@@ -811,11 +820,13 @@ now, not a typed refusal) and two rows take its place in their own TU,
 `true_inverse` - the clip is a `JournallingObject`). That is **+1 row / +1 `true_inverse` / +1
 `irreversible` / -1 `not_mutating`** over the wave-2 measurement, and the merge tip re-takes the
 measurement because the sibling lane `030/sample-accurate-automation` carries rows this branch does
-not. The same build's live `control.commands` list answers **284** commands, which is the second and
-independent instrument: the registry and the contract table are the same size, and no row names a
-command that is not there. (284 = the wave-2 tip's 283 + `automation.record_mode_set`, the one command
-this lane registers; `automation.mode_set` was already registered - as a refusal - and is the same id
-working now.)
+not. The same build's registry must answer **306** commands for the table's 306 rows: the two are the
+same size because `ReversibilityContractTest` holds that in BOTH directions (every registered id has a
+row, every row names a registered id) and both of those assertions passed in the run this section's
+figures come from. The figure this paragraph carried before it (**284** commands, = the wave-2 tip's
+283 + `automation.record_mode_set`) was the same 22 rows short as the row count above; it belongs to
+the earlier measurement, and a live `control.commands` count on the merge tip's binary is where the
+second instrument should be re-read.
 
 What the five wave-2 lanes added - each figure stated beside its own rows, and all five summing to
 the measurement exactly:

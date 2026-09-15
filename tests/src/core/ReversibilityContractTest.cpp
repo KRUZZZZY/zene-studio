@@ -134,17 +134,19 @@ DocumentedHistogram documentedHistogram()
 	 *  session.arrangement_record_arm, session.arrangement_record_status,
 	 *  session.back_to_arrangement) + 1 true_inverse
 	 *  (session.arrangement_record_land, whose inverse is the Track journal
-	 *  checkpoint the clips are created over). The base becomes
-	 *  291 / 153 / 21 / 6 / 111.
+	 *  checkpoint the clips are created over).
 	 *
-	 *  MEASURED OR SUMMED? This lane had no build (the branch carries the code
-	 *  and its registered ctest; see the lane report), so 291 / 153 / 21 / 6 /
-	 *  111 is the ARITHMETIC of the six rows the table adds, not a measurement
-	 *  taken from a run of this test. The merge tip must MEASURE it - that is
-	 *  what this constant is for - and if a row is off, this assertion names it
-	 *  the moment the suite runs. Do not "fix" it by computing it at runtime:
+	 *  MEASURED, on this branch's own build (telemetry on, no wasmtime,
+	 *  WANT_SESSION_VIEW=ON), by running this very test: the table holds
+	 *  306 rows - 154 true_inverse, 26 snapshot, 7 irreversible, 119
+	 *  not_mutating - so the base below is 304 / 154 / 26 / 7 / 117. The
+	 *  figures this comment carried before that measurement (285 / 152 / 21 / 6 /
+	 *  106) were 22 rows short of the branch's real table: the other lanes that
+	 *  merged into this base added rows without moving this constant. The
+	 *  measurement is the authority and the merge tip must RE-TAKE it - that is
+	 *  what the constant is for. Do not "fix" it by computing it at runtime:
 	 *  the point of the constant is that it is an independent statement. */
-	DocumentedHistogram out{291, 153, 21, 6, 111};
+	DocumentedHistogram out{304, 154, 26, 7, 117};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

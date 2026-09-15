@@ -68,6 +68,13 @@
 #include <cstdint>
 
 #include "LmmsTypes.h"
+// LMMS_EXPORT on the class below. Included BY NAME rather than relied on
+// transitively: this header is included FIRST by
+// tests/src/core/SessionArrangementRecordTest.cpp, and a TU that reaches it
+// before anything that defines the macro fails with "variable
+// 'lmms::LMMS_EXPORT lmms::SessionArrangementRecorder' has initializer but
+// incomplete type" - measured, not feared (the first build of this branch).
+#include "lmms_export.h"
 
 namespace lmms
 {

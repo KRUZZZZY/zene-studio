@@ -52,12 +52,16 @@ namespace lmms
 namespace
 {
 
-/*! The tick a Follow Action's outcome starts from: the action time, which is
- *  what the published fire reports and what the next action time is measured
- *  from. Kept here so the three call sites cannot disagree. */
-tick_t actionTime( tick_t nextActionTick, tick_t step ) noexcept
+/*! The tick a Follow Action's outcome starts from: the ACTION TIME the clock
+ *  has reached, which is `slot.followNextTick` at the moment of firing - the
+ *  next action time is what advances by one step afterwards, not before. (An
+ *  earlier revision subtracted the step here and reported every fire one step
+ *  EARLY - 0 instead of 192 for the first fire on a one-bar chain - which
+ *  SessionArrangementRecordTest::followStopEndsTheClip caught by measuring the
+ *  tick the stop was recorded at.) */
+tick_t actionTime( tick_t nextActionTick ) noexcept
 {
-	return step > 0 ? nextActionTick - step : nextActionTick;
+	return nextActionTick;
 }
 
 } // namespace
@@ -226,10 +230,12 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 	eval.rngUnit = followRandomUnit( m_followRng );
 
 	const FollowFire fire = decideFollowFire( *plan, eval );
-	// Advance FIRST and by exactly one step, so this action time fires once:
-	// an outcome that does nothing still consumes its action time rather than
-	// being re-decided every period.
-	const tick_t firedAt = actionTime( slot.followNextTick, step );
+	// The action time this evaluation has reached, taken BEFORE the advance so
+	// the fire is reported at the tick it was scheduled for. `followNextTick`
+	// is then moved on by exactly one step, so this action time fires once: an
+	// outcome that does nothing still consumes its action time rather than being
+	// re-decided every period.
+	const tick_t firedAt = actionTime( slot.followNextTick );
 	slot.followNextTick += step;
 
 	if( fire.outcome == FollowOutcome::None )
