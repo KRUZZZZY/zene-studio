@@ -173,6 +173,13 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The `project.*` reference group's three rows (feature row 38): the two
+ *  inspectors of a project FILE (missing-asset detection and content hashing,
+ *  both not_mutating) and the one writer (project.relink, a recorded-action
+ *  true_inverse row). A GROUP file on the same seam as the folder, vca, routing
+ *  and mastering files - the class comes from each row, not from this file.
+ *  Joined into reversibilityRowTable(). */
+LMMS_EXPORT const ReversibilityRow* reversibilityArchiveRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

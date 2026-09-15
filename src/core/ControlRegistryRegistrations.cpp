@@ -63,6 +63,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRecordingRecoveryCommands(registry);
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
+	// The project-asset reference group (feature row 38): detection, hashing and
+	// relink over a project FILE.
+	registerProjectArchiveCommands(registry);
 	registerSurfaceCommands(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF

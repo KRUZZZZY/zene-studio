@@ -84,7 +84,12 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{225, 120, 18, 7, 80};   // telemetry-off, wasm-off base; the guards add the rest
+	// telemetry-off, wasm-off base; the guards add the rest. 228/121/18/7/82
+	// is the base AFTER lane 030/project-archive added the three rows of feature
+	// row 38 (project.relink: true_inverse through a recorded action checkpoint;
+	// project.missing_assets and project.hash_assets: not_mutating) - the same
+	// figures docs/RELEASE-NOTES-v0.3.0-alpha.md's histogram section now carries.
+	DocumentedHistogram out{228, 121, 18, 7, 82};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

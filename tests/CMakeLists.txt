@@ -78,6 +78,15 @@ set(LMMS_TESTS
 	# the model's own arithmetic - the revision total order and the phase a
 	# peer's announcement implies. docs/LINK-SYNC.md.
 	src/core/ControlLinkCommandsTest.cpp
+	# The project-asset reference group (feature row 38: project collection /
+	# archive, hashing, relink): the three ids with their schemas and their
+	# mutating flags, the three A16 contract rows, the missing-asset DETECTION
+	# with its negative control (an intact project reports no missing assets),
+	# content HASHING measured against the files' own sha256, and the RELINK with
+	# its inverse proved for real - relink, read the document back, control.undo,
+	# compare the whole file with the bytes that were there before. It needs a
+	# real Engine (the recorded action checkpoint goes on the project journal).
+	src/core/ControlProjectArchiveTest.cpp
 	src/core/ControlRegistryTest.cpp
 	src/core/ControlTempoMapCommandsTest.cpp
 	# The 0.3.0 verb wave's four ids (clip.trim, clip.slip, note.probability_set,
@@ -1885,6 +1894,12 @@ set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
 # the registry (plugin.load, plugin.param_set, chain.save/apply), so it wants a
 # real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlChainPresetTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The project-asset reference group constructs a full Engine (the relink's
+# recorded action checkpoint goes on the project journal) and drives the three
+# verbs through the registry, so it wants a real Qt platform plugin even though
+# nothing opens a window - the same reason as the three groups above.
+set_tests_properties(ControlProjectArchiveTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The transport.tempo_map_* group constructs a full Engine and drives the map
 # through the registry (and the engine's undo stack), so it needs a Qt platform

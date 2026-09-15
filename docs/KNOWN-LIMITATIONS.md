@@ -883,3 +883,22 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+**Project assets can be inspected, hashed and relinked — they cannot be bundled (feature row 38).**
+`project.missing_assets` lists every file a project file references (sample clips, AudioFileProcessor
+and SF2 instruments, session-view audio slots) and which of those have nothing on disk at them;
+`project.hash_assets` adds a sha256 and a size per reference that is on disk, plus one digest over the
+reference set; `project.relink` points the references the caller names at the file that was found,
+refusing unless that file hashes to an `expect_sha256` the caller names. All three work on **one
+project FILE**, so they answer for a project that is not open and for one that cannot be loaded, and
+`project.relink` is reversible through a recorded action checkpoint that restores the file's previous
+bytes. The **portable-bundle half of the row is OUT (Bar 3)**: nothing copies media beside a project,
+nothing rewrites a project into a self-contained bundle, and no verb in the group writes any file
+except the one project file `project.relink` was given. Also absent: a **collection-wide sweep** (each
+call names one project file — the collection is scanned one project at a time), **plugin and preset
+paths as assets** (the scan covers the elements the project format carries a media path in; a plugin
+binary or a preset file is not a reference it reports), and a **committed `--control-socket`
+transcript** — the group's registered proof is the in-process ctest
+`ControlProjectArchiveTest`, which drives the same three ids through `ControlRegistry::invoke` and
+carries the negative control (an intact project reports no missing assets). Nothing in `src/gui/` lists
+a project's references, offers a relink or reports a hash.

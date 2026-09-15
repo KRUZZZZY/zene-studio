@@ -116,6 +116,7 @@ include/ControlLayout.h
 include/ControlMasteringSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
+include/ControlProjectAssets.h
 include/ControlRackSupport.h
 include/ControlRecordingSupport.h
 include/ControlRegistry.h
@@ -961,6 +962,7 @@ src/core/ControlCommandsPluginScanShared.h
 src/core/ControlCommandsPluginState.cpp
 src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
+src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
@@ -1002,6 +1004,9 @@ src/core/ControlGrooveSupport.cpp
 src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
+src/core/ControlProjectAssets.cpp
+src/core/ControlProjectAssetsRelink.cpp
+src/core/ControlProjectAssetsShared.h
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
@@ -1009,6 +1014,7 @@ src/core/ControlRegistryRegistrations.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
+src/core/ControlReversibilityTableArchive.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
@@ -1372,6 +1378,7 @@ tests/src/core/ControlGrooveCommandsTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
+tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp

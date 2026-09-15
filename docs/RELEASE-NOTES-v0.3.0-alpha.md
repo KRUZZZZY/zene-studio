@@ -648,14 +648,40 @@ The SPEC A16 classification table holds **227 rows**, measured from the table it
 **120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**228 rows / 82 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
 `ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
 four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+228 / 121 / 18 / 7 / 82.
+
+**Lane 030/project-archive adds three rows** (feature row 38, "project collection / archive,
+hashing, relink"): `project.relink`, `true_inverse` through a recorded ACTION checkpoint (the project
+file is outside the project's own journal, the shape `chain.save` and `mastering.run` use), and the two
+inspectors of a project FILE, `project.missing_assets` and `project.hash_assets`, both
+`not_mutating` - `+1 true_inverse / +2 not_mutating`. The two figures above therefore move with them:
+the telemetry-on measurement becomes **230 rows / 121 `true_inverse` / 18 `snapshot` / 7
+`irreversible` / 84 `not_mutating`**, and the constant in
+`ReversibilityContractTest::documentedHistogram()` is now **228 / 121 / 18 / 7 / 82**. The 227-row
+measurement quoted above was taken on the PREVIOUS train's merge tip and was NOT re-made by this lane:
+this lane did not build the tree, so only the constant it edited is stated here as its own arithmetic,
+and the merged-tip re-measurement is owed to the integration pass.
+
+The group itself: `project.missing_assets` (list what a project file references and what is not on
+disk), `project.hash_assets` (a sha256 and a size per reference that is on disk, plus one digest over
+the reference set) and `project.relink` (point the references the caller names at the file that was
+found, optionally refusing unless that file hashes to the expected sha256). The three read or rewrite
+**one project file** - so they answer for a project that is not open and for one that cannot be loaded
+- and the registered proof is the in-process ctest `ControlProjectArchiveTest`, which also carries the
+negative control (an intact project reports no missing assets). **There is no interface for any of
+this**: nothing in `src/gui/` lists a project's references, offers a relink or reports a hash, and the
+**portable-bundle half of the feature row is OUT (Bar 3)** - nothing copies media beside a project and
+no verb in the group writes any file except the one project file `project.relink` was given.
+`docs/KNOWN-LIMITATIONS.md` carries the same statements.
+
+The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
