@@ -410,3 +410,6 @@ bool restoreTimelineRevision(const QString& projectPath, const QString& recovery
 	}
 	return true;
 }
+
+} // namespace control
+} // namespace lmms

@@ -108,7 +108,7 @@ QVector<RevisionEntry> parseGitLog(const QByteArray& out)
 		entry.id = QStringLiteral("git:") + fields.at(0);
 		entry.source = QStringLiteral("git");
 		entry.commit = fields.at(0);
-		entry.timestamp = QDateTime::fromSecsSinceEpoch(fields.at(1).toLongLong(), QTimeZone::UTC);
+		entry.timestamp = QDateTime::fromSecsSinceEpoch(fields.at(1).toLongLong()).toUTC();
 		entry.note = fields.at(2);
 		entries.append(entry);
 	}

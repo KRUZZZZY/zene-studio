@@ -60,38 +60,45 @@ bool isNameChar(QChar c)
 		|| c == QLatin1Char('.') || c == QLatin1Char(':');
 }
 
+//! The index just past the '>' that closes the construct starting at \a open.
+int indexPastTagEnd(const QString& text, int open)
+{
+	const int close = text.indexOf(QLatin1Char('>'), open);
+	return (close < 0) ? text.size() : close + 1;
+}
+
+//! Counts the element one '<' construct holds, if any, and returns the index the
+//! scan continues from. Split out of elementCounts() because the construct's
+//! kinds (a close tag, a declaration, a comment, an element, a stray '<') are
+//! one decision each and the ratchet's CCN budget is ten per function.
+int countOneConstruct(const QString& text, int open, QHash<QString, int>* counts)
+{
+	const int nameStart = open + 1;
+	if (nameStart >= text.size()) { return text.size(); }
+	const QChar first = text.at(nameStart);
+	if (first == QLatin1Char('/') || first == QLatin1Char('?') || first == QLatin1Char('!'))
+	{
+		// A close tag, a declaration or a comment: skipped whole. A comment
+		// carries no element, and skipping to the next '>' is what keeps
+		// "<note>" quoted inside one from counting as a note.
+		return indexPastTagEnd(text, nameStart);
+	}
+	int end = nameStart;
+	while (end < text.size() && isNameChar(text.at(end))) { ++end; }
+	if (end == nameStart) { return nameStart; }
+	(*counts)[text.mid(nameStart, end - nameStart)] += 1;
+	return end;
+}
+
 //! Every OPENING element tag of \a document, counted by name.
 QHash<QString, int> elementCounts(const QByteArray& document)
 {
 	QHash<QString, int> counts;
 	const QString text = QString::fromUtf8(document);
-	const int size = text.size();
-	int index = 0;
-	while (index < size)
+	int index = text.indexOf(QLatin1Char('<'));
+	while (index >= 0)
 	{
-		const int open = text.indexOf(QLatin1Char('<'), index);
-		if (open < 0) { break; }
-		const int nameStart = open + 1;
-		if (nameStart >= size) { break; }
-		const QChar first = text.at(nameStart);
-		if (first == QLatin1Char('/') || first == QLatin1Char('?') || first == QLatin1Char('!'))
-		{
-			// A close tag, a declaration or a comment: skipped whole. A comment
-			// carries no element, and skipping to the next '>' is what keeps
-			// "<note>" quoted inside one from counting as a note.
-			const int close = text.indexOf(QLatin1Char('>'), nameStart);
-			index = (close < 0) ? size : close + 1;
-			continue;
-		}
-		int end = nameStart;
-		while (end < size && isNameChar(text.at(end))) { ++end; }
-		if (end == nameStart)
-		{
-			index = nameStart;
-			continue;
-		}
-		counts[text.mid(nameStart, end - nameStart)] += 1;
-		index = end;
+		index = text.indexOf(QLatin1Char('<'), countOneConstruct(text, index, &counts));
 	}
 	return counts;
 }
