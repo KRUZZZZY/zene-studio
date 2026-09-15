@@ -283,6 +283,30 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+/*! meter.get_state / meter.arm / meter.measure_file - the BS.1770-4 loudness and
+ *  true-peak surface (feature row 24 of docs/FEATURE-LIST-0.3.0.md, "LUFS /
+ *  loudness metering"): the LIVE master readout (integrated, momentary,
+ *  short-term, the loudest short-term window and true peak, measured from the
+ *  periods the engine is rendering by a passive tap, include/MasterLoudnessTap.h)
+ *  and the same five numbers for a RENDERED FILE, measured now from the file's
+ *  own bytes with the EBU R128 verdict.
+ *
+ *  WHY IT IS ITS OWN GROUP. The measurement core (`LufsMeter`, the ITU-R
+ *  BS.1770-4 / EBU R128 meter) and its offline consumer (`LoudnessReport`, which
+ *  the render path feeds) are both in the tree and proven - and were, until this
+ *  group, reachable by nothing but a render: no `lufs.` or `meter.` id existed
+ *  at all, so nothing an agent could send measured anything. This group is what
+ *  makes any of it drivable; it is the ONLY way to measure the live master in
+ *  this release (there is no loudness meter widget), and it forks no DSP - every
+ *  number it publishes comes out of the merged `LufsMeter`.
+ *
+ *  No compile-time switch: the meter, the report and the tap are in every
+ *  configuration, so its three ids are honest in every one. The render-path
+ *  half of the same feature (the `.loudness.txt` sidecar the export dialog and
+ *  `--loudness-report` produce) is exposed through `export.get_settings` /
+ *  `export.set_loudness_report` in src/core/ControlCommandsExport.cpp.
+ */
+LMMS_EXPORT void registerMeterCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

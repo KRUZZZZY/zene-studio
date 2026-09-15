@@ -81,6 +81,18 @@ void LoudnessReport::addBlock(const SampleFrame* frames, f_cnt_t frameCount)
 	if (shortTerm > m_shortTermMax) { m_shortTermMax = shortTerm; }
 }
 
+void LoudnessReport::addPlanarBlock(const sample_t* const* channels, ch_cnt_t channelCount,
+	f_cnt_t frameCount)
+{
+	// The same passive tap as addBlock(), for the layouts processBlock() cannot
+	// serve: mono fed channel-by-channel, and 5.1, whose channel weights only
+	// exist on the planar path. Reads only.
+	m_meter.processPlanar(channels, channelCount, frameCount);
+
+	const float shortTerm = m_meter.shortTermLufs();
+	if (shortTerm > m_shortTermMax) { m_shortTermMax = shortTerm; }
+}
+
 LoudnessReport::Verdict LoudnessReport::verdict() const
 {
 	Verdict result;

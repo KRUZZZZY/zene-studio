@@ -145,6 +145,15 @@ set(LMMS_SRCS
 	core/ControlMasteringSupport.cpp
 	core/ControlCommandsMastering.cpp
 	core/ControlCommandsMasteringRun.cpp
+	# The loudness surface (feature row 24 of docs/FEATURE-LIST-0.3.0.md, "LUFS /
+	# loudness metering"): the `meter.*` group - the live master tap and the file
+	# measurement - and the passive tap it reads the master mix through
+	# (include/MasterLoudnessTap.h). The measurement core itself is
+	# core/LufsMeter.cpp and core/LoudnessReport.cpp, merged by earlier lanes and
+	# untouched here: this group forks no DSP, it makes the merged meter
+	# drivable.
+	core/ControlCommandsMeter.cpp
+	core/MasterLoudnessTap.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp
@@ -272,6 +281,11 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	# The loudness feature's four rows (feature row 24): meter.get_state,
+	# meter.measure_file, meter.arm and the same feature's render-path half,
+	# export.set_loudness_report. A GROUP file on the same seam as the rows
+	# above.
+	core/ControlReversibilityTableMeter.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

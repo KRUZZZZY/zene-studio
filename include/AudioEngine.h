@@ -39,6 +39,7 @@
 #include "SampleFrame.h"
 #include "LocklessList.h"
 #include "AudioEngineProfiler.h"
+#include "MasterLoudnessTap.h"
 #include "PlayHandle.h"
 #include "MultiTrackRecorder.h"
 #include "SampleFrameRingBuffer.h"
@@ -150,6 +151,21 @@ public:
 	{
 		return m_audioDev;
 	}
+
+	/*! The PASSIVE loudness tap on the master mix (feature row 24 of
+	 *  docs/FEATURE-LIST-0.3.0.md): the live LUFS-I / LUFS-M / LUFS-S / true-peak
+	 *  readout, fed one period per rendered period out of renderStageMix().
+	 *
+	 *  It is constructed once, here, with the engine's PROCESSING rate and
+	 *  stereo channel count, and never replaced - so no allocation, no lock and
+	 *  no re-seating happens while audio is running, and a render that never
+	 *  arms it is bit-for-bit the render it always was (the tap only reads, and
+	 *  only while it is armed). It is DISARMED at construction: nothing in this
+	 *  release measures the master until a caller asks for it, which is the rule
+	 *  docs/LUFS-METER.md states ("the meter is opt-in") kept intact for the
+	 *  live path. Never null for a constructed engine; a caller that wants to
+	 *  handle a missing engine handles a missing engine. */
+	MasterLoudnessTap* masterLoudness() const { return m_masterLoudness.get(); }
 
 
 	// audio-bus-handle-stuff
@@ -437,6 +453,12 @@ private:
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
 	f_cnt_t m_outputBufferReadIndex;
+
+	/*! The live loudness tap (feature row 24), construction-only and disarmed
+	 *  until a caller arms it. Held by unique_ptr rather than by value so the
+	 *  engine's own header stays free of the meter's 25 KB of fixed state and
+	 *  an engine that never arms it pays one pointer. See masterLoudness(). */
+	std::unique_ptr<MasterLoudnessTap> m_masterLoudness;
 
 	// worker thread stuff
 	std::vector<AudioEngineWorkerThread *> m_workers;

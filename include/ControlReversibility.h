@@ -173,6 +173,15 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The `meter.*` group's three rows (feature row 24 of docs/FEATURE-LIST-0.3.0.md,
+ *  "LUFS / loudness metering"): one recorded-action true_inverse row (meter.arm
+ *  writes the live tap's armed flag) and the group's two not_mutating inspectors
+ *  (meter.get_state reads the tap's published snapshot, meter.measure_file reads
+ *  and hashes a rendered file). A GROUP file on the same seam as the folder,
+ *  vca, routing, scan/crash and mastering files - the class comes from each row,
+ *  not from its file. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityMeterRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

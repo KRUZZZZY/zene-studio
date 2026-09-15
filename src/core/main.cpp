@@ -737,7 +737,12 @@ int main( int argc, char * * argv )
 			// Ask the render for an EBU R128 loudness report: the measured
 			// values are printed to stdout and written beside the render as
 			// <output>.loudness.txt. Measure-only; the audio is unchanged.
+			// Set process-wide as well as on `os`, exactly as --dither does:
+			// ExportRenderSettings is what export.get_settings reads and what
+			// export.set_loudness_report writes, so the CLI flag and the
+			// control surface must not disagree about the current selection.
 			os.setLoudnessReport(true);
+			ExportRenderSettings::setLoudnessReport(true);
 		}
 		else if( arg == "--dither" )
 		{

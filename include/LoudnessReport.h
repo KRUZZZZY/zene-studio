@@ -118,6 +118,18 @@ public:
 	 */
 	void addBlock(const SampleFrame* frames, f_cnt_t frameCount);
 
+	/**
+	 * Measures one block of PLANAR channel buffers (channels[ch][frame]), the
+	 * feed a mono file and any layout above stereo needs: processBlock()'s
+	 * interleaved shape only serves 1 and 2 channels exactly, and the BS.1770-4
+	 * channel weights of a 6-channel (5.1) layout must see the channels
+	 * separately. Reads only; allocates nothing.
+	 *
+	 * \p channelCount must equal channelCount() (LufsMeter::processPlanar()
+	 * ignores a mismatch rather than reading past its storage).
+	 */
+	void addPlanarBlock(const sample_t* const* channels, ch_cnt_t channelCount, f_cnt_t frameCount);
+
 	//! Snapshot of the meter's four values at this instant.
 	LufsMeter::Reading reading() const { return m_meter.read(); }
 	//! Gated integrated loudness of the whole render (LUFS-I).

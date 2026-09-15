@@ -104,6 +104,12 @@ AudioEngine::AudioEngine(bool renderOnly)
 	// exactly once, here, off the audio thread and never resized afterwards.
 	m_inputStage = std::make_unique<SampleFrameRingBuffer>(InputStageCapacityFrames);
 
+	// The live loudness tap (feature row 24): ONE construction, here, with the
+	// engine's processing rate - the rate every period of the master mix is at,
+	// whatever rate the audio device then resamples to. Nothing allocates it
+	// later and nothing replaces it, so arming it can never race a render.
+	m_masterLoudness = std::make_unique<MasterLoudnessTap>(m_baseSampleRate, DEFAULT_CHANNELS);
+
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
@@ -352,6 +358,19 @@ void AudioEngine::renderStageMix()
 	mixer->masterMix(m_outputBufferWrite.get());
 
 	MixHelpers::multiply(m_outputBufferWrite.get(), m_masterGain, m_framesPerPeriod);
+
+	// STAGE 3b (feature row 24 of docs/FEATURE-LIST-0.3.0.md): the PASSIVE
+	// loudness tap. The period that was just mixed is handed to the meter -
+	// read only, in place, with no copy. A disarmed tap (the default, and the
+	// state of every engine that never asked for a live loudness reading)
+	// returns on its first load and the mixed buffer is not even inspected, so
+	// this is one relaxed atomic load per period for a render that does not use
+	// it. Nothing here allocates, locks or grows anything (AGENTS.md rule 4);
+	// the meter itself was constructed once, with this engine.
+	if( m_masterLoudness != nullptr )
+	{
+		m_masterLoudness->feed( m_outputBufferWrite.get(), m_framesPerPeriod );
+	}
 
 	emit nextAudioBuffer(m_outputBufferRead.get());
 

@@ -69,6 +69,14 @@ public:
 		 */
 		, m_dither(ExportRenderSettings::dither())
 		, m_srcQuality(ExportRenderSettings::srcQuality())
+		/*! The loudness report follows the same rule as the two above: this
+		 *  render is handed the process-wide selection unless it is told
+		 *  otherwise, so a caller that does not mention it (the CLI, the export
+		 *  dialog) renders with what an agent last chose through
+		 *  export.set_loudness_report, or with the default (off) when nobody
+		 *  has. The dialog sets it from its own checkbox, which is why its
+		 *  explicit choice always wins. */
+		, m_loudnessReport(ExportRenderSettings::loudnessReport())
 	{
 	}
 
@@ -139,9 +147,12 @@ private:
 	BitDepth m_bitDepth;
 	StereoMode m_stereoMode;
 	double m_compressionLevel;
-	bool m_loudnessReport = false;
 	bool m_dither = false;
 	SrcQuality m_srcQuality = SrcQuality::Linear;
+	//! Declared AFTER the two above so the constructor's initialiser list is in
+	//! declaration order (the tree builds with -Werror; a reordered list is a
+	//! -Wreorder failure, not a warning).
+	bool m_loudnessReport = false;
 };
 
 

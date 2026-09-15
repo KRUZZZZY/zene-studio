@@ -67,15 +67,25 @@ public:
 	static bool dither() noexcept;
 	static void setDither(bool enabled) noexcept;
 
+	//! The loudness report setting that outlives one OutputSettings: whether the
+	//! NEXT render measures itself and writes the EBU R128 report beside its
+	//! output (include/LoudnessReport.h). Process-wide exactly like the dither
+	//! and SRC choices above, so the CLI, the export dialog and an agent over
+	//! the control socket all read one value.
+	static bool loudnessReport() noexcept;
+	static void setLoudnessReport(bool enabled) noexcept;
+
 	static SrcQuality srcQuality() noexcept;
 	static void setSrcQuality(SrcQuality quality) noexcept;
 
-	//! Back to the compile-time defaults: dither off, `SrcQuality::Linear`.
+	//! Back to the compile-time defaults: dither off, `SrcQuality::Linear`,
+	//! loudness report OFF.
 	static void reset() noexcept;
 
 private:
 	static std::atomic<bool> s_dither;
 	static std::atomic<int> s_srcQuality;
+	static std::atomic<bool> s_loudnessReport;
 };
 
 } // namespace lmms
