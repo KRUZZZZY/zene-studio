@@ -164,7 +164,11 @@ public:
 	 *    asked for more frames than it declared in setupProcessing();
 	 *  - parameter changes are delivered once, at the start of the request;
 	 *    MIDI events are delivered in the chunk their sample offset falls in,
-	 *    with the offset rebased to that chunk.
+	 *    with the offset rebased to that chunk, and an event whose offset is at
+	 *    or beyond the end of the request is delivered with the LAST chunk at
+	 *    that chunk's end offset - exactly the `std::clamp(offset, 0, frames)`
+	 *    the host applied before it chunked, so a note-off written at a block
+	 *    boundary still releases the note.
 	 *
 	 * A request of 0 frames does nothing at all. Calling process() before
 	 * prepare() (or after release()) does nothing at all.

@@ -227,10 +227,12 @@ struct HostedPlugin::Impl
 
 	//! One chunk of one process() request: the pointer mapping, the parameter
 	//! and event delivery and the processor call for [offset, offset + chunk).
-	//! `chunk` is never larger than maxBlockSize. See the over-run and tail
-	//! rule documented on HostedPlugin::process() in Vst3Host.h.
+	//! `chunk` is never larger than maxBlockSize, `lastChunk` is true for the
+	//! chunk the request ends in (see the event boundary rule there). See the
+	//! over-run and tail rule documented on HostedPlugin::process() in
+	//! Vst3Host.h.
 	void runChunk(const float* const* inputs, float* const* outputs, int numInputs,
-		int numOutputs, int offset, int chunk, bool firstChunk);
+		int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk);
 
 	double sampleRate = 0.0;
 	int maxBlockSize = 0;
@@ -774,7 +776,8 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 	while (offset < frames)
 	{
 		const int chunk = std::min(frames - offset, d.maxBlockSize);
-		d.runChunk(inputs, outputs, numInputs, numOutputs, offset, chunk, offset == 0);
+		d.runChunk(inputs, outputs, numInputs, numOutputs, offset, chunk, offset == 0,
+			offset + chunk == frames);
 		counters.recordChunk();
 		offset += chunk;
 	}
@@ -784,7 +787,7 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 }
 
 void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outputs,
-	int numInputs, int numOutputs, int offset, int chunk, bool firstChunk)
+	int numInputs, int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk)
 {
 	// 1a. parameter changes belong to the chunk that starts the request.
 	if (!firstChunk)
@@ -792,18 +795,30 @@ void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 		inputParamChanges.clearQueue();
 	}
 
-	// 1b. this chunk's slice of the drained MIDI list.
+	// 1b. this chunk's slice of the drained MIDI list. An event belongs to the
+	//     chunk its sample offset falls in, rebased to that chunk's start. The
+	//     BOUNDARY RULE is the one the pre-chunking host had
+	//     (`std::clamp(frameOffset, 0, frames)`): an event whose offset is at or
+	//     beyond the end of the request is delivered with the LAST chunk, at
+	//     that chunk's end offset, so it is still seen exactly once. Dropping
+	//     those events instead would turn a note-off written at the block
+	//     boundary into a note that never releases
+	//     (Vst3InstrumentTest::testDistinctInputGivesDistinctOutput caught
+	//     exactly that).
 	if (processData.inputEvents != nullptr)
 	{
 		chunkEvents.clear();
 		const int32 count = inputEvents.getEventCount();
+		const int32 limit = offset + chunk;
 		for (int32 i = 0; i < count; ++i)
 		{
 			Event event{};
 			if (inputEvents.getEvent(i, event) != kResultOk) { continue; }
-			if (event.sampleOffset < offset || event.sampleOffset >= offset + chunk)
+			if (event.sampleOffset < offset) { continue; }
+			if (event.sampleOffset >= limit)
 			{
-				continue;
+				if (!lastChunk) { continue; }
+				event.sampleOffset = limit;
 			}
 			event.sampleOffset -= offset;
 			chunkEvents.addEvent(event);

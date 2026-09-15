@@ -1268,7 +1268,7 @@ returned success, which processed the first block and left the rest of the calle
 was there before. Both now run an explicit chunk loop: chunks of at most the prepared block, the last one
 carrying the remainder, so the request is processed whole; a channel the caller does not supply maps to the
 start of the zeroed block or the scratch, never past its end; parameter changes are delivered once, with the
-request's first chunk, and MIDI is drained once and sliced per chunk with the offset rebased to that chunk.
+request's first chunk, and MIDI is drained once and sliced per chunk with the offset rebased to that chunk - including the boundary case the pre-chunking host handled with `std::clamp(offset, 0, frames)`: an event at or beyond the end of the request is delivered with the last chunk at its end offset, so a note-off written at a block boundary still releases the note.
 The rule is written on `HostedPlugin::process()` in both host headers.
 
 Observable: **`plugin.host_chunking`** (read-only) reports the contract and the counters both hosts increment —

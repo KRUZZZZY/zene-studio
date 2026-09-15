@@ -67,6 +67,20 @@ TEST_EXIT=134
 Run alone, the second case aborts with `double free or corruption (!prev)`. Restoring the chunk loop:
 `BUILD_EXIT=0`, `VST3_EXIT=0`, `Totals: 6 passed, 0 failed`.
 
+### 3b. The regression this lane introduced and fixed (found by the parent's own bar)
+
+`Vst3InstrumentTest::testDistinctInputGivesDistinctOutput` failed on the first version of the chunk
+loop, and passed with the pre-fix host (checked by reverting `Vst3Host.{h,cpp}` to `2630a13ae~1` and
+rebuilding: `PRE_FIX_TEST_EXIT=0`, `Totals: 11 passed`). Cause: the chunk slicer dropped MIDI events
+whose sample offset is at or beyond the end of the request, where the pre-chunking host clamped them
+into the last sample (`std::clamp(frameOffset, 0, frames)`) - a note-off written at the block boundary
+stopped releasing the note. Fixed in `f84f4d168` by delivering those events with the LAST chunk at that
+chunk's end offset, the same behaviour the clamp had; the rule is now written in
+`Vst3Host.h`'s over-run/tail rule. After the fix, from the same build tree:
+`Vst3InstrumentTest EXIT=0 (11 passed)`, `Vst3HostTest EXIT=0 (9 passed)`,
+`Vst3ChunkProbeTest EXIT=0 (6 passed)`, `ClapHostTest EXIT=0 (12 passed)`,
+`WasmWorkerPoolTest EXIT=0 (7 passed)`.
+
 ### 4. CODE-5 — the pool, the wake-ups and the determinism verdict, green
 
 ```
@@ -104,12 +118,12 @@ wasm/WasmWorkerPool.cpp                        EXIT=0
 wasm/WasmOfflineRender.cpp                     EXIT=0
 ```
 
-### 6. Gates (all unpiped, run on the final tree)
+### 6. Gates (all unpiped, run on the final tree, after `1771d2bfd`)
 
 | gate | exit | result |
 |---|---|---|
-| `tests/file-length-gate.sh --check` | **1** | REGRESSION: `plugins/Vst3Effect/Vst3Host.cpp` grew 800 → 876 lines; `plugins/ClapEffect/ClapHost.cpp` 953 → 1001. Ratchet re-anchor NOT done (owner directive for this pass). |
-| `tests/complexity-gate.sh --check` | **1** | `wasm::WasmWorker::run` is no longer over CCN 10 — the removed polling loop; the baseline entry is now dead weight and asks to be removed deliberately. Baseline NOT edited (owner directive). |
+| `tests/file-length-gate.sh --check` | **1** | REGRESSION: `plugins/Vst3Effect/Vst3Host.cpp` grew 800 → 891 lines; `plugins/ClapEffect/ClapHost.cpp` 953 → 1001. Ratchet re-anchor NOT done (owner directive for this pass). |
+| `tests/complexity-gate.sh --check` | **1** | three new functions over the target — `lmms::wasm::renderOffline` CCN 22, the fixture's `ChunkProbe::process` CCN 21, `lmms::vst3::HostedPlugin::Impl::runChunk` CCN 14 — plus `wasm::WasmWorker::run`, whose baseline entry is now dead weight because the polling loop it measured is gone. Baseline NOT edited (owner directive); splitting those functions is the non-ratchet fix a later pass should take. |
 | `tests/no-tautology-gate.sh` | 0 | PASS |
 | `tests/duplication-gate.sh` | 0 | PASS (0.31 %, budget 5 %) |
 | `tests/fork-sources-gate.sh` | 0 | PASS — 446 fork-NEW, 1060 inherited, 0 stale |
