@@ -484,9 +484,8 @@ LMMS_EXPORT void registerChordWriteCommands(ControlRegistry& registry);
  */
 LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
 /*! The mmpz-git depth group (feature row 42, task #612): project.merge,
- *  project.diff, project.conflicts and project.audible_diff.  The engine half
- *  is tools/mmpz-git/mmpz_git.py; this is the thin control-surface wrapper.
- *  No compile-time switch: the Python tool is shipped in every configuration.
+ *  project.diff, project.conflicts, project.audible_diff, over
+ *  tools/mmpz-git/mmpz_git.py.  No compile-time switch: shipped everywhere.
  */
 LMMS_EXPORT void registerProjectMmpzGitCommands(ControlRegistry& registry);
 

@@ -94,8 +94,18 @@ DocumentedHistogram documentedHistogram()
 	 *  merged tip and the table measures 283 rows over the four classes: 151
 	 *  true_inverse, 21 snapshot, 6 irreversible, 105 not_mutating. The release
 	 *  configuration has the telemetry client in and no wasmtime, so the base
-	 *  below is 281 / 151 / 21 / 6 / 103 and the telemetry guard adds the two
+	 *  below was 281 / 151 / 21 / 6 / 103 and the telemetry guard adds the two
 	 *  telemetry.* rows back at the bottom.
+	 *
+	 *  The mmpz-git depth lane (feature row 42, task #612) appends FOUR rows to
+	 *  that measurement: project.merge / project.diff / project.conflicts /
+	 *  project.audible_diff all work on project FILES from a child process and
+	 *  none of them touches the running session, so the whole group is
+	 *  not_mutating (src/core/ControlReversibilityTableMmpzGit.cpp, one row per
+	 *  registered id). That moves this tree to 287 rows over 151 + 21 + 6 + 109
+	 *  and the base below to 285 / 151 / 21 / 6 / 107. The +4 is this lane's
+	 *  own delta, taken from the table file it adds rather than from a build of
+	 *  this lane; the merge tip re-measures the total.
 	 *
 	 *  EVERY FIGURE A LANE WROTE WHILE IT WAS LANDING WAS BRANCH-LOCAL, measured
 	 *  on the lane's own base - 228 from 030/undo-structural, 236 from
@@ -119,7 +129,7 @@ DocumentedHistogram documentedHistogram()
 	 *  src/core/ControlReversibilityTable*.cpp. The paragraph in
 	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
 	 *  assertion's job is that the two cannot drift. */
-	DocumentedHistogram out{281, 151, 21, 6, 103};
+	DocumentedHistogram out{285, 151, 21, 6, 107};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

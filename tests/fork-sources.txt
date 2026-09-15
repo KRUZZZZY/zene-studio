@@ -559,6 +559,7 @@ src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
@@ -629,6 +630,7 @@ src/core/ControlReversibilityTableInterchange.cpp
 src/core/ControlReversibilityTableLive.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
+src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp

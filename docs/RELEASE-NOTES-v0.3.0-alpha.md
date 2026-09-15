@@ -749,20 +749,25 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **283 rows**, measured from the table itself:
-**151 `true_inverse`, 21 `snapshot`, 6 `irreversible`, 105 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **287 rows**, measured from the table itself:
+**151 `true_inverse`, 21 `snapshot`, 6 `irreversible`, 109 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**281 rows / 103 `not_mutating`** - which is the base
+**285 rows / 107 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **This is the MERGED tree's own measurement, not arithmetic:**
 `ReversibilityContractTest` was run against a build of the five-lane **wave-2** merge train's tip and
-reports **283** rows over the four classes named above (151 + 21 + 6 + 105), and its constant is the
+reports **283** rows over the four classes named above (151 + 21 + 6 + 105), and its constant was the
 telemetry-off/wasm-off base of **281 / 151 / 21 / 6 / 103**. The same build's live `control.commands`
 list answers **283** commands, which is the second and independent instrument: the registry and the
 contract table are the same size, and no row names a command that is not there.
+**`030/mmpz-git-depth` (feature row 42, task #612) appends four rows to that measured figure, and the
+two figures on this page move with them: 287 rows (283 + 4) over 151 + 21 + 6 + 109, and the
+telemetry-off base `documentedHistogram()` carries becomes 285 / 151 / 21 / 6 / 107.** The +4 is this
+lane's own delta, taken from the table file it adds - four `not_mutating` rows, one per registered id
+(`ControlReversibilityTableMmpzGit.cpp`); the merge tip re-measures the total against a build.
 
 What the five wave-2 lanes added - each figure stated beside its own rows, and all five summing to
 the measurement exactly:
@@ -793,6 +798,16 @@ the measurement exactly:
   in this configuration, so their rows are empty here and the figure above is unchanged by them. The
   one place this release computes a split is `plugin.host_chunking`'s own counters; that is data, not
   a row.
+
+A sixth lane, `030/mmpz-git-depth` (feature row 42, task #612) - the mmpz-git depth group - landed
+after that train and adds **+4 rows, +4 `not_mutating`** on the rule the whole group rests on: all
+four verbs (`project.merge`, `project.diff`, `project.conflicts`, `project.audible_diff`) read and
+write project FILES from a child process and none of them touches the running session, so there is
+nothing for a checkpoint to capture and no inverse to record. `project.merge` writes the 'ours' file,
+which is what git requires of a merge driver, and that file is not the open song;
+`project.audible_diff` renders through the built binary as a child process and compares WAVs.
+Each row's reason and mechanism say so in `src/core/ControlReversibilityTableMmpzGit.cpp`, and the
++4 is the delta that takes this page's figure from the train's 283 to 287.
 
 
 Every other figure of this shape below was measured on the branch that wrote it, or on an earlier
@@ -867,16 +882,16 @@ because that window has no reset-on-absence) and `note.probability_set` (`true_i
 per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
 touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
 and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
-**The seven `stem.*` rows are NOT in the 283 above, and that is the point:** the offline
+**The seven `stem.*` rows are NOT in the 287 above, and that is the point:** the offline
 stem-separation group (feature row 26, board task #653) is compiled only when `WANT_STEM_SPLIT=ON` -
 **OFF in the default release configuration** this page describes - so its seven `not_mutating` rows
 (`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
 `stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
 which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
-on carries **290 rows / 112 `not_mutating`** - measured, not derived: the seven-row guard was added to
+on carries **294 rows / 116 `not_mutating`** - measured, not derived: the seven-row guard was added to
 `ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
 against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
-283 + 7 rows and 105 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
+287 + 7 rows and 109 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
 configuration the release does not ship. All seven drive one offline engine, write output artefacts
 (four stem WAVs and a checksum-verified model file) and record no project state: a job is not a
 document, and a written stem is an output.
@@ -2011,10 +2026,10 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
 ### mmpz-git depth (#612)
 
 - **Three-way merge of concurrent track edits** with a musical (not textual) conflict presentation. The merge driver uses deep whole-subtree fingerprints so a delete or rename on one side can never silently discard an edit nested below it. Conflicts are reported as `track "Bass" > pattern "I" > note F#1 at bar 1 beat 1`, not as XML noise, and marked in the file as machine-readable comments.
-- **Large-asset handling.** Embedded samples and plugin state chunks are summarised by hash in conflict comments; the full value is preserved in a `.mmpz-git-conflicts.json` sidecar so the project file does not bloat.
+- **Large-asset handling.** Embedded samples and plugin state chunks are summarised by hash in conflict comments; the full value is preserved in a `.mmpz-git-conflicts.json` sidecar so the project file does not bloat. The sidecar is named from the work-tree path git passes (`%P`) when git runs the driver, so a conflicted `git merge` leaves the full values beside the project file and never on git's transient `.merge_file_*` path.
 - **Audible-diff CLI** (`project.audible_diff`): renders two projects and reports which bars of which track differ, with per-bar RMS and peak-difference metrics.
 - **CI render recipe** (`tools/mmpz-git/render-recipe.sh`): headless render with unpiped exit codes, SHA-256 of output, and refusal on empty renders.
 - **Four control-surface ids:** `project.merge`, `project.diff`, `project.conflicts`, `project.audible_diff`, each with argument/result schemas and A16 reversibility metadata.
-- **Proof:** `MmpzGitDepthTest` (registered ctest: the Python test suite over real project files) and `bash tools/mmpz-git/depth-demo.sh` (a rerunnable transcript with unpiped exit codes that builds two branches, merges them, and asserts the result).
+- **Proof:** `MmpzGitDepthTest` (registered ctest: the Python test suite over real project files, including a git-driven end-to-end merge that asserts the large-asset sidecar lands beside the project) and `bash tools/mmpz-git/depth-demo.sh` (a rerunnable transcript with unpiped exit codes that builds branches from one real project, merges them, and asserts the merged documents: the different-track merge, the same-note conflict, the delete-vs-nested-edit silent-loss class, and the embedded-sample conflict with its eight document checks).
 - **UI absence — one line:** drivable through the socket, not from the interface.
 
