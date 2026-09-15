@@ -8,7 +8,7 @@ luac.c (standalone interpreter / bytecode compiler, not embedded).
 
 Vendored rather than found via find_package() because a scripting runtime is
 an optional, always-present dependency of the Lua scripting API (see
-docs/specs/SPEC-lua-api-v0.md section 2) and distributions do not ship a
+specs/SPEC-lua-api-v0.md section 2) and distributions do not ship a
 consistent Lua 5.4 development package. The runtime is ~300 KB of C with no
 external dependencies.
 

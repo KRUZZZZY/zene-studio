@@ -142,6 +142,14 @@ Left as they are, each for a stated reason:
 - **`modules/wasm/*.wat` and `modules/wasm/demo/gain_clip.c`** (4 citations of
   `specs/SPEC-wasm-sandbox.md`): their bytes are the compiled ABI fixture the sandbox test
   loads, so re-pointing a comment would change the artefact.
+- **`src/3rdparty/lua/README.lmms` and `src/3rdparty/luabridge/README.lmms`** (2 citations of
+  `specs/SPEC-lua-api-v0.md`): re-pointed first, then reverted on measurement. Gate 6 classifies a
+  changed file under `src/3rdparty/` that is in no scope list as "undeclared change to
+  upstream-inherited code", and `README.lmms` is not a source extension, so it can be registered
+  in no scope list and the ledger's own policy forbids an entry for it (the file does not exist at
+  the fork point, so a ledger entry would be a false statement about it — the same classifier
+  defect Gate 6's own comment records for non-source files under `tools/`). The two citations
+  therefore keep the workspace path, and that is a recorded decision rather than an oversight.
 - **The derived command snapshot**: `tools/mcp-zene-control/zene_control/commands_snapshot.json`
   carries one `specs/SPEC-lua-api-v0.md` inside a command description string copied from
   `src/core/ControlCommandsScript.cpp`. That file is DERIVED, never hand-edited, and is
