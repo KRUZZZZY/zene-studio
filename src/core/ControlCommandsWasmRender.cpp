@@ -36,6 +36,7 @@
  */
 
 #include <QCryptographicHash>
+#include <QByteArrayView>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -77,8 +78,12 @@ QString digestOf(const std::vector<float>& samples)
 	QCryptographicHash hash(QCryptographicHash::Sha256);
 	if (!samples.empty())
 	{
-		hash.addData(reinterpret_cast<const char*>(samples.data()),
-			static_cast<int>(samples.size() * sizeof(float)));
+		// Qt 6.4 deprecates addData(const char*, qsizetype) in favour of the
+		// QByteArrayView overload, and this tree builds with
+		// -Werror=deprecated-declarations. The bytes hashed are the same, so
+		// every digest this function returns is unchanged.
+		hash.addData(QByteArrayView(reinterpret_cast<const char*>(samples.data()),
+			static_cast<qsizetype>(samples.size() * sizeof(float))));
 	}
 	return QString::fromLatin1(hash.result().toHex());
 }
