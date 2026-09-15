@@ -311,6 +311,7 @@ include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NoteRandom.h
 include/NoteTransform.h
+include/PatchWiring.h
 include/PinConnector.h
 include/PluginAudioPorts.h
 include/PluginScanCache.h
@@ -562,6 +563,7 @@ src/core/ModulationLayer.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/PatchWiring.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournalBounds.cpp

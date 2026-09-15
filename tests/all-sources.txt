@@ -294,6 +294,7 @@ include/OscillatorConstants.h
 include/Oscilloscope.h
 include/OutputSettings.h
 include/OversamplingHelpers.h
+include/PatchWiring.h
 include/PathUtil.h
 include/PatternClip.h
 include/PatternClipView.h
@@ -1083,6 +1084,7 @@ src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/Oscillator.cpp
+src/core/PatchWiring.cpp
 src/core/PathUtil.cpp
 src/core/PatternClip.cpp
 src/core/PatternStore.cpp
