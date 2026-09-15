@@ -190,6 +190,10 @@ set(LMMS_SRCS
 	# Its own translation unit for the reason the automation and warp groups are
 	# split - gate 7 measures a file, not a group.
 	core/ControlCommandsInterchange.cpp
+	# DAWproject import / export (feature row 37, docs/DAWPROJECT-INTERCHANGE.md):
+	# the four dawproject.* ids. Its own translation unit for the same reason -
+	# gate 7 measures a file, not a group.
+	core/ControlCommandsDawProject.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp
@@ -411,6 +415,12 @@ set(LMMS_SRCS
 	# above, and it exists because ControlReversibilityTable.cpp is at 499 of the
 	# 500 lines the file ratchet allows.
 	core/ControlReversibilityTableInterchange.cpp
+	# The dawproject.* group's four rows (feature row 37: the published DAWproject
+	# format read and written; three not_mutating, one recorded-action
+	# true_inverse for the whole-session import). A GROUP file on the same seam as
+	# the interchange and chord rows above - the class comes from each row, not
+	# from its file.
+	core/ControlReversibilityTableDawProject.cpp
 	# The chord group's nine rows (feature row 35): three not_mutating reads, four
 	# recorded-action true_inverse rows for the track edits, two live-checkpoint
 	# rows for the generators. A GROUP file on the same seam as the routing and
@@ -577,6 +587,21 @@ set(LMMS_SRCS
 	# to survive whatever a foreign program meant, which is not the writer's job.
 	core/SmfInterchange.cpp
 	core/SmfInterchangeReader.cpp
+	# DAWproject import / export (feature row 37 of docs/FEATURE-LIST-0.3.0.md,
+	# docs/DAWPROJECT-INTERCHANGE.md): the published format's container, the model,
+	# and the four conversions a round trip is made of. The ZIP container is
+	# hand-written (STORE entries, no compression dependency) because DataFile's
+	# qUncompress is zlib's framed format and cannot make a raw DEFLATE stream;
+	# the XML writer and reader are one translation unit each, the session
+	# coupling is its own (a reader has to survive whatever a foreign program
+	# meant, which is not the writer's job - the same split SmfInterchange.cpp /
+	# SmfInterchangeReader.cpp uses), and every file stays inside gate 7's cap.
+	core/DawProjectZip.cpp
+	core/DawProjectModel.cpp
+	core/DawProjectWrite.cpp
+	core/DawProjectRead.cpp
+	core/DawProjectReadTracks.cpp
+	core/DawProjectSession.cpp
 	core/ModulationLayer.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp

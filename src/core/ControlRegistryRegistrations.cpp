@@ -239,6 +239,13 @@ void registerControlCommands(ControlRegistry& registry)
 	// tempo map and a file, both of which exist in every configuration, so
 	// its ids are honest in every one.
 	registerInterchangeCommands(registry);
+	// DAWproject import / export (feature row 37, docs/DAWPROJECT-INTERCHANGE.md):
+	// the published format read and written - tracks, clips, the tempo map and the
+	// mixer, with the losses reported. No compile-time switch - the writer, the
+	// reader and the ZIP container are plain value code over the session and a
+	// file, both of which exist in every configuration, so its ids are honest in
+	// every one.
+	registerDawProjectCommands(registry);
 	// The chord track, its detection and its generators (feature row 35). No
 	// compile-time switch: the track is plain project state on the Song, the
 	// vocabulary is the piano roll's own ChordTable and the arithmetic is a

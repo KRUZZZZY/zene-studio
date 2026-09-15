@@ -342,6 +342,7 @@ include/ControlVocabulary.h
 include/ControlWarpSupport.h
 include/ControlWasmSupport.h
 include/CrashReporter.h
+include/DawProjectInterchange.h
 include/DpiHelper.h
 include/ExportDither.h
 include/ExportRenderSettings.h
@@ -521,6 +522,7 @@ src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsCrash.cpp
+src/core/ControlCommandsDawProject.cpp
 src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -623,6 +625,7 @@ src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableArchive.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
+src/core/ControlReversibilityTableDawProject.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableHostChunking.cpp
 src/core/ControlReversibilityTableInterchange.cpp
@@ -655,6 +658,14 @@ src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
 src/core/ControlWasmSupport.cpp
 src/core/CrashReporter.cpp
+src/core/DawProjectModel.cpp
+src/core/DawProjectRead.cpp
+src/core/DawProjectReadShared.h
+src/core/DawProjectReadTracks.cpp
+src/core/DawProjectSession.cpp
+src/core/DawProjectWrite.cpp
+src/core/DawProjectZip.cpp
+tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 src/core/ExportDither.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp

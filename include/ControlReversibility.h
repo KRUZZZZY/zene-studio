@@ -266,6 +266,16 @@ LMMS_EXPORT const ReversibilityRow* reversibilityHostChunkingRowTable(int* rowCo
  *  the file-length cap. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityWasmRenderRowTable(int* rowCount);
+/*! The `dawproject.*` group's four rows (feature row 37: DAWproject import /
+ *  export). Three not_mutating (the convention read, the export that writes a
+ *  file OUTSIDE the session, and the reader) and one recorded-action
+ *  true_inverse row: dawproject.import REPLACES the whole session, so its inverse
+ *  is a captured document - every track's own XML taken while the track was still
+ *  alive, the mixer strips, the tempo map and the two globals - recreated through
+ *  the project loader's own path. A GROUP file on the same seam as the
+ *  interchange, chord and archive files above - the class comes from each row,
+ *  not from its file. Joined into reversibilityRowTable(). */
+LMMS_EXPORT const ReversibilityRow* reversibilityDawProjectRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 /*! The `stem.*` group's seven not_mutating rows (feature row 26, board task

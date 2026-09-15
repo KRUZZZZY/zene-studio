@@ -337,6 +337,49 @@ that marker is published as-is, and no unverified claim is published without one
   rest of a foreign file is ignored rather than refused. And import **replaces** the map (no merge, no
   "import into a range"). All of it is in `docs/SMF-INTERCHANGE.md`.
 
+## DAWproject import / export (`dawproject.*`) — added 2026-09-15
+
+- **New: the session leaves the program as a DAWproject container another DAW reads, and comes back.**
+  Tracks, clips, notes, the tempo map, the global tempo and metre and the mixer strips are written as a
+  **DAWproject 1.0 container** (ZIP with `project.xml` and `metadata.xml`, UTF-8), and a file can be read
+  back and imported. The format is version 1.0 and stable (the published spec's own statement); this module
+  writes `version="1.0"` and refuses a file declaring another major version.
+- **Control surface:** `dawproject.convention` (the format version, the container, the time unit, the tick
+  rule and the stated losses as data), `dawproject.export`, `dawproject.read` (read a file's model back
+  **without touching the session**, which is what makes a round trip checkable against the model rather than
+  against its hash) and `dawproject.import`. Export and read are `not_mutating` (they write a file outside
+  the session or only read); import replaces the session's tracks, tempo map, globals and mixer strips and
+  records its SPEC A16 class (`true_inverse` — a recorded action checkpoint carrying the captured document,
+  because the whole session is not inside any `Song` checkpoint), so one `control.undo` brings the previous
+  session back.
+- **The mixer model is separate strips.** LMMS' MixerChannel is a summing strip several tracks may feed, not
+  a property of any one track, so the format's bare `<Channel>` elements carry the mixer strips and each
+  track's `<Channel destination="...">` names the strip it feeds. The one routing fact the format CAN
+  express is preserved; the wider MixerRoute graph, pre/post-fader flags and which tracks share a strip are
+  not (LOSSY #7).
+- **UI absence — one line: DAWproject import / export is drivable through the socket, not from the
+  interface.** Nothing in `src/gui/` writes or reads a DAWproject container. `docs/KNOWN-LIMITATIONS.md`
+  carries the same sentence.
+- **Proof:** the registered ctest `DawProjectInterchangeRoundTripTest` (**the round trip the feature list
+  names**: a model with tracks, clips, notes, mixer channels and tempo-map points is written, read back and
+  compared — model for model, not file for file or hash for hash — then applied to a session, extracted and
+  compared again, and the import's undo is measured). The ids and the track-to-strip IDREF are asserted by
+  name too, so a document that gets renumbered fails with the id it changed rather than only in the blanket
+  comparison. `docs/DAWPROJECT-INTERCHANGE.md` section 9 carries the measured proof output.
+- **The model's own ids survive the trip.** The document's ids are the MODEL's: a mixer strip is written
+  with its `mixer<n>` id, a track with its own, and every IDREF (`destination`, a lane's `track`) points at
+  the id the model carries rather than at one the writer invented, so export → import → export is stable
+  and the track-to-strip join survives a round trip.
+- **Stated limits.** Eleven losses are recorded, each counted: audio clips and their media, automation
+  clips, device/plugin state, sends, fades and clip gain, loop points, scenes and clip slots, folder nesting
+  (LMMS' track list is flat), mixer routing and sharing, and track types with no format counterpart; the
+  track type's NAME is not in the document (it is derived from `contentType`, so a differently-spelled name
+  comes back canonical); and an id the schema would reject or the model repeats is replaced by a generated
+  one (`xs:ID` must be unique and an NCName). The tempo is bounded to the engine's own 10..999 and a file
+  outside them is refused. Time values are beats; a foreign time off LMMS' 48-ticks-per-beat grid is rounded
+  onto it and counted. All of it is in `docs/DAWPROJECT-INTERCHANGE.md`, with the format version read and
+  cited and where each loss is counted.
+
 ## The groove pool and quantise (`groove.*`) — added 2026-09-13
 
 - **New: the feel of a note pattern can be captured, named and re-applied, and notes can be

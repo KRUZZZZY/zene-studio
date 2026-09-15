@@ -29,20 +29,22 @@
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/tools-sources.txt | LC_ALL=C sort) \
 #     <(git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tools \
 #       | grep -E '\.(py|sh|cpp|c|h|hpp|cc|cxx)$' \
-#       | grep -vE '^(tools/local-ci\.sh|tools/mmpz-git/scratch/(qtesc|qtroundtrip|qtsave|qtsave2)\.cpp|tools/ncpu-shim\.c|tools/wasm/wat2wasm\.cpp)$' \
+#       | grep -vE '^(tools/dawproject-(a16-histogram|roundtrip-proof)\.cpp|tools/local-ci\.sh|tools/mmpz-git/scratch/(qtesc|qtroundtrip|qtsave|qtsave2)\.cpp|tools/ncpu-shim\.c|tools/wasm/wat2wasm\.cpp)$' \
 #       | LC_ALL=C sort) && echo REPRODUCES
 # Nothing else is subtracted - in particular every tools/ path that appears in NO manifest is
 # a Gate 9 failure, not an omission from this list. The collation is pinned to C for the same
 # reason the other two manifests pin it.
 # Members of that set which already have a home are NOT repeated here - one file, one
-# home: the four C++ scratch probes (tools/mmpz-git/scratch/*.cpp) and
-# tools/wasm/wat2wasm.cpp are in tests/all-sources.txt (the whole-tree first-party C/C++
-# scope - its list is `git ls-files` over the C/C++ extension set, so a tools/ C or C++ file
-# lands in it whether or not anyone remembered); tools/ncpu-shim.c and tools/local-ci.sh are
-# in tests/fork-sources.txt (post-alpha/render-determinism registered ncpu-shim.c there and it
-# is kept there at integration - see that file's header - and local-ci.sh was already measured
-# by the fork scope when this list was added, so moving it would narrow that scope). This
-# file's command subtracts all six.
+# home: the four C++ scratch probes (tools/mmpz-git/scratch/*.cpp), tools/wasm/wat2wasm.cpp
+# and the two DAWproject interchange probes (tools/dawproject-roundtrip-proof.cpp and
+# tools/dawproject-a16-histogram.cpp, feature row 37) are in tests/all-sources.txt (the
+# whole-tree first-party C/C++ scope - its list is `git ls-files` over the C/C++ extension
+# set, so a tools/ C or C++ file lands in it whether or not anyone remembered);
+# tools/ncpu-shim.c and tools/local-ci.sh are in tests/fork-sources.txt
+# (post-alpha/render-determinism registered ncpu-shim.c there and it is kept there at
+# integration - see that file's header - and local-ci.sh was already measured by the fork
+# scope when this list was added, so moving it would narrow that scope). This file's command
+# subtracts all eight.
 # Gate 9 accepts membership in any of the three lists, and reports a tools/ source that
 # is in none of them.
 #
@@ -86,6 +88,7 @@
 # docs/RENDER-DETERMINISM.md.
 tools/auto-mastering-demo.py
 tools/brand/rasterise-placeholders.py
+tools/dawproject-proof.sh
 tools/make_stub_model.py
 tools/mcp-zene-control/call_tool.py
 tools/mcp-zene-control/server.py
