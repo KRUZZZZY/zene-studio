@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-15T12:56:22Z",
+  "captured_at": "2026-09-15T20:50:04Z",
   "commands": [
     {
       "args_schema": {
@@ -255,7 +255,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Per track, every automatable device parameter with its stable '<plugin>/<index>' id and, for each automated one, its clip's points. A point's 'value' is the model's own unit (what plugin.param_get reports); 'raw_value' is what the clip stores. 'automated_only' trims the inventory.",
+      "description": "Per track, every automatable device parameter with its stable '<plugin>/<index>' id, its current automation 'mode' (what automation.mode_set sets) and, for each automated one, its clip's points and record flag. A point's 'value' is the model's own unit (what plugin.param_get reports); 'raw_value' is what the clip stores. 'automated_only' trims the inventory.",
       "group": "automation",
       "id": "automation.get_state",
       "mutating": false,
@@ -308,14 +308,181 @@
         ],
         "type": "object"
       },
-      "description": "Set a parameter's automation mode. Refused: this build has automation modes in the engine but no way to select or persist one (docs/KNOWN-LIMITATIONS.md), so no write is faked.",
+      "description": "Set a parameter's automation mode: off (ignore the curve - the manual value stands and nothing is written), read (follow the curve, never write), touch (write while the control is held, then return to reading), latch (write from the first touch until the transport run ends), or write (overwrite the pass while the transport runs). The mode is runtime state: not persisted and not journalled, so it has no undo. automation.get_state reports each parameter's mode, so the change can be observed and not only issued.",
       "group": "automation",
       "id": "automation.mode_set",
       "mutating": true,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "mode_before": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_block_mode": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Per automated parameter: the sample-accuracy mode its clip asked for, and the ramp the audio thread built for it in the last rendered block - knots, frames, whether the value MOVES inside the block, and how many knots the fixed capacity had to refuse. 'include_block_mode' false trims it to the parameters asking for sample accuracy.",
+      "group": "automation",
+      "id": "automation.ramp_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "live_ramp_count": {
+            "type": "integer"
+          },
+          "parameters": {
+            "type": "array"
+          },
+          "ramp_capacity": {
+            "type": "integer"
+          },
+          "sample_accurate_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "sample",
+              "block"
+            ],
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "parameter",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Render one automation clip at SAMPLE precision inside each audio block ('sample'), or leave it block-quantised ('block', the behaviour every project has always had). In 'sample' mode the parameter's per-sample buffer - what the mixer, the fx chain and the tracks multiply their samples with - carries the curve at every frame instead of one value smeared over the whole block. Reversible through the ProjectJournal.",
+      "group": "automation",
+      "id": "automation.ramp_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "automation": {
+            "type": "object"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "mode_before": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "on",
+              "off"
+            ],
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "parameter",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Set a parameter's automation clip record flag: 'on' to write the control's manual value into the clip at every tick the transport runs, 'off' to stop. The clip is a JournallingObject, so the inverse is a live checkpoint.",
+      "group": "automation",
+      "id": "automation.record_mode_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "mode_before": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -3238,6 +3405,38 @@
         "required": [],
         "type": "object"
       },
+      "description": "The stable-id contract: every id family, its persistence, its form, the document element it lives on, and the current count.",
+      "group": "control",
+      "id": "control.id_contract",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "families": {
+            "type": "array"
+          },
+          "index_derived": {
+            "type": "integer"
+          },
+          "persistent": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "Liveness probe; also reports whether the engine is addressable yet, and why not when it is not.",
       "group": "control",
       "id": "control.ping",
@@ -3628,6 +3827,286 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "control": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Turn LED/feedback output on or off for one MIDI-bound control. With feedback on, every control-change that moves the model is written back to the controller as a control-change on the channel the hardware transmits on, so a motorised fader or a lit ring follows the value the project holds - including after a project load, a MIDI-learn binding or an automation step. Enabling it also moves the control's MIDI port to Duplex mode, because a port that is not output-enabled cannot carry the write; that port mode is serialized in the project, which is why this command records a transaction. 'written' reports whether THIS call's own feedback write was handed to the port's output path, and 'output_events_written' is the port's own count of control-changes that reached the MIDI client - 'written': false with a port that is not output-enabled is the honest answer, not an error. Without a real controller attached nothing consumes the bytes; the count is a write to the client, not a proof that a lamp lit.",
+      "group": "controller",
+      "id": "controller.feedback",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "control": {
+            "type": "string"
+          },
+          "controller": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "feedback": {
+            "type": "boolean"
+          },
+          "output_events_offered": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "output_events_written": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "written": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "control": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Turn soft-takeover on or off for one MIDI-bound control, and/or set the value it waits for. While soft-takeover is on, a hardware control that is bound to a control whose stored value differs from the knob's position is IGNORED: the model does not jump to wherever the knob happened to be. The hardware takes the control over the moment a control-change crosses the stored value (or lands within one MIDI step of it), and only then do that control-change and the ones after it move the model. Without 'target' the value the model holds now is used, which is the reading a user expects: the surface was in some position when the project was saved. 'control' names the model's fullDisplayName() (controller.surface_state lists the names); an empty or absent 'control' means the project's only bound MIDI control. 'captured' reports whether the hardware has already taken over - it is reset by the first movement after enabling, which is what makes a fresh binding wait for the knob.",
+      "group": "controller",
+      "id": "controller.soft_takeover",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "captured": {
+            "type": "boolean"
+          },
+          "channel": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "control": {
+            "type": "string"
+          },
+          "controller": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "soft_takeover": {
+            "type": "boolean"
+          },
+          "takeover_target": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read-only: every control in this project that a MIDI controller drives, addressed by the model's fullDisplayName(). Each entry carries the MIDI channel and controller number, the soft-takeover flag and whether the hardware has already taken the control over ('captured'), the value the takeover waits for ('takeover_target'), the LED/feedback flag and the port's two output counters. 'output_events_written' is the count of control-changes this control's port actually handed to the MIDI client's output - the measurement the LED half is proved by, taken at the client boundary in MidiPort (include/MidiPort.h) and not self-reported by the command. This is how an agent reads a surface without a controller in hand.",
+      "group": "controller",
+      "id": "controller.surface_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "controls": {
+            "type": "array"
+          },
+          "count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Apply a saved mapping template to this project: for every binding in it whose target model resolves, create the MIDI controller and the connection that drives that model, and restore the binding's soft-takeover and feedback flags. 'bound' counts the controls the call bound, 'skipped' counts the bindings whose target is not in this project and 'missing' names them - a template saved against another song applies the part that resolves and REPORTS the rest, rather than failing as a whole. A binding whose target is already driven by a MIDI controller is re-bound, which is what makes applying a template a way to move a surface onto a different set of addresses. This creates project state (the model's <connection> element), so the project is marked modified. controller.surface_state reports the resulting surface.",
+      "group": "controller",
+      "id": "controller.template_apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bound": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missing": {
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "skipped": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Remove one saved mapping template from this machine. 'removed' is false when no template of that name existed, which is reported rather than treated as an error (the file is the state, and the state asked for - no such file - already holds). No project state is touched: the project's own bindings are unaffected.",
+      "group": "controller",
+      "id": "controller.template_delete",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read-only: the mapping templates saved on this machine, by name, sorted, with the directory they live in and - per template - how many bindings it holds, how many of them resolve in the CURRENT project, and the names that do not. A template whose targets do not resolve still lists: it is a saved mapping set, not a claim about the project that is open.",
+      "group": "controller",
+      "id": "controller.template_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "templates": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Save the project's current MIDI bindings as a named mapping template - one JSON file in the user preset tree, listed by controller.template_list and re-applied by controller.template_apply. Each binding records the MIDI channel, the controller number, the model's fullDisplayName() and the binding's soft-takeover and feedback flags, so applying a template restores the whole surface and not just the addresses. A template is not a project: it survives closing the project and is what a user with two controllers swaps between. An existing template of the same name is overwritten. 'name' must be one file name - a path separator, a \"..\" or a leading dot is refused.",
+      "group": "controller",
+      "id": "controller.template_save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bindings": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -3796,7 +4275,435 @@
         "required": [],
         "type": "object"
       },
-      "description": "Whether MIDI Polyphonic Expression input is on, and what that means in this engine: the flag itself, which axes reach PLAYBACK (pitch yes - the engine applies it as a frequency ratio; pressure and timbre are stored per note and consumed by nothing yet), how a note stores its capture (the optional mpepitch / mpepressure / mpetimbre attributes), the channel count and master channel the model assumes, the default bend range and the MPE+ cap on notes per channel. Read-only. 'per_stream_settings_reachable' is false and the result says why: the master channel and bend range live on a MIDI input stream's own MpeExpression, which no object the control surface holds owns.",
+      "description": "The DAWproject version and convention this build implements, as data: the format's name and version (README.md: \"The format is version 1.0 and is stable\"; Project.xsd declares version=\"1.0\"), the container's two entry names and its text encoding, the time unit every time value is written in, LMMS' own ticks per quarter note and the exact rule between a tick and a beat, the ZIP method used, the contentType vocabulary and how LMMS' nine track types map onto it, and the STATED LOSSES - everything this module does not carry. A file declaring another MAJOR version is refused rather than read with this build's assumptions.",
+      "group": "dawproject",
+      "id": "dawproject.convention",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "container": {
+            "type": "string"
+          },
+          "content_type_vocabulary": {
+            "type": "string"
+          },
+          "format_name": {
+            "type": "string"
+          },
+          "format_version": {
+            "type": "string"
+          },
+          "major_version": {
+            "type": "integer"
+          },
+          "metadata_entry": {
+            "type": "string"
+          },
+          "minor_version": {
+            "type": "integer"
+          },
+          "project_entry": {
+            "type": "string"
+          },
+          "stated_losses": {
+            "type": "string"
+          },
+          "text_encoding": {
+            "type": "string"
+          },
+          "tick_rule": {
+            "type": "string"
+          },
+          "ticks_per_quarter": {
+            "type": "integer"
+          },
+          "time_unit": {
+            "type": "string"
+          },
+          "zip_method": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "overwrite": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Write the session as a .dawproject container: a ZIP whose project.xml carries the tracks, their clips and notes, the tempo map and each track's mixer strip, in the published format's own vocabulary at version 1.0. The file is written with STORE entries so it needs no compression dependency and every ZIP reader opens it. `loss` in the reply reports EXACTLY what the format could not carry from this session. Refuses an existing file unless `overwrite` is true, and refuses a relative path. Writes a file; changes nothing in the session.",
+      "group": "dawproject",
+      "id": "dawproject.export",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "application_name": {
+            "type": "string"
+          },
+          "application_version": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "clip_count": {
+            "type": "integer"
+          },
+          "format_version": {
+            "type": "string"
+          },
+          "loss": {
+            "type": "object"
+          },
+          "meter_point_count": {
+            "type": "integer"
+          },
+          "mixer_channel_count": {
+            "type": "integer"
+          },
+          "model_digest": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "split_map_events": {
+            "type": "integer"
+          },
+          "tempo_point_count": {
+            "type": "integer"
+          },
+          "track_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Apply a .dawproject container's model to the session: REPLACE the tracks, write the global tempo and time signature, replace the tempo map with the file's two automation timelines and set the mixer strips it carries. One command, one undo: the whole session captured before the import is put back through the project loader's own paths when the stack unwinds. `loss` in the reply reports what the file carried that this build does not apply. Refused, typed, when the file cannot be read, when a tempo or metre is outside the engine's own bounds, or when the file needs more tempo-map events than the map holds - a refusal writes nothing.",
+      "group": "dawproject",
+      "id": "dawproject.import",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip_count": {
+            "type": "integer"
+          },
+          "denominator": {
+            "type": "integer"
+          },
+          "format_version": {
+            "type": "string"
+          },
+          "loss": {
+            "type": "object"
+          },
+          "map_active": {
+            "type": "boolean"
+          },
+          "meter_point_count": {
+            "type": "integer"
+          },
+          "mixer_channel_count": {
+            "type": "integer"
+          },
+          "model_digest": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "numerator": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "tempo": {
+            "type": "number"
+          },
+          "tempo_point_count": {
+            "type": "integer"
+          },
+          "track_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Read a .dawproject container's model WITHOUT touching the session: the format version the file declares, the application that wrote it, every track with its clips and notes, the tempo and time-signature timelines, the mixer strips, the entries the container carries that this module does not use, and the model's printable digest - what makes a round trip checkable against the FILE and the MODEL rather than a hash. A file that is not a ZIP, has no project.xml entry, declares another major format version, or carries a value the engine will not accept is a typed refusal.",
+      "group": "dawproject",
+      "id": "dawproject.read",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "application_name": {
+            "type": "string"
+          },
+          "application_version": {
+            "type": "string"
+          },
+          "clip_count": {
+            "type": "integer"
+          },
+          "format_version": {
+            "type": "string"
+          },
+          "has_metadata": {
+            "type": "boolean"
+          },
+          "loss": {
+            "type": "object"
+          },
+          "meter_point_count": {
+            "type": "integer"
+          },
+          "mixer_channel_count": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "object"
+          },
+          "model_digest": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "split_map_events": {
+            "type": "integer"
+          },
+          "tempo_point_count": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "unused_entries": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "max_seconds": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Analyse an audio file the importer can read and report what it implies: the tempo (BPM) over the declared 40..240 BPM band, the FIRST transient (in seconds and frames), and the key as a tonic pitch class plus a scale name from the pre-existing scale vocabulary - each with the detector's own score and the method that produced it. Writes NOTHING: this is the suggestion BACKLOG.md item 10 asks for, and `detect.apply` is the acceptance. Reads at most `max_seconds` (default 60) from the START of the file.",
+      "group": "detect",
+      "id": "detect.analyze",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysed_seconds": {
+            "type": "number"
+          },
+          "bounds": {
+            "type": "object"
+          },
+          "duration_seconds": {
+            "type": "number"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "key": {
+            "type": "object"
+          },
+          "method": {
+            "type": "object"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "tempo": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "boolean"
+          },
+          "max_seconds": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          },
+          "tempo": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Analyse an audio file and WRITE the result into the project's own fields: the detected tempo becomes a tempo-map event at tick 0 (the map is switched on, and the whole BPM is the map's integer - the exact estimate is reported back beside it), and the detected key is stored in the project's `<detected-key>` field under a scale name the pre-existing vocabulary knows. `tempo` and `key` select the halves (both default to true); a half the analysis found nothing for is REFUSED and NOTHING is written. Both writes are ONE undoable step: control.undo takes the whole detection off.",
+      "group": "detect",
+      "id": "detect.apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "type": "object"
+          },
+          "key": {
+            "type": "object"
+          },
+          "key_state": {
+            "type": "object"
+          },
+          "method": {
+            "type": "object"
+          },
+          "path": {
+            "type": "string"
+          },
+          "tempo": {
+            "type": "object"
+          },
+          "tempo_map": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read back what the project holds: the detected key (the `<detected-key>` field, when a detection has been applied), the tempo map's own state and what it answers at tick 0, the scale vocabulary a key name can come from, the two detection method names, the bounds - and the accuracy sentence (`method.accuracy_note`), which says plainly that real-world accuracy is unverified and that the confidence numbers are scores, not probabilities.",
+      "group": "detect",
+      "id": "detect.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "type": "object"
+          },
+          "key": {
+            "type": "object"
+          },
+          "method": {
+            "type": "object"
+          },
+          "scale_vocabulary": {
+            "type": "object"
+          },
+          "tempo_map": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Whether MIDI Polyphonic Expression input is on, and what that means in this engine: the flag itself, which axes reach PLAYBACK and how (all three do - pitch as a frequency ratio the engine applies to the note itself, and pressure and timbre as MIDI channel pressure and CC74 sent to the instrument on the channel the note's own note-on took, which for a note captured from an MPE controller is its member channel; the two MIDI axes need an instrument that consumes them - a hosted instrument or a MIDI output port - because the built-in synthesisers are driven by frequency and volume and never see MIDI), how a note stores its capture (the optional mpepitch / mpepressure / mpetimbre attributes), the channel count and master channel the model assumes, the default bend range and the MPE+ cap on notes per channel. Read-only. 'per_stream_settings_reachable' is false and the result says why: the master channel and bend range live on a MIDI input stream's own MpeExpression, which no object the control surface holds owns.",
       "group": "device",
       "id": "device.mpe_get_state",
       "mutating": false,
@@ -3855,7 +4762,7 @@
         ],
         "type": "object"
       },
-      "description": "Turn MIDI Polyphonic Expression INPUT on or off. While it is on, a bend / channel pressure / CC74 arriving on a note's own MPE member channel is that note's expression and is consumed instead of bending the whole instrument; while it is off the input path is exactly what it was before MPE existed (the engine's own flag is deliberately NOT serialized, so a project never changes meaning because of it). What reaches playback is the pitch axis only - pressure and timbre are stored on the note and consumed by nothing yet (feature-list row 12). Switching it off does NOT clear what is already stored on the notes: note.expression_get still reads it, and note.expression_clear is the verb that removes it. Reversible: a recorded action step restores the previous flag, so control.undo and Ctrl+Z are one history.",
+      "description": "Turn MIDI Polyphonic Expression INPUT on or off. While it is on, a bend / channel pressure / CC74 arriving on a note's own MPE member channel is that note's expression and is consumed instead of bending the whole instrument; while it is off the input path is exactly what it was before MPE existed (the engine's own flag is deliberately NOT serialized, so a project never changes meaning because of it). All three axes reach playback: pitch as a frequency ratio, pressure and timbre as MIDI channel pressure / CC74 on the note's own channel - which a hosted instrument or a MIDI output port consumes, and no built-in synthesiser does. Switching it off does NOT clear what is already stored on the notes: note.expression_get still reads it, and note.expression_clear is the verb that removes it. Reversible: a recorded action step restores the previous flag, so control.undo and Ctrl+Z are one history.",
       "group": "device",
       "id": "device.mpe_set",
       "mutating": true,
@@ -8020,6 +8927,117 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "The patcher node graph of a target's effect chain: every node with the role a patch addresses it by (\"input\", \"effect:<index>\"), its type, its ports, its own parameters and whether it is prepared; the edges in node ids and in roles; the cached topological order the audio thread walks; the output node; and whether the wiring is the DERIVED one (linear, from the effect list) or an AUTHORED patch. Read-only. `editable` reports whether an edit can land at all, with the reason when it cannot.",
+      "group": "patcher",
+      "id": "patcher.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "editable": {
+            "type": "object"
+          },
+          "effect_count": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "effective_wiring": {
+            "type": "object"
+          },
+          "graph": {
+            "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "patch_dropped": {
+            "type": "boolean"
+          },
+          "routes_through_graph": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "wiring": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "edges": {
+            "type": "array"
+          },
+          "output": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Re-wire a target's effect chain: 'edges' is the whole wiring ({from, to, from_port, to_port} objects whose ends are \"input\" or \"effect:<index>\"), 'output' is the node the host block leaves through (the last effect by default), and an empty or absent edge list restores the DERIVED wiring. The new graph is built off the audio thread and published under the audio engine's model-change guard, so the edit is never concurrent with the render (include/RoutingGraph.h's threading contract) and it survives the next plugin.load - the derived rebuild re-applies it. Refused, typed, with nothing written, when the chain does not render through its graph (see patcher.get_state's `editable`), when an edge would make a cycle, or when the output cannot be reached from the input. Reversible: the previous wiring, derived or authored, is restored by control.undo.",
+      "group": "patcher",
+      "id": "patcher.set_wiring",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "effective_wiring": {
+            "type": "object"
+          },
+          "graph": {
+            "type": "object"
+          },
+          "previous": {
+            "type": "object"
+          },
+          "routes_through_graph": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "wiring": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -9084,6 +10102,131 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "b": {
+            "type": "string"
+          },
+          "mix_only": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "type": "object"
+      },
+      "description": "Render two project files (through the built binary, as child processes) and report which bars of which track differ, with the RMS and peak difference per run of bars. This is the audible answer to `diff`: it names a bar and a track, not a note. Long-running: it renders both projects, track by track. differ=false means the renders matched bar for bar.",
+      "group": "project",
+      "id": "project.audible_diff",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "differ": {
+            "type": "boolean"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "report": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "description": "Re-present the musical conflicts a project file carries: the marker comments the mmpz-git merge driver left behind, read back without re-running the merge. Each conflict names the track, the pattern, the note and the bar, and what each side did. Reads one file and writes nothing; conflict_count 0 means the file is not conflicted.",
+      "group": "project",
+      "id": "project.conflicts",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "conflict_count": {
+            "type": "integer"
+          },
+          "report": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "b": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "type": "object"
+      },
+      "description": "Semantic, XML-aware diff of two LMMS project files: which elements were added, removed, changed or moved, named by their musical path. Reads both files and writes nothing. This is the diff the repository configures for .mmpz, so `git diff` and this verb show the same operation list.",
+      "group": "project",
+      "id": "project.diff",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "type": "integer"
+          },
+          "changed": {
+            "type": "integer"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "moved": {
+            "type": "integer"
+          },
+          "operations": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -9163,6 +10306,61 @@
           },
           "unhashed_present": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "type": "string"
+          },
+          "ours": {
+            "type": "string"
+          },
+          "report": {
+            "type": "string"
+          },
+          "theirs": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "base",
+          "ours",
+          "theirs"
+        ],
+        "type": "object"
+      },
+      "description": "Three-way (base, ours, theirs) merge of LMMS project files through the mmpz-git merge driver. Operates on FILES, not the running session: the merged document is written to the 'ours' path (which is what git expects of a merge driver). 'conflicts' is 0 for a clean merge and the number of musical conflicts otherwise; a conflicted file is marked in place with comments a human resolves and `project.conflicts` re-prints. Exit 2 from the driver (a merge it refuses to write) is an error here, never a silent success.",
+      "group": "project",
+      "id": "project.merge",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "conflicts": {
+            "type": "integer"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "merged_file": {
+            "type": "string"
+          },
+          "report": {
+            "type": "string"
+          },
+          "report_path": {
+            "type": "string"
+          },
+          "sidecar": {
+            "type": "string"
           }
         },
         "required": [],
@@ -11049,6 +12247,145 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "a": {
+            "type": "string"
+          },
+          "b": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "a"
+        ],
+        "type": "object"
+      },
+      "description": "Compare two revisions of a project, or one revision against the file as it is on disk now (the id 'live', which only this command accepts - revisions.list does not report the working file as a revision). The result reports each side's id, source, timestamp, size and sha256, whether the two are byte-identical, and a STRUCTURAL comparison of the two documents: how many elements of each tag each side holds, the element totals and the tags that differ. That is a summary, not a semantic diff - the musical diff of two project documents is tools/mmpz-git's (`mmpz-git diff`), outside this process. Read-only.",
+      "group": "revisions",
+      "id": "revisions.compare",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "object"
+          },
+          "b": {
+            "type": "object"
+          },
+          "comparison": {
+            "type": "object"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_git": {
+            "type": "boolean"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The project's revision timeline: every revision this machine still holds, newest first, each with the SOURCE it came from ('rotation' - the keep-3 revision set project.save rotates, '<file>.rev0..rev2'; 'backup' - the '<file>.bak' a save from the interface writes; 'autosave' - the periodic recover.mmp and the recover.mmp.bak it replaced; 'git' - the commits that touched the file where the project lives in a git repository), its timestamp (UTC; an autosave reports its sidecar's recorded savedUTC), its size and its sha256. Read-only: nothing is written and no new store is created. The `id` each entry carries is what revisions.compare and revisions.restore take. The `git` half is bounded and optional: 'include_git' false, no git on the machine, or no repository, and the `git` object says which - without failing the list.",
+      "group": "revisions",
+      "id": "revisions.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "git": {
+            "type": "object"
+          },
+          "revisions": {
+            "type": "array"
+          },
+          "sources": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "description": "Restore one revision of the project OVER the file on disk, by the `id` revisions.list reports (rev0..rev2, 'backup', 'autosave', 'autosave_prev' or 'git:<sha>'). The live file is rotated into the keep-3 revision set BEFORE it is replaced, so the restore is itself recoverable - control.undo puts the replaced file back, or, when there was no file on disk yet, removes the one this call created. Refused, typed and without writing anything, when the id names no revision, when the source exceeds the policy's 8 MiB per-revision cap, or when the live file does (its rotation would have to be bounded by the same cap, and a truncated project is a corrupt revision). The session in memory is NOT reloaded: call project.open afterwards to work on the restored bytes.",
+      "group": "revisions",
+      "id": "revisions.restore",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recovered_by": {
+            "type": "string"
+          },
+          "restored": {
+            "type": "boolean"
+          },
+          "revisions": {
+            "type": "object"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "clip": {
             "type": "string"
           }
@@ -11118,6 +12455,224 @@
           },
           "target_type": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Accept the offer of a normal start: write the acknowledgement the NEXT launch consumes, so it loads with third-party plugins enabled. Keeps the marker and does not change this session (instances already skipped were never created). Refuses when there is no marker. Not reversible - no function in this engine removes the acknowledgement except safestart.clear, which removes the marker with it.",
+      "group": "safestart",
+      "id": "safestart.acknowledge",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_a_safe_start": {
+            "type": "boolean"
+          },
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "acknowledgement": {
+            "type": "object"
+          },
+          "acknowledgement_path": {
+            "type": "string"
+          },
+          "marker_path": {
+            "type": "string"
+          },
+          "next_launch": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "safe_start": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Clear the crash marker: delete the marker and the acknowledgement, so the next launch is a normal one, and leave safe-start mode in this session. The verb for 'the cause is known and fixed'. Refuses when there is neither file, so a call that would change nothing writes nothing. Not reversible - the marker's own record of the crashed session is gone; control.undo names the fallback.",
+      "group": "safestart",
+      "id": "safestart.clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgement": {
+            "type": "object"
+          },
+          "cleared": {
+            "type": "boolean"
+          },
+          "marker": {
+            "type": "object"
+          },
+          "marker_present": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "array"
+          },
+          "removed_count": {
+            "type": "integer"
+          },
+          "safe_start": {
+            "type": "boolean"
+          },
+          "skip_enabled": {
+            "type": "boolean"
+          },
+          "was_safe_start": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Safe-start mode's state: whether the module is installed, the crash marker and the acknowledgement as files (path, existence, size, time), whether a marker says the previous run did not exit cleanly, whether THIS session started safe, how many sessions in a row have, the session-scoped skip switch, every plugin instance the mode skipped and why, the directories the third-party classification treats as this build's own, the previous session's own record and the offer of a normal start. Read-only, and it answers in every configuration.",
+      "group": "safestart",
+      "id": "safestart.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "acknowledgement": {
+            "type": "object"
+          },
+          "acknowledgement_path": {
+            "type": "string"
+          },
+          "bounds": {
+            "type": "object"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "marker": {
+            "type": "object"
+          },
+          "marker_path": {
+            "type": "string"
+          },
+          "marker_present": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "offer": {
+            "type": "object"
+          },
+          "own_plugin_directories": {
+            "type": "array"
+          },
+          "previous_run_exited_cleanly": {
+            "type": "boolean"
+          },
+          "project_path": {
+            "type": "string"
+          },
+          "safe_start": {
+            "type": "boolean"
+          },
+          "safe_start_runs": {
+            "type": "integer"
+          },
+          "session": {
+            "type": "object"
+          },
+          "skip_enabled": {
+            "type": "boolean"
+          },
+          "skipped": {
+            "type": "array"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "working_directory": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Turn the load-time skip of third-party plugin INSTANCES on or off for THIS session - the session-scoped half of the predicate Plugin::instantiate consults. Does not touch the marker: with it off, a project loaded now loads its third-party plugins when it is opened (already-skipped instances are not created by this call). Re-armed by the next session. Not reversible - process-scoped mode state, no journal checkpoint, and nothing puts an already-skipped instance back.",
+      "group": "safestart",
+      "id": "safestart.set_skip",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "marker_present": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "safe_start": {
+            "type": "boolean"
+          },
+          "skip_enabled": {
+            "type": "boolean"
+          },
+          "was": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -14690,20 +16245,438 @@
         "required": [],
         "type": "object"
       }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The hosted module's state: whether anything is hosted, and its path/format/fuel budget; when one is, its declared channel count and latency (the values the host reads from the channels and latency globals AND then clamps, ABI doc section 4.1), whether it exports process(), its linear-memory size, and all 16 parameter slots. 'last_log' is the text the most recent call passed to host_log() - reading it clears it. Writes nothing.",
+      "group": "wasm",
+      "id": "wasm.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "last_log": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "root": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "What this build's WASM DSP sandbox can host: the ABI version and import module, the exports a module must declare (with their wasm types) and the host imports it may use, the hard limits the host enforces (channels, parameter slots, log bytes, linear-memory and store limits, the default fuel budget, the largest block), and every .wat/.wasm module in a directory. The directory is 'root', defaulting to 'wasm-modules' - the directory the build assembles the demo modules into - resolved against the process's working directory. Also reports the currently hosted module.",
+      "group": "wasm",
+      "id": "wasm.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "abi_version": {
+            "type": "integer"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "exports": {
+            "type": "array"
+          },
+          "import_module": {
+            "type": "string"
+          },
+          "imports": {
+            "type": "array"
+          },
+          "limits": {
+            "type": "object"
+          },
+          "modules": {
+            "type": "array"
+          },
+          "root": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fuel": {
+            "maximum": 1000000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Host a module in the sandbox: 'path' is a .wat (assembled with the runtime's own wat2wasm, so no extra toolchain is needed) or a .wasm file. The module is compiled and instantiated, and 'fuel' overrides the per-call fuel budget (the default is the ABI's). ALL OR NOTHING: a module that fails to compile or instantiate is refused, typed, and the module already hosted is left alone - the host builds the new instance before replacing the old one. Reports the hosted module's own state, including the channels and latency the ABI reads from its globals.",
+      "group": "wasm",
+      "id": "wasm.load",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "previous_path": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The shared WASM worker pool: how many lane threads this process runs (bounded, shared by every hosted module - not one per module), how many workers are registered, how many lane passes found work, how many queued blocks the lanes processed, and what the audio path's wake-ups cost: `wakeups` (a parked lane was woken), `wakes_suppressed` (a lane was already awake, so the audio thread took no syscall) and `parks` (a lane went to sleep). Counters are process-wide and never reset. Writes nothing.",
+      "group": "wasm",
+      "id": "wasm.pool",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "lanes_per_process": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pool": {
+            "type": "object"
+          },
+          "state": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "maximum": 8192,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "input": {
+            "type": "array"
+          },
+          "sample_rate": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Run one block through the hosted module and report what happened. process() is entered once per channel plane, exactly as WasmWorker enters it, and plane 0's output is read back. 'frames' (1..8192) and 'sample_rate' default to 48 and 48000; 'input' supplies plane 0's samples, and when it is absent the conformance suite's rising ramp is used. 'status' is 'ok', 'trap' or 'error': a trap is REPORTED rather than thrown, which is the sandbox's whole purpose. The call's own outcome is a successful result; only having nothing to run is a refusal.",
+      "group": "wasm",
+      "id": "wasm.process",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "fuel_consumed": {
+            "type": "number"
+          },
+          "log": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "output": {
+            "type": "array"
+          },
+          "output_peak": {
+            "type": "number"
+          },
+          "planes_run": {
+            "type": "integer"
+          },
+          "return_value": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "number"
+          },
+          "state": {
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "trap",
+              "error"
+            ],
+            "type": "string"
+          },
+          "stimulus": {
+            "type": "string"
+          },
+          "trap_code": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "block_frames": {
+            "maximum": 8192,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "frames": {
+            "maximum": 4194304,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "input": {
+            "type": "array"
+          },
+          "module": {
+            "type": "string"
+          },
+          "repeats": {
+            "maximum": 8,
+            "minimum": 2,
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Render a module offline - one block in flight, on a fresh worker of the shared pool, so a module's state advances in block order - and report whether the render is reproducible WITHIN A MEASURED TOLERANCE rather than against a hash. 'repeats' pooled renders (2..8, default 2) are compared pairwise, and two inline (no-pool) renders of the same input give this build's own run-to-run floor; 'deterministic' is the worst pooled pair being within that floor in both differing frames and largest absolute difference. 'comparator_self_test' perturbs one sample and reports that the comparator finds it, so 'identical' is a measurement and not a constant. 'module' defaults to the hosted module; 'frames' (default 4096), 'block_frames' (default 256), 'sample_rate' (default 48000) and 'input' (plane 0; a ramp by default) describe the render. Writes nothing.",
+      "group": "wasm",
+      "id": "wasm.render_offline",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "block_frames": {
+            "type": "integer"
+          },
+          "blocks_in_flight": {
+            "type": "integer"
+          },
+          "channels": {
+            "type": "integer"
+          },
+          "comparator_self_test": {
+            "type": "object"
+          },
+          "control_runs": {
+            "type": "array"
+          },
+          "deterministic": {
+            "type": "boolean"
+          },
+          "format": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "latency": {
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "offline"
+            ],
+            "type": "string"
+          },
+          "module": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "repeats": {
+            "type": "integer"
+          },
+          "runs": {
+            "type": "array"
+          },
+          "sample_rate": {
+            "type": "number"
+          },
+          "state": {
+            "type": "object"
+          },
+          "stimulus": {
+            "enum": [
+              "caller",
+              "ramp"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "type": "object"
+          },
+          "subject_against_control": {
+            "type": "object"
+          },
+          "tolerance": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "maximum": 15,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "index",
+          "value"
+        ],
+        "type": "object"
+      },
+      "description": "Write one of the 16 parameter slots a module reads through env.host_get_param(index): 'index' is 0..15 and 'value' an f32. Refused, typed, when no module is hosted or the index is outside the range - never clamped silently, because a silent clamp is indistinguishable from a working write. 'previous' reports the slot's old value and one control.undo puts it back. This does NOT touch the wasm_effect plugin's 8 parameter models: those are project state, persisted with the project - reach them with plugin.param_set on a wasm_effect device instead.",
+      "group": "wasm",
+      "id": "wasm.set_param",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "previous": {
+            "type": "number"
+          },
+          "state": {
+            "type": "object"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Drop the hosted module, releasing its wasmtime store and the linear memory that went with it. Refused, typed, when nothing is hosted - there is no silent no-op. The inverse of wasm.load and of itself: the dropped module's path is recorded and one control.undo hosts it again, from a cold memory image.",
+      "group": "wasm",
+      "id": "wasm.unload",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object"
+          },
+          "unloaded": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
     }
   ],
-  "count": 283,
+  "count": 322,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 227684472,
-    "binary_sha256": "e59b59e4d6489115f1fbd2edcfd426919188608c55c5e920319e497e51f3916f",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "a4f5d4b9e0914c831edb6d44b646bf4ab6010137",
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-cnwu6k1i/zene.sock",
-    "version": "0.2.1-alpha.269+7cc7d5c"
+    "source_socket": "/tmp/zene-w4-snapshot.sock",
+    "version": "0.2.1-alpha.368+48af0d2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
-  "schema": 1
+  "schema": 1,
+  "surface": {
+    "group_count": 52,
+    "id_count": 322,
+    "ids_sha256": "021bc354d960aeefee77ac0ddfc537a2169d35f182342e0ed50613a169ca34d5"
+  }
 }
