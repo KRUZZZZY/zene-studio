@@ -1543,3 +1543,36 @@ What it is bounded by, stated rather than measured-away (every number below was 
   machines or optimisation levels: the floor is a property of one build on one box. A change whose
   samples move less than the floor is indistinguishable by construction, and a difference the
   programme does report is not attributed to a commit — that attribution is the reader's work.
+
+- **MIDI controller auto-reconnection has no interface, and its reach is the client poll — added
+  2026-09-14.** A controller assignment is remembered by IDENTITY (the MIDI client's NAME and the port's
+  NAME, "<client name>:<port name>") and re-established without user action when the device comes back
+  at a new sequencer address, drivable through `--control-socket` (`midi.reconnect_status`,
+  `midi.clients_list`, `midi.reconnect_arm`, `midi.reconnect_set`) with a registered ctest that kills a
+  real external ALSA-sequencer client and starts it again under the same name — but **nothing in
+  `src/gui/` shows, arms or reports a controller re-connection**: MIDI controller auto-reconnection is
+  drivable through the socket, not from the interface. There is no re-connection indicator, no binding
+  list and no mode switch. The notice is **measured per backend on this box**, not read off the source
+  (2026-09-15, the rebuilt binary, the config file's `audioengine/mididev` set to one client at a time and
+  `midi.reconnect_status` read back): the ALSA-sequencer client reports `notice: "polled"` with its ports
+  listed, and the registered transcript measures a real kill-and-return re-attachment through that poll;
+  the dummy client reports `notice: "none"` and an empty port list. **The JACK, ALSA-raw, OSS and sndio
+  clients cannot be reached on this host at all** — there is no `jackd`, no `sndiod`, no `/dev/midi*` and
+  no `/dev/sequencer`, and configuring any of the four lands the engine on the dummy client (measured:
+  `notice: "none"`, 0 ports) — so their own APIs' hotplug behaviour is **unverified-on-hardware**, not
+  measured and not claimed; the WinMM and CoreMIDI clients are not compiled on this platform at all
+  (`LMMS_HAVE_WINMM` undefined here) and are unverified-on-hardware for the same reason. What IS measured
+  is that this build re-attaches only where a client publishes a port-list change and reports `notice`
+  itself, so on any client that declares none the loss is recorded and nothing can re-attach
+  automatically. Four further bounds are stated rather than left to be discovered: a re-connection is
+  observed within the client's poll (about a second for the ALSA-sequencer client) and not at the instant
+  the device returns; a device that comes back with the address it just freed inside one poll interval is
+  never *seen* to leave, so no loss is recorded and there is nothing to re-attach (measured: the
+  transcript's mode step has to wait for the recorded loss before it measures anything); a port whose
+  track lives inside a Beat/Bassline container is reported by `midi.reconnect_status` as the port's own
+  display name, which `midi.reconnect_set` cannot address, because a `trk-<n>` id resolves over the song
+  container alone (`resolveTrack`, `src/core/ControlEditSupport.cpp`; measured: `'Jupiter' is not a track
+  id of the form trk-<n>`); an assignment is remembered only while it is bound at least once with the
+  device present, so a project naming a port that is absent at load time has no subscription to remember
+  and is not re-attached; and a controller whose driver renames its sequencer client on every replug is a
+  different identity, which is not re-attached.

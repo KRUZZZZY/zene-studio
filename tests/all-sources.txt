@@ -294,6 +294,7 @@ include/MidiLearnGui.h
 include/MidiOss.h
 include/MidiPort.h
 include/MidiPortMenu.h
+include/MidiReconnect.h
 include/MidiSetupWidget.h
 include/MidiSndio.h
 include/MidiWinMM.h
@@ -1011,6 +1012,9 @@ src/core/ControlCommandsMasteringRun.cpp
 src/core/ControlCommandsMeter.cpp
 src/core/ControlCommandsMeterFile.cpp
 src/core/ControlCommandsMidi.cpp
+src/core/ControlCommandsMidiReconnect.cpp
+src/core/ControlCommandsMidiReconnectEdit.cpp
+src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsModulator.cpp
@@ -1121,6 +1125,7 @@ src/core/ControlReversibilityTableInterchange.cpp
 src/core/ControlReversibilityTableLive.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
+src/core/ControlReversibilityTableMidiReconnect.cpp
 src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
@@ -1355,6 +1360,7 @@ src/core/midi/MidiEventToByteSeq.cpp
 src/core/midi/MidiJack.cpp
 src/core/midi/MidiOss.cpp
 src/core/midi/MidiPort.cpp
+src/core/midi/MidiReconnect.cpp
 src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
@@ -1577,6 +1583,7 @@ tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
+tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
@@ -1665,6 +1672,7 @@ tests/src/core/WarpMarkersTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
+
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
@@ -1672,7 +1680,6 @@ tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/PluginPortsHarness.h
 tests/src/plugins/PluginPortsMigrationReference.cpp
-
 tests/src/plugins/PluginPortsMigrationTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
@@ -1682,20 +1689,21 @@ tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
+
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
-
 tests/src/wasm/WasmWorkerPoolTest.cpp
 tools/dawproject-a16-histogram.cpp
+
 tools/dawproject-roundtrip-proof.cpp
 tools/mmpz-git/scratch/qtesc.cpp
 tools/mmpz-git/scratch/qtroundtrip.cpp
-
 tools/mmpz-git/scratch/qtsave.cpp
 tools/mmpz-git/scratch/qtsave2.cpp
 tools/ncpu-shim.c

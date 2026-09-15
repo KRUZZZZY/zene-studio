@@ -420,6 +420,13 @@ LMMS_EXPORT void registerPluginPresetCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDspCommands(ControlRegistry& registry);
 //! settings.*, audio.*, midi.* and app.version.
 LMMS_EXPORT void registerSettingsCommands(ControlRegistry& registry);
+//! midi.reconnect_status / midi.clients_list - the controller-assignment
+//! memory the engine keeps by IDENTITY, and the live ports it is matched
+//! against (0.3.0 feature-list row 18, OWNER-31 item 7).
+LMMS_EXPORT void registerMidiReconnectReadCommands(ControlRegistry& registry);
+//! midi.reconnect_arm / midi.reconnect_set - the mode switch and the manual
+//! binding the automatic re-connection then remembers.
+LMMS_EXPORT void registerMidiReconnectEditCommands(ControlRegistry& registry);
 //! automation.get_state and automation.mode_set.
 LMMS_EXPORT void registerAutomationCommands(ControlRegistry& registry);
 //! automation.add_point / automation.remove_point / automation.clear.

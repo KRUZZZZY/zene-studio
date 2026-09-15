@@ -253,6 +253,8 @@ set(LMMS_SRCS
 	core/ControlCommandsModulatorRoutes.cpp
 	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsMidi.cpp
+	core/ControlCommandsMidiReconnect.cpp
+	core/ControlCommandsMidiReconnectEdit.cpp
 	core/ControlCommandsNotes.cpp
 	# note.probability_set (0.3.0 verb wave): the MIDI-depth probability verb the
 	# engine has carried since docs/MIDI-DEPTH.md and never got an id for.
@@ -443,6 +445,7 @@ set(LMMS_SRCS
 	# #646): a live-checkpoint row and a read, joined into reversibilityRowTable().
 	core/ControlReversibilityTableAutomationRamp.cpp
 	core/ControlReversibilityTableChain.cpp
+	core/ControlReversibilityTableMidiReconnect.cpp
 	# The STRUCTURAL group's four action rows - created / reordered / deleted
 	# track, removed device (task #664, feature row 75). Its own TU for the same
 	# reason as the chain rows: the action table was at the file ratchet.
@@ -808,6 +811,7 @@ set(LMMS_SRCS
 	core/midi/MidiSndio.cpp
 	core/midi/MidiApple.cpp
 	core/midi/MidiPort.cpp
+	core/midi/MidiReconnect.cpp
 	core/midi/MpeExpression.cpp
 	core/midi/MidiWinMM.cpp
 

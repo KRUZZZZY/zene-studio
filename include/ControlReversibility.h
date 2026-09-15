@@ -164,6 +164,15 @@ LMMS_EXPORT const ReversibilityRow* reversibilityNoteScaleRowTable(int* rowCount
 //! for the same reason the folder rows are: the block's class comes from each
 //! row, not from its file.
 LMMS_EXPORT const ReversibilityRow* reversibilityChainRowTable(int* rowCount);
+//! The MIDI controller auto-reconnection GROUP's recorded-action row (0.3.0
+//! feature-list row 18, OWNER-31 item 7: midi.reconnect_set is true_inverse
+//! through a recorded step, because MidiPort::loadSettings only ever
+//! SUBSCRIBES the ports a restored element names and never detaches one it
+//! does not, so a checkpoint of the Track could not take a binding back off).
+//! Joined into the action half by reversibilityActionRowTable(), and through it
+//! into reversibilityRowTable(). The group's three not_mutating rows are in the
+//! passive file with every other read-only id.
+LMMS_EXPORT const ReversibilityRow* reversibilityMidiReconnectRowTable(int* rowCount);
 //! The STRUCTURAL group's four recorded-action rows (task #664, feature row 75):
 //! a created track, a reordered track, a deleted track restored WITH its clips
 //! and a removed device re-instantiated with its settings - the operations

@@ -450,6 +450,38 @@ const ReversibilityRow kPassiveRows[] = {
 		"and each carries a recorded action checkpoint", ""),
 
 
+	// The MIDI controller auto-reconnection group's three read-only ids (0.3.0
+	// feature-list row 18, OWNER-31 item 7). Its one writer,
+	// midi.reconnect_set, is a recorded-action true_inverse row in
+	// ControlReversibilityTableMidiReconnect.cpp: a binding is a property of the
+	// engine's MIDI port, and MidiPort::loadSettings only ever SUBSCRIBES what a
+	// restored element names, so the command records a step through the same
+	// subscribe call the write uses.
+	R("midi.reconnect_status", RC::NotMutating, false,
+		"reads the client's controller-assignment memory - one entry per "
+		"remembered binding, with its identity, the full name it currently holds, "
+		"whether that identity is live, whether it was lost, and the session's "
+		"re-connection and loss totals - plus the mode and the running client's "
+		"own answer to whether it publishes port-list changes at all",
+		"no write: midi.reconnect_set is the group's only writer, and the "
+		"re-attachment itself is the engine's, driven by the client's port-list "
+		"poll; nothing in this command touches a model, a file or the sequencer", ""),
+	R("midi.clients_list", RC::NotMutating, false,
+		"reads the ports the running MIDI client can see right now, gathered by "
+		"client name, with each port's identity, address, direction and whether an "
+		"engine port holds a binding to it",
+		"no write: it walks MidiClient::readablePorts()/writablePorts() and the "
+		"assignment memory; midi.reconnect_set is what writes a binding", ""),
+	R("midi.reconnect_arm", RC::NotMutating, false,
+		"switches the automatic re-connection mode on or off - engine/mode state "
+		"the client's own port-list poll reads, not project state: the "
+		"re-attachments it permits happen later, in the poll, and each one is a "
+		"binding this table classifies where the binding command is",
+		"no write: the flag is persisted to the config file's midi/reconnect key "
+		"(the midi.retro_capture_arm precedent) and no model, journal step or port "
+		"is touched by the call itself", ""),
+
+
 	// The chain-preset store's two read-only inspectors (the 0.3.0 ladder's
 	// "plugin-chain presets", OWNER-31 item 2). Its four writers are
 	// action-checkpoint rows in ControlReversibilityTableAction.cpp: the

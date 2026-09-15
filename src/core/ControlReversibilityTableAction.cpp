@@ -450,20 +450,21 @@ constexpr int kActionRowCount = static_cast<int>(sizeof(kActionRows) / sizeof(kA
 
 const ReversibilityRow* reversibilityActionRowTable(int* rowCount)
 {
-	// The action half is THREE translation units: this one's rows first, then
-	// the chain-preset group's (ControlReversibilityTableChain.cpp), then the
+	// The action half is FOUR translation units: this one's rows first, then the
+	// chain-preset group's (ControlReversibilityTableChain.cpp), then the
 	// STRUCTURAL group's (ControlReversibilityTableStructure.cpp - the created /
-	// deleted / reordered objects of task #664). Both satellites are
-	// recorded-ACTION rows - the class this half is defined by - and they are
-	// separate files only because each landed when this one was at the 500-line
-	// file-length ratchet. The join is here rather than in
-	// reversibilityRowTable() so the ONE row count callers read is unchanged:
-	// ControlReversibilityTable.cpp joins THIS function's result with the
-	// live-checkpoint rows exactly as before.
+	// deleted / reordered objects of task #664), then the MIDI controller
+	// auto-reconnection group's (ControlReversibilityTableMidiReconnect.cpp,
+	// 0.3.0 feature-list row 18). Every satellite is recorded-ACTION rows - the
+	// class this half is defined by - and each is a separate file only because
+	// it landed when this one was at the 500-line file-length ratchet. The join
+	// is here rather than in reversibilityRowTable() so the ONE row count
+	// callers read is unchanged: ControlReversibilityTable.cpp joins THIS
+	// function's result with the live-checkpoint rows exactly as before.
 	static const std::vector<ReversibilityRow> joined = [] {
 		std::vector<ReversibilityRow> all(kActionRows, kActionRows + kActionRowCount);
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityChainRowTable,
-				reversibilityStructureRowTable})
+				reversibilityStructureRowTable, reversibilityMidiReconnectRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

@@ -858,6 +858,10 @@ void MidiAlsaSeq::updatePortList()
 		m_writablePorts = writablePorts;
 		emit writablePortsChanged();
 	}
+
+	// Re-attach anything whose device came back at a new address; see
+	// include/MidiReconnect.h and include/MidiAlsaSeq.h (noticesPortChanges).
+	m_reconnect.reconcile( m_readablePorts, m_writablePorts );
 }
 
 

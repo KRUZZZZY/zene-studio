@@ -30,6 +30,7 @@
 
 
 #include "MidiEvent.h"
+#include "MidiReconnect.h"
 #include "RetroMidiCapture.h"
 
 class QObject;
@@ -46,7 +47,11 @@ class TimePos;
 class MidiClient
 {
 public:
-	MidiClient() = default;
+	MidiClient():
+		m_reconnect( this )
+	{
+	}
+
 	virtual ~MidiClient();
 
 	// to be implemented by sub-classes
@@ -107,6 +112,38 @@ public:
 	{
 	}
 
+	//! Whether this client class PUBLISHES a port-list change at all
+	//! (0.3.0 feature-list row 18, OWNER-31 item 7).
+	/*!
+	 * \c true only for a client that re-reads its port inventory on its own and
+	 * acts when it differs - MidiAlsaSeq's one-second poll of the sequencer's
+	 * client and port tables. It is the engine's own answer to "does this
+	 * backend expose hotplug notice", so a backend whose changes this build does
+	 * not consume cannot be reported as one that does: the base returns false
+	 * and no other client class in this build overrides it.
+	 */
+	virtual bool noticesPortChanges() const
+	{
+		return false;
+	}
+
+	//! This client's controller-assignment memory (include/MidiReconnect.h).
+	/*!
+	 * Every MidiPort registers its subscriptions here through
+	 * MidiPort::subscribeReadablePort/subscribeWritablePort, and a client that
+	 * notices port changes calls reconnect().reconcile() after publishing them,
+	 * which is what re-establishes an assignment whose device came back.
+	 */
+	MidiReconnect& reconnect()
+	{
+		return m_reconnect;
+	}
+
+	const MidiReconnect& reconnect() const
+	{
+		return m_reconnect;
+	}
+
 	// tries to open either MIDI-driver from config-file or (if it fails)
 	// any other working
 	static MidiClient * openMidiClient();
@@ -129,6 +166,11 @@ protected:
 	std::vector<MidiPort *> m_midiPorts;
 
 	RetroMidiCapture m_retroCapture;
+
+	//! The controller-assignment memory (0.3.0 row 18): the identity of every
+	//! port this client's MidiPorts are subscribed to, so a device that is
+	//! unplugged and replugged at a NEW sequencer address is re-attached.
+	MidiReconnect m_reconnect;
 
 } ;
 

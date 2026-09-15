@@ -232,6 +232,16 @@ set(LMMS_TESTS
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
+	# The engine half of MIDI controller auto-reconnection (0.3.0 feature-list
+	# row 18, OWNER-31 item 7): identity parsing (the volatile ALSA address is not
+	# part of an identity), a loss counted once on the transition, a device that
+	# comes back at a NEW address being re-attached without user action, the mode
+	# that records without re-attaching, an explicit unsubscribe never being
+	# re-attached, and two clients sharing one name being reported rather than
+	# guessed. No Engine and no device: the client and the port are synthetic, so
+	# it is the counterpart of the ControlMidiReconnect transcript below, which
+	# drives the real binary and a real external ALSA client.
+	src/core/MidiReconnectTest.cpp
 	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerConcurrencyTest.cpp
 	src/core/MixerRoutingBackwardCompatTest.cpp
@@ -2155,6 +2165,39 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		# and ControlCommandsSnapshot precedent.
 		SKIP_RETURN_CODE 77
 	)
+	# midi.reconnect_* (0.3.0 feature-list row 18, OWNER-31 item 7): MIDI
+	# CONTROLLER AUTO-RECONNECTION proved against a real device-shaped client.
+	# The transcript is its own external ALSA-sequencer client (the script
+	# re-executes itself in `--probe` mode, so the process that creates the
+	# controller, sends through SUBSCRIBERS and dies is a real external client,
+	# not a call inside the engine). It opens a project whose <midiport> is bound
+	# to that client, asserts the engine attached to it, KILLS the client by PID,
+	# creates it again under the SAME name at a NEW sequencer address, and asserts
+	# the engine re-attached without user action: the engine's own report
+	# (midi.reconnect_status / midi.clients_list), the KERNEL's subscription table
+	# (aconnect -l) and events delivered THROUGH the restored subscription are the
+	# readings, with a negative control - a second client nothing is bound to -
+	# proving the delivery is gated on the binding, and the mode switch measured in
+	# both directions. It reports ctest *Skipped* (exit 77) - never *Passed* - on a
+	# host with no ALSA-sequencer tooling or an engine that came up on the dummy
+	# MIDI client, because a test that cannot make its measurement must not report
+	# that it did. aplaymidi cannot supply this client: it requires --port and
+	# therefore addresses its destination directly, bypassing subscriptions.
+	# The engine half with no device at all is the registered MidiReconnectTest
+	# QTest above.
+	add_test(NAME ControlMidiReconnect
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-midi-reconnect.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMidiReconnect PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		# 77 is "this host cannot supply a real MIDI controller" (no alsa-utils,
+		# or the engine came up on the dummy MIDI client). CTest reports a test
+		# that exits 77 as Skipped, never Passed - the ControlRetroCapture and
+		# ControlCommandsSnapshot precedent.
+		SKIP_RETURN_CODE 77
+	)
 	# wasm.* (item #614): host the ABI example effect in the WASM DSP sandbox
 	# END TO END through --control-socket, and read back what the ABI does with it.
 	# Registered only when the sandbox is compiled in (WANT_WASM, which needs the
@@ -2583,6 +2626,12 @@ set_tests_properties(DawProjectInterchangeRoundTripTest PROPERTIES
 # a MIDI client and MidiClips and drives the registry commands, so it needs a
 # Qt platform plugin even though nothing opens a window.
 set_tests_properties(RetroMidiCaptureCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The engine half of MIDI controller auto-reconnection (0.3.0 row 18) builds a
+# real Engine - a MidiPort is a Model, and a model constructed with no Song
+# crashes in its own constructor - so it needs a Qt platform plugin even though
+# nothing opens a window.
+set_tests_properties(MidiReconnectTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The stable-id tests construct a full Engine and drive project.open/save through
 # the control registry, so they need a Qt platform plugin even though nothing

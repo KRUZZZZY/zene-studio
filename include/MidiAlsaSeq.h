@@ -78,6 +78,14 @@ public:
 
 	void removePort( MidiPort * _port ) override;
 
+	//! TRUE: this client re-reads its port inventory once a second and publishes
+	//! the difference (updatePortList()), which is what lets the engine
+	//! re-establish a controller assignment whose device went away and came back
+	//! (0.3.0 feature-list row 18, OWNER-31 item 7).
+	bool noticesPortChanges() const override
+	{
+		return true;
+	}
 
 	// list seq-ports from ALSA
 	QStringList readablePorts() const override
