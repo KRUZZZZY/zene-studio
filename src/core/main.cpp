@@ -241,7 +241,8 @@ void printHelp()
 		"      --run-script <file>        Run the Lua script <file> headless and exit\n"
 		"          Prints the script's LuaLog output to stdout\n"
 		"      --control-socket <path>    Listen for agent JSON-RPC commands on the\n"
-		"          AF_UNIX socket <path>. Opt-in; off unless given.\n"
+		"          AF_UNIX socket <path>, or on the named pipe <path> on Windows\n"
+		"          (\\\\.\\pipe\\<name>). Opt-in; off unless given.\n"
 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
 		"          Range: 44100 (default) to 192000\n"
 		"          Possible values: 1, 2, 4, 8\n"
@@ -907,7 +908,9 @@ int main( int argc, char * * argv )
 		else if( arg == "--control-socket" )
 		{
 			// Opt-in agent control socket (SPEC-zene-studio.md A12). Off unless
-			// this flag is given; the socket is AF_UNIX, mode 0600, local only.
+			// this flag is given; the socket is AF_UNIX, mode 0600, local only -
+			// on Windows it is a named pipe (\\.\pipe\<name>), which is local
+			// only too (CODE-9, docs/CONTROL-NAMED-PIPE.md).
 			++i;
 
 			if( i == argc )

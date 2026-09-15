@@ -1497,18 +1497,43 @@ endif()
 # EXTERNAL Python client over the AF_UNIX socket, so the socket, the wire
 # framing and the command groups are exercised end to end.
 # ---------------------------------------------------------------------------
-find_program(PYTHON3_EXECUTABLE NAMES python3)
-# The control surface is POSIX-only: the server itself refuses with a typed error on Windows
-# (ControlServer::listen's !Q_OS_UNIX branch), so its suite has no socket to drive there. The
-# tests were registered on every platform and failed on Windows in 0.07 s each - run #34731085749
+find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
+# The control surface suite is POSIX-only: its clients are AF_UNIX clients, so there is no
+# socket for them to drive on Windows - where the transport is a NAMED PIPE behind the same
+# contract (CODE-9) and has its own Windows-only proof below. The tests were registered on
+# every platform and failed on Windows in 0.07 s each - run #34731085749
 # (msvc-x64: 10 control-surface failures out of 14) - which reads as a defect and is a platform
-# fact. Registered on UNIX only; the Windows refusal path is covered by the unit tests that need
-# no socket. The suite stays ACTIVE everywhere it can run, including the hardware-less CI runners,
-# where its failure mode is the real thing it exists to catch.
+# fact. Registered on UNIX only. The suite stays ACTIVE everywhere it can run, including the
+# hardware-less CI runners, where its failure mode is the real thing it exists to catch.
 IF(WIN32)
 	SET(CONTROL_SUITE_AVAILABLE FALSE)
 ELSE()
 	SET(CONTROL_SUITE_AVAILABLE TRUE)
+ENDIF()
+
+# The Windows half of the control surface (CODE-9): the same JSON-RPC framing, the same
+# command ids and the same typed refusal shapes, over a NAMED PIPE. This smoke test starts
+# THIS binary with --control-socket \\.\pipe\<name>, connects with CreateFileW, and checks
+# the framing (two requests in one write, two whole reply lines), the ids the surface
+# carries, the malformed-line and unknown-command refusals, the 1 MiB request-line cap, the
+# start-up refusal a launcher reads for a path that is not a pipe name, and the shutdown
+# (control.quit answers, the process exits, the name is gone). It is the Windows half's
+# evidence and it is CI-only: the lane that wrote the transport had no Windows toolchain
+# (docs/CONTROL-NAMED-PIPE.md). Registered on Windows only, and only when a python3 is on
+# the PATH - a test that could not run must not be registered as one that passed.
+IF(WIN32 AND PYTHON3_EXECUTABLE)
+	add_test(NAME ControlNamedPipeSmoke
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-named-pipe-smoke.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlNamedPipeSmoke PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		# 77 = "nothing to drive" (the file exits 77 when its argument is not a
+		# binary): reported as Skipped, the same convention the session-lifecycle
+		# transcript uses.
+		SKIP_RETURN_CODE 77
+	)
 ENDIF()
 
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)

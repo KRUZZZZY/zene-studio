@@ -645,6 +645,7 @@ src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
+src/core/ControlServerWin32.cpp
 src/core/ControlSession.cpp
 src/core/ControlStemModel.cpp
 src/core/ControlStemSupport.cpp
