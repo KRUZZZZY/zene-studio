@@ -39,7 +39,11 @@ Where the code lives:
   Windows case to those two functions. On POSIX the file's token stream is what it was (proof in §3).
 - `include/ControlServer.h` — the Windows members and methods, inside `#if defined(Q_OS_WIN)`.
 - `src/core/ControlServer.cpp` — **untouched**: the wire half (framing, `dispatchLine()`) is shared.
-- `tests/control-named-pipe-smoke.py` — the smoke test, registered as `ControlNamedPipeSmoke`.
+- `tests/control-named-pipe-smoke.py` — the smoke test, registered as `ControlNamedPipeSmoke`; it
+  imports `tests/control_pipe_client.py`, which holds the two transports behind one interface (the
+  `AF_UNIX` client and the `ctypes` named-pipe client) and chooses between them by the shape of the
+  path. The split is what keeps both files under the per-file length ratchet **without** re-anchoring
+  its baseline.
 
 ## 2. The design, and why each decision is what it is
 

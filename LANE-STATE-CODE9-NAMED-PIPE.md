@@ -1,8 +1,10 @@
 # LANE STATE — CODE-9, the Windows named-pipe control transport (task #671, feature row 83)
 
 Branch `030/code9-named-pipe`, worktree `…/zene-030/wpipe`. Continuation of `52533045e`; this pass adds
-5 commits on top of it (the checkpoint commit's unreviewed WIP was **read, revised and partly
-reverted** — see §2).
+4 commits on top of it — `241087a03` (the transport and its bookkeeping), `65538174a` (the complexity
+ratchet for this lane's own new file), `835624da3` (manifest registration + the transport split) and
+the lane-state commit. The checkpoint commit's unreviewed WIP was **read, revised and partly
+reverted** — see §2.
 
 ## 1. What is in the tree now
 
@@ -13,7 +15,8 @@ reverted** — see §2).
 | `include/ControlServer.h` | edited | Windows members/methods, inside `#if defined(Q_OS_WIN)`. On POSIX the token stream is unchanged (proof §4). |
 | `src/core/ControlServer.cpp` | **reverted to `release/0.3.0`** | The wire half is shared and must not move. The WIP's guard reshuffle is gone; the file is bit-identical to `release/0.3.0`. |
 | `src/core/CMakeLists.txt` | edited | Names the new source in `LMMS_SRCS` (an explicit list, not a glob). |
-| `tests/control-named-pipe-smoke.py` | **new** | The Windows smoke test; dual-transport so it can be run by hand on POSIX too. |
+| `tests/control-named-pipe-smoke.py` | **new** | The Windows smoke test (checks only, 482 lines); dual-transport so it can be run by hand on POSIX too. |
+| `tests/control_pipe_client.py` | **new** | The two transports behind one interface (`AF_UNIX` / named pipe, chosen by the path's shape), 244 lines. Split out of the test so neither file breaks the 500-line ratchet — **without** re-anchoring the baseline. |
 | `tests/CMakeLists.txt` | edited | Registers the ctest `ControlNamedPipeSmoke` under `if(WIN32 AND PYTHON3_EXECUTABLE)`; `find_program(PYTHON3_EXECUTABLE)` gains `python3.exe`/`python` fallbacks; the stale "the server refuses on Windows" comment is corrected. `CONTROL_SUITE_AVAILABLE`'s logic is **untouched**. |
 | `tests/prove-posix-unchanged.sh` | **new** | The local proof, runnable: borrowed real flags, `-fsyntax-only` on the four TUs, `-E` token-stream comparison vs `release/0.3.0`. |
 | `docs/CONTROL-NAMED-PIPE.md` | **new** | The transport, what is identical/absent vs POSIX, what is proven locally, what is CI-only, and the next action. |
@@ -99,6 +102,41 @@ The smoke test's run above is **over the POSIX transport** (the path's shape sel
 evidence that the *test* is right, not that the pipe works. The binary used is the merge-train tree's
 `…/zene-030/build/zene`, borrowed read-only — no build was made in this lane.
 
+The gate suite, run individually (its gate 1 needs a build tree this lane does not have):
+
+```
+$ bash tests/fork-sources-gate.sh
+PASS: every tracked source in scope is registered (530 fork-NEW, 1085 inherited, 34 tooling).
+FORK_SOURCES EXIT=0
+
+$ bash tests/complexity-gate.sh --check
+# after 65538174a: NOT ONE ControlServerWin32 entry in the regression list.
+# The 17 remaining REGRESSION lines are the branch's own pre-existing ones
+# (stem_commands_lib.py, WasmOfflineRender.cpp, ControlCommandsMeterFile.cpp, …);
+# `comm` of the flagged paths against `git diff --name-only 52533045e...HEAD` is empty.
+COMPLEXITY EXIT=1 (pre-existing reds only, none of them mine)
+
+$ bash tests/file-length-gate.sh --check
+# the five REGRESSION lines are the branch's own pre-existing ones; measured at
+# 52533045e they are already exactly those lengths, and none is a file this lane
+# touched. ControlServerWin32.cpp 485, ControlServerSocket.cpp 499, the test 482,
+# the helper 244 — all under the 500 line limit.
+FILE_LENGTH EXIT=1 (pre-existing reds only, none of them mine)
+
+$ bash tests/no-upstream-regression-gate.sh      # gate 6, the divergence ledger
+PASS: every change to upstream-inherited code since 01148947ea… is declared
+      (414 changed path(s) declared; the ledger holds 430 entries)
+GATE6 EXIT=0
+
+$ bash tests/unregistered-tests-gate.sh ; echo EXIT=$?   # gate 10
+PASS: every test source under tests/src/ is registered, or declared with a reason
+EXIT=0
+
+$ bash tests/evidence-gate.sh                    # gate 11
+PASS: no committed evidence file types and nothing over the cap.
+EVIDENCE EXIT=0
+```
+
 ## 5. The VERBATIM replacement row text for `docs/FEATURE-LIST-0.3.0.md`
 
 `docs/FEATURE-LIST-0.3.0.md` lives on `030/audit` and was **NOT edited**. Replace row 83 (section 10,
@@ -114,11 +152,17 @@ evidence that the *test* is right, not that the pipe works. The binary used is t
 |---|---|
 | local build + ctest of this worktree | **not run** — no build tree in the lane (owner directive: land the feature, fix builds in the fix-up pass) |
 | `tests/prove-posix-unchanged.sh` | **EXIT=0** (§4) |
-| `tests/control-named-pipe-smoke.py` over the POSIX transport | **EXIT=0** (§4) |
+| `tests/control-named-pipe-smoke.py` over the POSIX transport | **EXIT=0**, 13 checks (§4); no-argument path EXIT=77 (Skipped) |
 | `src/core/main.cpp` compiles under the borrowed flags | **EXIT=0** (§4) |
+| gate 6 (divergence ledger) | **EXIT=0** — the `main.cpp`, `src/core/CMakeLists.txt` and `tests/CMakeLists.txt` entries carry the CODE-9 reason, file ends with a newline |
+| gate 9 (fork-sources) | **EXIT=0** — 530 fork-NEW entries, 0 stale |
+| gate 10 (unregistered tests), gate 11 (evidence) | **EXIT=0** |
+| gate 4 (complexity) | EXIT=1 — the branch's 17 pre-existing reds; **no `ControlServerWin32` entry** after `65538174a` |
+| gate 7 (file-length) | EXIT=1 — the branch's 5 pre-existing reds; every file this lane added is under the limit |
+| gate 8 (duplication) | not run in this lane |
 | `ControlNamedPipeSmoke` on the `msvc-x64` job | **not yet run** — this is the Windows verdict, and the single next action (§7) |
 | `ControlCommandsSnapshot` | expected red in this lane: the snapshot is derived and regenerated once at a merge |
-| `tests/run-all-gates.sh` | not run (its gate 1 needs a build); the cheap gates were run individually |
+| `tests/run-all-gates.sh` | not run as a whole (its gate 1 needs a build); the gates above were run individually |
 
 ## 7. The next exact action
 
