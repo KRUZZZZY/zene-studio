@@ -77,6 +77,7 @@ include/AudioSampleRecorder.h
 include/AudioSdl.h
 include/AudioSndio.h
 include/AudioSoundIo.h
+include/AudioStretcher.h
 include/AutomatableButton.h
 include/AutomatableModel.h
 include/AutomatableModelView.h
@@ -904,6 +905,7 @@ src/core/AudioEngineProfiler.cpp
 src/core/AudioEngineWorkerThread.cpp
 src/core/AudioPortsModel.cpp
 src/core/AudioResampler.cpp
+src/core/AudioStretcher.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationNode.cpp
@@ -1371,6 +1373,7 @@ tests/src/core/AudioEngineTeardownTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
+tests/src/core/AudioStretcherTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
@@ -1506,6 +1509,7 @@ tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
+tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp

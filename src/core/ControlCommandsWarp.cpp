@@ -76,6 +76,12 @@ QString tempoModeName(WarpTempoMode mode)
 	return mode == WarpTempoMode::SourceTempo ? QStringLiteral("source") : QStringLiteral("follow");
 }
 
+QString stretchModeName(WarpStretchMode mode)
+{
+	return mode == WarpStretchMode::PreservePitch
+		? QStringLiteral("preserve_pitch") : QStringLiteral("resample");
+}
+
 QJsonObject markerJson(const WarpMarker& marker, int index)
 {
 	QJsonObject entry;
@@ -106,6 +112,12 @@ QJsonObject warpState(const ClipRef& ref, const SampleClip& clip)
 	out.insert(QStringLiteral("warped"), !clip.warpMarkers().empty());
 	out.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
 	out.insert(QStringLiteral("source_tempo"), static_cast<double>(clip.sourceTempo()));
+	// Row 30: how a rate change is rendered, and by which algorithm. Reported
+	// for EVERY clip, because "resample" is the answer that matters as much as
+	// "preserve_pitch" - it is the mode the pitch moves in.
+	out.insert(QStringLiteral("stretch"), stretchModeName(clip.warpStretchMode()));
+	out.insert(QStringLiteral("stretch_algorithm"), QStringLiteral("wsola"));
+	out.insert(QStringLiteral("renders_linearly"), clip.rendersLinearly());
 	out.insert(QStringLiteral("marker_count"), clip.warpMarkers().size());
 	out.insert(QStringLiteral("max_markers"), WarpMarkers::MaxMarkers);
 	out.insert(QStringLiteral("markers"), markerListJson(clip));
@@ -119,6 +131,7 @@ QJsonObject warpBefore(const ClipRef& ref, const SampleClip& clip)
 	before.insert(QStringLiteral("markers"), markerListJson(clip));
 	before.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
 	before.insert(QStringLiteral("source_tempo"), static_cast<double>(clip.sourceTempo()));
+	before.insert(QStringLiteral("stretch"), stretchModeName(clip.warpStretchMode()));
 	return before;
 }
 
@@ -229,6 +242,11 @@ QJsonObject warpStateSchema(QJsonObject extra)
 		{QStringLiteral("warped"), booleanProperty()},
 		{QStringLiteral("tempo_mode"), stringProperty()},
 		{QStringLiteral("source_tempo"), numberProperty()},
+		// Row 30: the stretch mode and the algorithm that would render it, plus
+		// whether this clip has a rate change to render at all.
+		{QStringLiteral("stretch"), stringProperty()},
+		{QStringLiteral("stretch_algorithm"), stringProperty()},
+		{QStringLiteral("renders_linearly"), booleanProperty()},
 		{QStringLiteral("marker_count"), integerProperty(0, WarpMarkers::MaxMarkers)},
 		{QStringLiteral("max_markers"), integerProperty(0, WarpMarkers::MaxMarkers)},
 		{QStringLiteral("markers"), arrayProperty()},
@@ -242,6 +260,14 @@ QJsonObject tempoModeProperty()
 	return QJsonObject{
 		{QStringLiteral("type"), QStringLiteral("string")},
 		{QStringLiteral("enum"), QJsonArray{QStringLiteral("follow"), QStringLiteral("source")}}};
+}
+
+QJsonObject stretchModeProperty()
+{
+	return QJsonObject{
+		{QStringLiteral("type"), QStringLiteral("string")},
+		{QStringLiteral("enum"), QJsonArray{QStringLiteral("resample"),
+			QStringLiteral("preserve_pitch")}}};
 }
 
 QJsonObject markerProperty()

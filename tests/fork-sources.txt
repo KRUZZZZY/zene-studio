@@ -265,6 +265,7 @@ include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
+include/AudioStretcher.h
 include/AudioWideInputStage.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
@@ -436,6 +437,7 @@ plugins/WasmEffect/WasmEffectControls.h
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
 src/core/AudioPortsModel.cpp
+src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
@@ -679,6 +681,7 @@ tests/control-mastering-commands.py
 tests/control-negative-control.py
 tests/control-no-audio-device.py
 tests/control-pdc-commands.py
+tests/control-pitch-stretch-transcript.py
 tests/control-plugin-scan-commands.py
 tests/control-ports-commands.py
 tests/control-punch-transcript.py
@@ -707,6 +710,7 @@ tests/link_sync_evidence.py
 tests/mastering_probe_lib.py
 tests/render-software-tag.py
 tests/src/core/AudioResamplerRatioTest.cpp
+tests/src/core/AudioStretcherTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipSerialisationTest.cpp
@@ -740,6 +744,7 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
+tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 tools/local-ci.sh

@@ -27,6 +27,7 @@
 #define LMMS_SAMPLE_PLAY_HANDLE_H
 
 #include "Sample.h"
+#include "AudioStretcher.h"
 #include "ClipEdits.h"
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
@@ -103,6 +104,17 @@ private:
 	 *  is neither, so an unwarped project's arithmetic is unchanged. */
 	f_cnt_t m_timelineFrames = 0;
 	bool m_rendersLinearly = true;
+	/*! Row 30: render a rate change through the pitch-preserving stretcher
+	 *  (`WarpStretchMode::PreservePitch`) instead of the resampler. Snapshotted
+	 *  at construction like the window and the warp - a live handle renders the
+	 *  mode it was created with. False for every clip that did not ask, which is
+	 *  every clip in every project written before this feature. */
+	bool m_preservePitch = false;
+	/*! The stretcher, prepared only for a clip that asked for it (a no-op for
+	 *  everyone else: `isPrepared()` false means `process()` returns 0 without
+	 *  touching the source). Fixed size, allocated with the handle - nothing on
+	 *  the render path allocates (I8). */
+	AudioStretcher m_stretcher;
 	/*! The clip's fades and its gain, snapshotted at construction exactly as the
 	 *  window and the warp are (invariant I1): a live handle renders the envelope
 	 *  it was created with, and nothing the control thread does to the clip
@@ -129,6 +141,19 @@ private:
 	//! warp rate at the source frame this period starts on, over the natural
 	//! rate. Exactly 1.0 for every clip with no markers and no source tempo.
 	float warpRatio() const;
+
+	/*! Renders \a frames output frames of a clip whose rate change is
+	 *  pitch-preserving (row 30), reading the clip's window through
+	 *  `m_stretcher` instead of `Sample::play`'s resampler.
+	 *
+	 *  The source frames per output frame are
+	 *  `(1 / warpRatio()) / (sampleRateRatio * freqRatio)` — the reciprocal of
+	 *  the converter ratio the resample path would hand `AudioResampler`, so
+	 *  both modes put the same source frames on the same timeline and differ
+	 *  only in what they do to the waveform's period. The handle's playback
+	 *  state is advanced to the stretcher's own analysis cursor, which is what
+	 *  the next period's rate is derived from. */
+	void renderPreservingPitch(SampleFrame* dst, f_cnt_t frames);
 
 	/*! Multiplies the clip's fade-and-gain envelope into the frames this period
 	 *  just rendered. Never called for a neutral clip, so the default path pays

@@ -57,7 +57,27 @@ class SampleClipView;
 enum class WarpTempoMode
 {
 	FollowProject = 0,
-	SourceTempo = 1,
+	SourceTempo = 1
+};
+
+/*! How a clip whose mapping changes the rate renders that rate change
+ *  (0.3.0, feature-list row 30 — pitch-preserving time-stretch).
+ *
+ *  `Resample` is the historical behaviour and the default, so every project
+ *  written before this feature (and every clip that does not ask) renders
+ *  through `AudioResampler` exactly as it did. `PreservePitch` routes the
+ *  clip's audio through `AudioStretcher` (WSOLA) instead, which keeps the
+ *  waveform's period — the pitch — where it was and moves only the grain
+ *  positions, at the cost of the alignment search (see AudioStretcher.h).
+ *
+ *  The mode only means anything for a clip that is NOT `rendersLinearly()`:
+ *  a clip with no marker and no source tempo has no rate change to preserve
+ *  pitch across, and the playback path deliberately does not route it through
+ *  the stretcher at all (docs/PITCH-STRETCH.md §5). */
+enum class WarpStretchMode
+{
+	Resample = 0,
+	PreservePitch = 1
 };
 
 
@@ -136,6 +156,14 @@ public:
 	WarpTempoMode warpTempoMode() const { return m_tempoMode; }
 	void setWarpTempoMode(WarpTempoMode mode);
 
+	/*! How this clip renders a rate change: plain resampling (the default,
+	 *  and the pitch moves with the rate) or the pitch-preserving stretch
+	 *  (WSOLA, feature-list row 30). Only read for a clip that does not
+	 *  `rendersLinearly()`: with no rate change both modes are the same
+	 *  render, and the playback path takes the historical one. */
+	WarpStretchMode warpStretchMode() const { return m_stretchMode; }
+	void setWarpStretchMode(WarpStretchMode mode);
+
 	//! The tempo the clip was recorded at, in BPM; only read in `SourceTempo`.
 	float sourceTempo() const { return m_sourceTempo; }
 	void setSourceTempo(float bpm);
@@ -192,6 +220,10 @@ private:
 	WarpTempoMode m_tempoMode = WarpTempoMode::FollowProject;
 	//! The clip's declared source tempo in BPM; only read in `SourceTempo`.
 	float m_sourceTempo = 0.0f;
+	/*! How a rate change is rendered (feature-list row 30): the historical
+	 *  resampling, or the pitch-preserving WSOLA stretch. `Resample` is the
+	 *  default, so a clip that does not ask renders exactly as it did. */
+	WarpStretchMode m_stretchMode = WarpStretchMode::Resample;
 	BoolModel m_recordModel;
 	bool m_isPlaying;
 	int m_startFrameOffset;

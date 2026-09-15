@@ -309,6 +309,74 @@ ControlResult warpSet(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+/*! Row 30 of the 0.3.0 list: choose how a clip renders a rate change.
+ *
+ *  `resample` (the default) is what the engine has always done - the warped
+ *  rate is handed to `AudioResampler` and the pitch moves with it.
+ *  `preserve_pitch` routes the same rate through `AudioStretcher` (WSOLA), so
+ *  the clip lasts as long as the mapping says and keeps its pitch.
+ *
+ *  A clip the mode means nothing for - one that renders linearly, i.e. with no
+ *  marker and no source tempo - is REFUSED rather than silently accepted, because
+ *  the render path deliberately bypasses the stretcher for it and a success
+ *  here would promise a pitch that the next playback pass would not deliver.
+ *  The clip's own state is the checkpoint (the `stretch` attribute of the same
+ *  serialized <warp> element), so one control.undo takes the mode back. */
+ControlResult warpStretch(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	SampleClip* clip = resolveSampleClip(args, &ref, &error);
+	if (clip == nullptr) { return error; }
+
+	const QString mode = args.value(QStringLiteral("mode")).toString();
+	if (mode != QLatin1String("resample") && mode != QLatin1String("preserve_pitch"))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'mode' is '%1'; it is either 'resample' (the rate is rendered by plain "
+				"resampling and the pitch moves with it - the default) or 'preserve_pitch' (the "
+				"rate is rendered by the WSOLA stretcher and the pitch stays where it is)").arg(mode));
+	}
+
+	// Honest refusal: with no rate change there is nothing to preserve the
+	// pitch across, and SamplePlayHandle does not route such a clip through
+	// the stretcher at all (see renderPreservingPitch).
+	if (mode == QLatin1String("preserve_pitch") && clip->rendersLinearly())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("this clip has no warp markers and follows the project tempo, so it "
+				"renders linearly: there is no rate change for a pitch-preserving stretch to "
+				"render. Author the warp first (warp.add / warp.set), or declare the clip's own "
+				"source tempo, and then set the stretch mode."));
+	}
+
+	const WarpStretchMode wanted = mode == QLatin1String("preserve_pitch")
+		? WarpStretchMode::PreservePitch : WarpStretchMode::Resample;
+	const WarpStretchMode previous = clip->warpStretchMode();
+
+	const QJsonObject before = warpBefore(ref, *clip);
+	// The same one-checkpoint shape warp.set uses: the mode lives in the clip's
+	// own <warp> element, so the clip's checkpoint is the exact inverse.
+	clip->addJournalCheckPoint();
+	clip->setWarpStretchMode(wanted);
+
+	QJsonObject result = warpState(ref, *clip);
+	result.insert(QStringLiteral("previous_mode"), stretchModeName(previous));
+	result.insert(QStringLiteral("changed"), previous != wanted);
+
+	// The inverse is this command with the previous mode, and it travels as
+	// the same "warp.stretch" id the caller would re-issue by hand.
+	QJsonObject inverseArgs;
+	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	inverseArgs.insert(QStringLiteral("mode"), stretchModeName(previous));
+	result.insert(QStringLiteral("__transaction"), transactionPayload(before,
+		QStringLiteral("warp.stretch"), inverseArgs, true,
+		QStringLiteral("ProjectJournal (Clip checkpoint: the stretch mode is the 'stretch' "
+			"attribute of the clip's own <warp> element, which SampleClip::saveSettings writes "
+			"and SampleClip::loadSettings re-reads, so one undo restores the previous mode)")));
+	return ControlResult::success(result);
+}
+
 //! One registration step per verb, because a lambda cannot carry a description
 //! this long without burying the schema beside it.
 void registerWarpAdd(ControlRegistry& registry)
@@ -399,16 +467,44 @@ void registerWarpSet(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerWarpStretch(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("warp.stretch");
+	cmd.group = QStringLiteral("warp");
+	cmd.verb = QStringLiteral("stretch");
+	cmd.description = QStringLiteral("Choose how a warped sample clip renders its rate change: "
+		"'resample' (the default, and what the engine has always done - the rate goes to the "
+		"resampler and the pitch moves with it, so a 2x warp is an octave up) or 'preserve_pitch' "
+		"(the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long "
+		"as the mapping says and keeps its own pitch). Refused for a clip that renders linearly - "
+		"with no marker and no source tempo there is no rate change to render. Reversible through "
+		"the ProjectJournal (Clip checkpoint).");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("mode"), stretchModeProperty()},
+	}, {QStringLiteral("clip"), QStringLiteral("mode")});
+	cmd.resultSchema = warpStateSchema({
+		{QStringLiteral("previous_mode"), stringProperty()},
+		{QStringLiteral("changed"), booleanProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) { return warpStretch(args); };
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerWarpEditCommands(ControlRegistry& registry)
 {
 	// add / move / remove edit ONE marker; set replaces the map and carries the
-	// clip-level warp tempo with it.
+	// clip-level warp tempo with it; stretch picks how a rate change is
+	// rendered (row 30 - resampling or the pitch-preserving WSOLA stretch).
 	registerWarpAdd(registry);
 	registerWarpMove(registry);
 	registerWarpRemove(registry);
 	registerWarpSet(registry);
+	registerWarpStretch(registry);
 }
 
 } // namespace lmms

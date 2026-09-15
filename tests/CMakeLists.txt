@@ -46,6 +46,11 @@ set(LMMS_TESTS
 	src/core/AudioEngineTeardownTest.cpp
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
+	# Pitch-preserving time stretch (0.3.0 feature-list row 30): the WSOLA DSP
+	# on its own - the same input through the resampler and through the
+	# stretcher, with the pitch MEASURED at both (a Goertzel bin per tone), and
+	# the streaming/I8/parameter contract the render path depends on.
+	src/core/AudioStretcherTest.cpp
 	src/core/AudioResamplerRatioTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/AutomationModesTest.cpp
@@ -253,6 +258,7 @@ set(LMMS_TESTS
 	src/core/WarpMarkersTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
+	src/tracks/SampleClipStretchTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
 )
@@ -2013,6 +2019,14 @@ set_tests_properties(ControlVerbInverseTest PROPERTIES
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlWarpCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Pitch-preserving time stretch (row 30): SampleClipStretchTest constructs a full
+# Engine, a SampleTrack and real play handles and drives the warp.stretch command
+# through the registry, so it wants a real Qt platform plugin even though nothing
+# opens a window. AudioStretcherTest needs no Engine (it is pure DSP), but it is
+# built from the same objects; it is listed here only to keep the pair together
+# in one place whose reason is written down.
+set_tests_properties(SampleClipStretchTest AudioStretcherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The link.* group drives the process-wide session model (and the Song's tempo,
 # for an adopted one) and starts the UI-thread service timer, so it wants a real

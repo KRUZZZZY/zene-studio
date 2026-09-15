@@ -103,6 +103,22 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 			* Engine::framesPerTick(Engine::audioEngine()->outputSampleRate()));
 	}
 
+	/*! Row 30: whether this clip renders its rate change pitch-preservingly.
+	 *
+	 *  Snapshotted here with the window and the warp, and only when the clip
+	 *  HAS a rate change to preserve: a clip that renders linearly has no
+	 *  warp speed to apply, so the historical resampler path stays exactly the
+	 *  path it was even if the mode was somehow set. The stretcher is prepared
+	 *  once here (a table fill, no allocation) and its analysis cursor starts
+	 *  at the head of the window, in window-relative frames. */
+	m_preservePitch = clip->warpStretchMode() == WarpStretchMode::PreservePitch
+		&& !m_rendersLinearly;
+	if (m_preservePitch)
+	{
+		m_stretcher.prepare();
+		m_stretcher.seek(0.0);
+	}
+
 	// The clip's fades and its gain (the fade/crossfade/clip-gain wave), taken
 	// here for exactly the reason the window and the warp are: a live handle
 	// renders the envelope it was created with. A neutral clip leaves m_edits
@@ -251,7 +267,15 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		// playback. It is exactly 1.0 for every clip without markers and
 		// without a declared source tempo, which is the value this call
 		// already passed.
-		if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, warpRatio()))
+		//
+		// Row 30: a clip whose stretch mode is PreservePitch does NOT come
+		// through here - its rate change is rendered by the stretcher, which
+		// is the only difference between the two modes.
+		if (m_preservePitch)
+		{
+			renderPreservingPitch(workingBuffer, frames);
+		}
+		else if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, warpRatio()))
 		{
 			zeroSampleFrames(workingBuffer, frames);
 		}
@@ -320,6 +344,60 @@ float SamplePlayHandle::warpRatio() const
 	 *  named above so that cannot happen silently.
 	 */
 	return m_naturalFramesPerTick / rate;
+}
+
+
+
+
+/*! Row 30 of the 0.3.0 list: the pitch-preserving render.
+ *
+ *  Same timeline, same source frames consumed, different waveform. The rate
+ *  the mapping asks for is carried by the STRETCHER's analysis hop instead of
+ *  by the resampler's ratio, and the stretcher's alignment search is what
+ *  keeps the waveform's own period (the pitch) where it was: the source is
+ *  consumed `speed` frames per output frame, but the grains that carry it are
+ *  re-aligned to each other rather than shortened.
+ *
+ *  The source is the clip's own WINDOW, not the whole buffer, so a trimmed
+ *  clip cannot bleed the audio on either side of its trim into the render
+ *  (reads outside the window are silence, exactly as `Sample::render` stops at
+ *  the window's end). The cursor is therefore window-relative and the state's
+ *  frame index is the window-relative cursor added back to `sourceIn`.
+ */
+void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
+{
+	const SampleFrame* source = m_sample->data();
+	const f_cnt_t windowFrames = m_window.length();
+	if (source == nullptr || windowFrames == 0)
+	{
+		zeroSampleFrames(dst, frames);
+		return;
+	}
+	const SampleFrame* window = source + static_cast<std::ptrdiff_t>(m_window.sourceIn);
+
+	/*! source frames consumed per output frame.
+	 *
+	 *  `warpRatio()` is `natural / rate` (the converter ratio, output frames
+	 *  per input frame), so its reciprocal is the speed the mapping asks for
+	 *  in source frames per output frame. The sample's own rate ratio and its
+	 *  tuning divide into it exactly as they multiply into the resampler's
+	 *  ratio - the two modes therefore consume the source identically and the
+	 *  difference between them is only the waveform. */
+	const double sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate())
+		/ static_cast<double>(m_sample->sampleRate());
+	const double freqRatio = static_cast<double>(m_sample->frequency()) / DefaultBaseFreq;
+	const double converterRatio = static_cast<double>(warpRatio());
+	const double speed = converterRatio > 0.0
+		? 1.0 / (converterRatio * sampleRateRatio * freqRatio)
+		: 1.0;
+
+	const f_cnt_t written = m_stretcher.process(window, windowFrames, dst, frames, speed);
+	if (written < frames) { zeroSampleFrames(dst + written, frames - written); }
+
+	// The analysis cursor IS the source position this period reached; the next
+	// period's rate is taken from the frame it starts on.
+	m_state.setFrameIndex(static_cast<int>(m_window.sourceIn
+		+ static_cast<f_cnt_t>(std::llround(m_stretcher.sourcePosition()))));
 }
 
 

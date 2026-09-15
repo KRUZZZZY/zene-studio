@@ -709,3 +709,50 @@ QT_QPA_PLATFORM=offscreen <merge-tip-build>/zene --control-socket /tmp/z.sock &
 python3 tools/mcp-zene-control/snapshot_commands.py --socket /tmp/z.sock
 git add tools/mcp-zene-control/zene_control/commands_snapshot.json
 ```
+
+# LANE-STATE — 030/pitch-stretch (feature-list row 30, board task 652)
+
+* **Worktree:** `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wstretch`
+* **Branch:** `030/pitch-stretch`, from `release/0.3.0` @ `f611c888b`
+* **Tip sha:** _recorded at the end of this file, updated at every commit_
+* **Build dir:** `build/` (RelWithDebInfo, `-DWANT_QT6=ON -DWANT_VST3=OFF -DWANT_CLAP=OFF
+  -DWANT_WASM=OFF -DWANT_STEM_SPLIT=OFF`), kept for the parent's re-run (not deleted)
+* **Log dir:** `/home/kruzzzzy/zene-030-wstretch-logs/`
+* **Not done, on purpose:** no merge, no rebase, no push, and **no `commands_snapshot.json`
+  regeneration** (it is captured from a live instance and is a merge-time step).
+
+## What landed
+`AudioStretcher` — WSOLA pitch-preserving time stretch (`include/AudioStretcher.h`,
+`src/core/AudioStretcher.cpp`), a persisted per-clip `WarpStretchMode` (default `Resample`, so nothing
+existing moves), `SamplePlayHandle` routing a non-linear clip through it when the clip asks, and the
+`warp.stretch` command (+ `warp.list` reporting `stretch` / `stretch_algorithm` / `renders_linearly`)
+with its A16 `true_inverse` row. Record: `docs/PITCH-STRETCH.md`.
+
+## Verified (unpiped; logs in /home/kruzzzzy/zene-030-wstretch-logs/)
+| command | exit |
+|---|---|
+| `cmake --build build -j2 --target zene` | **0** |
+| `cmake --build build -j2 --target AudioStretcherTest SampleClipStretchTest` | **0** |
+| `ctest -R "AudioStretcherTest\|SampleClipStretchTest"` in `build/tests` | **0** — 2/2 Passed |
+| `ctest -R "ControlWarpCommandsTest\|ReversibilityContractTest\|WarpMarkersTest"` | **0** — 3/3 Passed (after the histogram update) |
+| `ctest -R "^agent_surface$"` (junk-argument sweep over every id) | **0** |
+| `bash tests/fork-sources-gate.sh` (gate 9) | **0** — 437 entries, 0 stale |
+| `bash tests/no-upstream-regression-gate.sh` (gate 6) | **0** — every change declared |
+| `diff` of `tests/all-sources.txt` against its documented regenerate command | prints `REPRODUCES` |
+| ctest `ControlCommandsSnapshot` | **1** — one finding: `warp.stretch` missing from the committed snapshot (merge-time regeneration) |
+
+## Measured (the acceptance artefact)
+Same input, two paths, pitch **measured** (Goertzel bin per tone + interpolated zero crossings):
+input 440/660 Hz = 0.5000/0.3000; **resampled 2×** → 0.0000/0.0000 at 440/660 and 0.5000/0.3000 at
+880/1320 (measured 879.99 Hz); **stretched 2×** → 0.4992/0.2990 at 440/660 and 0.0001/0.0001 at
+880/1320 (measured 439.95 Hz); same length (44100 frames) and same RMS (0.4123). Through the clip
+path: identical numbers, 0 differing frames of 88200 between the two modes on a clip with no rate
+change. Cost: 58.7 ms per second of stretched audio at the default `searchRadius` (17× realtime),
+29.7 ms at 64, 15.1 ms at 32 — and 0 allocations over 2000 render calls.
+
+## What could not be verified here
+The full suite, the coverage/mutation/file-length gates, the socket transcript and CI were not run
+(the owner directive for this pass puts landing the feature ahead of a green build; the parent re-runs
+the suite on the merged tip).
+
+* **Tip sha (recorded at the end of this file):** `a61c69054106f5eca4df148cea5122abb8192302` (8 commits from `f611c888b`: feat(dsp) d2c83132c, manifests fea559f50 + ba02f2f53, fix(test) 25ff3472d, docs c0d2b3205 + 3e011c571 + a61c69054, lane-state, transcript)

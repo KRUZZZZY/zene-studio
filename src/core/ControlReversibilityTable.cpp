@@ -255,6 +255,15 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (Clip checkpoint): the three fields travel as ONE "
 		"checkpoint, so one control.undo restores the whole warp map",
 		""),
+	R("warp.stretch", RC::TrueInverse, true,
+		"the stretch mode is the 'stretch' attribute of the same serialized "
+		"<warp> element #597 writes - one more field of the clip's own state, "
+		"and the render mode of every clip is unchanged until it is set",
+		"ProjectJournal (Clip checkpoint): SampleClip::saveSettings writes the "
+		"attribute and SampleClip::loadSettings re-reads it, so one undo "
+		"restores the previous mode. The recorded inverse is warp.stretch "
+		"re-issued with the before-state's own mode",
+		""),
 	R("plugin.bypass", RC::TrueInverse, true,
 		"the On/Off control is the Effect's enabled model",
 		"ProjectJournal (Effect enabled-model checkpoint)",

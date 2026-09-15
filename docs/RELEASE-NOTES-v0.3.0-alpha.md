@@ -716,6 +716,10 @@ The SPEC A16 classification table holds **228 rows**, measured from the table it
 **120 `true_inverse`, 19 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
+The SPEC A16 classification table holds **228 rows**, measured from the table itself:
+**121 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
+compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
 **226 rows / 80 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
@@ -764,6 +768,16 @@ one of the refusals. Net for this lane: **+9 rows, +1 `true_inverse`, +2 `snapsh
 four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
 225 / 120 / 18 / 7 / 80 - **234 / 121 / 20 / 7 / 86 after the recording engine surface's ten rows
 above, which is the constant this tree now carries.** The seventeen rows this train's three merges added are the verb wave's four
+225 / 120 / 18 / 7 / 80.
+**Lane note (2026-09-15, `030/pitch-stretch`, feature-list row 30):** `warp.stretch` is row **228**
+(`+1 true_inverse`, mechanism = the clip's own journal checkpoint, because the stretch mode is the
+`stretch` attribute of the clip's `<warp>` element). The two figures at the top of this paragraph are
+that lane's own branch measurement - **228 rows / 121 `true_inverse`** compiled-in, and a
+**226 / 121 / 18 / 7 / 80** base - and the **merge tip must re-count**: this page's rule is that the
+number here is the merged measurement and never a sum of anybody's report, so the parent's merge step
+re-runs `ReversibilityContractTest` and updates this paragraph and that constant together.
+
+The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
@@ -1665,6 +1679,51 @@ not where or over what, and whether the configured endpoint is acceptable is vis
 `telemetry.status`; the shutdown hook has **no interface** — it is process machinery on the exit path,
 and nothing in the window shows it; and the `telemetry.consent_set` decision has **no interface** to
 be absent from, because nothing was built.
+## Pitch-preserving time-stretch: a warped clip can keep its pitch (`warp.stretch`) — added 2026-09-15
+
+Until now every rate change in the engine was **plain resampling**: the warp mapping hands
+`Sample::play` a ratio, `Sample::play` hands it to `AudioResampler`, and the pitch moves with the rate —
+which is why `docs/WARP.md` §3 says a 2x warp is an octave up. That is still the **default** and it is
+unchanged for every project; what is new is the second mode.
+
+* **The engine half.** `AudioStretcher` (new: `include/AudioStretcher.h`, `src/core/AudioStretcher.cpp`)
+  is a **WSOLA** time-domain stretch: grains of 1024 frames at 50 % overlap with a periodic Hann
+  window, a hop that advances the output by a fixed synthesis hop and the source by
+  `synthesisHop × speed`, and a normalised cross-correlation search that re-aligns every grain to what
+  has already been rendered. Fixed-size state, prepared once: **`process()` allocates nothing, locks
+  nothing and grows nothing** (0 allocations across 2000 render calls, measured with `AllocationProbe`),
+  and period-sized calls produce **byte-identical output to one call**.
+* **The clip half.** `SampleClip` gains a persisted stretch mode (`WarpStretchMode`, **default
+  `Resample`** = the historical render), written as the `stretch="wsola"` attribute of the same `<warp>`
+  element the warp engine already owns — so a clip that never asks serialises byte for byte as before —
+  and `SamplePlayHandle` routes a non-linear clip through the stretcher when the clip asks. A clip that
+  renders linearly (no markers, project tempo) is **never** routed through it, measured as **0 differing
+  frames of 88200** between the two modes.
+* **The proof, with the pitch measured rather than asserted.** The same two-tone input (440 Hz + 660 Hz)
+  through both paths, amplitudes measured with a Goertzel bin per tone and the fundamental measured a
+  second time by interpolated zero crossings: the **resample** control renders 0.0000 / 0.0000 / 0.5000 /
+  0.3000 at 440 / 660 / 880 / 1320 Hz (880 Hz measured — the octave up), the **stretch** renders
+  0.4992 / 0.2990 / 0.0001 / 0.0001 at the same frequencies (**439.95 Hz** measured), at the same length
+  and the same RMS. Measured again through the clip path (`SampleClip` → `SamplePlayHandle::play`) on
+  one clip's two render modes. The registered ctests are `AudioStretcherTest` (9 slots) and
+  `SampleClipStretchTest` (7 slots), both green: `ctest -R "AudioStretcherTest|SampleClipStretchTest"` →
+  2/2 Passed.
+* **The quality/complexity trade, stated and measured.** The price is the alignment search:
+  **58.7 ms of CPU per second of stretched audio at the default** (`searchRadius` 128, 44.1 kHz stereo,
+  ~17x faster than realtime, ≈ 6 % of one core per stretched clip), 29.7 ms at 64 and 15.1 ms at 32 —
+  linear in the radius, which is also the alignment reach (±128 frames = 2.9 ms, so periods down to
+  ~345 Hz). With the search off (a plain overlap-add) the two tones **cancel** to 0.0285 of 0.5: that row
+  is why the cost buys something. Nothing is paid by a project that does not use the mode.
+* **The surface.** One new command, `warp.stretch` (`clip`, `mode` = `resample` | `preserve_pitch`),
+  headless-safe, **reversible**: the mode is the clip's own serialized state, so the Clip's journal
+  checkpoint is the inverse and the recorded inverse is `warp.stretch` with the before-state's mode
+  (A16 row `true_inverse` in `src/core/ControlReversibilityTable.cpp`). `preserve_pitch` is **refused**
+  for a clip with no rate change rather than silently accepted. `warp.list` reports `stretch`,
+  `stretch_algorithm` and `renders_linearly`, so both modes are readable and the answer is never a
+  guess. Full detail, including the measurements and every limitation: `docs/PITCH-STRETCH.md`.
+* **UI absence — one line: the stretch mode is settable through the socket, not from the interface.**
+  `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/` returns **0**
+  hits — there is no clip-context entry, no checkbox and no marker-drag gesture for it.
 
 ## Not in this draft yet
 
