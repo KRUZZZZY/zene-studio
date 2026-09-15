@@ -533,6 +533,7 @@ tests/control-headless-no-audio-device.py
 tests/control-headless-project-open.py
 tests/control-headless-working-directory.py
 tests/control-link-sync.py
+tests/control-mcp-group-coverage.py
 tests/control-negative-control.py
 tests/control-no-audio-device.py
 tests/control-readiness.py
@@ -547,6 +548,7 @@ tests/control_instance_diagnosis.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
 tests/link_sync_evidence.py
+tests/mcp_stdio_session.py
 tests/render-software-tag.py
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
