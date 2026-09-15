@@ -1200,6 +1200,12 @@ void Song::clearProject()
 	// well as from the (absent) element in loadProject.
 	m_chordTrack.clear();
 
+	// The detected key is project state too: a key from one project must not
+	// describe the next one, and the field is written to the file ONLY when it
+	// holds something, so the empty state has to be reachable here as well as
+	// from the (absent) element in loadProject (the groove pool's own rule).
+	m_projectKey.clear();
+
 	// The modulation layer is project state too, and a layer from one project
 	// must not keep driving the next one's parameters. CLEARING the layer drops
 	// its resolved routes with it, so no write target outlives the project it
@@ -1732,6 +1738,15 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 		m_chordTrack.saveSettings( dataFile, dataFile.content() );
 	}
 
+	// And for the detected key (feature row 34, import detection): written ONLY
+	// when a detect.apply has put one there, so a project that never ran a
+	// detection re-saves exactly the bytes it has always had
+	// (include/ProjectKey.h).
+	if( m_projectKey.shouldPersist() )
+	{
+		m_projectKey.saveSettings( dataFile, dataFile.content() );
+	}
+
 	// The named visibility sets (owner items 3+20+21): project state beside the
 	// tempo map and the modulation layer, and written only when there is at
 	// least one, so a project that never made one re-saves the bytes it always
@@ -1962,6 +1977,18 @@ bool Song::restorePublisherBackedSection(const QDomNode &node)
 	if (node.nodeName() == "chord-track")
 	{
 		m_chordTrack.loadSettings(node.toElement());
+		return true;
+	}
+
+	// The detected key (feature row 34, import detection). The same
+	// reset-on-absence rule: the element is written only when a detection has
+	// been applied, so an absent element has to take the key back to EMPTY
+	// rather than leave the previous project's key behind - and ProjectKey::
+	// loadSettings clears unconditionally, which is what makes the
+	// pre-first-detection state reachable from a journal checkpoint too.
+	if (node.nodeName() == ProjectKey::ElementName)
+	{
+		m_projectKey.loadSettings(node.toElement());
 		return true;
 	}
 	return false;

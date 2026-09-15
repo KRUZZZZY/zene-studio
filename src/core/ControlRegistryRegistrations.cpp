@@ -219,6 +219,13 @@ void registerControlCommands(ControlRegistry& registry)
 	// meter are in every configuration, so its ids are honest in every one.
 	registerMasteringCommands(registry);
 	registerMasteringRunCommands(registry);
+	// Import detection (feature row 34: transient / BPM / key detection on
+	// import). No compile-time switch: the engine's own decoder, the Qt-free
+	// arithmetic and the project's `<detected-key>` field are in every
+	// configuration, so its three ids are honest in every one. detect.analyze is
+	// the SUGGESTION and detect.apply the acceptance (BACKLOG.md item 10's
+	// "never applied silently").
+	registerDetectCommands(registry);
 	// The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	// 81): the note randomisation, transform and slide verbs, the scale.* group (read
 	// half, the two context writers and the one clip-editing verb) and the registry's

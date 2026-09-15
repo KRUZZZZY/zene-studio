@@ -43,6 +43,8 @@
 #include "ModulationLayer.h"
 #include "GroovePool.h"
 #include "ChordTrack.h"
+
+#include "ProjectKey.h"
 #include "Timeline.h"
 #include "TrackContainer.h"
 #include "VstSyncController.h"
@@ -439,6 +441,17 @@ public:
 	ChordTrack& chordTrack() { return m_chordTrack; }
 	const ChordTrack& chordTrack() const { return m_chordTrack; }
 
+	/*! The project's DETECTED KEY (feature row 34, import detection;
+	 *  include/ProjectKey.h): the tonic and the scale name a `detect.apply` wrote
+	 *  after analysing an imported audio file, using the pre-existing scale
+	 *  vocabulary. It is project state with no audio-thread reader and no
+	 *  publisher - the tempo half of a detection goes into the tempo map above,
+	 *  which DOES have one - so it is read only by the detect.* commands and the
+	 *  project writer. An EMPTY key is exactly the state before the feature:
+	 *  nothing is persisted and nothing is consulted. */
+	ProjectKey& projectKey() { return m_projectKey; }
+	const ProjectKey& projectKey() const { return m_projectKey; }
+
 	//! The tempo in force at \a tick: the map's event at or before it, else the
 	//! global tempo model (the map's own out-of-range rule).
 	int tempoAtTick(tick_t tick) const;
@@ -608,6 +621,13 @@ private:
 	 *  of generating notes FROM it), and the notes are what plays. Read only by
 	 *  the chord.* commands and the project writer. */
 	ChordTrack m_chordTrack;
+
+	/*! The project's detected key (feature row 34, import detection). Plain
+	 *  project state with no audio-thread reader and no publisher: it is written
+	 *  by detect.apply, read by detect.get_state and the project writer, and
+	 *  written to the file ONLY when it holds something, so a project that never
+	 *  ran a detection re-saves byte for byte as before. */
+	ProjectKey m_projectKey;
 	int m_oldTicksPerBar;
 	IntModel m_masterVolumeModel;
 	IntModel m_masterPitchModel;

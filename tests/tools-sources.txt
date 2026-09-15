@@ -89,21 +89,21 @@
 tools/auto-mastering-demo.py
 tools/brand/rasterise-placeholders.py
 tools/dawproject-proof.sh
+tools/import-detection-proof.cpp
 tools/make_stub_model.py
 tools/mcp-zene-control/call_tool.py
 tools/mcp-zene-control/server.py
 tools/mcp-zene-control/snapshot_commands.py
 tools/mcp-zene-control/tests/__init__.py
 tools/mcp-zene-control/tests/harness.py
+tools/mcp-zene-control/tests/mcp_fixture.py
+tools/mcp-zene-control/tests/test_declared_surface.py
 tools/mcp-zene-control/tests/test_mcp_e2e.py
+tools/mcp-zene-control/tests/test_mcp_errors.py
+tools/mcp-zene-control/tests/test_offline_staleness.py
 tools/mcp-zene-control/tests/test_units.py
+tools/mcp-zene-control/tests/test_wire_client.py
 tools/mcp-zene-control/zene_control/__init__.py
-tools/mcp-zene-control/zene_control/config.py
-tools/mcp-zene-control/zene_control/protocol.py
-tools/mcp-zene-control/zene_control/registry.py
-tools/mcp-zene-control/zene_control/server.py
-tools/mcp-zene-control/zene_control/staleness.py
-tools/mcp-zene-control/zene_control/tools.py
 # SPLIT 2026-09-12 (tools-scope bar). The bridge's two test files arrived over the
 # 500-line limit (tools/mcp-zene-control/tests/test_mcp_e2e.py 610 lines,
 # tests/test_units.py 513) with four functions over CCN 10, so the freshly imported
@@ -125,11 +125,12 @@ tools/mcp-zene-control/zene_control/tools.py
 # generation, configuration, the taxonomy and the offline surfaces. No assertion was
 # changed, moved out of a suite or weakened by the split; line and CCN counts are in
 # docs/TOOLS-SCOPE-AND-GATE6-FIX.md.
-tools/mcp-zene-control/tests/mcp_fixture.py
-tools/mcp-zene-control/tests/test_declared_surface.py
-tools/mcp-zene-control/tests/test_mcp_errors.py
-tools/mcp-zene-control/tests/test_offline_staleness.py
-tools/mcp-zene-control/tests/test_wire_client.py
+tools/mcp-zene-control/zene_control/config.py
+tools/mcp-zene-control/zene_control/protocol.py
+tools/mcp-zene-control/zene_control/registry.py
+tools/mcp-zene-control/zene_control/server.py
+tools/mcp-zene-control/zene_control/staleness.py
+tools/mcp-zene-control/zene_control/tools.py
 tools/mmpz-git/demo_check.py
 tools/mmpz-git/demo_edits.py
 tools/mmpz-git/depth-demo.sh
@@ -144,4 +145,15 @@ tools/rack-render-proof.py
 tools/render-determinism-compare.py
 tools/render-determinism-probe.sh
 tools/stem-export-demo.py
+
 tools/stem_split_cli.py
+
+#       | grep -vE '^(tools/local-ci\.sh|tools/mmpz-git/scratch/(qtesc|qtroundtrip|qtsave|qtsave2)\.cpp|tools/ncpu-shim\.c|tools/wasm/wat2wasm\.cpp)$' \
+# home: the four C++ scratch probes (tools/mmpz-git/scratch/*.cpp) and
+# tools/wasm/wat2wasm.cpp are in tests/all-sources.txt (the whole-tree first-party C/C++
+# scope - its list is `git ls-files` over the C/C++ extension set, so a tools/ C or C++ file
+# lands in it whether or not anyone remembered); tools/ncpu-shim.c and tools/local-ci.sh are
+# in tests/fork-sources.txt (post-alpha/render-determinism registered ncpu-shim.c there and it
+# is kept there at integration - see that file's header - and local-ci.sh was already measured
+# by the fork scope when this list was added, so moving it would narrow that scope). This
+# file's command subtracts all six.

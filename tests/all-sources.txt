@@ -119,6 +119,7 @@ include/ControlChainPresetSupport.h
 include/ControlChordSupport.h
 include/ControlClipLinkSupport.h
 include/ControlCompSupport.h
+include/ControlDetectSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlExportPresetSupport.h
@@ -196,6 +197,8 @@ include/GrooveTemplate.h
 include/GroupBox.h
 include/GuiApplication.h
 include/Hardware.h
+include/ImportDetection.h
+include/ImportDetectionDsp.h
 include/ImportFilter.h
 include/InlineAutomation.h
 include/InputChannelRing.h
@@ -345,6 +348,7 @@ include/PositionLine.h
 include/PresetPreviewPlayHandle.h
 include/ProjectIds.h
 include/ProjectJournal.h
+include/ProjectKey.h
 include/ProjectNotes.h
 include/ProjectRecovery.h
 include/ProjectRenderer.h
@@ -980,6 +984,8 @@ src/core/ControlCommandsController.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsDawProject.cpp
+src/core/ControlCommandsDetect.cpp
+src/core/ControlCommandsDetectApply.cpp
 src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -1064,6 +1070,7 @@ src/core/ControlCommandsWasm.cpp
 src/core/ControlCommandsWasmEdit.cpp
 src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
+src/core/ControlDetectSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
@@ -1091,6 +1098,7 @@ src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableController.cpp
 src/core/ControlReversibilityTableDawProject.cpp
+src/core/ControlReversibilityTableDetect.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableHostChunking.cpp
 src/core/ControlReversibilityTableInterchange.cpp
@@ -1148,6 +1156,11 @@ src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
+src/core/ImportDetection.cpp
+src/core/ImportDetectionDsp.cpp
+src/core/ImportDetectionKey.cpp
+src/core/ImportDetectionSpectrum.cpp
+src/core/ImportDetectionSpectrum.h
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
 src/core/Instrument.cpp
@@ -1210,6 +1223,7 @@ src/core/ProjectIds.cpp
 src/core/ProjectJournal.cpp
 src/core/ProjectJournalBounds.cpp
 src/core/ProjectJournalStructural.cpp
+src/core/ProjectKey.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
@@ -1468,6 +1482,7 @@ src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
 src/wasm/WasmWorkerPool.cpp
 src/wasm/WasmWorkerPool.h
+tests/control-detect-commands.py
 tests/data/clap-test-plugin/clap-test-gain.c
 tests/data/gigproof/make_gig.cpp
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
@@ -1529,6 +1544,7 @@ tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
+tests/src/core/ImportDetectionTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp
@@ -1637,6 +1653,7 @@ tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
+
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
