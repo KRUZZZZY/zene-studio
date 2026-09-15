@@ -432,6 +432,8 @@ LMMS_EXPORT void registerRecordingRouteCommands(ControlRegistry& registry);
  *  docs/KNOWN-LIMITATIONS.md.
  */
 LMMS_EXPORT void registerInterchangeCommands(ControlRegistry& registry);
+/*! The `dawproject.*` group (feature row 37: DAWproject import / export) - the published format read and written: dawproject.convention, .export, .read, .import. Engine half: include/DawProjectInterchange.h. Joined into reversibilityRowTable() by its own group file. */
+LMMS_EXPORT void registerDawProjectCommands(ControlRegistry& registry);
 
 /*! The `chord.*` group (feature row 35: "Chord track, chord detection,
  *  progression tools, generators"): chord.get_state / chord.detect /

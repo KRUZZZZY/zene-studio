@@ -155,6 +155,7 @@ include/DataFile.h
 include/Delay.h
 include/DeprecationHelper.h
 include/DetuningHelper.h
+include/DawProjectInterchange.h
 include/DpiHelper.h
 include/Draggable.h
 include/DrumSynth.h
@@ -972,6 +973,7 @@ src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsCrash.cpp
+src/core/ControlCommandsDawProject.cpp
 src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -1074,6 +1076,7 @@ src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableArchive.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
+src/core/ControlReversibilityTableDawProject.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableHostChunking.cpp
 src/core/ControlReversibilityTableInterchange.cpp
@@ -1114,6 +1117,13 @@ src/core/Effect.cpp
 src/core/EffectChain.cpp
 src/core/Engine.cpp
 src/core/EnvelopeAndLfoParameters.cpp
+src/core/DawProjectModel.cpp
+src/core/DawProjectRead.cpp
+src/core/DawProjectReadShared.h
+src/core/DawProjectReadTracks.cpp
+src/core/DawProjectSession.cpp
+src/core/DawProjectWrite.cpp
+src/core/DawProjectZip.cpp
 src/core/ExportDither.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
