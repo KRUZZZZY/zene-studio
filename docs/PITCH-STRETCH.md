@@ -240,6 +240,27 @@ nothing — one bool test per period.
 
 ---
 
+---
+
+## 5b. What is RED on this branch, and what was not run
+
+* **`ControlCommandsSnapshot` is RED, with exactly one finding**: `warp.stretch` is registered by this
+  branch's binary (228 live ids) and missing from `tools/mcp-zene-control/zene_control/commands_snapshot.json`
+  (227 ids). Measured: `1 command id(s) this binary registers are NOT in the snapshot`. That file is
+  regenerated **from a live instance** (`python3 tools/mcp-zene-control/snapshot_commands.py --socket
+  <sock>`), never by hand, and every lane of this wave adds commands - so regenerating it here would be
+  a merge conflict rather than a fix. **The merge tip regenerates it once.** Nothing else about the
+  snapshot drifted: the test's other three comparisons report `0 missing, 0 extra`.
+* **`ReversibilityContractTest` was RED and is GREEN after the histogram update** (§4.5 of the ledger:
+  row 228, +1 `true_inverse`). It is listed here because the fix is a *count* the test itself asks to be
+  updated with the table, and the merge tip must re-count it again.
+* **Not run at all**: the coverage, mutation and file-length gates, the full ctest suite (only the
+  targets this lane needed were built), the socket transcript
+  (`tests/control-warp-commands-transcript.py`), and CI. `tests/run-all-gates.sh` was not run.
+* **`agent_surface` (the junk-argument sweep over every registered id, `warp.stretch` included) is
+  GREEN** on this branch's binary, and so are `ControlWarpCommandsTest` (the pre-existing warp group's
+  own contract test, 1.41 s) and `WarpMarkersTest`.
+
 ## 6. Reproduction
 
 ```bash
