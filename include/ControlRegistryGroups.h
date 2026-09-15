@@ -457,6 +457,22 @@ LMMS_EXPORT void registerChordEditCommands(ControlRegistry& registry);
 //! reversibility seam: they write notes into a clip, so their inverse is the
 //! clip's own journal checkpoint rather than a recorded action).
 LMMS_EXPORT void registerChordWriteCommands(ControlRegistry& registry);
+/*! project.missing_assets / project.hash_assets / project.relink - the
+ * project-asset reference group (feature row 38: "project collection /
+ * archive, hashing, relink").
+ *
+ * The engine half is include/ControlProjectAssets.h (the READ TU
+ * src/core/ControlProjectAssets.cpp and the WRITE TU
+ * src/core/ControlProjectAssetsRelink.cpp); this group is its control surface.
+ * Detection and hashing read a project FILE - so they answer for a project
+ * that cannot be loaded and for one that is not open - and relink rewrites the
+ * one reference it was asked to, through a recorded action checkpoint.
+ *
+ * The PORTABLE-BUNDLE half of the feature row is OUT (Bar 3): nothing in this
+ * group copies media or writes any file except the one project file relink was
+ * given. Named in docs/KNOWN-LIMITATIONS.md and the release notes.
+ */
+LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

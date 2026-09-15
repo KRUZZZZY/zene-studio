@@ -402,6 +402,19 @@ set(LMMS_SRCS
 	# rows for the generators. A GROUP file on the same seam as the routing and
 	# mastering rows above - the class comes from each row, not from its file.
 	core/ControlReversibilityTableChord.cpp
+	# The project-asset reference group's three rows (feature row 38): the two
+	# not_mutating inspectors of a project FILE and the one recorded-action
+	# true_inverse row the relink's file write needs. A GROUP file on the same
+	# seam as the routing and mastering rows above.
+	core/ControlReversibilityTableArchive.cpp
+	# project.missing_assets / project.hash_assets / project.relink, the engine
+	# half of feature row 38 split into its READ and WRITE translation units
+	# (the automation/warp/vca/chain read-edit split, for the file-length
+	# ratchet): the scan+hash half and the relink rewrite, sharing
+	# core/ControlProjectAssetsShared.h.
+	core/ControlCommandsProjectArchive.cpp
+	core/ControlProjectAssets.cpp
+	core/ControlProjectAssetsRelink.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

@@ -311,6 +311,7 @@ include/ControlMeterSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlNoteShared.h
+include/ControlProjectAssets.h
 include/ControlRackSupport.h
 include/ControlRecordingSupport.h
 include/ControlRegistry.h
@@ -538,6 +539,7 @@ src/core/ControlCommandsPluginScanShared.h
 src/core/ControlCommandsPluginState.cpp
 src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
+src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
@@ -589,6 +591,9 @@ src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
 src/core/ControlNoteShared.cpp
+src/core/ControlProjectAssets.cpp
+src/core/ControlProjectAssetsRelink.cpp
+src/core/ControlProjectAssetsShared.h
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
@@ -596,6 +601,7 @@ src/core/ControlRegistryRegistrations.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
+src/core/ControlReversibilityTableArchive.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
