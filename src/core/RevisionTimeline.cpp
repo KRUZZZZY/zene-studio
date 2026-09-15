@@ -182,21 +182,30 @@ QString sha256OfFile(const QString& path)
 	return QString::fromLatin1(hash.result().toHex());
 }
 
-/*! An autosave's own provenance: the `.info` sidecar's recorded time and the
- *  project it came from. Absent or unparsable, the file's own mtime stands and
- *  no note is added - a recovery written by upstream has no sidecar and is still
- *  a revision. */
-void applyAutosaveIdentity(RevisionEntry* entry)
+/*! Whether an autosave belongs to \a projectPath, and the provenance it carries.
+ *
+ *  The recovery file is a SESSION artefact - one per working directory, not one
+ *  per project - so its `.info` sidecar is the only thing that makes it a
+ *  revision OF this project. A sidecar naming ANOTHER project excludes it, the
+ *  same rule ProjectRecovery::decideRecovery applies to the startup prompt (and
+ *  for the same reason: a stale autosave of something else is not this project's
+ *  revision). A recovery with NO sidecar, or one that names no project, is
+ *  reported: an upstream-written autosave cannot say whose it is, and hiding a
+ *  real artefact would be the worse error.
+ */
+bool applyAutosaveIdentity(const QString& projectPath, RevisionEntry* entry)
 {
 	QFile sidecar(ProjectRecovery::recoveryInfoPath(entry->path));
-	if (!sidecar.open(QIODevice::ReadOnly)) { return; }
+	if (!sidecar.open(QIODevice::ReadOnly)) { return true; }
 	QString from;
 	QDateTime savedAt;
 	const bool parsed = ProjectRecovery::parseRecoveryIdentity(
 		QString::fromUtf8(sidecar.readAll()), from, savedAt);
-	if (!parsed) { return; }
+	if (!parsed) { return true; }
 	if (savedAt.isValid()) { entry->timestamp = savedAt.toUTC(); }
 	entry->note = QStringLiteral("autosave of %1").arg(from);
+	if (from.isEmpty()) { return true; }
+	return QFileInfo(from).absoluteFilePath() == QFileInfo(projectPath).absoluteFilePath();
 }
 
 //! Newest first; ties keep the artefact order the list was built in, so the
@@ -247,7 +256,12 @@ RevisionEntry findRevision(const QString& projectPath, const QString& recoveryFi
 	// WITHOUT a hash rather than hashed and then refused on read: the same bound
 	// decides both halves, so a listed entry with a hash is always readable.
 	if (info.size() <= Bounds::MaxRevisionBytes) { entry.sha256 = sha256OfFile(slot.path); }
-	if (slot.source == QStringLiteral("autosave")) { applyAutosaveIdentity(&entry); }
+	if (slot.source == QStringLiteral("autosave") && !applyAutosaveIdentity(projectPath, &entry))
+	{
+		// A recovery of a DIFFERENT project: it is that project's revision, not
+		// this one's, and the timeline of the project it names is where it shows.
+		return RevisionEntry();
+	}
 	return entry;
 }
 

@@ -370,6 +370,11 @@ private slots:
 		QJsonObject report;
 		const QVector<RevisionEntry> entries = listProjectRevisions(project, recoveryFile(),
 			true, &report);
+		// ONE entry, and the number is load-bearing: the fixture's autosave
+		// (recover.mmp) is passed as the recovery file to consider, but its
+		// sidecar names the OTHER project, so it is not a revision of this one.
+		// Measured: before the timeline read the sidecar's identity it listed two
+		// entries and presented a recovery of another project as this project's.
 		QCOMPARE(entries.size(), 1);
 		QCOMPARE(entries.first().source, QStringLiteral("git"));
 		QVERIFY(entries.first().id.startsWith(QStringLiteral("git:")));
