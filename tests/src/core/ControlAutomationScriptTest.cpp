@@ -34,6 +34,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QPair>
 #include <QThread>
@@ -42,6 +43,8 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ScriptEngine.h"
+#include "Song.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -78,6 +81,7 @@ private slots:
 			{qstr("automation.remove_point"), true},
 			{qstr("automation.clear"), true},
 			{qstr("automation.mode_set"), true},
+			{qstr("automation.record_mode_set"), true},
 		};
 		for (const auto& entry : required)
 		{
@@ -172,6 +176,14 @@ private slots:
 			{qstr("automation.mode_set"), {{qstr("track"), qstr("trk-9999")},
 				{qstr("parameter"), qstr("inst/0")}, {qstr("mode"), qstr("write")}},
 				ControlErrorKind::NotFound},
+			// record_mode_set's closed enum is real, so a bogus mode never reaches the handler
+			{qstr("automation.record_mode_set"), {{qstr("track"), qstr("trk-9999")},
+				{qstr("parameter"), qstr("inst/0")}, {qstr("mode"), qstr("scribble")}},
+				ControlErrorKind::InvalidArgs},
+			// record_mode_set on a non-existent track resolves the target first
+			{qstr("automation.record_mode_set"), {{qstr("track"), qstr("trk-9999")},
+				{qstr("parameter"), qstr("inst/0")}, {qstr("mode"), qstr("on")}},
+				ControlErrorKind::NotFound},
 			// an unknown command is not_found too
 			{qstr("automation.no_such_verb"), {}, ControlErrorKind::NotFound},
 		};
@@ -186,6 +198,102 @@ private slots:
 			QVERIFY(!result.errorMessage.isEmpty());
 		}
 	}
+
+	//! mode_set on a valid track+parameter but with no automation clip still
+	//! succeeds: the mode is per-model, not per-clip, and it can be set before
+	//! any automation exists.
+	void automationModeSetSucceedsOnABareParameter()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		// A fresh song has at least one track with parameters; find one.
+		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"));
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		const QJsonArray tracks = state.result.value(QStringLiteral("tracks")).toArray();
+		QVERIFY(!tracks.isEmpty());
+		QString trackId;
+		QString paramId;
+		for (const QJsonValue& t : tracks)
+		{
+			const QJsonArray params = t.toObject().value(QStringLiteral("parameters")).toArray();
+			if (!params.isEmpty())
+			{
+				trackId = t.toObject().value(QStringLiteral("id")).toString();
+				paramId = params.first().toObject().value(QStringLiteral("id")).toString();
+				break;
+			}
+		}
+		QVERIFY2(!trackId.isEmpty(), "no track with parameters in the fresh song");
+		QVERIFY2(!paramId.isEmpty(), "no parameter found");
+
+		for (const QString& mode : {qstr("off"), qstr("read"), qstr("touch"), qstr("latch"), qstr("write")})
+		{
+			const ControlResult result = registry->invoke(QStringLiteral("automation.mode_set"),
+				QJsonObject{{QStringLiteral("track"), trackId},
+					{QStringLiteral("parameter"), paramId},
+					{QStringLiteral("mode"), mode}});
+			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			QCOMPARE(result.result.value(QStringLiteral("track")).toString(), trackId);
+			QCOMPARE(result.result.value(QStringLiteral("parameter")).toString(), paramId);
+			QCOMPARE(result.result.value(QStringLiteral("mode")).toString(), mode);
+			// A mode change is OBSERVABLE, not only accepted: the read-back
+			// reports exactly the string that was set, through the one
+			// spelling function both directions use (ControlAutomationSupport).
+			QCOMPARE(modeOf(registry, trackId, paramId), mode);
+			QVERIFY2(!result.result.value(QStringLiteral("mode_before")).toString().isEmpty(),
+				qPrintable(mode + ": the set reported no mode_before"));
+			QCOMPARE(result.result.value(QStringLiteral("changed")).toBool(),
+				result.result.value(QStringLiteral("mode_before")).toString() != mode);
+		}
+
+		// Leave the parameter as the test found it (read), so the mode this
+		// test ended on is not a hidden precondition of the next one.
+		const ControlResult back = registry->invoke(QStringLiteral("automation.mode_set"),
+			QJsonObject{{QStringLiteral("track"), trackId},
+				{QStringLiteral("parameter"), paramId},
+				{QStringLiteral("mode"), qstr("read")}});
+		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+	}
+
+	//! record_mode_set requires an existing automation clip, because the record
+	//! flag lives on the clip, not on the parameter.
+	void automationRecordModeSetRequiresAClip()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"));
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		const QJsonArray tracks = state.result.value(QStringLiteral("tracks")).toArray();
+		QVERIFY(!tracks.isEmpty());
+		QString trackId;
+		QString paramId;
+		for (const QJsonValue& t : tracks)
+		{
+			const QJsonArray params = t.toObject().value(QStringLiteral("parameters")).toArray();
+			if (!params.isEmpty())
+			{
+				trackId = t.toObject().value(QStringLiteral("id")).toString();
+				paramId = params.first().toObject().value(QStringLiteral("id")).toString();
+				break;
+			}
+		}
+		QVERIFY2(!trackId.isEmpty(), "no track with parameters in the fresh song");
+		QVERIFY2(!paramId.isEmpty(), "no parameter found");
+
+		const ControlResult result = registry->invoke(QStringLiteral("automation.record_mode_set"),
+			QJsonObject{{QStringLiteral("track"), trackId},
+				{QStringLiteral("parameter"), paramId},
+				{QStringLiteral("mode"), qstr("on")}});
+		QVERIFY2(!result.ok, "record_mode_set succeeded without a clip");
+		QCOMPARE(result.errorKind, ControlErrorKind::NotFound);
+		QVERIFY2(result.errorMessage.contains(QStringLiteral("no automation clip")),
+			qPrintable(result.errorMessage));
+	}
+
+	//! The MODES' own proof (the no-destruction property, the mode round trip for all
+	//! five modes and the write-mode sensitivity leg) lives in its own binary,
+	//! tests/src/core/ControlAutomationModesTest.cpp: it drives plugin.param_set and
+	//! Song::processNextBuffer() while the transport walks over a recorded curve,
+	//! which is more machinery than this file's registry contract needs - and the
+	//! file-length ratchet is not moved for a new feature.
 
 	void scriptListShowsTheShippedScripts()
 	{
@@ -308,6 +416,30 @@ private slots:
 
 private:
 	static QString qstr(const char* text) { return QString::fromLatin1(text); }
+
+	//! One parameter's "mode" as automation.get_state reports it, or an empty
+	//! string when the track or the parameter is not in the read-back.
+	static QString modeOf(ControlRegistry* registry, const QString& trackId, const QString& paramId)
+	{
+		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"),
+			QJsonObject{{QStringLiteral("track"), trackId}});
+		if (!state.ok) { return QString(); }
+		for (const QJsonValue& t : state.result.value(QStringLiteral("tracks")).toArray())
+		{
+			const QJsonObject track = t.toObject();
+			if (track.value(QStringLiteral("id")).toString() != trackId) { continue; }
+			for (const QJsonValue& p : track.value(QStringLiteral("parameters")).toArray())
+			{
+				const QJsonObject parameter = p.toObject();
+				if (parameter.value(QStringLiteral("id")).toString() == paramId)
+				{
+					return parameter.value(QStringLiteral("mode")).toString();
+				}
+			}
+		}
+		return QString();
+	}
+
 };
 
 QTEST_GUILESS_MAIN(ControlAutomationScriptTest)

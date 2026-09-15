@@ -289,3 +289,36 @@ keeps `AutomatableModel` **additive**: new API in its own banner-marked block in
 whole implementation appended at the end of the `.cpp` (`src/core/AutomatableModel.cpp:762-946`).
 `setControllerConnection` and the controller-binding code are untouched, and no existing member,
 method or signature was restructured.
+
+---
+
+## 6. Addendum, 0.3.0-alpha (`030/automation-modes`, feature-list rows 10 and 63): Off, the surface, and the proof
+
+The state machine above reached the alpha unchanged. What 0.3.0 adds is the **selection** half and one
+mode the post-alpha slice did not have:
+
+- **`off` is a mode of its own.** In the post-alpha slice the four modes existed and nothing could select
+  one; the first 0.3.0 revision of `automation.mode_set` mapped `off` onto `Read`, which made "off" a
+  second spelling of "follow the curve" — the opposite of what an engineer means by it. `off` is now
+  `AutomatableModel::AutomationMode::Off`, appended **last** in the enum so the four original ordinals do
+  not move: the control ignores its written curve (the engine's apply pass in
+  `Song::processAutomations()` skips an `Off` model, so the manual value stands) and writes nothing.
+  `Read` and `Off` therefore make the **same write decision** — `automationWantsWrite()` cannot tell them
+  apart — and differ on the **read** path, which is where the test pins them.
+- **The modes are drivable and observable through the socket.** `automation.mode_set`
+  (`off`/`read`/`touch`/`latch`/`write`, closed enum) answers with `mode`, `mode_before` and `changed`;
+  `automation.get_state` reports every parameter's `mode` and every automated clip's `recording` flag,
+  and both directions go through one spelling function (`control::automationModeName`), so "the mode I set
+  is the mode I read" is a property of the code. `automation.record_mode_set` toggles the clip's legacy
+  per-clip record flag through a live journal checkpoint (its A16 inverse).
+- **The proof, twice.** `tests/src/core/AutomationModesTest.cpp` holds the no-destruction property on the
+  engine path (ride a control in Read, assert the clip's time map is bit-identical, paired with a Touch
+  pass that must change it) and now also `testOffIgnoresTheAutomationAndWritesNothing`, whose Read leg is
+  its sensitivity control. `tests/src/core/ControlAutomationModesTest.cpp::readRideThroughTheSocketCannotTouchTheRecordedAutomation`
+  holds the same property **through the command surface** — `automation.add_point` records, `mode_set`
+  selects `read`, `plugin.param_set` rides while the harness drives `Song::processNextBuffer()`, and the
+  clip is compared node for node — with a `write`-mode leg that must change the clip.
+- **Known limits, unchanged by this addendum:** the mode is runtime state (not persisted, not journalled,
+  no undo — see `docs/KNOWN-LIMITATIONS.md`); only the mixer fader has a touch gesture, so `touch` and
+  `latch` cannot be armed through the socket yet (`write` needs no gesture); `write` does not erase the
+  un-passed remainder of a clip.

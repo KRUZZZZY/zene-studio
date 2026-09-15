@@ -329,6 +329,16 @@ public:
 	// as the transport runs, with no touch needed. Read is the default because
 	// it is what every existing project does and what an engineer expects of a
 	// control they have not armed - the alpha behaves as Read today.
+	// Off is the mode with no automation at all: the control does not follow
+	// its clip (Song's apply pass skips an Off model, so the manual value
+	// stands) and never writes. It is the mode that freezes a control without
+	// deleting the curve.
+	//
+	// Read and Off make the SAME write decision (neither writes one), so
+	// automationWantsWrite() cannot tell them apart -- the READ path does, and
+	// Song::processAutomations() is the only other reader of the mode. Any new
+	// reader that asks "does this control follow its automation?" must ask
+	// `automationMode() != AutomationMode::Off` and not compare against Read.
 	//
 	// THREAD OWNERSHIP. setAutomationMode(), noteAutomationTouchStart()/End()
 	// and setTrimOffset() are called from the GUI thread. The audio thread only
@@ -344,7 +354,14 @@ public:
 		Read,   //!< follow written automation, never write (default)
 		Touch,  //!< write while touched, then return to reading
 		Latch,  //!< write from the first touch until the transport run ends
-		Write   //!< overwrite the pass while the transport runs
+		Write,  //!< overwrite the pass while the transport runs
+		//! Ignore the written automation and never write: the manual value
+		//! stands (the read-path half is Song::processAutomations' apply
+		//! pass). Appended LAST so the four original enumerators keep the
+		//! ordinals they have always had: the mode is runtime state and
+		//! nothing serialises the enum, so nothing depends on them, but a
+		//! silent renumbering is not a risk worth taking for the ordering.
+		Off
 	};
 
 	static_assert(std::atomic<AutomationMode>::is_always_lock_free,

@@ -74,6 +74,15 @@ set(LMMS_TESTS
 	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp
 	src/core/ControlAutomationScriptTest.cpp
+	# The automation MODES' own proof (feature-list rows 10 and 63, board task
+	# #647): the mode round trip for all five modes through automation.get_state,
+	# and THE no-destruction property through the command surface - a curve
+	# recorded with automation.add_point, the mode set to read, the control ridden
+	# with plugin.param_set while this harness drives Song::processNextBuffer(),
+	# and the clip compared node for node - with a write-mode leg that must change
+	# it. A second binary because the file-length ratchet is not moved for a new
+	# feature.
+	src/core/ControlAutomationModesTest.cpp
 	# The browser.* command surface (W8): the ids, the schemas, the typed
 	# refusals the agent-surface sweep needs, and the A16 undo proof - a tag's
 	# inverse is the paired COMMAND, so control.undo dispatches it.
@@ -393,12 +402,18 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# device catalogue is real rather than empty.  PluginScanCacheTest drives the
 	# scan cache against a copy of the built tripleoscillator module;
 	# ReversibilityContractTest/ReversibilityUndoTest load the real binary's
-	# plugins to prove the A16 inverses (#623).
+	# plugins to prove the A16 inverses (#623). ControlAutomationScriptTest needs
+	# them so the automation-mode commands have a real parameter to drive: the
+	# no-destruction proof (feature-list rows 10 and 63, board task #647) rides an
+	# instrument parameter through plugin.param_set, and without the modules the
+	# song's track holds a parameterless DummyInstrument.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlAutomationScriptTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlAutomationModesTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE

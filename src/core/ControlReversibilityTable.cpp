@@ -99,7 +99,7 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityLiveRowTable,
 				reversibilityActionRowTable,
 				reversibilityTrackFolderRowTable, reversibilityVcaRowTable, reversibilityRoutingRowTable,
-				reversibilityVerbRowTable, reversibilityScanAndCrashRowTable, reversibilityMasteringRowTable, reversibilityNoteScaleRowTable, reversibilityMeterRowTable, reversibilityExportPresetRowTable, reversibilityRecordingRowTable, reversibilityInterchangeRowTable, reversibilityChordRowTable, reversibilityArchiveRowTable, reversibilityHostChunkingRowTable, reversibilityWasmRenderRowTable, reversibilityDawProjectRowTable, reversibilityMmpzGitRowTable})
+				reversibilityVerbRowTable, reversibilityScanAndCrashRowTable, reversibilityMasteringRowTable, reversibilityNoteScaleRowTable, reversibilityMeterRowTable, reversibilityExportPresetRowTable, reversibilityRecordingRowTable, reversibilityInterchangeRowTable, reversibilityChordRowTable, reversibilityArchiveRowTable, reversibilityHostChunkingRowTable, reversibilityWasmRenderRowTable, reversibilityDawProjectRowTable, reversibilityMmpzGitRowTable, reversibilityAutomationModesRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

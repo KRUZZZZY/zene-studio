@@ -451,6 +451,10 @@ set(LMMS_SRCS
 	# same reason: the passive block that holds the rest of the wasm.* rows is at
 	# the file-length cap.
 	core/ControlReversibilityTableWasmRender.cpp
+	# The automation-mode group's two rows (feature-list rows 10 and 63,
+	# board task #647). A GROUP file on the same seam as the mastering and
+	# routing rows above.
+	core/ControlReversibilityTableAutomationModes.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

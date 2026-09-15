@@ -587,7 +587,12 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		bool isRecording = recordedModels.contains(model);
 		model->setUseControllerValue(isRecording);
 
-		if (!isRecording)
+		// Automation modes: a control in Off IGNORES its written automation -
+		// the manual value stands - so this frame's apply is skipped for it.
+		// The clip itself is untouched, and the mode is the only gate here:
+		// an Off control that a gesture or the clip's own record flag is
+		// writing to is still recording (that is what those two are for).
+		if (!isRecording && model->automationMode() != AutomatableModel::AutomationMode::Off)
 		{
 			/* TODO
 			 * Remove scaleValue() from here when automation editor's

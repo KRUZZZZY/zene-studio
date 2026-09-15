@@ -625,6 +625,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableArchive.cpp
+src/core/ControlReversibilityTableAutomationModes.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableDawProject.cpp
@@ -805,6 +806,7 @@ tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ControlAutomationModesTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp

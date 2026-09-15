@@ -466,10 +466,71 @@ private slots:
 			"a Write pass with the transport running wrote nothing");
 	}
 
+	//! Off is a mode of its own and NOT a second spelling of Read. In Read the
+	//! control FOLLOWS its written automation; in Off it ignores it and the
+	//! manual value stands. The same harness shows both, and every leg must
+	//! leave the clip bit-identical - neither mode writes one.
+	//!
+	//! The Read leg is this test's sensitivity control: without it, "Off did not
+	//! follow the curve" could pass by the apply pass never running at all (a
+	//! harness that silently stopped driving the song), which is exactly the
+	//! failure a comparison-shaped assertion has to rule out. The Read leg
+	//! proves the same harness DOES move the control from the curve.
+	void testOffIgnoresTheAutomationAndWritesNothing()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+		// A single discrete node at 0 with the clip length set: the value the
+		// curve applies is a constant 0.5 wherever the playhead is, so the
+		// expectation is exact rather than a rounded interpolation.
+		rig.clip.setProgressionType(AutomationClip::ProgressionType::Discrete);
+		rig.clip.putValue(0, 0.5f, false);
+		rig.clip.changeLength(192);
+		rig.clip.addObject(&rig.volume);
+		const auto before = timeMapBits(rig.clip);
+
+		// --- Read: the curve drives the control -----------------------------
+		rig.volume.setAutomationMode(AutomationMode::Read);
+		rig.volume.setValue(0.25f); // a manual move the curve has to override
+		playFromZero(song, 4);
+		QCOMPARE(rig.volume.value(), 0.5f);
+		QCOMPARE(timeMapBits(rig.clip), before);
+
+		// --- Off: the identical harness, and the manual value STANDS --------
+		song->stop();
+		rig.volume.setAutomationMode(AutomationMode::Off);
+		rig.volume.setValue(0.25f);
+		playFromZero(song, 4);
+		QVERIFY2(rig.volume.value() == 0.25f,
+			qPrintable(QStringLiteral("Off followed the curve: the control is %1, the manual "
+				"value is 0.25").arg(rig.volume.value())));
+		QCOMPARE(timeMapBits(rig.clip), before);
+
+		// --- Back to Read: nothing latched, the curve takes over again ------
+		song->stop();
+		rig.volume.setAutomationMode(AutomationMode::Read);
+		playFromZero(song, 4);
+		QCOMPARE(rig.volume.value(), 0.5f);
+		QCOMPARE(timeMapBits(rig.clip), before);
+
+		// --- And Off neither writes one: the write half of the mode ---------
+		song->stop();
+		rig.volume.setAutomationMode(AutomationMode::Off);
+		QVERIFY2(!rig.volume.automationWantsWrite(
+				AutomatableModel::automationTransportRun(), AutomatableModel::automationClockNs()),
+			"Off declared a write");
+	}
+
 	//! The decision table, and the proof that no two modes are the same mode:
 	//! each mode's decisions over the scenario set are a distinct vector, so a
 	//! mode implemented as another would fail here (Touch-as-Latch, Read-as-
 	//! Write, and so on).
+	//!
+	//! Off is deliberately NOT a row: it makes the same write decision as Read
+	//! over every scenario (neither writes), so it would collide with Read in the
+	//! distinctness check below - which is correct, because the two differ on the
+	//! READ path and not here. testOffIgnoresTheAutomationAndWritesNothing pins
+	//! that difference where it actually exists.
 	void testEachModeDiffersFromTheOthers()
 	{
 		const qint64 t0 = 1000000;
