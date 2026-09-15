@@ -196,6 +196,9 @@ set(LMMS_SRCS
 	core/ControlCommandsModulatorRoutes.cpp
 	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsMidi.cpp
+	# the controller.* group (feature row 19, board task #651): MIDI controller
+	# soft-takeover, LED/feedback output and the mapping templates.
+	core/ControlCommandsController.cpp
 	core/ControlCommandsNotes.cpp
 	# note.probability_set (0.3.0 verb wave): the MIDI-depth probability verb the
 	# engine has carried since docs/MIDI-DEPTH.md and never got an id for.
@@ -436,6 +439,11 @@ set(LMMS_SRCS
 	# same reason: the passive block that holds the rest of the wasm.* rows is at
 	# the file-length cap.
 	core/ControlReversibilityTableWasmRender.cpp
+	# The controller.* rows (feature row 19, board task #651): the MIDI controller
+	# surface's soft-takeover, LED feedback and mapping templates. Two
+	# not_mutating read verbs and five snapshot rows, in their own file so the
+	# capped join file and the passive block both stay untouched.
+	core/ControlReversibilityTableController.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp
@@ -457,6 +465,11 @@ set(LMMS_SRCS
 	${CMAKE_SOURCE_DIR}/include/ControlServer.h
 	core/Controller.cpp
 	core/ControllerConnection.cpp
+	# ControllerSurface.cpp - the mapping-template store of the controller
+	# surface (feature row 19, board task #651). Missed by the lane's WIP commit
+	# cbb717660: the file was written but never added to this list, so nothing
+	# built it.
+	core/ControllerSurface.cpp
 	core/DataFile.cpp
 	core/DrumSynth.cpp
 	core/Effect.cpp

@@ -26,6 +26,8 @@
 #ifndef LMMS_MIDI_PORT_H
 #define LMMS_MIDI_PORT_H
 
+#include <atomic>
+
 #include <QString>
 #include <QList>
 #include <QMap>
@@ -103,6 +105,27 @@ public:
 		return mode() == Mode::Output || mode() == Mode::Duplex;
 	}
 
+	/*! Output accounting, written on whatever thread calls processOutEvent()
+	 *  (the audio thread for the note path, the caller for LED feedback) and
+	 *  read by `controller.surface_state` and the controller tests.
+	 *
+	 *  `outputEventsOffered()` counts events handed to this port's output path;
+	 *  `outputEventsWritten()` counts the ones MidiPort::processOutEvent() then
+	 *  actually passed to the MIDI client - the client BOUNDARY, which is the
+	 *  strongest thing an in-process test can measure with no hardware (the
+	 *  client's own bytes go to sendByte(), a no-op in the dummy client).
+	 *
+	 *  Relaxed atomics: this is a measurement, not synchronization. Nothing
+	 *  here allocates or locks, so the audio path stays realtime-safe. */
+	quint64 outputEventsOffered() const
+	{
+		return m_outputEventsOffered.load(std::memory_order_relaxed);
+	}
+	quint64 outputEventsWritten() const
+	{
+		return m_outputEventsWritten.load(std::memory_order_relaxed);
+	}
+
 	int realOutputChannel() const
 	{
 		// There's a possibility of outputChannel being 0 ("--"), which is used to keep all
@@ -172,6 +195,11 @@ private:
 
 	Map m_readablePorts;
 	Map m_writablePorts;
+
+	//! Output accounting - see the accessors' comment above. Zero-initialized
+	//! atomics, so a port that never writes costs nothing.
+	std::atomic<quint64> m_outputEventsOffered{0};
+	std::atomic<quint64> m_outputEventsWritten{0};
 
 
 	friend class gui::ControllerConnectionDialog;

@@ -24,6 +24,11 @@
  */
 
 
+#include <algorithm>
+#include <cmath>
+
+#include <QDomElement>
+
 #include "AudioEngine.h"
 #include "MidiController.h"
 
@@ -146,24 +151,45 @@ void MidiController::resetSoftTakeover()
 void MidiController::setFeedbackEnabled(bool enabled)
 {
 	m_feedbackEnabled = enabled;
-	if (enabled)
+	if (!enabled) { return; }
+
+	// A port that is not output-enabled cannot carry the write, and
+	// MidiPort::processOutEvent gates on the port's output CHANNEL: a feedback
+	// event written on the channel this control transmits on would be filtered
+	// out as "not the channel the user selected" against any other setting. So
+	// point the output channel at the channel this control receives on, which is
+	// the channel the hardware listens to for its own control's lamp.
+	if (!m_midiPort.isOutputEnabled())
 	{
-		// Ensure output is enabled on the port so feedback can travel.
-		if (!m_midiPort.isOutputEnabled())
-		{
-			m_midiPort.setMode(MidiPort::Mode::Duplex);
-		}
-		sendFeedback();
+		m_midiPort.setMode(MidiPort::Mode::Duplex);
 	}
+	if (m_midiPort.inputChannel() > 0 && m_midiPort.outputChannel() != m_midiPort.inputChannel())
+	{
+		m_midiPort.setOutputChannel(m_midiPort.inputChannel());
+	}
+	sendFeedback();
 }
 
-void MidiController::sendFeedback()
+int MidiController::feedbackByte() const
 {
-	const int channel = m_midiPort.realOutputChannel();
+	return static_cast<int>(std::lround(std::clamp(m_lastValue, 0.0f, 1.0f) * 127.0f));
+}
+
+bool MidiController::sendFeedback()
+{
 	const int controller = m_midiPort.inputController();
-	if (controller < 0) { return; }
-	const int value = static_cast<int>(std::clamp(m_lastValue * 127.0f, 0.0f, 127.0f));
-	processOutEvent(MidiEvent(MidiControlChange, channel, controller, value), TimePos());
+	if (controller < 0) { return false; }  // nothing is bound to a controller number
+
+	// "MIDI chX ctrlY" is a 1-based channel; a MidiEvent carries the wire
+	// channel, so it is one lower. realOutputChannel() is the same byte for a
+	// port whose output channel was pointed at this control's channel above.
+	const int channel = m_midiPort.realOutputChannel();
+	processOutEvent(MidiEvent(MidiControlChange, channel, controller, feedbackByte()),
+		TimePos());
+
+	// The event was handed to the port. Whether it then reached the client is
+	// the port's own measurement - see MidiController.h.
+	return true;
 }
 
 

@@ -490,6 +490,24 @@ LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
  *  here by the 0.3.0-alpha wave-2 train, whose registrations took that header to 504
  *  lines; it is back to the 502 it inherited. */
 LMMS_EXPORT void registerTrackStructureCommands(ControlRegistry& registry);
+
+/*! controller.surface_state / soft_takeover / feedback / template_save /
+ *  template_list / template_apply / template_delete - the ENGINE HALF of MIDI
+ *  controller surfaces (feature row 19). The engine is
+ *  include/ControllerSurface.h (the template store) with the per-binding
+ *  soft-takeover and LED/feedback state on MidiController
+ *  (include/MidiController.h) and the output measurement on MidiPort
+ *  (include/MidiPort.h).
+ *
+ *  It builds ON the landed MIDI-learn path (src/core/MidiLearn.cpp, the
+ *  midi.learn_toggle / midi.device_list ids): a control bound by learn, by a
+ *  project load or by controller.template_apply all answer to the same
+ *  address, the model's fullDisplayName().
+ *
+ *  OSC IS OUT (Bar 3): this group is MIDI controller surfaces only. There is no
+ *  interface for any of it in this release - the group is the only way to reach
+ *  it. Named in docs/KNOWN-LIMITATIONS.md and the release notes. */
+LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

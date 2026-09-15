@@ -266,6 +266,15 @@ LMMS_EXPORT const ReversibilityRow* reversibilityHostChunkingRowTable(int* rowCo
  *  the file-length cap. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityWasmRenderRowTable(int* rowCount);
+/*! The `controller.*` rows (feature row 19, board task #651): the MIDI
+ *  controller surface's soft-takeover, LED/feedback output and mapping
+ *  templates. Two not_mutating read verbs, and five snapshot rows with
+ *  reversible=false - the surface flags live in the model's own <connection>
+ *  element and the templates are files outside the project, so no
+ *  ProjectJournal checkpoint holds a previous value and an undo attempt must
+ *  FAIL, typed, naming the inverse command. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityControllerRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 /*! The `stem.*` group's seven not_mutating rows (feature row 26, board task

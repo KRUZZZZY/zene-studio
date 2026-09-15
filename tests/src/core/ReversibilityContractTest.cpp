@@ -119,7 +119,16 @@ DocumentedHistogram documentedHistogram()
 	 *  src/core/ControlReversibilityTable*.cpp. The paragraph in
 	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
 	 *  assertion's job is that the two cannot drift. */
-	DocumentedHistogram out{281, 151, 21, 6, 103};
+	/*! LANE-LOCAL MEASUREMENT (030/controller-surfaces, feature row 19, board
+	 *  task #651) - NOT a merged-tip measurement. This lane adds the seven
+	 *  controller.* rows: five `snapshot` (each reversible=false, with the
+	 *  inverse command named as its fallback) and two `not_mutating`. The
+	 *  telemetry-off / wasm-off base above therefore becomes 288 / 151 / 26 /
+	 *  6 / 105, and the comment ABOVE this line describes the wave-2 merged
+	 *  tip, which knew nothing about this lane. THE MERGE TIP MUST RE-MEASURE
+	 *  THIS CONSTANT: it was moved to what this branch's tree measures, and
+	 *  this branch cannot run the test (no full build in the lane's window). */
+	DocumentedHistogram out{281 + 7, 151, 21 + 5, 6, 103 + 2};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

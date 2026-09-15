@@ -43,6 +43,12 @@ QJsonObject ControllerTemplateBinding::toJson() const
 	obj.insert(QStringLiteral("channel"), channel);
 	obj.insert(QStringLiteral("controller"), controller);
 	obj.insert(QStringLiteral("target"), targetName);
+	// The surface flags travel with the binding: a template that restored only
+	// the addresses would leave every fader hard-taking-over the value it
+	// happens to sit on, which is the half of a controller surface a user
+	// notices immediately.
+	obj.insert(QStringLiteral("soft_takeover"), softTakeover);
+	obj.insert(QStringLiteral("feedback"), feedback);
 	return obj;
 }
 
@@ -52,6 +58,8 @@ ControllerTemplateBinding ControllerTemplateBinding::fromJson(const QJsonObject&
 	b.channel = obj.value(QStringLiteral("channel")).toInt(1);
 	b.controller = obj.value(QStringLiteral("controller")).toInt(0);
 	b.targetName = obj.value(QStringLiteral("target")).toString();
+	b.softTakeover = obj.value(QStringLiteral("soft_takeover")).toBool();
+	b.feedback = obj.value(QStringLiteral("feedback")).toBool();
 	return b;
 }
 
@@ -88,12 +96,18 @@ ControllerSurface& ControllerSurface::instance()
 
 QString ControllerSurface::templateDirectory()
 {
-	return ConfigManager::inst()->userConfigDir() + QStringLiteral("controller-templates");
+	// The user PRESET tree, like the chain presets (ControlChainPresetSupport.cpp)
+	// and the render presets (ControlExportPresetSupport.cpp): a mapping template
+	// is a user artefact that outlives a project, and it belongs beside the other
+	// ones. One directory per kind, with the trailing separator an agent copies
+	// into a path.
+	return ConfigManager::inst()->userPresetsDir() + QStringLiteral("controller-templates")
+		+ QDir::separator();
 }
 
-QString ControllerSurface::templatePath(const QString& name) const
+QString ControllerSurface::templatePathFor(const QString& name) const
 {
-	return templateDirectory() + QDir::separator() + name + QStringLiteral(".json");
+	return templateDirectory() + name + QStringLiteral(".json");
 }
 
 bool ControllerSurface::saveTemplate(const QString& name)
@@ -108,7 +122,7 @@ bool ControllerSurface::saveTemplate(const QString& name)
 	t.name = name;
 	t.bindings = currentBindings();
 
-	QFile file(templatePath(name));
+	QFile file(templatePathFor(name));
 	if (!file.open(QIODevice::WriteOnly))
 	{
 		return false;
@@ -135,7 +149,7 @@ QStringList ControllerSurface::listTemplates() const
 
 ControllerTemplate ControllerSurface::loadTemplate(const QString& name) const
 {
-	QFile file(templatePath(name));
+	QFile file(templatePathFor(name));
 	if (!file.open(QIODevice::ReadOnly))
 	{
 		return ControllerTemplate();
@@ -177,6 +191,24 @@ int ControllerSurface::applyTemplate(const QString& name)
 		auto* connection = new ControllerConnection(controller);
 		target->setControllerConnection(connection);
 
+		// The two surface flags, in the order that matters: soft-takeover first,
+		// because setSoftTakeoverTarget() derives its target from the model the
+		// binding now drives, and enabling feedback last, because enabling it
+		// writes the value the model holds straight back to the hardware.
+		if (b.softTakeover)
+		{
+			controller->setSoftTakeoverEnabled(true);
+			// The value accessors on AutomatableModel are templates (value<T>(),
+			// minValue<T>(), maxValue<T>()); the takeover point is a float.
+			const float span = target->maxValue<float>() - target->minValue<float>();
+			controller->setSoftTakeoverTarget(span > 0.0f
+				? (target->value<float>() - target->minValue<float>()) / span : 0.0f);
+		}
+		if (b.feedback)
+		{
+			controller->setFeedbackEnabled(true);
+		}
+
 		++created;
 	}
 
@@ -189,7 +221,27 @@ int ControllerSurface::applyTemplate(const QString& name)
 
 bool ControllerSurface::removeTemplate(const QString& name)
 {
-	return QFile::remove(templatePath(name));
+	return QFile::remove(templatePathFor(name));
+}
+
+AutomatableModel* ControllerSurface::modelOfConnection(const ControllerConnection* connection)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return nullptr; }
+
+	QList<QObject*> queue;
+	queue.append(song);
+	while (!queue.isEmpty())
+	{
+		QObject* obj = queue.takeFirst();
+		auto* model = dynamic_cast<AutomatableModel*>(obj);
+		if (model != nullptr && model->controllerConnection() == connection)
+		{
+			return model;
+		}
+		queue.append(obj->findChildren<QObject*>(QString(), Qt::FindDirectChildrenOnly));
+	}
+	return nullptr;
 }
 
 QVector<ControllerTemplateBinding> ControllerSurface::currentBindings() const
@@ -200,10 +252,19 @@ QVector<ControllerTemplateBinding> ControllerSurface::currentBindings() const
 		auto* mc = dynamic_cast<MidiController*>(conn->getController());
 		if (mc == nullptr) { continue; }
 
+		// The target name is read from the MODEL the connection drives, not
+		// from the port's display name: the model is the thing a template has to
+		// resolve on the next project, and a connection whose model is gone is
+		// not a binding a template can restore.
+		AutomatableModel* target = modelOfConnection(conn);
+		if (target == nullptr) { continue; }
+
 		ControllerTemplateBinding b;
 		b.channel = mc->midiPort().inputChannel();
 		b.controller = mc->midiPort().inputController();
-		b.targetName = mc->midiPort().displayName();
+		b.targetName = target->fullDisplayName();
+		b.softTakeover = mc->softTakeoverEnabled();
+		b.feedback = mc->feedbackEnabled();
 		result.append(b);
 	}
 	return result;

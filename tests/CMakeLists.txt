@@ -117,6 +117,13 @@ set(LMMS_TESTS
 	# real Engine (the recorded action checkpoint goes on the project journal).
 	src/core/ControlProjectArchiveTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# The controller surface (feature row 19, board task #651): soft-takeover
+	# (a hardware control is ignored until a synthetic control-change crosses
+	# the stored value, with the take-over-off case as its negative control),
+	# LED/feedback output measured at the MIDI-client boundary - the strongest
+	# in-process claim with no hardware - and the mapping templates
+	# (save/list/read/apply, and what they report they cannot resolve).
+	src/core/ControllerSurfaceTest.cpp
 	# CODE-8: the shutdown-hook lifetime. The hook that unlinks the control
 	# socket must survive a registry instance it was not registered on, and
 	# must NOT outlive the ControlServer that registered it - both halves are
