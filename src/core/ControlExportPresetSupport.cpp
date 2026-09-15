@@ -194,11 +194,11 @@ QString controlExportPresetValidate(const ControlExportPreset& preset)
 			.arg(controlExportPresetMinSampleRate())
 			.arg(controlExportPresetMaxSampleRate());
 	}
-	if (controlExportPresetBitDepthName(preset.bitDepth).isEmpty())
+	if (preset.bitDepth >= OutputSettings::BitDepth::Count)
 	{
 		return QStringLiteral("bit_depth is not one of 16, 24 or 32");
 	}
-	if (controlExportPresetStereoModeName(preset.stereoMode).isEmpty())
+	if (preset.stereoMode >= OutputSettings::StereoMode::Count)
 	{
 		return QStringLiteral("stereo_mode is not one of mono, stereo or jointstereo");
 	}

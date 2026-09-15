@@ -1063,7 +1063,7 @@ int main( int argc, char * * argv )
 		// that then exits, never the session a caller is editing.
 		if( renderRangeBegin >= 0 )
 		{
-			auto& timeline = Engine::getSong()->getTimeline( PlayMode::Song );
+			auto& timeline = Engine::getSong()->getTimeline( Song::PlayMode::Song );
 			timeline.setLoopPoints( TimePos( renderRangeBegin ), TimePos( renderRangeEnd ) );
 			Engine::getSong()->setRenderBetweenMarkers( true );
 			printf( "Rendering ticks %d to %d\n", renderRangeBegin, renderRangeEnd );
