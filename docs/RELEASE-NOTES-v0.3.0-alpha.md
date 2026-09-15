@@ -1029,6 +1029,7 @@ one back; nothing removes the reporter's `offered` sentinel; nothing writes a re
 `+2 snapshot / +5 not_mutating / +3 irreversible`. `src/core/ControlReversibilityTableScanAndCrash.cpp` holds
 the rows as one group, whatever their class, and `reversibilityRowTable()` joins them for the same reason it
 joins the routing surface's: the passive block and the live block are both at the file-length cap.
+* **`030/revision-timeline` (feature row 76, OWNER-31 item 30) - +3 rows, +1 `true_inverse`,
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 
@@ -2353,3 +2354,59 @@ editable now has an edit, and both reasons it had none are answered rather than 
   draws a patch bay, a cable, a node or a port, and there is no patcher canvas - the node set a patch
   re-wires is the effect list's. `docs/KNOWN-LIMITATIONS.md` carries that sentence plus the session-scope
   and blocking-edit bounds; `docs/PATCHER-GRAPH.md` is the design record.
+
+## The in-app revision timeline (feature-list row 76, OWNER-31 item 30)
+
+**The revisions a project has are listed with their source and their time, two of them can be
+compared structurally, and any one of them can be restored - over the socket, not from a panel.**
+The three ids are `revisions.list`, `revisions.compare` and `revisions.restore` (group `revisions`;
+engine half `include/RevisionTimeline.h`, split across `src/core/RevisionTimeline.cpp`,
+`RevisionTimelineGit.cpp` and `RevisionTimelineCompare.cpp`). **No new store was written and no
+project format changed**: every entry comes from an artefact this engine already produces for its own
+reason -
+
+| source | the artefact | who writes it |
+|---|---|---|
+| `rotation` | `<file>.rev0` .. `<file>.rev2`, each capped at 8 MiB | the A16 keep-3 rotation `project.save` performs, reusing `control::projectRevisionPath()` |
+| `backup` | `<file>.bak` | `DataFile::writeFile`, on every save from the interface |
+| `autosave` | `recover.mmp` (+ `recover.mmp.bak`) and its `.info` sidecar | the periodic autosave; the sidecar supplies the recorded `savedUTC` and the project it belongs to |
+| `git` | the commits that touched the file | the project's own repository, read through one bounded `git log` (`RevisionTimelineBounds::GitTimeoutMs` = 2500 ms), plus one `git cat-file --batch-check` for the whole list's sizes |
+
+`revisions.list` reports each entry's `id`, `source`, UTC `timestamp`, `bytes`, `path` and `sha256`
+(empty for a git entry: the commit sha is its identity, and its `bytes` is the blob size git
+reports for it - measured, not left at 0, because a caller reading "0 bytes" would take a real
+revision for an empty one), newest first, plus a per-source count and a
+`git` object that says *why* there are no git entries - no git on the machine, no repository, or
+`include_git: false` - rather than failing the list. `revisions.compare` takes two ids (or one, and
+the file as it is on disk, the id `live`), reports each side's metadata, whether the two are
+byte-identical, and a **structural** comparison: each document's element count per tag, the element
+totals and the tags that differ. `identical` is a BYTE comparison of the two artefacts, so a
+`.mmpz` revision and the equivalent `.mmp` document are not "identical" while their structure
+is the same - a `.mmpz` container is decompressed before it is counted, never reported
+unreadable. It is deliberately **not** a semantic diff - `mmpz-git diff` is that
+tool, outside this process, and this page will not claim a second implementation. `revisions.restore`
+restores one id over the file on disk **after rotating the live file into the keep-3 set**, so the
+restore is itself recoverable: `control.undo` restores revision 0 (the file it replaced), or removes
+the file the restore created when there was none. A restore whose live file is over the policy's
+8 MiB per-revision cap is **refused, typed, before anything is written** - that is the one path in
+this group that could not be reversed, and it is a refusal rather than an irreversible row.
+**The session in memory is not reloaded** by a restore; `project.open` is how a caller works on the
+restored bytes, exactly as `project.restore_revision` states for its own restore.
+
+**A16.** `revisions.list` and `revisions.compare` are `not_mutating`; `revisions.restore` is
+`true_inverse` through a recorded ACTION checkpoint (rows in
+`src/core/ControlReversibilityTableRevisions.cpp`, joined into the table; +3 rows on the histogram
+above). **Proof:** the registered ctest **`RevisionTimelineTest`** builds a real project document, a
+`.bak`, a `.rev0` and an autosave with its sidecar in a temp directory, drives all three ids through
+the registry (the path a socket client takes), asserts that the list reports each artefact with its
+source and time, that `compare` reports the differing `<note>` counts of two documents, that a
+`backup` restore and a `rev0` restore both come back **byte for byte** through
+`control::restoreProjectRevision(path, 0)` - the inverse the transaction names - and that an unknown
+id, a vanished artefact and an empty project path are typed refusals that write nothing. Where the
+machine has `git` it builds a real repository with a commit and proves the commit's own bytes are
+readable and restorable; without git that case skips by name.
+
+**UI absence — one line: the revision timeline is drivable through the socket, not from the
+interface.** There is no revision panel, no timeline strip, no "restore this revision" menu entry and
+no autosave/revision UI of any kind in this release - `docs/KNOWN-LIMITATIONS.md` carries the same
+sentence, and `revisions.list` is where a caller finds out what a project has.

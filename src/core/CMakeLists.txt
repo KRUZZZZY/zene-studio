@@ -252,6 +252,16 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
+	# The in-app revision timeline (feature-list row 76, OWNER-31 item 30): the
+	# list/compare/restore surface over the revision artefacts the engine already
+	# writes. Its engine half is include/RevisionTimeline.h, split across three
+	# translation units - the timeline itself, its git half (the one child
+	# process) and the structural comparison - and its A16 rows live in
+	# ControlReversibilityTableRevisions.cpp.
+	core/ControlCommandsRevisions.cpp
+	core/RevisionTimeline.cpp
+	core/RevisionTimelineGit.cpp
+	core/RevisionTimelineCompare.cpp
 	# render.stems (0.3.0 verb wave): per-track stem export through the CLI path the
 	# product already ships (`lmms exportstems`), with the same declared bound every
 	# render-running command carries - see the file header and docs/RENDER-CHILD-WAIT.md.
@@ -421,6 +431,11 @@ set(LMMS_SRCS
 	# GROUP file on the same seam as the mastering and routing rows above.
 	core/ControlReversibilityTableExportPresets.cpp
 	core/ControlReversibilityTableRecording.cpp
+	# The `revisions.*` group's THREE rows (feature-list row 76): two
+	# not_mutating reads and the one recorded-action true_inverse restore. Its own
+	# file because both the live block and the passive block sit at this fork's
+	# 500-line file ratchet - the same reason the recording and meter files exist.
+	core/ControlReversibilityTableRevisions.cpp
 	# The interchange group's four rows (feature row 33: the Standard MIDI File
 	# conductor track). A GROUP file on the same seam as the mastering rows
 	# above, and it exists because ControlReversibilityTable.cpp is at 499 of the

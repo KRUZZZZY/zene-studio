@@ -415,6 +415,7 @@ include/RetroMidiCapture.h
 include/RetroMidiCaptureSettings.h
 include/RetroMidiClipWriter.h
 include/RetroMidiRing.h
+include/RevisionTimeline.h
 include/RoutingChainNodes.h
 include/RoutingGraph.h
 include/RoutingNode.h
@@ -607,6 +608,7 @@ src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsRenderStems.cpp
+src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
@@ -674,6 +676,7 @@ src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp
+src/core/ControlReversibilityTableRevisions.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
@@ -747,6 +750,10 @@ src/core/RetroAudioCapture.cpp
 src/core/RetroMidiCapture.cpp
 src/core/RetroMidiCaptureSettings.cpp
 src/core/RetroMidiClipWriter.cpp
+src/core/RevisionTimeline.cpp
+src/core/RevisionTimelineCompare.cpp
+src/core/RevisionTimelineGit.cpp
+src/core/RevisionTimelineGit.h
 src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp

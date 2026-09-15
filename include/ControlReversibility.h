@@ -224,6 +224,19 @@ LMMS_EXPORT const ReversibilityRow* reversibilityExportPresetRowTable(int* rowCo
  *  a real arm verb with a command inverse. A GROUP file on the same seam as the
  *  mastering and scan-and-crash files. Joined into reversibilityRowTable(). */
 LMMS_EXPORT const ReversibilityRow* reversibilityRecordingRowTable(int* rowCount);
+/*! The `revisions.*` group's three rows (feature-list row 76, OWNER-31 item 30:
+ *  the in-app revision timeline over the artefacts this engine already writes -
+ *  the keep-3 rotation, `<file>.bak`, the autosave and the project's own git
+ *  history). Two `not_mutating` reads (the timeline itself, and the structural
+ *  comparison of two documents) and ONE recorded-action `true_inverse` writer
+ *  (`revisions.restore`: the live file is rotated into the keep-3 set before the
+ *  staged revision replaces it, so control.undo restores revision 0 - or removes
+ *  the file the restore created when there was none). No irreversible row: the
+ *  one path that could be one, a live file over the policy's per-revision cap,
+ *  is a typed REFUSAL before any write. A GROUP file on the same seam as the
+ *  recording and mastering files - the class comes from each row, not from its
+ *  file. Joined into reversibilityRowTable(). */
+LMMS_EXPORT const ReversibilityRow* reversibilityRevisionsRowTable(int* rowCount);
 /*! The `interchange.*` group's four rows (feature row 33: the Standard MIDI
  *  File conductor track). A GROUP file on the same seam as the mastering rows
  *  above - the class comes from each row, not from the file it lives in - and
