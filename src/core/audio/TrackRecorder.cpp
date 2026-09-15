@@ -58,7 +58,7 @@ TrackRecorder::~TrackRecorder()
 
 void TrackRecorder::setInputChannel(int channel) noexcept
 {
-	m_inputChannel.store(std::clamp(channel, 0, static_cast<int>(DEFAULT_CHANNELS) - 1),
+	m_inputChannel.store(inputChannelSelectable(channel) ? channel : 0,
 		std::memory_order_relaxed);
 }
 
@@ -73,8 +73,41 @@ int TrackRecorder::inputChannel() const noexcept
 
 
 
+void TrackRecorder::setInputChannelCapacity(int channels) noexcept
+{
+	m_inputChannelCapacity.store(channels < 1 ? 1 : channels, std::memory_order_relaxed);
+}
+
+
+
+
+int TrackRecorder::inputChannelCapacity() const noexcept
+{
+	return m_inputChannelCapacity.load(std::memory_order_relaxed);
+}
+
+
+
+
+bool TrackRecorder::inputChannelSelectable(int channel) const noexcept
+{
+	return channel >= 0 && channel < inputChannelCapacity();
+}
+
+
+
+
 bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputChannel)
 {
+	// The channel is validated BEFORE the file is opened: a route that cannot
+	// read the channel it was asked for must not leave a take file (or a take
+	// journal) behind. setInputChannel() itself clamps and can never fail, so
+	// the check has to happen here.
+	if (!inputChannelSelectable(inputChannel))
+	{
+		return false;
+	}
+
 	bool expected = false;
 	if (!m_armed.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
 	{
@@ -196,7 +229,24 @@ void TrackRecorder::disarm()
 
 void TrackRecorder::processInput(const SampleFrame* input, f_cnt_t frames) noexcept
 {
-	if (input == nullptr || frames == 0 || !m_armed.load(std::memory_order_acquire))
+	if (input == nullptr)
+	{
+		return;
+	}
+	// The engine's input bus: DEFAULT_CHANNELS-wide interleaved frames, which
+	// is the same memory layout as an array of SampleFrame (two adjacent
+	// floats each) that this class has always relied on.
+	processInputInterleaved(input->data(), static_cast<int>(DEFAULT_CHANNELS), frames);
+}
+
+
+
+
+void TrackRecorder::processInputInterleaved(const sample_t* interleaved, int channels,
+	f_cnt_t frames) noexcept
+{
+	if (interleaved == nullptr || channels < 1 || frames == 0
+		|| !m_armed.load(std::memory_order_acquire))
 	{
 		return;
 	}
@@ -205,8 +255,17 @@ void TrackRecorder::processInput(const SampleFrame* input, f_cnt_t frames) noexc
 	// No allocation, no locks, no syscalls (asserted by the offline harness
 	// and the RecordRingBufferTest allocation probe).
 	const auto channel = m_inputChannel.load(std::memory_order_relaxed);
-	const auto pushed = m_ring->writeStrided(input->data() + channel,
-		DEFAULT_CHANNELS, static_cast<std::size_t>(frames));
+	if (channel >= channels)
+	{
+		// This route is pointed past the width the engine just delivered (a
+		// 2-channel bus feeding a route armed for channel 5). It records
+		// nothing rather than reading past the end of the block, and the route
+		// still reports the frames it did NOT get - see armTrack's refusal,
+		// which is where such a route is normally stopped before this point.
+		return;
+	}
+	const auto pushed = m_ring->writeStrided(interleaved + channel,
+		static_cast<std::size_t>(channels), static_cast<std::size_t>(frames));
 	m_framesPushed.fetch_add(pushed, std::memory_order_relaxed);
 }
 

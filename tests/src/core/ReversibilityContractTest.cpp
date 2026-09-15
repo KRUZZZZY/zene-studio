@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{225, 120, 18, 7, 80};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{234, 121, 20, 7, 86};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
@@ -232,7 +232,9 @@ private slots:
 		const control::ReversibilityTable& table = control::ReversibilityTable::instance();
 		const QStringList documentedRefusals = {
 			QStringLiteral("mixer.set_pan"),
-			QStringLiteral("track.set_arm"),
+			// NOT track.set_arm any more: as of 0.3.0 (feature row 14) it arms a
+			// real capture on the recorder and its table row moved from
+			// not_mutating to snapshot, which is what this list is here to notice.
 			QStringLiteral("automation.mode_set"),
 			// Declared mutating and refused on every call: this build has no
 			// upload and no network code of any kind in the crash reporter

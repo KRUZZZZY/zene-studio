@@ -283,6 +283,15 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+/*! record.get_state / arm_track / disarm_track / disarm_all - the ROUTE verbs of
+ *  the `record.` group, in their own translation unit (0.3.0, feature rows 14 and
+ *  64; docs/RECORD-INPUTS.md): the multi-track recorder's own state, and the verbs
+ *  that arm and stop one of its routes. Declared here rather than beside the other
+ *  record.* declarations because include/ControlRegistry.h sits at the
+ *  file-length ratchet's limit (500 lines) and this header is where the groups
+ *  that outgrew that budget are declared. Called by
+ *  registerControlCommands() beside registerRecordingInputCommands(). */
+LMMS_EXPORT void registerRecordingRouteCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

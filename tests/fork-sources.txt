@@ -260,10 +260,12 @@
 # re-anchored for either. Reproduces verified with the command under "Verify it"
 # after the entry was committed.
 include/AudioBus.h
+include/AudioInputPath.h
 include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
+include/AudioWideInputStage.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
@@ -294,6 +296,7 @@ include/ExportDither.h
 include/ExportRenderSettings.h
 include/GroovePool.h
 include/GrooveTemplate.h
+include/InputChannelRing.h
 include/LatencyCompensation.h
 include/LinkPeerTransport.h
 include/LinkSync.h
@@ -324,6 +327,8 @@ include/RackZones.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
 include/RemotePluginAudioPorts.h
+include/RetroAudioCapture.h
+include/RetroAudioRing.h
 include/RetroMidiCapture.h
 include/RetroMidiCaptureSettings.h
 include/RetroMidiClipWriter.h
@@ -420,7 +425,9 @@ plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 src/core/AudioBus.cpp
+src/core/AudioInputPath.cpp
 src/core/AudioPortsModel.cpp
+src/core/AudioWideInputStage.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserMetadata.cpp
@@ -480,7 +487,10 @@ src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRecording.cpp
+src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
+src/core/ControlCommandsRecordingRetro.cpp
+src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRouting.cpp
 src/core/ControlCommandsScript.cpp
@@ -525,6 +535,7 @@ src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
+src/core/ControlReversibilityTableRecording.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
@@ -572,6 +583,7 @@ src/core/RackMacros.cpp
 src/core/RackNodes.cpp
 src/core/RackZones.cpp
 src/core/RecordingJournal.cpp
+src/core/RetroAudioCapture.cpp
 src/core/RetroMidiCapture.cpp
 src/core/RetroMidiCaptureSettings.cpp
 src/core/RetroMidiClipWriter.cpp
@@ -681,6 +693,8 @@ tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTestSupport.h
 tests/src/core/RackZonesTest.cpp
+tests/src/core/RecordingInputPathTest.cpp
+tests/src/core/RetroAudioCaptureTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp

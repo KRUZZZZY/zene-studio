@@ -173,6 +173,15 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The recording engine surface's ten rows (0.3.0, feature rows 14, 16 and 64):
+ *  `record.arm_track` / `record.disarm_track` / `record.disarm_all` /
+ *  `record.get_state` / `record.input_get_state` / `record.input_set` /
+ *  `record.retro_capture_arm` / `record.retro_capture_status` /
+ *  `record.retro_capture_to_take`, and the RE-CLASSIFIED `track.set_arm` - which
+ *  used to be one of the four documented refusals in the passive block and is now
+ *  a real arm verb with a command inverse. A GROUP file on the same seam as the
+ *  mastering and scan-and-crash files. Joined into reversibilityRowTable(). */
+LMMS_EXPORT const ReversibilityRow* reversibilityRecordingRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

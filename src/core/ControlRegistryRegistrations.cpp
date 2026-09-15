@@ -61,6 +61,16 @@ void registerControlCommands(ControlRegistry& registry)
 	registerTransportPunchCommands(registry);
 	registerRecordingCommands(registry);
 	registerRecordingRecoveryCommands(registry);
+	// The capture-IN half of the `record.` group (0.3.0, feature rows 14 and
+	// 64) and the retrospective AUDIO capture half (row 16), each its own
+	// translation unit. No compile-time switch: the input path's plan is a
+	// config value and the recorder is a member of the engine in every
+	// configuration, so the ids are honest in every one (a build with no
+	// capture device says so in record.input_get_state rather than hiding the
+	// command).
+	registerRecordingInputCommands(registry);
+	registerRecordingRouteCommands(registry);
+	registerRecordingRetroCommands(registry);
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
 	registerSurfaceCommands(registry);

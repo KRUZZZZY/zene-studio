@@ -212,6 +212,17 @@ set(LMMS_SRCS
 	core/ControlCommandsRecording.cpp
 	core/ControlCommandsRecordingRecovery.cpp
 	core/ControlRecordingSupport.cpp
+	# The recording engine surface (0.3.0, feature rows 14/16/64): the capture
+	# IN path's plan and live state, the N-channel staging stage between a
+	# capture thread and the render thread, the retrospective AUDIO capture and
+	# its ring, and the group's two new command halves (the arm/input verbs and
+	# the retro-capture verbs). docs/RECORD-INPUTS.md is the design record.
+	core/AudioInputPath.cpp
+	core/AudioWideInputStage.cpp
+	core/RetroAudioCapture.cpp
+	core/ControlCommandsRecordingInput.cpp
+	core/ControlCommandsRecordingRoutes.cpp
+	core/ControlCommandsRecordingRetro.cpp
 	core/ControlCommandsWarp.cpp
 	core/ControlCommandsWarpEdit.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
@@ -272,6 +283,7 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	core/ControlReversibilityTableRecording.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp
@@ -427,6 +439,8 @@ set(LMMS_SRCS
 	core/audio/AudioSdl.cpp
 	core/audio/MultiTrackRecorder.cpp
 	core/audio/TrackRecorder.cpp
+	# (the capture path itself lives in core/audio/AudioAlsa.cpp, an inherited
+	# file this fork already lists above)
 
 	core/lv2/Lv2Basics.cpp
 	core/lv2/Lv2ControlBase.cpp

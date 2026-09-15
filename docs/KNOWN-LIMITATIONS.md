@@ -883,3 +883,15 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+**The recording engine surface (0.3.0) — three absences, one line each.** `record.input_set` takes effect on
+the **next start**: the backend opens its capture device at startup and each record route's selectable input
+range is fixed when the engine is built, so the command reports `restart_required: true` instead of pretending
+to swap a live device (the route COUNT, `MultiTrackRecorder::MaxRoutes`, never changes either). A retrospective
+AUDIO take is **written to a file and never inserted into the session** — the same absence
+`record.recovery_restore` states for a recovered take, for the same reason. And **the real-interface half is
+hardware-bound and unverified on this box**: whether a sound card opens, how many channels it grants and
+whether it delivers frames are *this machine's* answers and not properties of the feature, which is why they
+are reported rather than assumed — `record.input_get_state` carries `capture_capable`, `capture_open`,
+`capture_reason`, the granted channel count and rate, and the `bus_frames` / `wide_frames` /
+`input_frames_staged` counters, and every one of them is **0 or false** on a build with no capture device.

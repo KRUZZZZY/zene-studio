@@ -644,18 +644,27 @@ bound in its own description and contract row instead of pretending to a timeout
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **227 rows**, measured from the table itself:
-**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **236 rows**, measured from the table itself:
+**121 `true_inverse`, 20 `snapshot`, 7 `irreversible`, 88 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**234 rows / 86 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
+what left one of them stale before. **These are MEASUREMENTS, and the figures above are the ones this
+lane's own tree measures** (the recording engine surface, feature rows 14/16/64): its ten rows are
+`record.arm_track` and the re-classified `track.set_arm` (`snapshot`, each with a paired-command
+inverse), `record.input_set` (`true_inverse`, the config write's previous plan) and seven
+`not_mutating` rows (`record.get_state`, `record.disarm_track`, `record.disarm_all`,
+`record.input_get_state`, `record.retro_capture_arm`, `record.retro_capture_status`,
+`record.retro_capture_to_take`), while `track.set_arm` LEAVES `not_mutating` because it is no longer
+one of the refusals. Net for this lane: **+9 rows, +1 `true_inverse`, +2 `snapshot`, +6
+`not_mutating`**, on top of the 227 / 120 / 18 / 7 / 82 the merge tip measured before it. **These are the MERGED tree's own measurement, not arithmetic:**
 `ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
 four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+225 / 120 / 18 / 7 / 80 - **234 / 121 / 20 / 7 / 86 after the recording engine surface's ten rows
+above, which is the constant this tree now carries.** The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
@@ -1263,3 +1272,59 @@ joins the routing surface's: the passive block and the live block are both at th
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
 0.3.0 scope, plus the release-bar statements, are the responsibility of their own lanes and wave W12. This
 file grows as those land; it is not a summary of 0.3.0 and must not be read as one.
+
+## The recording engine surface: an arbitrary input count, a drivable multi-track recorder, and a retro window
+
+Three feature rows of `docs/FEATURE-LIST-0.3.0.md` that were one chain, landed together: **row 64** (arbitrary
+input count / multiple simultaneous inputs), **row 14** (multi-track recorder) and **row 16** (retrospective
+audio capture). `docs/RECORD-INPUTS.md` is the design record; `docs/RETRO-AUDIO-CAPTURE.md` is the audio
+window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
+
+- **The ALSA backend has a capture path for the first time.** `src/core/audio/AudioAlsa.cpp` contained **no**
+  `snd_pcm_readi`: under ALSA `AudioEngine::inputBufferFrames()` was always 0, so every record route took zero
+  inputs. A second PCM is now opened for `SND_PCM_STREAM_CAPTURE` **on its own thread** (the read blocks, and
+  a blocking read on the playback thread would stall the render), with FLOAT preferred to S16_LE and a bounded
+  200 ms wait so the stop flag is honoured on a device that has gone quiet. Every buffer it touches is
+  allocated before the thread starts.
+- **The input count is arbitrary, and it is the *channel* count.** `record.input_set` writes
+  `audioinput/{device,channels,left,right}`; `channels` is 1..32 and is the number of device channels the
+  backend captures. The engine keeps all of them (an N-channel staging ring, `AudioWideInputStage`) and puts
+  the configured **pair** on the stereo bus the rest of the engine reads, so an interface's third and fourth
+  input can be what the engine hears.
+- **`track.set_arm` is no longer a refusal stub — it arms a real capture.** The audit's row 14 named the
+  contradiction exactly: a real recorder in the tree with no command that could start it, and the id that
+  should, registered to refuse. It now starts a capture on the record route a song track's position maps to,
+  writes a 24-bit WAV, **journals the take** beside it (so a crash mid-take is offered to the next start by
+  `record.recovery_get_state`), and is taken back by `control.undo` through its recorded inverse. **No field
+  is added to the track's serialization format** — the arm state lives on the recorder, where it always did,
+  which is the objection the old refusal was right to raise.
+- **The recorder is drivable.** `record.get_state`, `record.arm_track`, `record.disarm_track` and
+  `record.disarm_all` address up to `MultiTrackRecorder::MaxRoutes` (16) routes, each able to select **any**
+  input channel in `[0, input_channel_capacity)`. A route is a file plus a channel; several routes may record
+  one channel.
+- **Retrospective AUDIO capture.** `record.retro_capture_arm` / `_status` / `_to_take`: off by default, one
+  bounded window of the most recent 2^20 frames (~21.8 s at 48 kHz) of the engine's input bus, drop-oldest
+  with the overwritten count reported, a consistent copy that never blocks the audio thread, and a one-pass
+  stereo 24-bit WAV of exactly the retained frames. The model is `RetroMidiCapture`'s, deliberately.
+- **A16.** Ten rows, in the new group file `src/core/ControlReversibilityTableRecording.cpp`: `snapshot` for
+  `record.arm_track` and the re-classified `track.set_arm` (each with a paired-command inverse), `true_inverse`
+  for `record.input_set` (the config write's previous plan), and seven `not_mutating` rows for the two
+  inspectors, the three writers whose only output is a file, and the retro mode.
+- **Proof.** `RecordingInputPathTest` and `RetroAudioCaptureTest` (registered ctests, no hardware: N routes ×
+  N channels with each take read back sample-exactly, and the retro window's bounds, non-allocating producer
+  path and empty-window refusal) plus `ControlRecordInputs` (`tests/control-record-inputs.py`), which drives
+  the **real binary** over `--control-socket` and proves the arbitrary input count **across a restart** — a
+  route armed for input channel 7 is refused by the instance that started with two channels and accepted by
+  the next one, which is what `restart_required` means.
+- **UI absence — one line: the recording engine surface is drivable through the socket and nothing in the
+  interface reaches it.** There is no input-device picker for capture, no input-channel selector on a track,
+  no arm button bound to `track.set_arm`, and no retrospective-audio control at all; `docs/KNOWN-LIMITATIONS.md`
+  carries the sentence and the bounds.
+- **And the honest limit, in the same voice as everything else here: the real-interface half is hardware-bound
+  and unverified on this box.** Whether a sound card opens, how many channels it grants and whether it delivers
+  frames are this machine's answers and not properties of the feature — which is why they are *reported* by
+  `record.input_get_state` (`capture_capable` / `capture_open` / `capture_reason`, the granted channels and
+  rate, and the `bus_frames` / `wide_frames` / `input_frames_staged` counters) rather than assumed, and why
+  the ctest asserts those fields for internal consistency rather than for a value. The
+  `TwoTrackAlsaCaptureProbe` (task #556) remains the real-hardware probe: it drives libasound directly and
+  needs a card, a cable and a human.

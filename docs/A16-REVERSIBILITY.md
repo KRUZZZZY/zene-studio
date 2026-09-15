@@ -435,3 +435,13 @@ gestures were already one step each (a checkpoint at mouse-press, journalling of
 `ClipView`, `Fader`, `AutomatableSlider`), and nothing about that path changed.
 
 ---
+
+> **2026-09-15 / 0.3.0 (recording engine surface, feature rows 14/16/64).** `track.set_arm` is no longer a
+> refusal: it arms a REAL capture on the record route a song track's position maps to, and its row has moved
+> out of the `not_mutating` refusal block into the new group file
+> `src/core/ControlReversibilityTableRecording.cpp` as `snapshot` with a paired-command inverse
+> (`track.set_arm` with `armed: false`). The refusal row quoted in the table above is that lane's
+> measurement of the tree it described and is kept as written; the live table, the counts and the release
+> notes carry the new class, and `ReversibilityContractTest`'s histogram and its documented-refusal list were
+> updated in the same commit. The other three refusals (`mixer.set_pan`, `automation.mode_set`,
+> `crash.upload_report`) are unchanged.
