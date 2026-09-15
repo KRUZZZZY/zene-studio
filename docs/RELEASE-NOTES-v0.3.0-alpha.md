@@ -2007,3 +2007,69 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   detector reads notes), no time-varying key analysis (the key is one estimate for the whole note
   list), no roman-numeral analysis of arbitrary chord sequences, and no chord track that sounds on
   its own — it is harmony written down, and `chord.track_write` is what turns it into notes.
+
+## The Lua API's DAW-control half: a script can drive the mixer, and the version policy is a ratchet (feature row 50, task #674) — added 2026-09-15
+
+The Lua binding shipped as a **pattern-editing** API: notes, patterns, a track's name and
+volume, transport, files, MIDI. It reached **no** mixer channel, effect chain, plugin, send,
+PDC, automation clip, controller or settings object, which is what the audit measured as row
+50 at 66%. This is the DAW-control half of it.
+
+- **`zene.mixer()` and the four new classes.** `Mixer` (`channelCount`, `channel(id)`,
+  `channelById("ch-3")`, `master()`, `ids()`, `addChannel()`), `MixerChannel` (`gain`/`setGain`,
+  `muted`/`setMuted`, `soloed`/`setSoloed`, `name`/`setName`, `isMaster`, `isBus`, `chain()`,
+  `sendCount`/`sendTarget`/`sendAmount`/`sendPreFader`), `EffectChain` (`effectCount`,
+  `effect(i)`, `effectById("fx-2")`, `loadEffect("dev-7")`, `removeEffect(i)`) and `Effect`
+  (`id`, `pluginName`, `enabled`/`setEnabled`, `parameterCount`/`parameterName`/`parameter(i)`
+  — the parameter is the engine's own `AutomatableModel`, so it is the same object
+  `plugin.param_get` reads).
+- **One implementation, two surfaces.** A script addresses the channel the control surface
+  addresses: the ids are `ch-<n>` / `fx-<n>` from `ControlVocabulary.h`, the chain is the same
+  `EffectChain` `resolveControlTarget()` returns, and a device is loaded through the same
+  `controlInstantiateDevice()` `plugin.load` uses. The proof asserts that identity rather than
+  assuming it (`ScriptDawBindingTest`).
+- **Writes are queued, never applied on the script's thread.** Engine state is mutated by the
+  apply side only: the fixed command vocabulary grew by ONE type (`ScriptCommand::Type::DawEdit`,
+  an opcode in `i0`) because `ScriptEngine::applyCommand` is a grandfathered complexity-ratchet
+  entry — the op dispatch lives in `src/core/ScriptDawEdit.cpp`, and two note-edit case bodies
+  moved out of the switch so the entry does not move.
+- **Undo.** A gain/mute/solo write queues the channel model's own `addJournalCheckPoint()`
+  immediately before the model write (the same call `mixer.set_volume` makes), a created channel
+  records the action step that deletes it, and a loaded effect records the action step that
+  unloads it — so one `control.undo` (or Ctrl+Z) reverses what the script did. The committed
+  test proves the fader case end to end against `ProjectJournal`.
+- **The version + compatibility policy is enforced, not described** (it was prose plus a
+  script-side header gate). `zene.apiSurface()` reports the version and the LIVE `zene` surface,
+  and `tests/lua-api-surface.py` (registered ctest **`LuaApiSurface`**) derives the whole surface
+  — every namespace function and every class member — from the registration sources and fails on
+  drift in EITHER direction against the committed `docs/lua-api-surface.txt`: a removed or renamed
+  name is a breaking change (bump `ZENE_LUA_API_VERSION_MAJOR`), an added name is additive (bump
+  `ZENE_LUA_API_VERSION_MINOR`). The test names each entry and prints the policy. It needs no
+  build of the DAW, so it runs everywhere.
+- **The version moved to 0.2.0** (was 0.1.0) because this change is additive, which is what the
+  policy says to do; every `--! zene-api 0.1` script keeps running on this build, and a 0.2
+  script is refused by a 0.1 build rather than misbehaving.
+- **The console was already there and stays an output path.** `ScriptConsole` streams every
+  captured line onto the DAW's Qt log path (`lua:` prefix) and `--run-script` turns it off so
+  stdout is not printed twice; `script.run` returns the captured lines as `log`. No dock widget
+  is added here — that is still future work.
+- **UI absence — one line: there is no console pane, no script editor and no GUI control that
+  drives the binding.** The only interface path to a script is the pre-existing File > Run Lua
+  Script action (`src/gui/MainWindow.cpp:942`, a file dialog that hands the file to the engine),
+  and nothing in the interface shows what a script changed: `grep -rniI 'luaConsole\|LuaConsole\|
+  scriptEditor' src/ include/` returns **0** hits, and `src/gui/` mentions Lua in three places
+  (two of them that dialog). `docs/KNOWN-LIMITATIONS.md` carries the sentence and the withheld
+  list.
+- **Deliberately withheld, one line each** (`docs/LUA-API-STABILISATION.md` §5): **channel pan**
+  (a `MixerChannel` carries no pan in this tree — `mixer.set_pan` refuses for the same reason),
+  **channel and effect removal** (a deleted channel has no inverse; the socket's
+  `mixer.remove_channel` row is `irreversible` and the binding does not add a one-way door to
+  Lua), **sends** (read-only: creating or moving a send changes routing and is `mixer.route_*`'s
+  job, not a script's), **PDC** (not bound at all: latency is a property the engine derives per
+  chain and `dsp.get_state` reports, not something a script may set), **plugins beyond the chain**
+  cannot scan, instantiate a device outside a chain, or publish a preset), **automation clips
+  and controllers** (`automation.*` and the modulator groups own those objects; the binding
+  reaches neither), **settings** (`script.set_memory_budget` remains the only knob a script
+  owns), and **a channel rename is journalless** (`MixerChannel::m_name` is a plain `QString`;
+  the binding performs the rename because a script that creates a channel has to be able to
+  name it, and claims no inverse for it).
