@@ -316,6 +316,169 @@ Enforcing it is an owner decision about runner minutes (that job is the only one
 push) and about whether the integration branch's CI may go red on the next merge before a freeze.
 The local exit codes for all three scopes are recorded instead, in `docs/GATE-HYGIENE.md`.
 
+## The whole-tree scope's status: ADVISORY SCOPE — the 2026-09-15 decision (REPO-58, task 685)
+
+This section is the decision the row-58 contradiction asked for, and the evidence it rests on. It
+replaces every earlier statement that the whole-tree scope "must be green" or "is green" — the
+scope's *status* was never written down as a decision, only implied by whoever last measured it, and
+two documents said different things: `docs/FEATURE-LIST-0.3.0.md` row 58 claimed the whole-tree gates
+"each exit 0", while this file's 2026-09-12 policy text said the scope "is not the release gate".
+
+**THE DECISION. The whole-tree scope (`tests/all-sources.txt`, gates 4/7/8 `--scope all`) is an
+ADVISORY SCOPE — a monitoring ratchet — and NOT a release gate.** The release gates are the **fork**
+scope (`tests/fork-sources.txt`) and the **tools** scope (`tests/tools-sources.txt`): those are what a
+bare `bash tests/run-all-gates.sh` runs, what CI's `static-gates` job runs, and what a tag must be cut
+from. A white-box release gate is a scope something enforces by default; the whole-tree scope is
+enforced by nothing but the person who runs `--whole-tree`, and it is ~4× the fork scope (1,665
+first-party C/C++ sources vs 244) of which most is upstream LMMS code this repo deliberately does not
+refactor. A red whole-tree scope is therefore **a report to be made, not a release blocker**; a red
+fork or tools scope is a blocker.
+
+**The evidence (exit codes, unpiped, measured on the lane's own tree `030/ratchet-decision` at
+`859883b62`, 2026-09-15 23:50–00:00 BST — the release tip may have advanced since; cut all of these
+against the tree you are holding):**
+
+```sh
+bash tests/complexity-gate.sh  --check --scope all      # EXIT=1 — 59 regression lines over 42 paths (20.4 s)
+bash tests/file-length-gate.sh --check --scope all      # EXIT=1 — 34 regression lines over 34 paths
+bash tests/duplication-gate.sh --scope all              # EXIT=0 — 0.64 % duplicated lines, budget 5 %
+bash tests/run-all-gates.sh --whole-tree --no-mutation  # EXIT=1 — gates 4 and 7 FAIL; 1/2/5 SKIP; RESULT: FAIL
+bash tests/run-all-gates.sh --no-mutation               # EXIT=1 — the enforced scope (fork + tools): gates 4 and 7 FAIL
+bash tests/fork-sources-gate.sh                         # EXIT=0 — registration AND (new) the manifest's own recipe
+```
+
+**Read the two `run-all-gates.sh` exit codes together, because they are the point.** The whole-tree
+run exited **1**, not the **3** (pass-with-skips) the project expects before a tag — and the default,
+enforced run exited **1** on the same tree for the same reason class: the wave-3/4/5 merges landed
+more code than either ratchet's baseline had been reconciled against. What separates the two is
+**ownership**, not colour: the fork scope's 52 complexity and 10 file-length regression lines are
+release-blocking and belong to the fix-up pass (`FIXUP-LIST-MERGED-TIP-2026-09-15.md` names them); the
+whole-tree scope's 93 lines are reported here, disposed of one path at a time (below), and never
+allowed to block a tag. A decision to treat the whole-tree scope as a release gate would mean gating
+0.3.0 on refactoring `src/core/main.cpp` (`main`, CCN 196), `PianoRoll::paintEvent` (CCN 103) and
+`src/gui/` — inherited upstream code, which is exactly the work this repo has repeatedly refused.
+
+**What the decision obliges, in the same breath (an advisory scope is not a licence):**
+
+1. **Measured at every freeze and every release, and its state RECORDED with the exit codes** — red or
+   green. The defect this section was written to fix was never "the scope is red"; it was that the
+   scope was **red and unreported** (2026-09-12: 23 + 13 lines that no default runner, CI job or merge
+   record mentioned). A red advisory scope whose exit code is pasted into the release record is
+   working as designed; a scope nobody ran is not a scope that passed.
+2. **The ratchet still moves only by a recorded act, per path** — `--reanchor-file <path> "<reason>"`,
+   the reason naming the path, its class and the measured growth. A scope-wide `--reanchor` remains
+   refused for this scope, exactly as it was for the 2026-09-13 pass: it would grandfather every
+   open entry unreviewed.
+3. **The whole-tree scope stays out of CI's `static-gates` job** — unchanged, and still an owner
+   decision about runner minutes, restated here rather than silently reversed.
+4. **A fork-authored path in this scope is escalated, never parked.** Of the 42 complexity paths, 27
+   are fork-authored (and the same file is measured by the fork scope); of the 34 file-length paths,
+   9 are. An advisory entry in code **this programme wrote** is not "upstream we don't refactor" — it
+   is named in the register below with the scope that owns the fix.
+
+### The per-path disposition of every open advisory at `859883b62`
+
+Every open line is disposed of individually: either **fixed by extraction** (the function is split, and
+the split is measured), or **grandfathered by a single-path record** — the gate's own
+`--reanchor-file`, run once per path with its own reason, never the scope-wide form. The gate prints
+each key it moves, old value to new; each invocation carried a reason naming the path, its class
+(`upstream-inherited` = declared in `tests/upstream-modifications.txt`, `fork-authored product`,
+`fork-authored test-side`) and the growth accepted, verbatim from the regression line.
+
+`| scope | class | path | open line(s) at 859883b62 | disposition |
+|---|---|---|---|---|
+| C | inherited | `src/core/AutomatableModel.cpp` | REGRESSION: lmms::AutomatableModel::valueBuffer@544-661@src/core/AutomatableModel.cpp CCN rose 18 -> 21 | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/Mixer.cpp` | REGRESSION: lmms::Mixer::loadSettings@1984-2154@src/core/Mixer.cpp CCN rose 20 -> 24<br>REGRESSION: lmms::Mixer::saveSettings@1853-1968@src/core/Mixer.cpp CCN rose 12 -> 14 | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/SampleClip.cpp` | REGRESSION: lmms::SampleClip::loadSettings@546-652@src/core/SampleClip.cpp CCN rose 18 -> 19<br>REGRESSION: lmms::SampleClip::saveSettings@468-541@src/core/SampleClip.cpp CCN rose 11 -> 13 | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/Song.cpp` | REGRESSION: lmms::Song::loadProject@1396-1731@src/core/Song.cpp CCN rose 39 -> 42<br>REGRESSION: lmms::Song::processNextBuffer@248-486@src/core/Song.cpp CCN rose 34 -> 36<br>REGRESSION: lmms::Song::processAutomations@489-619@src/core/Song.cpp CCN rose 20 -> 21<br>REGRESSION: new function over target: lmms::Song::buildAutomationRamps@1106-1176@src/core/Song.cpp (CCN 16) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/Track.cpp` | REGRESSION: lmms::Track::loadTrack@456-605@src/core/Track.cpp CCN rose 19 -> 23<br>REGRESSION: new function over target: lmms::Track::saveTrack@338-441@src/core/Track.cpp (CCN 13) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/audio/AudioAlsa.cpp` | REGRESSION: new function over target: lmms::AudioAlsa::openCapture@306-451@src/core/audio/AudioAlsa.cpp (CCN 16) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/main.cpp` | REGRESSION: main@344-1574@src/core/main.cpp CCN rose 177 -> 196 | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/midi/MidiAlsaSeq.cpp` | REGRESSION: lmms::MidiAlsaSeq::run@588-781@src/core/midi/MidiAlsaSeq.cpp CCN rose 23 -> 25<br>REGRESSION: new function over target: lmms::MidiAlsaSeq::processOutEvent@216-335@src/core/midi/MidiAlsaSeq.cpp (CCN 16) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/midi/MidiClient.cpp` | REGRESSION: lmms::MidiClientRaw::parseData@105-261@src/core/midi/MidiClient.cpp CCN rose 15 -> 16<br>REGRESSION: new function over target: lmms::MidiClientRaw::processOutEvent@342-397@src/core/midi/MidiClient.cpp (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | inherited | `src/core/midi/MidiController.cpp` | REGRESSION: new function over target: lmms::MidiController::processInEvent@77-124@src/core/midi/MidiController.cpp (CCN 13) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `include/ScriptMemoryBudget.h` | REGRESSION: new function over target: lmms::ScriptMemoryState::allocate@77-121@include/ScriptMemoryBudget.h (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `include/SessionFollow.h` | REGRESSION: new function over target: lmms::followTargetScene@226-264@include/SessionFollow.h (CCN 17)<br>REGRESSION: new function over target: lmms::pickFollowIndex@182-212@include/SessionFollow.h (CCN 12) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `plugins/Vst3Effect/Vst3Host.cpp` | REGRESSION: new function over target: lmms::vst3::HostedPlugin::Impl::runChunk@789-871@plugins/Vst3Effect/Vst3Host.cpp (CCN 14) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsAutomationRamp.cpp` | REGRESSION: new function over target: lmms::automationRampGet@201-238@src/core/ControlCommandsAutomationRamp.cpp (CCN 12) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsDetectApply.cpp` | REGRESSION: new function over target: lmms::registerApplyCommand@57-226@src/core/ControlCommandsDetectApply.cpp (CCN 17) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsIdContract.cpp` | REGRESSION: new function over target: lmms::registerIdContractCommand@52-164@src/core/ControlCommandsIdContract.cpp (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsMeterFile.cpp` | REGRESSION: new function over target: lmms::control::meterMeasureFile@125-253@src/core/ControlCommandsMeterFile.cpp (CCN 18) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsNoteRandom.cpp` | REGRESSION: new function over target: lmms::randomize@256-342@src/core/ControlCommandsNoteRandom.cpp (CCN 16) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsProject.cpp` | REGRESSION: new function over target: lmms::renderSession@379-462@src/core/ControlCommandsProject.cpp (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsSessionFollow.cpp` | REGRESSION: new function over target: lmms::followActionFromJson@77-138@src/core/ControlCommandsSessionFollow.cpp (CCN 13)<br>REGRESSION: new function over target: lmms::registerFollowGetState@332-415@src/core/ControlCommandsSessionFollow.cpp (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsSessionRecordInternal.h` | REGRESSION: new function over target: lmms::sessionrecord::landPairEvents@91-139@src/core/ControlCommandsSessionRecordInternal.h (CCN 12) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsSessionRecordLand.cpp` | REGRESSION: new function over target: lmms::registerRecordLand@79-211@src/core/ControlCommandsSessionRecordLand.cpp (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlCommandsWasmRender.cpp` | REGRESSION: new function over target: lmms::handleRenderOffline@191-278@src/core/ControlCommandsWasmRender.cpp (CCN 12) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlExportPresetSupport.cpp` | REGRESSION: new function over target: lmms::controlExportPresetFromBytes@222-295@src/core/ControlExportPresetSupport.cpp (CCN 14) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlScaleSupport.cpp` | REGRESSION: new function over target: lmms::control::readScaleRoot@108-158@src/core/ControlScaleSupport.cpp (CCN 13) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ControlStemModel.cpp` | REGRESSION: new function over target: lmms::control::stemModelDownload@104-159@src/core/ControlStemModel.cpp (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/DawProjectModel.cpp` | REGRESSION: new function over target: lmms::interchange::DawProjectTrack::operator ==@157-165@src/core/DawProjectModel.cpp (CCN 15)<br>REGRESSION: new function over target: lmms::interchange::dawProjectModelDigest@201-257@src/core/DawProjectModel.cpp (CCN 15) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/DawProjectRead.cpp` | REGRESSION: new function over target: lmms::interchange::parseDocument@74-217@src/core/DawProjectRead.cpp (CCN 41)<br>REGRESSION: new function over target: lmms::interchange::readDawProject@267-312@src/core/DawProjectRead.cpp (CCN 12) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/DawProjectReadTracks.cpp` | REGRESSION: new function over target: lmms::interchange::readdetail::parseClips@107-179@src/core/DawProjectReadTracks.cpp (CCN 23)<br>REGRESSION: new function over target: lmms::interchange::readdetail::parseLanes@184-220@src/core/DawProjectReadTracks.cpp (CCN 17) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/DawProjectSession.cpp` | REGRESSION: new function over target: lmms::interchange::applyDawProjectModel@344-496@src/core/DawProjectSession.cpp (CCN 33)<br>REGRESSION: new function over target: lmms::interchange::dawProjectModelFromSong@180-342@src/core/DawProjectSession.cpp (CCN 23) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/DawProjectWrite.cpp` | REGRESSION: new function over target: lmms::interchange::dawProjectXmlFromModel@156-438@src/core/DawProjectWrite.cpp (CCN 42) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/DawProjectZip.cpp` | REGRESSION: new function over target: lmms::interchange::dawProjectZipRead@248-425@src/core/DawProjectZip.cpp (CCN 36)<br>REGRESSION: new function over target: lmms::interchange::dawProjectZipWrite@145-246@src/core/DawProjectZip.cpp (CCN 12) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ImportDetectionDsp.cpp` | REGRESSION: new function over target: lmms::detection::estimateTempo@236-346@src/core/ImportDetectionDsp.cpp (CCN 30)<br>REGRESSION: new function over target: lmms::detection::refinedPeriodHops@118-154@src/core/ImportDetectionDsp.cpp (CCN 12) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/ImportDetectionKey.cpp` | REGRESSION: new function over target: lmms::detection::estimateKey@48-133@src/core/ImportDetectionKey.cpp (CCN 23) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/core/SessionFollow.cpp` | REGRESSION: new function over target: lmms::SessionScheduler::evaluateFollow@191-309@src/core/SessionFollow.cpp (CCN 14) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-product | `src/wasm/WasmOfflineRender.cpp` | REGRESSION: new function over target: lmms::wasm::renderOffline@241-344@src/wasm/WasmOfflineRender.cpp (CCN 22)<br>REGRESSION: new function over target: lmms::wasm::renderInline@70-145@src/wasm/WasmOfflineRender.cpp (CCN 13) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | fork-test | `tests/control-detect-commands.py` | REGRESSION: new function over target: run_checks@203-398@tests/control-detect-commands.py (CCN 75) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | in-all-manifest | `tests/data/clap-test-plugin/clap-test-gain.c` | REGRESSION: new function over target: gain_process@329-371@tests/data/clap-test-plugin/clap-test-gain.c (CCN 14) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | in-all-manifest | `tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp` | REGRESSION: new function over target: Steinberg::Vst::ZeneChunkProbe::ChunkProbe::process@289-360@tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp (CCN 21) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | in-all-manifest | `tests/src/core/SampleAccurateAutomationTest.cpp` | REGRESSION: new function over target: measureRender@267-326@tests/src/core/SampleAccurateAutomationTest.cpp (CCN 15) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | in-all-manifest | `tests/src/core/SmfInterchangeTestSupport.h` | REGRESSION: new function over target: smfsupport::parseConductorFile@107-188@tests/src/core/SmfInterchangeTestSupport.h (CCN 14) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| C | in-all-manifest | `tools/dawproject-a16-histogram.cpp` | REGRESSION: new function over target: main@116-175@tools/dawproject-a16-histogram.cpp (CCN 11) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `include/AudioEngine.h` | REGRESSION: new file over 500 lines: include/AudioEngine.h (543) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `include/AutomatableModel.h` | REGRESSION: include/AutomatableModel.h grew 623 -> 676 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `include/Mixer.h` | REGRESSION: include/Mixer.h grew 562 -> 588 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `include/Song.h` | REGRESSION: include/Song.h grew 711 -> 762 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/AudioEngine.cpp` | REGRESSION: src/core/AudioEngine.cpp grew 1039 -> 1172 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/AutomatableModel.cpp` | REGRESSION: src/core/AutomatableModel.cpp grew 958 -> 1012 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/AutomationClip.cpp` | REGRESSION: src/core/AutomationClip.cpp grew 1230 -> 1379 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/Mixer.cpp` | REGRESSION: src/core/Mixer.cpp grew 2116 -> 2211 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/Note.cpp` | REGRESSION: new file over 500 lines: src/core/Note.cpp (508) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/NotePlayHandle.cpp` | REGRESSION: src/core/NotePlayHandle.cpp grew 721 -> 752 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/SampleClip.cpp` | REGRESSION: src/core/SampleClip.cpp grew 636 -> 663 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/Song.cpp` | REGRESSION: src/core/Song.cpp grew 2022 -> 2243 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/Track.cpp` | REGRESSION: src/core/Track.cpp grew 1043 -> 1131 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/audio/AudioAlsa.cpp` | REGRESSION: new file over 500 lines: src/core/audio/AudioAlsa.cpp (782) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/main.cpp` | REGRESSION: src/core/main.cpp grew 1399 -> 1574 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/midi/MidiAlsaSeq.cpp` | REGRESSION: src/core/midi/MidiAlsaSeq.cpp grew 718 -> 871 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/core/midi/MidiPort.cpp` | REGRESSION: new file over 500 lines: src/core/midi/MidiPort.cpp (501) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/gui/MainWindow.cpp` | REGRESSION: src/gui/MainWindow.cpp grew 1945 -> 2062 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/tracks/InstrumentTrack.cpp` | REGRESSION: src/tracks/InstrumentTrack.cpp grew 1250 -> 1261 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | inherited | `src/tracks/MidiClip.cpp` | REGRESSION: src/tracks/MidiClip.cpp grew 683 -> 700 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `include/ControlRegistry.h` | REGRESSION: new file over 500 lines: include/ControlRegistry.h (509) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `include/ControlRegistryGroups.h` | REGRESSION: new file over 500 lines: include/ControlRegistryGroups.h (671) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `include/ControlReversibility.h` | REGRESSION: new file over 500 lines: include/ControlReversibility.h (518) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `plugins/Vst3Effect/Vst3Host.cpp` | REGRESSION: plugins/Vst3Effect/Vst3Host.cpp grew 800 -> 891 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `src/core/ControlCommandsNotes.cpp` | REGRESSION: new file over 500 lines: src/core/ControlCommandsNotes.cpp (512) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `src/core/ControlCommandsProject.cpp` | REGRESSION: new file over 500 lines: src/core/ControlCommandsProject.cpp (510) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `src/core/ControlCommandsWarpEdit.cpp` | REGRESSION: new file over 500 lines: src/core/ControlCommandsWarpEdit.cpp (510) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-product | `src/core/ControlReversibilityTablePassive.cpp` | REGRESSION: new file over 500 lines: src/core/ControlReversibilityTablePassive.cpp (518) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | fork-test | `tests/src/core/ControlRegistryTest.cpp` | REGRESSION: new file over 500 lines: tests/src/core/ControlRegistryTest.cpp (505) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | in-all-manifest | `tests/src/core/AutomationModesTest.cpp` | REGRESSION: tests/src/core/AutomationModesTest.cpp grew 726 -> 787 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | in-all-manifest | `tests/src/core/ControlNoteScaleVerbsTest.cpp` | REGRESSION: new file over 500 lines: tests/src/core/ControlNoteScaleVerbsTest.cpp (628) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | in-all-manifest | `tests/src/core/PluginScanCacheTest.cpp` | REGRESSION: tests/src/core/PluginScanCacheTest.cpp grew 747 -> 834 lines | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | in-all-manifest | `tests/src/core/RetroMidiCaptureCommandsTest.cpp` | REGRESSION: new file over 500 lines: tests/src/core/RetroMidiCaptureCommandsTest.cpp (558) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+| F | in-all-manifest | `tests/src/core/SampleAccurateAutomationTest.cpp` | REGRESSION: new file over 500 lines: tests/src/core/SampleAccurateAutomationTest.cpp (708) | grandfathered — one `--reanchor-file` for this path, reason recorded; the gate printed its old → new values |
+
+**42 complexity paths and 34 file-length paths** — 76 single-path records, 93 regression lines. By class:
+
+| scope | inherited (`upstream-modifications.txt`) | fork-authored product | fork-authored test-side |
+|---|---|---|---|
+| complexity | 10 | 26 | 6 |
+| file-length | 20 | 8 | 6 |`
+
+**What is NOT claimed.** The re-anchor makes the two `-all` baselines current *at this tip and this
+tree*; it does not make them future-proof, and it is not a claim that the growth was good. What it
+claims is the smaller, checkable thing: at `859883b62` every open line has a recorded owner and a
+recorded reason, and none of them was grandfathered by a blanket move or by trimming code. The
+advisory scope went red **three times** in five days precisely because each reconciliation had no
+instrument that could say "this needs doing again" — `tests/all-sources-reproduce.sh` (below) is that
+instrument for the manifest, and obligation 1 above is that instrument for the scope.
+
 The **standards fork** numbers below are inherited from the fork's run (kept for
 provenance); the **product** numbers are this repo's own measured run. The
 product's first run was captured 2026-09-09 on the port commit.
