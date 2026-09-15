@@ -140,6 +140,34 @@ public:
 		return true;
 	}
 
+	/*! Model thread: copies up to \a max waiting events into \a out WITHOUT
+	 *  consuming them, oldest first, and returns how many it copied. Safe for
+	 *  the consumer to call: the producer only ever writes at the write index,
+	 *  so everything between read and write is stable.
+	 *
+	 *  WHY IT EXISTS. session.arrangement_record_land has to know whether every
+	 *  recorded start has its stop BEFORE it consumes anything. A pass that
+	 *  discovered an open pair halfway through would have to drop the start it
+	 *  could not pair - the data loss this ring exists to prevent - or land a
+	 *  clip whose end it invented. The snapshot makes the decision checkable
+	 *  first; only a pass that can land everything consumes anything. */
+	std::size_t snapshot( Event* out, std::size_t max ) const noexcept
+	{
+		if( out == nullptr || max == 0 )
+		{
+			return 0;
+		}
+		const std::size_t read = m_read.load( std::memory_order_relaxed );
+		const std::size_t write = m_write.load( std::memory_order_acquire );
+		std::size_t count = write >= read ? write - read : storageSize - read + write;
+		if( count > max ) { count = max; }
+		for( std::size_t i = 0; i < count; ++i )
+		{
+			out[i] = m_data[( read + i ) % storageSize];
+		}
+		return count;
+	}
+
 	//! Events waiting to be landed (a bounded estimate: the two indices are
 	//! read separately, so a concurrent push may not be counted).
 	std::size_t pending() const noexcept

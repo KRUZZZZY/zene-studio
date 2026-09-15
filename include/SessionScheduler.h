@@ -319,6 +319,20 @@ public:
 		return m_followArmed.load( std::memory_order_relaxed );
 	}
 
+	/*! The armed cells as a BITMASK: bit (track * 8 + scene) is set for a cell
+	 *  whose plan is installed and enabled, for track < 8 and scene < 8. The
+	 *  wider grid is still COUNTED by armedFollowCells(); only the mask is
+	 *  bounded, and its bound is published in the same store as the count.
+	 *
+	 *  WHY IT EXISTS. "Which cell is armed" is the question a client that has
+	 *  just installed a chain has to be able to check, and the model thread
+	 *  cannot read the installed plans (they are audio-thread storage, not
+	 *  atomics). The count alone answers a different question. Any thread. */
+	std::uint64_t armedFollowCellsMask() const noexcept
+	{
+		return m_followArmedMask.load( std::memory_order_relaxed );
+	}
+
 	//! Follow actions that have fired since the last reset(). Any thread.
 	std::uint64_t followFires() const noexcept
 	{
@@ -499,6 +513,9 @@ private:
 	std::atomic<std::uint64_t> m_followFires{ 0 };
 	//! Cells with an enabled plan installed; see armedFollowCells().
 	std::atomic<int> m_followArmed{ 0 };
+	//! The same set as a bitmask, bit (track * 8 + scene), published by the
+	//! same store as the count; see armedFollowCellsMask().
+	std::atomic<std::uint64_t> m_followArmedMask{ 0 };
 	//! The audio thread's Follow Action RNG (xorshift32, SessionFollow.h).
 	//! Audio-thread-only, so it needs no atomic.
 	std::uint32_t m_followRng = 0x2545f491u;

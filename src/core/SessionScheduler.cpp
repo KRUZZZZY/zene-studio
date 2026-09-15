@@ -381,6 +381,22 @@ bool SessionScheduler::consumeResetRequest() noexcept
 		return false;
 	}
 	m_seenGeneration = generation;
+	// Arrangement Record: a reset is the END of the performance for every slot
+	// it drops, so each playing slot's stop is recorded first, at the clock the
+	// reset was carried out at. Without this the ring would keep START events
+	// whose stop never came - the open pairs session.arrangement_record_land
+	// refuses to land - and session.back_to_arrangement, whose whole contract is
+	// "the session stops and the performance can still be landed", would produce
+	// exactly that. Audio thread, bounded loop, no allocation.
+	for( const auto& slot : m_active )
+	{
+		if( slot.track >= 0
+			&& ( slot.state.phase == SlotPhase::Playing
+				|| slot.state.phase == SlotPhase::StopPending ) )
+		{
+			m_recorder.recordStop( slot.track, slot.scene, m_positionTicks );
+		}
+	}
 	for( auto& slot : m_active )
 	{
 		slot = ActiveSlot{};
@@ -390,6 +406,7 @@ bool SessionScheduler::consumeResetRequest() noexcept
 		installed = InstalledFollowPlan{};
 	}
 	m_followArmed.store( 0, std::memory_order_relaxed );
+	m_followArmedMask.store( 0, std::memory_order_relaxed );
 	m_followFires.store( 0, std::memory_order_relaxed );
 	m_lastFollowFire.store( 0, std::memory_order_relaxed );
 	// Arrangement Record's ring is deliberately NOT cleared: the events it

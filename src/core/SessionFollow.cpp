@@ -121,14 +121,24 @@ bool SessionScheduler::installFollowPlan( int track, int scene, const FollowPlan
 void SessionScheduler::recountArmedFollowCells() noexcept
 {
 	int armed = 0;
+	std::uint64_t mask = 0;
 	for( const auto& installed : m_followPlans )
 	{
 		if( installed.track >= 0 && installed.plan.enabled && installed.plan.count > 0 )
 		{
 			++armed;
+			if( installed.track < 8 && installed.scene >= 0 && installed.scene < 8 )
+			{
+				mask |= std::uint64_t{ 1 } << ( installed.track * 8 + installed.scene );
+			}
 		}
 	}
 	m_followArmed.store( armed, std::memory_order_relaxed );
+	// One store each, both relaxed: the pair is a diagnostic reading, not a
+	// synchronisation primitive (the same rule lastStartLine() follows). A
+	// reader may therefore see the count and the mask from two different
+	// installs; neither is used to gate anything.
+	m_followArmedMask.store( mask, std::memory_order_relaxed );
 }
 
 
@@ -245,13 +255,19 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 			// PlayAgain: the cell starts over at its action time. This is
 			// counted and published like any other start, so a session driven by
 			// Follow Actions is as observable as one driven by the socket.
+			//
+			// Arrangement Record records NOTHING here, and that is deliberate: a
+			// restart is the SAME playback continuing, so its arrangement clip
+			// is the one span from the launch to the stop that ends it. A start
+			// event here would open a second pair that only a later stop could
+			// close, and a performance whose clips all restart would leave the
+			// ring full of pairs that never complete.
 			slot.state.startedTick = firedAt;
 			++slot.state.startCount;
 			slot.followScheduled = false;
 			slot.followNextTick = 0;
 			m_launches.fetch_add( 1, std::memory_order_relaxed );
 			publishStart( firedAt, ctx.positionTicks );
-			m_recorder.recordStart( slot.track, slot.scene, firedAt );
 			return;
 		}
 		case FollowOutcome::SwitchScene:
