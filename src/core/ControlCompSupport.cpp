@@ -40,7 +40,7 @@ QString takeClipId(const Clip* clip)
 	if (clip == nullptr) { return QString(); }
 	for (const ClipRef& ref : enumerateClips())
 	{
-		if (ref.clip == clip) { return clipId(ref.ordinal); }
+		if (ref.clip == clip) { return clipId(ref.id); }
 	}
 	return QString();
 }
@@ -53,7 +53,7 @@ bool resolveTakeClip(const QString& id, ClipRef* ref, ControlResult* error)
 	*error = ControlResult::failure(ControlErrorKind::Refused,
 		QStringLiteral("take lanes carry audio takes in this release; %1 is a %2 clip "
 			"(docs/COMPING.md)")
-			.arg(clipId(ref->ordinal), ref->clip->nodeName()));
+			.arg(clipId(ref->id), ref->clip->nodeName()));
 	return false;
 }
 

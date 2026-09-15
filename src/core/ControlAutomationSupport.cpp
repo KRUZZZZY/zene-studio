@@ -147,7 +147,7 @@ QList<AutomationParameter> automationParameters(const ControlTarget& target)
 		const QString name = QString::fromUtf8(effects[e]->descriptor()->name);
 		for (int i = 0; i < models.size(); ++i)
 		{
-			out.append({effectId(static_cast<int>(e)), name, i, models[i]});
+			out.append({effectIdOf(effects[e]), name, i, models[i]});
 		}
 	}
 	return out;

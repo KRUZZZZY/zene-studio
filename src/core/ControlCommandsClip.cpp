@@ -50,7 +50,7 @@ int ordinalOf(const Clip* clip)
 {
 	for (const control::ClipRef& ref : control::enumerateClips())
 	{
-		if (ref.clip == clip) { return ref.ordinal; }
+		if (ref.clip == clip) { return ref.id; }
 	}
 	return -1;
 }
@@ -168,13 +168,13 @@ void registerClipMove(ControlRegistry& registry)
 			args.value(QStringLiteral("position")).toDouble())));
 
 		QJsonObject result;
-		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		result.insert(QStringLiteral("position"), ref.clip->startPosition().getTicks());
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("position"), previous);
 		QJsonObject before;
-		before.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		before.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		before.insert(QStringLiteral("position"), previous);
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before, QStringLiteral("clip.move"), inverseArgs,
@@ -215,13 +215,13 @@ void registerClipResize(ControlRegistry& registry)
 		ref.clip->setAutoResize(false);
 
 		QJsonObject result;
-		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		result.insert(QStringLiteral("length"), ref.clip->length().getTicks());
 		QJsonObject before;
-		before.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		before.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		before.insert(QStringLiteral("length"), previous);
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("length"), previous);
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before, QStringLiteral("clip.resize"), inverseArgs,
@@ -268,7 +268,7 @@ void registerClipSplit(ControlRegistry& registry)
 		}
 
 		QJsonObject before;
-		before.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		before.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		before.insert(QStringLiteral("position"), start);
 		before.insert(QStringLiteral("length"), end - start);
 
@@ -288,11 +288,11 @@ void registerClipSplit(ControlRegistry& registry)
 
 		const int rightOrdinal = ordinalOf(right);
 		QJsonObject result;
-		result.insert(QStringLiteral("left"), control::clipId(ref.ordinal));
+		result.insert(QStringLiteral("left"), control::clipId(ref.id));
 		result.insert(QStringLiteral("right"), control::clipId(rightOrdinal));
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before, QStringLiteral("UNIMPLEMENTED: re-join the two halves"),
-				QJsonObject{{QStringLiteral("left"), control::clipId(ref.ordinal)},
+				QJsonObject{{QStringLiteral("left"), control::clipId(ref.id)},
 					{QStringLiteral("right"), control::clipId(rightOrdinal)}},
 				true, ClauseTrackJournalled));
 		return ControlResult::success(result);
@@ -330,7 +330,7 @@ void registerClipDelete(ControlRegistry& registry)
 		{
 			QJsonObject preview = snapshot;
 			preview.insert(QStringLiteral("dry_run"), true);
-			preview.insert(QStringLiteral("deleted"), control::clipId(ref.ordinal));
+			preview.insert(QStringLiteral("deleted"), control::clipId(ref.id));
 			preview.insert(QStringLiteral("__transaction"),
 				control::transactionPayload(snapshot, QStringLiteral("UNIMPLEMENTED: re-create the clip"),
 					QJsonObject(), false, QStringLiteral("dry_run preview: nothing was changed")));
@@ -345,7 +345,7 @@ void registerClipDelete(ControlRegistry& registry)
 		delete ref.clip;
 
 		QJsonObject result;
-		result.insert(QStringLiteral("deleted"), control::clipId(ref.ordinal));
+		result.insert(QStringLiteral("deleted"), control::clipId(ref.id));
 		result.insert(QStringLiteral("track"), trackIdText);
 		result.insert(QStringLiteral("dry_run"), false);
 		result.insert(QStringLiteral("__transaction"),
@@ -385,7 +385,7 @@ void registerClipDuplicate(ControlRegistry& registry)
 			? static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble())
 			: ref.clip->endPosition().getTicks();
 		QJsonObject before;
-		before.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		before.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		before.insert(QStringLiteral("clip_count"), ref.track->numOfClips());
 
 		Track* track = ref.track;
@@ -396,7 +396,7 @@ void registerClipDuplicate(ControlRegistry& registry)
 		const int ordinal = ordinalOf(copy);
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ordinal));
-		result.insert(QStringLiteral("source"), control::clipId(ref.ordinal));
+		result.insert(QStringLiteral("source"), control::clipId(ref.id));
 		result.insert(QStringLiteral("position"), copy->startPosition().getTicks());
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before, QStringLiteral("clip.delete"),

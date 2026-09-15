@@ -102,11 +102,23 @@ QJsonArray trackInputReport()
 	QJsonArray inputs;
 	AudioEngine* engine = Engine::audioEngine();
 	if (engine == nullptr) { return inputs; }
+	Mixer* mixer = Engine::mixer();
 	for (const AudioBusHandle* handle : engine->audioBusHandles())
 	{
 		QJsonObject entry;
 		entry.insert(QStringLiteral("name"), handle->name());
-		entry.insert(QStringLiteral("channel"), control::channelId(handle->nextMixerChannel()));
+		// The channel's PERSISTENT id (SPEC-stable-ids.md slice 2), read off the
+		// channel the handle is assigned to - the handle itself carries the
+		// channel's POSITION (AudioBusHandle::nextMixerChannel), which is what
+		// the assignment model stores. A position in the id field would name a
+		// different channel as soon as one earlier channel is deleted; an
+		// assignment that names no live channel answers the empty id
+		// (channelIdOf(nullptr)).
+		const mix_ch_t assigned = handle->nextMixerChannel();
+		MixerChannel* channel = (mixer != nullptr
+			&& assigned < static_cast<mix_ch_t>(mixer->numChannels()))
+			? mixer->mixerChannel(assigned) : nullptr;
+		entry.insert(QStringLiteral("channel"), channelIdOf(channel));
 		entry.insert(QStringLiteral("latency_frames"), handle->latencyFrames());
 		inputs.append(entry);
 	}

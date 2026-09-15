@@ -161,7 +161,7 @@ ControlResult chordTrackWrite(const QJsonObject& args)
 	const int written = writeNoteSpecs(write.clip, specs);
 
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(write.ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(write.ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(write.ref.track));
 	result.insert(QStringLiteral("pattern"), ChordProgression::patternName(pattern));
 	result.insert(QStringLiteral("chords_written"), chordsWritten);
@@ -170,7 +170,7 @@ ControlResult chordTrackWrite(const QJsonObject& args)
 	result.insert(QStringLiteral("note_count"),
 		static_cast<int>(write.clip->notes().size()));
 	result.insert(QStringLiteral("__transaction"), chordClipInverse(write.before,
-		QJsonObject{{QStringLiteral("clip"), clipId(write.ref.ordinal)},
+		QJsonObject{{QStringLiteral("clip"), clipId(write.ref.id)},
 			{QStringLiteral("command"), QStringLiteral("chord.track_write")}}));
 	return ControlResult::success(result);
 }
@@ -212,7 +212,7 @@ ControlResult chordProgressionGenerate(const QJsonObject& args)
 	}
 
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(write.ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(write.ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(write.ref.track));
 	result.insert(QStringLiteral("progression"), request.progression);
 	result.insert(QStringLiteral("scale"), request.scale);
@@ -231,7 +231,7 @@ ControlResult chordProgressionGenerate(const QJsonObject& args)
 	result.insert(QStringLiteral("note_count"),
 		static_cast<int>(write.clip->notes().size()));
 	result.insert(QStringLiteral("__transaction"), chordClipInverse(write.before,
-		QJsonObject{{QStringLiteral("clip"), clipId(write.ref.ordinal)},
+		QJsonObject{{QStringLiteral("clip"), clipId(write.ref.id)},
 			{QStringLiteral("command"), QStringLiteral("chord.progression_generate")}}));
 	return ControlResult::success(result);
 }

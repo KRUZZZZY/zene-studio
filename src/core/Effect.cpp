@@ -33,6 +33,7 @@
 #include "EffectChain.h"
 #include "EffectControls.h"
 #include "EffectView.h"
+#include "ProjectIds.h"
 #include "SampleFrame.h"
 
 namespace lmms
@@ -44,6 +45,15 @@ Effect::Effect( const Plugin::Descriptor * _desc,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
 	Plugin( _desc, _parent, _key ),
 	m_parent( nullptr ),
+	// The stable id, handed out once, here, at creation (SPEC-stable-ids.md
+	// 2.1, slice 2). It is the number in fx-<n> and it never changes while the
+	// effect lives, so a client that was told fx-4 keeps fx-4 when a sibling
+	// effect is inserted, deleted, reordered or undone - and it is the same
+	// number after a save/open cycle, because saveSettings writes it into the
+	// project file and loadSettings takes it back. The counter is the
+	// project-scoped ProjectIds, shared with the track, clip, note and channel
+	// ids.
+	m_id( ProjectIds::allocate() ),
 	m_okay( true ),
 	m_noRun( false ),
 	m_awake(false),
@@ -78,12 +88,34 @@ void Effect::setDontRun(bool _state)
 	}
 }
 
+/*! Replace the id with \a id, and raise the project counter above it so the
+ *  number can never be handed out again (SPEC-stable-ids.md rule R3).
+ *
+ *  A negative value is ignored: it is not a number this surface can address,
+ *  and the constructor's id is always a valid answer.
+ */
+void Effect::setId( int id )
+{
+	if( id < 0 )
+	{
+		return;
+	}
+	m_id = id;
+	ProjectIds::observe( id );
+}
+
 void Effect::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
 	m_enabledModel.saveSettings( _doc, _this, "on" );
 	m_wetDryModel.saveSettings( _doc, _this, "wet" );
 	m_autoQuitModel.saveSettings( _doc, _this, "autoquit" );
 	controls()->saveState( _doc, _this );
+
+	// The effect's stable id (SPEC-stable-ids.md slice 2). An ATTRIBUTE on the
+	// effect's own element, never a child element: the loader walks the
+	// element's children and turns each one into control state, so a child
+	// would become a phantom control group on load.
+	_this.setAttribute( "id", m_id );
 }
 
 
@@ -94,6 +126,38 @@ void Effect::loadSettings( const QDomElement & _this )
 	m_enabledModel.loadSettings( _this, "on" );
 	m_wetDryModel.loadSettings( _this, "wet" );
 	m_autoQuitModel.loadSettings( _this, "autoquit" );
+
+	// The stable id (SPEC-stable-ids.md slice 2; the slice-1 pattern of
+	// Track::loadTrack). A file that carries one keeps it; a file that does
+	// not leaves the number the constructor already handed out, which is
+	// deterministic because EffectChain::loadSettings recreates the effects in
+	// document order. Either way ProjectIds::loadAssignments() counts it.
+	//
+	// An effect element read out of a device-state document KEEPS the id it was
+	// constructed with instead (rule R4). That document - the
+	// <zenepluginstate> root plugin.state_save/state_load, plugin.preset_save/
+	// preset_load and the chain preset's embedded device state all use - is a
+	// snapshot of ONE instance, and it is loaded into an instance that is
+	// already alive and already has an id of its own: taking the snapshot's id
+	// would give that instance the id of the effect the snapshot came from,
+	// which the surface may still be addressing (the defect class the contract
+	// exists to remove). The wrapper decides it, not the element
+	// (ProjectIds::isDocumentElement); a project's effects sit under their
+	// channel's chain and are loaded from <song>.
+	if( ProjectIds::isDocumentElement( _this ) )
+	{
+		if( _this.hasAttribute( "id" ) )
+		{
+			bool ok = false;
+			const int stored = _this.attribute( "id" ).toInt( &ok );
+			if( ok && stored >= 0 ) { setId( stored ); }
+			else { ProjectIds::noteLoadAssignment(); }
+		}
+		else
+		{
+			ProjectIds::noteLoadAssignment();
+		}
+	}
 
 	QDomNode node = _this.firstChild();
 	while( !node.isNull() )

@@ -134,21 +134,26 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		clip->dataChanged();
 
 		QJsonObject result = noteState(note, index);
-		result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
-		result.insert(QStringLiteral("note"), noteId(index));
+		result.insert(QStringLiteral("clip"), clipId(ref.id));
+		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2), never its
+		// position in the clip's note list.
+		result.insert(QStringLiteral("note"), noteIdOf(note));
 		// The field is reported by name as well as through noteState(), because
 		// noteState() is the shape roll.get_state publishes for EVERY note and this
 		// verb must not change that shape for callers that do not use it.
 		result.insert(QStringLiteral("probability"), static_cast<double>(note->probability()));
 
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
-		inverseArgs.insert(QStringLiteral("note"), noteId(index));
+		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
+		// The inverse addresses the note by ID, so a re-sort of the clip's list
+		// (this clip's own, or one a later edit causes) cannot re-point it at a
+		// different note - which is exactly what an index-addressed inverse did.
+		inverseArgs.insert(QStringLiteral("note"), noteIdOf(note));
 		inverseArgs.insert(QStringLiteral("probability"), static_cast<double>(previous));
 		result.insert(QStringLiteral("__transaction"),
 			transactionPayload(
-				QJsonObject{{QStringLiteral("clip"), clipId(ref.ordinal)},
-					{QStringLiteral("note"), noteId(index)},
+				QJsonObject{{QStringLiteral("clip"), clipId(ref.id)},
+					{QStringLiteral("note"), noteIdOf(note)},
 					{QStringLiteral("probability"), static_cast<double>(previous)}},
 				QStringLiteral("note.probability_set"), inverseArgs, true,
 				MechanismClipCheckpoint));

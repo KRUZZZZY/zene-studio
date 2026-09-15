@@ -75,7 +75,7 @@ constexpr double kMaxGainDb = 24.0;
 QJsonObject editsState(const ClipRef& ref, const ClipEdits& edits)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	out.insert(QStringLiteral("clip"), clipId(ref.id));
 	out.insert(QStringLiteral("gain_db"), static_cast<double>(gainLinearToDb(edits.gain)));
 	out.insert(QStringLiteral("fade_in"), edits.fadeInTicks);
 	out.insert(QStringLiteral("fade_out"), edits.fadeOutTicks);
@@ -87,7 +87,7 @@ QJsonObject editsState(const ClipRef& ref, const ClipEdits& edits)
 //! The two keys every mutating handler here needs to name its clip again.
 QJsonObject clipArg(const ClipRef& ref)
 {
-	return QJsonObject{{QStringLiteral("clip"), clipId(ref.ordinal)}};
+	return QJsonObject{{QStringLiteral("clip"), clipId(ref.id)}};
 }
 
 /*! Resolves \p id to a clip whose edits this release can actually apply.
@@ -104,7 +104,7 @@ bool resolveAudioClip(const QString& id, ClipRef* ref, ControlResult* error)
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("fades and clip gain are applied to audio clips only in this "
 				"release; %1 is a %2 clip (docs/KNOWN-LIMITATIONS.md)")
-				.arg(clipId(ref->ordinal), ref->clip->nodeName()));
+				.arg(clipId(ref->id), ref->clip->nodeName()));
 		return false;
 	}
 	return true;
@@ -301,14 +301,14 @@ void registerClipCrossfade(ControlRegistry& registry)
 		if (outRef.clip == inRef.clip)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'out' and 'in' are the same clip (%1)").arg(clipId(outRef.ordinal)));
+				QStringLiteral("'out' and 'in' are the same clip (%1)").arg(clipId(outRef.id)));
 		}
 		if (outRef.track != inRef.track)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("'out' (%1) and 'in' (%2) are on different tracks; a crossfade "
 					"pairs two clips of ONE track's lane")
-					.arg(clipId(outRef.ordinal), clipId(inRef.ordinal)));
+					.arg(clipId(outRef.id), clipId(inRef.id)));
 		}
 
 		const tick_t outStart = outRef.clip->startPosition().getTicks();
@@ -322,7 +322,7 @@ void registerClipCrossfade(ControlRegistry& registry)
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("clips %1 and %2 do not overlap (%3..%4 vs %5..%6), so there is "
 					"no range to crossfade")
-					.arg(clipId(outRef.ordinal), clipId(inRef.ordinal))
+					.arg(clipId(outRef.id), clipId(inRef.id))
 					.arg(outStart).arg(outEnd).arg(inStart).arg(inEnd));
 		}
 		const int overlap = static_cast<int>(overlapEnd - overlapStart);
@@ -354,8 +354,8 @@ void registerClipCrossfade(ControlRegistry& registry)
 		inRef.clip->setClipEdits(inAfter);
 
 		QJsonObject before;
-		before.insert(QStringLiteral("out"), clipId(outRef.ordinal));
-		before.insert(QStringLiteral("in"), clipId(inRef.ordinal));
+		before.insert(QStringLiteral("out"), clipId(outRef.id));
+		before.insert(QStringLiteral("in"), clipId(inRef.id));
 		before.insert(QStringLiteral("overlap"), overlap);
 		before.insert(QStringLiteral("out_fade_out"), outBefore.fadeOutTicks);
 		before.insert(QStringLiteral("out_fade_out_shape"), fadeShapeName(outBefore.fadeOutShape));
@@ -363,15 +363,15 @@ void registerClipCrossfade(ControlRegistry& registry)
 		before.insert(QStringLiteral("in_fade_in_shape"), fadeShapeName(inBefore.fadeInShape));
 
 		QJsonObject result;
-		result.insert(QStringLiteral("out"), clipId(outRef.ordinal));
-		result.insert(QStringLiteral("in"), clipId(inRef.ordinal));
+		result.insert(QStringLiteral("out"), clipId(outRef.id));
+		result.insert(QStringLiteral("in"), clipId(inRef.id));
 		result.insert(QStringLiteral("overlap"), overlap);
 		result.insert(QStringLiteral("shape"), fadeShapeName(shape));
 		result.insert(QStringLiteral("out_fade_out"), outAfter.fadeOutTicks);
 		result.insert(QStringLiteral("in_fade_in"), inAfter.fadeInTicks);
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("out"), clipId(outRef.ordinal));
-		inverseArgs.insert(QStringLiteral("in"), clipId(inRef.ordinal));
+		inverseArgs.insert(QStringLiteral("out"), clipId(outRef.id));
+		inverseArgs.insert(QStringLiteral("in"), clipId(inRef.id));
 		inverseArgs.insert(QStringLiteral("out_fade_out"), outBefore.fadeOutTicks);
 		inverseArgs.insert(QStringLiteral("out_fade_out_shape"),
 			fadeShapeName(outBefore.fadeOutShape));

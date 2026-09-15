@@ -505,16 +505,28 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// the containers in document order. Either way ProjectIds::loadAssignments()
 	// counts it, and project.open reports the count as `ids_assigned`, so a
 	// legacy file's one-time upgrade is stated rather than silent.
-	if (element.hasAttribute("id"))
+	//
+	// A track read out of a COPY payload keeps the id its constructor handed
+	// out instead (rule R4): Track::clone() - the duplicate-track action - and
+	// the Ctrl-drag of a track both re-load the SOURCE track's element, whose
+	// id names a track that is still alive, and two live tracks answering to
+	// one `trk-<n>` would make the id an ambiguous address. The wrapper decides
+	// it (ProjectIds::isDocumentElement): the clone document is
+	// <clonedtrack>, a drag payload <dnddata>, a project <song>. A copy is not
+	// an assignment, so nothing is counted for it.
+	if (ProjectIds::isDocumentElement(element))
 	{
-		bool ok = false;
-		const int stored = element.attribute("id").toInt(&ok);
-		if (ok && stored >= 0) { setId(stored); }
-		else { ProjectIds::noteLoadAssignment(); }
-	}
-	else
-	{
-		ProjectIds::noteLoadAssignment();
+		if (element.hasAttribute("id"))
+		{
+			bool ok = false;
+			const int stored = element.attribute("id").toInt(&ok);
+			if (ok && stored >= 0) { setId(stored); }
+			else { ProjectIds::noteLoadAssignment(); }
+		}
+		else
+		{
+			ProjectIds::noteLoadAssignment();
+		}
 	}
 
 	{

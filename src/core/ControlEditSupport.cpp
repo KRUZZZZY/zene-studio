@@ -118,7 +118,11 @@ QVector<ClipRef> enumerateClips()
 			ref.track = track;
 			ref.trackIndex = t;
 			ref.indexInTrack = entry.indexInTrack;
-			ref.ordinal = refs.size();
+			// The clip's PERSISTENT id, not its ordinal in this enumeration
+			// (SPEC-stable-ids.md slice 2). The vector is still returned in
+			// arrangement order - callers that want the order read it off the
+			// sequence - but the id a caller is told is the clip's own.
+			ref.id = ref.clip->id();
 			refs.append(ref);
 		}
 	}
@@ -157,22 +161,34 @@ Track* resolveTrack(const QString& id, ControlResult* error)
 
 bool resolveClip(const QString& id, ClipRef* ref, ControlResult* error)
 {
-	const int ordinal = idToIndex(id, QStringLiteral("clip-"));
-	if (ordinal < 0)
+	const int wanted = idToIndex(id, QStringLiteral("clip-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a clip id of the form clip-<n>").arg(id));
 		return false;
 	}
+	// Resolve the OBJECT the id names. Since SPEC-stable-ids.md slice 2 the
+	// number is the clip's creation-assigned id (Clip::id()), not its ordinal
+	// in arrangement order, so adding, deleting, splitting, moving or undoing a
+	// sibling clip cannot move it (the defect the undo lane measured: a deleted
+	// track's clip came back as clip-0 where it had been clip-1). There is
+	// deliberately NO positional fallback, for the reason resolveTrack() gives:
+	// every clip carries an id from construction, so a fallback could only ever
+	// resolve a stale position. A well-formed id naming no live clip is the
+	// typed not_found below.
 	const QVector<ClipRef> refs = enumerateClips();
-	if (ordinal >= refs.size())
+	for (const ClipRef& candidate : refs)
 	{
-		*error = ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("no clip %1 (the song has %2)").arg(id).arg(refs.size()));
-		return false;
+		if (candidate.id == wanted)
+		{
+			*ref = candidate;
+			return true;
+		}
 	}
-	*ref = refs[ordinal];
-	return true;
+	*error = ControlResult::failure(ControlErrorKind::NotFound,
+		QStringLiteral("no clip %1 (the song has %2)").arg(id).arg(refs.size()));
+	return false;
 }
 
 MidiClip* resolveMidiClip(const QString& id, ClipRef* ref, ControlResult* error)
@@ -195,21 +211,31 @@ MidiClip* resolveMidiClip(const QString& id, ClipRef* ref, ControlResult* error)
 
 Note* resolveNote(MidiClip* clip, const QString& id, int* index, ControlResult* error)
 {
-	const int i = idToIndex(id, QStringLiteral("note-"));
-	if (i < 0)
+	const int wanted = idToIndex(id, QStringLiteral("note-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a note id of the form note-<n>").arg(id));
 		return nullptr;
 	}
-	if (i >= static_cast<int>(clip->notes().size()))
+	// Resolve the OBJECT the id names (Note::id(), SPEC-stable-ids.md slice 2),
+	// not the note's index in the clip's list. The list is kept sorted by
+	// position and rearrangeAllNotes() re-sorts after an edit, so an index is
+	// the least stable address in the document - which is why the note family
+	// was deliberately last. `index` is still filled, because callers need the
+	// POSITION for the selection helpers; it is no longer the address.
+	const NoteVector& notes = clip->notes();
+	for (int i = 0; i < static_cast<int>(notes.size()); ++i)
 	{
-		*error = ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("no note %1 (the clip has %2)").arg(id).arg(clip->notes().size()));
-		return nullptr;
+		if (notes[i]->id() == wanted)
+		{
+			*index = i;
+			return notes[i];
+		}
 	}
-	*index = i;
-	return clip->notes()[i];
+	*error = ControlResult::failure(ControlErrorKind::NotFound,
+		QStringLiteral("no note %1 (the clip has %2)").arg(id).arg(notes.size()));
+	return nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +291,7 @@ QVector<int> selectedNoteIndices(const QString& clip)
 QJsonObject clipState(const ClipRef& ref)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), clipId(ref.ordinal));
+	entry.insert(QStringLiteral("id"), clipId(ref.id));
 	entry.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	entry.insert(QStringLiteral("index_in_track"), ref.indexInTrack);
 	entry.insert(QStringLiteral("name"), ref.clip->name());
@@ -279,7 +305,7 @@ QJsonObject clipState(const ClipRef& ref)
 	entry.insert(QStringLiteral("note_count"),
 		midiClip == nullptr ? QJsonValue(QJsonValue::Null)
 			: QJsonValue(static_cast<int>(midiClip->notes().size())));
-	entry.insert(QStringLiteral("selected"), selectedClipId() == clipId(ref.ordinal));
+	entry.insert(QStringLiteral("selected"), selectedClipId() == clipId(ref.id));
 	// The clip's fades and gain (the fade/crossfade/clip-gain wave). Reported
 	// for EVERY clip, neutral or not, so an agent reading arrangement.get_state
 	// or roll.get_state can see what clip.set_fade / clip.set_gain left behind
@@ -298,7 +324,11 @@ QJsonObject clipState(const ClipRef& ref)
 QJsonObject noteState(const Note* note, int index)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), noteId(index));
+	// The note's PERSISTENT id (SPEC-stable-ids.md slice 2), not its position
+	// in the clip's list. `index` is still reported, because a caller doing
+	// positional arithmetic (moving a note to the end of a bar, say) needs it -
+	// it is simply no longer the note's address.
+	entry.insert(QStringLiteral("id"), noteIdOf(note));
 	entry.insert(QStringLiteral("index"), index);
 	entry.insert(QStringLiteral("key"), note->key());
 	entry.insert(QStringLiteral("position"), note->pos().getTicks());
@@ -315,8 +345,9 @@ QJsonObject noteState(const Note* note, int index)
 QJsonObject rollState(const ClipRef& ref)
 {
 	QJsonObject out = clipState(ref);
-	out.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	out.insert(QStringLiteral("clip"), clipId(ref.id));
 	QJsonArray notes;
+	QJsonArray selected;
 	auto* midiClip = dynamic_cast<MidiClip*>(ref.clip);
 	if (midiClip != nullptr)
 	{
@@ -326,19 +357,27 @@ QJsonObject rollState(const ClipRef& ref)
 			QJsonObject entry = noteState(note, index);
 			// The clip the note belongs to travels with the note, so a caller that
 			// only kept a note id can still address it.
-			entry.insert(QStringLiteral("clip"), clipId(ref.ordinal));
-			entry.insert(QStringLiteral("selected"), noteSelected(clipId(ref.ordinal), index));
+			entry.insert(QStringLiteral("clip"), clipId(ref.id));
+			entry.insert(QStringLiteral("selected"), noteSelected(clipId(ref.id), index));
 			notes.append(entry);
 			++index;
+		}
+		// The selection itself is positions inside the clip - it is view state
+		// the project file does not carry, so it has no id of its own - and it
+		// is REPORTED as the ids of the notes at those positions, because an id
+		// is what a client can address. An index the list no longer has (the
+		// note was deleted) is dropped rather than reported as a dangling id.
+		const NoteVector& noteList = midiClip->notes();
+		for (int selectedIndex : selectedNoteIndices(clipId(ref.id)))
+		{
+			if (selectedIndex >= 0 && selectedIndex < static_cast<int>(noteList.size()))
+			{
+				selected.append(noteIdOf(noteList[selectedIndex]));
+			}
 		}
 	}
 	out.insert(QStringLiteral("notes"), notes);
 	out.insert(QStringLiteral("note_count"), notes.size());
-	QJsonArray selected;
-	for (int index : selectedNoteIndices(clipId(ref.ordinal)))
-	{
-		selected.append(noteId(index));
-	}
 	out.insert(QStringLiteral("selected_notes"), selected);
 	return out;
 }

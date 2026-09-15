@@ -72,7 +72,7 @@ constexpr int kMaxSchemaInteger = 2147483647;
 QJsonObject grooveClipBefore(const ClipRef& ref, const MidiClip& clip)
 {
 	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	before.insert(QStringLiteral("clip"), clipId(ref.id));
 	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	before.insert(QStringLiteral("note_count"), static_cast<int>(clip.notes().size()));
 	return before;
@@ -195,11 +195,11 @@ ControlResult grooveApply(const QJsonObject& args)
 	clip->dataChanged();
 
 	QJsonObject target;
-	target.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	target.insert(QStringLiteral("clip"), clipId(ref.id));
 	target.insert(QStringLiteral("name"), name);
 
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("name"), name);
 	result.insert(QStringLiteral("strength"), static_cast<double>(strength));
@@ -234,11 +234,11 @@ ControlResult grooveQuantize(const QJsonObject& args)
 	clip->dataChanged();
 
 	QJsonObject target;
-	target.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	target.insert(QStringLiteral("clip"), clipId(ref.id));
 	target.insert(QStringLiteral("grid"), static_cast<qint64>(options.grid));
 
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("grid"), static_cast<qint64>(options.grid));
 	result.insert(QStringLiteral("strength"), static_cast<double>(options.strength));

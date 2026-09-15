@@ -106,7 +106,7 @@ bool captureDevices(const ControlTarget& target, QList<ControlChainPresetDevice>
 		// The device is resolved the way plugin.state_save resolves it, so the
 		// captured bytes are that command's bytes and not a second serialisation.
 		ControlDeviceHandle handle;
-		if (!resolveControlDevice(target, control::effectId(i), &handle, error)) { return false; }
+		if (!resolveControlDevice(target, control::effectIdOf(target.chain->effects()[static_cast<std::size_t>(i)]), &handle, error)) { return false; }
 		ControlChainPresetDevice device;
 		device.state = controlDeviceStateBytes(handle);
 		if (!controlChainPresetIdentity(&device, error)) { return false; }

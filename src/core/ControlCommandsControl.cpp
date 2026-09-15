@@ -28,7 +28,6 @@
 
 #include "AudioEngine.h"
 
-#include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -421,6 +420,7 @@ void registerControlGroupCommands(ControlRegistry& registry)
 	registerUndoCommand(registry);
 	registerRedoCommand(registry);
 	registerQuitCommand(registry);
+	registerIdContractCommand(registry);
 	// The bounded-undo slice (task #623): the depth, the two caps and the
 	// coalescing window. Its own translation unit because this file is at the
 	// file-length ratchet's limit; the same group either way.

@@ -51,6 +51,14 @@ namespace lmms
 Clip::Clip( Track * track ) :
 	Model( track ),
 	m_track( track ),
+	// The stable id, handed out once, here, at creation (SPEC-stable-ids.md
+	// 2.1, slice 2). It is the number in clip-<n> and it never changes while
+	// the clip lives, so a client that was told clip-4 keeps clip-4 when a
+	// sibling clip is inserted, deleted, split, reordered or undone - and it
+	// is the same number after a save/open cycle, because saveState() writes
+	// it into the project file and restoreState() takes it back. The counter
+	// is the project-scoped one, shared with the track ids.
+	m_id( ProjectIds::allocate() ),
 	m_startPosition(),
 	m_length(),
 	m_mutedModel( false, this, tr( "Mute" ) ),
@@ -77,6 +85,11 @@ Clip::Clip(const Clip& other):
 	Model(other.m_track),
 	m_track(other.m_track),
 	m_name(other.m_name),
+	// A COPY IS A NEW CLIP: it gets its own id and does NOT inherit the
+	// source's. clone() is what clip.duplicate, clip.split and the piano
+	// roll's own copy/paste are built on, and two clips wearing one id would
+	// make an id an ambiguous address - the one thing the contract forbids.
+	m_id(ProjectIds::allocate()),
 	m_startPosition(other.m_startPosition),
 	m_length(other.m_length),
 	m_startTimeOffset(other.m_startTimeOffset),
@@ -92,6 +105,102 @@ Clip::Clip(const Clip& other):
 	{
 		getTrack()->addClip(this);
 	}
+}
+
+/*! The clip's own element, plus the STABLE ID as an `id` attribute
+ *  (SPEC-stable-ids.md slice 2).
+ *
+ *  ONE override covers all four clip types: MidiClip, SampleClip, PatternClip
+ *  and AutomationClip each override saveSettings/loadSettings but NONE of them
+ *  overrides saveState/restoreState, so every clip that is written into a
+ *  project file - through Track::saveTrack's `clip->saveState(doc, element)`
+ *  and through a Journal checkpoint - carries its id, and a checkpoint restore
+ *  (which re-loads the element) puts the SAME id back on the clip.
+ *
+ *  JournallingObject::saveState is called BY NAME, and not SerializingObject's:
+ *  it is the override this class inherited before this feature existed, and it
+ *  is the one that appends the `<journallingObject id=N metadata="true">` child
+ *  every journal checkpoint and every undo step is recorded against. Calling
+ *  SerializingObject::saveState directly - as the first cut of this slice did -
+ *  drops that child from every clip element the build writes, which is the
+ *  defect docs/UNDO-BOUNDS.md records for exactly this reader/writer pair: a
+ *  re-created object carries a NEW journal id, every step recorded before the
+ *  re-load names a dead object, ProjectJournal::undo() skips it and unwinds an
+ *  OLDER one, and ONE control.undo takes back edits the caller never asked for.
+ *
+ *  The id attribute is written only when the clip is going into a DOCUMENT
+ *  (ProjectIds::isDocumentElement): a copy payload carries the source clip's
+ *  attributes verbatim, and a clip built from one is a NEW clip that must keep
+ *  the id its constructor handed out (rule R4), or two live clips would answer
+ *  to one `clip-<n>`.
+ */
+QDomElement Clip::saveState( QDomDocument & doc, QDomElement & parent )
+{
+	QDomElement element = JournallingObject::saveState( doc, parent );
+
+	if( ProjectIds::isDocumentElement( element ) )
+	{
+		element.setAttribute( QStringLiteral( "id" ), m_id );
+	}
+
+	return element;
+}
+
+/*! The clip's own element, plus the id it was written with.
+ *
+ *  A file that carries one keeps it; a legacy file (or a file that came back
+ *  through a build without this feature, which drops the attribute) keeps the
+ *  number the constructor already handed out. That fallback is deterministic
+ *  because the load walks the containers and their clips in that order, and
+ *  the assignment is COUNTED - ProjectIds::loadAssignments() - so project.open
+ *  reports it as `ids_assigned` instead of upgrading the file silently.
+ *
+ *  JournallingObject::restoreState is called BY NAME for the reason saveState
+ *  above records: it is the reader that hands the clip back the journal id the
+ *  document carries, so the undo steps already recorded against this clip still
+ *  find it after a re-load (a checkpoint restore, a track undo).
+ *
+ *  A clip built from a COPY payload is skipped entirely: it keeps the id its
+ *  constructor handed out, because the payload's id names the clip that was
+ *  copied, which is still alive (rule R4). A skip is not an assignment, so it
+ *  is not counted.
+ */
+void Clip::restoreState( const QDomElement & element )
+{
+	JournallingObject::restoreState( element );
+
+	if( !ProjectIds::isDocumentElement( element ) )
+	{
+		return;
+	}
+
+	const QString stored = element.attribute( QStringLiteral( "id" ) );
+	bool ok = false;
+	const int id = stored.toInt( &ok );
+	if( !stored.isEmpty() && ok && id >= 0 )
+	{
+		setId( id );
+	}
+	else
+	{
+		ProjectIds::noteLoadAssignment();
+	}
+}
+
+/*! Replace the id with \a id, and raise the project counter above it so the
+ *  number can never be handed out again (SPEC-stable-ids.md rule R3).
+ *
+ *  A negative value is ignored: it is not a number this surface can address,
+ *  and the constructor's id is always a valid answer.
+ */
+void Clip::setId( int id )
+{
+	if( id < 0 )
+	{
+		return;
+	}
+	m_id = id;
+	ProjectIds::observe( id );
 }
 
 /*! \brief Destroy a Clip

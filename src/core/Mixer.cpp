@@ -38,6 +38,7 @@
 #include "InstrumentTrack.h"
 #include "MixHelpers.h"
 #include "PatternStore.h"
+#include "ProjectIds.h"
 #include "SampleTrack.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
 
@@ -153,7 +154,19 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_sidechainReceives(),
 	m_isBus( false ),
 	m_dependenciesMet(0),
-	m_channelIndex(idx)
+	m_channelIndex(idx),
+	// The stable id, handed out once, here, at creation (SPEC-stable-ids.md
+	// 2.1, slice 2). It is the number in ch-<n> and it never changes while the
+	// channel lives, so a client that was told ch-7 keeps ch-7 when a sibling
+	// channel is added, removed or moved - unlike the channel's index in the
+	// mixer, which is what ch-<n> used to be derived from. Mixer::loadSettings
+	// overrides it with the file's value on a project load, and a file element
+	// with no id keeps this one, which is what makes legacy assignment
+	// deterministic (the load walks the <mixerchannel> elements in document
+	// order, and each one's `num` allocates the channels up to it). The
+	// counter is the project-scoped ProjectIds, shared with the track, clip,
+	// note and effect ids.
+	m_id( ProjectIds::allocate() )
 {
 	m_bus.silenceAllChannels();
 	m_sidechainBuffer.silenceAllChannels();
@@ -166,6 +179,26 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 MixerChannel::~MixerChannel()
 {
 	delete[] m_buffer;
+}
+
+/*! Replace the id with \a id, and raise the project counter above it so the
+ *  number can never be handed out again (SPEC-stable-ids.md rule R3).
+ *
+ *  A negative value is ignored: it is not a number this surface can address,
+ *  and the constructor's id is always a valid answer. Mixer::loadSettings is
+ *  the only caller - the file's `id` attribute, when it parses to a
+ *  non-negative int.
+ */
+void MixerChannel::setId( int id )
+{
+	if( id < 0 )
+	{
+		return;
+	}
+	m_id = id;
+	// Never let the counter hand this number to anything else, even if the
+	// file that carried it had no (or a stale) next-id.
+	ProjectIds::observe( id );
 }
 
 
@@ -1835,6 +1868,16 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
+		// SPEC-stable-ids.md 3.1/3.2, slice 2: the channel's stable id as an
+		// ATTRIBUTE on the channel's own element, BESIDE `num` - which keeps
+		// its meaning as the channel's position in the mixer (the load
+		// allocates channels up to it). They are two different numbers now and
+		// must not be conflated: `num` is reconstructed positionally on load,
+		// `id` names the object and is read back. An ATTRIBUTE and not a child
+		// element, for the reason Track::saveTrack records for the track id -
+		// this loader walks the element's children, so a child would become a
+		// phantom send to a legacy reader on every channel of every project.
+		mixch.setAttribute("id", ch->id());
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
 
@@ -1977,6 +2020,27 @@ void Mixer::loadSettings( const QDomElement & _this )
 
 		// allocate enough channels
 		allocateChannelsTo( num );
+
+		// The stable id (SPEC-stable-ids.md rules R1/R2, slice 2) - the same
+		// shape Track::loadTrack uses for the track element. A file that
+		// carries one keeps it; a legacy file that does not keeps the number
+		// the constructor already handed out, which is deterministic because
+		// this load walks the <mixerchannel> elements in document order.
+		// Either way ProjectIds::loadAssignments() counts it, and project.open
+		// reports the count as `ids_assigned`, so a legacy file's one-time
+		// upgrade is stated rather than silent. Read AFTER allocateChannelsTo:
+		// that call is what constructs the channel this element describes.
+		if( mixch.hasAttribute( "id" ) )
+		{
+			bool ok = false;
+			const int stored = mixch.attribute( "id" ).toInt( &ok );
+			if( ok && stored >= 0 ) { m_mixerChannels[num]->setId( stored ); }
+			else { ProjectIds::noteLoadAssignment(); }
+		}
+		else
+		{
+			ProjectIds::noteLoadAssignment();
+		}
 
 		m_mixerChannels[num]->m_volumeModel.loadSettings( mixch, "volume" );
 		m_mixerChannels[num]->m_muteModel.loadSettings( mixch, "muted" );

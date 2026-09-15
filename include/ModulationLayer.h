@@ -100,7 +100,7 @@ LMMS_EXPORT bool modulationShapeFromName(const QString& name, ModulationShape* s
  */
 struct ModulationRoute
 {
-	int channel = 0;         //!< mixer channel index (ch-<n>)
+	int channel = 0;         //!< the mixer channel's persistent id (ch-<n>; SPEC-stable-ids.md slice 2)
 	int chain = 0;           //!< chain inside that channel's rack (0 = its own)
 	int effect = 0;          //!< effect inside that chain (fx-<n> order)
 	QString parameter;       //!< the parameter's display name

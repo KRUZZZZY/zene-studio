@@ -42,27 +42,42 @@ namespace
 //! Resolve a "ch-<n>" id against the live mixer.
 MixerChannel* resolveChannel(const QString& id, ControlResult* error)
 {
-	const int index = control::idToIndex(id, QStringLiteral("ch-"));
-	if (index < 0)
+	const int wanted = control::idToIndex(id, QStringLiteral("ch-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a channel id of the form ch-<n>").arg(id));
 		return nullptr;
 	}
 	Mixer* mixer = Engine::mixer();
-	if (index >= static_cast<int>(mixer->numChannels()))
+	// By id, not by position (SPEC-stable-ids.md slice 2): the number names the
+	// channel OBJECT (MixerChannel::id()), so a cached ch-<n> still names the
+	// same channel after a sibling channel is added, removed or moved. No
+	// positional fallback - every channel carries an id from construction, so a
+	// fallback could only ever resolve a stale position.
+	MixerChannel* channel = nullptr;
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* candidate = mixer->mixerChannel(i);
+		if (candidate != nullptr && candidate->id() == wanted)
+		{
+			channel = candidate;
+			break;
+		}
+	}
+	if (channel == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no mixer channel %1 (the mixer has %2)").arg(id).arg(static_cast<int>(mixer->numChannels())));
 		return nullptr;
 	}
-	return mixer->mixerChannel(index);
+	return channel;
 }
 
 QJsonObject channelState(MixerChannel* channel)
 {
 	QJsonObject entry;
-	entry.insert(QStringLiteral("id"), control::channelId(channel->index()));
+	entry.insert(QStringLiteral("id"), control::channelIdOf(channel));
 	entry.insert(QStringLiteral("index"), channel->index());
 	entry.insert(QStringLiteral("name"), channel->m_name);
 	entry.insert(QStringLiteral("volume"), static_cast<double>(channel->m_volumeModel.value()));
@@ -78,7 +93,7 @@ QJsonObject channelState(MixerChannel* channel)
 	for (MixerRoute* route : channel->m_sends)
 	{
 		QJsonObject send;
-		send.insert(QStringLiteral("to"), control::channelId(route->receiverIndex()));
+		send.insert(QStringLiteral("to"), control::channelIdOf(route->receiver()));
 		send.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
 		send.insert(QStringLiteral("pre_fader"), route->preFader());
 		sends.append(send);
@@ -146,16 +161,19 @@ void registerMixerCommands(ControlRegistry& registry)
 			channel->m_volumeModel.setValue(volume);
 
 			QJsonObject result;
-			result.insert(QStringLiteral("channel"), control::channelId(channel->index()));
+			// The channel's PERSISTENT id, so the inverse below names the same
+			// channel after a sibling is deleted (SPEC-stable-ids.md slice 2).
+			const QString channelIdText = control::channelIdOf(channel);
+			result.insert(QStringLiteral("channel"), channelIdText);
 			result.insert(QStringLiteral("volume"), static_cast<double>(channel->m_volumeModel.value()));
 			QJsonObject transaction;
 			transaction.insert(QStringLiteral("before"),
-				QJsonObject{{QStringLiteral("channel"), control::channelId(channel->index())},
+				QJsonObject{{QStringLiteral("channel"), channelIdText},
 					{QStringLiteral("volume"), static_cast<double>(previous)}});
 			transaction.insert(QStringLiteral("inverse"),
 				QJsonObject{{QStringLiteral("op"), QStringLiteral("mixer.set_volume")},
 					{QStringLiteral("args"),
-						QJsonObject{{QStringLiteral("channel"), control::channelId(channel->index())},
+						QJsonObject{{QStringLiteral("channel"), channelIdText},
 							{QStringLiteral("volume"), static_cast<double>(previous)}}}});
 			transaction.insert(QStringLiteral("reversible"), true);
 			transaction.insert(QStringLiteral("mechanism"),
@@ -225,15 +243,21 @@ void registerMixerCommands(ControlRegistry& registry)
 				},
 				[mixer]() { mixer->createChannel(); });
 			const int index = mixer->createChannel();
+			// The new channel's PERSISTENT id (MixerChannel::id()), not its
+			// index: the inverse below names the channel this command created,
+			// and a ch-<n> addressed by position would name a different channel
+			// once any earlier channel is removed. Read from the object, which
+			// is alive here - the recorded undo step runs later.
+			const QString channelIdText = control::channelIdOf(mixer->mixerChannel(index));
 
 			QJsonObject result;
-			result.insert(QStringLiteral("channel"), control::channelId(index));
+			result.insert(QStringLiteral("channel"), channelIdText);
 			result.insert(QStringLiteral("index"), index);
 			QJsonObject transaction;
 			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("count"), before}});
 			transaction.insert(QStringLiteral("inverse"),
 				QJsonObject{{QStringLiteral("op"), QStringLiteral("mixer.remove_channel")},
-					{QStringLiteral("args"), QJsonObject{{QStringLiteral("channel"), control::channelId(index)}}}});
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("channel"), channelIdText}}}});
 			transaction.insert(QStringLiteral("reversible"), true);
 			transaction.insert(QStringLiteral("mechanism"),
 				QStringLiteral("action checkpoint: the recorded undo step deletes the channel this "
@@ -273,10 +297,14 @@ void registerMixerCommands(ControlRegistry& registry)
 			Mixer* mixer = Engine::mixer();
 			const int before = static_cast<int>(mixer->numChannels());
 			QJsonObject beforeState = channelState(channel);
+			// Read the id BEFORE the delete: after Mixer::deleteChannel the
+			// pointer is gone, and the id is what the caller was told
+			// (SPEC-stable-ids.md slice 2 - it survives the delete).
+			const QString removedId = control::channelIdOf(channel);
 			mixer->deleteChannel(index);
 
 			QJsonObject result;
-			result.insert(QStringLiteral("removed"), control::channelId(index));
+			result.insert(QStringLiteral("removed"), removedId);
 			result.insert(QStringLiteral("count"), static_cast<int>(mixer->numChannels()));
 			QJsonObject transaction;
 			transaction.insert(QStringLiteral("before"), beforeState);

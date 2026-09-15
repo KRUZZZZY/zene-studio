@@ -110,7 +110,7 @@ void registerNoteAdd(ControlRegistry& registry)
 		if (clip == nullptr) { return error; }
 		const int before = static_cast<int>(clip->notes().size());
 		QJsonObject beforeState;
-		beforeState.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		beforeState.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		beforeState.insert(QStringLiteral("note_count"), before);
 		beforeState.insert(QStringLiteral("notes"), noteArgsOf(args, true));
 
@@ -134,13 +134,16 @@ void registerNoteAdd(ControlRegistry& registry)
 				QStringLiteral("the added note is not in the clip"));
 		}
 		QJsonObject result = control::noteState(added, index);
-		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
-		result.insert(QStringLiteral("note"), control::noteId(index));
+		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
+		// The added note's own id (Note::id(), SPEC-stable-ids.md slice 2):
+		// `index` is where it landed in the sorted list, not its address - the
+		// inverse below must survive the next re-sort, which is the whole point.
+		result.insert(QStringLiteral("note"), control::noteIdOf(added));
 		result.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(beforeState, QStringLiteral("note.remove"),
-				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.ordinal)},
-					{QStringLiteral("note"), control::noteId(index)}},
+				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.id)},
+					{QStringLiteral("note"), control::noteIdOf(added)}},
 				true, MechanismClipCheckpoint));
 		return ControlResult::success(result);
 	};
@@ -174,12 +177,16 @@ void registerNoteRemove(ControlRegistry& registry)
 		// args recreates it, and the clip checkpoint restores it in the journal.
 		QJsonObject state = control::noteState(note, index);
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
+		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("key"), note->key());
 		inverseArgs.insert(QStringLiteral("position"), note->pos().getTicks());
 		inverseArgs.insert(QStringLiteral("length"), note->length().getTicks());
 		inverseArgs.insert(QStringLiteral("velocity"), static_cast<int>(note->getVolume()));
-		const QString id = control::noteId(index);
+		// The id is read BEFORE the removeNote() below deletes the note
+		// (MidiClip::removeNote does `delete note`). It is the note's own id
+		// (Note::id(), SPEC-stable-ids.md slice 2), which is what the result
+		// reports and what an `removed` id is meant to name.
+		const QString id = control::noteIdOf(note);
 
 		clip->addJournalCheckPoint();
 		clip->removeNote(note);
@@ -225,7 +232,12 @@ void registerNoteMove(ControlRegistry& registry)
 		int index = -1;
 		Note* note = control::resolveNote(clip, args.value(QStringLiteral("note")).toString(), &index, &error);
 		if (note == nullptr) { return error; }
-		const QString previousId = control::noteId(index);
+		// A note's id is its own from now on (Note::id(), SPEC-stable-ids.md
+		// slice 2), so the re-sort below cannot change it: previous_id is the id
+		// the note had before the move, which is the id it still has. The key
+		// stays - the result schema declares it, and the transaction's
+		// before-payload carries it.
+		const QString previousId = control::noteIdOf(note);
 		const tick_t previousPos = note->pos().getTicks();
 
 		clip->addJournalCheckPoint();
@@ -246,17 +258,21 @@ void registerNoteMove(ControlRegistry& registry)
 				QStringLiteral("the note is not in the clip after the move"));
 		}
 		QJsonObject result;
-		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
-		result.insert(QStringLiteral("note"), control::noteId(newIndex));
+		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
+		// The note's own id, which the move did NOT change, and its new POSITION
+		// reported alongside (the re-sort may have moved it in the list).
+		result.insert(QStringLiteral("note"), control::noteIdOf(note));
 		result.insert(QStringLiteral("previous_id"), previousId);
 		result.insert(QStringLiteral("position"), note->pos().getTicks());
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
-		inverseArgs.insert(QStringLiteral("note"), control::noteId(newIndex));
+		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
+		// The inverse is addressed by ID too, so undoing the move finds the note
+		// wherever the re-sort left it.
+		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));
 		inverseArgs.insert(QStringLiteral("position"), previousPos);
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(
-				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.ordinal)},
+				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.id)},
 					{QStringLiteral("note"), previousId},
 					{QStringLiteral("position"), previousPos}},
 				QStringLiteral("note.move"), inverseArgs, true, MechanismClipCheckpoint));
@@ -301,16 +317,18 @@ void registerNoteResize(ControlRegistry& registry)
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 
 		QJsonObject result = control::noteState(note, index);
-		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
-		result.insert(QStringLiteral("note"), control::noteId(index));
+		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
+		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2): a resize
+		// does not re-sort the list, but the id is still what addresses the note.
+		result.insert(QStringLiteral("note"), control::noteIdOf(note));
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
-		inverseArgs.insert(QStringLiteral("note"), control::noteId(index));
+		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
+		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));
 		inverseArgs.insert(QStringLiteral("length"), previous);
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(
-				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.ordinal)},
-					{QStringLiteral("note"), control::noteId(index)},
+				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.id)},
+					{QStringLiteral("note"), control::noteIdOf(note)},
 					{QStringLiteral("length"), previous}},
 				QStringLiteral("note.resize"), inverseArgs, true, MechanismClipCheckpoint));
 		return ControlResult::success(result);
@@ -354,16 +372,17 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 
 		QJsonObject result = control::noteState(note, index);
-		result.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
-		result.insert(QStringLiteral("note"), control::noteId(index));
+		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
+		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2).
+		result.insert(QStringLiteral("note"), control::noteIdOf(note));
 		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.ordinal));
-		inverseArgs.insert(QStringLiteral("note"), control::noteId(index));
+		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
+		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));
 		inverseArgs.insert(QStringLiteral("velocity"), static_cast<double>(previous));
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(
-				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.ordinal)},
-					{QStringLiteral("note"), control::noteId(index)},
+				QJsonObject{{QStringLiteral("clip"), control::clipId(ref.id)},
+					{QStringLiteral("note"), control::noteIdOf(note)},
 					{QStringLiteral("velocity"), static_cast<double>(previous)}},
 				QStringLiteral("note.velocity_set"), inverseArgs, true, MechanismClipCheckpoint));
 		return ControlResult::success(result);
@@ -397,32 +416,45 @@ void registerNoteSelect(ControlRegistry& registry)
 		control::ClipRef ref;
 		MidiClip* clip = control::resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 		if (clip == nullptr) { return error; }
-		const QString clipText = control::clipId(ref.ordinal);
+		const QString clipText = control::clipId(ref.id);
 		const QVector<int> previous = control::selectedNoteIndices(clipText);
 		QVector<int> wanted;
 		for (const QJsonValue& value : args.value(QStringLiteral("notes")).toArray())
 		{
-			const int index = control::idToIndex(value.toString(), QStringLiteral("note-"));
-			if (index < 0)
-			{
-				return ControlResult::failure(ControlErrorKind::InvalidArgs,
-					QStringLiteral("'%1' is not a note id of the form note-<n>").arg(value.toString()));
-			}
-			if (index >= static_cast<int>(clip->notes().size()))
-			{
-				return ControlResult::failure(ControlErrorKind::NotFound,
-					QStringLiteral("no note %1 (the clip has %2)").arg(value.toString())
-						.arg(clip->notes().size()));
-			}
-			wanted.append(index);
+			// The argument names the OBJECT by its id (Note::id(),
+			// SPEC-stable-ids.md slice 2), exactly as note.remove/note.move
+			// resolve theirs: resolveNote looks the id up in the clip and fills
+			// `position` with where the note currently sits. That position is
+			// what the selection store holds - it is view state (SPEC A16) and
+			// carries no ids of its own - and it is reported back as ids below.
+			int position = -1;
+			Note* note = control::resolveNote(clip, value.toString(), &position, &error);
+			if (note == nullptr) { return error; }
+			wanted.append(position);
 		}
 		control::selectNotes(clipText, static_cast<int>(clip->notes().size()), wanted);
 		clip->dataChanged();
 
+		// The selection is reported as the IDS of the notes at the stored
+		// positions (rollState reports the same way). A position the clip's list
+		// no longer holds is dropped rather than reported as a dangling id.
+		const NoteVector& noteList = clip->notes();
 		QJsonArray selected;
-		for (int index : control::selectedNoteIndices(clipText)) { selected.append(control::noteId(index)); }
+		for (int position : control::selectedNoteIndices(clipText))
+		{
+			if (position >= 0 && position < static_cast<int>(noteList.size()))
+			{
+				selected.append(control::noteIdOf(noteList[position]));
+			}
+		}
 		QJsonArray previousIds;
-		for (int index : previous) { previousIds.append(control::noteId(index)); }
+		for (int position : previous)
+		{
+			if (position >= 0 && position < static_cast<int>(noteList.size()))
+			{
+				previousIds.append(control::noteIdOf(noteList[position]));
+			}
+		}
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), clipText);
 		result.insert(QStringLiteral("selected_notes"), selected);

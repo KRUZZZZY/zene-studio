@@ -2050,3 +2050,15 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   detector reads notes), no time-varying key analysis (the key is one estimate for the whole note
   list), no roman-numeral analysis of arbitrary chord sequences, and no chord track that sounds on
   its own — it is harmony written down, and `chord.track_write` is what turns it into notes.
+
+## Stable ids — slice 2: clip-, note-, ch-, fx- persist through save/open (feature row 51)
+
+- **`trk-<n>` was slice 1 (row 50).** This slice makes the remaining four document-object families persistent the same way: the id is assigned once at construction, written as an `id` attribute on the object's own element, and read back on load.
+- **`clip-<n>`** persists on `<midiclip>`, `<sampleclip>`, `<patternclip>` and `<automationclip>` elements. A cached clip id survives sibling insert, delete, split, reorder and undo.
+- **`note-<n>`** persists on `<note>` elements. A note's id survives `rearrangeAllNotes` re-sorting the list.
+- **`ch-<n>`** persists on `<mixerchannel>` elements, beside `num` (which remains the positional index). A channel's id survives add, remove and move.
+- **`fx-<n>`** persists on `<effect>` elements. An effect's id survives append, remove and reorder in its chain.
+- **`dev-<n>`** is reclassified as a catalogue selector: it names a build's `plugin.list` entry, not a project object, and is intentionally NOT written into the project file.
+- **Proof.** `tests/control-stable-ids-slice2.py` asserts identical ids before and after `project.save` / `project.open` for each persistent family, and asserts that a clip delete does not renumber siblings. `SKIP_RETURN_CODE 77` when the build ships no loadable effect (the fx-<n> family cannot be exercised).
+- **UI absence — one line: stable id inspection is drivable through the socket, not from the interface.** There is no id column in the track list, the clip list, the piano roll, the mixer or the rack; `control.id_contract` is the only way to read the contract and the counts.
+- **A copy is a new object (contract rules R4/R5).** Duplicating a track, Ctrl-dragging a clip, pasting notes or applying a device preset creates NEW objects with NEW ids: the payload carries the source's attributes verbatim, so the reader deliberately ignores the id in it. Only two things preserve an id: the object never moving (it is the same object) and a restore from the document (a save/open, an undo of a delete).

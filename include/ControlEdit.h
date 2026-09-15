@@ -62,17 +62,24 @@ namespace control
 //           and a trk-<n> that names no live track is a typed not_found. The
 //           project-scoped counter behind it is `next-id` on the project root
 //           (see ProjectIds.h).
-// clip-<n>  STILL INDEX-DERIVED: ordinal of the clip in ARRANGEMENT order -
-//           tracks in song order, and inside a track the clips sorted by start
-//           position (ties keep the track's own order). One ordinal space for the
-//           whole song. Persisting clip ids is slice 2, not this change.
-// note-<n>  STILL INDEX-DERIVED: index of the note in its clip's note list (the
-//           list addNote() keeps sorted by position, and rearrangeAllNotes()
-//           re-sorts after an edit). Persisting note ids is slice 2, and it is
-//           deliberately last: <note> is where a mistake costs a user their music.
+// clip-<n>  PERSISTENT (slice 2). The number is assigned when the Clip object is
+//           created (Clip::id()), is written to the project file as an `id`
+//           ATTRIBUTE on the clip's own element, and is resolved by matching
+//           Clip::id() - never by arrangement ordinal any more. So a cached
+//           clip-4 still names the same clip after a sibling clip is inserted,
+//           deleted, split, reordered or undone, and after a save/open cycle.
+//           Arrangement ORDER is still what arrangement.get_state reports the
+//           clips in; it is no longer what the id means.
+// note-<n>  PERSISTENT (slice 2). The number is assigned when the Note object is
+//           created (Note::id()), is written to the project file as an `id`
+//           ATTRIBUTE on the <note> element, and is resolved by matching
+//           Note::id() - never by the note's index in the clip's list (the list
+//           addNote() keeps sorted by position and rearrangeAllNotes() re-sorts).
+//           The index is still an index for positional arguments; it is no
+//           longer an address.
 // ---------------------------------------------------------------------------
-QString clipId(int ordinal);
-QString noteId(int index);
+QString clipId(int id);
+QString noteId(int id);
 //! Wire name of a track type ("instrument", "pattern", ...).
 QString trackTypeNameOf(Track::Type type);
 
@@ -83,7 +90,11 @@ struct ClipRef
 	Track* track = nullptr;
 	int trackIndex = -1;    //!< index of the owning track in the song
 	int indexInTrack = -1;  //!< index of the clip in its track's clip vector
-	int ordinal = -1;       //!< clip-<ordinal>
+	//! clip-<id>: the clip's PERSISTENT id (Clip::id()), not its arrangement
+	//! ordinal (slice 2). The two are different numbers and neither is derived
+	//! from the other - `enumerateClips()` still returns the refs in arrangement
+	//! order, and this field is what that clip's id IS.
+	int id = -1;
 };
 
 //! Every clip of the song, in arrangement order (the enumeration clip-<n> uses).

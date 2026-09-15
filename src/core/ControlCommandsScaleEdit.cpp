@@ -83,12 +83,12 @@ ControlResult snapNotes(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	NoteScope scope = NoteScope::Clip;
 	if (!readScope(args, &scope, &error)) { return error; }
-	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.ordinal));
+	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.id));
 	if (notes.empty())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 has %2 notes and none is selected, so scope 'selection' would edit "
-				"nothing").arg(clipId(ref.ordinal)).arg(clip->notes().size()));
+				"nothing").arg(clipId(ref.id)).arg(clip->notes().size()));
 	}
 
 	clip->addJournalCheckPoint();
@@ -102,7 +102,7 @@ ControlResult snapNotes(const QJsonObject& args)
 	// NOW, counted with the engine's own predicate.
 	const int inScale = countNotesInScale(*clip, resolved.classes);
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("scope"), scopeName(scope));
 	result.insert(QStringLiteral("root"), resolved.root);
@@ -118,13 +118,13 @@ ControlResult snapNotes(const QJsonObject& args)
 		static_cast<int>(clip->notes().size()) - inScale);
 
 	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	before.insert(QStringLiteral("clip"), clipId(ref.id));
 	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	before.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 	before.insert(QStringLiteral("root"), resolved.root);
 	before.insert(QStringLiteral("scale"), resolved.scale);
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 	inverseArgs.insert(QStringLiteral("scope"), scopeName(scope));
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(before, QStringLiteral("control.undo"), inverseArgs, true,

@@ -224,7 +224,7 @@ QJsonObject chordProgressionSchema()
 QJsonObject chordClipBefore(const ClipRef& ref, const MidiClip& clip)
 {
 	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	before.insert(QStringLiteral("clip"), clipId(ref.id));
 	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	before.insert(QStringLiteral("note_count"), static_cast<int>(clip.notes().size()));
 	return before;

@@ -320,7 +320,7 @@ void registerCompAssign(ControlRegistry& registry)
 				QStringLiteral("%1 has no take lane %2 (its lanes: %3); add one with "
 					"comp.lane_add").arg(trackIdOf(ref.track)).arg(lane).arg(laneIndexList(model)));
 		}
-		const QString clipIdText = clipId(ref.ordinal);
+		const QString clipIdText = clipId(ref.id);
 		const int previous = ref.clip->laneIndex();
 
 		ref.clip->addJournalCheckPoint();

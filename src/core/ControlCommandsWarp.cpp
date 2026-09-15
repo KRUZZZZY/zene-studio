@@ -107,7 +107,7 @@ QJsonArray markerListJson(const SampleClip& clip)
 QJsonObject warpState(const ClipRef& ref, const SampleClip& clip)
 {
 	QJsonObject out;
-	out.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	out.insert(QStringLiteral("clip"), clipId(ref.id));
 	out.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	out.insert(QStringLiteral("warped"), !clip.warpMarkers().empty());
 	out.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
@@ -127,7 +127,7 @@ QJsonObject warpState(const ClipRef& ref, const SampleClip& clip)
 QJsonObject warpBefore(const ClipRef& ref, const SampleClip& clip)
 {
 	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	before.insert(QStringLiteral("clip"), clipId(ref.id));
 	before.insert(QStringLiteral("markers"), markerListJson(clip));
 	before.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
 	before.insert(QStringLiteral("source_tempo"), static_cast<double>(clip.sourceTempo()));

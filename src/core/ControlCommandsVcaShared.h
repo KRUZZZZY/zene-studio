@@ -69,7 +69,7 @@
 #include "Clip.h"            // control::clipState()'s object, and a moved clip's own state
 #include "ControlEdit.h"       // control::resolveTrack()
 #include "ControlRegistry.h"   // ControlResult, ControlErrorKind
-#include "ControlVocabulary.h" // control::channelId(), control::trackId(), idToIndex()
+#include "ControlVocabulary.h" // control::channelIdOf(), control::trackId(), idToIndex()
 #include "Engine.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -142,9 +142,16 @@ inline QJsonObject groupState(VcaGroup* group)
 	for (mix_ch_t member : group->members())
 	{
 		QJsonObject entry;
-		entry.insert(QStringLiteral("channel"), control::channelId(member));
+		MixerChannel* channel = Engine::mixer()->mixerChannel(member);
+		// The channel's PERSISTENT id (SPEC-stable-ids.md slice 2), read off
+		// the object the position names: the membership itself is stored as
+		// positions (VcaGroup::members() is a list of mix_ch_t, and
+		// Mixer::refreshGroups walks channels by position), but the id a
+		// caller is handed is the channel's OWN, so it still names that
+		// channel after a sibling channel is deleted.
+		entry.insert(QStringLiteral("channel"), control::channelIdOf(channel));
 		entry.insert(QStringLiteral("gain_for_member"),
-			static_cast<double>(Engine::mixer()->mixerChannel(member)->vcaGain()));
+			static_cast<double>(channel->vcaGain()));
 		members.append(entry);
 	}
 	out.insert(QStringLiteral("members"), members);
@@ -241,9 +248,10 @@ inline int moveLockedClip(LockedEditResult* out, Track* track, Clip* clip, tick_
 
 /*! Resolve the `channel` argument of vca.assign / vca.unassign.
  *
- *  `ch-<n>` is the mixer's own grammar (`mixer.*` writes it and
- *  MixerChannel::index() is the number), so the id form is not this group's to
- *  invent - only the REFUSALS are, and they say what a GROUP is allowed to hold
+ *  `ch-<n>` is the mixer's own grammar and the number in it is the channel's
+ *  PERSISTENT id (MixerChannel::id(), SPEC-stable-ids.md slice 2) - the same
+ *  number mixer.get_state reports - so the id form is not this group's to
+ *  invent; only the REFUSALS are, and they say what a GROUP is allowed to hold
  *  rather than what a mixer channel is: a group never takes master (the mix bus
  *  is not a member of anything) and never takes a channel that already belongs
  *  to another group. The second rule is VcaGroup::addMember's own ("a channel is
@@ -255,31 +263,52 @@ inline MixerChannel* memberChannel(const QJsonObject& args, VcaGroup* group, Con
 {
 	Mixer* mixer = Engine::mixer();
 	const QString id = args.value(QStringLiteral("channel")).toString();
-	const int index = control::idToIndex(id, QStringLiteral("ch-"));
-	if (index < 0)
+	const int wanted = control::idToIndex(id, QStringLiteral("ch-"));
+	if (wanted < 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is not a channel id of the form ch-<n>").arg(id));
 		return nullptr;
 	}
-	if (index >= static_cast<int>(mixer->numChannels()))
+	// By id, not by position (SPEC-stable-ids.md slice 2): the number names the
+	// channel OBJECT (MixerChannel::id()), which is what the rest of the mixer
+	// surface now reports, so the channel a vca.assign names is the channel the
+	// caller read. No positional fallback - every channel carries an id from
+	// construction, so one could only ever resolve a stale position.
+	MixerChannel* channel = nullptr;
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* candidate = mixer->mixerChannel(i);
+		if (candidate != nullptr && candidate->id() == wanted)
+		{
+			channel = candidate;
+			break;
+		}
+	}
+	if (channel == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no mixer channel %1 (the mixer has %2)")
 				.arg(id).arg(static_cast<int>(mixer->numChannels())));
 		return nullptr;
 	}
-	if (index == 0)
+	// Master is refused by IDENTITY (isMaster() is the channel's position 0,
+	// the mix bus itself) and not by the number read off the wire: ch-0 is the
+	// master's id in a fresh project, but an id is not a position any more.
+	if (channel->isMaster())
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("ch-0 is the master channel and cannot be a group member: a group "
 				"scales the channels that feed the master"));
 		return nullptr;
 	}
-	MixerChannel* channel = mixer->mixerChannel(index);
-	if (group != nullptr && !group->contains(static_cast<mix_ch_t>(index)))
+	// The membership itself stays the group's own bookkeeping, which is a
+	// channel INDEX (VcaGroup::members() is a list of mix_ch_t positions, and
+	// Mixer::refreshGroups walks the channels by position).
+	const mix_ch_t channelIndex = static_cast<mix_ch_t>(channel->index());
+	if (group != nullptr && !group->contains(channelIndex))
 	{
-		if (VcaGroup* holder = mixer->vcaGroupForChannel(static_cast<mix_ch_t>(index)))
+		if (VcaGroup* holder = mixer->vcaGroupForChannel(channelIndex))
 		{
 			*error = ControlResult::failure(ControlErrorKind::Refused,
 				QStringLiteral("%1 already belongs to %2; a channel is in at most one group, "

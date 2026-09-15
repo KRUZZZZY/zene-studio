@@ -177,7 +177,7 @@ ControlResult grooveExtract(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("no groove could be read from %1: it carries no note a slot can be "
-				"measured from").arg(clipId(ref.ordinal)));
+				"measured from").arg(clipId(ref.id)));
 	}
 
 	const QString before = pool->toXml();
@@ -205,7 +205,7 @@ ControlResult grooveExtract(const QJsonObject& args)
 	result.insert(QStringLiteral("groove"), grooveJson(captured, true));
 	result.insert(QStringLiteral("replaced"), replaced);
 	result.insert(QStringLiteral("notes_read"), notesRead);
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("__transaction"), groovePoolInverse(before,
 		hadPrevious ? QStringLiteral("groove.set") : QStringLiteral("groove.remove"),

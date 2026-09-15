@@ -532,6 +532,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHostChunking.cpp
+src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
@@ -831,5 +832,6 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
+tests/control-stable-ids-slice2.py
 tools/local-ci.sh
 tools/ncpu-shim.c

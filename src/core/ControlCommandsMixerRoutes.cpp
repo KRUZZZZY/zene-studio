@@ -106,7 +106,7 @@ ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("the mixer refused to create %1 -> %2")
-				.arg(channelId(fromIndex), channelId(toIndex)));
+				.arg(channelIdOf(ends.from), channelIdOf(ends.to)));
 	}
 
 	QJsonObject result = mixerRouteResult(ends, route, before);
@@ -114,8 +114,8 @@ ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
 									   : QStringLiteral("mixer.route_to");
 	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("channel"), channelId(fromIndex));
-	inverseArgs.insert(QStringLiteral("to"), channelId(toIndex));
+	inverseArgs.insert(QStringLiteral("channel"), channelIdOf(ends.from));
+	inverseArgs.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	QJsonObject transaction = transactionPayload(before,
 		existed ? inverseOp : QStringLiteral("mixer.route_remove"),
 		inverseArgs, true,
@@ -171,12 +171,12 @@ ControlResult handleSidechainWrite(const QJsonObject& args)
 			QStringLiteral("the mixer refused a sidechain send %1 -> %2: the master cannot send, "
 				"or the route would close a cycle made of sidechain sends alone (a sidechain edge "
 				"never creates a circular wait, so the mixer refuses that one outright)")
-				.arg(channelId(fromIndex), channelId(toIndex)));
+				.arg(channelIdOf(ends.from), channelIdOf(ends.to)));
 	}
 
 	QJsonObject result;
-	result.insert(QStringLiteral("from"), channelId(fromIndex));
-	result.insert(QStringLiteral("to"), channelId(toIndex));
+	result.insert(QStringLiteral("from"), channelIdOf(ends.from));
+	result.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	result.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
 	result.insert(QStringLiteral("tap_point"), sidechainTapPointName(route->mode()));
 	result.insert(QStringLiteral("deferred"), route->deferred());
@@ -185,8 +185,8 @@ ControlResult handleSidechainWrite(const QJsonObject& args)
 
 	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("channel"), channelId(fromIndex));
-	inverseArgs.insert(QStringLiteral("to"), channelId(toIndex));
+	inverseArgs.insert(QStringLiteral("channel"), channelIdOf(ends.from));
+	inverseArgs.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	QJsonObject transaction = transactionPayload(before,
 		existed ? QStringLiteral("mixer.sidechain_to")
 				: QStringLiteral("UNIMPLEMENTED: remove this sidechain send"),
@@ -212,7 +212,7 @@ ControlResult removeSidechainSend(Mixer* mixer, const RoutingEnds& ends)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no sidechain send from %1 to %2")
-				.arg(channelId(fromIndex), channelId(toIndex)));
+				.arg(channelIdOf(ends.from), channelIdOf(ends.to)));
 	}
 	const QJsonObject before = mixerSidechainBeforeState(route);
 	const float amount = static_cast<float>(route->amount()->value());
@@ -228,12 +228,12 @@ ControlResult removeSidechainSend(Mixer* mixer, const RoutingEnds& ends)
 	QJsonObject result;
 	result.insert(QStringLiteral("removed"), true);
 	result.insert(QStringLiteral("sidechain"), true);
-	result.insert(QStringLiteral("from"), channelId(fromIndex));
-	result.insert(QStringLiteral("to"), channelId(toIndex));
+	result.insert(QStringLiteral("from"), channelIdOf(ends.from));
+	result.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	QJsonObject transaction = transactionPayload(before,
 		QStringLiteral("mixer.sidechain_to"),
-		QJsonObject{{QStringLiteral("channel"), channelId(fromIndex)},
-			{QStringLiteral("to"), channelId(toIndex)},
+		QJsonObject{{QStringLiteral("channel"), channelIdOf(ends.from)},
+			{QStringLiteral("to"), channelIdOf(ends.to)},
 			{QStringLiteral("amount"), static_cast<double>(amount)},
 			{QStringLiteral("tap_point"), sidechainTapPointName(mode)}},
 		true,
@@ -261,7 +261,7 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("no send from %1 to %2 (read %1's sends with pdc.report or "
-				"mixer.get_state)").arg(channelId(fromIndex), channelId(toIndex)));
+				"mixer.get_state)").arg(channelIdOf(ends.from), channelIdOf(ends.to)));
 	}
 	const QJsonObject before = mixerRouteBeforeState(route);
 	const float amount = static_cast<float>(route->amount()->value());
@@ -276,12 +276,12 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 	QJsonObject result;
 	result.insert(QStringLiteral("removed"), true);
 	result.insert(QStringLiteral("sidechain"), false);
-	result.insert(QStringLiteral("from"), channelId(fromIndex));
-	result.insert(QStringLiteral("to"), channelId(toIndex));
+	result.insert(QStringLiteral("from"), channelIdOf(ends.from));
+	result.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	QJsonObject transaction = transactionPayload(before,
 		QStringLiteral("mixer.route_to"),
-		QJsonObject{{QStringLiteral("channel"), channelId(fromIndex)},
-			{QStringLiteral("to"), channelId(toIndex)},
+		QJsonObject{{QStringLiteral("channel"), channelIdOf(ends.from)},
+			{QStringLiteral("to"), channelIdOf(ends.to)},
 			{QStringLiteral("amount"), static_cast<double>(amount)},
 			{QStringLiteral("pre_fader"), preFader}},
 		true,

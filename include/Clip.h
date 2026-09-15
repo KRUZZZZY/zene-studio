@@ -28,10 +28,18 @@
 #include <optional>
 
 #include <QColor>
+#include <QDomElement>
 
 #include "AutomatableModel.h"
 #include "ClipEdits.h"
 
+// GLOBAL scope, never inside namespace lmms: a `class QDomDocument;` declared
+// after `namespace lmms {` declares the DIFFERENT type lmms::QDomDocument, and
+// every saveState/saveSettings signature parsed after it silently stops
+// overriding the one SerializingObject declares with the global type - the
+// whole model layer then fails to compile with "'override', but does not
+// override" (measured on the first cut of this slice).
+class QDomDocument;
 
 namespace lmms
 {
@@ -55,6 +63,40 @@ class LMMS_EXPORT Clip : public Model, public JournallingObject
 public:
 	Clip( Track * track );
 	~Clip() override;
+
+	/*! The clip's STABLE ID - the number in `clip-<n>` (SPEC-stable-ids.md
+	 *  slice 2). Assigned once, in the constructor, and never changed while the
+	 *  clip is alive; written to the project file as an `id` ATTRIBUTE on the
+	 *  clip's own element and taken back by restoreState, so a cached
+	 *  `clip-<n>` still names this clip after a sibling clip is inserted,
+	 *  deleted, reordered or undone - and after a save/open cycle.
+	 *
+	 *  An ATTRIBUTE and not a child element, for the reason Track::saveTrack
+	 *  records for the track id: every clip loader walks its element's children
+	 *  (MidiClip::loadSettings turns an unrecognised child into a Note), so a
+	 *  child element would make every clip grow a phantom note on load.
+	 */
+	int id() const { return m_id; }
+	//! Overrides the constructor's id with a file's value. Raises the project
+	//! counter past \a id so a retired number is never handed out again.
+	void setId(int id);
+
+	//! SerializingObject: the clip's own element plus the persistent `id`
+	//! attribute. ONE override for all four clip types (midiclip, sampleclip,
+	//! patternclip, automationclip) - none of them overrides saveState, so
+	//! every clip that is written to a project file carries its id. It goes
+	//! through JournallingObject::saveState (the journal node every undo step
+	//! is recorded against must stay in the element) and writes the id ONLY
+	//! when the element is part of a document, never in a copy payload - see
+	//! Clip.cpp and ProjectIds::isDocumentElement.
+	QDomElement saveState( QDomDocument & doc, QDomElement & parent ) override;
+	//! JournallingObject: loadSettings() plus the `id` attribute. A file that
+	//! carries one keeps it; a legacy file that does not keeps the number the
+	//! constructor handed out - deterministic, because the load walks the
+	//! containers and their clips in document order - and the assignment is
+	//! COUNTED, so project.open reports it as `ids_assigned` instead of
+	//! upgrading a file silently.
+	void restoreState( const QDomElement & element ) override;
 
 	inline Track * getTrack() const
 	{
@@ -229,6 +271,13 @@ protected:
 private:
 	Track * m_track;
 	QString m_name;
+
+	/*! The clip's stable id: the number in `clip-<n>`. Handed out once by the
+	 *  constructor through ProjectIds - the same project-scoped counter the
+	 *  track ids come from, so `next-id` on the project root covers both - and
+	 *  replaced by the file's value on a project load (see saveState /
+	 *  restoreState). */
+	int m_id;
 
 	TimePos m_startPosition;
 	TimePos m_length;

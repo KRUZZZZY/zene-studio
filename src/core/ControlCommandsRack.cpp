@@ -160,7 +160,7 @@ void registerRackAddChain(ControlRegistry& registry)
 		if (channel == nullptr) { return error; }
 		Rack& rack = channel->m_rack;
 		const int before = rack.chainCount();
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 
 		// A created chain has no before-state to restore, so the inverse is the
 		// OPERATION (SPEC A16 deliverable 5) - one action step, through the same
@@ -246,7 +246,7 @@ void registerRackRemoveChain(ControlRegistry& registry)
 
 		const int before = rack.chainCount();
 		const QString stateXml = captureChainXml(*chain);
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		rack.removeChain(index);
 
 		QJsonObject beforeState;
@@ -315,7 +315,7 @@ void registerRackSetSelected(ControlRegistry& registry)
 		}
 
 		const int previous = rack.selectedChain();
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		addSelectorUndoStep(channelIdText, previous, index);
 		rack.setSelectedChain(index);
 

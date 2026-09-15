@@ -141,7 +141,7 @@ ControlResult chordDetect(const QJsonObject& args)
 	for (const ChordDetect::ChordMatch& match : matches) { chords.append(matchJson(match)); }
 
 	QJsonObject result;
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("count"), static_cast<int>(matches.size()));
 	result.insert(QStringLiteral("window_ticks"), static_cast<qint64>(options.windowTicks));

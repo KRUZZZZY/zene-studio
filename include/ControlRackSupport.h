@@ -88,8 +88,16 @@ LMMS_EXPORT QJsonObject rackState(MixerChannel* channel, Rack& rack);
  */
 struct MacroRestore
 {
-	//! The mixer channel the rack belongs to, re-resolved at undo time.
-	int channelIndex = 0;
+	/*! The mixer channel the rack belongs to, as the "ch-<n>" id this surface
+	 *  addresses it by, re-resolved at undo time. The ID and not the channel's
+	 *  POSITION (SPEC-stable-ids.md slice 2): a step recorded against a
+	 *  position would write its parameters into a DIFFERENT channel once a
+	 *  sibling channel was deleted or the mixer reordered, which is the defect
+	 *  the persistent id exists to remove - and the id is what the command's
+	 *  reply and its transaction carry, so the step and the wire agree. It is
+	 *  the string form because that is what resolveRack() takes.
+	 */
+	QString channelId;
 	int macro = 0;
 	float value = 0.0f;
 	std::vector<std::pair<RackMacroTarget, float>> parameters;

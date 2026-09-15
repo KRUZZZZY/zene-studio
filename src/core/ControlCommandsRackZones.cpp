@@ -131,7 +131,7 @@ void registerZoneAdd(ControlRegistry& registry)
 		const RackZone zone = zoneFromArgs(args);
 		if (!isValidRackZone(zone, rack.chainCount())) { return zoneRefusal(zone, rack.chainCount()); }
 
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		const int before = rack.zones().zoneCount();
 		const int index = rack.zones().addZone(zone);
 		// A created zone has no before-state; the inverse is the operation, one
@@ -202,7 +202,7 @@ void registerZoneRemove(ControlRegistry& registry)
 		if (index < 0) { return error; }
 
 		const RackZone zone = *rack.zones().zone(index);
-		const QString channelIdText = channelId(channel->index());
+		const QString channelIdText = channelIdOf(channel);
 		rack.zones().removeZone(index);
 		// A zone is pure data, so re-inserting the captured one at its index
 		// restores the list exactly - including where it sits, which is what
@@ -272,7 +272,7 @@ void registerZoneResolve(ControlRegistry& registry)
 		const int index = rack.zones().resolve(key, velocity);
 
 		QJsonObject result;
-		result.insert(QStringLiteral("channel"), channelId(channel->index()));
+		result.insert(QStringLiteral("channel"), channelIdOf(channel));
 		result.insert(QStringLiteral("key"), key);
 		result.insert(QStringLiteral("velocity"), velocity);
 		result.insert(QStringLiteral("matched"), index >= 0);

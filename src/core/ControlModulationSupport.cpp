@@ -33,13 +33,41 @@
 #include "ControlRackSupport.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "RackMacros.h"
 #include "Song.h"
 
 namespace lmms
 {
 
-using namespace control;  // channelId()/idToIndex() live in ControlVocabulary.h
+using namespace control;  // channelIdOf()/idToIndex() live in ControlVocabulary.h
+
+namespace
+{
+
+/*! The mixer channel a route's `channel` field names, or nullptr.
+ *
+ *  ModulationRoute::channel carries the persistent ch- id the route was
+ *  created with (modulationRouteFromArgs parses it out of the "ch-<n>"
+ *  argument, and the modulation layer saves the same number in its <route>
+ *  element), so the lookup is BY ID (SPEC-stable-ids.md slice 2): a modulator
+ *  keeps driving the channel the caller named after a sibling channel is
+ *  deleted or the mixer is reordered. It is one function because this file
+ *  needs it in both directions - to resolve the target and to report the id.
+ */
+MixerChannel* routeChannel(const ModulationRoute& route)
+{
+	Mixer* mixer = Engine::mixer();
+	if (mixer == nullptr) { return nullptr; }
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* channel = mixer->mixerChannel(i);
+		if (channel != nullptr && channel->id() == route.channel) { return channel; }
+	}
+	return nullptr;
+}
+
+} // namespace
 
 ModulationLayerPublisher& songModulationLayer()
 {
@@ -52,7 +80,25 @@ ModulationLayerPublisher& songModulationLayer()
 AutomatableModel* modulationTargetModel(const ModulationRoute& route, QString* why)
 {
 	ControlResult error;
-	Rack* rack = resolveRack(channelId(route.channel), &error);
+	MixerChannel* channel = routeChannel(route);
+	if (channel == nullptr)
+	{
+		// The route names a channel this mixer does not have (a project loaded
+		// with a route whose channel is gone, or a channel deleted after the
+		// route was created): there is no rack to resolve a target on, and
+		// saying so beats resolving an empty id.
+		if (why != nullptr)
+		{
+			*why = QStringLiteral("no mixer channel for this route (the mixer has %1)")
+				.arg(Engine::mixer() == nullptr
+					? 0 : static_cast<int>(Engine::mixer()->numChannels()));
+		}
+		return nullptr;
+	}
+	// The rack is resolved from the channel OBJECT's own id (channelIdOf), not
+	// from the raw number the route carries: resolveRack() addresses a channel
+	// by its persistent id, the same rule the rest of the mixer surface uses.
+	Rack* rack = resolveRack(channelIdOf(channel), &error);
 	if (rack == nullptr)
 	{
 		if (why != nullptr) { *why = error.errorMessage; }
@@ -109,7 +155,10 @@ QJsonObject modulationRouteJson(const ModulationRoute& route, int index)
 {
 	QJsonObject out;
 	out.insert(QStringLiteral("index"), index);
-	out.insert(QStringLiteral("channel"), channelId(route.channel));
+	// The channel's own persistent id, looked up from the id the route carries
+	// (empty when the channel is gone - the same "no object, no id" rule
+	// channelIdOf/trackIdOf follow), never the raw stored number.
+	out.insert(QStringLiteral("channel"), channelIdOf(routeChannel(route)));
 	out.insert(QStringLiteral("chain"), route.chain);
 	out.insert(QStringLiteral("effect"), route.effect);
 	out.insert(QStringLiteral("parameter"), route.parameter);
@@ -191,6 +240,10 @@ ModulatorSource modulationSourceFromArgs(const QJsonObject& args, const Modulato
 ModulationRoute modulationRouteFromArgs(const QJsonObject& args)
 {
 	ModulationRoute route;
+	// The number in the "ch-<n>" argument IS the channel's persistent id
+	// (SPEC-stable-ids.md slice 2; the rest of the mixer surface reports the
+	// same number), and it is stored and saved as that id - resolution in
+	// this file and in the modulation layer looks the id up, never a position.
 	route.channel = idToIndex(args.value(QStringLiteral("channel")).toString(), QStringLiteral("ch-"));
 	route.chain = static_cast<int>(args.value(QStringLiteral("chain")).toDouble());
 	route.effect = static_cast<int>(args.value(QStringLiteral("effect")).toDouble());

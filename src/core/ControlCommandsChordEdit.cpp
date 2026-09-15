@@ -217,7 +217,7 @@ ControlResult chordDetectToTrack(const QJsonObject& args)
 	ClipRef ref;
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	if (clip == nullptr) { return error; }
-	if (clip->notes().empty()) { return noNotesRefusal(clipId(ref.ordinal)); }
+	if (clip->notes().empty()) { return noNotesRefusal(clipId(ref.id)); }
 	ChordDetect::DetectOptions options;
 	if (!readDetectOptions(args, &options, &error)) { return error; }
 	const bool append = args.value(QStringLiteral("append")).toBool(false);
@@ -251,7 +251,7 @@ ControlResult chordDetectToTrack(const QJsonObject& args)
 	recordChordTrackRestore(before);
 
 	QJsonObject result = chordTrackState(*track);
-	result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("clip_track"), trackIdOf(ref.track));
 	result.insert(QStringLiteral("detected"), static_cast<int>(matches.size()));
 	result.insert(QStringLiteral("written"), written);

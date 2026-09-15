@@ -80,7 +80,7 @@ void registerArrangementGetState(ControlRegistry& registry)
 			QJsonArray clipIds;
 			for (const control::ClipRef& ref : refs)
 			{
-				if (ref.trackIndex == i) { clipIds.append(control::clipId(ref.ordinal)); }
+				if (ref.trackIndex == i) { clipIds.append(control::clipId(ref.id)); }
 			}
 			entry.insert(QStringLiteral("clips"), clipIds);
 			entry.insert(QStringLiteral("selected"), control::selectedClipId().isEmpty() ? false

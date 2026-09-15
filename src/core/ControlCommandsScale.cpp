@@ -146,7 +146,7 @@ ControlResult getState(const QJsonObject& args)
 		if (clip == nullptr) { return error; }
 		const int total = static_cast<int>(clip->notes().size());
 		const int inScale = countNotesInScale(*clip, resolved.classes);
-		result.insert(QStringLiteral("clip"), clipId(ref.ordinal));
+		result.insert(QStringLiteral("clip"), clipId(ref.id));
 		result.insert(QStringLiteral("track"), trackIdOf(ref.track));
 		result.insert(QStringLiteral("note_count"), total);
 		result.insert(QStringLiteral("notes_in_scale"), inScale);
