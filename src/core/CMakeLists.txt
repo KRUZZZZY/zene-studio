@@ -236,6 +236,23 @@ set(LMMS_SRCS
 	core/ControlChainPresetSupport.cpp
 	core/ControlCommandsChain.cpp
 	core/ControlCommandsChainEdit.cpp
+	# The chord engine (feature row 35): the read-only view over the piano roll's
+	# existing ChordTable, the persistent chord track, the detector and the
+	# seeded progression generator. No new vocabulary: every name comes from
+	# InstrumentFunctionNoteStacking::ChordTable. See docs/CHORD-TRACK.md.
+	core/ChordVocabulary.cpp
+	core/ChordTrack.cpp
+	core/ChordDetect.cpp
+	core/ChordProgression.cpp
+	# ... and its command group: the read half + the shared wire helpers, then
+	# the track-editing verbs and the two generators (the automation, warp and
+	# chain groups' split - and here the split is also the A16 seam: the track
+	# verbs record an action checkpoint, the generators reverse through the
+	# clip's own checkpoint).
+	core/ControlChordSupport.cpp
+	core/ControlCommandsChord.cpp
+	core/ControlCommandsChordEdit.cpp
+	core/ControlCommandsChordWrite.cpp
 	core/ControlEditSupport.cpp
 	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
@@ -272,6 +289,11 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	# The chord group's nine rows (feature row 35): three not_mutating reads, four
+	# recorded-action true_inverse rows for the track edits, two live-checkpoint
+	# rows for the generators. A GROUP file on the same seam as the routing and
+	# mastering rows above - the class comes from each row, not from its file.
+	core/ControlReversibilityTableChord.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp

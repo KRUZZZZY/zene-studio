@@ -172,6 +172,12 @@ void registerControlCommands(ControlRegistry& registry)
 	// meter are in every configuration, so its ids are honest in every one.
 	registerMasteringCommands(registry);
 	registerMasteringRunCommands(registry);
+	// The chord track, its detection and its generators (feature row 35). No
+	// compile-time switch: the track is plain project state on the Song, the
+	// vocabulary is the piano roll's own ChordTable and the arithmetic is a
+	// function over a note list, so its ids are honest in every configuration
+	// (docs/CHORD-TRACK.md, include/ControlRegistryGroups.h).
+	registerChordCommands(registry);
 }
 
 } // namespace lmms

@@ -173,6 +173,15 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The `chord.*` group's nine rows (feature row 35, docs/CHORD-TRACK.md): the
+ *  three reads are not_mutating, the four track edits are recorded-action
+ *  true_inverse rows (the track is project state no Song checkpoint carries)
+ *  and the two generators are live-checkpoint true_inverse rows (they write
+ *  notes into a MidiClip, whose own checkpoint restores them). A GROUP file on
+ *  the same seam as the folder, vca, routing and mastering files - the class
+ *  comes from each row, not from its file. Joined into
+ *  reversibilityRowTable(). */
+LMMS_EXPORT const ReversibilityRow* reversibilityChordRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

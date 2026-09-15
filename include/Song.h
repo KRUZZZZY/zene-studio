@@ -42,6 +42,7 @@
 #include "TempoMap.h"
 #include "ModulationLayer.h"
 #include "GroovePool.h"
+#include "ChordTrack.h"
 #include "Timeline.h"
 #include "TrackContainer.h"
 #include "VstSyncController.h"
@@ -427,6 +428,17 @@ public:
 	GroovePool& groovePool() { return m_groovePool; }
 	const GroovePool& groovePool() const { return m_groovePool; }
 
+	/*! The chord track: the project's harmony written down as an ENTITY - one
+	 *  chord per position, named from the vocabulary this product already has
+	 *  (include/ChordVocabulary.h is a view over ChordTable; the piano roll's
+	 *  chord and scale selectors read the same table). It is what
+	 *  chord.detect_to_track writes, what chord.track_write turns into notes,
+	 *  and it persists as ONE <chord-track> element inside <song>, written only
+	 *  when it holds a chord (include/ChordTrack.h). Nothing here is consulted
+	 *  from a render path: the track is edited by commands and read by them. */
+	ChordTrack& chordTrack() { return m_chordTrack; }
+	const ChordTrack& chordTrack() const { return m_chordTrack; }
+
 	//! The tempo in force at \a tick: the map's event at or before it, else the
 	//! global tempo model (the map's own out-of-range rule).
 	int tempoAtTick(tick_t tick) const;
@@ -591,6 +603,11 @@ private:
 	 *  the notes are what plays, so the pool itself is read only by the
 	 *  groove.* commands and the project writer. */
 	GroovePool m_groovePool;
+	/*! The project's chord track. Project state beside the groove pool, with no
+	 *  audio-thread reader: a chord track is a way of writing harmony down (and
+	 *  of generating notes FROM it), and the notes are what plays. Read only by
+	 *  the chord.* commands and the project writer. */
+	ChordTrack m_chordTrack;
 	int m_oldTicksPerBar;
 	IntModel m_masterVolumeModel;
 	IntModel m_masterPitchModel;

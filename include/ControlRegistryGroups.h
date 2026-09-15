@@ -283,6 +283,41 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+
+/*! The `chord.*` group (feature row 35: "Chord track, chord detection,
+ *  progression tools, generators"): chord.get_state / chord.detect /
+ *  chord.progression_list, then the track edits (chord.set / chord.remove /
+ *  chord.clear / chord.detect_to_track) and the two generators
+ *  (chord.track_write / chord.progression_generate).
+ *
+ *  The engine half is include/ChordTrack.h (an ordered, persistent chord track
+ *  written as ONE <chord-track> element inside <song>),
+ *  include/ChordDetect.h (what a clip's notes spell) and
+ *  include/ChordProgression.h (the catalogue and the SEEDED generator), and
+ *  NONE of them is a new scale or chord vocabulary: every name they use comes
+ *  from InstrumentFunctionNoteStacking::ChordTable - the 95 entries behind the
+ *  piano roll's own chord and scale selectors - through
+ *  include/ChordVocabulary.h, which is a read-only view over it. This group is
+ *  what makes any of it drivable, and it is the ONLY way to reach it: there is
+ *  no chord-track lane, no chord ruler and no generator panel in this
+ *  release's interface (docs/CHORD-TRACK.md).
+ *
+ *  Two halves in two translation units (the automation, warp, vca and
+ *  chain-preset groups' read/edit split): ControlCommandsChord.cpp holds the
+ *  three reads and the group's ONLY registration point, and
+ *  ControlCommandsChordEdit.cpp the six writers. The split is also a
+ *  reversibility split: the four track verbs record an ACTION checkpoint (the
+ *  track is project state the Song's journal checkpoint does not carry), the
+ *  two generators reverse through the CLIP's own journal checkpoint. */
+LMMS_EXPORT void registerChordCommands(ControlRegistry& registry);
+//! chord.set / chord.remove / chord.clear / chord.detect_to_track - the four
+//! TRACK-editing verbs (their inverse is a recorded action checkpoint).
+LMMS_EXPORT void registerChordEditCommands(ControlRegistry& registry);
+//! chord.track_write / chord.progression_generate - the group's two GENERATORS,
+//! in their own translation unit (this file's own split, and the group's
+//! reversibility seam: they write notes into a clip, so their inverse is the
+//! clip's own journal checkpoint rather than a recorded action).
+LMMS_EXPORT void registerChordWriteCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

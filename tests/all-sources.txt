@@ -96,6 +96,10 @@ include/BrowserPeakCache.h
 include/BufferManager.h
 include/CPULoadWidget.h
 include/CaptionMenu.h
+include/ChordDetect.h
+include/ChordProgression.h
+include/ChordTrack.h
+include/ChordVocabulary.h
 include/Clip.h
 include/ClipEdits.h
 include/ClipView.h
@@ -108,6 +112,7 @@ include/ConfigManager.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
+include/ControlChordSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
@@ -909,6 +914,10 @@ src/core/BrowserMetadata.cpp
 src/core/BrowserPeakCache.cpp
 src/core/BrowserTagStore.cpp
 src/core/BufferManager.cpp
+src/core/ChordDetect.cpp
+src/core/ChordProgression.cpp
+src/core/ChordTrack.cpp
+src/core/ChordVocabulary.cpp
 src/core/Clip.cpp
 src/core/ClipEdits.cpp
 src/core/Clipboard.cpp
@@ -917,6 +926,7 @@ src/core/ConfigManager.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
+src/core/ControlChordSupport.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
@@ -926,6 +936,9 @@ src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
 src/core/ControlCommandsChain.cpp
 src/core/ControlCommandsChainEdit.cpp
+src/core/ControlCommandsChord.cpp
+src/core/ControlCommandsChordEdit.cpp
+src/core/ControlCommandsChordWrite.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipTrim.cpp
@@ -1010,6 +1023,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
@@ -1358,6 +1372,10 @@ tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
+tests/src/core/ChordDetectTest.cpp
+tests/src/core/ChordProgressionTest.cpp
+tests/src/core/ChordTestSupport.h
+tests/src/core/ChordTrackTest.cpp
 tests/src/core/ClipEditsTest.cpp
 tests/src/core/ClipFadesRenderTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
@@ -1366,6 +1384,8 @@ tests/src/core/ConfigMigrationTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlChainPresetTest.cpp
+tests/src/core/ControlChordCommandsTest.cpp
+tests/src/core/ControlChordWriteTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp

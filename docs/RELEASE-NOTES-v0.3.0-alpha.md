@@ -1263,3 +1263,53 @@ joins the routing surface's: the passive block and the live block are both at th
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the
 0.3.0 scope, plus the release-bar statements, are the responsibility of their own lanes and wave W12. This
 file grows as those land; it is not a summary of 0.3.0 and must not be read as one.
+
+## Chord track, chord detection, progression tools, generators (feature row 35)
+
+- **A chord TRACK that persists in the project.** An ordered list of chords — position, length,
+  root pitch class, the octave the root sounds in, the chord's name and the key it was written
+  in — saved as **one `<chord-track>` element inside `<song>`**, written **only when it holds a
+  chord**, so a project that never used one re-saves the bytes it always had, and cleared by
+  `Song::clearProject()`. The position is the key (a set at an occupied tick replaces), `length`
+  0 means "hold until the next chord", and a name outside the vocabulary is refused rather than
+  stored. Bounds: 64 events.
+- **No second scale vocabulary.** Every name — chord and scale — comes from
+  `InstrumentFunctionNoteStacking::ChordTable`, the 95 entries behind the piano roll's own chord
+  and scale selectors, through a read-only view (`include/ChordVocabulary.h`). This feature adds
+  no table; adding an entry to the piano roll's table adds it here.
+- **Chord DETECTION.** `chord.detect` reads a clip's notes, groups them into slices (notes that
+  start together; `window_ticks` for a strummed take), names each slice from the vocabulary with
+  its root, its root key, its bass, the tones it MISSES and the tones it ADDS (`exact` is false
+  when either is non-empty — a name is never rounded), and reports the clip's key. Proven on a
+  known clip: `ControlChordCommandsTest::aKnownClipDetectsTheChordItSpells` builds C-E-G through
+  `note.add` and reads back `Major`, root C, key 60, exact. `chord.detect_to_track` writes a
+  detection onto the track, and a detection that names nothing is refused rather than
+  half-written.
+- **Progression tools and a SEEDED, REPEATABLE generator.** `chord.progression_generate` walks a
+  named progression's SCALE DEGREES, builds each chord by stacking the scale's own tones in
+  thirds and names it from the table (`I-V-vi-IV` in C major is Major / Major / minor / Major),
+  then lays it out as block, arpeggio up, arpeggio down or broken, into a clip. The draws —
+  voicing, timing, velocity — are `NoteRandom::rollUnit` over the seed and each chord's own
+  identity, so **the same request with the same seed reproduces the take note for note and a
+  different seed gives a different one** (the repeatability pair, asserted in
+  `ChordProgressionTest` and again through the surface in `ControlChordCommandsTest`), while
+  `variation` 0 draws nothing and the seed decides nothing. `chord.track_write` turns the chord
+  track's own chords into notes under the same layout.
+- **Nine ids, all drivable, each with an A16 row.** `chord.get_state`, `chord.detect`,
+  `chord.progression_list` (reads); `chord.set`, `chord.remove`, `chord.clear`,
+  `chord.detect_to_track` (track edits, reversed by a recorded action checkpoint);
+  `chord.track_write`, `chord.progression_generate` (note generators, reversed by the clip's own
+  journal checkpoint). Rows in `src/core/ControlReversibilityTableChord.cpp`.
+- **Proof.** `ChordTrackTest`, `ChordDetectTest`, `ChordProgressionTest` (the engine arithmetic
+  with no Engine at all) and `ControlChordCommandsTest` (the surface: schemas, typed refusals,
+  both inverses through `control.undo`, the known-clip detection, the repeatability pair read off
+  the wire, and the project file with the element present when the track holds a chord and ABSENT
+  when it does not). Design and reproduction: `docs/CHORD-TRACK.md`.
+- **UI absence — one line: the chord track is drivable through the socket, not from the
+  interface.** There is no chord lane, no chord ruler and no generator panel; `grep -rniI
+  'ChordTrack\|chord-track' src/gui/` returns **0** hits, and `docs/KNOWN-LIMITATIONS.md` carries
+  the sentence and the bounds above.
+- **What this does NOT have, stated rather than implied:** no chord detection from AUDIO (the
+  detector reads notes), no time-varying key analysis (the key is one estimate for the whole note
+  list), no roman-numeral analysis of arbitrary chord sequences, and no chord track that sounds on
+  its own — it is harmony written down, and `chord.track_write` is what turns it into notes.

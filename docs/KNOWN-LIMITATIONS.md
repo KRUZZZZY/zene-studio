@@ -883,3 +883,20 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+**The chord track, its detection and its generators are drivable, and nothing in the interface
+shows or plays them.** `chord.*` is the only way to reach any of it: there is no chord lane, no
+chord ruler, no chord-edit popover and no generator panel in 0.3.0, and `grep -rniI
+'ChordTrack\|chord-track' src/gui/` returns **0** hits. What IS there is the entity (a chord
+track persisted as one `<chord-track>` element inside `<song>`, written only when it holds a
+chord), the detection (what a clip's notes spell, against the vocabulary the piano roll's own
+chord and scale selectors read — no second scale table exists in this fork) and two generators
+that write notes into a clip. The bounds, stated rather than implied: the track holds at most 64
+events; detection is from NOTES that sound together (not from audio, not over time — the key is
+one estimate for the whole note list, and a slice whose nearest vocabulary entry is not an exact
+match is reported with `exact: false` and the tones it misses and adds rather than rounded to a
+name); the generator's seed only decides the VOICINGS, the timing nudges and the velocity nudges
+that `variation` opens — with `variation` 0 the take is the progression itself and the seed
+decides nothing; and a chord track does not sound on its own (it is harmony written down, and
+`chord.track_write` is what turns it into notes). There is no roman-numeral analysis of arbitrary
+chord sequences and no chord detection from audio in this release.
