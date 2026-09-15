@@ -56,10 +56,7 @@ public:
 					const TimePos & _time, f_cnt_t offset = 0 ) override;
 
 	void processOutEvent( const MidiEvent& _me,
-					const TimePos & _time, f_cnt_t offset = 0 ) override
-	{
-		// No output yet
-	}
+					const TimePos & _time, f_cnt_t offset = 0 ) override;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _this ) override;
 	void loadSettings( const QDomElement & _this ) override;
@@ -80,6 +77,18 @@ public:
 		return m_midiPort;
 	}
 
+	// Soft-takeover: a hardware control only takes over when it crosses the
+	// stored value. Enabled per-controller so a surface can mix bound styles.
+	bool softTakeoverEnabled() const { return m_softTakeoverEnabled; }
+	void setSoftTakeoverEnabled(bool enabled);
+	void setSoftTakeoverTarget(float target); // 0..1
+	float softTakeoverTarget() const { return m_softTakeoverTarget; }
+	bool softTakeoverCaptured() const { return m_softTakeoverCaptured; }
+	void resetSoftTakeover();
+
+	// LED/feedback output: send the current value back to the controller.
+	bool feedbackEnabled() const { return m_feedbackEnabled; }
+	void setFeedbackEnabled(bool enabled);
 
 public slots:
 	gui::ControllerDialog* createDialog( QWidget * _parent ) override;
@@ -93,9 +102,14 @@ protected:
 
 	MidiPort m_midiPort;
 
-
 	float m_lastValue;
 	float m_previousValue;
+
+	bool m_softTakeoverEnabled = false;
+	bool m_softTakeoverCaptured = false;
+	float m_softTakeoverTarget = 0.0f;
+
+	bool m_feedbackEnabled = false;
 
 	friend class gui::ControllerConnectionDialog;
 	friend class AutoDetectMidiController;

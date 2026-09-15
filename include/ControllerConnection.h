@@ -92,6 +92,13 @@ public:
 
 	static void finalizeConnections();
 
+	//! Every live connection, in no particular order. Used by the controller
+	//! surface to enumerate current MIDI bindings for template save/load.
+	static const ControllerConnectionVector& connections()
+	{
+		return s_connections;
+	}
+
 	void saveSettings( QDomDocument & _doc, QDomElement & _this ) override;
 	void loadSettings( const QDomElement & _this ) override;
 

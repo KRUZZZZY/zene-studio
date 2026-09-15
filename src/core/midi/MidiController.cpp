@@ -45,7 +45,6 @@ MidiController::MidiController( Model * _parent ) :
 
 
 
-
 void MidiController::updateValueBuffer()
 {
 	if( m_previousValue != m_lastValue )
@@ -59,7 +58,6 @@ void MidiController::updateValueBuffer()
 	}
 	m_bufferLastUpdated = s_periods;
 }
-
 
 void MidiController::updateName()
 {
@@ -83,9 +81,34 @@ void MidiController::processInEvent(const MidiEvent& event, const TimePos& time,
 				(m_midiPort.inputChannel() == event.channel() + 1 || m_midiPort.inputChannel() == 0))
 			{
 				unsigned char val = event.controllerValue();
+				const float incoming = static_cast<float>(val) / 127.0f;
+
+				if (m_softTakeoverEnabled && !m_softTakeoverCaptured)
+				{
+					// Capture when the incoming value crosses the target,
+					// or is already very close to it (within 1 MIDI step).
+					const float epsilon = 1.0f / 127.0f;
+					if ((m_lastValue <= m_softTakeoverTarget && incoming >= m_softTakeoverTarget) ||
+					    (m_lastValue >= m_softTakeoverTarget && incoming <= m_softTakeoverTarget) ||
+					    std::abs(incoming - m_softTakeoverTarget) <= epsilon)
+					{
+						m_softTakeoverCaptured = true;
+					}
+					else
+					{
+						// Ignore: the hardware has not yet reached the stored value.
+						break;
+					}
+				}
+
 				m_previousValue = m_lastValue;
-				m_lastValue = static_cast<float>(val) / 127.0f;
+				m_lastValue = incoming;
 				emit valueChanged();
+
+				if (m_feedbackEnabled)
+				{
+					sendFeedback();
+				}
 			}
 			break;
 		}
@@ -95,6 +118,53 @@ void MidiController::processInEvent(const MidiEvent& event, const TimePos& time,
 	}
 }
 
+void MidiController::processOutEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
+{
+	m_midiPort.processOutEvent(event, time);
+}
+
+void MidiController::setSoftTakeoverEnabled(bool enabled)
+{
+	m_softTakeoverEnabled = enabled;
+	if (!enabled)
+	{
+		m_softTakeoverCaptured = false;
+	}
+}
+
+void MidiController::setSoftTakeoverTarget(float target)
+{
+	m_softTakeoverTarget = std::clamp(target, 0.0f, 1.0f);
+	m_softTakeoverCaptured = false;
+}
+
+void MidiController::resetSoftTakeover()
+{
+	m_softTakeoverCaptured = false;
+}
+
+void MidiController::setFeedbackEnabled(bool enabled)
+{
+	m_feedbackEnabled = enabled;
+	if (enabled)
+	{
+		// Ensure output is enabled on the port so feedback can travel.
+		if (!m_midiPort.isOutputEnabled())
+		{
+			m_midiPort.setMode(MidiPort::Mode::Duplex);
+		}
+		sendFeedback();
+	}
+}
+
+void MidiController::sendFeedback()
+{
+	const int channel = m_midiPort.realOutputChannel();
+	const int controller = m_midiPort.inputController();
+	if (controller < 0) { return; }
+	const int value = static_cast<int>(std::clamp(m_lastValue * 127.0f, 0.0f, 127.0f));
+	processOutEvent(MidiEvent(MidiControlChange, channel, controller, value), TimePos());
+}
 
 
 
@@ -114,9 +184,9 @@ void MidiController::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
 	Controller::saveSettings( _doc, _this );
 	m_midiPort.saveSettings( _doc, _this );
-
+	_this.setAttribute("softtakeover", m_softTakeoverEnabled ? "1" : "0");
+	_this.setAttribute("feedback", m_feedbackEnabled ? "1" : "0");
 }
-
 
 
 
@@ -125,7 +195,8 @@ void MidiController::loadSettings( const QDomElement & _this )
 	Controller::loadSettings( _this );
 
 	m_midiPort.loadSettings( _this );
-
+	m_softTakeoverEnabled = (_this.attribute("softtakeover", "0") == "1");
+	m_feedbackEnabled = (_this.attribute("feedback", "0") == "1");
 	updateName();
 }
 
@@ -136,7 +207,6 @@ QString MidiController::nodeName() const
 {
 	return( "Midicontroller" );
 }
-
 
 
 
