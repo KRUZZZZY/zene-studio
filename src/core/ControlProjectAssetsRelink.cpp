@@ -198,6 +198,11 @@ bool controlRelinkProjectAsset(const QString& projectPath, const QString& from, 
 	}
 
 	out->bytes = serialiseDocument(&document);
+	// An .mmpz is the same XML, qCompress'd (DataFile::writeFile writes exactly
+	// this for the mmpz/xptz extensions): writing the plain XML back into a
+	// .mmpz would produce a file the loader's qUncompress refuses, so the format
+	// the file arrived in is the format it leaves in.
+	if (format == QLatin1String("mmpz")) { out->bytes = qCompress(out->bytes); }
 	out->sha256 = controlSha256OfBytes(out->bytes);
 	return commitRelink(projectPath, dryRun, out, error);
 }

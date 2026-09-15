@@ -22,8 +22,7 @@
  *
  * The registered proof is THIS file, as the ctest ControlProjectArchiveTest
  * (tests/CMakeLists.txt): it drives the three ids through
- * ControlRegistry::invoke, the same entry the socket calls, so the ids, the
- * schemas, the contract rows and the measured effects are one test. A committed
+ * ControlRegistry::invoke, the same entry the socket calls. A committed
  * --control-socket transcript is NOT provided by this lane - the contract's
  * third item allows either - and that absence is stated in
  * docs/KNOWN-LIMITATIONS.md rather than implied away.
@@ -153,10 +152,7 @@ QString writeFixture(const QString& dir, const QString& projectName, bool intact
 	QStringList names{QStringLiteral("sample.wav"), QStringLiteral("clip.wav"),
 		QStringLiteral("sound.sf2"), QStringLiteral("slot.wav")};
 	if (intact) { names.append(QStringLiteral("gone.wav")); }
-	for (const QString& name : names)
-	{
-		writeBytes(dir + QLatin1Char('/') + name, fakeWave(32));
-	}
+	for (const QString& name : names) { writeBytes(dir + QLatin1Char('/') + name, fakeWave(32)); }
 	const QString project = dir + QLatin1Char('/') + projectName;
 	writeBytes(project, fixtureDocument(dir));
 	return project;
@@ -167,10 +163,7 @@ QJsonObject referenceWithRaw(const QJsonArray& references, const QString& raw)
 {
 	for (const QJsonValue& value : references)
 	{
-		if (value.toObject().value(QStringLiteral("raw")).toString() == raw)
-		{
-			return value.toObject();
-		}
+		if (value.toObject().value(QStringLiteral("raw")).toString() == raw) { return value.toObject(); }
 	}
 	return QJsonObject();
 }
@@ -202,7 +195,6 @@ private slots:
 		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
-
 	//! The group is on the wire: three ids, each with a schema, and the
 	//! mutating flag that decides whether a transaction is recorded for it.
 	void theThreeVerbsAreRegistered()
@@ -235,7 +227,6 @@ private slots:
 		QCOMPARE(relink.value(QStringLiteral("required")).toArray(),
 			(QJsonArray{QStringLiteral("project"), QStringLiteral("from"), QStringLiteral("to")}));
 	}
-
 	//! SPEC A16: one row per command, in the table, with the reason and the
 	//! mechanism filled in. relink is the true_inverse one, and its inverse is
 	//! automatic - no manual fallback is needed, which the empty fallback says.
@@ -261,7 +252,6 @@ private slots:
 			"the relink's inverse is automatic (a recorded action checkpoint), so its row must "
 			"not name a manual fallback");
 	}
-
 	//! THE NEGATIVE CONTROL. Every reference is on disk, so the missing list is
 	//! EMPTY and the counts say so; the one inline element is counted separately
 	//! and is not a reference.
@@ -298,7 +288,6 @@ private slots:
 			QCOMPARE(ref.value(QStringLiteral("sha256")).toString(), sha256Of(path));
 		}
 	}
-
 	//! The positive half: the four files that are gone are named by the value
 	//! the project STORES (so the caller can pass it straight back to relink),
 	//! including the legacy relative one, which resolves against the project's
@@ -337,7 +326,6 @@ private slots:
 		QCOMPARE(referenceWithRaw(references, QStringLiteral("gone.wav"))
 			.value(QStringLiteral("exists")).toBool(), false);
 	}
-
 	//! Hashing is the identity step: the digest is stable, and relinking
 	//! changes it, because the digest covers the reference set and its hashes.
 	void hashingIsStableAndChangesWithTheReferenceSet()
@@ -367,7 +355,6 @@ private slots:
 		QVERIFY2(after.result.value(QStringLiteral("digest")).toString() != digest,
 			"the digest did not move with the reference set");
 	}
-
 	//! The relink's inverse, for real: the file is rewritten (the reference
 	//! resolves again, and a rescan says so), then ONE control.undo puts back the
 	//! bytes that were there before - compared whole, not attribute by attribute.
@@ -415,7 +402,6 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(readBytes(project), before);
 	}
-
 	//! A relink that cannot identify the media must refuse and write NOTHING.
 	void relinkRefusesAMismatchedHash()
 	{
@@ -443,7 +429,6 @@ private slots:
 		QCOMPARE(absent.errorKind, ControlErrorKind::NotFound);
 		QCOMPARE(readBytes(project), before);
 	}
-
 	//! A dry run says what would change and leaves the file alone.
 	void dryRunWritesNothing()
 	{
@@ -461,6 +446,27 @@ private slots:
 		QCOMPARE(preview.result.value(QStringLiteral("replaced")).toInt(), 1);
 		QCOMPARE(preview.result.value(QStringLiteral("dry_run")).toBool(), true);
 		QCOMPARE(readBytes(project), before);
+	}
+	//! An .mmpz project is rewritten AS .mmpz: the bytes it leaves in still
+	//! inflate, and the reference they carry moved. (Writing the plain XML back
+	//! into a .mmpz is the defect this proves absent.)
+	void relinkKeepsTheCompressedFormat()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString plain = writeFixture(dir.path(), QStringLiteral("plain.mmp"), false);
+		const QString packed = dir.path() + QStringLiteral("/packed.mmpz");
+		QVERIFY(writeBytes(packed, qCompress(readBytes(plain))));
+		const ControlResult relinked = run(QStringLiteral("project.relink"), QJsonObject{
+			{QStringLiteral("project"), packed},
+			{QStringLiteral("from"), QStringLiteral("gone.wav")},
+			{QStringLiteral("to"), dir.path() + QStringLiteral("/sample.wav")}});
+		QVERIFY2(relinked.ok, qPrintable(relinked.errorMessage));
+		// Measured: the file still inflates, and what it says moved.
+		const QString inflated = QString::fromUtf8(qUncompress(readBytes(packed)));
+		QVERIFY(!inflated.isEmpty());
+		QVERIFY(inflated.contains(QStringLiteral("sample.wav")));
+		QVERIFY(!inflated.contains(QStringLiteral("gone.wav")));
 	}
 
 	//! Junk arguments are typed refusals, never a crash: this is the shape the
