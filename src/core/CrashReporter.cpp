@@ -32,6 +32,7 @@
 #endif
 
 #include "CrashReporter.h"
+#include "CrashReporterFormat.h"
 
 #include "lmmsconfig.h"
 #include "lmmsversion.h"
@@ -89,135 +90,6 @@ bool s_installed = false;
 // The directory the public, main-thread API uses.  The handler does not read
 // this; it only uses s_dirFd.
 std::string s_dir;
-
-// ---- bounded, allocation-free formatting ----
-// These touch one fixed buffer and never allocate, so they are safe to call
-// from the signal handler.
-
-unsigned long appendStr(char* buf, unsigned long cap, unsigned long pos, const char* s)
-{
-	while (s != nullptr && *s != '\0' && pos < cap) { buf[pos++] = *s++; }
-	return pos;
-}
-
-// Like appendStr, but never reads past `limit` source bytes even if the source
-// is not NUL-terminated (a torn read of s_projectPath).
-unsigned long appendCapped(char* buf, unsigned long cap, unsigned long pos,
-	const char* s, unsigned long limit)
-{
-	for (unsigned long i = 0; i < limit && pos < cap; ++i)
-	{
-		const char c = s[i];
-		if (c == '\0') { break; }
-		buf[pos++] = c;
-	}
-	return pos;
-}
-
-unsigned long appendUInt(char* buf, unsigned long cap, unsigned long pos, unsigned long long v)
-{
-	char tmp[24];
-	int n = 0;
-	if (v == 0) { tmp[n++] = '0'; }
-	while (v != 0 && n < static_cast<int>(sizeof(tmp)))
-	{
-		tmp[n++] = static_cast<char>('0' + static_cast<int>(v % 10));
-		v /= 10;
-	}
-	while (n > 0 && pos < cap) { buf[pos++] = tmp[--n]; }
-	return pos;
-}
-
-unsigned long appendHex(char* buf, unsigned long cap, unsigned long pos, unsigned long long v)
-{
-	pos = appendStr(buf, cap, pos, "0x");
-	char tmp[20];
-	int n = 0;
-	if (v == 0) { tmp[n++] = '0'; }
-	while (v != 0 && n < static_cast<int>(sizeof(tmp)))
-	{
-		const unsigned int d = static_cast<unsigned int>(v & 0xF);
-		tmp[n++] = static_cast<char>(d < 10 ? ('0' + static_cast<int>(d))
-										   : ('a' + static_cast<int>(d - 10)));
-		v >>= 4;
-	}
-	while (n > 0 && pos < cap) { buf[pos++] = tmp[--n]; }
-	return pos;
-}
-
-const char* signalName(int sig)
-{
-	switch (sig)
-	{
-		case SIGSEGV: return "SIGSEGV";
-		case SIGBUS:  return "SIGBUS";
-		case SIGILL:  return "SIGILL";
-		case SIGFPE:  return "SIGFPE";
-		case SIGABRT: return "SIGABRT";
-		default:      return "SIGUNKNOWN";
-	}
-}
-
-// The faulting instruction pointer, where the architecture lays it out in the
-// signal ucontext.  Falls back to 0 rather than guessing.
-unsigned long long programCounterFrom(void* context)
-{
-#if defined(__APPLE__)
-	// Darwin's ucontext_t holds a POINTER to the machine context (Linux's is a struct)
-	// and names the thread state __ss on both architectures, while the program counter
-	// inside it is __pc on arm64 and __rip on x86_64. Taking the Linux shape here is
-	// what failed macos-arm64 ("no member named 'pc' in '__darwin_mcontext64'"); note
-	// that Darwin defines no REG_RIP, so the x86_64 half returned 0 before this branch.
-	if (context != nullptr)
-	{
-		const auto* uc = static_cast<const ucontext_t*>(context);
-#if defined(__aarch64__)
-		return static_cast<unsigned long long>(uc->uc_mcontext->__ss.__pc);
-#else
-		return static_cast<unsigned long long>(uc->uc_mcontext->__ss.__rip);
-#endif
-	}
-#elif defined(__aarch64__)
-	if (context != nullptr)
-	{
-		const auto* uc = static_cast<const ucontext_t*>(context);
-		return static_cast<unsigned long long>(uc->uc_mcontext.pc);
-	}
-#elif defined(__x86_64__) && defined(REG_RIP)
-	if (context != nullptr)
-	{
-		const auto* uc = static_cast<const ucontext_t*>(context);
-		return static_cast<unsigned long long>(uc->uc_mcontext.gregs[REG_RIP]);
-	}
-#else
-	(void)context;
-#endif
-	return 0;
-}
-
-// The thread id, straight from the kernel.  syscall() is not on POSIX's
-// async-signal-safe list, but SYS_gettid is a direct kernel entry: no
-// allocation, no lock, no errno other than a thread-local write.  This is the
-// same call Breakpad and Crashpad make from their handlers.
-//
-// Darwin is the exception, and it is a deliberate one: it has no gettid and no
-// declared syscall() to reach one through, so the report carries 0 rather than
-// calling into pthread from a signal handler -- macos-arm64 and macos-x86_64
-// both failed this file with
-//   CrashReporter.cpp:204:43: error: no member named 'syscall' in the global
-//   namespace; did you mean 'sysconf'?
-// A tid from pthread_mach_thread_np(pthread_self()) is the obvious candidate and
-// is what Breakpad uses, but this box cannot compile Darwin code, so the release
-// does not depend on an API choice nobody here can test. The pc, the signal and
-// the backtrace are the report's payload; on macOS the tid field reads 0.
-unsigned long long currentThreadId()
-{
-#if defined(__APPLE__)
-	return 0;
-#else
-	return static_cast<unsigned long long>(::syscall(SYS_gettid));
-#endif
-}
 
 // ---- the signal handler ----
 // Calls only async-signal-safe entry points: openat, write, close, sigaction,
@@ -315,6 +187,21 @@ std::string reportFileInDir(const std::string& dir, const char* name)
 	return p;
 }
 
+/*! The signals the reporter claims - the ONE place the set is written down.
+ *  install(), uninstall() and handlersArmed() all read it: a second copy of the
+ *  set is how a disarmed reporter leaves one signal armed, or an armed one
+ *  misses one. LMMS_DEBUG_FPE keeps its exception (main.cpp) here.
+ */
+const int* handlerSignals(int& count)
+{
+	static const int kSignals[] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE };
+	count = 5;
+#ifdef LMMS_DEBUG_FPE
+	count = 4;
+#endif
+	return kSignals;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -362,14 +249,8 @@ bool install(const std::string& workingDirectory)
 	sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
 	sigemptyset(&sa.sa_mask);
 
-	int signals[5] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE };
-	int count = 5;
-#ifdef LMMS_DEBUG_FPE
-	// A debug build has already claimed SIGFPE with its own backtrace handler
-	// (main.cpp); do not steal it, and do not pretend to handle something we
-	// deliberately did not install.
-	count = 4;
-#endif
+	int count = 0;
+	const int* signals = handlerSignals(count);
 	for (int i = 0; i < count; ++i)
 	{
 		sigaction(signals[i], &sa, nullptr);
@@ -377,6 +258,60 @@ bool install(const std::string& workingDirectory)
 
 	s_installed = true;
 	return true;
+}
+
+/*! Restore the default disposition for exactly the signals install() claimed
+ *  (one shared list: handlerSignals), drop the report-directory fd and clear
+ *  s_installed. It deletes nothing and keeps the remembered directory, so
+ *  crash.enable re-arms to the same place. See include/CrashReporter.h for the
+ *  full statement of what "disarmed" does and does not mean.
+ */
+bool uninstall()
+{
+	if (!s_installed) { return false; }
+
+	struct sigaction dfl;
+	std::memset(&dfl, 0, sizeof(dfl));
+	dfl.sa_handler = SIG_DFL;
+	sigemptyset(&dfl.sa_mask);
+
+	int count = 0;
+	const int* signals = handlerSignals(count);
+	for (int i = 0; i < count; ++i)
+	{
+		sigaction(signals[i], &dfl, nullptr);
+	}
+
+	if (s_dirFd >= 0) { ::close(s_dirFd); s_dirFd = -1; }
+	s_installed = false;
+	return true;
+}
+
+/*! Is the handler ACTUALLY armed? Reads the kernel's own dispositions, not a
+ *  flag: install() sets every signal of handlerSignals() to the crash handler,
+ *  and anything else (SIG_DFL after uninstall(), SIG_IGN, a handler someone
+ *  installed over ours) reads false. See include/CrashReporter.h.
+ */
+bool handlersArmed()
+{
+	int count = 0;
+	const int* signals = handlerSignals(count);
+	for (int i = 0; i < count; ++i)
+	{
+		struct sigaction current;
+		std::memset(&current, 0, sizeof(current));
+		if (sigaction(signals[i], nullptr, &current) != 0) { return false; }
+		if (current.sa_sigaction != &zeneCrashSignalHandler) { return false; }
+	}
+	return count > 0;
+}
+
+//! The working directory the reporter was last handed (main.cpp's
+//! ConfigManager::workingDir()), or empty when it has never been installed. What
+//! crash.enable re-arms to with no arguments, because uninstall() keeps it.
+std::string reportDirectory()
+{
+	return s_dir;
 }
 
 bool isInstalled()
@@ -532,33 +467,6 @@ void setReentrancyGuardForTest(bool active)
 	s_active = active ? 1 : 0;
 }
 
-#else // LMMS_BUILD_WIN32
-
-// ---------------------------------------------------------------------------
-// Windows: deliberately a no-op for v1.
-//
-// A Windows crash reporter is a different implementation (minidumps via
-// SetUnhandledExceptionFilter / vectored exception handling), not a port of
-// this one.  Shipping a SIGSEGV handler that CRT Windows does not deliver
-// would look like coverage while providing none, so nothing is installed and
-// every predicate says so.
-// ---------------------------------------------------------------------------
-
-bool setReportDirectory(const std::string&) { return false; }
-bool install(const std::string&) { return false; }
-bool isInstalled() { return false; }
-void setProjectPath(const std::string&) {}
-void beginSession() {}
-void endSession() {}
-bool sessionMarkerExists() { return false; }
-bool hasPendingReport() { return false; }
-std::string pendingReportPath() { return std::string(); }
-void acknowledgePendingReport() {}
-void discardPendingReport() {}
-bool writeReportIfIdle(const CrashInfo&) { return false; }
-bool reentrancyGuardActive() { return false; }
-void setReentrancyGuardForTest(bool) {}
-
-#endif // LMMS_BUILD_WIN32
+#endif // !LMMS_BUILD_WIN32
 
 } // namespace lmms::crashreporter

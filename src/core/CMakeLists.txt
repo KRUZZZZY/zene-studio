@@ -119,6 +119,12 @@ set(LMMS_SRCS
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
 	core/CrashReporter.cpp
+	# The arm/disarm path (crash.enable / crash.disable, board task #643) pays
+	# for its room in core/CrashReporter.cpp (zero-line tolerance in the file-length
+	# baseline) by splitting that file: the async-signal-safe formatters and the
+	# Windows no-op half live in their own translation units.
+	core/CrashReporterFormat.cpp
+	core/CrashReporterWindows.cpp
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsClipEdits.cpp

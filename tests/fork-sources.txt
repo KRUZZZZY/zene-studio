@@ -369,6 +369,7 @@ include/ControlWarpSupport.h
 include/ControlWasmSupport.h
 include/ControllerSurface.h
 include/CrashReporter.h
+include/CrashReporterFormat.h
 include/DawProjectInterchange.h
 include/DpiHelper.h
 include/ExportDither.h
@@ -694,6 +695,8 @@ src/core/ControlVocabulary.cpp
 src/core/ControlWasmSupport.cpp
 src/core/ControllerSurface.cpp
 src/core/CrashReporter.cpp
+src/core/CrashReporterFormat.cpp
+src/core/CrashReporterWindows.cpp
 src/core/DawProjectModel.cpp
 src/core/DawProjectRead.cpp
 src/core/DawProjectReadShared.h
