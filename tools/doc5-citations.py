@@ -231,6 +231,7 @@ def main():
         sys.exit("git grep failed: " + grep.stderr)
 
     citers = defaultdict(set)          # token -> {file}
+    SELF = "tools/doc5-citations.py"   # the measuring instrument is not a citation source
     for line in grep.stdout.split("\n"):
         if not line:
             continue
@@ -238,6 +239,8 @@ def main():
         if len(parts) != 3:
             continue
         path, _, content = parts
+        if path == SELF:
+            continue
         for m in TOKEN.finditer(content):
             citers[m.group(1)].add(path)
 
