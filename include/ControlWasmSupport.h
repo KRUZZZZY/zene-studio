@@ -62,13 +62,6 @@ LMMS_EXPORT ControlCommand wasmCommand(const QString& verb, const QString& descr
 	const QJsonObject& resultProperties, bool mutating,
 	const std::function<ControlResult(const QJsonObject&)>& handler);
 
-//! wasm.pool and wasm.render_offline (CODE-5, feature row 73): the shared
-//! worker pool's own state, and the deterministic offline render whose result
-//! carries a verdict measured against this build's own run-to-run floor. Its
-//! own translation unit (src/core/ControlCommandsWasmRender.cpp) on the same
-//! seam the group's read/edit split uses.
-LMMS_EXPORT void registerWasmRenderCommands(ControlRegistry& registry);
-
 //! The schema of the `state` object every wasm.* result carries.
 LMMS_EXPORT const QJsonObject& wasmStateProperty();
 
@@ -83,6 +76,25 @@ LMMS_EXPORT const QJsonObject& wasmStateProperty();
 LMMS_EXPORT QJsonObject wasmStateJson();
 
 } // namespace control
+
+/*! wasm.pool (CODE-5) and wasm.render_offline (CODE-5, feature row 73): the
+ *  shared worker pool's own state, and the deterministic offline render whose
+ *  result carries a verdict measured against this build's own run-to-run floor.
+ *  Its own translation unit (src/core/ControlCommandsWasmRender.cpp) on the same
+ *  seam the group's read/edit split uses.
+ *
+ *  It is declared in namespace lmms, not in namespace control, because that is
+ *  where the definition and its only call site live: the TU defines it inside
+ *  `namespace lmms` and src/core/ControlCommandsWasm.cpp calls it from there,
+ *  the same shape registerWasmCommands has (the group registration functions
+ *  this file's siblings declare in include/ControlRegistryGroups.h are all
+ *  namespace-lmms names). Declared in namespace control it did not link:
+ *    undefined reference to `lmms::control::registerWasmRenderCommands(
+ *      lmms::ControlRegistry&)'
+ *  measured on the wave-3 integration tip, where this TU compiled for the first
+ *  time on a box with Qt 6.4 (the deprecation above it had stopped the build
+ *  before the link, so the mismatch had never been reached). */
+LMMS_EXPORT void registerWasmRenderCommands(ControlRegistry& registry);
 
 } // namespace lmms
 
