@@ -27,35 +27,55 @@ through `LoudnessReport`).
 
 ## 3. What was RUN here, and what it returned
 
-*(filled in from the lane's own runs; anything not run is named as not run — nothing in this file is a
-prediction)*
+Every command below was run in this worktree; the exit codes are unpiped (`cmd > log; echo EXIT=$?`).
 
-- Static review only at the time of writing: the lane's build was started
-  (`JOBS=2 bash tools/local-ci.sh --build-dir build --jobs 2`, log `/tmp/meter-local-ci.log`) and its
-  **configure step exited 0**; the compile/test steps had not finished when the lane closed. The exact
-  state is in §4.
+```
+$ cmake --build build -j2 --target zene MeterTapTest audiofileprocessor > /tmp/meter-build3.log 2>&1; echo EXIT=$?
+EXIT=0                      # the four new sources compile; no warnings (the tree builds with -Werror)
+$ cd build/tests && ./MeterTapTest > /tmp/meter-tap2.log 2>&1; echo EXIT=$?
+EXIT=0                      # Totals: 11 passed, 0 failed, 0 skipped
+$ cd build/tests && ctest -R ControlMeterCommands --output-on-failure > /tmp/meter-ctest3.log 2>&1; echo EXIT=$?
+EXIT=0                      # 1/1 Test #142: ControlMeterCommands ... Passed  13.35 sec
+$ QT_QPA_PLATFORM=offscreen python3 tests/control-meter-commands.py build/zene > /tmp/meter-checks.log 2>&1; echo EXIT=$?
+EXIT=0                      # 28/28 checks ok (the full list is in that log)
+$ python3 tools/mcp-zene-control/snapshot_commands.py --socket <own instance> > /tmp/meter-snapshot.log 2>&1; echo EXIT=$?
+EXIT=0                      # 231 commands, including meter.arm / meter.get_state / meter.measure_file / export.set_loudness_report
+$ cd build/tests && ctest -R ControlCommandsSnapshot --output-on-failure > /tmp/meter-snap-ctest.log 2>&1; echo EXIT=$?
+EXIT=0                      # 1/1 Passed 3.09 sec (the surface snapshot now carries the four new ids)
+```
 
-## 4. What the parent must run (and what is expected to be red first)
+The three negative controls the task names are asserted in **both** proofs, and both pass:
+`tone-23.wav` / `tone-33.wav` measure -23.00 / -33.00 LUFS-I (±0.1) and **10 LU apart**, live and from a
+file; `silent.wav` reports `null` for every reading with `measured: false` and verdict
+`NOT MEASURED (...)`; and the tap's buffer is hash-identical after being fed (C++) while two renders of one
+project have identical PCM frames with the tap armed and disarmed (socket).
 
-1. **Build**: `JOBS=2 bash tools/local-ci.sh --build-dir build --jobs 2` in this worktree. Eight lanes share
-   this box; `-j2` is deliberate.
-2. **The two proofs**:
-   `cd build/tests && ./MeterTapTest > /tmp/meter-tap.log 2>&1; echo EXIT=$?` and
-   `cd build/tests && ctest -R ControlMeterCommands --output-on-failure; echo EXIT=$?`.
-3. **Known-red, by design, until the surface snapshot is regenerated:**
-   `ControlCommandsSnapshot` (`tests/control-commands-snapshot.py`) compares the committed
-   `tools/mcp-zene-control/zene_control/commands_snapshot.json` against the binary BOTH ways, and the four
-   new ids are not in that snapshot. The snapshot is **derived from a live instance and is never
-   hand-written** (`tools/mcp-zene-control/snapshot_commands.py` says so in its own docstring), so this lane
-   did not edit it by hand. Regenerate it once the binary builds:
-   `python3 tools/mcp-zene-control/snapshot_commands.py --socket <a running instance's socket>`.
-   The expectation is 4 new ids in the snapshot (`meter.get_state`, `meter.arm`, `meter.measure_file`,
-   `export.set_loudness_report`) and nothing else changed.
-4. **Gate 7 (file length)**: the new files are all under the 500-line ratchet (largest: 338). Run
-   `bash tests/file-length-gate.sh --check` after the build to confirm nothing was entered into a baseline.
-5. **Gate 3 (no tautology), gate 4 (complexity), gate 8 (duplication)**: not run in this lane; the new
-   command file is long and comment-heavy, and `tests/no-tautology-gate.sh` is the one that has flagged
-   assert-free slots before.
+**One defect the socket proof found and this lane fixed** (recorded because the fix is a contract change):
+a re-arm of an already-armed tap used to be a no-op, so the second of two measured sections came out
+**2.59 LU** from the first instead of 10 - the earlier material was still in the integrated value while the
+*momentary* value was correct. `MasterLoudnessTap::setEnabled(true)` now always starts a fresh measurement
+(bounded quiesce, reset in place), the command description says so, `MeterTapTest` asserts the reset, and the
+socket proof's LIVE 10 LU separation is the control that caught it.
+
+## 4. What the parent must run (and what was still open here)
+
+1. **The full tree build** (`JOBS=2 bash tools/local-ci.sh --build-dir build --jobs 2`). This lane built
+   `zene`, `MeterTapTest` and the `audiofileprocessor` plugin (needed by the fixtures) and those are green;
+   the full `all` target was interrupted here once by an unrelated target
+   (`AutomationModesTest`: `undefined reference to 'main'` - a stale object left by this lane's own kill of a
+   build, so its `.o` was deleted and it must be allowed to rebuild). **Not verified in this lane:** the rest
+   of the suite, so the parent should re-run it.
+2. **The two proofs**: commands and expected exit codes above.
+3. **`ControlCommandsSnapshot`**: regenerated from a live instance in this lane and green (see §3). If the
+   parent merges another lane that also adds ids, regenerate again with
+   `tools/mcp-zene-control/snapshot_commands.py --socket <its socket>` - never by hand.
+4. **Static gates** (`no-tautology`, `complexity`, `file-length`, `duplication`, `fork-sources`,
+   `no-upstream-regression`): not run in this lane. All new files are under the 500-line ratchet (largest:
+   `ControlCommandsMeter.cpp` 338, `MeterTapTest.cpp` 338) and the two ledgers were updated in the same
+   commits, but the gates want a run on the merged tip.
+5. **This lane's build environment note**: `-DWANT_QT6=ON` (this box has Qt6 dev files, no Qt5), `-j2` as the
+   8-lane box requires. An instance killed mid-test in another lane's worktree by a `pkill` pattern that was
+   too broad (this lane's mistake, stated rather than hidden): the patterns used after that are exact-path.
 
 ## 5. Stated limits (also in `docs/KNOWN-LIMITATIONS.md`)
 

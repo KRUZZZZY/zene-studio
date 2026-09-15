@@ -53,39 +53,29 @@ MasterLoudnessTap::MasterLoudnessTap(sample_rate_t sampleRate, ch_cnt_t channelC
 
 void MasterLoudnessTap::setEnabled(bool enabled) noexcept
 {
-	if (enabled == this->enabled())
-	{
-		// Enabling an armed tap continues the measurement it is running;
-		// disabling a disarmed tap has nothing to do. Idempotent on purpose:
-		// "arm" is a state, not an event, and a caller that re-arms by mistake
-		// must not silently discard a measurement.
-		return;
-	}
-
 	if (!enabled)
 	{
 		m_enabled.store(false, std::memory_order_release);
-		// Not required for correctness (nothing touches the meter below), but
-		// it makes the contract simple to state: once setEnabled(false)
-		// returns, the last feed() that could have been running has finished,
-		// so the reading a caller sees next is final.
+		// Not required for correctness (nothing below touches the meter), but it
+		// makes the contract simple to state: once setEnabled(false) returns, the
+		// last feed() that could have been running has finished, so the reading a
+		// caller sees next is final.
 		(void) waitForQuiet();
 		return;
 	}
 
-	// Arming STARTS A MEASUREMENT. The tap is disarmed, so the audio thread is
-	// not inside the meter; the quiesce wait is the belt to that brace (a block
-	// whose enabled() read predates the disarm can still be finishing).
-	if (!waitForQuiet()) { return; }
-	m_meter.reset();
-	m_shortTermMax = LufsMeter::MinusInfinity;
-	m_blocksFed.store(0, std::memory_order_relaxed);
-	m_framesFed.store(0, std::memory_order_relaxed);
-	m_integratedLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
-	m_momentaryLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
-	m_shortTermLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
-	m_shortTermMaxLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
-	m_truePeakDbtp.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
+	// ARMING (or RE-ARMING) STARTS A MEASUREMENT, every time. The tap is taken
+	// out of the audio path first, so the meter is only ever touched while the
+	// audio thread is not inside it; the quiesce wait is bounded, and a wait that
+	// expires leaves the tap exactly as it was rather than resetting under a feed
+	// in flight.
+	m_enabled.store(false, std::memory_order_release);
+	if (!waitForQuiet())
+	{
+		m_enabled.store(true, std::memory_order_release);
+		return;
+	}
+	clearMeasurement();
 	m_enabled.store(true, std::memory_order_release);
 }
 
@@ -95,13 +85,23 @@ bool MasterLoudnessTap::reset() noexcept
 	if (wasEnabled) { m_enabled.store(false, std::memory_order_release); }
 	if (!waitForQuiet())
 	{
-		// Nothing was reset: saying so is the point. A caller that is told
-		// false knows the reading it is about to see is the OLD measurement,
-		// not a fresh one.
+		// Nothing was reset: saying so is the point. A caller that is told false
+		// knows the reading it is about to see is the OLD measurement, not a
+		// fresh one.
 		if (wasEnabled) { m_enabled.store(true, std::memory_order_release); }
 		return false;
 	}
 
+	clearMeasurement();
+	if (wasEnabled) { m_enabled.store(true, std::memory_order_release); }
+	return true;
+}
+
+//! Drops everything measured: the meter's own state and every published value.
+//! CONTROL THREAD, and only ever with the tap quiet (the callers above are the
+//! only two, and both wait first).
+void MasterLoudnessTap::clearMeasurement() noexcept
+{
 	m_meter.reset();
 	m_shortTermMax = LufsMeter::MinusInfinity;
 	m_blocksFed.store(0, std::memory_order_relaxed);
@@ -111,9 +111,6 @@ bool MasterLoudnessTap::reset() noexcept
 	m_shortTermLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
 	m_shortTermMaxLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
 	m_truePeakDbtp.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
-
-	if (wasEnabled) { m_enabled.store(true, std::memory_order_release); }
-	return true;
 }
 
 void MasterLoudnessTap::feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept

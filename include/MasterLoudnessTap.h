@@ -129,17 +129,23 @@ public:
 
 	/*! Enables or disables the tap. CONTROL THREAD.
 	 *
-	 *  Enabling a DISABLED tap starts a FRESH measurement: the accumulated
-	 *  integrated loudness and true peak of whatever was measured before are
-	 *  dropped, so "arm, play the section, read" reports that section. Enabling
-	 *  an already-enabled tap changes nothing (the measurement continues).
+	 *  ENABLING STARTS A FRESH MEASUREMENT - every time, including a re-arm of an
+	 *  already-armed tap: the accumulated integrated loudness, the short-term
+	 *  maximum and the true peak of whatever was measured before are dropped, so
+	 *  "arm, play the section, read" always reports THAT section. This is
+	 *  deliberately not idempotent: an agent that measures two sections in a row
+	 *  (arm, play A, read, arm, play B, read) must not get A's blocks averaged
+	 *  into B's reading - a meter that silently mixes two pieces of material is
+	 *  worse than one that makes the caller say when it starts. A caller that
+	 *  wants the running measurement to continue simply does not re-arm it.
 	 *
 	 *  Disabling keeps the last reading readable - `snapshot()` still answers
 	 *  with what was measured - so a caller can disarm and then read the result.
 	 *
 	 *  Allocates nothing, and never replaces the meter object: the algorithm is
 	 *  designed so the tap can be armed and disarmed while the transport is
-	 *  running.
+	 *  running (the tap goes quiet for a bounded moment, its own fixed arrays are
+	 *  zeroed, and it is let back in).
 	 */
 	void setEnabled(bool enabled) noexcept;
 
@@ -171,6 +177,9 @@ private:
 	//! Waits, bounded by QuietWaitMs, for the audio thread to leave the tap.
 	//! CONTROL THREAD (never the audio thread). Returns false on timeout.
 	bool waitForQuiet() noexcept;
+	//! Drops every measurement: the meter's own state and every published value.
+	//! CONTROL THREAD, and only with the tap quiet - both callers wait first.
+	void clearMeasurement() noexcept;
 
 	//! The one measurement core (constructed with the engine's rate and channel
 	//! count; never replaced, so a feed in flight always completes against a

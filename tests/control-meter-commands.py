@@ -274,15 +274,28 @@ def check_default_state(session, recorder):
                    "target=%r" % target)
 
 
+def meter_records(session):
+    """The A16 records this group left, as control.transactions reports them.
+
+    The registry REMOVES the handler's private `__transaction` key from the reply and
+    records it itself (ControlRegistry::recordTransactionOf), so the transaction an
+    agent reads back is this command's records - not a key in the result.
+    """
+    records = session.result("control.transactions").get("transactions") or []
+    return [record for record in records if record.get("command") == "meter.arm"]
+
+
 def check_arm_is_live_and_reversible(session, recorder):
     """Arming starts a measurement, is reversible, and the audio thread feeds the tap."""
     armed = session.result("meter.arm", {"enabled": True})
-    transaction = armed.get("__transaction") or {}
+    records = meter_records(session)
+    record = records[-1] if records else {}
     recorder.check("meter.arm records a reversible action checkpoint",
                    armed.get("armed") is True and armed.get("previous") is False
-                   and transaction.get("reversible") is True
-                   and bool(transaction.get("mechanism")),
-                   "transaction=%r" % transaction)
+                   and record.get("class") == "true_inverse"
+                   and record.get("reversible") is True
+                   and "setEnabled" in (record.get("mechanism") or ""),
+                   "record=%r" % record)
     recorder.check("arming starts a FRESH measurement (the readings are null immediately)",
                    readings(live(armed)) == (None, None, None, None, None),
                    "live=%r" % live(armed))
@@ -290,9 +303,14 @@ def check_arm_is_live_and_reversible(session, recorder):
     first = live(session.result("meter.get_state"))
     time.sleep(1.0)
     second = live(session.result("meter.get_state"))
+    # The FIRST reading is taken the instant after arming, so it can legitimately be 0 -
+    # what matters is that the count then MOVES on its own, with nothing sent in between.
     recorder.check("the engine's own audio thread is feeding the tap (blocks_fed grows)",
-                   second.get("blocks_fed", 0) > first.get("blocks_fed", 0) > 0,
-                   "first=%r second=%r" % (first.get("blocks_fed"), second.get("blocks_fed")))
+                   second.get("blocks_fed", 0) > first.get("blocks_fed", 0)
+                   and second.get("frames_fed", 0) > 0,
+                   "first=%r second=%r frames=%r" % (first.get("blocks_fed"),
+                                                     second.get("blocks_fed"),
+                                                     second.get("frames_fed")))
     recorder.check("a master carrying no signal still reads null, never a number",
                    readings(second) == (None, None, None, None, None),
                    "live=%r" % second)
@@ -336,7 +354,7 @@ def check_file_measurements(session, recorder, fixtures):
     recorder.check("NEGATIVE CONTROL: silence reads null and claims no verdict",
                    readings(silent) == (None, None, None, None, None)
                    and silent.get("measured") is False
-                   and silent.get("verdict") == "NOT MEASURED",
+                   and str(silent.get("verdict")).startswith("NOT MEASURED"),
                    "result=%r" % {k: silent.get(k) for k in ("integrated_lufs", "true_peak_dbtp",
                                                              "measured", "verdict")})
 

@@ -146,7 +146,7 @@ private slots:
 	//! single relaxed atomic load.
 	void aDisarmedTapMeasuresNothing()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		QVERIFY(!tap.enabled());
 
 		const std::vector<SampleFrame> signal = makeSine(Case1Dbfs, 1.0);
@@ -165,7 +165,7 @@ private slots:
 	//! measured from the samples themselves.
 	void silenceReadsTheSentinel()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		tap.setEnabled(true);
 		QVERIFY(tap.enabled());
 
@@ -186,7 +186,7 @@ private slots:
 	//! delivery spec asks for - is what shortTermMaxLufs reports).
 	void anArmedTapReadsTheLevelItWasFed()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		tap.setEnabled(true);
 
 		const std::vector<SampleFrame> signal = makeSine(Case1Dbfs, 5.0);
@@ -207,23 +207,28 @@ private slots:
 	//! NEGATIVE CONTROL 2: 10 dB more input is 10 LU more output. Run as ONE
 	//! test that measures both levels through the same object, so a tap that
 	//! reported a constant, or that was never fed, fails on the difference - and
-	//! re-arming between the two measurements also proves that arming DISCARDS
-	//! the previous measurement (the documented "arming starts a measurement").
+	//! RE-ARMING between the two measurements proves that arming discards the
+	//! previous measurement, which is what keeps two pieces of material from
+	//! being silently averaged into one reading (the failure this cost a real
+	//! socket run: measured, not imagined).
 	void aLouderSignalReadsProportionallyHigher()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		tap.setEnabled(true);
 		const std::vector<SampleFrame> loud = makeSine(Case1Dbfs, 5.0);
 		feedInBlocks(tap, loud, 512);
-		const float loudReading = tap.snapshot().integratedLufs;
+		const MasterLoudnessTap::Snapshot loudReading = tap.snapshot();
+		QVERIFY(std::fabs(loudReading.integratedLufs - Case1Dbfs) <= ToleranceLu);
 
-		// Disarm, then arm again: the fresh measurement must start from the
-		// sentinel, not from the loud reading.
-		tap.setEnabled(false);
+		// RE-ARMING the already-armed tap: the fresh measurement must start from
+		// the sentinel, not from the loud reading. (A no-op here would average
+		// the two signals, and the separation below would come out near 2.6 LU
+		// instead of 10 - the measured symptom that fixed this contract.)
 		tap.setEnabled(true);
 		const MasterLoudnessTap::Snapshot fresh = tap.snapshot();
 		QCOMPARE(fresh.integratedLufs, LufsMeter::MinusInfinity);
 		QCOMPARE(fresh.truePeakDbtp, LufsMeter::MinusInfinity);
+		QCOMPARE(fresh.blocksFed, 0ull);
 
 		const std::vector<SampleFrame> quiet = makeSine(Case2Dbfs, 5.0);
 		feedInBlocks(tap, quiet, 512);
@@ -232,7 +237,7 @@ private slots:
 		QVERIFY(std::fabs(quietReading - Case2Dbfs) <= ToleranceLu);
 		// The two signals are 10 dB apart by construction (EBU cases 1 and 2),
 		// and loudness follows level one for one.
-		QVERIFY(std::fabs((loudReading - quietReading) - 10.0f) <= ToleranceLu);
+		QVERIFY(std::fabs((loudReading.integratedLufs - quietReading) - 10.0f) <= ToleranceLu);
 	}
 
 	//! NEGATIVE CONTROL 3: the tap is PASSIVE. The buffer's bytes are hashed,
@@ -242,7 +247,7 @@ private slots:
 	//! here, and that failure would be an audible change to every render.
 	void feedingAnArmedTapDoesNotChangeOneByte()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		tap.setEnabled(true);
 
 		const std::vector<SampleFrame> signal = makeSine(Case1Dbfs, 2.0);
@@ -262,7 +267,7 @@ private slots:
 	//! per-block allocation to hide behind a cache.
 	void feedingAnArmedTapAllocatesNothing()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		const std::vector<SampleFrame> signal = makeSine(Case1Dbfs, 1.0);
 
 		lmms::test::tlCountAllocations = true;
@@ -285,7 +290,7 @@ private slots:
 	//! and then reads still sees the section it measured.
 	void disarmingKeepsTheLastReadingAndStopsCounting()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		tap.setEnabled(true);
 		const std::vector<SampleFrame> signal = makeSine(Case1Dbfs, 4.0);
 		feedInBlocks(tap, signal, 512);
@@ -308,7 +313,7 @@ private slots:
 	//! one that does not change the armed flag.
 	void resetStartsANewMeasurementWhileStayingArmed()
 	{
-		MasterLoudnessTap tap(SampleRate, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
 		tap.setEnabled(true);
 		const std::vector<SampleFrame> signal = makeSine(Case1Dbfs, 4.0);
 		feedInBlocks(tap, signal, 512);
@@ -326,10 +331,10 @@ private slots:
 	//! build the meter for" from "nothing has sounded yet".
 	void theSnapshotReportsTheMetersOwnConfiguration()
 	{
-		MasterLoudnessTap tap(44100, DEFAULT_CHANNELS);
+		MasterLoudnessTap tap(44100, lmms::DEFAULT_CHANNELS);
 		const MasterLoudnessTap::Snapshot reading = tap.snapshot();
 		QCOMPARE(static_cast<int>(reading.sampleRate), 44100);
-		QCOMPARE(static_cast<int>(reading.channels), static_cast<int>(DEFAULT_CHANNELS));
+		QCOMPARE(static_cast<int>(reading.channels), static_cast<int>(lmms::DEFAULT_CHANNELS));
 		QVERIFY(!reading.enabled);
 	}
 };

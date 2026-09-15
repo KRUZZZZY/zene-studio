@@ -266,15 +266,16 @@ void registerMeterCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("meter");
 		cmd.verb = QStringLiteral("arm");
 		cmd.description = QStringLiteral("Arm or disarm the PASSIVE loudness tap on the master mix. "
-			"ARMING STARTS A MEASUREMENT: the accumulated integrated loudness and true peak are "
-			"dropped and everything measured from now on is the new reading, so 'arm, play the "
-			"section, read meter.get_state' reports that section. Arming an already-armed tap is a "
-			"no-op (it does not discard the running measurement); DISARMING keeps the last reading "
-			"readable, so a caller can stop measuring and still see the result. Safe to send while "
-			"the transport is running: the tap allocates nothing, locks nothing and only reads the "
-			"master mix, so the audio is bit-for-bit unchanged. Reversible: control.undo restores "
-			"the armed flag (the readings themselves are surface memory and are not part of the "
-			"inverse).");
+			"ARMING STARTS A MEASUREMENT, EVERY TIME - including a re-arm of an already-armed tap: "
+			"the accumulated integrated loudness, short-term maximum and true peak are dropped and "
+			"everything measured from now on is the new reading, so 'arm, play the section, read "
+			"meter.get_state' always reports THAT section and two measured sections can never be "
+			"silently averaged into one number. A caller that wants the running measurement to "
+			"continue simply does not re-arm it. DISARMING keeps the last reading readable, so a "
+			"caller can stop measuring and still see the result. Safe to send while the transport "
+			"is running: the tap allocates nothing, locks nothing and only reads the master mix, so "
+			"the audio is bit-for-bit unchanged. Reversible: control.undo restores the armed flag "
+			"(the readings themselves are surface memory and are not part of the inverse).");
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("enabled"), booleanProperty()},
 		}, {QStringLiteral("enabled")});

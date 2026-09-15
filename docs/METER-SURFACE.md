@@ -61,13 +61,25 @@ in `src/core/ControlReversibilityTable.cpp`.
 | id | A16 | What it does |
 |---|---|---|
 | `meter.get_state` | `not_mutating` | the LIVE master readout: `live.enabled`, `live.sample_rate`, `live.channels`, `live.blocks_fed`, `live.frames_fed`, `live.seconds_fed`, `live.engine_running`, and `integrated_lufs` / `momentary_lufs` / `short_term_lufs` / `short_term_max_lufs` / `true_peak_dbtp`; plus `target` (the standard it reports against) |
-| `meter.arm` | `true_inverse` (recorded action) | arm / disarm the tap. **Arming starts a measurement**; **disarming keeps the last reading readable**; arming an armed tap is a no-op so a re-send cannot discard a running measurement |
+| `meter.arm` | `true_inverse` (recorded action) | arm / disarm the tap. **Arming starts a measurement, every time** - including a re-arm, so two measured sections can never be silently averaged into one number; **disarming keeps the last reading readable**. A caller that wants the running measurement to continue simply does not re-arm it |
 | `meter.measure_file` | `not_mutating` | measure a **rendered file** now, from its bytes: the same five values, the EBU R 128 verdict, the target, and the file's facts (rate, channels, frames, duration, bytes, sha256, libsndfile's container code). 1–6 channels; more is refused, typed |
 | `export.set_loudness_report` | `true_inverse` (recorded action) | the render path's `.loudness.txt` report for the next render — the second half of row 24's complaint |
 
 **Readings are JSON `null` when the meter has no measurement** (silence, or a window that has not
 filled) — never `-70`, never `-inf`, never a plausible number. That follows
 `MasteringReport.cpp`'s convention for the same values, so one rule parses across the release.
+
+### The re-arm contract, and how it was found
+
+`meter.arm {enabled: true}` **always** starts a fresh measurement, a re-arm of an already-armed tap included.
+The first draft made a re-arm a no-op ("do not discard a running measurement"), and the registered socket
+proof caught what that costs: it measures two fixtures in a row (*arm, play tone-23, read, arm, play tone-33,
+read*) and the second reading came out **2.59 LU** from the first instead of the fixtures' known **10 LU**
+difference - the loud fixture's blocks were still in the integrated value, because the second `arm` had
+declined to reset. The per-fixture *momentary* value was correct (-33.00), which is exactly how a silent
+averaging bug looks from outside. The contract now restores on every arm (bounded quiesce, in place), the
+C++ test asserts the reset (`aLouderSignalReadsProportionallyHigher` re-arms instead of disarming first),
+and the socket proof asserts the 10 LU separation LIVE, which is what caught it.
 
 ## 4. The tap: why it is honest
 
@@ -169,7 +181,29 @@ over `--control-socket`, on the real binary, with the tree's own fixtures
   that had not been run when the lane closed. Nothing here claims a green run that was not
   observed.
 
-## 7. How to reproduce
+## 7. Verified state of this lane (what was run, with exit codes)
+
+```
+$ cmake --build build -j2 --target zene MeterTapTest audiofileprocessor ; echo EXIT=$?
+EXIT=0
+$ cd build/tests && ./MeterTapTest > /tmp/meter-tap2.log 2>&1; echo EXIT=$?
+EXIT=0        # Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted  (the three negative controls included)
+$ cd build/tests && ctest -R ControlMeterCommands ; echo EXIT=$?
+EXIT=0        # 1/1 Passed 13.35 sec - 28/28 checks over --control-socket, including both LIVE controls
+$ python3 tools/mcp-zene-control/snapshot_commands.py --socket <own instance>; echo EXIT=$?
+EXIT=0        # 231 commands, the four new ids among them
+$ cd build/tests && ctest -R ControlCommandsSnapshot ; echo EXIT=$?
+EXIT=0        # the MCP tooling spine now carries meter.arm / meter.get_state / meter.measure_file /
+              # export.set_loudness_report
+```
+
+**Not run in this lane:** the rest of the ctest suite, `tests/run-all-gates.sh` and the static gates. The
+lane's worktree was also the site of one unrelated, self-inflicted build interruption
+(`AutomationModesTest`, `undefined reference to 'main'`, from a stale object after this lane killed its own
+build) — its `.o` was removed so it rebuilds; the parent's full build will confirm. `LANE-STATE-METER-SURFACE.md`
+§4 lists exactly what is still open.
+
+## 8. How to reproduce
 
 ```
 # build + tests (the CI reproduction script, adapted to this box: Qt6 dev files, no Qt5)
