@@ -93,7 +93,7 @@ inline QString addTrack(const QString& type)
 }
 
 //! The clip's own authoritative read of its membership - a fresh lookup of the
-//! object the id names, not a remembered pointer.
+//! object the id names, not a remembered pointer. -1 when the query itself failed.
 inline int clipLinkId(const QString& clipId)
 {
 	const ControlResult state = ControlRegistry::instance()->invoke(
@@ -102,28 +102,28 @@ inline int clipLinkId(const QString& clipId)
 	return state.result.value(QStringLiteral("group")).toInt();
 }
 
+//! The clip's start position in ticks, read from arrangement.get_state's flat
+//! `clips` array (each entry is a clipState(), whose id key is `id`). -1 when no
+//! clip of that id is in the arrangement, so a caller can tell "not found" from
+//! "at tick 0".
 inline int clipStart(const QString& clipId)
 {
 	const ControlResult state = ControlRegistry::instance()->invoke(
 		QStringLiteral("arrangement.get_state"));
 	if (!state.ok) { return -1; }
-	for (const QJsonValue& trackValue : state.result.value(QStringLiteral("tracks")).toArray())
+	for (const QJsonValue& clipValue : state.result.value(QStringLiteral("clips")).toArray())
 	{
-		for (const QJsonValue& clipValue : trackValue.toObject()
-				.value(QStringLiteral("clips")).toArray())
+		const QJsonObject clip = clipValue.toObject();
+		if (clip.value(QStringLiteral("id")).toString() == clipId)
 		{
-			const QJsonObject clip = clipValue.toObject();
-			if (clip.value(QStringLiteral("clip")).toString() == clipId)
-			{
-				return clip.value(QStringLiteral("position")).toInt();
-			}
+			return clip.value(QStringLiteral("position")).toInt();
 		}
 	}
 	return -1;
 }
 
-//! The clip's notes, read through roll.get_state - the surface's own view of
-//! the note list the group shares.
+//! The clip's notes, read through roll.get_state - the surface's own view of the
+//! note list the group shares.
 inline QJsonArray notesOf(const QString& clipId)
 {
 	const ControlResult rolled = ControlRegistry::instance()->invoke(

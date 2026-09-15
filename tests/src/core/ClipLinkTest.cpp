@@ -206,8 +206,11 @@ private slots:
 		QCOMPARE(groupState.value(QStringLiteral("group")).toInt(), group);
 
 		// (e) and the two are NOT the same clip: what a link does NOT share is
-		//     where each member plays the content. Move B and A stays put.
+		//     where each member plays the content. Move B and A stays put. The
+		//     reader is checked to have FOUND the clips first: a "both -1" would
+		//     otherwise pass as "A did not move".
 		const int aStart = clipStart(a);
+		QVERIFY2(aStart >= 0, "arrangement.get_state must report a clip of this id");
 		const ControlResult movedB = registry->invoke(QStringLiteral("clip.move"),
 			QJsonObject{{QStringLiteral("clip"), b}, {QStringLiteral("position"), 1920}});
 		QVERIFY2(movedB.ok, qPrintable(movedB.errorMessage));

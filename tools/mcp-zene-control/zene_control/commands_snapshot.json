@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-14T15:30:39Z",
+  "captured_at": "2026-09-15T10:58:48Z",
   "commands": [
     {
       "args_schema": {
@@ -1382,6 +1382,166 @@
           },
           "source": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "clips": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "clips"
+        ],
+        "type": "object"
+      },
+      "description": "Link clips to a clip so they share its content: an edit to the note list of any member is seen by every member (linked / smart clips). 'clip' is the content source and the group's anchor - if it is already linked, the named clips join ITS group; otherwise a new group is created and 'clip' joins it. The new members ADOPT 'clip'\"s notes (the group starts in sync), while their own position, length, source offset, fades, gain and take lane stay their own: a link shares content, not placement. Reversible through the ProjectJournal (one Clip checkpoint per member written, merged into one undo step). See docs/LINKED-CLIPS.md.",
+      "group": "clip",
+      "id": "clip.link_create",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "group": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "notes": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read the link groups: every group with its members, the content channel it shares ('notes'), the note count, which member is the reference (the group's first member in arrangement order) and - per member - whether its content still matches the reference (`in_sync`) or has drifted (`divergent`). With 'clip', the report is that clip's group only; without it, every group in the song. Read-only.",
+      "group": "clip",
+      "id": "clip.link_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "groups": {
+            "type": "array"
+          },
+          "linked": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Unlink a clip: it leaves its link group and keeps the content it has, but stops following - and stops being followed by - the other members. This is the operation that detaches (there is no detach-on-edit: an edit to a member propagates). When the group is left with a single member that member's link is dissolved too, so no group of one outlives its last pair; a clip that is not linked is refused, typed. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.link_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dissolved": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "integer"
+          },
+          "remaining": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Force the group to agree: every other member of 'clip'\"s link group is given this clip's content, and the members that had to be rewritten are named in `written`. An edit through the note.* verbs already propagates on its own - this is the REPAIR verb for the edit kinds that do not (a piano-roll gesture the engine's note entry points do not see, a hand-edited project file), and it is what makes a disagreement fixable instead of permanent. Reversible through the ProjectJournal (one Clip checkpoint per member written).",
+      "group": "clip",
+      "id": "clip.link_sync",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "divergent_before": {
+            "type": "array"
+          },
+          "group": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "written_count": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -11153,16 +11313,16 @@
       }
     }
   ],
-  "count": 227,
+  "count": 231,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 205380680,
-    "binary_sha256": "a0a84b3dfac4e6cf20981d69c2e2b088d607898a6f11863f49f1e8333809c6a0",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "89a5e79429edb00b99f6d6f3a275fa9cd6e8bd08",
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wlink/build/zene",
+    "binary_bytes": 11467440,
+    "binary_sha256": "c94d061d144b4375479221a5de5ed7bef908c3ea27e72620ea3e3212f3a8f025",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wlink",
+    "lane_head": "fbf62afc6fc0862a7be13f5002322c43e83e89b5",
     "proto": 1,
-    "source_socket": "/home/kruzzzzy/zene-030-merge2-598d4f5c1/zene-merge2.sock",
-    "version": "0.2.1-alpha.191+6c55700"
+    "source_socket": "/tmp/wlink-mine.sock",
+    "version": "0.2.1-alpha.199+fbf62af"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
