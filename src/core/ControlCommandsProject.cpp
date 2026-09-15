@@ -38,6 +38,7 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "ExportRenderSettings.h"
 #include "OutputSettings.h"
 #include "ProjectIds.h"
 #include "ProjectRevisions.h"
@@ -293,15 +294,26 @@ QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatNa
 	return QString();
 }
 
-//! Runs the shipped CLI render path as a child process.
+//! Runs the shipped CLI render path as a child process. The loudness report
+//! (feature row 24) travels with it when the process-wide selection asks for
+//! one: the child is a fresh process whose own ExportRenderSettings start at
+//! the defaults, so a report that was turned on through
+//! export.set_loudness_report would otherwise be silently absent from the file
+//! the agent just rendered. Measure-only: the flag changes the report and the
+//! sidecar, never the audio.
 bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName, int* exitCode)
 {
+	QStringList arguments{QStringLiteral("render"), projectPath, QStringLiteral("-o"), out,
+		QStringLiteral("-f"), formatName, QStringLiteral("-s"), QStringLiteral("44100")};
+	if (ExportRenderSettings::loudnessReport())
+	{
+		arguments << QStringLiteral("--loudness-report");
+	}
+
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
 	renderer.setStandardErrorFile(QProcess::nullDevice());
-	renderer.start(QCoreApplication::applicationFilePath(),
-		{QStringLiteral("render"), projectPath, QStringLiteral("-o"), out,
-			QStringLiteral("-f"), formatName, QStringLiteral("-s"), QStringLiteral("44100")});
+	renderer.start(QCoreApplication::applicationFilePath(), arguments);
 	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;

@@ -35,6 +35,11 @@ namespace lmms
 std::atomic<bool> ExportRenderSettings::s_dither{false};
 std::atomic<int> ExportRenderSettings::s_srcQuality{
 	static_cast<int>(SrcQuality::Linear)};
+// OFF by default: the report is opt-in (feature row 24 of
+// docs/FEATURE-LIST-0.3.0.md), and a render that never asks for one is
+// byte-for-byte the render it always was - the loudness report is measure-only,
+// but not constructing a meter is still the honest default.
+std::atomic<bool> ExportRenderSettings::s_loudnessReport{false};
 
 bool ExportRenderSettings::dither() noexcept
 {
@@ -44,6 +49,16 @@ bool ExportRenderSettings::dither() noexcept
 void ExportRenderSettings::setDither(bool enabled) noexcept
 {
 	s_dither.store(enabled, std::memory_order_relaxed);
+}
+
+bool ExportRenderSettings::loudnessReport() noexcept
+{
+	return s_loudnessReport.load(std::memory_order_relaxed);
+}
+
+void ExportRenderSettings::setLoudnessReport(bool enabled) noexcept
+{
+	s_loudnessReport.store(enabled, std::memory_order_relaxed);
 }
 
 SrcQuality ExportRenderSettings::srcQuality() noexcept
@@ -60,6 +75,7 @@ void ExportRenderSettings::reset() noexcept
 {
 	setDither(false);
 	setSrcQuality(SrcQuality::Linear);
+	setLoudnessReport(false);
 }
 
 // ---------------------------------------------------------------------------

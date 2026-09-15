@@ -716,9 +716,12 @@ compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with thei
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
-four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+`ReversibilityContractTest` was run against a build of this merge tip and reports **231** rows over the
+four classes named above (122 + 18 + 7 + 84), and its constant is the telemetry-off/wasm-off base of
+229 / 122 / 18 / 7 / 82. The four rows this page's earlier 227 did not have are the loudness surface's
+(feature row 24, `030/meter-surface`): `meter.arm` and `export.set_loudness_report` as recorded-action
+`true_inverse` rows, `meter.get_state` and `meter.measure_file` as `not_mutating` inspectors — the **+2
+true_inverse / +2 not_mutating** growth against the base this page carried before that lane. The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
@@ -1400,6 +1403,56 @@ transposes a clip or a selection as a command, marks a slide note, snaps notes t
 group's context or reaches the MPE switch — and the piano roll's own key/scale combo boxes are **not wired**
 to `scale.*` in either direction. `docs/KNOWN-LIMITATIONS.md` carries the sentences, and the bounds above
 with them.
+## Loudness metering — the live master and any rendered file, drivable (2026-09-15)
+
+- **The BS.1770-4 meter is reachable, live and offline.** Feature row 24 of `docs/FEATURE-LIST-0.3.0.md` was
+  the audit's "in the tree but not drivable" case: the measurement core (`LufsMeter`, ITU-R BS.1770-4 /
+  EBU R 128) and the render path's offline consumer (`LoudnessReport`, which writes the `.loudness.txt`
+  sidecar) were merged and proven by `LufsMeterTest`, `LoudnessReportTest` and `MasteringTest`, and **no
+  `lufs.` or `meter.` id existed at all** — nothing an agent could send measured anything, and
+  `export.get_settings` did not expose the render-path report either. The new `meter.*` group closes both
+  halves and **forks no DSP**: every number comes out of the merged `LufsMeter`.
+- **Three ids.** `meter.get_state` — the LIVE master readout: gated integrated loudness (LUFS-I), momentary
+  (LUFS-M), short-term (LUFS-S), the loudest short-term window and true peak (dBTP), plus whether the tap is
+  armed and how many audio periods it has measured. `meter.arm` — arms or disarms the tap; **arming starts a
+  measurement** and **disarming keeps the last reading readable**, so "arm, play the section, read" reports
+  that section and a stopped tape can still be read. `meter.measure_file` — the same five numbers for a
+  **rendered file**, measured now from the file's own bytes with the EBU R 128 verdict and the file's own
+  facts (rate, channels, frames, duration, size, sha256). A reading is JSON **`null`**, never a plausible
+  number, while the meter has no measurement (silence, or a window that has not filled).
+- **The live tap is PASSIVE, and that is measured rather than asserted.** `include/MasterLoudnessTap.h` owns
+  one `LufsMeter`, constructed once with the engine's processing rate, and the engine hands it the period
+  `renderStageMix()` has just mixed. It takes the frames `const`, allocates nothing, locks nothing and grows
+  nothing, so a render is bit-for-bit what it was with the tap disarmed — which is also why the tap is
+  **disarmed by default**: an unarmed engine pays one relaxed atomic load per period and measures nothing.
+  Arming, disarming and resetting go through a **bounded** quiesce on the control thread and never replace
+  the meter object, so the tap can be toggled while the transport runs.
+- **The render-path report is drivable too.** `export.get_settings` now exposes `loudness_report`, and
+  `export.set_loudness_report` turns the `.loudness.txt` report on for the next render (the same value the
+  export dialog's checkbox and the CLI's `--loudness-report` set); `render.render` passes the flag to its
+  child process, so a socket-driven render produces the sidecar as well. Measure-only: the rendered audio is
+  byte-identical whether the report is on or off.
+- **Reversibility (SPEC A16).** `meter.get_state` and `meter.measure_file` are `not_mutating` (one reads a
+  snapshot of atomics, one reads and hashes a file). `meter.arm` and `export.set_loudness_report` are
+  `true_inverse` through recorded **action checkpoints**. What the inverse does **not** restore is a
+  measurement: readings are surface memory, not project state, and arming starts a fresh one — the row, the
+  command description and the transaction record all say so.
+- **Proof:** the registered ctest `ControlMeterCommands` (`tests/control-meter-commands.py`) starts the real
+  binary over `--control-socket` and carries the negative controls that make the tap honest — **silence reads
+  `null`** (EBU fixtures: `tone-23` −23.00 and `tone-33` −33.00 LUFS-I measure their own known levels, and the
+  silent fixture measures nothing and claims no verdict), **a signal 10 dB louder reads 10 LU higher** (both
+  from a file and LIVE, with the two fixtures playing through the engine, where a constant-reading tap cannot
+  produce the difference), and **the audio is byte-identical with the meter attached** (measuring a file
+  leaves its sha256 unchanged; two renders of one project have identical PCM frames with the tap armed and
+  disarmed) — plus typed refusals and `control.undo` restoring the armed flag. The live tap itself is proven
+  by the registered ctest `MeterTapTest` (`tests/src/core/MeterTapTest.cpp`): the sentinel for silence,
+  ±0.1 LU against EBU Tech 3341 case 1/2, 10 LU separation, a fed buffer hash-identical before and after, and
+  **0 allocations** over 64 fed blocks.
+- **UI absence — one line: loudness metering is drivable through the socket, not from the interface.** There
+  is no loudness meter widget, no LUFS/true-peak readout, no meter bridge and no loudness column;
+  `grep -rniI 'lufs\|loudness' src/gui/` finds only the export dialog's existing report checkbox and its
+  result label. `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds;
+  `docs/METER-SURFACE.md` is the feature's own record.
 
 ## Not in this draft yet
 

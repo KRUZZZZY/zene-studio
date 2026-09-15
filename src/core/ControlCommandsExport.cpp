@@ -67,6 +67,11 @@ QJsonObject exportSettingsJson()
 	result.insert(QStringLiteral("dither"), ExportRenderSettings::dither());
 	result.insert(QStringLiteral("src_quality"), qualityWireName(ExportRenderSettings::srcQuality()));
 	result.insert(QStringLiteral("src_quality_choices"), srcQualityChoices());
+	// Feature row 24: the render path's EBU R128 loudness report, which used to
+	// be reachable only from the export dialog's checkbox and the CLI's
+	// `--loudness-report` flag - the second half of the audit's complaint about
+	// this feature. Read from the same process-wide holder the other two are.
+	result.insert(QStringLiteral("loudness_report"), ExportRenderSettings::loudnessReport());
 	return result;
 }
 
@@ -77,17 +82,21 @@ void registerExportGetSettings(ControlRegistry& registry)
 	cmd.group = QStringLiteral("export");
 	cmd.verb = QStringLiteral("get_settings");
 	cmd.description = QStringLiteral("Read the render settings that outlive one OutputSettings: whether "
-		"the next export dithers, and which sample-rate-conversion quality it resamples with. "
-		"Both are OFF/DEFAULT unless something asked for otherwise - dither is off by default "
-		"because this release's render-reproducibility claim depends on it, and 'linear' is the "
-		"converter every render the engine has produced so far used. Read-only: no transaction "
-		"is recorded. There is no interface for either setting; drive them through export.set_* "
-		"(docs/KNOWN-LIMITATIONS.md).");
+		"the next export dithers, which sample-rate-conversion quality it resamples with, and "
+		"whether it writes an EBU R128 loudness report beside its output. All three are "
+		"OFF/DEFAULT unless something asked for otherwise - dither is off by default because "
+		"this release's render-reproducibility claim depends on it, 'linear' is the converter "
+		"every render the engine has produced so far used, and the loudness report is opt-in "
+		"because it is a measurement, not a render choice. Read-only: no transaction is "
+		"recorded. There is no interface for the first two; drive them through export.set_* "
+		"(docs/KNOWN-LIMITATIONS.md). The loudness report has an interface - the export dialog's "
+		"checkbox - and export.set_loudness_report drives the same value from here.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("dither"), booleanProperty()},
 		{QStringLiteral("src_quality"), stringProperty()},
 		{QStringLiteral("src_quality_choices"), arrayProperty()},
+		{QStringLiteral("loudness_report"), booleanProperty()},
 	});
 	// A read of a process-wide value: it answers before an engine exists, which
 	// is when an agent most needs to know what the next render will do.
@@ -119,6 +128,7 @@ void registerExportSetDither(ControlRegistry& registry)
 		{QStringLiteral("previous"), booleanProperty()},
 		{QStringLiteral("src_quality"), stringProperty()},
 		{QStringLiteral("src_quality_choices"), arrayProperty()},
+		{QStringLiteral("loudness_report"), booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -175,6 +185,7 @@ void registerExportSetSrcQuality(ControlRegistry& registry)
 		{QStringLiteral("previous"), stringProperty()},
 		{QStringLiteral("dither"), booleanProperty()},
 		{QStringLiteral("src_quality_choices"), arrayProperty()},
+		{QStringLiteral("loudness_report"), booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -220,6 +231,68 @@ void registerExportSetSrcQuality(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerExportSetLoudnessReport(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("export.set_loudness_report");
+	cmd.group = QStringLiteral("export");
+	cmd.verb = QStringLiteral("set_loudness_report");
+	cmd.description = QStringLiteral("Turn the render path's EBU R128 loudness report on or off for "
+		"the NEXT render (feature row 24 of docs/FEATURE-LIST-0.3.0.md, \"LUFS / loudness "
+		"metering\"). With it on, the render measures every block it writes with the engine's "
+		"BS.1770-4 meter (the same LufsMeter `meter.get_state` and `meter.measure_file` report "
+		"through) and writes the report beside the output as <output>.loudness.txt - integrated "
+		"LUFS, the loudest 3 s window, true peak in dBTP and the EBU R128 verdict against -23.0 "
+		"LUFS-I +/- 0.5 LU and -1.0 dBTP. MEASURE-ONLY: the rendered audio is byte-identical "
+		"whether the report is on or off (the tap reads the frames immediately before the file "
+		"device writes them), which is why the default is off rather than on. The same value is "
+		"the export dialog's \"Loudness report (EBU R128)\" checkbox and the CLI's "
+		"--loudness-report flag; this verb is how an agent sets it. Reversible: control.undo "
+		"restores the previous selection.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("enabled"), booleanProperty()},
+	}, {QStringLiteral("enabled")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("loudness_report"), booleanProperty()},
+		{QStringLiteral("previous"), booleanProperty()},
+		{QStringLiteral("dither"), booleanProperty()},
+		{QStringLiteral("src_quality"), stringProperty()},
+		{QStringLiteral("src_quality_choices"), arrayProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		const bool previous = ExportRenderSettings::loudnessReport();
+		const bool requested = args.value(QStringLiteral("enabled")).toBool();
+
+		// SPEC A16: one bounded scalar owned by a subsystem the engine does not
+		// journal, so the inverse is a recorded undo STEP on the engine's own
+		// stack - the mechanism export.set_dither and export.set_src_quality use
+		// beside it.
+		control::addUndoStep(
+			[previous]() { ExportRenderSettings::setLoudnessReport(previous); },
+			[requested]() { ExportRenderSettings::setLoudnessReport(requested); });
+		ExportRenderSettings::setLoudnessReport(requested);
+
+		QJsonObject result = exportSettingsJson();
+		result.insert(QStringLiteral("previous"), previous);
+
+		QJsonObject transaction;
+		transaction.insert(QStringLiteral("before"),
+			QJsonObject{{QStringLiteral("loudness_report"), previous}});
+		transaction.insert(QStringLiteral("inverse"),
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("export.set_loudness_report")},
+				{QStringLiteral("args"),
+					QJsonObject{{QStringLiteral("enabled"), previous}}}});
+		transaction.insert(QStringLiteral("reversible"), true);
+		transaction.insert(QStringLiteral("mechanism"),
+			QStringLiteral("action checkpoint: the recorded undo step restores the previous "
+				"selection, exactly as this command sets the new one"));
+		result.insert(QStringLiteral("__transaction"), transaction);
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerExportCommands(ControlRegistry& registry)
@@ -227,6 +300,10 @@ void registerExportCommands(ControlRegistry& registry)
 	registerExportGetSettings(registry);
 	registerExportSetDither(registry);
 	registerExportSetSrcQuality(registry);
+	// Feature row 24: the render-path loudness report, so the half of the
+	// feature that only the export dialog's checkbox could reach is drivable
+	// from the socket too.
+	registerExportSetLoudnessReport(registry);
 }
 
 } // namespace lmms

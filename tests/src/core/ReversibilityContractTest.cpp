@@ -87,7 +87,17 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{225, 120, 18, 7, 80};   // telemetry-off, wasm-off base; the guards add the rest
+	/*! telemetry-off, wasm-off base; the guards add the rest.
+	 *
+	 *  THE BASE MOVED ONCE since the merge train's 225 / 120 / 18 / 7 / 80, and the
+	 *  growth is named rather than absorbed: the loudness surface (feature row 24,
+	 *  030/meter-surface) added four rows - meter.arm and export.set_loudness_report
+	 *  as recorded-action true_inverse rows, meter.get_state and meter.measure_file as
+	 *  not_mutating inspectors - so the base is 229 / 122 / 18 / 7 / 82 and a
+	 *  telemetry-on build reads 231 / 122 / 18 / 7 / 84. The paragraph in
+	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this assertion's
+	 *  job is that the two cannot drift. */
+	DocumentedHistogram out{229, 122, 18, 7, 82};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

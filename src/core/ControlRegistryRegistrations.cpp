@@ -192,6 +192,12 @@ void registerControlCommands(ControlRegistry& registry)
 	registerScaleCommands(registry);
 	registerScaleEditCommands(registry);
 	registerDeviceCommands(registry);
+	// The loudness surface (feature row 24, "LUFS / loudness metering"): the live
+	// master tap and the file measurement, plus the render-path report that
+	// export.get_settings exposes. No compile-time switch: the BS.1770-4 meter,
+	// the report and the tap are in every configuration, so its three ids are
+	// honest in every one.
+	registerMeterCommands(registry);
 }
 
 } // namespace lmms

@@ -276,6 +276,7 @@ include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlGrooveSupport.h
 include/ControlMasteringSupport.h
+include/ControlMeterSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlNoteShared.h
@@ -303,6 +304,7 @@ include/LinkSync.h
 include/LmmsPolyfill.h
 include/LoudnessReport.h
 include/LufsMeter.h
+include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
@@ -460,6 +462,8 @@ src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
+src/core/ControlCommandsMeter.cpp
+src/core/ControlCommandsMeterFile.cpp
 src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
@@ -536,6 +540,7 @@ src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableMastering.cpp
+src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
@@ -569,6 +574,7 @@ src/core/LinkSyncWire.cpp
 src/core/LinkUdpTransport.cpp
 src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
+src/core/MasterLoudnessTap.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
@@ -693,6 +699,7 @@ tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/LufsMeterTest.cpp
+tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp

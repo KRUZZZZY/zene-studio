@@ -114,6 +114,14 @@ set(LMMS_TESTS
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
 	src/core/MathTest.cpp
+	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
+	# `meter.*` group's live half): what an armed tap reads, the three negative
+	# controls that keep it honest - silence reads the sentinel, 10 dB more input
+	# reads 10 LU higher, and a buffer fed through an armed tap is bit-identical
+	# afterwards - plus zero allocations over 64 fed blocks. The socket proof of
+	# the group itself is the registered ctest ControlMeterCommands
+	# (tests/control-meter-commands.py).
+	src/core/MeterTapTest.cpp
 	src/core/MidiLearnTest.cpp
 	# MIDI clock (0.3.0, the `clock.*` group's engine half): the master's
 	# emitted message set for a known transport script, and the follower's
@@ -1791,6 +1799,27 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-commands.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlMasteringCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
+	# The loudness surface (feature row 24 of docs/FEATURE-LIST-0.3.0.md, "LUFS /
+	# loudness metering"), which is the release contract's section 3.1 claim for
+	# the `meter.*` group: it starts the real binary, arms the PASSIVE master tap
+	# and reads BS.1770-4 integrated / momentary / short-term / true peak off the
+	# wire while the tree's own EBU Tech 3341 fixtures play through the engine,
+	# measures a rendered file with the same meter, and carries the negative
+	# controls the task names - silence reads null (never a plausible number), a
+	# signal 10 dB louder reads 10 LU higher both live and from a file, and the
+	# audio is byte-identical with the tap attached (the file's sha256 is
+	# unchanged by measuring it; two renders of one project have identical PCM
+	# with the tap armed and disarmed). It reports ctest *Skipped* (exit 77) -
+	# never *Passed* - when the tree has no loudness fixture generator to run.
+	add_test(NAME ControlMeterCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-meter-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMeterCommands PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77

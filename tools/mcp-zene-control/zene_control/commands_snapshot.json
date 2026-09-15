@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-14T15:30:39Z",
+  "captured_at": "2026-09-15T10:57:06Z",
   "commands": [
     {
       "args_schema": {
@@ -2909,7 +2909,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Read the render settings that outlive one OutputSettings: whether the next export dithers, and which sample-rate-conversion quality it resamples with. Both are OFF/DEFAULT unless something asked for otherwise - dither is off by default because this release's render-reproducibility claim depends on it, and 'linear' is the converter every render the engine has produced so far used. Read-only: no transaction is recorded. There is no interface for either setting; drive them through export.set_* (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Read the render settings that outlive one OutputSettings: whether the next export dithers, which sample-rate-conversion quality it resamples with, and whether it writes an EBU R128 loudness report beside its output. All three are OFF/DEFAULT unless something asked for otherwise - dither is off by default because this release's render-reproducibility claim depends on it, 'linear' is the converter every render the engine has produced so far used, and the loudness report is opt-in because it is a measurement, not a render choice. Read-only: no transaction is recorded. There is no interface for the first two; drive them through export.set_* (docs/KNOWN-LIMITATIONS.md). The loudness report has an interface - the export dialog's checkbox - and export.set_loudness_report drives the same value from here.",
       "group": "export",
       "id": "export.get_settings",
       "mutating": false,
@@ -2918,6 +2918,9 @@
         "additionalProperties": false,
         "properties": {
           "dither": {
+            "type": "boolean"
+          },
+          "loudness_report": {
             "type": "boolean"
           },
           "src_quality": {
@@ -2953,6 +2956,50 @@
         "additionalProperties": false,
         "properties": {
           "dither": {
+            "type": "boolean"
+          },
+          "loudness_report": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "boolean"
+          },
+          "src_quality": {
+            "type": "string"
+          },
+          "src_quality_choices": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Turn the render path's EBU R128 loudness report on or off for the NEXT render (feature row 24 of docs/FEATURE-LIST-0.3.0.md, \"LUFS / loudness metering\"). With it on, the render measures every block it writes with the engine's BS.1770-4 meter (the same LufsMeter `meter.get_state` and `meter.measure_file` report through) and writes the report beside the output as <output>.loudness.txt - integrated LUFS, the loudest 3 s window, true peak in dBTP and the EBU R128 verdict against -23.0 LUFS-I +/- 0.5 LU and -1.0 dBTP. MEASURE-ONLY: the rendered audio is byte-identical whether the report is on or off (the tap reads the frames immediately before the file device writes them), which is why the default is off rather than on. The same value is the export dialog's \"Loudness report (EBU R128)\" checkbox and the CLI's --loudness-report flag; this verb is how an agent sets it. Reversible: control.undo restores the previous selection.",
+      "group": "export",
+      "id": "export.set_loudness_report",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dither": {
+            "type": "boolean"
+          },
+          "loudness_report": {
             "type": "boolean"
           },
           "previous": {
@@ -2991,6 +3038,9 @@
         "additionalProperties": false,
         "properties": {
           "dither": {
+            "type": "boolean"
+          },
+          "loudness_report": {
             "type": "boolean"
           },
           "previous": {
@@ -4271,6 +4321,165 @@
             "type": "object"
           },
           "source_render_file": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Arm or disarm the PASSIVE loudness tap on the master mix. ARMING STARTS A MEASUREMENT, EVERY TIME - including a re-arm of an already-armed tap: the accumulated integrated loudness, short-term maximum and true peak are dropped and everything measured from now on is the new reading, so 'arm, play the section, read meter.get_state' always reports THAT section and two measured sections can never be silently averaged into one number. A caller that wants the running measurement to continue simply does not re-arm it. DISARMING keeps the last reading readable, so a caller can stop measuring and still see the result. Safe to send while the transport is running: the tap allocates nothing, locks nothing and only reads the master mix, so the audio is bit-for-bit unchanged. Reversible: control.undo restores the armed flag (the readings themselves are surface memory and are not part of the inverse).",
+      "group": "meter",
+      "id": "meter.arm",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "live": {
+            "type": "object"
+          },
+          "note": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The LIVE loudness of the master mix: gated integrated loudness (LUFS-I), momentary (LUFS-M, last 400 ms), short-term (LUFS-S, last 3 s), the loudest short-term window since the tap was armed, and true peak (dBTP) - the ITU-R BS.1770-4 / EBU R128 measures - measured by the engine's own meter from the periods it is rendering, plus whether the tap is armed and how many periods it has measured. Reads only; the tap is PASSIVE, so it never changes a sample. A reading is null (never a plausible number) while nothing measurable has been fed - which is also the state before the tap is armed: see meter.arm.",
+      "group": "meter",
+      "id": "meter.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "live": {
+            "type": "object"
+          },
+          "note": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Measure a RENDERED FILE's loudness and true peak, now, from the file's own bytes: gated integrated loudness (LUFS-I), momentary, short-term and the loudest short-term window, true peak in dBTP, the EBU R128 verdict, and the file's own facts (sample rate, channels, frames, duration, size and sha256). The same BS.1770-4 meter the render path uses measures it, in bounded chunks, reading the file and writing nothing - so a caller can hash the file before and after and see it unchanged. 1 to 6 channels (mono and stereo exactly; 5.1 with BS.1770-4's channel weights); a file with more, or one with no frames, is refused typed. A silent file reports null readings, measured false and verdict NOT MEASURED.",
+      "group": "meter",
+      "id": "meter.measure_file",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "channels": {
+            "type": "integer"
+          },
+          "deviation_lu": {
+            "type": "number"
+          },
+          "duration_seconds": {
+            "type": "number"
+          },
+          "format_major": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "integrated_lufs": {
+            "type": "number"
+          },
+          "loudness_pass": {
+            "type": "boolean"
+          },
+          "measured": {
+            "type": "boolean"
+          },
+          "momentary_lufs": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "short_term_lufs": {
+            "type": "number"
+          },
+          "short_term_max_lufs": {
+            "type": "number"
+          },
+          "source": {
+            "type": "array"
+          },
+          "target": {
+            "type": "object"
+          },
+          "true_peak_dbtp": {
+            "type": "number"
+          },
+          "true_peak_pass": {
+            "type": "boolean"
+          },
+          "verdict": {
             "type": "string"
           }
         },
@@ -11153,16 +11362,16 @@
       }
     }
   ],
-  "count": 227,
+  "count": 231,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 205380680,
-    "binary_sha256": "a0a84b3dfac4e6cf20981d69c2e2b088d607898a6f11863f49f1e8333809c6a0",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "89a5e79429edb00b99f6d6f3a275fa9cd6e8bd08",
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wmeter/build/zene",
+    "binary_bytes": 206737744,
+    "binary_sha256": "1b436715a0ea44b00682a3906a8fa3e476c68ff391b6e01e52881c4d4cdae21e",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wmeter",
+    "lane_head": "28a9246aa11d7aaac1cc9bc6103c3e52aebbdcfb",
     "proto": 1,
-    "source_socket": "/home/kruzzzzy/zene-030-merge2-598d4f5c1/zene-merge2.sock",
-    "version": "0.2.1-alpha.191+6c55700"
+    "source_socket": "/tmp/meter-snap/zene.sock",
+    "version": "0.2.1-alpha.198+28a9246"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
