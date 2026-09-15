@@ -531,6 +531,8 @@ src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
+# ... and the four FILE verbs of the same group, split off at the 500-line ratchet.
+src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp

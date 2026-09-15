@@ -508,6 +508,13 @@ LMMS_EXPORT void registerTrackStructureCommands(ControlRegistry& registry);
  *  interface for any of it in this release - the group is the only way to reach
  *  it. Named in docs/KNOWN-LIMITATIONS.md and the release notes. */
 LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
+/*! controller.template_save / template_list / template_apply / template_delete -
+ *  the four FILE verbs of the same group, in their own translation unit
+ *  (src/core/ControlCommandsControllerTemplates.cpp) because the group measured
+ *  706 lines against the 500-line whole-tree ratchet and a fork-NEW file over
+ *  the limit fails the gate. Called by registerControllerSurfaceCommands; the
+ *  registry still has exactly one controller.* registration point. */
+LMMS_EXPORT void registerControllerTemplateCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
