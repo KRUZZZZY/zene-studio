@@ -55,7 +55,8 @@ using RC = ReversibilityClass;
 const ReversibilityRow kControllerRows[] = {
 	// =====================================================================
 	// Feature row 19: the controller surface - soft-takeover, LED/feedback
-	// output and saveable mapping templates (docs/CONTROLLER-SURFACES.md).
+	// output and saveable mapping templates (the shipped limits are in
+	// docs/KNOWN-LIMITATIONS.md).
 	// =====================================================================
 	R("controller.surface_state", RC::NotMutating, false,
 		"reads this project's bound MIDI controls: each one's target, its "

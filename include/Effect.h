@@ -189,7 +189,7 @@ public:
 	virtual EffectControls * controls() = 0;
 
 	//! Frames of latency this effect adds to the signal path.
-	//! Latency-compensating hosts (see mixer/SPEC-dynamic-routing.md) query
+	//! Latency-compensating hosts (see docs/specs/SPEC-dynamic-routing.md) query
 	//! this to align parallel paths. Defaults to 0 for zero-latency effects.
 	virtual int latencyFrames() const
 	{

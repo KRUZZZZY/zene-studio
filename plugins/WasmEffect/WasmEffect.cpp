@@ -212,7 +212,7 @@ Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t fr
 
 	// submit() notices a sample-rate change and asks the worker thread to
 	// re-instantiate the module; nothing but atomics happens on the audio
-	// thread (specs/SPEC-wasm-sandbox.md section 4).
+	// thread (docs/specs/SPEC-wasm-sandbox.md section 4).
 	m_worker.submit(m_dryScratch.data(), frameCount, sampleRate);
 	return ProcessStatus::Continue;
 }

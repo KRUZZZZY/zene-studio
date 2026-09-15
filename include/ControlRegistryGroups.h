@@ -333,7 +333,7 @@ LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
  *    positions, NoteRandom's pure function of the seed and each note's identity).
  *  - registerNoteSlideCommands: note.slide_set / note.slide_clear - the FL-style
  *    slide (portamento) flag, which the engine has carried since
- *    docs/specs/SPEC-slide-notes and never had an id for.
+ *    docs/specs/SPEC-slide-notes.md and never had an id for.
  *  - registerNoteTransformCommands: note.transpose / note.velocity_offset /
  *    note.velocity_scale - NoteTransform's three transforms. The grid quantise is
  *    deliberately NOT re-wrapped: groove.quantize already drives

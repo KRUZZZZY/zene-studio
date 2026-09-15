@@ -75,7 +75,7 @@ IF(VERSION_BUILD)
 	SET(VERSION     "${VERSION}-${VERSION_BUILD}")
 ENDIF()
 
-# Lua scripting API version (spec: specs/SPEC-lua-api-v0.md, policy:
+# Lua scripting API version (spec: docs/specs/SPEC-lua-api-v0.md, policy:
 # docs/LUA-COMPATIBILITY-POLICY.md). This is the single source of truth for the
 # version the engine reports to scripts (lmms.version(), lmms.apiVersion()) and
 # enforces when a script declares `--! lmms-api <major>.<minor>`. Bump MINOR for

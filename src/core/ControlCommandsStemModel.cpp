@@ -15,7 +15,7 @@
  * spec is deliberately unpinned in v1 - so the DEFAULT call to
  * stem.model_download is a typed refusal that names the model card. That is the
  * "models are never bundled, always verified" rule working, not a gap
- * (include/StemSeparation/StemModelStore.h:65-69, docs/STEM-SPLIT.md).
+ * (include/StemSeparation/StemModelStore.h:65-69, doc/STEM-SPLIT.md).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *

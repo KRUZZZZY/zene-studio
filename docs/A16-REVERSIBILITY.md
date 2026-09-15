@@ -9,7 +9,7 @@ step), with three new `control.*` commands and a per-command coalescing declarat
 See §10 and `docs/UNDO-BOUNDS.md` for the two decisions the extension makes.
 
 This is the DESIGN + IMPLEMENTATION record. The measured baseline it starts from is
-`ableton-gap/A16-STATUS-MEASURED.md` (36 mutating commands exercised, 17 `reversible: true`); where
+`docs/specs/A16-STATUS-MEASURED.md` (36 mutating commands exercised, 17 `reversible: true`); where
 this table disagrees with that measurement, the row says so and section 2 argues it.
 
 ---

@@ -45,7 +45,7 @@ FILE(READ "${LMMS_VST3_SDK_PATH}/LICENSE.txt" LMMS_VST3_LICENSE_TEXT)
 IF(NOT LMMS_VST3_LICENSE_TEXT MATCHES "MIT License")
 	MESSAGE(FATAL_ERROR
 		"${LMMS_VST3_SDK_PATH}/LICENSE.txt is not the MIT licence. Only "
-		"VST3 SDK >= 3.8 may be used by LMMS (see plugin-hosting/VST3-LICENSING.md).")
+		"VST3 SDK >= 3.8 may be used by LMMS (see docs/specs/VST3-LICENSING.md).")
 ENDIF()
 IF(EXISTS "${LMMS_VST3_SDK_PATH}/pluginterfaces/vst2.x")
 	MESSAGE(FATAL_ERROR

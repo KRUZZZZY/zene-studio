@@ -37,7 +37,7 @@ Ring full ⇒ **drop incoming frame + `m_overflow.fetch_add(1, relaxed)`** (neve
 
 **Arm/input state:** prototype uses `std::atomic<bool> m_armed` + `std::atomic<int> m_inputChannel` per track (2 hardcoded tracks in `MultiTrackRecorder`), standing in for per-`SampleTrack` arm/input-selection state (phase 2 wires `SampleClip::m_recordModel` to these atomics).
 
-## 4. Invariants held (mixer/SPEC-dynamic-routing.md §5)
+## 4. Invariants held (docs/specs/SPEC-dynamic-routing.md §5)
 
 1. No allocation, no locks, no syscalls on the producer path — ring is pre-allocated at arm time.
 2. T4 is SCHED_OTHER; the producer never waits on it.

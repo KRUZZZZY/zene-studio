@@ -215,7 +215,7 @@ LMMS_EXPORT QJsonObject stemModelState(bool withHash);
  *  With no \a url/\a sha256/\a size_bytes the store's own spec is used, and in
  *  v1 that spec is deliberately unpinned - so the default call is REFUSED with
  *  the store's own sentence and the model card URL, which is the policy working
- *  rather than a bug (StemModelStore.h:65-69, docs/STEM-SPLIT.md "Model
+ *  rather than a bug (StemModelStore.h:65-69, doc/STEM-SPLIT.md "Model
  *  handling"). A non-HTTPS URL is refused before any transfer starts.
  *
  *  A performing call is a real network transfer on the application thread, and

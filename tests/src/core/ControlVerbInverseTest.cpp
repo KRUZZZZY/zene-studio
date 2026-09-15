@@ -19,9 +19,8 @@
  *     checkpoint taken before the edit carries none either.
  *
  * The negative control - neuter the reset, expect FAIL - is NOT here, because it
- * needs a rebuilt engine; it is the recorded procedure in tests/control-verb-inverses.md
- * and its result is quoted in LANE-STATE.md. What this file proves is the positive
- * direction, against the shipped engine.
+ * needs a rebuilt engine, so the shipped engine this test runs against cannot exercise
+ * it. What this file proves is the positive direction, against the shipped engine.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *

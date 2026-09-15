@@ -7,7 +7,7 @@
  *
  * WHY A PRIVATE STORE AND NOT A PROJECT ELEMENT. A preset whose whole point is
  * "apply this to another track in another project" cannot live in the project
- * that captured it: docs/CHAIN-PRESETS.md states the finding, and the brief for
+ * that captured it: docs/KNOWN-LIMITATIONS.md states the finding as the shipped limitation, and the brief for
  * OWNER-31 item 2 states it as the requirement ("a store that survives
  * project.save/project.open AND is usable across projects"). The store is
  * therefore the product's own user preset root - the same directory tree the

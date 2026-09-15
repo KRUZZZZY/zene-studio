@@ -8,7 +8,7 @@
  * read and reviewed as a table in one place, and so the anti-drift test has
  * exactly one thing to compare against the registry.
  *
- * Reconciled against ableton-gap/A16-STATUS-MEASURED.md (the parent's measured
+ * Reconciled against docs/specs/A16-STATUS-MEASURED.md (the parent's measured
  * baseline of 36 exercised mutating commands, 17 reversible:true). The rows
  * where this table DISAGREES with that measurement are marked "DISAGREEMENT"
  * and the doc that ships beside this code (docs/A16-REVERSIBILITY.md) records

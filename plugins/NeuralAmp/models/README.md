@@ -35,4 +35,4 @@ Repos cloned for verification at these commits:
   byte-identical to upstream, so nothing here was synthesised locally.
 - `BossWN-nano.nam` (842 weights) and `BossWN-standard.nam` (13 802 weights) are the
   small and standard WaveNet variants used for the CPU measurements in
-  `../../../../NEURAL-AMP.md`.
+  `docs/specs/NEURAL-AMP.md`.

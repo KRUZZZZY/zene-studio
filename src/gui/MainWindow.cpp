@@ -339,7 +339,7 @@ void MainWindow::finalize()
 	project_menu->addAction(embed::getIconPixmap("project_import"), tr("Import..."),
 		this, &MainWindow::onImportProject);
 
-	// Lua scripting (spec: specs/SPEC-lua-api-v0.md, G4). The script runs on
+	// Lua scripting (spec: docs/specs/SPEC-lua-api-v0.md, G4). The script runs on
 	// the ScriptEngine worker thread; engine mutations are applied on this
 	// (GUI) thread when the run finishes, so nothing touches the audio thread.
 	addAction(project_menu, "tool", tr("Run &Script..."),
