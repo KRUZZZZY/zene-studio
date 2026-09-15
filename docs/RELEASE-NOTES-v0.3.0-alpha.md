@@ -295,6 +295,48 @@ that marker is published as-is, and no unverified claim is published without one
   matching the pre-existing engine, which divides by `DefaultTicksPerBar` and never by the metre. There are no
   tempo *curves*: events are steps.
 
+## Tempo-map export and import: Standard MIDI File conductor interchange (`interchange.*`) — added 2026-09-15
+
+- **New: the tempo map leaves the program as a file another DAW reads, and comes back.** The map is written
+  as a **format-1 Standard MIDI File with one conductor track** at **480 ticks per quarter note**, carrying the
+  tempo and time-signature events, and a file's conductor events can be read back and applied to the map.
+  LMMS' own grid is 48 ticks per quarter note, so a LMMS tick maps into the file **exactly** (×10, no
+  rounding); the tempo meta event is microseconds per quarter note, and `bpm -> µs -> bpm` is the identity for
+  every integer tempo the engine accepts (10..999 — measured, not asserted).
+- **The tick-0 rule, stated because a DAW's reader depends on it.** An SMF has no "global tempo before the
+  first event" — before one, a player assumes 120 bpm — so the writer seeds tick 0 with the tempo and metre the
+  timeline obeys there unless the map already carries that half at tick 0. A map whose first event is at bar 5
+  therefore exports bars 1-4 at the tempo they actually play, and `seed_events` in the reply says how many
+  halves the rule had to add. Importing such a file leaves every sampled tempo and metre unchanged.
+- **Control surface:** `interchange.smf_convention` (the PPQ, the LMMS ticks per quarter, the ratio, the tempo
+  unit, the time-signature byte layout, the file shape and the tick-0 rule — the convention as data on the
+  wire), `interchange.smf_export`, `interchange.smf_read` (read a file's events back **without touching the
+  session**, which is what makes a round trip checkable against the file rather than against its hash) and
+  `interchange.smf_import`. Export and read are `not_mutating` (the export writes a file outside the session);
+  an import replaces the tempo map and records its SPEC A16 class (`true_inverse` — the same action checkpoint
+  the `transport.tempo_map_*` commands use, because the map is not inside any `Song` checkpoint), so one
+  `control.undo` brings the previous map back.
+- **Cross-DAW on the read side too.** A foreign division (96, 960, 1000 ppq) is scaled onto LMMS'
+  48-ticks-per-quarter grid, every event that had to be rounded is **counted and reported**
+  (`rounded_events`), every track's tempo and metre events are read and merged by tick, and a file needing more
+  ticks than the map holds (128) is refused — `capacity_events` says by how much — rather than truncated into
+  the map.
+- **UI absence — one line: Standard MIDI File tempo-map interchange is drivable through the socket, not from
+  the interface.** Nothing in `src/gui/` writes or reads a conductor track; `File > Export MIDI` is the
+  pre-existing note export and is neither changed by nor wired to these ids. `docs/KNOWN-LIMITATIONS.md`
+  carries the same sentence.
+- **Proof:** the registered ctests `SmfInterchangeTest` (the four ids, the schemas, the typed refusals, and
+  the written file's bytes checked against the format by the **test's own** Standard MIDI File parser, which
+  shares no code with the module under test) and `SmfInterchangeRoundTripTest` (**the round trip the feature
+  list names**: a map with tempo AND metre changes exported, the session's map cleared, the FILE imported, and
+  the MAP then compared — event for event, as the engine's own `TempoMap` object, and as sampled step
+  functions against an oracle built from the authored events — not the file, not its hash).
+- **Stated limits.** Events are **steps**: the map holds steps and the format's tempo event is a step, so no
+  tempo curve is written (there is none to write). **Only the conductor track** is written — notes, clips,
+  automation and markers are not in the file. On read, only the tempo and metre meta events are used, so the
+  rest of a foreign file is ignored rather than refused. And import **replaces** the map (no merge, no
+  "import into a range"). All of it is in `docs/SMF-INTERCHANGE.md`.
+
 ## The groove pool and quantise (`groove.*`) — added 2026-09-13
 
 - **New: the feel of a note pattern can be captured, named and re-applied, and notes can be
