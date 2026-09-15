@@ -7,46 +7,20 @@
  * docs/DAWPROJECT-INTERCHANGE.md, which is the document the release contract
  * asks for when it asks which version was implemented.
  *
- * THE DOCUMENT'S SHAPE (the schema's own sequence: Application, Transport,
- * Structure, Arrangement, Scenes), every name one Project.xsd declares:
+ * THE DOCUMENT'S SHAPE is the schema's own sequence - Application, Transport,
+ * Structure, Arrangement, Scenes - with every name this file emits reproduced
+ * against its Project.xsd line in docs/DAWPROJECT-INTERCHANGE.md (section 2).
+ * Two facts from it belong here: the mixer's strips are BARE <Channel> elements
+ * inside <Structure>, before the <Track>s, and inside <Arrangement> the two
+ * automation timelines come AFTER the lanes.
  *
- *   <Project version="1.0">
- *     <Application name="Zene Studio" version="..."/>
- *     <Transport><Tempo .../><TimeSignature .../></Transport>
- *     <Structure>
- *       <Channel id="mixer0" role="master"><Volume .../><Mute .../></Channel>
- *       <Track contentType="notes" loaded="true" id="id4" name="Bass">
- *         <Channel id="strip1" destination="mixer0"><Pan .../></Channel>
- *       </Track>
- *     </Structure>
- *     <Arrangement id="..."><Lanes timeUnit="beats" id="...">
- *       <Lanes track="id4" id="..."><Clips id="..."><Clip time="0"
- *           duration="8" playStart="0"><Notes id="..."><Note time="0"
- *           duration="0.25" channel="0" key="65" vel="0.787402"
- *           rel="0.787402"/></Notes></Clip></Clips></Lanes></Lanes>
- *       <TempoAutomation ...><Target parameter="id0"/><RealPoint .../></...>
- *       <TimeSignatureAutomation ...><Target parameter="id1"/>...</...>
- *     </Arrangement><Scenes/></Project>
+ * IDS. A model that names its own id keeps it (elementId below); every other id
+ * is `id<n>` in document order, assigned before the elements that point at it.
  *
- * The full attribute set of every element is in
- * docs/DAWPROJECT-INTERCHANGE.md, which reproduces the XSD declarations.
- *
- * THE ORDER INSIDE <Arrangement> IS Lanes, Markers, TempoAutomation,
- * TimeSignatureAutomation - the schema's own sequence, so the automation
- * timelines come AFTER the lanes and not before them. Inside <Structure> the
- * mixer's bare <Channel> elements come first and the <Track>s after them; each
- * track's <Channel destination="..."> names the strip it feeds.
- *
- * IDS. Every id is `id<n>` in document order (the shape the format's own
- * example uses), and the ones that are also REFERENCED - the tempo and
- * time-signature parameters, the tracks, their lanes and the mixer strips - are
- * assigned before the elements that point at them.
- *
- * WHAT IT REFUSES RATHER THAN ROUNDS: a tempo outside the engine's own bounds,
- * a metre whose denominator is not a power of two, or a clip whose lane has no
- * track id. The format could express all three; this engine cannot read them
- * back or place them, so writing them would produce a file that claims
- * something the session is not.
+ * WHAT IT REFUSES RATHER THAN ROUNDS: a tempo outside the engine's own bounds, a
+ * metre whose denominator is not a power of two, or a clip whose lane has no
+ * track id - the format could express all three, this engine cannot read them
+ * back - plus the id rules in elementId below. See the doc, section 3.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -70,6 +44,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 #include <QString>
 #include <QXmlStreamWriter>
 
@@ -113,11 +88,27 @@ QString number(double value, int decimals)
 	return text;
 }
 
-//! "<index>" -> "id<index>". One counter for the whole document, in document
-//! order, so the ids are stable for a given model.
-QString idFor(int* counter)
+//! "<index>" -> "id<index>". One counter for the whole document, in document order.
+QString idFor(int* counter) { return QStringLiteral("id%1").arg((*counter)++); }
+
+//! A generated id, reserved so nothing after it can be given the same one.
+QString freshId(int* counter, QSet<QString>& used)
 {
-	return QStringLiteral("id%1").arg((*counter)++);
+	QString id;
+	do { id = idFor(counter); } while (used.contains(id));
+	used.insert(id);
+	return id;
+}
+
+//! The id an element gets: the MODEL's own when the schema allows it and it is
+//! not taken, else a generated one - reserved either way, so this writer can
+//! never produce a document with a duplicate xs:ID.
+QString elementId(int* counter, const QString& candidate, QSet<QString>& used)
+{
+	const QString id = dawProjectUsableDocumentId(candidate) && !used.contains(candidate)
+		? candidate : freshId(counter, used);
+	used.insert(id);
+	return id;
 }
 
 QString beatsText(double beats) { return number(beats, TimeDecimals); }
@@ -215,6 +206,7 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 	writer.writeStartDocument(QStringLiteral("1.0"), true);
 
 	int counter = 0;
+	QSet<QString> used;
 	writer.writeStartElement(QStringLiteral("Project"));
 	writer.writeAttribute(QStringLiteral("version"), DawProjectVersionAttribute);
 
@@ -226,10 +218,10 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 	// The Transport comes before the Structure, and its two parameters' ids are
 	// what the two automation timelines' <Target> elements refer to.
 	writer.writeStartElement(QStringLiteral("Transport"));
-	const QString tempoId = idFor(&counter);
+	const QString tempoId = freshId(&counter, used);
 	writeValueParameter(writer, QStringLiteral("Tempo"), QStringLiteral("Tempo"),
 		QStringLiteral("bpm"), model.tempo, DawProjectMinTempo, DawProjectMaxTempo, tempoId);
-	const QString meterId = idFor(&counter);
+	const QString meterId = freshId(&counter, used);
 	writer.writeStartElement(QStringLiteral("TimeSignature"));
 	writer.writeAttribute(QStringLiteral("denominator"), QString::number(model.denominator));
 	writer.writeAttribute(QStringLiteral("numerator"), QString::number(model.numerator));
@@ -246,7 +238,9 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 	mixerIds.reserve(model.mixerChannels.size());
 	for (const DawProjectMixerChannel& channel : model.mixerChannels)
 	{
-		const QString channelId = idFor(&counter);
+		// The model's own strip id (the session path names them `mixer<n>`), so
+		// `destination` below points at the id the model carries.
+		const QString channelId = elementId(&counter, channel.id, used);
 		mixerIds.append(channelId);
 		writer.writeStartElement(QStringLiteral("Channel"));
 		writer.writeAttribute(QStringLiteral("audioChannels"),
@@ -263,9 +257,9 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 			writer.writeAttribute(QStringLiteral("name"), channel.name);
 		}
 		writeValueParameter(writer, QStringLiteral("Volume"), QStringLiteral("Volume"),
-			QStringLiteral("linear"), channel.volume, 0.0, 2.0, idFor(&counter));
+			QStringLiteral("linear"), channel.volume, 0.0, 2.0, freshId(&counter, used));
 		writeBoolParameter(writer, QStringLiteral("Mute"), QStringLiteral("Mute"), channel.mute,
-			idFor(&counter));
+			freshId(&counter, used));
 		writer.writeEndElement();  // Channel (bare, a mixer strip)
 	}
 
@@ -299,7 +293,7 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 	trackIds.reserve(model.tracks.size());
 	for (const DawProjectTrack& track : model.tracks)
 	{
-		const QString trackId = idFor(&counter);
+		const QString trackId = elementId(&counter, track.id, used);
 		trackIds.append(trackId);
 
 		writer.writeStartElement(QStringLiteral("Track"));
@@ -317,7 +311,8 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 			track.solo ? QStringLiteral("true") : QStringLiteral("false"));
 		if (!track.channelId.isEmpty())
 		{
-			writer.writeAttribute(QStringLiteral("id"), track.channelId);
+			writer.writeAttribute(QStringLiteral("id"),
+				elementId(&counter, track.channelId, used));
 		}
 		if (!track.name.isEmpty()) { writer.writeAttribute(QStringLiteral("name"), track.name); }
 		const QString destination = destinationFor(track);
@@ -330,10 +325,10 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 		if (track.hasVolume)
 		{
 			writeValueParameter(writer, QStringLiteral("Volume"), QStringLiteral("Volume"),
-				QStringLiteral("linear"), track.volume, 0.0, 2.0, idFor(&counter));
+				QStringLiteral("linear"), track.volume, 0.0, 2.0, freshId(&counter, used));
 		}
 		writeBoolParameter(writer, QStringLiteral("Mute"), QStringLiteral("Mute"), track.mute,
-			idFor(&counter));
+			freshId(&counter, used));
 		// LOSSY #6: written only where the track type HAS a panning model. A
 		// channel with none leaves the attribute out, and a reader sees the
 		// format's own default (0.5, centre) - which is the pan such a track
@@ -341,7 +336,7 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 		if (track.hasPan)
 		{
 			writeValueParameter(writer, QStringLiteral("Pan"), QStringLiteral("Pan"),
-				QStringLiteral("normalized"), track.pan, 0.0, 1.0, idFor(&counter));
+				QStringLiteral("normalized"), track.pan, 0.0, 1.0, freshId(&counter, used));
 		}
 		writer.writeEndElement();  // Channel (the track's own strip)
 		writer.writeEndElement();  // Track
@@ -349,19 +344,19 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 	writer.writeEndElement();  // Structure
 
 	writer.writeStartElement(QStringLiteral("Arrangement"));
-	writer.writeAttribute(QStringLiteral("id"), idFor(&counter));
+	writer.writeAttribute(QStringLiteral("id"), freshId(&counter, used));
 
 	writer.writeStartElement(QStringLiteral("Lanes"));
 	writer.writeAttribute(QStringLiteral("timeUnit"), QString::fromLatin1(DawProjectTimeUnit));
-	writer.writeAttribute(QStringLiteral("id"), idFor(&counter));
+	writer.writeAttribute(QStringLiteral("id"), freshId(&counter, used));
 	for (int index = 0; index < model.tracks.size(); index++)
 	{
 		const DawProjectTrack& track = model.tracks[index];
 		writer.writeStartElement(QStringLiteral("Lanes"));
 		writer.writeAttribute(QStringLiteral("track"), trackIds[index]);
-		writer.writeAttribute(QStringLiteral("id"), idFor(&counter));
+		writer.writeAttribute(QStringLiteral("id"), freshId(&counter, used));
 		writer.writeStartElement(QStringLiteral("Clips"));
-		writer.writeAttribute(QStringLiteral("id"), idFor(&counter));
+		writer.writeAttribute(QStringLiteral("id"), freshId(&counter, used));
 		for (const DawProjectClip& clip : track.clips)
 		{
 			writer.writeStartElement(QStringLiteral("Clip"));
@@ -374,7 +369,7 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 				writer.writeAttribute(QStringLiteral("color"), clip.color);
 			}
 			writer.writeStartElement(QStringLiteral("Notes"));
-			writer.writeAttribute(QStringLiteral("id"), idFor(&counter));
+			writer.writeAttribute(QStringLiteral("id"), freshId(&counter, used));
 			for (const DawProjectNote& note : clip.notes)
 			{
 				writer.writeStartElement(QStringLiteral("Note"));
@@ -402,7 +397,7 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 		writer.writeStartElement(QStringLiteral("TempoAutomation"));
 		writer.writeAttribute(QStringLiteral("timeUnit"), QString::fromLatin1(DawProjectTimeUnit));
 		writer.writeAttribute(QStringLiteral("unit"), QStringLiteral("bpm"));
-		writer.writeAttribute(QStringLiteral("id"), idFor(&counter));
+		writer.writeAttribute(QStringLiteral("id"), freshId(&counter, used));
 		writeTarget(writer, tempoId);
 		for (const DawProjectPoint& point : model.tempoPoints)
 		{
@@ -418,7 +413,7 @@ bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QStri
 	{
 		writer.writeStartElement(QStringLiteral("TimeSignatureAutomation"));
 		writer.writeAttribute(QStringLiteral("timeUnit"), QString::fromLatin1(DawProjectTimeUnit));
-		writer.writeAttribute(QStringLiteral("id"), idFor(&counter));
+		writer.writeAttribute(QStringLiteral("id"), freshId(&counter, used));
 		writeTarget(writer, meterId);
 		for (const DawProjectPoint& point : model.meterPoints)
 		{

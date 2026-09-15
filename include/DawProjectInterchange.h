@@ -11,12 +11,9 @@
  * WHAT THIS FILE IS. One in-memory MODEL of a DAWproject document (the structs
  * below), plus the four conversions a round trip is made of: modelFromSong,
  * xmlFromModel, modelFromXml and applyModelToSong. Every conversion reports what
- * it could NOT carry, because the interesting part of an interchange format is
- * the part that is lossy (the LOSSY MAPPINGS section below). A suite of
- * conversions rather than one save/load pair is what makes the round trip
- * checkable the way the release contract asks: the MODEL can be compared, which
- * a file hash cannot do. The per-attribute mapping tables are in
- * docs/DAWPROJECT-INTERCHANGE.md.
+ * it could NOT carry (the LOSSY MAPPINGS below). A suite of conversions rather
+ * than one save/load pair is what makes the round trip checkable the way the
+ * release contract asks: the MODEL can be compared, which a file hash cannot.
  *
  * VERSION. The format is version 1.0 and is stable (the project's README.md,
  * "Status"), and Project.xsd declares version="1.0" on its own <xs:schema>.
@@ -29,9 +26,9 @@
  * THE CONTAINER is a ZIP with a `project.xml` entry and an optional
  * `metadata.xml` entry, XML, UTF-8 (README.md, "Format Specification"). This
  * module writes both entries and reads either; the ZIP is written with the
- * STORE method so the container needs no compression dependency - a stored
- * entry is a valid entry in every ZIP reader, and DAWproject's own spec
- * constrains the entries, not the compression method.
+ * STORE method so the container needs no compression dependency: a stored entry
+ * is a valid entry in every ZIP reader, and the spec constrains the entries, not
+ * the compression method.
  *
  * LOSSY MAPPINGS. Every one is recorded here, in one line each, and in full -
  * with the reasoning - in docs/DAWPROJECT-INTERCHANGE.md, which is the document
@@ -60,6 +57,10 @@
  *   8. TEMPO BOUNDS: written as 10..999, and a file outside them is REFUSED.
  *   9. TIME VALUES are beats; a FOREIGN time off LMMS' 48-per-beat grid is
  *      rounded onto it and counted in `rounded_times`.
+ *  10. THE TRACK TYPE'S NAME is not in the document (the format carries the
+ *      contentType), so a typeName spelled another way comes back canonical.
+ *  11. AN UNUSABLE OR REPEATED ID is replaced by a generated `id<n>` (xs:ID must
+ *      be unique and an NCName); ids a model does carry round-trip (LOSSY #11).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -135,6 +136,8 @@ constexpr int DawProjectMaxTempo = 999;
 LMMS_EXPORT double dawProjectBeatsFromTicks(qint64 ticks);
 //! The tick a beat value lands on - the reader's inverse, rounded to the grid.
 LMMS_EXPORT qint64 dawProjectTicksFromBeats(double beats);
+//! True when `id` is a usable xs:ID (an NCName), so the writer may emit it.
+LMMS_EXPORT bool dawProjectUsableDocumentId(const QString& id);
 
 /*! The format's `contentType` value for a LMMS Track::Type name, and back.
  *

@@ -101,13 +101,25 @@ QString colorText(const std::optional<QColor>& color)
 double panFromEngine(double panning) { return (panning + 100.0) / 200.0; }
 double panToEngine(double pan) { return pan * 200.0 - 100.0; }
 
-//! The Track::Type a model track asks to be created as.
+//! The Track::Type a model track asks to be created as. The names are the
+//! canonical lowercase ones control::trackTypeNameOf emits; the comparison is
+//! case-insensitive so a hand-built model that spells one differently still
+//! imports as the type it names rather than silently as an instrument.
 Track::Type trackTypeFromName(const QString& typeName)
 {
-	if (typeName == QLatin1String("pattern")) { return Track::Type::Pattern; }
-	if (typeName == QLatin1String("sample")) { return Track::Type::Sample; }
-	if (typeName == QLatin1String("automation")) { return Track::Type::Automation; }
-	if (typeName == QLatin1String("folder")) { return Track::Type::Folder; }
+	const auto is = [&typeName](const char* name)
+	{
+		return typeName.compare(QLatin1String(name), Qt::CaseInsensitive) == 0;
+	};
+	if (is("pattern")) { return Track::Type::Pattern; }
+	if (is("sample")) { return Track::Type::Sample; }
+	if (is("automation")) { return Track::Type::Automation; }
+	if (is("hidden_automation") || is("hiddenautomation"))
+	{
+		return Track::Type::HiddenAutomation;
+	}
+	if (is("folder")) { return Track::Type::Folder; }
+	if (is("video")) { return Track::Type::Video; }
 	return Track::Type::Instrument;
 }
 

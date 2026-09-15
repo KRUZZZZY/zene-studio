@@ -71,20 +71,44 @@ qint64 dawProjectTicksFromBeats(double beats)
 	return static_cast<qint64>(std::floor(beats * DawProjectTicksPerQuarterNote + 0.5));
 }
 
+bool dawProjectUsableDocumentId(const QString& id)
+{
+	// xs:ID is an NCName: not empty, not starting with a digit, and only letters,
+	// digits, '_', '-' and '.'. The ids this module and the session path write
+	// are `id<n>` / `mixer<n>` / `strip<n>`; the check is the alphabet those need
+	// and no more, so an id the schema would reject is replaced by a generated
+	// one rather than written into a document another DAW must parse.
+	if (id.isEmpty()) { return false; }
+	const QChar first = id.at(0);
+	if (first.isDigit() || first == QLatin1Char('-') || first == QLatin1Char('.')) { return false; }
+	for (const QChar character : id)
+	{
+		const bool allowed = character.isLetterOrNumber() || character == QLatin1Char('_')
+			|| character == QLatin1Char('-') || character == QLatin1Char('.');
+		if (!allowed) { return false; }
+	}
+	return true;
+}
+
 QString dawProjectContentTypeForType(const QString& typeName, bool* lost)
 {
 	if (lost != nullptr) { *lost = false; }
-	if (typeName == QLatin1String("instrument") || typeName == QLatin1String("pattern"))
+	// LMMS' own type names are the lowercase ones control::trackTypeNameOf emits,
+	// but a model built by hand may spell one differently, so the comparison is
+	// case-insensitive: "Instrument" and "instrument" are one type here. The
+	// run-together spelling of hidden automation is tolerated for the same reason.
+	const auto is = [&typeName](const char* name)
 	{
-		return QStringLiteral("notes");
-	}
-	if (typeName == QLatin1String("sample")) { return QStringLiteral("audio"); }
-	if (typeName == QLatin1String("automation") || typeName == QLatin1String("hiddenautomation"))
+		return typeName.compare(QLatin1String(name), Qt::CaseInsensitive) == 0;
+	};
+	if (is("instrument") || is("pattern")) { return QStringLiteral("notes"); }
+	if (is("sample")) { return QStringLiteral("audio"); }
+	if (is("automation") || is("hidden_automation") || is("hiddenautomation"))
 	{
 		return QStringLiteral("automation");
 	}
-	if (typeName == QLatin1String("video")) { return QStringLiteral("video"); }
-	if (typeName == QLatin1String("folder")) { return QStringLiteral("tracks"); }
+	if (is("video")) { return QStringLiteral("video"); }
+	if (is("folder")) { return QStringLiteral("tracks"); }
 	if (lost != nullptr) { *lost = true; }
 	return QString();
 }
@@ -92,17 +116,24 @@ QString dawProjectContentTypeForType(const QString& typeName, bool* lost)
 QString dawProjectTypeForContentType(const QString& contentType, bool* lost)
 {
 	if (lost != nullptr) { *lost = false; }
+	// Project.xsd declares the six contentType values lowercase; a foreign
+	// document that spells one differently is read by the same rule rather than
+	// dropped, and the name this returns is always the canonical lowercase one.
+	const auto is = [](const QString& value, const char* name)
+	{
+		return value.compare(QLatin1String(name), Qt::CaseInsensitive) == 0;
+	};
 	const QStringList values = contentType.split(QLatin1Char(' '), Qt::SkipEmptyParts);
 	for (const QString& value : values)
 	{
-		if (value == QLatin1String("audio")) { return QStringLiteral("sample"); }
-		if (value == QLatin1String("automation")) { return QStringLiteral("automation"); }
-		if (value == QLatin1String("video")) { return QStringLiteral("video"); }
-		if (value == QLatin1String("tracks")) { return QStringLiteral("folder"); }
+		if (is(value, "audio")) { return QStringLiteral("sample"); }
+		if (is(value, "automation")) { return QStringLiteral("automation"); }
+		if (is(value, "video")) { return QStringLiteral("video"); }
+		if (is(value, "tracks")) { return QStringLiteral("folder"); }
 	}
 	for (const QString& value : values)
 	{
-		if (value == QLatin1String("notes")) { return QStringLiteral("instrument"); }
+		if (is(value, "notes")) { return QStringLiteral("instrument"); }
 	}
 	// A document that declares nothing, or only "markers", is read as an
 	// instrument track: it carries notes if it carries anything this module
@@ -350,7 +381,7 @@ const DawProjectConvention& dawProjectConvention()
 		value.zipMethod = QStringLiteral("store (method 0)");
 		value.contentTypeVocabulary = QStringLiteral("audio|automation|notes|video|markers|tracks "
 			"(a space-separated list); LMMS maps instrument and pattern to notes, sample to "
-			"audio, automation and hiddenautomation to automation, folder to tracks, and a type "
+			"audio, automation and hidden_automation to automation, folder to tracks, and a type "
 			"with no counterpart is written with an empty contentType and counted");
 		value.statedLosses = QStringLiteral("NOT carried: audio clips and their media (no media is "
 			"copied), automation clips and automation content, device/plugin state and "
@@ -359,7 +390,12 @@ const DawProjectConvention& dawProjectConvention()
 			"flags, and the sharing of one mixer channel by several tracks. NOT in the format: "
 			"LMMS' take lanes, clip link groups, slide notes, note probability and detune. A "
 			"tempo-map event carrying both a tempo and a metre half becomes TWO points, because "
-			"the format has one timeline per half");
+			"the format has one timeline per half. Also NOT carried: the track type's NAME "
+			"(derived from contentType on read, so it comes back in the canonical lowercase "
+			"spelling), and an id the schema would reject or the model repeats (xs:ID must be "
+			"unique and an NCName, so it is replaced by a generated id<n>; ids the model does "
+			"carry round-trip). The full list, with the reasoning and where each is counted, is "
+			"docs/DAWPROJECT-INTERCHANGE.md section 7");
 		return value;
 	}();
 	return convention;

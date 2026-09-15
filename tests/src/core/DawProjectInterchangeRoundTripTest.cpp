@@ -7,14 +7,14 @@
  * and the surface is src/core/ControlCommandsDawProject.cpp; this file is the
  * proof the feature list names explicitly.
  *
- * Four claims, each measured:
+ * Five claims, each measured:
  *
  *  1. THE ROUND TRIP: model -> write -> read -> compare the MODEL (not the
  *     file, not its hash). The comparison is track-for-track, clip-for-clip,
  *     note-for-note, mixer-channel-for-mixer-channel, and tempo-map-point-for-
  *     point, using the model's own operator==.
  *  2. THE SESSION ROUND TRIP: model -> apply to session -> extract model from
- *     session -> compare. This is the LOSSY half: the nine stated losses are
+ *     session -> compare. This is the LOSSY half: the eleven stated losses are
  *     counted and reported, and the test asserts that ONLY the expected losses
  *     occur.
  *  3. THE FILE ROUND TRIP: export -> read back via the control command ->
@@ -98,7 +98,10 @@ DawProjectModel authoredModel()
 	trackA.name = QStringLiteral("Bass");
 	trackA.color = QStringLiteral("#a2eabf");
 	trackA.contentType = QStringLiteral("notes");
-	trackA.typeName = QStringLiteral("Instrument");
+	//! The canonical lowercase vocabulary (control::trackTypeNameOf). LOSSY #10:
+	//! the document carries the contentType, the NAME is derived from it, so a
+	//! fixture spelling it "Instrument" could not round-trip by construction.
+	trackA.typeName = QStringLiteral("instrument");
 	trackA.channelId = QStringLiteral("strip1");
 	trackA.solo = false;
 	trackA.mute = false;
@@ -140,7 +143,7 @@ DawProjectModel authoredModel()
 	trackB.id = QStringLiteral("track1");
 	trackB.name = QStringLiteral("Lead");
 	trackB.contentType = QStringLiteral("notes");
-	trackB.typeName = QStringLiteral("Instrument");
+	trackB.typeName = QStringLiteral("instrument");
 	trackB.channelId = QStringLiteral("strip2");
 	trackB.destinationChannelId = QStringLiteral("mixer1");
 	trackB.mixerChannelIndex = 1;
@@ -236,8 +239,20 @@ private slots:
 		QCOMPARE(readReport.meterPointCount, 1);
 		QCOMPARE(readReport.formatVersion, QStringLiteral("1.0"));
 
-		// THE MODEL COMPARISON: not the file, not its hash.
+		// THE MODEL COMPARISON: not the file, not its hash. operator== compares
+		// every track, clip, note, mixer channel, tempo point and metre point,
+		// including the ids and the IDREF between a track and its strip.
 		QCOMPARE(read, authored);
+
+		// ... and the ids are asserted BY NAME as well, so a regression that
+		// renumbers the document (writing `id<n>` instead of the model's own ids)
+		// fails with the id it changed rather than only in the blanket compare.
+		QCOMPARE(read.mixerChannels[0].id, QStringLiteral("mixer0"));
+		QCOMPARE(read.mixerChannels[1].id, QStringLiteral("mixer1"));
+		QCOMPARE(read.tracks[0].id, QStringLiteral("track0"));
+		QCOMPARE(read.tracks[0].channelId, QStringLiteral("strip1"));
+		QCOMPARE(read.tracks[0].destinationChannelId, QStringLiteral("mixer0"));
+		QCOMPARE(read.tracks[1].destinationChannelId, QStringLiteral("mixer1"));
 	}
 
 	//! Claim 2: model -> apply to session -> extract -> compare.
@@ -385,6 +400,22 @@ private slots:
 		const ControlResult badZip = run(QStringLiteral("dawproject.read"),
 			{{QStringLiteral("path"), notAZip}});
 		QVERIFY(!badZip.ok);
+
+		// A ZIP with no project.xml entry.
+		const QString emptyZip = path(m_directory, QStringLiteral("no-project.dawproject"));
+		QFile emptyFile(emptyZip);
+		QVERIFY(emptyFile.open(QIODevice::WriteOnly));
+		emptyFile.write("PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
+		emptyFile.close();
+		const ControlResult noProjectXml = run(QStringLiteral("dawproject.read"),
+			{{QStringLiteral("path"), emptyZip}});
+		QVERIFY(!noProjectXml.ok);
+
+		// A relative path on export: refused as argument semantics, not rounded
+		// into a file next to the process's own working directory.
+		const ControlResult relative = run(QStringLiteral("dawproject.export"),
+			{{QStringLiteral("path"), QStringLiteral("relative.dawproject")}});
+		QVERIFY(!relative.ok);
 	}
 
 private:
