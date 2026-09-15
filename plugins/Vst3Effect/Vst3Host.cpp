@@ -25,11 +25,14 @@
 #include "Vst3Host.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 
 #include <QDebug>
 
+#include "PluginHostChunking.h"
 #include "Vst3MidiEvent.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
@@ -194,6 +197,10 @@ struct HostedPlugin::Impl
 	//! The event list handed to the plug-in as ProcessData::inputEvents.
 	//! Sized once, in its constructor; cleared and refilled per block.
 	EventList inputEvents{kMaxMidiEventsPerBlock};
+	//! The slice of inputEvents that belongs to the chunk being processed, with
+	//! its sample offsets rebased to that chunk's start. Sized once, in its
+	//! constructor: process() never allocates (see runChunk()).
+	EventList chunkEvents{kMaxMidiEventsPerBlock};
 	//! Audio thread scratch for ordering the drained events by sample offset
 	std::vector<MidiEventIn> midiEvents;
 
@@ -217,6 +224,15 @@ struct HostedPlugin::Impl
 	ParameterChanges inputParamChanges;
 	ProcessData processData{};
 	ProcessContext context{};
+
+	//! One chunk of one process() request: the pointer mapping, the parameter
+	//! and event delivery and the processor call for [offset, offset + chunk).
+	//! `chunk` is never larger than maxBlockSize, `lastChunk` is true for the
+	//! chunk the request ends in (see the event boundary rule there). See the
+	//! over-run and tail rule documented on HostedPlugin::process() in
+	//! Vst3Host.h.
+	void runChunk(const float* const* inputs, float* const* outputs, int numInputs,
+		int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk);
 
 	double sampleRate = 0.0;
 	int maxBlockSize = 0;
@@ -715,20 +731,17 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 	int numInputs, int numOutputs, int frames)
 {
 	auto& d = *m_impl;
-	if (!d.prepared || !d.processor) { return; }
+	if (!d.prepared || !d.processor || frames <= 0) { return; }
 
-	// 0. MIDI: drain the queue into the plug-in's event list, in sample order.
-	//    Only an instrument with an input event bus has an event list here;
-	//    for everything else processData.inputEvents is nullptr and none of
-	//    this runs, so the effect path is untouched.
-	if (d.processData.inputEvents != nullptr)
-	{
-		d.inputEvents.clear();
-		drainMidiIntoEventList(d.midiQueue, d.midiEvents, d.inputEvents,
-			d.eventInputBusIndex, frames);
-	}
+	// Chunking counters, in the CORE (include/PluginHostChunking.h): the audio
+	// path increments, the control surface reads through `plugin.host_chunking`.
+	// Relaxed atomics, no allocation, no lock, no per-frame traffic.
+	control::PluginHostChunkingCounters& counters = control::vst3HostChunkingCounters();
+	counters.recordRequest(frames, d.maxBlockSize);
 
-	// 1. parameter changes: lock free, queues were sized in prepare()
+	// 0. parameter changes: queued once, for the whole request. A change is a
+	//    time-0 point of the chunk that starts the request (runChunk() hands
+	//    the queue to the first chunk only, so it is delivered exactly once).
 	d.inputParamChanges.clearQueue();
 	int32 queueIndex = 0;
 	for (std::size_t i = 0; i < d.params.size(); ++i)
@@ -743,45 +756,118 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 		}
 	}
 
+	// 1. MIDI: the queue is drained ONCE, with the whole request as the horizon,
+	//    and runChunk() then slices the resulting list per chunk - an event is
+	//    delivered in the chunk its sample offset falls in, rebased to that
+	//    chunk's start, so no event is dropped and none is delivered twice.
+	if (d.processData.inputEvents != nullptr)
+	{
+		d.inputEvents.clear();
+		drainMidiIntoEventList(d.midiQueue, d.midiEvents, d.inputEvents,
+			d.eventInputBusIndex, frames);
+	}
+
+	// 2. chunks: every chunk but the last is exactly maxBlockSize long and the
+	//    last carries the remainder, so a request that is not a multiple of the
+	//    prepared block is processed whole - as many chunks as it takes, with
+	//    the plug-in never handed a buffer shorter than the frames it is asked
+	//    for and never asked for more than the block size it was prepared with.
+	int offset = 0;
+	while (offset < frames)
+	{
+		const int chunk = std::min(frames - offset, d.maxBlockSize);
+		d.runChunk(inputs, outputs, numInputs, numOutputs, offset, chunk, offset == 0,
+			offset + chunk == frames);
+		counters.recordChunk();
+		offset += chunk;
+	}
+
+	// The next request drains into the full list again.
+	if (d.midiEnabled) { d.processData.inputEvents = &d.inputEvents; }
+}
+
+void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outputs,
+	int numInputs, int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk)
+{
+	// 1a. parameter changes belong to the chunk that starts the request.
+	if (!firstChunk)
+	{
+		inputParamChanges.clearQueue();
+	}
+
+	// 1b. this chunk's slice of the drained MIDI list. An event belongs to the
+	//     chunk its sample offset falls in, rebased to that chunk's start. The
+	//     BOUNDARY RULE is the one the pre-chunking host had
+	//     (`std::clamp(frameOffset, 0, frames)`): an event whose offset is at or
+	//     beyond the end of the request is delivered with the LAST chunk, at
+	//     that chunk's end offset, so it is still seen exactly once. Dropping
+	//     those events instead would turn a note-off written at the block
+	//     boundary into a note that never releases
+	//     (Vst3InstrumentTest::testDistinctInputGivesDistinctOutput caught
+	//     exactly that).
+	if (processData.inputEvents != nullptr)
+	{
+		chunkEvents.clear();
+		const int32 count = inputEvents.getEventCount();
+		const int32 limit = offset + chunk;
+		for (int32 i = 0; i < count; ++i)
+		{
+			Event event{};
+			if (inputEvents.getEvent(i, event) != kResultOk) { continue; }
+			if (event.sampleOffset < offset) { continue; }
+			if (event.sampleOffset >= limit)
+			{
+				if (!lastChunk) { continue; }
+				event.sampleOffset = limit;
+			}
+			event.sampleOffset -= offset;
+			chunkEvents.addEvent(event);
+		}
+		processData.inputEvents = &chunkEvents;
+	}
+
 	// 2. map the planar LMMS channels onto the plug-in's buses. Channels the
 	//    track does not provide read from a pre-allocated silence buffer and
-	//    write into a pre-allocated scratch buffer.
+	//    write into a pre-allocated scratch buffer. Both are maxBlockSize long,
+	//    and a chunk is never longer than that, so the mapping points INTO them
+	//    (at their start) rather than past their end.
 	std::size_t channel = 0;
-	for (std::size_t b = 0; b < d.inputBuses.size(); ++b)
+	for (std::size_t b = 0; b < inputBuses.size(); ++b)
 	{
-		auto& bus = d.inputBuses[b];
-		auto& ptrs = d.inputChannelPtrs[b];
+		auto& bus = inputBuses[b];
+		auto& ptrs = inputChannelPtrs[b];
 		for (int32 c = 0; c < bus.numChannels; ++c, ++channel)
 		{
 			ptrs[c] = channel < static_cast<std::size_t>(numInputs)
-				? const_cast<float*>(inputs[channel])
-				: d.silence.data();
+				? const_cast<float*>(inputs[channel]) + offset
+				: silence.data();
 		}
 		bus.channelBuffers32 = ptrs.data();
 		bus.silenceFlags = 0;
 	}
 	channel = 0;
-	for (std::size_t b = 0; b < d.outputBuses.size(); ++b)
+	for (std::size_t b = 0; b < outputBuses.size(); ++b)
 	{
-		auto& bus = d.outputBuses[b];
-		auto& ptrs = d.outputChannelPtrs[b];
+		auto& bus = outputBuses[b];
+		auto& ptrs = outputChannelPtrs[b];
 		for (int32 c = 0; c < bus.numChannels; ++c, ++channel)
 		{
 			ptrs[c] = channel < static_cast<std::size_t>(numOutputs)
-				? outputs[channel]
-				: d.scratchOutput.data();
-			std::memset(ptrs[c], 0, static_cast<std::size_t>(frames) * sizeof(float));
+				? outputs[channel] + offset
+				: scratchOutput.data();
+			std::memset(ptrs[c], 0, static_cast<std::size_t>(chunk) * sizeof(float));
 		}
 		bus.channelBuffers32 = ptrs.data();
 		bus.silenceFlags = 0;
 	}
 
-	d.processData.numSamples = frames;
-	d.context.continousTimeSamples = d.continuousSamples;
-	d.context.projectTimeSamples = d.continuousSamples;
-	d.continuousSamples += frames;
+	// 3. the chunk itself
+	processData.numSamples = chunk;
+	context.continousTimeSamples = continuousSamples;
+	context.projectTimeSamples = continuousSamples;
+	continuousSamples += chunk;
 
-	d.processor->process(d.processData);
+	processor->process(processData);
 }
 
 auto HostedPlugin::paramDisplayValue(std::uint32_t id, float normalized) const -> QString
@@ -795,6 +881,11 @@ auto HostedPlugin::paramDisplayValue(std::uint32_t id, float normalized) const -
 		return fromString128(text);
 	}
 	return {};
+}
+
+auto hostChunkingStats() -> HostChunkingStats
+{
+	return control::vst3HostChunkingCounters().read();
 }
 
 } // namespace lmms::vst3

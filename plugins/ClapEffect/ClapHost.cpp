@@ -24,6 +24,8 @@
 
 #include "ClapHost.h"
 
+#include "PluginHostChunking.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -225,6 +227,13 @@ struct HostedPlugin::Impl
 	std::vector<float> silence;
 	std::vector<float> outputScratch;
 	clap_event_transport_t transport{};
+
+	//! One chunk of one process() request: the pointer mapping, the transport
+	//! event and the plugin->process() call for [offset, offset + chunk).
+	//! `chunk` is never larger than maxFrames. See the over-run and tail rule
+	//! documented on HostedPlugin::process() in ClapHost.h.
+	auto runChunk(const float* const* inputs, float* const* outputs, int inputChannels,
+		int outputChannels, int offset, int chunk) -> bool;
 
 	std::atomic<bool> needsReprepare{false};
 	std::atomic<bool> callbackRequested{false};
@@ -823,10 +832,18 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	auto& impl = *m_impl;
 	if (!impl.prepared || !impl.plugin) { return false; }
 	if (frames <= 0) { return true; }
-	frames = std::min(frames, impl.maxFrames);
 	t_isAudioThread = true;
 
+	// Chunking counters, in the CORE (include/PluginHostChunking.h): the audio
+	// path increments, the control surface reads through `plugin.host_chunking`.
+	// Relaxed atomics, no allocation, no lock, no per-frame traffic.
+	control::PluginHostChunkingCounters& counters = control::clapHostChunkingCounters();
+	counters.recordRequest(frames, impl.maxFrames);
+
 	// --- parameter changes -> preallocated event list ---------------------
+	// Built once for the whole request; the first chunk carries them and the
+	// chunks after it are handed an empty list, so each change is delivered
+	// exactly once.
 	std::uint32_t eventCount = 0;
 	for (std::size_t i = 0; i < impl.params.size(); ++i)
 	{
@@ -851,64 +868,90 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	}
 	impl.eventState.count = eventCount;
 
+	// --- chunks -----------------------------------------------------------
+	// As many chunks of at most the activated block size as the request needs;
+	// the last one carries the remainder. No frame is dropped and no chunk is
+	// ever longer than the plug-in was activated for.
+	bool ok = true;
+	int offset = 0;
+	while (offset < frames && ok)
+	{
+		const int chunk = std::min(frames - offset, impl.maxFrames);
+		ok = impl.runChunk(inputs, outputs, inputChannels, outputChannels, offset, chunk);
+		// The parameter events belong to the chunk that starts the request.
+		impl.eventState.count = 0;
+		counters.recordChunk();
+		offset += chunk;
+	}
+	return ok;
+}
+
+auto HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outputs,
+	int inputChannels, int outputChannels, int offset, int chunk) -> bool
+{
 	// --- planar channel pointers -> clap_audio_buffer_t -------------------
 	int channel = 0;
-	for (std::size_t p = 0; p < impl.layout.inputPortChannels.size(); ++p)
+	for (std::size_t p = 0; p < layout.inputPortChannels.size(); ++p)
 	{
-		const auto channels = impl.layout.inputPortChannels[p];
-		auto& buffer = impl.inBuffers[p];
+		const auto channels = layout.inputPortChannels[p];
+		auto& buffer = inBuffers[p];
 		buffer = {};
 		buffer.channel_count = static_cast<std::uint32_t>(channels);
 		// clap_audio_buffer_t::data32 is float** even for inputs; the plug-in
 		// contract is that input buffers are read-only.
-		buffer.data32 = const_cast<float**>(impl.inPtrs.data() + channel);
+		buffer.data32 = const_cast<float**>(inPtrs.data() + channel);
 		for (int c = 0; c < channels; ++c)
 		{
-			impl.inPtrs[channel + c] = (channel + c) < inputChannels ? inputs[channel + c]
-																	 : impl.silence.data();
+			// A channel the caller does not supply reads from the zeroed
+			// block; a chunk is never longer than that block, so this points
+			// into it rather than past its end.
+			inPtrs[channel + c] = (channel + c) < inputChannels ? inputs[channel + c] + offset
+																: silence.data();
 		}
 		channel += channels;
 	}
 	channel = 0;
-	for (std::size_t p = 0; p < impl.layout.outputPortChannels.size(); ++p)
+	for (std::size_t p = 0; p < layout.outputPortChannels.size(); ++p)
 	{
-		const auto channels = impl.layout.outputPortChannels[p];
-		auto& buffer = impl.outBuffers[p];
+		const auto channels = layout.outputPortChannels[p];
+		auto& buffer = outBuffers[p];
 		buffer = {};
 		buffer.channel_count = static_cast<std::uint32_t>(channels);
-		buffer.data32 = impl.outPtrs.data() + channel;
+		buffer.data32 = outPtrs.data() + channel;
 		for (int c = 0; c < channels; ++c)
 		{
-			impl.outPtrs[channel + c] = (channel + c) < outputChannels
-				? outputs[channel + c]
-				: impl.outputScratch.data() + static_cast<std::size_t>(channel + c) * impl.maxFrames;
+			// Same for a channel the caller does not supply: the scratch is
+			// maxFrames per channel, a chunk never longer than that.
+			outPtrs[channel + c] = (channel + c) < outputChannels
+				? outputs[channel + c] + offset
+				: outputScratch.data() + static_cast<std::size_t>(channel + c) * maxFrames;
 		}
 		channel += channels;
 	}
 
 	// --- transport --------------------------------------------------------
-	impl.transport = {};
-	impl.transport.header.size = sizeof(clap_event_transport_t);
-	impl.transport.header.time = 0;
-	impl.transport.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-	impl.transport.header.type = CLAP_EVENT_TRANSPORT;
-	impl.transport.flags = CLAP_TRANSPORT_HAS_TEMPO |
-		(impl.playing.load(std::memory_order_relaxed) ? CLAP_TRANSPORT_IS_PLAYING : 0);
-	impl.transport.tempo = impl.tempo.load(std::memory_order_relaxed);
+	transport = {};
+	transport.header.size = sizeof(clap_event_transport_t);
+	transport.header.time = 0;
+	transport.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+	transport.header.type = CLAP_EVENT_TRANSPORT;
+	transport.flags = CLAP_TRANSPORT_HAS_TEMPO |
+		(playing.load(std::memory_order_relaxed) ? CLAP_TRANSPORT_IS_PLAYING : 0);
+	transport.tempo = tempo.load(std::memory_order_relaxed);
 
 	clap_process_t request{};
-	request.steady_time = impl.steadyTime;
-	request.frames_count = static_cast<std::uint32_t>(frames);
-	request.transport = &impl.transport;
-	request.audio_inputs = impl.inBuffers.data();
-	request.audio_inputs_count = static_cast<std::uint32_t>(impl.inBuffers.size());
-	request.audio_outputs = impl.outBuffers.data();
-	request.audio_outputs_count = static_cast<std::uint32_t>(impl.outBuffers.size());
-	request.in_events = &impl.inEvents;
-	request.out_events = &impl.outEvents;
+	request.steady_time = steadyTime;
+	request.frames_count = static_cast<std::uint32_t>(chunk);
+	request.transport = &transport;
+	request.audio_inputs = inBuffers.data();
+	request.audio_inputs_count = static_cast<std::uint32_t>(inBuffers.size());
+	request.audio_outputs = outBuffers.data();
+	request.audio_outputs_count = static_cast<std::uint32_t>(outBuffers.size());
+	request.in_events = &inEvents;
+	request.out_events = &outEvents;
 
-	impl.steadyTime += frames;
-	const auto status = impl.plugin->process(impl.plugin, &request);
+	steadyTime += chunk;
+	const auto status = plugin->process(plugin, &request);
 	return status != CLAP_PROCESS_ERROR;
 }
 
@@ -948,6 +991,11 @@ auto listClasses(const QString& modulePath, QString* error) -> std::vector<Class
 	entry->deinit();
 	closeModule(library);
 	return classes;
+}
+
+auto hostChunkingStats() -> HostChunkingStats
+{
+	return control::clapHostChunkingCounters().read();
 }
 
 } // namespace lmms::clap

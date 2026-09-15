@@ -352,6 +352,7 @@ include/NoteRandom.h
 include/NoteTransform.h
 include/PinConnector.h
 include/PluginAudioPorts.h
+include/PluginHostChunking.h
 include/PluginScanCache.h
 include/ProjectIds.h
 include/ProjectRecovery.h
@@ -512,6 +513,7 @@ src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
+src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
@@ -579,6 +581,7 @@ src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlCommandsWasm.cpp
 src/core/ControlCommandsWasmEdit.cpp
+src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
@@ -605,6 +608,7 @@ src/core/ControlReversibilityTableArchive.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
+src/core/ControlReversibilityTableHostChunking.cpp
 src/core/ControlReversibilityTableInterchange.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
@@ -619,6 +623,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
@@ -656,6 +661,7 @@ src/core/ModulationLayer.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/PluginHostChunking.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournalBounds.cpp
@@ -706,6 +712,8 @@ src/gui/StemSplitController.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
+src/wasm/WasmOfflineRender.cpp
+src/wasm/WasmOfflineRender.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
@@ -713,6 +721,8 @@ src/wasm/WasmSandboxHost.h
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
+src/wasm/WasmWorkerPool.cpp
+src/wasm/WasmWorkerPool.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
 tests/control-absent-socket.py
@@ -756,6 +766,7 @@ tests/control-wasm-sandbox.py
 tests/control_instance_diagnosis.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
+tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/freeze_bounce_evidence.py
 tests/link_sync_evidence.py
 tests/mastering_probe_lib.py
@@ -791,7 +802,9 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
+tests/src/plugins/Vst3ChunkProbeTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/src/wasm/WasmWorkerPoolTest.cpp
 tests/stem_commands_lib.py
 tools/local-ci.sh
 tools/ncpu-shim.c

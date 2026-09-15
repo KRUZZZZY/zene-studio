@@ -990,6 +990,48 @@ if(WANT_WASM)
 		LMMS_TESTING
 		WASM_ABI_EXAMPLE_WAT="${CMAKE_SOURCE_DIR}/tests/data/wasm-effect-abi/softclip.wat"
 	)
+
+	# CODE-5 (feature row 73): the shared worker pool, its wake-ups, and the
+	# deterministic offline render - whose verdict is a MEASURED comparison
+	# against this build's own run-to-run floor (docs/RENDER-DETERMINISM.md is
+	# the recorded contract; byte identity and fixed thresholds are both out).
+	#
+	# It COMPILES the sources under test itself - the pool, the worker, the
+	# offline render and the sandbox - exactly as ClapHostTest and Vst3HostTest
+	# do for their hosts, instead of linking lmmsobjs: the wasm sources are Qt
+	# free and reference no core symbol, so the test builds and runs without the
+	# engine. (Linking lmmsobjs would drag the whole core into the test and cost
+	# a full build of it.) The subject module comes from the wasm-modules target.
+	add_executable(WasmWorkerPoolTest
+		src/wasm/WasmWorkerPoolTest.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandbox.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorker.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorkerPool.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
+	)
+	add_test(NAME WasmWorkerPoolTest COMMAND WasmWorkerPoolTest)
+	target_include_directories(WasmWorkerPoolTest PRIVATE
+		# the generated headers the core's own headers carry: lmms_export.h
+		# (build/src) and lmmsconfig.h (build/include)
+		${CMAKE_BINARY_DIR}
+		${CMAKE_BINARY_DIR}/src
+		${CMAKE_BINARY_DIR}/include
+		${CMAKE_SOURCE_DIR}/include
+		${CMAKE_SOURCE_DIR}/src/wasm
+	)
+	target_include_directories(WasmWorkerPoolTest SYSTEM PRIVATE ${WASMTIME_INCLUDE_DIRS})
+	target_link_libraries(WasmWorkerPoolTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		${WASMTIME_LIBRARIES}
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_features(WasmWorkerPoolTest PRIVATE cxx_std_20)
+	target_compile_definitions(WasmWorkerPoolTest PRIVATE
+		LMMS_TESTING
+		WASM_MODULE_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
+	)
+	add_dependencies(WasmWorkerPoolTest wasm-modules)
 endif()
 
 # Native CLAP hosting tests. They only exist when the MIT licensed CLAP headers
@@ -1019,10 +1061,14 @@ if(TARGET lmms_clap)
 		src/plugins/ClapHostTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		# the host path's chunking counters (CODE-4), core-owned
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
 	add_test(NAME ClapHostTest COMMAND ClapHostTest)
 	target_include_directories(ClapHostTest PRIVATE
 		${CMAKE_BINARY_DIR}
+		# the generated lmms_export.h, which the core headers carry
+		${CMAKE_BINARY_DIR}/src
 		${CMAKE_SOURCE_DIR}/include
 		${LMMS_CLAP_EFFECT_DIR}
 	)
@@ -1130,10 +1176,14 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		# the host path's chunking counters (CODE-4), core-owned
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
 	add_test(NAME Vst3HostTest COMMAND Vst3HostTest)
 	target_include_directories(Vst3HostTest PRIVATE
 		${CMAKE_BINARY_DIR}
+		# the generated lmms_export.h, which the core headers carry
+		${CMAKE_BINARY_DIR}/src
 		${CMAKE_SOURCE_DIR}/include
 		${LMMS_VST3_EFFECT_DIR}
 	)
@@ -1147,6 +1197,41 @@ if(TARGET lmms_vst3_sdk)
 	target_compile_definitions(Vst3HostTest PRIVATE
 		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}")
 	add_dependencies(Vst3HostTest vst3-test-effect)
+
+	# CODE-4: the chunking contract on the audio path, proven against a
+	# purpose-built in-tree MIT fixture (tests/data/vst3-chunk-probe) that
+	# records the block sizes the host asked it for and any call that exceeded
+	# the block size setupProcessing() declared. The SDK's sample plugin is the
+	# wrong subject for this: its identity and parameter shape are asserted by
+	# Vst3HostTest, and it cannot report what it was asked for.
+	add_subdirectory(data/vst3-chunk-probe)
+
+	add_executable(Vst3ChunkProbeTest
+		src/plugins/Vst3ChunkProbeTest.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		# the host path's chunking counters (CODE-4), core-owned
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
+	)
+	add_test(NAME Vst3ChunkProbeTest COMMAND Vst3ChunkProbeTest)
+	target_include_directories(Vst3ChunkProbeTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		# the generated lmms_export.h, which the core headers carry
+		${CMAKE_BINARY_DIR}/src
+		${CMAKE_SOURCE_DIR}/include
+		${LMMS_VST3_EFFECT_DIR}
+	)
+	target_compile_features(Vst3ChunkProbeTest PRIVATE cxx_std_20)
+	target_link_libraries(Vst3ChunkProbeTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_vst3_sdk
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(Vst3ChunkProbeTest PRIVATE
+		VST3_CHUNK_PROBE_PATH="${LMMS_VST3_CHUNK_PROBE_BUNDLE_DIR}")
+	add_dependencies(Vst3ChunkProbeTest vst3-chunk-probe)
 
 	# Product-level proof: the effect is loaded into an EffectChain on an
 	# AudioBus and driven through the engine, its state round-trips through the
@@ -1208,7 +1293,7 @@ endif()
 # PluginPortsMigrationReference is deliberately left un-instrumented: the
 # reference side of the behaviour comparison must stay plain.
 foreach(LMMS_GATE_TEST ClapBusMapTest ClapHostTest ClapEffectIntegrationTest
-		Vst3BusMapTest Vst3HostTest Vst3EffectIntegrationTest
+		Vst3BusMapTest Vst3HostTest Vst3EffectIntegrationTest Vst3ChunkProbeTest
 		WasmSandboxTest PluginPortsMigrationTest AudioPluginTest
 		synthetic_audio_plugin)
 	if(TARGET ${LMMS_GATE_TEST})
@@ -1338,9 +1423,13 @@ if(TARGET lmms_vst3_sdk)
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
+			# the host path's chunking counters (CODE-4), core-owned
+			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 		)
 		add_test(NAME Vst3InstrumentTest COMMAND Vst3InstrumentTest)
 		target_include_directories(Vst3InstrumentTest PRIVATE
+			# the generated lmms_export.h, which the core headers carry
+			${CMAKE_BINARY_DIR}/src
 			${CMAKE_SOURCE_DIR}/include
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect
 			# tests/src/core/AllocationProbe.h - the allocation counter the
