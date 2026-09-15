@@ -283,6 +283,28 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+/*! The `interchange.*` group - the Standard MIDI File conductor track (feature
+ *  row 33 of docs/FEATURE-LIST-0.3.0.md: tempo-map export / SMF cross-DAW
+ *  interchange). Four ids: interchange.smf_convention (the tick/PPQ,
+ *  tempo-unit and time-signature convention as data on the wire),
+ *  interchange.smf_export (write the tempo map as a format-1 conductor track
+ *  another DAW can read), interchange.smf_read (read a file's conductor events
+ *  back without touching the session - what makes a round trip checkable
+ *  against the file rather than against its hash) and interchange.smf_import
+ *  (apply them to the tempo map, one undo).
+ *
+ *  The engine half is include/SmfInterchange.h + src/core/SmfInterchange.cpp,
+ *  which is a hand-written encoder and a bounds-checked reader rather than the
+ *  note-oriented MidiFile.hpp under plugins/MidiExport or the vendored portsmf
+ *  behind plugins/MidiImport - neither is reachable from src/core, where a
+ *  tempo map lives. No compile-time switch: the map is a plain value on Song
+ *  and the file format is not optional, so its ids are honest in every
+ *  configuration. The stated limits (events are steps, so no tempo curve;
+ *  only the conductor track is written; only tempo and metre meta events are
+ *  read) are in docs/SMF-INTERCHANGE.md and, in one line, in
+ *  docs/KNOWN-LIMITATIONS.md.
+ */
+LMMS_EXPORT void registerInterchangeCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

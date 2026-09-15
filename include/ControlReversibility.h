@@ -173,6 +173,17 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
  *  from each row, not from its file. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
+/*! The `interchange.*` group's four rows (feature row 33: the Standard MIDI
+ *  File conductor track). A GROUP file on the same seam as the mastering rows
+ *  above - the class comes from each row, not from the file it lives in - and
+ *  it lands here because ControlReversibilityTable.cpp is at 499 of the 500
+ *  lines the file-length ratchet allows. Three of the four rows are
+ *  not_mutating (the export writes a file outside the session and the two
+ *  readers only read); interchange.smf_import replaces the tempo map and is a
+ *  recorded-action true_inverse row, the same mechanism the
+ *  transport.tempo_map_* commands use. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityInterchangeRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
 

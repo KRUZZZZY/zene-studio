@@ -343,6 +343,7 @@ include/ScriptLuaQtTypes.h
 include/ScriptPackage.h
 include/SessionModel.h
 include/SessionScheduler.h
+include/SmfInterchange.h
 include/SrcQuality.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
@@ -453,6 +454,7 @@ src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
+src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
@@ -523,6 +525,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableInterchange.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
@@ -589,6 +592,8 @@ src/core/SessionClip.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
 src/core/SessionScheduler.cpp
+src/core/SmfInterchange.cpp
+src/core/SmfInterchangeReader.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp

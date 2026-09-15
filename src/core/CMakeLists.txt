@@ -145,6 +145,12 @@ set(LMMS_SRCS
 	core/ControlMasteringSupport.cpp
 	core/ControlCommandsMastering.cpp
 	core/ControlCommandsMasteringRun.cpp
+	# Standard MIDI File conductor interchange (feature row 33 of
+	# docs/FEATURE-LIST-0.3.0.md, docs/SMF-INTERCHANGE.md): the tempo map written
+	# as, and read back from, a format-1 conductor track another DAW can read.
+	# Its own translation unit for the reason the automation and warp groups are
+	# split - gate 7 measures a file, not a group.
+	core/ControlCommandsInterchange.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp
@@ -272,6 +278,11 @@ set(LMMS_SRCS
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.
 	core/ControlReversibilityTableMastering.cpp
+	# The interchange group's four rows (feature row 33: the Standard MIDI File
+	# conductor track). A GROUP file on the same seam as the mastering rows
+	# above, and it exists because ControlReversibilityTable.cpp is at 499 of the
+	# 500 lines the file ratchet allows.
+	core/ControlReversibilityTableInterchange.cpp
 	# The transaction record's accounting, and the rule that decides when two
 	# commands are one undo step.
 	core/ControlTransactions.cpp
@@ -393,6 +404,16 @@ set(LMMS_SRCS
 	core/SerializingObject.cpp
 	core/Song.cpp
 	core/TempoMap.cpp
+	# The Standard MIDI File conductor track (feature row 33): the encoder and
+	# the bounds-checked reader behind the interchange.* group. Hand-written
+	# rather than reusing plugins/MidiExport's note-oriented MidiFile.hpp or the
+	# portsmf vendored behind plugins/MidiImport, neither of which is reachable
+	# from src/core; the convention it writes and reads is recorded in
+	# include/SmfInterchange.h and docs/SMF-INTERCHANGE.md. The reader is its own
+	# translation unit because the file ratchet allows 500 lines and a reader has
+	# to survive whatever a foreign program meant, which is not the writer's job.
+	core/SmfInterchange.cpp
+	core/SmfInterchangeReader.cpp
 	core/ModulationLayer.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp

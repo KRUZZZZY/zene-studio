@@ -385,6 +385,7 @@ include/SharedMemory.h
 include/SideBar.h
 include/SideBarWidget.h
 include/SimpleTextFloat.h
+include/SmfInterchange.h
 include/Song.h
 include/SongEditor.h
 include/SrcQuality.h
@@ -940,6 +941,7 @@ src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
+src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
@@ -1010,6 +1012,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableChain.cpp
+src/core/ControlReversibilityTableInterchange.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
@@ -1135,6 +1138,8 @@ src/core/SessionClip.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
 src/core/SessionScheduler.cpp
+src/core/SmfInterchange.cpp
+src/core/SmfInterchangeReader.cpp
 src/core/Song.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
@@ -1445,6 +1450,9 @@ tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SlideNotesTest.cpp
+tests/src/core/SmfInterchangeRoundTripTest.cpp
+tests/src/core/SmfInterchangeTest.cpp
+tests/src/core/SmfInterchangeTestSupport.h
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
