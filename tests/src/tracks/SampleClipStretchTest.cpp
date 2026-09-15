@@ -114,7 +114,7 @@ SampleClip* makeClip(SampleTrack& track, int rate)
  *  test measures 2x at whatever tempo the fixture song is at. */
 void applyTwoTimesWarp(SampleClip& clip, int rate)
 {
-	const auto frames = static_cast<f_cnt_t>(clip->sample().sampleSize());
+	const auto frames = static_cast<f_cnt_t>(clip.sample().sampleSize());
 	const auto ticks = static_cast<tick_t>(std::llround(frames / (2.0 * Engine::framesPerTick(rate))));
 	const std::array<WarpMarker, 2> markers{ WarpMarker{ 0, 0 }, WarpMarker{ frames, ticks } };
 	QVERIFY(clip.setWarpMarkers(std::span<const WarpMarker>(markers.data(), markers.size())));
@@ -154,14 +154,20 @@ std::vector<SampleFrame> renderClip(SampleClip* clip, int periodFrames = 512)
 	std::vector<SampleFrame> rendered;
 	rendered.reserve(static_cast<std::size_t>(total));
 	std::vector<SampleFrame> buffer(static_cast<std::size_t>(periodFrames));
+	// The handle consumes exactly one buffer per call, so ceil(total/period)
+	// calls finish it; the guard is a safety net against a handle that never
+	// reports done, not a bound on the render (a guard that is too small would
+	// measure silence past its end, which is the bug it exists to catch).
+	const int guardLimit = total / periodFrames + 16;
 	int guard = 0;
-	while (static_cast<int>(handle.framesDone()) < total && guard < 16)
+	while (static_cast<int>(handle.framesDone()) < total && guard < guardLimit)
 	{
 		std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
 		handle.play(std::span<SampleFrame>(buffer));
 		rendered.insert(rendered.end(), buffer.begin(), buffer.end());
 		++guard;
 	}
+	Q_ASSERT(guard < guardLimit);
 	rendered.resize(static_cast<std::size_t>(total));
 	return rendered;
 }
