@@ -424,12 +424,6 @@ LMMS_EXPORT void addStructuralUndoStep(std::function<void()> undo,
  *  clip is a JournallingObject and the flag is restored by a live checkpoint).
  *  Joined into reversibilityRowTable(). */
 LMMS_EXPORT const ReversibilityRow* reversibilityAutomationModesRowTable(int* rowCount);
-
-} // namespace control
-
-} // namespace lmms
-
-#endif // LMMS_CONTROL_REVERSIBILITY_H
 /*! The mmpz-git depth group's four not_mutating rows (feature row 42, task #612):
  *  project.merge, project.diff, project.conflicts and project.audible_diff.
  *  A GROUP file on the same seam as the folder, vca, routing and mastering files.
@@ -445,3 +439,9 @@ LMMS_EXPORT const ReversibilityRow* reversibilityMmpzGitRowTable(int* rowCount);
  *  FAIL, typed, naming the inverse command. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityControllerRowTable(int* rowCount);
+
+} // namespace control
+
+} // namespace lmms
+
+#endif // LMMS_CONTROL_REVERSIBILITY_H

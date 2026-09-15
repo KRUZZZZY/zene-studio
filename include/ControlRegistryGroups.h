@@ -501,9 +501,6 @@ LMMS_EXPORT void registerTrackStructureCommands(ControlRegistry& registry);
 //! control.id_contract - the stable-id contract as a readable table (feature row 51).
 //! Split out of ControlCommandsControl.cpp for the file-length ratchet: src/core/ControlCommandsIdContract.cpp.
 LMMS_EXPORT void registerIdContractCommand(ControlRegistry& registry);
-} // namespace lmms
-
-#endif // LMMS_CONTROL_REGISTRY_GROUPS_H
 /*! controller.surface_state / soft_takeover / feedback / template_save /
  *  template_list / template_apply / template_delete - the ENGINE HALF of MIDI
  *  controller surfaces (feature row 19). The engine is
@@ -528,3 +525,6 @@ LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
  *  the limit fails the gate. Called by registerControllerSurfaceCommands; the
  *  registry still has exactly one controller.* registration point. */
 LMMS_EXPORT void registerControllerTemplateCommands(ControlRegistry& registry);
+} // namespace lmms
+
+#endif // LMMS_CONTROL_REGISTRY_GROUPS_H
