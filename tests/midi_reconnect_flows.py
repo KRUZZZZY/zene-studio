@@ -138,6 +138,23 @@ def check_attached(context, problems):
                      % (entry["reconnects"], entry["lost"]))
     context["track"] = entry["port"]
 
+    # The engine's own answer to "does this backend expose hotplug notice", read
+    # on the live instance rather than trusted from the source: a re-connection
+    # is driven by the client's port-list poll, and only a client that publishes
+    # one can offer it. Both inspectors report it, so both are read.
+    status = reading(session, STATUS)
+    problems.require(status["notice"] == "polled",
+                     "the running client reports notice=%r: this proof needs the "
+                     "client that PUBLISHES port-list changes (the ALSA-sequencer "
+                     "one-second poll), which is what a re-attachment is driven by"
+                     % status["notice"])
+    problems.require(reading(session, CLIENTS)["notice"] == "polled",
+                     "midi.clients_list reports a different notice than "
+                     "midi.reconnect_status for the same client")
+    problems.require(reading(session, ARM, {"enabled": True})["notice"] == "polled",
+                     "midi.reconnect_arm reports a different notice than "
+                     "midi.reconnect_status for the same client")
+
     listed = port_entry(session, controller.full_name)
     problems.require(listed is not None,
                      "midi.clients_list does not list %r" % controller.full_name)
@@ -312,6 +329,17 @@ def check_mode_switch(context, problems):
                      "the config file does not carry the disarmed key: %s" % config)
 
     problems.require(context["controller"].kill() == -9, "the client was not killed")
+    # The LOSS has to happen while DISARMED, or this step measures nothing. A
+    # device that comes back with the number it just freed inside one poll
+    # interval is never SEEN to leave - the inventory poll is what notices, and
+    # ALSA hands the freed client number straight back - so the binding was never
+    # repaired-able in the first place. So wait (boundedly) for the engine to
+    # record the loss, the same transition check_loss measures, and only then let
+    # the device return.
+    lost = wait_for_binding(session, IDENTITY, False, POLL)
+    problems.require(lost is not None and lost["lost"] is True,
+                     "the engine never recorded the loss while disarmed, so the "
+                     "mode was never exercised: %r" % (lost,))
     third = context["restart"]()
     if third is None:
         problems.add("could not start the third external client")
@@ -326,6 +354,18 @@ def check_mode_switch(context, problems):
                          "the engine re-attached while DISARMED (live=%r)" % entry["live"])
         context["reconnects_while_off"] = entry["reconnects"]
 
+    # ...and the reading the engine's own report cannot fake: disarmed, the
+    # re-created client's burst must arrive NOWHERE. The kernel tore the dead
+    # client's subscription down with the client, so events arriving here would
+    # mean the binding had been re-attached.
+    before = captured(session)
+    context["controller"].burst(BURST, problems)
+    dead = captured(session)
+    problems.require(dead - before == 0,
+                     "the engine received %d of the %d event(s) the re-created "
+                     "client played while DISARMED: the binding was re-attached"
+                     % (dead - before, BURST))
+
     rearmed = reading(session, ARM)
     problems.require(rearmed["enabled"] is True and rearmed["changed"] is True,
                      "re-arming reported enabled=%r changed=%r"
@@ -337,8 +377,18 @@ def check_mode_switch(context, problems):
         problems.require(entry["reconnects"] > context.get("reconnects_while_off", 0),
                          "the re-attachment after arming was not counted (%r)"
                          % entry["reconnects"])
-    print("  mode: disarmed left it dead, armed brought it back (reconnects=%s)"
-          % (None if entry is None else entry["reconnects"]))
+    # The armed direction, measured at the kernel too: the restored subscription
+    # carries the re-created client's burst.
+    before = captured(session)
+    context["controller"].burst(BURST, problems)
+    alive = captured(session)
+    problems.require(alive - before == BURST,
+                     "the re-armed engine received %d of the %d event(s) the "
+                     "re-connected client played: the restored binding is not live"
+                     % (alive - before, BURST))
+    print("  mode: disarmed left it dead (0 events), armed brought it back "
+          "(reconnects=%s, +%d events)"
+          % (None if entry is None else entry["reconnects"], alive - before))
 
 
 def check_inverse(context, problems):

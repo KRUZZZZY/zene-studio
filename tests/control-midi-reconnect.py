@@ -172,8 +172,23 @@ def readable_fixture(instance, full_name):
     """
     with open(FIXTURE) as handle:
         text = handle.read()
-    bound = text.replace('readable="0"',
-                         'readable="1" inports="%s"' % full_name, 1)
+    # WHICH track is bound matters, and it is the SECOND <midiport> in the file.
+    # trk-<n> ids resolve over Engine::getSong()->tracks() and nothing else
+    # (src/core/ControlEditSupport.cpp, resolveTrack: song-container tracks,
+    # numbered by Track::id()), and this fixture's FIRST instrument track - the
+    # one named "Jupiter" - lives inside a Beat/Bassline container. Its port is
+    # therefore reported by midi.reconnect_status as the port's own display name
+    # ("Jupiter", MidiPort being a Model), which midi.reconnect_set cannot
+    # address: measured, it refuses with "'Jupiter' is not a track id of the form
+    # trk-<n>". The second instrument track is in the song container, so it is
+    # the one the surface can name by id - and the A16 inverse measurement below
+    # binds a track BY ID.
+    first = text.index('readable="0"')
+    second = text.index('readable="0"', first + 1)
+    bound = (text[:second] + 'readable="1" inports="%s"' % full_name
+             + text[second + len('readable="0"'):])
+    # Every other <midiport> still opens its input port: a readable port is what
+    # makes subscribeReadablePort reach the sequencer at all.
     bound = bound.replace('readable="0"', 'readable="1"')
     path = os.path.join(instance.tmp, "midi-reconnect.mmp")
     write_text(path, bound)

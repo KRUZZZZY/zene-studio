@@ -404,14 +404,20 @@ that marker is published as-is, and no unverified claim is published without one
   GUI's port menu and the re-attachment itself all come through them — so that is the one place the
   memory is kept in step with the subscription, and an explicit unsubscribe is an explicit forget (a
   port a user detached is never silently re-attached).
-- **The notice, stated per backend.** `MidiAlsaSeq` re-reads the sequencer's client and port inventory
-  once a second and publishes the difference, which is what drives a re-connection; it is the only client
-  class in this build that declares one (`MidiClient::noticesPortChanges()`, overridden only there). The
-  engine reports the running client's own answer as `notice` — `"polled"` for the ALSA-sequencer client,
-  `"none"` for every client class whose changes this build does not consume into the re-connection, in
-  which case the loss is still recorded and **nothing can re-attach automatically**. No claim is made
-  here about the JACK/WinMM/CoreMIDI APIs: what ships is that this build consumes port-list changes from
-  the ALSA-sequencer client and from **no other**, and the command says so itself.
+- **The notice, stated per backend, and measured.** `MidiAlsaSeq` re-reads the sequencer's client and port
+  inventory once a second and publishes the difference, which is what drives a re-connection; it is the
+  only client class in this build that declares one (`MidiClient::noticesPortChanges()`, overridden only
+  there). The engine reports the running client's own answer as `notice` — `"polled"` for the
+  ALSA-sequencer client, `"none"` for every client class whose changes this build does not consume into
+  the re-connection, in which case the loss is still recorded and **nothing can re-attach
+  automatically**. This is a measurement, not a table read off the source (2026-09-15, the rebuilt
+  binary): configuring the ALSA-sequencer client gives `notice: "polled"` with its ports listed and the
+  registered transcript's kill-and-return re-attachment runs through it, and configuring the dummy client
+  gives `notice: "none"` with an empty port list. **This host cannot reach the JACK, ALSA-raw, OSS or
+  sndio clients at all** — no `jackd`, no `sndiod`, no `/dev/midi*`, no `/dev/sequencer`, and each of the
+  four falls back to the dummy client when configured (measured) — so those backends' own hotplug
+  behaviour is **unverified-on-hardware**: not measured, not claimed, and named as such in
+  `docs/KNOWN-LIMITATIONS.md`, as are the WinMM and CoreMIDI clients this platform does not compile.
 - **Control surface:** the `midi.*` re-connection group — `midi.reconnect_status`, `midi.clients_list`,
   `midi.reconnect_arm`, `midi.reconnect_set` — with argument/result schemas and A16 reversibility
   metadata. Two inspectors, one mode switch (engine state, persisted to the config file's
@@ -430,7 +436,15 @@ that marker is published as-is, and no unverified claim is published without one
   engine re-attached and the controller's binding is live again — with the kernel's own subscription
   table (`aconnect -l`), the engine's report and events delivered **through the restored subscription**
   as the readings, and a negative control (a second client nothing is bound to) proving the delivery is
-  gated on the binding. Aplaymidi cannot be used for this: it requires `--port` and therefore addresses
+  gated on the binding. The mode switch is measured in both directions at the kernel rather than from the
+  engine's own flag: disarmed, the re-created client's burst arrives **nowhere** (0 events, with the
+  binding reported not live) and re-armed it arrives again (**+4 events**) with the re-attachment counted.
+  The A16 step binds the unbound control client to a track's MIDI port and takes it off again with ONE
+  `control.undo` — the reading that caught a real defect in the recorded inverse: its undo and redo
+  actions were swapped, so the undo of a bind subscribed again and left the binding on the port
+  (measured 2026-09-15 against this lane's own rebuilt binary: after one `control.undo` the live port
+  still reported `bound: true`; fixed and re-measured green). Aplaymidi cannot be used for this: it
+  requires `--port` and therefore addresses
   its destination directly, bypassing subscriptions (measured: exit 1, "Please specify at least one port
   with --port"), so the external client is the lane's own probe process.
 - **UI absence — one line: MIDI controller auto-reconnection is drivable through the socket, not from the
