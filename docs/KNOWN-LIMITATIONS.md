@@ -1105,7 +1105,11 @@ project file or `warp.stretch` are the only two ways to author it.
   comparison** — each document's element count per tag and the tags that differ — and it is **not a
   semantic diff**; the musical diff of two project documents stays `tools/mmpz-git`'s (`mmpz-git diff`),
   outside this process; **a git entry carries no `sha256`** (hashing every listed commit would be one
-  child process per entry — the commit sha is its identity); **`revisions.restore` does not reload the
+  child process per entry — the commit sha is its identity) while its `bytes` IS measured, with one
+  `git cat-file --batch-check` for the whole list; **`revisions.compare`'s `identical` is a byte
+  comparison of the two artefacts**, so a `.mmpz` revision and the equivalent `.mmp` document are
+  not "identical" while their element counts are the same (a `.mmpz` container is decompressed
+  before it is counted, and reported unreadable only when it cannot be read at all); **`revisions.restore` does not reload the
   session** — it restores the FILE, and `project.open` is how a caller works on the restored bytes
   (the same sentence `project.restore_revision` carries); the restore is reversible only through the
   keep-3 set, so a live file over the policy's 8 MiB per-revision cap is **refused, typed, before

@@ -187,6 +187,11 @@ private slots:
 		QVERIFY(backup.value(QStringLiteral("timestamp")).toString().endsWith(QLatin1Char('Z')));
 		QCOMPARE(backup.value(QStringLiteral("bytes")).toInt(),
 			documentWith(1).size());
+		// The hash is what a caller compares two revisions by without reading them,
+		// so the list carries one for every artefact it can read (measured: the
+		// first version of the list reported an empty sha256, which no reader of
+		// the description could have told from a hash of nothing).
+		QCOMPARE(backup.value(QStringLiteral("sha256")).toString().size(), 64);
 
 		// The autosave's time is the SIDECAR's recorded savedUTC, not the file's
 		// mtime: the artefact says when the autosave was written, and that is
@@ -247,6 +252,22 @@ private slots:
 			.value(QStringLiteral("identical")).toBool());
 		QCOMPARE(same.result.value(QStringLiteral("comparison")).toObject()
 			.value(QStringLiteral("differing_tag_count")).toInt(), 0);
+
+		// A `.mmpz` container is compared AFTER decompression: the bytes of a
+		// compressed document are not the bytes of the text it holds, so the two
+		// are not "identical" - but the structure is the same, and a comparison
+		// that reported a compressed revision as unreadable would be useless
+		// exactly where the artefact carries a compressed project.
+		QVERIFY(writeBytes(path(QStringLiteral("song.mmp.rev1")), qCompress(documentWith(3))));
+		const ControlResult container = registry->invoke(QStringLiteral("revisions.compare"),
+			QJsonObject{{QStringLiteral("project"), m_project},
+				{QStringLiteral("a"), QStringLiteral("rev1")},
+				{QStringLiteral("b"), QStringLiteral("live")}});
+		QVERIFY2(container.ok, qPrintable(container.errorMessage));
+		const QJsonObject compressed = container.result.value(QStringLiteral("comparison")).toObject();
+		QVERIFY(compressed.value(QStringLiteral("readable")).toBool());
+		QCOMPARE(compressed.value(QStringLiteral("differing_tag_count")).toInt(), 0);
+		QVERIFY(!compressed.value(QStringLiteral("identical")).toBool());
 	}
 
 	//! restore puts the revision's bytes back, and the file it replaced is
@@ -353,7 +374,12 @@ private slots:
 		QCOMPARE(entries.first().source, QStringLiteral("git"));
 		QVERIFY(entries.first().id.startsWith(QStringLiteral("git:")));
 		QVERIFY(entries.first().timestamp.isValid());
+		// The size is MEASURED (one `git cat-file --batch-check` for the list),
+		// not reported as zero: a caller reading "0 bytes" would take a real
+		// revision for an empty one. Measured is what makes this assertable.
+		QCOMPARE(entries.first().bytes, static_cast<qint64>(documentWith(1).size()));
 		QVERIFY(report.value(QStringLiteral("in_repository")).toBool());
+		QCOMPARE(report.value(QStringLiteral("sizes_measured")).toInt(), 1);
 
 		// The commit holds the FIRST document, and restoring it writes those
 		// bytes - which is what makes a git revision a revision and not a log line.

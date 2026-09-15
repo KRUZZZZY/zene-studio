@@ -720,15 +720,20 @@ reason -
 | `rotation` | `<file>.rev0` .. `<file>.rev2`, each capped at 8 MiB | the A16 keep-3 rotation `project.save` performs, reusing `control::projectRevisionPath()` |
 | `backup` | `<file>.bak` | `DataFile::writeFile`, on every save from the interface |
 | `autosave` | `recover.mmp` (+ `recover.mmp.bak`) and its `.info` sidecar | the periodic autosave; the sidecar supplies the recorded `savedUTC` and the project it belongs to |
-| `git` | the commits that touched the file | the project's own repository, read through one bounded `git log` (`RevisionTimelineBounds::GitTimeoutMs` = 2500 ms) |
+| `git` | the commits that touched the file | the project's own repository, read through one bounded `git log` (`RevisionTimelineBounds::GitTimeoutMs` = 2500 ms), plus one `git cat-file --batch-check` for the whole list's sizes |
 
 `revisions.list` reports each entry's `id`, `source`, UTC `timestamp`, `bytes`, `path` and `sha256`
-(empty for a git entry: the commit sha is its identity), newest first, plus a per-source count and a
+(empty for a git entry: the commit sha is its identity, and its `bytes` is the blob size git
+reports for it - measured, not left at 0, because a caller reading "0 bytes" would take a real
+revision for an empty one), newest first, plus a per-source count and a
 `git` object that says *why* there are no git entries - no git on the machine, no repository, or
 `include_git: false` - rather than failing the list. `revisions.compare` takes two ids (or one, and
 the file as it is on disk, the id `live`), reports each side's metadata, whether the two are
 byte-identical, and a **structural** comparison: each document's element count per tag, the element
-totals and the tags that differ. It is deliberately **not** a semantic diff - `mmpz-git diff` is that
+totals and the tags that differ. `identical` is a BYTE comparison of the two artefacts, so a
+`.mmpz` revision and the equivalent `.mmp` document are not "identical" while their structure
+is the same - a `.mmpz` container is decompressed before it is counted, never reported
+unreadable. It is deliberately **not** a semantic diff - `mmpz-git diff` is that
 tool, outside this process, and this page will not claim a second implementation. `revisions.restore`
 restores one id over the file on disk **after rotating the live file into the keep-3 set**, so the
 restore is itself recoverable: `control.undo` restores revision 0 (the file it replaced), or removes

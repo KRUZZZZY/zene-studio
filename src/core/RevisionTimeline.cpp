@@ -172,6 +172,33 @@ QString sha256Of(const QByteArray& bytes)
 		QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
 
+//! sha256 of a file's bytes, streamed. Empty when it cannot be read.
+QString sha256OfFile(const QString& path)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
+	QCryptographicHash hash(QCryptographicHash::Algorithm::Sha256);
+	if (!hash.addData(&file)) { return QString(); }
+	return QString::fromLatin1(hash.result().toHex());
+}
+
+/*! An autosave's own provenance: the `.info` sidecar's recorded time and the
+ *  project it came from. Absent or unparsable, the file's own mtime stands and
+ *  no note is added - a recovery written by upstream has no sidecar and is still
+ *  a revision. */
+void applyAutosaveIdentity(RevisionEntry* entry)
+{
+	QFile sidecar(ProjectRecovery::recoveryInfoPath(entry->path));
+	if (!sidecar.open(QIODevice::ReadOnly)) { return; }
+	QString from;
+	QDateTime savedAt;
+	const bool parsed = ProjectRecovery::parseRecoveryIdentity(
+		QString::fromUtf8(sidecar.readAll()), from, savedAt);
+	if (!parsed) { return; }
+	if (savedAt.isValid()) { entry->timestamp = savedAt.toUTC(); }
+	entry->note = QStringLiteral("autosave of %1").arg(from);
+}
+
 //! Newest first; ties keep the artefact order the list was built in, so the
 //! order is total and reproducible.
 bool entryIsNewer(const RevisionEntry& left, const RevisionEntry& right)
@@ -215,19 +242,12 @@ RevisionEntry findRevision(const QString& projectPath, const QString& recoveryFi
 	entry.path = slot.path;
 	entry.bytes = info.size();
 	entry.timestamp = info.lastModified().toUTC();
-	if (slot.source == QStringLiteral("autosave"))
-	{
-		QString from;
-		QDateTime savedAt;
-		QFile sidecar(ProjectRecovery::recoveryInfoPath(slot.path));
-		if (sidecar.open(QIODevice::ReadOnly)
-			&& ProjectRecovery::parseRecoveryIdentity(QString::fromUtf8(sidecar.readAll()), from,
-				savedAt))
-		{
-			if (savedAt.isValid()) { entry.timestamp = savedAt.toUTC(); }
-			entry.note = QStringLiteral("autosave of %1").arg(from);
-		}
-	}
+	// The hash is what a caller compares two revisions by without reading them,
+	// so the list carries it. An artefact over the per-revision cap is listed
+	// WITHOUT a hash rather than hashed and then refused on read: the same bound
+	// decides both halves, so a listed entry with a hash is always readable.
+	if (info.size() <= Bounds::MaxRevisionBytes) { entry.sha256 = sha256OfFile(slot.path); }
+	if (slot.source == QStringLiteral("autosave")) { applyAutosaveIdentity(&entry); }
 	return entry;
 }
 
@@ -293,7 +313,7 @@ QJsonObject revisionTimelineState(const QString& projectPath, const QString& rec
 {
 	QJsonObject gitReport;
 	gitReport.insert(QStringLiteral("in_repository"), false);
-	gitReport.insert(QStringLiteral("reason"), QStringLiteral("not asked for"));
+	gitReport.insert(QStringLiteral("reason"), QString());
 	QVector<RevisionEntry> entries =
 		listProjectRevisions(projectPath, recoveryFile, includeGit, &gitReport);
 
