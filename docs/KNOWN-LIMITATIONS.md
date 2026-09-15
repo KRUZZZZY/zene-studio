@@ -734,6 +734,25 @@ that is this page's fault — report it and it gets added.
   module has no uninstall — and the module is a documented no-op on Windows, where the read reports no
   directory and the writers refuse, typed. The engine keeps its proof (`tests/src/core/CrashReporterTest.cpp`)
   and the **surface** is proven by `tests/control-crash-reporter.py`.
+- **Safe-start mode is drivable, and there is no way to see, offer, accept or clear it from the interface —
+  added 2026-09-15.** After a session that did not exit cleanly, the next launch writes a crash marker
+  (`zene-safe-start.marker`, in the working directory, beside the crash reporter's) and loads the project with
+  **third-party plugin instances skipped** — each one replaced by the engine's own `DummyPlugin`, the same
+  substitute a missing plugin gets — because the thing that killed the last session is usually loaded during
+  start-up. The state is readable through `--control-socket` with `safestart.get_state` (the marker, the
+  acknowledgement, the crashed session's own record, this session's skipped instances, the directories the
+  third-party classification treats as this build's own, and the offer), the offer is accepted with
+  `safestart.acknowledge` (the NEXT launch loads the plugins; the acknowledgement is consumed by that launch),
+  the marker is dropped now with `safestart.clear`, and the session-scoped half of the predicate is
+  `safestart.set_skip` — but **nothing in `src/gui/` shows the mode, offers the normal start, accepts it or
+  clears it**: the offer is printed on stderr by `main()` and held on the control surface, and there is no
+  dialog, banner, menu item or toolbar button for any of it. All three writers are `irreversible` and each
+  names its fallback (the acknowledgement's file, the report the crash reporter still holds, or loading the
+  project again with `safestart.set_skip` off); `safestart.set_skip` is session-scoped process state and no
+  `JournallingObject` checkpoint describes it. "Third-party" is a definition rather than a guess — a module
+  file this build does not ship (see `safestart.get_state`'s `own_plugin_directories`) — the engine proof is
+  `tests/src/core/SafeStartTest.cpp`, which raises a real signal in a forked child before asserting the next
+  launch, and the surface half is the `safestart.*` group in the same test binary.
 
 ## Telemetry and privacy
 
