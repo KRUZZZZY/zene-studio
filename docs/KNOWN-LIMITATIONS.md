@@ -1285,3 +1285,36 @@ interface.** There is no pipe-name field, no control-surface page and no Windows
 `grep -rniI 'control-socket\|ControlServer\|controlSocket' src/gui/` returns **2** hits, both
 comments about *unattended* runs (`GuiApplication.cpp`, `MainWindow.cpp`) and neither a widget, a
 dialog nor a menu entry.
+
+## The golden-audio integration programme (board task #679, lane `030/golden-audio`) — added 2026-09-15
+
+**UI absence — one line: the golden-audio programme is a test, not a surface.** It registers **no**
+command group (no `golden.*` id exists), nothing under `src/gui/` reaches it, and its release
+evidence is the two registered ctests (`GoldenAudioSelfTest`, `ControlGoldenAudio`) plus the
+committed record `tests/golden-audio-record.tsv`. It is not driven from the interface because it is
+not part of the product's surface at all; the whole programme is `docs/GOLDEN-AUDIO.md`.
+
+What it is bounded by, stated rather than measured-away (every number below was measured on
+2026-09-15 on one 20-core Linux box, `build/zene` RelWithDebInfo/Qt6, binary sha256
+`fd10f160…`; the record carries the floors and the provenance):
+
+- **The tolerance is a measured same-build run-to-run floor, not bit-identity.** Renders here are
+  not reproducible run to run (`docs/RENDER-DETERMINISM.md`), so no check anywhere may compare two
+  renders by hash. The programme renders its fixture 5 times per path, compares every pair, and
+  takes the worst value of each term as that term's floor; a verdict fails only when a term
+  exceeds **twice its own floor**, floored at one LSB (16-bit) or 0.01 dB.
+- **Three of the four measured paths were bit-reproducible on that build** (floor 0 LSB over 10
+  pairs): a socket-built fixture's `render.render`, `render.stems` and `bounce.in_place`. On those
+  the smallest gain change the programme distinguishes is **−0.001 dB**; −0.0001 dB (one LSB of
+  sample delta) is **not** distinguishable and is not claimed to be.
+- **The bundled project that is recorded as still not reproducible still is**: over 10 pairs of the
+  same build, 96.7 % of `Root84-TrancyLoop`'s frames differed, by up to 13 275 LSB (40.5 % of full
+  scale), while its **loudness moved by 0.0023 dB** — which is why the sample-level terms exist and
+  why a level check alone would be worthless here. On that fixture the sample term's tolerance is
+  81–95 % of full scale, so it can only catch a near-full-scale difference and **the level term is
+  what carries the discrimination**; the smallest change the programme distinguishes there is
+  **−0.1 dB**.
+- **It says nothing about a module that is itself non-deterministic**, and nothing across builds,
+  machines or optimisation levels: the floor is a property of one build on one box. A change whose
+  samples move less than the floor is indistinguishable by construction, and a difference the
+  programme does report is not attributed to a commit — that attribution is the reader's work.
