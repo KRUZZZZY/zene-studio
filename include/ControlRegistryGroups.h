@@ -504,3 +504,27 @@ LMMS_EXPORT void registerIdContractCommand(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
+/*! controller.surface_state / soft_takeover / feedback / template_save /
+ *  template_list / template_apply / template_delete - the ENGINE HALF of MIDI
+ *  controller surfaces (feature row 19). The engine is
+ *  include/ControllerSurface.h (the template store) with the per-binding
+ *  soft-takeover and LED/feedback state on MidiController
+ *  (include/MidiController.h) and the output measurement on MidiPort
+ *  (include/MidiPort.h).
+ *
+ *  It builds ON the landed MIDI-learn path (src/core/MidiLearn.cpp, the
+ *  midi.learn_toggle / midi.device_list ids): a control bound by learn, by a
+ *  project load or by controller.template_apply all answer to the same
+ *  address, the model's fullDisplayName().
+ *
+ *  OSC IS OUT (Bar 3): this group is MIDI controller surfaces only. There is no
+ *  interface for any of it in this release - the group is the only way to reach
+ *  it. Named in docs/KNOWN-LIMITATIONS.md and the release notes. */
+LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
+/*! controller.template_save / template_list / template_apply / template_delete -
+ *  the four FILE verbs of the same group, in their own translation unit
+ *  (src/core/ControlCommandsControllerTemplates.cpp) because the group measured
+ *  706 lines against the 500-line whole-tree ratchet and a fork-NEW file over
+ *  the limit fails the gate. Called by registerControllerSurfaceCommands; the
+ *  registry still has exactly one controller.* registration point. */
+LMMS_EXPORT void registerControllerTemplateCommands(ControlRegistry& registry);

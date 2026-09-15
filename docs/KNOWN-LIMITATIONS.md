@@ -1207,3 +1207,36 @@ produce no audio the user hears — the limit `docs/WASM-EFFECT-ABI.md` section 
 **Stable ids — slice 2 (feature row 51).** `clip-<n>`, `note-<n>`, `ch-<n>` and `fx-<n>` are persistent across save/open, `dev-<n>` is a catalogue selector and is intentionally not in the project file. **Stable id inspection is drivable through the socket, not from the interface**: there is no id column in the track list, the clip list, the piano roll, the mixer or the rack; `control.id_contract` is the only way to read the contract and the counts.
 
 **mmpz-git depth is drivable through the socket, not from the interface.** The merge driver, semantic diff, conflict reporter and audible-diff CLI are wrapped as `project.merge`, `project.diff`, `project.conflicts` and `project.audible_diff` on the control surface, but nothing in the GUI reaches them. The audible-diff command requires the built binary as its renderer; the merge driver operates on project files, not the running session.
+
+## MIDI controller surfaces — soft-takeover, LED/feedback and mapping templates (feature row 19, board task #651)
+
+**The controller surface is drivable through the socket, not from the interface.** There is no
+soft-takeover toggle, no feedback switch and no template menu: `grep -rniI
+'ControllerSurface\|softtakeover\|controller\.template_' src/gui/` returns **0** hits, and the
+`controller.*` group (`controller.surface_state`, `controller.soft_takeover`, `controller.feedback`,
+`controller.template_save`, `controller.template_list`, `controller.template_apply`,
+`controller.template_delete`) is the only way to reach any of it.
+
+What is bounded, stated rather than implied:
+
+- **No hardware was attached when this was written, and none is required to run the proof.** Every
+  claim in `ControllerSurfaceTest` is made by feeding a synthetic control-change through
+  `MidiLearn::handleMidiEvent` / `MidiPort::processInEvent`, the same event the MIDI clients deliver.
+  The LED half's strongest in-process claim is **a measured write to the output client**: the port's
+  own counter (`MidiPort::outputEventsWritten()`) is read where `m_midiClient->processOutEvent()` is
+  called. That is a write reaching the client, **not** a proof that a lamp lit — with the dummy client
+  `sendByte()` is a no-op, and nothing here has been run against a controller that could confirm it.
+- **OSC is out** — this is the MIDI controller surface only.
+- **No motorised-fader return path is proved.** `controller.feedback` writes the value the project
+  holds; whether a given device acts on it (moves a fader rather than lighting a ring) is a property of
+  the device, and is unverified here.
+- **Feedback writes are filtered by the port's output channel**, like every other out-event
+  (`MidiPort::processOutEvent`). Enabling feedback points the output channel at the channel the control
+  transmits on, which is what makes the write pass; a project that later sets a different output
+  channel will filter it out again.
+- **Soft-takeover's take-over point is the value the model holds** when it is enabled (or the explicit
+  `target`). It is a scalar outside every journal checkpoint, so `control.undo` does not reverse it:
+  the recorded inverse command does.
+- **A mapping template is files outside the project** (`<userConfig>/controller-templates/<name>.json`).
+  It is not carried in the project file, it is not shared by saving a project, and deleting one has no
+  undo. A binding whose target model is absent is skipped and reported, never invented.

@@ -491,7 +491,12 @@ private slots:
 		// telemetry.* pair), plus the five synthetic commands the slots above
 		// declare. rack.* (#599) and transport.tempo_map_* (D11) are in the 85;
 		// script.set_memory_budget (CODE-6) is new.
-		QCOMPARE(registry->commandCount(), 85 + 5 + 5);
+		//   + 7 (feature row 19, board task #651): the controller.* ids -
+		//   surface_state, soft_takeover, feedback, template_save,
+		//   template_list, template_apply, template_delete.
+		// A MEASUREMENT, moved with this tree's registration and not run here:
+		// the merge tip must re-measure it.
+		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5);
 	}
 #endif
 };

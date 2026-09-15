@@ -352,6 +352,19 @@ void MidiClientRaw::processOutEvent(const MidiEvent& event, const TimePos&, cons
 			sendByte(event.velocity());
 			break;
 
+		/* A control-change is three bytes on the wire: status (0xB0 | channel),
+		 * controller number, value. This is the path LED/feedback output takes
+		 * BACK to a controller - `controller.feedback`, feature row 19 - and it
+		 * was the `default:` warning below until that group landed: enabling
+		 * feedback reached this client and produced a qWarning per write instead
+		 * of a byte. The note path above is the same shape, so a raw client
+		 * needs no new machinery for it. */
+		case MidiControlChange:
+			sendByte(MidiControlChange | event.channel());
+			sendByte(event.controllerNumber());
+			sendByte(event.controllerValue());
+			break;
+
 		/* The MIDI-clock family (0.3.0, the `clock.*` group's master half).
 		 * These are the same raw byte path a note takes - sendByte() - because
 		 * that IS this client's output: a raw client writes to its one device.

@@ -436,3 +436,12 @@ LMMS_EXPORT const ReversibilityRow* reversibilityAutomationModesRowTable(int* ro
  *  Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityMmpzGitRowTable(int* rowCount);
+/*! The `controller.*` rows (feature row 19, board task #651): the MIDI
+ *  controller surface's soft-takeover, LED/feedback output and mapping
+ *  templates. Two not_mutating read verbs, and five snapshot rows with
+ *  reversible=false - the surface flags live in the model's own <connection>
+ *  element and the templates are files outside the project, so no
+ *  ProjectJournal checkpoint holds a previous value and an undo attempt must
+ *  FAIL, typed, naming the inverse command. Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityControllerRowTable(int* rowCount);

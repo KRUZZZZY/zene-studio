@@ -2114,3 +2114,35 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
 - **Four control-surface ids:** `project.merge`, `project.diff`, `project.conflicts`, `project.audible_diff`, each with argument/result schemas and A16 reversibility metadata.
 - **Proof:** `MmpzGitDepthTest` (registered ctest: the Python test suite over real project files, including a git-driven end-to-end merge that asserts the large-asset sidecar lands beside the project) and `bash tools/mmpz-git/depth-demo.sh` (a rerunnable transcript with unpiped exit codes that builds branches from one real project, merges them, and asserts the merged documents: the different-track merge, the same-note conflict, the delete-vs-nested-edit silent-loss class, and the embedded-sample conflict with its eight document checks).
 - **UI absence — one line:** drivable through the socket, not from the interface.
+
+### MIDI controller surfaces — soft-takeover, LED/feedback output and mapping templates
+
+- **Ids:** `controller.surface_state`, `controller.soft_takeover`, `controller.feedback`,
+  `controller.template_save`, `controller.template_list`, `controller.template_apply`,
+  `controller.template_delete` (group `controller`, registered in
+  `src/core/ControlRegistryRegistrations.cpp`, declared in `include/ControlRegistryGroups.h`).
+- **Engine half:** `include/MidiController.h` + `src/core/midi/MidiController.cpp` (the soft-takeover
+  crossing gate in `processInEvent`, and the LED/feedback write), `include/ControllerSurface.h` +
+  `src/core/ControllerSurface.cpp` (the template store), and two output counters on `MidiPort`
+  (`include/MidiPort.h`) plus the `MidiControlChange` case in `MidiClientRaw::processOutEvent`
+  (`src/core/midi/MidiClient.cpp`) — without that case a feedback write reached the client and produced
+  a `qWarning` per write instead of three bytes.
+- **A16:** five `snapshot` rows with `reversible = false` and two `not_mutating` rows, in their own
+  translation unit `src/core/ControlReversibilityTableController.cpp`, joined by one entry in
+  `src/core/ControlReversibilityTable.cpp`. The surface flags live in the model's own `<connection>`
+  element (so no `ProjectJournal` checkpoint holds them) and a template is a file outside the project,
+  so an undo attempt is refused, typed, and names the inverse command.
+- **Proof.** `ControllerSurfaceTest`, registered in `tests/CMakeLists.txt`, driven entirely through the
+  synthetic-CC entry point (`MidiLearn::handleMidiEvent` / `MidiPort::processInEvent`): the soft-takeover
+  gate and its take-over-off negative control, the feedback write measured at the MIDI-client boundary
+  plus its feedback-off negative control, the template save/list/read/apply round trip with the flags
+  intact, what a template reports it cannot resolve, and the surface flags through the project's own
+  serialisation.
+- **UI absence — one line: the controller surface is drivable through the socket, not from the
+  interface.** There is no soft-takeover toggle, no feedback switch and no template menu;
+  `grep -rniI 'ControllerSurface\|softtakeover\|controller\.template_' src/gui/` returns **0** hits, and
+  `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds above.
+- **What this does NOT have, stated rather than implied:** **OSC is out**; **no hardware was attached
+  when this was written**, so the LED half's strongest claim is a measured write reaching the output
+  client (the dummy client's `sendByte()` is a no-op) and nothing here proves a lamp lit or a motor
+  moved; and no motorised-fader return path is proved at all.

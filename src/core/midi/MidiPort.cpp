@@ -178,6 +178,12 @@ void MidiPort::processInEvent( const MidiEvent& event, const TimePos& time )
 
 void MidiPort::processOutEvent( const MidiEvent& event, const TimePos& time )
 {
+	// The measurement, taken at the boundary this port is: an event was offered
+	// to the output path, and - inside the gate below - the MIDI client was
+	// actually handed it. Relaxed increments: no allocation, no lock, so the
+	// audio path this runs on stays realtime-safe (see MidiPort.h).
+	m_outputEventsOffered.fetch_add( 1, std::memory_order_relaxed );
+
 	// When output is enabled, route midi events if the selected channel matches
 	// the event channel or if there's no selected channel (value 0, represented by "--")
 	if( isOutputEnabled() && ( outputChannel() == 0 || realOutputChannel() == event.channel() ) )
@@ -197,6 +203,7 @@ void MidiPort::processOutEvent( const MidiEvent& event, const TimePos& time )
 		}
 
 		m_midiClient->processOutEvent( outEvent, time, this );
+		m_outputEventsWritten.fetch_add( 1, std::memory_order_relaxed );
 	}
 }
 

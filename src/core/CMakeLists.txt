@@ -681,3 +681,20 @@ set(LMMS_SRCS
 
 	PARENT_SCOPE
 )
+
+	# the controller.* group (feature row 19, board task #651): MIDI controller
+	# soft-takeover, LED/feedback output and the mapping templates.
+	core/ControlCommandsController.cpp
+	# ... and its four FILE verbs (template save/list/apply/delete), split off at
+	# the 500-line ratchet so both files stay under it.
+	core/ControlCommandsControllerTemplates.cpp
+	# The controller.* rows (feature row 19, board task #651): the MIDI controller
+	# surface's soft-takeover, LED feedback and mapping templates. Two
+	# not_mutating read verbs and five snapshot rows, in their own file so the
+	# capped join file and the passive block both stay untouched.
+	core/ControlReversibilityTableController.cpp
+	# ControllerSurface.cpp - the mapping-template store of the controller
+	# surface (feature row 19, board task #651). Missed by the lane's WIP commit
+	# cbb717660: the file was written but never added to this list, so nothing
+	# built it.
+	core/ControllerSurface.cpp

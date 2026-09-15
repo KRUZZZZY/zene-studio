@@ -103,6 +103,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerDspCommands(registry);
 	registerSettingsCommands(registry);
 	registerMidiRetroCaptureCommands(registry);
+	// The controller-surface group (feature row 19): soft-takeover, LED/feedback
+	// output and the mapping templates, on top of the MIDI-learn path above.
+	registerControllerSurfaceCommands(registry);
 	registerAutomationCommands(registry);
 	registerAutomationEditCommands(registry);
 	registerWarpCommands(registry);
