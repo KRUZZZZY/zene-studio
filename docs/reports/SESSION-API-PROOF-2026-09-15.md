@@ -15,7 +15,7 @@ behaviour is a line in the committed socket transcript.
 | Binary sha256 | `2eac83506be5bc6c6a691174caa19ec284ed5905d4a5af239279a0b42364c946` |
 | Build switch | `WANT_SESSION_VIEW=ON`, `LMMS_HAVE_SESSION_VIEW` defined (`zene-030/build/lmmsconfig.h:42`) |
 | Committed transcript | `docs/reports/SESSION-API-PROOF-transcript-2026-09-15.txt` (135 158 bytes) |
-| Registered ctest | `ControlSessionApiProof` — `tests/control-session-api-proof.py` |
+| Registered ctest | `ControlSessionApiProof` — `tests/control-session-api-proof.py`; measured as **Test #144 of 183** after a configure, and **Passed** when ctest was run (3/3 for the `^ControlSession` set) |
 
 ## The measuring command
 
@@ -32,6 +32,54 @@ The script starts the real binary with `--control-socket` through the project's 
 (`tests/control_socket_harness.py`), so it adds no second launch path. It prints the raw request/response
 transcript, and writes the same text to `--out`. The full transcript is committed as the proof artefact;
 this file is the table it produces, with the registered reference each row was checked against.
+
+## How the proof is registered, and the run that proves it runs
+
+Registration was **measured by configuring the tree**, not asserted from the diff:
+
+```bash
+cmake -S . -B .proof-ctest -DCMAKE_BUILD_TYPE=Release -DWANT_QT6=ON > /tmp/cmake-configure2.log 2>&1; echo CMAKE_EXIT=$?
+# CMAKE_EXIT=0        (configure only: no compile, no 25 GB build tree)
+
+ctest --test-dir .proof-ctest/tests -N | tail -3
+# Total Tests: 183
+ctest --test-dir .proof-ctest/tests -N | grep -A1 ControlSession
+#   Test #142: ControlSessionLaunch
+#   Test #143: ControlSessionLifecycleTranscript
+#   Test #144: ControlSessionApiProof
+#   Test #145: ControlExportSettings
+grep -n LMMS_HAVE_SESSION_VIEW .proof-ctest/lmmsconfig.h
+# 42:#define LMMS_HAVE_SESSION_VIEW
+```
+
+and the generated entry, from `.proof-ctest/tests/CTestTestfile.cmake`:
+
+```
+add_test(ControlSessionApiProof "…/python3" "…/tests/control-session-api-proof.py" "…/.proof-ctest/zene")
+set_tests_properties(ControlSessionApiProof PROPERTIES  ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    SKIP_RETURN_CODE "77" TIMEOUT "300" _BACKTRACE_TRIPLES "…/tests/CMakeLists.txt;1791;add_test;…")
+```
+
+The ctest was then **run** in that tree, against the same copied binary placed at the `$<TARGET_FILE:zene>`
+path the generator resolves:
+
+```bash
+ln -sf "$PWD/.proof-bin/zene-a74749d15" .proof-ctest/zene
+export LD_LIBRARY_PATH=$PWD/../third_party/wasmtime/lib      # zene-030/third_party/wasmtime/lib
+ctest --test-dir .proof-ctest/tests -R '^ControlSession' > /tmp/ctest-session3.log 2>&1; echo EXIT=$?
+# EXIT=0
+#     Start 142: ControlSessionLaunch
+# 1/3 Test #142: ControlSessionLaunch ................   Passed    5.37 sec
+#     Start 143: ControlSessionLifecycleTranscript
+# 2/3 Test #143: ControlSessionLifecycleTranscript ...   Passed    6.02 sec
+#     Start 144: ControlSessionApiProof
+# 3/3 Test #144: ControlSessionApiProof ..............   Passed    4.79 sec
+# 100% tests passed, 0 tests failed out of 3
+```
+
+`ctest` was run from `<build>/tests`, never from the top-level build directory, and `-N` reported **183**
+tests rather than 0. The two sibling ctests passing in the same run is the regression evidence that this
+branch changed nothing about the group's existing behaviour: it added one entry and one script.
 
 ## Per-id table
 
