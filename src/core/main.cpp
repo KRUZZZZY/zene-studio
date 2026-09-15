@@ -313,7 +313,7 @@ int noInputFileError()
 // docs/RELEASE-NOTES-v0.3.0-alpha.md both state.
 void announceSafeStart()
 {
-	if( !safestart::safeStartActive() )
+	if( !lmms::safestart::safeStartActive() )
 	{
 		return;
 	}
@@ -321,7 +321,7 @@ void announceSafeStart()
 		"launch skips THIRD-PARTY plugin instances (the engine's dummy plugin stands in for "
 		"each one). Accept the normal start with safestart.acknowledge - the NEXT launch loads "
 		"them again - or clear the marker with safestart.clear.\n" );
-	const safestart::SessionRecord previous = safestart::lastSession();
+	const lmms::safestart::SessionRecord previous = lmms::safestart::lastSession();
 	if( !previous.projectPath.empty() )
 	{
 		fprintf( stderr, "Safe-start mode: the project that was open was %s\n",

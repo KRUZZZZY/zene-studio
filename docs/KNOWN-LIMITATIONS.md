@@ -750,9 +750,10 @@ that is this page's fault — report it and it gets added.
   names its fallback (the acknowledgement's file, the report the crash reporter still holds, or loading the
   project again with `safestart.set_skip` off); `safestart.set_skip` is session-scoped process state and no
   `JournallingObject` checkpoint describes it. "Third-party" is a definition rather than a guess — a module
-  file this build does not ship (see `safestart.get_state`'s `own_plugin_directories`) — the engine proof is
-  `tests/src/core/SafeStartTest.cpp`, which raises a real signal in a forked child before asserting the next
-  launch, and the surface half is the `safestart.*` group in the same test binary.
+  file this build does not ship (see `safestart.get_state`'s `own_plugin_directories`) — the engine proofs are
+ `tests/src/core/SafeStartTest.cpp`, which raises a real signal in a forked child before asserting the next
+ launch, and `tests/src/core/SafeStartLoadPathTest.cpp`, which drives the real `Plugin::instantiate()`
+ against a third-party module copy — and the surface half is the `safestart.*` group in the first of them.
 
 ## Telemetry and privacy
 

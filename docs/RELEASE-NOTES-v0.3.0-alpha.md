@@ -681,12 +681,14 @@ back. Safe-start mode covers it, with a MARKER and one load-time predicate:
   instances on the next launch, the offer of a normal start is printed on stderr and held on the
   control surface, and there is no dialog, banner, menu item or toolbar button for any of it.
   `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
-- **The proof is registered:** `SafeStartTest` (`tests/src/core/SafeStartTest.cpp`). It raises a REAL
-  signal in a forked child (and SIGKILL, which no handler can catch) and shows the next launch reading
-  the crashed session's own record; it shows the real `Plugin::instantiate()` returning the
-  `DummyPlugin` for a third-party module copy and really loading that module once the session switch
-  is off; and its negative control holds — a clean exit leaves no marker, no acknowledgement, no
-  skipped instance and no safe start offered.
+- **The proof is registered, in two binaries:** `SafeStartTest` (`tests/src/core/SafeStartTest.cpp`)
+  raises a REAL signal in a forked child (and SIGKILL, which no handler can catch) and shows the next
+  launch reading the crashed session's own record, with the negative control that a clean exit leaves
+  no marker, no acknowledgement, no skipped instance and no safe start offered;
+  `SafeStartLoadPathTest` (`tests/src/core/SafeStartLoadPathTest.cpp`) drives the real
+  `Plugin::instantiate()` against a third-party module copy and asserts the `DummyPlugin`, then really
+  loads that module once the session switch is off — two binaries because the file-length ratchet is
+  not moved for a new feature.
 
 ## Offline stem separation, made drivable (`stem.*`, feature row 26) — added 2026-09-15
 

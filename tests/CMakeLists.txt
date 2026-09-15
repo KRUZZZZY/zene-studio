@@ -130,6 +130,13 @@ set(LMMS_TESTS
 	# REAL signal in a forked child and against the real Plugin::instantiate()
 	# with a third-party module copy.
 	src/core/SafeStartTest.cpp
+	# The same feature's load-path half, in its own binary (the file-length
+	# ratchet is not moved for a new feature - the ClipLinkTest /
+	# ClipLinkPersistenceTest arrangement): a real plugin module copy, the plugin
+	# search path pinned to it, and the real Plugin::instantiate() asserted to
+	# hand back the DummyPlugin while safe-start is active and to load the module
+	# once the session switch is off.
+	src/core/SafeStartLoadPathTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
 	# The export dither (TPDF) and the explicit SRC quality: the statistical
@@ -395,7 +402,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# exactly like the zene executable does (the same setup PluginScanCacheTest
 	# and PhaseDSidechainTest need). It also needs a Qt platform plugin, even
 	# though it is guiless.
-	if(LMMS_TEST_NAME STREQUAL "SafeStartTest")
+	if(LMMS_TEST_NAME STREQUAL "SafeStartTest" OR LMMS_TEST_NAME STREQUAL "SafeStartLoadPathTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_SAFE_START_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")

@@ -228,6 +228,11 @@ set(LMMS_SRCS
 	# own translation unit for the reason the crash and scan groups have theirs -
 	# gate 7 measures a file, not a group - and because the group is one group.
 	core/ControlCommandsSafeStart.cpp
+	# Its edit half (safestart.acknowledge / clear / set_skip), in its own
+	# translation unit along the seam ControlCommandsAutomation.cpp /
+	# ...AutomationEdit.cpp established: the read half and the pair's shared header
+	# are the other two files of the same split.
+	core/ControlCommandsSafeStartEdit.cpp
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp

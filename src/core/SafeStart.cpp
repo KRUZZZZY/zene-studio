@@ -270,7 +270,7 @@ void beginSession()
 	s.skipEnabled = true;
 	if (!s.installed) { return; }
 
-		const std::string marker = markerPath();
+	const std::string marker = markerPath();
 	const std::string acknowledgedFile = acknowledgedPath();
 
 	// READ what the previous run left, before this session's marker replaces it.

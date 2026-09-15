@@ -36,7 +36,8 @@
 //     Plugin::instantiate() really returns the engine's DummyPlugin for a
 //     THIRD-PARTY module file, and with the session switch off the SAME call
 //     really loads the module - so the skip is the mode's doing and not a plugin
-//     that failed to load;
+//     that failed to load. That half needs a real plugin module and its own
+//     binary (SafeStartLoadPathTest, the file-length ratchet's reason);
 //   * the NEGATIVE CONTROL holds: a session that exits cleanly leaves no marker,
 //     no acknowledgement, no skipped instance and no safe start offered;
 //   * the acknowledgement makes the launch AFTER the next one normal, and it is
@@ -46,13 +47,10 @@
 //
 // The signal half is POSIX-only; on Windows the fork-and-signal cases are
 // skipped with the reason the suite's other plugin-module tests give, and the
-// state machine half still runs.
+// state machine half still runs. The load-path half is
+// tests/src/core/SafeStartLoadPathTest.cpp, registered beside this one.
 
 #include "SafeStart.h"
-
-#include "DummyPlugin.h"
-#include "Plugin.h"
-#include "PluginFactory.h"
 
 #include <QtTest>
 #include <QByteArray>
@@ -65,19 +63,12 @@
 #ifndef Q_OS_WIN
 #include <algorithm>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#endif
-
-//! Build-tree plugin directory, injected by tests/CMakeLists.txt: the module
-//! this suite copies into a fixture so it can prove the load path skips
-//! THIRD-PARTY files (a fixture directory is a file the build does not ship,
-//! which is exactly what the predicate classifies as third-party).
-#ifndef LMMS_TEST_SAFE_START_PLUGIN_DIR
-#define LMMS_TEST_SAFE_START_PLUGIN_DIR "plugins"
 #endif
 
 namespace
@@ -91,13 +82,6 @@ using namespace lmms::safestart;
 const std::string ThirdPartyPath = "/tmp/some-user-drop-in/libtotallythirdparty.so";
 
 #ifndef Q_OS_WIN
-
-//! The module file name the scanner looks for on this platform (PluginFactory's
-//! candidate filter is "*.dll" on Windows and "lib*.so" elsewhere).
-constexpr auto moduleFileName() -> const char*
-{
-	return "libmidiexport.so";
-}
 
 //! Wait for a child, bounded. A timeout is a HANG, which this module must never
 //! cause, and every caller asserts on it. (The CrashReporterTest helper, which
@@ -434,89 +418,6 @@ private slots:
 		endSession();
 	}
 
-	// -----------------------------------------------------------------------
-	// 8. THE LOAD PATH. The predicate is not a claim about a helper: the real
-	//    Plugin::instantiate() returns the engine's DummyPlugin for a
-	//    third-party module while safe-start is active, and the SAME call really
-	//    loads that module once the session switch is off. Without the second
-	//    half the first would be indistinguishable from a module that simply
-	//    fails to load.
-	// -----------------------------------------------------------------------
-	void theLoadPathReallySkipsAThirdPartyInstance()
-	{
-#ifdef Q_OS_WIN
-		QSKIP("a Windows test host cannot load plugin MODULE libraries: plugin modules link the "
-			"zene executable, so their import descriptor names zene.exe and a test host cannot "
-			"satisfy it (the same reason ScriptEngineTest and PluginScanCacheTest skip here)");
-#else
-		QTemporaryDir fixture;
-		QVERIFY2(fixture.isValid(), "could not create the plugin directory fixture");
-		const QFileInfo module(QDir(QStringLiteral(LMMS_TEST_SAFE_START_PLUGIN_DIR))
-			.filePath(QString::fromUtf8(moduleFileName())));
-		QVERIFY2(module.exists(),
-			qPrintable(QStringLiteral("the build's own plugin module is missing: %1")
-				.arg(module.absoluteFilePath())));
-		QVERIFY2(QFile::copy(module.absoluteFilePath(),
-				fixture.filePath(QString::fromUtf8(moduleFileName()))),
-			"cannot copy the module into the fixture");
-
-		// The fixture is a directory this build does not ship from, which is
-		// exactly what makes the file third-party for the predicate - and it is
-		// the ONLY plugin directory in the search path, so the name below
-		// resolves to it.
-		QVERIFY(isThirdPartyPluginFile(fixture.filePath(QString::fromUtf8(moduleFileName()))
-			.toStdString()));
-		// The fixture must be the ONLY plugin directory in the search path, or
-		// the name below could resolve to a module this build ships and the case
-		// would prove nothing. LMMS_PLUGIN_DIR is the one other way the build's
-		// own modules get in, so it is cleared here.
-		qunsetenv("LMMS_PLUGIN_DIR");
-		QDir::setSearchPaths(QStringLiteral("plugins"), QStringList{fixture.path()});
-
-		QTemporaryDir dir;
-		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
-		QVERIFY(install(dir.path().toStdString()));
-		{
-			QFile marker(QString::fromStdString(markerPath()));
-			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
-			marker.write("Zene Studio safe-start marker v1\npid=4245\n");
-		}
-		beginSession();
-		QVERIFY(safeStartActive());
-		resetSkippedInstances();
-
-		// 1) SAFE: the instance is NOT created, and the module is still in the
-		//    factory's catalogue - so the skip is the mode's doing.
-		lmms::PluginFactory* factory = lmms::getPluginFactory();
-		QVERIFY2(!factory->pluginInfo("midiexport").isNull(),
-			"the fixture module was not discovered, so this case would prove nothing");
-		QCOMPARE(factory->pluginInfo("midiexport").file.absoluteFilePath(),
-			fixture.filePath(QString::fromUtf8(moduleFileName())),
-			"the name must resolve to the FIXTURE copy: that is what makes it third-party");
-		lmms::Plugin* skipped = lmms::Plugin::instantiate(QStringLiteral("midiexport"),
-			nullptr, nullptr);
-		QVERIFY2(skipped != nullptr, "Plugin::instantiate must still return an object");
-		QVERIFY2(dynamic_cast<lmms::DummyPlugin*>(skipped) != nullptr,
-			"safe-start mode must hand back the engine's DummyPlugin for a third-party module");
-		QCOMPARE(skippedCount(), 1);
-		delete skipped;
-
-		// 2) THE CONTROL: the same call, with the session switch off, really
-		//    loads the module (not a DummyPlugin).
-		setSkipEnabled(false);
-		lmms::Plugin* loaded = lmms::Plugin::instantiate(QStringLiteral("midiexport"),
-			nullptr, nullptr);
-		QVERIFY2(loaded != nullptr, "Plugin::instantiate must return an object");
-		QVERIFY2(dynamic_cast<lmms::DummyPlugin*>(loaded) == nullptr,
-			"with the session switch off the module must really load, or the skip above proves "
-			"nothing about safe-start mode");
-		delete loaded;
-		QCOMPARE(skippedCount(), 1);   // the control added no record
-
-		endSession();
-		QDir::setSearchPaths(QStringLiteral("plugins"), QStringList{});
-#endif
-	}
 };
 
 QTEST_GUILESS_MAIN(SafeStartTest)
