@@ -2763,3 +2763,39 @@ precision inside the block.
   Windows (the only witness is our own MIT fixture), no plug-in editor (unchanged — the parameters surface as
   the generated grid, see the 0.2.1 limitations page), no CLAP instrument hosting, and no local execution of
   the Windows half at all.
+
+## The golden-audio integration programme — added 2026-09-15
+
+**What it is.** The release's audio evidence, and the second of the two verification programmes
+the 0.3.0 plan names (the other is the real-time-safety one). It answers "did this change alter
+what the engine renders?" with a number instead of an opinion, in the only form this tree's
+renderer allows: **max |delta| in LSB and dBFS against a same-build run-to-run floor**, measured
+per fixture by rendering it five times and comparing every pair, never `sha256` byte-identity and
+never a single before/after value. It covers the three headline paths — a render
+(`render.render`), a stem export (`render.stems`) and a freeze/bounce (`bounce.in_place`) — and it
+carries a **negative control** that the comparison must fail: a stated gain change made by the
+product through `mixer.set_volume`.
+
+**What it measured on this release's own build** (2026-09-15, `build/zene` sha256 `fd10f160…`,
+one 20-core Linux box; the numbers and the provenance are in `tests/golden-audio-record.tsv`):
+
+- **0 LSB over 10 pairs** for all three headline paths of a socket-built fixture: the
+  `ProjectRenderer` fix holds end to end through the control surface.
+- **13 275 LSB (40.5 % of full scale) and 96.7 % of frames differing** on the bundled project
+  `docs/RENDER-DETERMINISM.md` records as still not reproducible — with its loudness moving by
+  0.0023 dB, which is why the programme compares samples as well as levels.
+- The bound, measured by sweeping the fader: on the reproducible fixture a **−0.001 dB** change is
+  caught; on the jittering fixture only **−0.1 dB** and above is. Below one LSB of a 16-bit render
+  nothing is distinguishable, by construction.
+
+**How it is proved.** Two ctests, registered in `tests/CMakeLists.txt`: `GoldenAudioSelfTest` (the
+instrument's own control on synthesised WAVs whose difference is known, including that a
+deliberate −0.5 dB gain FAILS the comparison — no binary, no socket, any platform) and
+`ControlGoldenAudio` (the programme end to end over `--control-socket` against the real binary).
+The record is **the baseline**: `--write-record` rewrites it deliberately and a floor moved to fit
+a result would be a deleted test, which the file's own header says.
+
+- **UI absence — one line: this programme is a test, not a surface.** It registers no command group
+  (no `golden.*` id exists), nothing under `src/gui/` reaches it, and `docs/KNOWN-LIMITATIONS.md`
+  carries its bounds and the measured limit of what it can distinguish. The programme itself is
+  `docs/GOLDEN-AUDIO.md`.
