@@ -369,6 +369,17 @@ Not covered, explicitly:
 * `--track NAME` compares one track; it does not attribute a *mix* difference to
   an instrument.
 
+How far the chain was exercised without a build (this lane, 2026-09-15): the
+argument passing, the per-track WAV matching, the bar grid read from the
+project's own `<head bpm>`, and all three exit codes were run against the real
+`data/projects/shorties/sv-DnB-Startup.mmpz` with `--renderer` pointed at a stub
+that answers `render`/`rendertracks` with generated PCM - identical project:
+exit 0 `render identically`; one note added: exit 1 with per-track and mix bar
+ranges; a missing input with a renderer present: exit 2 `no such file`; no
+renderer at all: exit 2 `no renderer found`. That is a **plumbing** check - the
+audio was generated, not rendered - so the numbers in §3.4 remain the ones a
+real build measured, and the classes that need that build still skip here.
+
 ## 6. Tests
 
 Run: `python3 tools/mmpz-git/tests/test_mmpz_git.py -v` (no build needed for the
