@@ -86,6 +86,9 @@ set(LMMS_SRCS
 	core/AudioEngineWorkerThread.cpp
 	core/AudioPortsModel.cpp
 	core/AudioResampler.cpp
+	# Pitch-preserving time stretch (0.3.0 feature-list row 30): WSOLA. The
+	# DSP the warp/clip path selects when a clip asks for PreservePitch.
+	core/AudioStretcher.cpp
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp
 	core/AutomationNode.cpp

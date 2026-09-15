@@ -264,6 +264,7 @@ include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
 include/AudioPortsSettings.h
+include/AudioStretcher.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
@@ -421,6 +422,7 @@ plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 src/core/AudioBus.cpp
 src/core/AudioPortsModel.cpp
+src/core/AudioStretcher.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserMetadata.cpp
@@ -659,6 +661,7 @@ tests/link_sync_evidence.py
 tests/mastering_probe_lib.py
 tests/render-software-tag.py
 tests/src/core/AudioResamplerRatioTest.cpp
+tests/src/core/AudioStretcherTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipSerialisationTest.cpp
@@ -689,6 +692,7 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
+tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tools/local-ci.sh
 tools/ncpu-shim.c

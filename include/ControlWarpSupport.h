@@ -61,6 +61,11 @@ using MarkerArray = std::array<WarpMarker, WarpMarkers::MaxMarkers>;
 //! The wire name of a tempo mode.
 QString tempoModeName(WarpTempoMode mode);
 
+/*! The wire name of a stretch mode (row 30 of the 0.3.0 list): how the clip
+ *  renders a rate change. "resample" is the historical one — the pitch moves
+ *  with the rate — and "preserve_pitch" is the WSOLA stretch. */
+QString stretchModeName(WarpStretchMode mode);
+
 //! One marker as the wire reports it: its position in the engine's order, the
 //! source frame it pins and where that frame lands.
 QJsonObject markerJson(const WarpMarker& marker, int index);
@@ -118,6 +123,8 @@ QJsonObject warpStateSchema(QJsonObject extra = QJsonObject());
 //! (the same inline enum form track.add uses for its track types) and the marker
 //! object/array shapes warp.set accepts.
 QJsonObject tempoModeProperty();
+//! The closed set of stretch mode names (row 30).
+QJsonObject stretchModeProperty();
 QJsonObject markerProperty();
 QJsonObject markersProperty();
 QJsonObject offsetTicksProperty();

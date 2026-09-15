@@ -82,6 +82,7 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	m_warp(orig.m_warp),
 	m_tempoMode(orig.m_tempoMode),
 	m_sourceTempo(orig.m_sourceTempo),
+	m_stretchMode(orig.m_stretchMode),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset)
 {
@@ -346,6 +347,18 @@ void SampleClip::setSourceTempo(float bpm)
 }
 
 
+void SampleClip::setWarpStretchMode(WarpStretchMode mode)
+{
+	// The same shape as the two setters above: a change of the clip's own
+	// serialized state, marked modified and announced. Rendering reads it at
+	// handle construction, so a change takes effect on the next playback pass.
+	if (m_stretchMode == mode) { return; }
+	m_stretchMode = mode;
+	Engine::getSong()->setModified();
+	emit sampleChanged();
+}
+
+
 
 
 void SampleClip::setSampleStartFrame(f_cnt_t startFrame)
@@ -483,16 +496,25 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		_this.setAttribute( "srcout", QString::number(m_window.sourceOut) );
 	}
 	// The warp map (#597), as a child element of the clip exactly as the design
-	// asks (§2.4, §2.6). Additive: a clip with no markers and the default
-	// (follower) tempo mode writes no <warp> element at all, so a project
-	// without warp serialises exactly as it did before this task (I9).
-	if (!m_warp.empty() || m_tempoMode != WarpTempoMode::FollowProject)
+	// asks (§2.4, §2.6). Additive: a clip with no markers, the default
+	// (follower) tempo mode and the default (resampling) stretch mode writes no
+	// <warp> element at all, so a project without warp serialises exactly as it
+	// did before this task (I9).
+	if (!m_warp.empty() || m_tempoMode != WarpTempoMode::FollowProject
+		|| m_stretchMode != WarpStretchMode::Resample)
 	{
 		QDomElement warp = _doc.createElement( "warp" );
 		warp.setAttribute( "mode", m_tempoMode == WarpTempoMode::SourceTempo ? "source" : "follow" );
 		if (m_tempoMode == WarpTempoMode::SourceTempo)
 		{
 			warp.setAttribute( "tempo", QString::number( m_sourceTempo ) );
+		}
+		// Row 30 of the 0.3.0 list: how the rate change is rendered. Written
+		// only when it is not the historical resampling, so a clip that never
+		// chose the stretch serialises byte for byte as #597 left it.
+		if (m_stretchMode == WarpStretchMode::PreservePitch)
+		{
+			warp.setAttribute( "stretch", "wsola" );
 		}
 		for (const auto& marker : m_warp.all())
 		{
@@ -582,6 +604,10 @@ void SampleClip::loadSettings( const QDomElement & _this )
 		m_tempoMode = warpNode.attribute("mode", "follow") == "source"
 			? WarpTempoMode::SourceTempo : WarpTempoMode::FollowProject;
 		m_sourceTempo = warpNode.attribute("tempo", "0").toFloat();
+		// Row 30: absent means resampling, which is what every file written
+		// before this attribute existed asks for.
+		m_stretchMode = warpNode.attribute("stretch", "resample") == "wsola"
+			? WarpStretchMode::PreservePitch : WarpStretchMode::Resample;
 
 		m_warp.clear();
 		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))
@@ -605,6 +631,7 @@ void SampleClip::loadSettings( const QDomElement & _this )
 		m_warp.clear();
 		m_tempoMode = WarpTempoMode::FollowProject;
 		m_sourceTempo = 0.0f;
+		m_stretchMode = WarpStretchMode::Resample;
 	}
 
 	if (_this.hasAttribute("color"))
