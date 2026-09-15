@@ -749,18 +749,51 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **265 rows**, measured from the table itself:
-**141 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 96 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **283 rows**, measured from the table itself:
+**151 `true_inverse`, 21 `snapshot`, 6 `irreversible`, 105 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**263 rows / 94 `not_mutating`** - which is the base
+**281 rows / 103 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **This is the MERGED tree's own measurement, not arithmetic:**
-`ReversibilityContractTest` was run against a build of the eight-lane wave-1 merge train's tip and
-reports **265** rows over the four classes named above (141 + 21 + 7 + 96), and its constant is the
-telemetry-off/wasm-off base of **263 / 141 / 21 / 7 / 94**.
+`ReversibilityContractTest` was run against a build of the five-lane **wave-2** merge train's tip and
+reports **283** rows over the four classes named above (151 + 21 + 6 + 105), and its constant is the
+telemetry-off/wasm-off base of **281 / 151 / 21 / 6 / 103**. The same build's live `control.commands`
+list answers **283** commands, which is the second and independent instrument: the registry and the
+contract table are the same size, and no row names a command that is not there.
+
+What the five wave-2 lanes added - each figure stated beside its own rows, and all five summing to
+the measurement exactly:
+
+* **`030/smf-tempo-export` (feature row 33) - +4 rows, +1 `true_inverse`, +3 `not_mutating`:**
+  `interchange.smf_import` is the recorded-action `true_inverse` row (it replaces the tempo map);
+  `interchange.smf_convention`, `interchange.smf_export` and `interchange.smf_read` write nothing
+  outside the session - the export writes a file.
+* **`030/undo-structural` (feature row 75) - +1 row, +2 `true_inverse`, -1 `irreversible`:** the new
+  `track.move` is a `true_inverse` row, and `plugin.unload` MOVED out of the `irreversible` block
+  because a removed device is now re-instantiated with its settings by one `control.undo` - the
+  train's only re-classification, and the reason the `irreversible` column goes DOWN. Its four
+  structural rows (`track.add`, `track.move`, `track.remove`, `plugin.unload`) live in their own
+  table TU, `src/core/ControlReversibilityTableStructure.cpp`, joined into the action half so the
+  block still reads as ONE `true_inverse` block with one row count. It is a disagreement with
+  `A16-STATUS-MEASURED.md` that the rows themselves record.
+* **`030/chord-track` (feature row 35) - +9 rows, +6 `true_inverse`, +3 `not_mutating`:** the three
+  reads (`chord.get_state`, `chord.detect`, `chord.progression_list`) are `not_mutating`; the four
+  track edits (`chord.set` / `chord.remove` / `chord.clear` / `chord.detect_to_track`) are
+  recorded-action `true_inverse` rows and the two generators (`chord.track_write`,
+  `chord.progression_generate`) are live-checkpoint `true_inverse` rows.
+* **`030/project-archive` (feature row 38) - +3 rows, +1 `true_inverse`, +2 `not_mutating`:** the two
+  inspectors of a project FILE (`project.missing_assets`, `project.hash_assets`) read and write
+  nothing, and `project.relink` is the one writer, a recorded-action `true_inverse` row.
+* **`030/host-chunking-wasm` (feature rows 82 and 73) - +1 row, +1 `not_mutating`:**
+  `plugin.host_chunking` is read-only. The group's other two ids, `wasm.pool` and
+  `wasm.render_offline`, are registered only when the wasmtime C API is on the find path - it is not
+  in this configuration, so their rows are empty here and the figure above is unchanged by them. The
+  one place this release computes a split is `plugin.host_chunking`'s own counters; that is data, not
+  a row.
+
 
 Every other figure of this shape below was measured on the branch that wrote it, or on an earlier
 merge tip, and is kept as that lane's own record rather than as this tree's number:
@@ -834,16 +867,16 @@ because that window has no reset-on-absence) and `note.probability_set` (`true_i
 per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
 touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
 and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
-**The seven `stem.*` rows are NOT in the 265 above, and that is the point:** the offline
+**The seven `stem.*` rows are NOT in the 283 above, and that is the point:** the offline
 stem-separation group (feature row 26, board task #653) is compiled only when `WANT_STEM_SPLIT=ON` -
 **OFF in the default release configuration** this page describes - so its seven `not_mutating` rows
 (`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
 `stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
 which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
-on carries **272 rows / 103 `not_mutating`** - measured, not derived: the seven-row guard was added to
+on carries **290 rows / 112 `not_mutating`** - measured, not derived: the seven-row guard was added to
 `ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
 against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
-265 + 7 rows and 96 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
+283 + 7 rows and 105 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
 configuration the release does not ship. All seven drive one offline engine, write output artefacts
 (four stem WAVs and a checksum-verified model file) and record no project state: a job is not a
 document, and a written stem is an output.

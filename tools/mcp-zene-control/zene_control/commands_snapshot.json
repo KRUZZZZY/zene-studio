@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-15T11:53:59Z",
+  "captured_at": "2026-09-15T12:50:32Z",
   "commands": [
     {
       "args_schema": {
@@ -1188,6 +1188,766 @@
             "type": "boolean"
           },
           "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Empty the project's chord track, reporting how many chords went. An already-empty track is REFUSED, typed: a clear that would change nothing must not leave an undo step behind. Reversible: one recorded action checkpoint holding the whole <chord-track> element as it was.",
+      "group": "chord",
+      "id": "chord.clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "min_pitch_classes": {
+            "maximum": 13,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "window_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "What chords a MIDI clip's notes spell. The notes are grouped into slices - by default notes that start at the SAME tick; 'window_ticks' widens that for a strummed or humanised take, measured from each slice's first note so a run of sixteenths cannot chain into one huge slice - and each slice is named from this engine's chord vocabulary. Every slice reports the nearest entry with 'missing' (chord tones the slice does not sound) and 'extra' (tones the chord does not contain), so 'exact' false is visible rather than rounded to a name, and the whole clip's key is reported too. Read-only: nothing is written to the clip or the track (write a detection with chord.detect_to_track).",
+      "group": "chord",
+      "id": "chord.detect",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "type": "array"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "additionalProperties": false,
+            "properties": {
+              "complete": {
+                "type": "boolean"
+              },
+              "key": {
+                "maximum": 127,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "pitch_classes": {
+                "maximum": 12,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "root": {
+                "maximum": 11,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "scale": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "min_pitch_classes": {
+            "maximum": 13,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "window_ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "append": {
+            "type": "boolean"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "min_pitch_classes": {
+            "maximum": 13,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "window_ticks": {
+            "maximum": 192,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Detect the chords a MIDI clip's notes spell (the same detection chord.detect reports) and write them onto the project's chord track. By default the track is REPLACED; 'append' adds to what is there. A slice with no name in this engine's vocabulary cannot be a chord-track event and is reported as `skipped` - and if nothing at all could be written the track is left EXACTLY as it was and the call is refused, typed, rather than half-written. Reversible: one recorded action checkpoint.",
+      "group": "chord",
+      "id": "chord.detect_to_track",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "appended": {
+            "type": "boolean"
+          },
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "clip_track": {
+            "type": "string"
+          },
+          "detected": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "written": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The project's CHORD TRACK: every chord with its position, length, root pitch class, the octave the root sounds in, the root's absolute MIDI key, the chord's name and the key (scale) it was written in, plus the track's own bounds. Read-only. The track is project state saved inside <song> as one <chord-track> element (written only when it holds a chord, so a project that never used one is byte-identical to before), and it is what chord.track_write turns into notes. Chord and scale names come from the piano roll's own vocabulary - see chord.progression_list.",
+      "group": "chord",
+      "id": "chord.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "pattern": {
+            "enum": [
+              "block",
+              "arpeggio_up",
+              "arpeggio_down",
+              "broken"
+            ],
+            "type": "string"
+          },
+          "progression": {
+            "enum": [
+              "I-V-vi-IV",
+              "I-vi-IV-V",
+              "vi-IV-I-V",
+              "ii-V-I",
+              "I-vi-ii-V",
+              "I-IV-V-I",
+              "i-VI-III-VII",
+              "i-iv-v-i"
+            ],
+            "type": "string"
+          },
+          "replace": {
+            "type": "boolean"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "enum": [
+              "Major",
+              "Harmonic minor",
+              "Melodic minor",
+              "Diminished",
+              "Major bebop",
+              "Dominant bebop",
+              "Arabic",
+              "Enigmatic",
+              "Neopolitan",
+              "Neopolitan minor",
+              "Hungarian minor",
+              "Dorian",
+              "Phrygian",
+              "Lydian",
+              "Mixolydian",
+              "Aeolian",
+              "Locrian",
+              "Minor",
+              "Chromatic",
+              "Half-Whole Diminished",
+              "Phrygian dominant",
+              "Persian"
+            ],
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tick": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "variation": {
+            "type": "number"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "progression"
+        ],
+        "type": "object"
+      },
+      "description": "GENERATE a named progression into a MIDI clip as notes. The walk and the key are the pre-existing vocabulary's: each step of the progression is the chord on that SCALE DEGREE, built by stacking the scale's own tones in thirds and named by this engine's chord table (a stack the table cannot name comes back with an empty 'chord' and is still written). 'pattern' is block, arpeggio_up, arpeggio_down or broken; 'step_ticks' is how long each chord lasts (default one 4/4 bar); 'steps' defaults to one pass of the walk. SEEDED AND REPEATABLE: 'variation' (0..1, default 0) opens the draws - each chord's voicing, its position and its velocity - and every draw is a pure function of 'seed' and that chord's own identity, so the same request reproduces the same take note for note and a different seed gives a different one. With 'variation' 0 nothing is drawn and the seed decides nothing. Reversible through the ProjectJournal (MidiClip checkpoint).",
+      "group": "chord",
+      "id": "chord.progression_generate",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "type": "array"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_replaced": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_written": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "progression": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tick": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "variation": {
+            "type": "number"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "What this engine can be asked for: the named PROGRESSIONS the generator walks (each a name and the scale degrees it steps through), the SCALES a key may name, the CHORDS a chord-track event may name, the patterns a generation can lay a chord out with, and the group's bounds. Every one of those vocabularies is the piano roll's own (InstrumentFunctionNoteStacking::ChordTable, the table behind its chord and scale selectors) - this group adds no names of its own. Read-only; with 'name' one progression is reported on its own.",
+      "group": "chord",
+      "id": "chord.progression_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "type": "array"
+          },
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_degree_count": {
+            "maximum": 8,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_steps": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "patterns": {
+            "type": "array"
+          },
+          "progression": {
+            "additionalProperties": false,
+            "properties": {
+              "degrees": {
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "steps": {
+                "maximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "progressions": {
+            "type": "array"
+          },
+          "scales": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "pos": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pos"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the chord at an absolute tick from the project's chord track, reporting the event that went. A tick that holds no chord is a typed not_found, never a silent success. Reversible: one recorded action checkpoint, and the recorded inverse names chord.set with the removed event's own arguments.",
+      "group": "chord",
+      "id": "chord.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "event": {
+            "additionalProperties": false,
+            "properties": {
+              "chord": {
+                "type": "string"
+              },
+              "key": {
+                "maximum": 127,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "length": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "octave": {
+                "maximum": 9,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "pos": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "root": {
+                "maximum": 11,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "scale": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chord": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "pos": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pos",
+          "chord"
+        ],
+        "type": "object"
+      },
+      "description": "Write ONE chord into the project's chord track at an absolute tick: the chord's name (a chord of this engine's vocabulary - chord.progression_list lists them), its root pitch class, the octave the root sounds in, and optionally its length. The POSITION is the key: a set at a tick that already holds a chord REPLACES it (the command reports `replaced`), so a track cannot hold two chords at once. 'length' 0 (the default) means HOLD - the chord sounds until the next one, which is what a chord track means. Reversible: one recorded action checkpoint (the track is project state the Song's journal checkpoint does not carry), so one control.undo takes the write back.",
+      "group": "chord",
+      "id": "chord.set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "event": {
+            "additionalProperties": false,
+            "properties": {
+              "chord": {
+                "type": "string"
+              },
+              "key": {
+                "maximum": 127,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "length": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "octave": {
+                "maximum": 9,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "pos": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "root": {
+                "maximum": 11,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "scale": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "events": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "replaced": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "length": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pattern": {
+            "enum": [
+              "block",
+              "arpeggio_up",
+              "arpeggio_down",
+              "broken"
+            ],
+            "type": "string"
+          },
+          "replace": {
+            "type": "boolean"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Write the CHORD TRACK's own chords into a MIDI clip as notes: every event's chord is voiced from its root and laid out under 'pattern' (block, arpeggio_up, arpeggio_down, broken), each event starting where the track says and sounding for as long as the track says (the distance to the next chord, or 'length' for the last one). 'replace' (default true) clears the clip's notes first and reports how many went; false adds to them. Reversible through the ProjectJournal (MidiClip checkpoint). An empty chord track is refused, typed: there is nothing to write.",
+      "group": "chord",
+      "id": "chord.track_write",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chords_written": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "note_count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_replaced": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes_written": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "track": {
             "type": "string"
           }
         },
@@ -4431,6 +5191,266 @@
         "required": [],
         "type": "object"
       },
+      "description": "The tick/PPQ and time-signature convention this product's Standard MIDI File interchange uses, as data: the division it writes (ticks per quarter note), LMMS' own ticks per quarter note and the exact ratio between them, the unit the tempo meta event is expressed in, the byte layout of the time-signature meta event, the file shape (format and track layout), the tick-0 rule and the stated limits (steps only, conductor track only).",
+      "group": "interchange",
+      "id": "interchange.smf_convention",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "lmms_ticks_per_quarter": {
+            "type": "integer"
+          },
+          "smf_ticks_per_lmms_tick": {
+            "type": "integer"
+          },
+          "stated_limits": {
+            "type": "string"
+          },
+          "tempo_unit": {
+            "type": "string"
+          },
+          "tick_zero_rule": {
+            "type": "string"
+          },
+          "ticks_per_quarter": {
+            "type": "integer"
+          },
+          "time_signature_encoding": {
+            "type": "string"
+          },
+          "track_shape": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "overwrite": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Write the tempo map as a Standard MIDI File another DAW can read: format 1, one conductor track carrying the tempo and time-signature events, at division 480 ticks per quarter note (LMMS' own 48 ticks per quarter mapped in exactly). The file always names the step in force at tick 0, so a map whose first event is later still exports the session it is part of; `seed_events` reports how many halves that rule had to add. Notes, clips and automation are NOT in this file - it is a conductor track (the note export is File > Export MIDI, a different, pre-existing path). Refuses an existing file unless `overwrite` is true, and refuses a relative path. Writes a file; changes nothing in the session.",
+      "group": "interchange",
+      "id": "interchange.smf_export",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "event_count": {
+            "type": "integer"
+          },
+          "first_tick": {
+            "type": "integer"
+          },
+          "format": {
+            "type": "integer"
+          },
+          "global_tempo": {
+            "type": "integer"
+          },
+          "global_timesig": {
+            "type": "string"
+          },
+          "last_tick": {
+            "type": "integer"
+          },
+          "lmms_ticks_per_quarter": {
+            "type": "integer"
+          },
+          "meter_events": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "seed_events": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "smf_ticks_per_lmms_tick": {
+            "type": "integer"
+          },
+          "tempo_events": {
+            "type": "integer"
+          },
+          "ticks_per_quarter": {
+            "type": "integer"
+          },
+          "track_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Replace the tempo map with the conductor events of a Standard MIDI File: every track's tempo and time-signature meta events, merged by tick, in LMMS' own tick domain at the file's own division. The imported map is ACTIVE - a conductor track IS a tempo map, so a map switched off would import tempo changes the timeline does not obey. One command, one undo: the map captured before the import is written back through TempoMapPublisher::edit when the stack unwinds. Refused, typed, when the file is not readable as a Standard MIDI File, when an event is outside the engine's own bounds (tempo 10..999, a denominator that is a power of two up to 32), or when the file needs more than the map's 128 events - a refusal writes nothing.",
+      "group": "interchange",
+      "id": "interchange.smf_import",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "event_count": {
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "first_tick": {
+            "type": "integer"
+          },
+          "last_tick": {
+            "type": "integer"
+          },
+          "meter_events": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "rounded_events": {
+            "type": "integer"
+          },
+          "tempo_events": {
+            "type": "integer"
+          },
+          "ticks_per_quarter": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Read a Standard MIDI File's conductor events back and report them in LMMS' own tick domain, WITHOUT touching the session: every track's tempo and time-signature meta events, merged by tick (the first the file names at a tick wins, per half), with the file's own division, how many events had to be rounded onto LMMS' 48-ticks-per-quarter grid, and whether the map could hold them all. This is what makes a round trip checkable against the file rather than against its hash: read the file, compare the map. A file that is not a Standard MIDI File, or whose division is an SMPTE rate, is a typed invalid_args refusal.",
+      "group": "interchange",
+      "id": "interchange.smf_read",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "capacity_events": {
+            "type": "integer"
+          },
+          "event_count": {
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "first_tick": {
+            "type": "integer"
+          },
+          "format": {
+            "type": "integer"
+          },
+          "importable": {
+            "type": "boolean"
+          },
+          "last_tick": {
+            "type": "integer"
+          },
+          "lmms_ticks_per_quarter": {
+            "type": "integer"
+          },
+          "meter_events": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "rounded_events": {
+            "type": "integer"
+          },
+          "smf_ticks_per_lmms_tick": {
+            "type": "integer"
+          },
+          "superseded_events": {
+            "type": "integer"
+          },
+          "tempo_events": {
+            "type": "integer"
+          },
+          "tempo_unit": {
+            "type": "string"
+          },
+          "ticks_per_quarter": {
+            "type": "integer"
+          },
+          "time_signature_encoding": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "The session-sync state this instance sees: whether sync is on, how many peers are in the session and who they are, the session tempo and who declared it, the shared beat and its phase inside the quantum, this engine's own tempo and phase and the error between the two, and whether announcements can travel at all (transport.available / transport.reason). The model is 'zene-link-style' - Ableton Link's semantics (a shared tempo, a shared beat phase, a quantum, a peer set) without Ableton Link's protocol - and the `interop` block says so plainly rather than leaving a reader to infer it. Read-only: no transaction is recorded. There is no interface for any of it; drive it through link.set_* (docs/KNOWN-LIMITATIONS.md).",
       "group": "link",
       "id": "link.get_state",
@@ -7096,6 +8116,35 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The chunking contract both plugin host paths keep, and what this instance's audio path has actually been asked for: per host, the process() calls that reached a loaded plug-in, the frames they asked for, the plug-in calls they were turned into, the requests that needed more than one chunk and the frames beyond the prepared block they carried, the largest request and the block size the last one was prepared with. 'chunks' > 'requests' with a non-zero 'frames_beyond_prepared_block' is a request that was chunked instead of truncated or over-run. Counters are process-wide and never reset; read-only.",
+      "group": "plugin",
+      "id": "plugin.host_chunking",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "type": "object"
+          },
+          "hosts": {
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "format": {
             "enum": [
@@ -7884,7 +8933,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. The removed device's full state XML is recorded in the transaction's 'before' snapshot so it can be rebuilt: write that XML to a file, load the same dev-<n> again and issue plugin.state_load.",
+      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. REVERSIBLE: the device's own state document is captured before the removal and one control.undo re-instantiates the same plugin at the same index in the chain with its settings restored. The transaction's 'before' snapshot still carries the state XML, so a client that prefers to rebuild by hand can; a device whose state exceeds the capture cap reports itself as snapshot-only instead.",
       "group": "plugin",
       "id": "plugin.unload",
       "mutating": true,
@@ -7895,8 +8944,17 @@
           "count": {
             "type": "integer"
           },
+          "index": {
+            "type": "integer"
+          },
+          "plugin": {
+            "type": "string"
+          },
           "removed": {
             "type": "string"
+          },
+          "reversible": {
+            "type": "boolean"
           },
           "target": {
             "type": "string"
@@ -8062,6 +9120,118 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "description": "The same reference list as project.missing_assets, plus a sha256 and a size per reference that is on disk - the identity of the media, so 'the same sample, moved' is distinguishable from 'a different sample with the same name' before anything is rewritten. Also returns one digest over the whole reference set, so two projects that reference byte-identical media compare equal whatever the files are named. Reads only; a reference over the per-file cap (1 GiB) is reported unhashed rather than quietly skipped.",
+      "group": "project",
+      "id": "project.hash_assets",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "type": "string"
+          },
+          "embedded_count": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "hashed_count": {
+            "type": "integer"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "reference_count": {
+            "type": "integer"
+          },
+          "references": {
+            "type": "array"
+          },
+          "unhashed_present": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "description": "Every file a project file references - sample clips, AudioFileProcessor and SF2 instruments, session-view audio slots - and which of those references have nothing on disk at them. Reads the project FILE, so it needs no session and answers for a project that cannot be loaded; nothing is written. The list is empty for an intact project. Sample paths are resolved the way the engine resolves them, with one stated difference: 'local:' and an unresolvable legacy relative path resolve against the project file's own directory rather than the open project's. Copying the media into a portable bundle is NOT this verb (Bar 3).",
+      "group": "project",
+      "id": "project.missing_assets",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "type": "string"
+          },
+          "embedded_count": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "present_count": {
+            "type": "integer"
+          },
+          "reference_count": {
+            "type": "integer"
+          },
+          "referenced_elements": {
+            "type": "array"
+          },
+          "references": {
+            "type": "array"
+          },
+          "unresolved_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "path": {
             "type": "string"
           }
@@ -8115,6 +9285,70 @@
           },
           "track_count": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "expect_sha256": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Point the references of a project file whose value is 'from' - as stored, or resolved to a path - at the file 'to', so the project finds its media again. 'from' is a value project.missing_assets reported; pass 'expect_sha256' to refuse unless the file really is that media (the hash project.hash_assets reported). dry_run previews the change and writes nothing. The document is re-serialised with the product's own serialiser and no other attribute, element or the root's name is touched. Reversible: one recorded action checkpoint holds the previous bytes of the project file, so one control.undo restores it byte for byte. The media is not copied anywhere - the portable-bundle half is Bar 3 and is not this verb.",
+      "group": "project",
+      "id": "project.relink",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "type": "array"
+          },
+          "before": {
+            "type": "array"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "stored_value": {
+            "type": "string"
           }
         },
         "required": [],
@@ -11302,6 +12536,58 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "index": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "index"
+        ],
+        "type": "object"
+      },
+      "description": "Reorder a track: put it at `index` in the song's track list (0-based, the index track.list prints). Reversible through one recorded action step - control.undo puts the track back where it was, and the redo sends it forward again. Refuses an index outside the song rather than clamping it. A track that is not in the song container is refused too: the engine's own reorder erases-then-inserts, so a foreign pointer would be DUPLICATED into the song.",
+      "group": "track",
+      "id": "track.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "moved": {
+            "type": "boolean"
+          },
+          "order": {
+            "type": "array"
+          },
+          "previous_index": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "track_count": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "dry_run": {
             "type": "boolean"
           },
@@ -11324,6 +12610,9 @@
         "properties": {
           "dry_run": {
             "type": "boolean"
+          },
+          "index": {
+            "type": "integer"
           },
           "removed": {
             "type": "string"
@@ -13403,16 +14692,16 @@
       }
     }
   ],
-  "count": 265,
+  "count": 283,
   "instance": {
     "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
-    "binary_bytes": 217948952,
-    "binary_sha256": "0c3d0a322666430aea3b634e8e1af7eb8cdf197fc2dc4c10b99fd5200cbf814a",
+    "binary_bytes": 227673624,
+    "binary_sha256": "29548efc7d8c34d3b25ecdf0d29cc640a33d0a5f4119f0f68dce49544dabc663",
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
-    "lane_head": "cb3c730e9bf7223c12266b0ca8755ab04db781d3",
+    "lane_head": "7cc7d5c7c5ea15eedee5427362bc200ba2091b02",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-7pdpmfo6/zene.sock",
-    "version": "0.2.1-alpha.240+e72cb8c"
+    "source_socket": "/tmp/zctl-run-i3_zwfh1/zene.sock",
+    "version": "0.2.1-alpha.268+b2227b2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

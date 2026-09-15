@@ -483,6 +483,13 @@ LMMS_EXPORT void registerChordWriteCommands(ControlRegistry& registry);
  * given. Named in docs/KNOWN-LIMITATIONS.md and the release notes.
  */
 LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
+
+/*! The declarations that do not fit beside their own group are here: include/ControlRegistry.h
+ *  includes this header, in the same namespace with the same signatures, so a caller
+ *  includes Registry.h exactly as before. track.move (task #664, feature row 75) moved
+ *  here by the 0.3.0-alpha wave-2 train, whose registrations took that header to 504
+ *  lines; it is back to the 502 it inherited. */
+LMMS_EXPORT void registerTrackStructureCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

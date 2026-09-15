@@ -355,6 +355,9 @@ set(LMMS_SRCS
 	# checkpoint / a bounded recorded state / nothing): see
 	# include/ControlReversibility.h.
 	core/ControlReversibilityTable.cpp
+	# The live-checkpoint rows, split out of the join file when the wave-2
+	# join entries took it to the file-length ratchet (a move, not a rewrite).
+	core/ControlReversibilityTableLive.cpp
 	core/ControlReversibilityTableAction.cpp
 	core/ControlReversibilityTableChain.cpp
 	# The STRUCTURAL group's four action rows - created / reordered / deleted

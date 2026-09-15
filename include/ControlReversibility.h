@@ -122,6 +122,12 @@ LMMS_EXPORT const ReversibilityRow* reversibilityRowTable(int* rowCount);
 //! recorded operation rather than a live object checkpoint. Joined into
 //! reversibilityRowTable(); not read by the constructor on its own.
 LMMS_EXPORT const ReversibilityRow* reversibilityActionRowTable(int* rowCount);
+/*! The LIVE-checkpoint half of the contract table, in a translation unit of its
+ *  own: moved out of ControlReversibilityTable.cpp by the 0.3.0-alpha wave-2
+ *  merge train, because that file is at the file-length ratchet's cap and a
+ *  split is the recorded remedy rather than a re-anchor. The rows are unchanged.
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityLiveRowTable(int* rowCount);
 //! The folder-track GROUP's rows (owner items 3+20+21): two live-checkpoint rows
 //! and five recorded-action rows. Joined into reversibilityRowTable() as well,
 //! so the block's class still comes from each row and not from its file.
