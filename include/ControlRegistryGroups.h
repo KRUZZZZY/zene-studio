@@ -296,6 +296,13 @@ LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
  *  `link.*` is a different feature (docs/LINK-SYNC.md).
  */
 LMMS_EXPORT void registerClipLinkCommands(ControlRegistry& registry);
+/*! clip.link_get_state / clip.link_sync - the same group's READ half and its
+ *  repair verb, in their own translation unit (the automation, warp, vca and
+ *  chain-preset groups' read/edit split): the group has four ids and the
+ *  file-length ratchet is not moved for a new feature. Ids keep the `clip.`
+ *  prefix, so an agent finds the read where it finds the write.
+ */
+LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

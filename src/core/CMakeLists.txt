@@ -110,10 +110,12 @@ set(LMMS_SRCS
 	core/ControlCommandsClipTrim.cpp
 	# Linked / smart clips (feature-list row 6, board task #645): the relation
 	# (include/ClipLinks.h: the group id on the clip, the mirror that propagates
-	# an edit to every member) and the clip.link_* commands that drive it. See
-	# docs/LINKED-CLIPS.md for the design decision and the edit-kind table.
+	# an edit to every member), the clip.link_* commands that drive it, and the
+	# helpers the group's two translation units share. See docs/LINKED-CLIPS.md
+	# for the design decision and the edit-kind table.
 	core/ClipLinks.cpp
 	core/ControlCommandsClipLink.cpp
+	core/ControlCommandsClipLinkState.cpp
 	# MIDI clock / MTC (0.3.0): the DAW as a clock master and as a clock slave.
 	# The engine half is the MidiClock* sources below; this is the command group
 	# that drives it. See docs/KNOWN-LIMITATIONS.md for the bound it states.

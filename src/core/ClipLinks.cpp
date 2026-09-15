@@ -147,6 +147,47 @@ QString contentFingerprint(Clip* clip)
 	return notes.join(QLatin1Char('\n'));
 }
 
+namespace
+{
+
+/*! Splits \p members into the ones that must be rewritten and the ones that
+ *  already carry the source's content, counting both on \p report. False when
+ *  \p sourceMidi is null - a group whose source has no content channel.
+ *
+ *  Split out of mirrorContent() for the same reason everything else here is: the
+ *  per-method complexity target is CCN 10 and the ratchet is not moved for a new
+ *  feature (tests/complexity-gate.sh). */
+bool collectStaleMembers(MidiClip* sourceMidi, const QVector<Clip*>& members,
+	const QString& wanted, MirrorReport* report, QVector<MidiClip*>* stale)
+{
+	if (sourceMidi == nullptr) { return false; }
+	for (Clip* member : members)
+	{
+		auto* midi = dynamic_cast<MidiClip*>(member);
+		if (midi == nullptr) { ++report->skipped; continue; }
+		if (midi == sourceMidi) { continue; }
+		if (contentFingerprint(midi) == wanted) { ++report->alreadyInSync; continue; }
+		stale->append(midi);
+	}
+	return true;
+}
+
+/*! Copies \p source's note list onto \p member, through the member's own public
+ *  note API - the same calls the piano roll makes - so the member's clip length
+ *  (auto-resize) and its views follow exactly as they do for an edit made in
+ *  that clip. */
+void writeContent(MidiClip* source, MidiClip* member)
+{
+	member->clearNotes();
+	for (const Note* note : source->notes())
+	{
+		if (note != nullptr) { member->addNote(*note, false); }
+	}
+	member->dataChanged();
+}
+
+} // namespace
+
 MirrorReport mirrorContent(Clip* source)
 {
 	MirrorReport report;
@@ -173,34 +214,15 @@ MirrorReport mirrorContent(Clip* source)
 	report.members = static_cast<int>(members.size());
 
 	auto* sourceMidi = dynamic_cast<MidiClip*>(source);
-	if (sourceMidi == nullptr)
+	const QString wanted = sourceMidi == nullptr ? QString() : contentFingerprint(sourceMidi);
+
+	QVector<MidiClip*> stale;
+	if (!collectStaleMembers(sourceMidi, members, wanted, &report, &stale))
 	{
 		report.ok = false;
 		report.reason = QStringLiteral("a link group's content channel is a note list, and this "
 			"clip has none");
 		return report;
-	}
-
-	const QString wanted = contentFingerprint(source);
-
-	QVector<MidiClip*> stale;
-	QVector<JournallingObject*> toCheckpoint;
-	for (Clip* member : members)
-	{
-		auto* midi = dynamic_cast<MidiClip*>(member);
-		if (midi == nullptr)
-		{
-			++report.skipped;
-			continue;
-		}
-		if (midi == sourceMidi) { continue; }
-		if (contentFingerprint(midi) == wanted)
-		{
-			++report.alreadyInSync;
-			continue;
-		}
-		stale.append(midi);
-		toCheckpoint.append(midi);
 	}
 	if (stale.isEmpty())
 	{
@@ -211,8 +233,9 @@ MirrorReport mirrorContent(Clip* source)
 	// ONE checkpoint covering every member that is about to be written, taken
 	// BEFORE the first write: the engine's own undo (Ctrl+Z and control.undo)
 	// restores the whole group from it, and the control surface's
-	// mergeCheckpointsFrom() folds it into the one step the calling command
-	// makes.
+	// mergeCheckpointsFrom() folds it into the one step the calling command makes.
+	QVector<JournallingObject*> toCheckpoint;
+	for (MidiClip* member : stale) { toCheckpoint.append(member); }
 	if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr)
 	{
 		journal->addJournalCheckPoint(toCheckpoint);
@@ -221,16 +244,7 @@ MirrorReport mirrorContent(Clip* source)
 	++g_mirrorDepth;
 	for (MidiClip* member : stale)
 	{
-		// The member's note list becomes the source's, through the member's own
-		// public note API - the same calls the piano roll makes - so the member's
-		// clip length (auto-resize) and its views follow exactly as they do for
-		// an edit made in that clip.
-		member->clearNotes();
-		for (const Note* note : sourceMidi->notes())
-		{
-			if (note != nullptr) { member->addNote(*note, false); }
-		}
-		member->dataChanged();
+		writeContent(sourceMidi, member);
 		++report.written;
 	}
 	--g_mirrorDepth;

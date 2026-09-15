@@ -60,6 +60,11 @@ set(LMMS_TESTS
 	# that propagates across it, an unlink, and the relation surviving a
 	# save/reload round trip - all driven through the control surface.
 	src/core/ClipLinkTest.cpp
+	# The same feature's other half: the save/reload round trip (the row's
+	# acceptance criterion) and the typed refusals. Two binaries because the
+	# file-length ratchet is not moved for a new feature; the fixtures both use
+	# are src/core/ClipLinkTestSupport.h.
+	src/core/ClipLinkPersistenceTest.cpp
 	src/core/ClipSerialisationTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp

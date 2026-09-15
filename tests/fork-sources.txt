@@ -272,6 +272,7 @@ include/ClipLinks.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
+include/ControlClipLinkSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
@@ -444,6 +445,7 @@ src/core/ControlCommandsChainEdit.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipLink.cpp
+src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp

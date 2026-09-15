@@ -1,9 +1,8 @@
 /*
  * ClipLinkTest.cpp - the registered proof of the linked / smart clip relation
- *                    (feature-list row 6, board task #645): the link relation
- *                    in the engine, an edit that propagates across it, an
- *                    unlink, and the relation surviving a save/reload round
- *                    trip.
+ *                    (feature-list row 6, board task #645): the relation in the
+ *                    engine, an edit that propagates across it, an unlink, the
+ *                    A16 rows and the UI-absence line.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -30,37 +29,37 @@
 // contract accepts: if the feature cannot be driven through the socket, it is
 // not in 0.3.0. The tests are therefore also this group's argument-schema tests.
 //
-//   1. the four ids exist with both schemas and an empty `requires` (SPEC A13):
-//      requiredCommandsAreRegistered()
+//   1. the four ids exist with both schemas and an empty `requires` (SPEC A13),
+//      and the two writers are declared mutating: requiredCommandsAreRegistered()
 //   2. the relation is real: two clips that share one source, an edit to ONE of
-//      them seen by ALL of them, in both directions, for every content verb:
+//      them seen by ALL of them, in both directions, for every content verb, and
+//      the placement edits that must NOT propagate:
 //      anEditToOneMemberIsSeenByAll()
 //   3. unlinking detaches, keeps the content, and dissolves the last pair:
 //      unlinkDetachesAndKeepsItsContent()
-//   4. THE ROUND TRIP: the project is saved, reloaded, and the link is still
-//      there - and still propagates: theLinkSurvivesSaveAndReload()
-//   5. the refusals are typed, not silent (a non-member, an audio clip, a
-//      group that would merge): refusalsAreTypedAndNothingIsHalfWritten()
-//   6. SPEC A16: one edit to one member is ONE undo step, and it takes the
+//   4. SPEC A16: one edit to one member is ONE undo step, and it takes the
 //      WHOLE group back: undoRestoresEveryMemberOfTheGroup()
-//   7. the table carries a row for each id: theA16ContractHasARowForEachId()
-//   8. the UI absence is written down (the two docs say the same thing):
+//   5. the table carries a row for each id: theA16ContractHasARowForEachId()
+//   6. the UI absence is written down (both docs say the same thing):
 //      theOneLineUiAbsenceIsWrittenDown()
+//
+// The save/reload round trip - the acceptance criterion of this row - and the
+// typed refusals are ClipLinkPersistenceTest, and both binaries build their
+// scenes with the fixtures in ClipLinkTestSupport.h.
 
 #include <QtTest>
 
-#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
-#include <QTemporaryDir>
 
+#include "ClipLinkTestSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
-#include "Song.h"
 
 using namespace lmms;
+using namespace cliplinktest;
 
 namespace
 {
@@ -276,132 +275,6 @@ private slots:
 	// 4. THE ROUND TRIP
 	// -----------------------------------------------------------------------
 
-	void theLinkSurvivesSaveAndReload()
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		const QString a = addMidiClip(QStringLiteral("roundtrip A"));
-		const QString b = addMidiClip(QStringLiteral("roundtrip B"));
-		const ControlResult linked = registry->invoke(QStringLiteral("clip.link_create"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}});
-		QVERIFY2(linked.ok, qPrintable(linked.errorMessage));
-		const int group = linked.result.value(QStringLiteral("group")).toInt();
-		const ControlResult note = registry->invoke(QStringLiteral("note.add"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 69},
-				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
-		QVERIFY2(note.ok, qPrintable(note.errorMessage));
-
-		QVERIFY(Engine::getSong()->saveProjectFile(m_project));
-		QVERIFY(QFile::exists(m_project));
-
-		// the file itself carries the relation: the `link` attribute on each
-		// member's own element, and nothing else (an unlinked clip writes none).
-		QString xml;
-		{
-			QFile file(m_project);
-			QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
-			xml = QString::fromUtf8(file.readAll());
-		}
-		QVERIFY2(xml.contains(QStringLiteral("link=\"%1\"").arg(group)),
-			"the saved project must name the link group on its members");
-
-		// RELOAD and ask again - the acceptance criterion of this row.
-		Engine::getSong()->loadProject(m_project);
-
-		const ControlResult after = registry->invoke(QStringLiteral("clip.link_get_state"));
-		QVERIFY2(after.ok, qPrintable(after.errorMessage));
-		QVERIFY2(after.result.value(QStringLiteral("count")).toInt() >= 1,
-			"the reloaded project has no link group at all");
-		const QJsonObject groupState = firstGroupOfSize(after.result.value(QStringLiteral("groups")).toArray(), 2);
-		QVERIFY2(!groupState.isEmpty(), "no reloaded group has two members");
-		QCOMPARE(groupState.value(QStringLiteral("group")).toInt(), group);
-		QCOMPARE(groupState.value(QStringLiteral("divergent")).toArray().size(), 0);
-		QCOMPARE(groupState.value(QStringLiteral("notes")).toInt(), 1);
-
-		// and the reloaded relation still PROPAGATES: the members of the reloaded
-		// group are addressed by name (the ids are arrangement-derived, so they are
-		// re-read rather than remembered) and an edit to one reaches the other.
-		const QJsonArray members = groupState.value(QStringLiteral("members")).toArray();
-		QCOMPARE(members.size(), 2);
-		const QString first = members.at(0).toString();
-		const QString second = members.at(1).toString();
-		const ControlResult added = registry->invoke(QStringLiteral("note.add"),
-			QJsonObject{{QStringLiteral("clip"), first}, {QStringLiteral("key"), 71},
-				{QStringLiteral("position"), 240}, {QStringLiteral("length"), 24}});
-		QVERIFY2(added.ok, qPrintable(added.errorMessage));
-		QCOMPARE(noteCount(second), 2);
-
-		// the second save of the loaded project writes the same relation: the
-		// round trip is stable, not merely lossless once.
-		QVERIFY(Engine::getSong()->saveProjectFile(m_dir.filePath(QStringLiteral("link-again.mmp"))));
-		QString again;
-		{
-			QFile file(m_dir.filePath(QStringLiteral("link-again.mmp")));
-			QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
-			again = QString::fromUtf8(file.readAll());
-		}
-		QCOMPARE(again.count(QStringLiteral("link=\"%1\"").arg(group)),
-			xml.count(QStringLiteral("link=\"%1\"").arg(group)));
-	}
-
-	// -----------------------------------------------------------------------
-	// 5. the refusals
-	// -----------------------------------------------------------------------
-
-	void refusalsAreTypedAndNothingIsHalfWritten()
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		const QString a = addMidiClip(QStringLiteral("refuse A"));
-		const QString b = addMidiClip(QStringLiteral("refuse B"));
-		const QString other = addMidiClip(QStringLiteral("refuse C"));
-
-		// a clip that is not linked cannot be synced or unlinked
-		const ControlResult syncUnlinked = registry->invoke(QStringLiteral("clip.link_sync"),
-			QJsonObject{{QStringLiteral("clip"), a}});
-		QVERIFY(!syncUnlinked.ok);
-		QCOMPARE(syncUnlinked.errorKind, ControlErrorKind::InvalidArgs);
-		const ControlResult unlinkUnlinked = registry->invoke(QStringLiteral("clip.link_remove"),
-			QJsonObject{{QStringLiteral("clip"), a}});
-		QVERIFY(!unlinkUnlinked.ok);
-		QCOMPARE(unlinkUnlinked.errorKind, ControlErrorKind::InvalidArgs);
-
-		// an AUDIO clip has no note list, so it cannot be a member (the one-line
-		// UI note names this bound: a link shares a note list in 0.3.0)
-		const QString sampleClip = addSampleClip(QStringLiteral("refuse audio"));
-		QVERIFY(!sampleClip.isEmpty());
-		const ControlResult audioMember = registry->invoke(QStringLiteral("clip.link_create"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{sampleClip}}});
-		QVERIFY(!audioMember.ok);
-		QCOMPARE(audioMember.errorKind, ControlErrorKind::InvalidArgs);
-		QVERIFY(audioMember.errorMessage.contains(QStringLiteral("note list")));
-
-		// nothing was half-written by that refusal: A is still unlinked
-		const ControlResult stateAfterRefusal = registry->invoke(QStringLiteral("clip.link_get_state"),
-			QJsonObject{{QStringLiteral("clip"), a}});
-		QVERIFY(stateAfterRefusal.ok);
-		QVERIFY(!stateAfterRefusal.result.value(QStringLiteral("linked")).toBool());
-
-		// a group is not merged into another by naming one of its members
-		const ControlResult firstPair = registry->invoke(QStringLiteral("clip.link_create"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}});
-		QVERIFY2(firstPair.ok, qPrintable(firstPair.errorMessage));
-		const ControlResult secondPair = registry->invoke(QStringLiteral("clip.link_create"),
-			QJsonObject{{QStringLiteral("clip"), other}, {QStringLiteral("clips"), QJsonArray{a}}});
-		QVERIFY(!secondPair.ok);
-		QCOMPARE(secondPair.errorKind, ControlErrorKind::Refused);
-		QVERIFY(secondPair.errorMessage.contains(QStringLiteral("clip.link_remove")));
-
-		// and the refusal left the first pair intact and `other` unlinked
-		const ControlResult pair = registry->invoke(QStringLiteral("clip.link_get_state"),
-			QJsonObject{{QStringLiteral("clip"), a}});
-		QVERIFY(pair.ok);
-		QCOMPARE(pair.result.value(QStringLiteral("groups")).toArray().first().toObject()
-			.value(QStringLiteral("size")).toInt(), 2);
-	}
-
-	// -----------------------------------------------------------------------
-	// 6. SPEC A16: one undo takes the whole group back
-	// -----------------------------------------------------------------------
-
 	void undoRestoresEveryMemberOfTheGroup()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
@@ -503,146 +376,6 @@ private slots:
 		}
 	}
 
-private:
-	// -----------------------------------------------------------------------
-	// fixtures, all through the control surface (the release's own door)
-	// -----------------------------------------------------------------------
-
-	//! Adds an instrument track and a MIDI clip on it; returns the clip id.
-	QString addMidiClip(const QString& name)
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		const QString track = addTrack(QStringLiteral("instrument"));
-		if (track.isEmpty()) { return QString(); }
-		const ControlResult clip = registry->invoke(QStringLiteral("clip.add"),
-			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("position"), 0},
-				{QStringLiteral("length"), 384}, {QStringLiteral("name"), name}});
-		if (!clip.ok) { return QString(); }
-		return clip.result.value(QStringLiteral("clip")).toString();
-	}
-
-	//! Adds a sample track and the audio clip on it; returns the clip id.
-	QString addSampleClip(const QString& name)
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		const QString track = addTrack(QStringLiteral("sample"));
-		if (track.isEmpty()) { return QString(); }
-		const ControlResult clip = registry->invoke(QStringLiteral("clip.add"),
-			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("position"), 0},
-				{QStringLiteral("length"), 384}, {QStringLiteral("name"), name}});
-		if (!clip.ok) { return QString(); }
-		return clip.result.value(QStringLiteral("clip")).toString();
-	}
-
-	QString addTrack(const QString& type)
-	{
-		const ControlResult added = ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
-			QJsonObject{{QStringLiteral("type"), type}});
-		if (!added.ok) { return QString(); }
-		return added.result.value(QStringLiteral("track")).toString();
-	}
-
-	//! The clip's own authoritative read of its membership - a fresh lookup of the
-	//! object the id names, not a remembered pointer.
-	int clipLinkId(const QString& clipId)
-	{
-		const ControlResult state = ControlRegistry::instance()->invoke(
-			QStringLiteral("clip.link_get_state"), QJsonObject{{QStringLiteral("clip"), clipId}});
-		if (!state.ok) { return -1; }
-		return state.result.value(QStringLiteral("group")).toInt();
-	}
-
-	int clipStart(const QString& clipId)
-	{
-		const ControlResult state = ControlRegistry::instance()->invoke(
-			QStringLiteral("arrangement.get_state"));
-		if (!state.ok) { return -1; }
-		for (const QJsonValue& trackValue : state.result.value(QStringLiteral("tracks")).toArray())
-		{
-			for (const QJsonValue& clipValue : trackValue.toObject()
-					.value(QStringLiteral("clips")).toArray())
-			{
-				const QJsonObject clip = clipValue.toObject();
-				if (clip.value(QStringLiteral("clip")).toString() == clipId)
-				{
-					return clip.value(QStringLiteral("position")).toInt();
-				}
-			}
-		}
-		return -1;
-	}
-
-	//! The clip's notes, read through roll.get_state - the surface's own view of
-	//! the note list the group shares.
-	QJsonArray notesOf(const QString& clipId)
-	{
-		const ControlResult rolled = ControlRegistry::instance()->invoke(
-			QStringLiteral("roll.get_state"), QJsonObject{{QStringLiteral("clip"), clipId}});
-		if (!rolled.ok) { return QJsonArray(); }
-		return rolled.result.value(QStringLiteral("notes")).toArray();
-	}
-
-	int noteCount(const QString& clipId) { return notesOf(clipId).size(); }
-	int noteKeyAt(const QString& clipId, int index)
-	{
-		const QJsonArray notes = notesOf(clipId);
-		if (index < 0 || index >= notes.size()) { return -1; }
-		return notes.at(index).toObject().value(QStringLiteral("key")).toInt();
-	}
-	int notePositionAt(const QString& clipId, int index)
-	{
-		const QJsonArray notes = notesOf(clipId);
-		if (index < 0 || index >= notes.size()) { return -1; }
-		return notes.at(index).toObject().value(QStringLiteral("position")).toInt();
-	}
-	int noteLengthAt(const QString& clipId, int index)
-	{
-		const QJsonArray notes = notesOf(clipId);
-		if (index < 0 || index >= notes.size()) { return -1; }
-		return notes.at(index).toObject().value(QStringLiteral("length")).toInt();
-	}
-	int noteVelocityAt(const QString& clipId, int index)
-	{
-		const QJsonArray notes = notesOf(clipId);
-		if (index < 0 || index >= notes.size()) { return -1; }
-		return notes.at(index).toObject().value(QStringLiteral("velocity")).toInt();
-	}
-
-	//! The group object of the requested size, or an empty object.
-	QJsonObject firstGroupOfSize(const QJsonArray& groups, int size)
-	{
-		for (const QJsonValue& value : groups)
-		{
-			const QJsonObject group = value.toObject();
-			if (group.value(QStringLiteral("size")).toInt() == size) { return group; }
-		}
-		return QJsonObject();
-	}
-
-	/*! A doc file, read from the source tree this test binary was built out of.
-	 *  ctest runs the binary from <build>/tests, so the worktree root is two
-	 *  directories up; the candidates are tried in order and an unreadable file
-	 *  is an empty string, which the caller turns into a SKIP rather than a
-	 *  fabricated pass. */
-	QString readDoc(const QString& name)
-	{
-		const QStringList candidates = {
-			QCoreApplication::applicationDirPath() + QStringLiteral("/../../docs/") + name,
-			QCoreApplication::applicationDirPath() + QStringLiteral("/../../../docs/") + name,
-		};
-		for (const QString& path : candidates)
-		{
-			QFile file(path);
-			if (file.open(QIODevice::ReadOnly | QIODevice::Text))
-			{
-				return QString::fromUtf8(file.readAll());
-			}
-		}
-		return QString();
-	}
-
-	QTemporaryDir m_dir;
-	QString m_project;
 };
 
 QTEST_MAIN(ClipLinkTest)

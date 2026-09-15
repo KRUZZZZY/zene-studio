@@ -109,6 +109,7 @@ include/ConfigManager.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
+include/ControlClipLinkSupport.h
 include/ControlCompSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
@@ -931,6 +932,7 @@ src/core/ControlCommandsChainEdit.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipLink.cpp
+src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
@@ -1363,7 +1365,9 @@ tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipEditsTest.cpp
 tests/src/core/ClipFadesRenderTest.cpp
+tests/src/core/ClipLinkPersistenceTest.cpp
 tests/src/core/ClipLinkTest.cpp
+tests/src/core/ClipLinkTestSupport.h
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/ConfigMigrationTest.cpp

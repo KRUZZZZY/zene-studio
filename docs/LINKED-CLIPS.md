@@ -5,8 +5,11 @@ half: `include/ClipLinks.h` (the relation: the group id on the clip, the group,
 the mirror) and `src/core/ClipLinks.cpp` (its implementation). Clip-side state:
 `Clip::linkId()` / `Clip::setLinkId()`, persisted by `Clip::saveClipEdits` /
 `Clip::loadClipEdits` as the `link` attribute of the clip's own element. Surface:
-`src/core/ControlCommandsClipLink.cpp` (`clip.link_create`, `clip.link_remove`,
-`clip.link_get_state`, `clip.link_sync`).
+`src/core/ControlCommandsClipLink.cpp` (`clip.link_create`, `clip.link_remove`)
+and `src/core/ControlCommandsClipLinkState.cpp` (`clip.link_get_state`,
+`clip.link_sync`) — two translation units because the group has four ids and the
+file-length ratchet is not moved for a new feature — plus the helpers both halves
+share in `include/ControlClipLinkSupport.h`.
 
 **One-line summary.** Two clips share one source — the clip's content, its note
 list — so an edit to one is seen by all of them; the relation is written to each
