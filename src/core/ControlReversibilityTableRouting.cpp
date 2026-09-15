@@ -12,7 +12,8 @@
  * block every consumer reads.
  *
  * What each row argues:
- *   * pdc.report / routing.get_state / bus.list / port.get_state write nothing.
+ *   * pdc.report / routing.get_state / bus.list / port.get_state / patcher.get_state
+ *     write nothing.
  *   * bus.create's inverse is the OPERATION (a created channel has no
  *     before-state): the mixer.add_channel shape, one action step that deletes
  *     the bus this command created.
@@ -154,6 +155,39 @@ const ReversibilityRow kRoutingRows[] = {
 		"previous value and the recorded inverse is port.set_pin again with it (`applies: command`, "
 		"which control.undo dispatches through the registry). The write itself is the engine's own "
 		"pin path (AudioPortsModel::Matrix::setPin), the call the PinConnector view makes",
+		""),
+
+	// ---- the patcher node graph (feature row 69) ----
+	// patcher.get_state reads the same graph routing.get_state does, addressed
+	// in PATCH terms (the role each node answers to, its own parameters); 
+	// patcher.set_wiring is the EDIT row 69 asked for, and the class it lands in
+	// is the interesting part.
+	//
+	// An EffectChain is a Model and a SerializingObject, never a
+	// JournallingObject, so there is no object checkpoint to take - the same
+	// reason port.set_pin is a snapshot. What IS bounded here is the wiring: a
+	// list of edges plus one output node, and the two states a chain can be in
+	// (derived, or an authored patch) are both expressible in it. The recorded
+	// inverse is therefore the SAME command with the wiring captured before the
+	// write - and, when that wiring was the DERIVED one, an empty edge list, so
+	// an undo restores the derivation rather than a linear-looking patch that
+	// would read as authored afterwards.
+	R("patcher.get_state", RC::NotMutating, false,
+		"reads the node graph a target's chain is processed through: the nodes with the role a patch "
+		"addresses them by, their type, ports, parameters and prepared flag, the wiring (derived or "
+		"authored), the cached processing order and whether an edit can land at all; no write",
+		"no write",
+		""),
+	R("patcher.set_wiring", RC::Snapshot, true,
+		"the wiring is a bounded recorded state - a list of edges plus one output node - and it is NOT "
+		"part of the chain's serialized <fxchain> form, so the chain's own XML carries no before-state "
+		"for it; and an EffectChain is a Model and a SerializingObject, not a JournallingObject, so no "
+		"live checkpoint exists",
+		"bounded recorded state replayed by an INVERSE COMMAND: the transaction records the wiring in "
+		"force before the write (its edges, its output, and whether it was derived or authored) and the "
+		"recorded inverse is patcher.set_wiring again with it (`applies: command`, which control.undo "
+		"dispatches through the registry, the port.set_pin shape). A previously DERIVED wiring comes "
+		"back as the derivation (an empty edge list) rather than as an authored linear patch",
 		""),
 };
 

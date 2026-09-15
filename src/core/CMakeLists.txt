@@ -164,6 +164,16 @@ set(LMMS_SRCS
 	core/ControlCommandsRouting.cpp
 	core/ControlCommandsBus.cpp
 	core/ControlCommandsPorts.cpp
+	# The patcher node-graph group (feature row 69 of docs/FEATURE-LIST-0.3.0.md):
+	# patcher.get_state / patcher.set_wiring, the read and the EDIT of a chain's
+	# derived graph. The engine half is core/PatchWiring.cpp (the wiring as data)
+	# and core/EffectChainPatcher.cpp (the rebuild that re-applies it);
+	# docs/PATCHER-GRAPH.md is the design record and docs/KNOWN-LIMITATIONS.md the
+	# stated bounds. Two translation units for the group itself - the read, then
+	# the edit - for the reason the automation and plugin-scan groups have two:
+	# gate 7 measures a file.
+	core/ControlCommandsPatcher.cpp
+	core/ControlCommandsPatcherEdit.cpp
 	# Auto-mastering wave 1 (feature rows 25 and 72 of docs/FEATURE-LIST-0.3.0.md,
 	# docs/AUTO-MASTERING.md): the group's read half and its one writing verb, each
 	# its own translation unit for the reason above, plus the shared helpers (the
@@ -503,6 +513,11 @@ set(LMMS_SRCS
 	core/DrumSynth.cpp
 	core/Effect.cpp
 	core/EffectChain.cpp
+	# The patcher half of EffectChain (feature row 69): the graph rebuild that
+	# re-applies an AUTHORED wiring, the role-to-node resolution and the edit
+	# entry point, in a fork TU because EffectChain.cpp is upstream-inherited and
+	# carries a whole-tree file-length baseline row (Gate 7's tolerance is zero).
+	core/EffectChainPatcher.cpp
 	core/Engine.cpp
 	core/EnvelopeAndLfoParameters.cpp
 	core/ExportDither.cpp
@@ -550,6 +565,10 @@ set(LMMS_SRCS
 	core/NoteRandom.cpp
 	core/NoteTransform.cpp
 	core/Oscillator.cpp
+	# The authored wiring of a DERIVED routing graph (feature row 69, the
+	# patcher node-graph): the roles a wiring addresses and the JSON a command
+	# reads and writes, with no RoutingGraph and no EffectChain in sight.
+	core/PatchWiring.cpp
 	core/PathUtil.cpp
 	core/PatternClip.cpp
 	core/PatternStore.cpp

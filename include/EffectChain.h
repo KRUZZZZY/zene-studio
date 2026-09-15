@@ -29,6 +29,7 @@
 #include "Model.h"
 #include "SerializingObject.h"
 #include "AutomatableModel.h"
+#include "PatchWiring.h"
 
 #include <atomic>
 #include <memory>
@@ -117,6 +118,57 @@ public:
 	auto routesThroughGraph() const -> bool { return m_graphActive; }
 
 	/**
+	 * @brief The AUTHORED wiring of this chain's graph.
+	 *
+	 * Empty means "the derived wiring": input -> effect 0 -> ... -> effect n-1,
+	 * which is what rebuildRoutingGraph() builds from the effect list and what
+	 * a chain has until a patch is set (@see setPatchWiring). A non-empty
+	 * wiring is re-applied by EVERY rebuild, which is what makes a hand-wired
+	 * edge survive the next plugin.load rather than being discarded by it.
+	 */
+	auto patchWiring() const -> const PatchWiring& { return m_patch; }
+	//! True when an authored wiring - not the derivation - wires this graph
+	auto patchActive() const -> bool { return !m_patch.isEmpty(); }
+	/**
+	 * True when a rebuild could NOT apply an authored wiring (the effect list
+	 * changed under it) and the chain fell back to the derived wiring. The
+	 * patch is dropped rather than kept for a list it does not fit; the flag
+	 * reports that this happened until the next rebuild.
+	 */
+	auto patchDropped() const -> bool { return m_patchDropped; }
+
+	/**
+	 * @brief The graph node id a patch reference names in the CURRENT graph,
+	 *        or -1 when this chain has no such node.
+	 *
+	 * Control thread only. Refs are roles ("input", "effect:<index>"), which
+	 * survive a rebuild; node ids do not, which is why a patch is stored as
+	 * refs and resolved here.
+	 */
+	auto patchNodeId(const PatchRef& ref) const -> int;
+
+	/**
+	 * @brief Replaces this chain's wiring with @a wiring and re-renders through it.
+	 *
+	 * An empty @a wiring puts the chain back on its derived wiring. The new
+	 * graph is built off the audio thread (every node's buffers are allocated
+	 * there) and published under the audio engine's model-change guard, which
+	 * is the seam every other topology edit in this tree takes
+	 * (appendEffect/removeEffect/moveUp/moveDown/clear): the guard excludes a
+	 * render period, so the edit is never concurrent with process() - the
+	 * requirement RoutingGraph.h's threading contract states. It is NOT the
+	 * lock-free pending-change plan swap of mixer/SPEC-dynamic-routing.md
+	 * section 5.4, and it blocks the audio thread for the rebuild's duration.
+	 *
+	 * Refused, with @a error set and nothing written, when the chain does not
+	 * render through a graph at all (no effects, an effect that routes its own
+	 * audio ports, an unknown block size) or when the derivation cannot take
+	 * the wiring; in both cases the previous wiring is rebuilt in place.
+	 * Control thread only.
+	 */
+	auto setPatchWiring(const PatchWiring& wiring, QString* error) -> bool;
+
+	/**
 	 * @brief Rebuilds the graph from the current effect list and prepares it.
 	 *
 	 * Call this after any change to the effect list or its order. The graph is
@@ -156,6 +208,12 @@ private:
 	std::vector<EffectNode*> m_effectNodes;
 	//! Set by rebuildRoutingGraph() when the graph mirrors this chain
 	bool m_graphActive = false;
+	/*! The AUTHORED wiring, empty while the graph is wired by its derivation,
+	 *  and re-applied by every rebuildRoutingGraph() (@see PatchWiring,
+	 *  setPatchWiring). Control thread only. */
+	PatchWiring m_patch;
+	//! Set by rebuildRoutingGraph() when it could not apply m_patch
+	bool m_patchDropped = false;
 
 	//! Audio thread: renders one bus block through the graph. Allocates nothing.
 	auto processThroughGraph(AudioBus& bus) -> bool;

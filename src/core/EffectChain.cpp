@@ -44,6 +44,7 @@ namespace lmms
 {
 
 
+
 EffectChain::EffectChain( Model * _parent ) :
 	Model( _parent ),
 	SerializingObject(),
@@ -68,63 +69,14 @@ auto EffectChain::routingGraph() const -> const RoutingGraph&
 }
 
 
-void EffectChain::rebuildRoutingGraph()
-{
-	m_graph->clear();
-	m_effectNodes.clear();
-	m_graphInput.reset();
-	m_graphOutput.reset();
-	m_graphActive = false;
+// The graph rebuild (rebuildRoutingGraph) and the patcher half (patchNodeId,
+// setPatchWiring) are defined in src/core/EffectChainPatcher.cpp. This file is
+// upstream-inherited and carries a whole-tree file-length baseline row, so the
+// fork's additions live in their own translation unit; behaviour is unchanged.
 
-	auto* engine = Engine::audioEngine();
-	const f_cnt_t frames = engine != nullptr ? engine->framesPerPeriod() : 0;
-	if (frames == 0 || m_effects.empty()) { return; }
 
-	// Effects with audio ports route their own ports on the bus (AudioPlugin
-	// overrides the bus entry point for exactly that); the graph's planar
-	// blocks cannot carry that port map, so the whole chain keeps the
-	// pre-existing path rather than routing half of it.
-	for (const Effect* effect : m_effects)
-	{
-		if (effect->audioPortsModel() != nullptr) { return; }
-	}
 
-	m_graphInput = std::make_unique<AudioBuffer>(frames, DEFAULT_CHANNELS);
-	m_graphOutput = std::make_unique<AudioBuffer>(frames, DEFAULT_CHANNELS);
-	m_graphInput->silenceAllChannels();
-	m_graphOutput->silenceAllChannels();
 
-	auto input = std::make_unique<ChainInputNode>(m_graphInput.get());
-	const int inputId = m_graph->addNode(std::move(input));
-
-	// Same effects, same order, same connections the plain loop walks: the
-	// graph is equivalent by construction, not by coincidence.
-	int previous = inputId;
-	for (Effect* effect : m_effects)
-	{
-		auto node = std::make_unique<EffectNode>(effect);
-		EffectNode* const raw = node.get();
-		const int id = m_graph->addNode(std::move(node));
-		m_effectNodes.push_back(raw);
-
-		QString error;
-		if (!m_graph->connect(previous, id, 0, 0, &error))
-		{
-			// Unreachable for a linear chain (no cycle is possible); leave the
-			// chain on the plain loop rather than on a half-wired graph.
-			m_graph->clear();
-			m_effectNodes.clear();
-			m_graphInput.reset();
-			m_graphOutput.reset();
-			return;
-		}
-		previous = id;
-	}
-
-	m_graph->setOutputNode(previous);
-	m_graph->prepare(frames, DEFAULT_CHANNELS);
-	m_graphActive = true;
-}
 
 
 void EffectChain::refreshLatency()

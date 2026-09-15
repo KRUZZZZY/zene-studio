@@ -93,7 +93,10 @@ public:
 	void prepare(f_cnt_t frames, ch_cnt_t channels) override;
 	void process(f_cnt_t frames) override;
 
+	//! Explicit overload so a const graph - a read - can ask a node which Effect
+	//! it wraps, exactly as the non-const one lets a control-thread edit do it.
 	auto effect() -> Effect* { return m_effect; }
+	auto effect() const -> const Effect* { return m_effect; }
 
 	/**
 	 * @returns what the effect's processAudioBuffer() reported last time: false

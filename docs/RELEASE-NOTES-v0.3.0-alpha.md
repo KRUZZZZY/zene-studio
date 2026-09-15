@@ -2301,3 +2301,55 @@ PDC, automation clip, controller or settings object, which is what the audit mea
   full and listed to the limit.
 - **UI absence — one line:** none of this is in the interface either; the drift report exists only through the
   MCP bridge (and `snapshot_commands.py`), and the deployment limit above is unchanged.
+
+## The patcher node graph: an edit for the routing graph (`patcher.*`) — added 2026-09-15
+
+Feature row 69, "Patcher node-graph driving": the routing graph row 28 recorded as readable and **not**
+editable now has an edit, and both reasons it had none are answered rather than restated.
+
+- **`patcher.get_state`** reads a target's chain graph as a PATCH: every node with the role a patch
+  addresses it by (`"input"`, `"effect:<index>"` - roles survive the rebuild that node ids do not), its
+  type, its arity, its own parameters (read generically through the node's own `saveSettings`) and its
+  prepared flag; the wiring in roles AND in node ids; the cached topological order; and `editable` with
+  the reason when an edit cannot land.
+- **`patcher.set_wiring`** replaces that wiring: `edges` is the whole wiring, `output` the node the host
+  block leaves through, and an empty edge list restores the DERIVED wiring. It is validated against the
+  current node set BEFORE the chain is touched - an unknown reference, a port outside the node's arity, a
+  repeated or self edge, a cycle, or an output node the input cannot reach are typed refusals that write
+  nothing.
+- **Why an edit is possible at all, with the evidence.** `include/RoutingGraph.h`'s threading contract
+  forbids a topology edit concurrent with `process()` and names the lock-free pending-change plan swap of
+  `mixer/SPEC-dynamic-routing.md` section 5.4 that the spike did not implement. The engine already has the
+  seam that satisfies the requirement as written: `AudioEngine::renderNextPeriod()` holds `m_changeMutex`
+  for a whole render period (`src/core/AudioEngine.cpp:368`) and `requestChangeInModel()` locks the same
+  mutex from the control thread (`src/core/AudioEngine.cpp:628-637`) - which is exactly what
+  `appendEffect` / `removeEffect` / `moveUp` / `moveDown` / `clear` have always wrapped their own rebuild
+  in. The new graph is built off the audio thread and published under that guard, so the edit is never
+  concurrent with a render period. It is **not** lock-free: it blocks the audio thread for the rebuild's
+  duration, and `docs/KNOWN-LIMITATIONS.md` says so.
+- **The DERIVED-graph constraint is resolved, not documented away.** The node SET stays derived (one input
+  node, one node per effect), which keeps `graphMirrorsEffectList()` true, so the graph is still ON the
+  signal path and the patch is really RENDERED; the WIRING is authored state the chain owns
+  (`include/PatchWiring.h`) and `EffectChain::rebuildRoutingGraph()` re-applies it on every rebuild, so a
+  hand-wired edge is no longer discarded by the next `plugin.load`. A wiring the effect list can no longer
+  take is dropped and reported (`patch_dropped`), never half-applied.
+- **A16.** `patcher.get_state` is `not_mutating`; `patcher.set_wiring` is a `snapshot` whose inverse **is**
+  a command (the `port.set_pin` shape - an `EffectChain` is a `Model` and a `SerializingObject`, never a
+  `JournallingObject`), and a chain that was on its derived wiring comes back AS the derivation rather
+  than as a linear-looking authored patch.
+- **Measured scope, unchanged from row 28.** A chain whose devices have audio-ports models keeps the plain
+  effect loop and its graph is EMPTY, so `set_wiring` refuses it, typed - and every built-in device this
+  tree ships is `AudioPlugin`-derived (`DefaultEffect`). A chain of legacy effects does have a live graph,
+  which is what the proof builds.
+- **Proof.** `tests/src/core/PatcherCommandsTest.cpp` (registered ctest `PatcherCommandsTest`): the read of
+  the derived wiring; the EDIT measured on the audio path - the channel rendered through
+  `Mixer::masterMix()` before and after a re-wire, the patched render being exactly the linear render
+  without the bypassed effect's gain (the `RoutingGraphLiveTest` shape); the authored wiring SURVIVING
+  `EffectChain::rebuildRoutingGraph()`; `control.undo` restoring both the wiring and the render; every
+  refusal typed with the state unchanged; and one block through the patched graph allocating nothing on the
+  audio thread. The socket half needs no per-feature work: the MCP bridge derives one tool per registered id
+  from a live instance's `control.commands_list`.
+- **UI absence - one line:** the node graph is drivable through the socket and nothing in the interface
+  draws a patch bay, a cable, a node or a port, and there is no patcher canvas - the node set a patch
+  re-wires is the effect list's. `docs/KNOWN-LIMITATIONS.md` carries that sentence plus the session-scope
+  and blocking-edit bounds; `docs/PATCHER-GRAPH.md` is the design record.

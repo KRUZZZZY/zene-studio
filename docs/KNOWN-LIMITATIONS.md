@@ -682,26 +682,45 @@ that is this page's fault — report it and it gets added.
   `tests/src/core/PdcMixerTest.cpp` (sample alignment, the `LatencyCompensation::MaxFrames` clamp, the
   bit-identical zero-delay bypass) and the registered transcript `tests/control-pdc-commands.py` proves the
   SURFACE: the numbers are on the wire and they follow the routing. Stated as the bound it is, not hidden.
-- **The routing graph is readable, not editable, and there is no patcher — added 2026-09-14.** The graph a
+- **The routing graph is readable, and the patcher group edits it; there is no patcher GUI — added 2026-09-14,
+  extended 2026-09-15.** The graph a
   signal is actually processed through (the effect chain's `RoutingGraph`: its nodes, connections, cached
   topological order and output node, plus a mixer channel's rack graph) is drivable through
   `--control-socket` with `routing.get_state`, and the mixer's routing is settable through `mixer.route_to` /
   `mixer.send_to` / `mixer.sidechain_to` / `mixer.route_remove` — but **nothing in `src/gui/` draws a patch
-  bay, a cable, a node or a port**, and **no command edits a `RoutingGraph`**: the class's own threading
-  contract (`include/RoutingGraph.h`) says topology edits are control-thread operations that must not run
-  concurrently with `process()`, and the atomic plan swap that would make live edits safe is deliberately not
-  implemented (see `PATCHER-MVP.md`); on top of that a chain's graph is DERIVED — `EffectChain::
-  rebuildRoutingGraph()` clears and re-wires it from the effect list on every change, so a hand-wired edge
-  would be discarded by the next `plugin.load` / `plugin.unload`. **The read is narrower than the name
-  sounds, and this is measured rather than estimated:** a chain whose devices HAVE audio-ports models keeps
-  the plain effect loop (`EffectChain::rebuildRoutingGraph` returns early for it,
-  `src/core/EffectChain.cpp:89`), and every built-in device in this tree is `AudioPlugin`-derived
+  bay, a cable, a node or a port**, and there is **no patcher canvas**: the `patcher.*` group (added
+  2026-09-15, row 69) reads a chain's graph in patch terms and RE-WIRES it, but the node SET is the effect
+  list's — a node can be neither added to nor removed from a chain's graph, and no verb sets a node's own
+  parameters. Until 2026-09-15 no command edited a `RoutingGraph`, on two recorded grounds: the class's
+  threading contract (`include/RoutingGraph.h`) says topology edits are control-thread operations that must
+  not run concurrently with `process()`, and a chain's graph is DERIVED — `EffectChain::rebuildRoutingGraph()`
+  clears and re-wires it from the effect list on every change, so a hand-wired edge would have been discarded
+  by the next `plugin.load` / `plugin.unload`. `patcher.set_wiring` answers both (see its own bullet below);
+  the **lock-free pending-change plan swap** of `PATCHER-MVP.md` section 4 Part C 3 /
+  `mixer/SPEC-dynamic-routing.md` section 5.4 is still **not implemented**. **The read is narrower than the
+  name sounds, and this is measured rather than estimated:** a chain whose devices HAVE audio-ports models
+  keeps the plain effect loop (`EffectChain::rebuildRoutingGraph` returns early for it,
+  `src/core/EffectChainPatcher.cpp:121`), and the built-in devices this tree ships are `AudioPlugin`-derived
   (`DefaultEffect`, `include/AudioPlugin.h:462`), so a track's or a channel's chain graph is normally EMPTY
-  with `routes_through_graph: false`; the graph with live prepared nodes is the **rack's**, which
+  with `routes_through_graph: false` and `patcher.set_wiring` refuses it, typed
+  (`error.kind: "refused"`); the graph with live prepared nodes is the **rack's**, which
   `routing.get_state` also reports and `tests/control-routing-commands.py` measures (two added chains = five
-  nodes, six connections, the sum node as the output node, prepared at the engine's own block size). The
+  nodes, six connections, the sum node as the output node, prepared at the engine's own block size). Devices
+  that are NOT `AudioPlugin`-derived (a legacy `Effect`) do make a chain graph live, which is what
+  `tests/src/core/PatcherCommandsTest.cpp` builds to prove the edit. The
   patcher GUI is out of scope for this
   release, exactly as feature row 28 records.
+- **The patcher's edit is guarded, session-scoped and blocking — added 2026-09-15.** `patcher.get_state` /
+  `patcher.set_wiring` (feature row 69) let an agent re-wire a target's effect chain through
+  `--control-socket`: the wiring is addressed by ROLE (`"input"`, `"effect:<index>"`), it is re-applied by
+  every derived rebuild, and `control.undo` restores the previous wiring as ONE step (a chain that was on its
+  derived wiring comes back AS the derivation). Three bounds, stated rather than hidden: (1) **no patcher
+  GUI** — nothing in `src/gui/` shows the wiring the way the socket does; (2) **the wiring is session state**
+  — no `<routinggraph>` element is written into `<fxchain>`, so a patch does not survive a save/load, exactly
+  as the pre-existing re-wired session did not (`docs/ROUTING-GRAPH-LIVE.md` section 7); (3) **the edit is not
+  lock-free** — the new graph is built off the audio thread and published under the engine's model-change
+  guard, so it is never concurrent with a render period, but it BLOCKS the audio thread for the rebuild's
+  duration (every other topology edit in this tree, `appendEffect` / `moveUp` / `clear`, pays the same cost).
 - **Buses are topology only, and `bus.remove` is not undoable — added 2026-09-14.** A parallel bus
   (`Mixer::createBusChannel`: a mixer channel that never receives instrument output and whose incoming sends
   default to pre-fader) is drivable through `--control-socket` with `bus.list` / `bus.create` / `bus.remove`
