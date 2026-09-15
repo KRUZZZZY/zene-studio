@@ -10,6 +10,10 @@
 #      reports a musical conflict instead of silently picking a side;
 #   3. the silent-loss cases that used to pass as clean merges: one side
 #      deletes or renames a track while the other adds a note inside it.
+#   4. large-asset handling: both sides embed a DIFFERENT 8 KB sample in the
+#      same track's <audiofileprocessor>; the merged document must keep ours in
+#      place, keep theirs out of the file, and preserve both full values in the
+#      .mmpz-git-conflicts.json sidecar.
 #
 # Every command's exit code is printed unpiped (`cmd; echo EXIT=$?`), because a
 # pipeline reports the exit code of its last command and would launder a failed
@@ -118,12 +122,76 @@ run "$PY" "$CHECK" project.mmpz --has-note 36:96
 printf '\n--> and the conflict names the track in musical terms:\n'
 "$PY" "$TOOL" conflicts project.mmpz
 
+# ------------------------------------------- 4 large-asset handling
+say "4. LARGE ASSET: both sides embed a DIFFERENT 8 KB sample on the same track"
+run git merge --abort
+run git switch -q main
+BLOB_A="$("$PY" -c 'import base64,sys; sys.stdout.write(base64.b64encode(bytes(range(256))*32).decode())')"
+BLOB_B="$("$PY" -c 'import base64,sys; sys.stdout.write(base64.b64encode(bytes(range(255,-1,-1))*32).decode())')"
+run git switch -qc feat/sample-ours
+run "$PY" "$EDIT" set-track-attr project.mmpz --track Kick --attr sampledata \
+	--element audiofileprocessor --value "$BLOB_A"
+run git commit -qam "kick: embed sample A (8192 bytes) in the audiofileprocessor"
+run git switch -q main
+run git switch -qc feat/sample-theirs
+run "$PY" "$EDIT" set-track-attr project.mmpz --track Kick --attr sampledata \
+	--element audiofileprocessor --value "$BLOB_B"
+run git commit -qam "kick: embed sample B (8192 bytes) in the audiofileprocessor"
+run git switch -q feat/sample-ours
+run git merge --no-edit feat/sample-theirs
+SAMPLE_RC=$?
+printf '\n--> git merge exit=%d (want 1: one field, two values)\n' "$SAMPLE_RC"
+printf '\n--> the report summarises the blobs by hash instead of printing them:\n'
+run "$PY" "$TOOL" conflicts project.mmpz
+printf '\n--> the merged document is checked, not eyeballed:\n'
+PYTHONPATH="$HERE" "$PY" - "$PWD/project.mmpz" "$BLOB_A" "$BLOB_B" <<'PYEOF'
+import json, os, re, sys
+import mmpz_git as M
+
+merged, blob_a, blob_b = sys.argv[1], sys.argv[2], sys.argv[3]
+xml = M.load_any(merged).decode("utf-8")
+fails = []
+
+
+def check(ok, label):
+    print("  %s   %s" % ("OK  " if ok else "FAIL", label))
+    if not ok:
+        fails.append(label)
+
+
+comments = [c for c in re.findall(r"<!--.*?-->", xml, re.S) if M.CONFLICT_BANNER in c]
+check(xml.count(blob_a) == 1,
+      "ours' sample is in the file exactly once (the attribute), not repeated in a comment")
+check(xml.count(blob_b) == 0, "theirs' sample is not inlined anywhere in the file")
+check(len(comments) == 1, "exactly one conflict comment is marked")
+check(comments and max(len(c) for c in comments) < 2000,
+      "the comment is small: the 10,924-char blob is summarised (len %d)"
+      % (max((len(c) for c in comments), default=0)))
+check(comments and "chars, sha256=" in comments[0], "the comment carries the hash summary")
+sidecar = merged + ".mmpz-git-conflicts.json"
+check(os.path.exists(sidecar), "the sidecar is written next to the project (%s)"
+      % os.path.basename(sidecar))
+data = json.load(open(sidecar)) if os.path.exists(sidecar) else {"conflicts": []}
+check(any(r.get("theirs") == blob_b and r.get("ours") == blob_a for r in data["conflicts"]),
+      "both FULL values are recoverable from the sidecar")
+import mmpz_git
+doc = mmpz_git.parse(mmpz_git.load_any(merged))
+check(len(mmpz_git.marker_records(doc)) == 1, "the marker data reads back from the merged file")
+print("  %s %s" % ("FAIL" if fails else "PASS", "large-asset handling"))
+sys.exit(1 if fails else 0)
+PYEOF
+SAMPLE_CHECK_RC=$?
+printf '[EXIT=%d] the large-asset checks above\n' "$SAMPLE_CHECK_RC"
+
 say "summary"
 printf 'different-track merge exit : %d (want 0)\n' "$MERGE_RC"
 printf 'same-note merge exit        : %d (want 1)\n' "$CONFLICT_RC"
 printf 'delete-vs-nested-edit exit  : %d (want 1)\n' "$DEEP_RC"
+printf 'embedded-sample merge exit  : %d (want 1)\n' "$SAMPLE_RC"
+printf 'large-asset document checks : %d (want 0)\n' "$SAMPLE_CHECK_RC"
 printf 'work dir                    : %s\n' "$WORK"
 [ "$MERGE_RC" -eq 0 ] && [ "$CONFLICT_RC" -eq 1 ] && [ "$DEEP_RC" -eq 1 ] \
-	&& { echo "ALL THREE BEHAVE AS SPECIFIED"; exit 0; }
+	&& [ "$SAMPLE_RC" -eq 1 ] && [ "$SAMPLE_CHECK_RC" -eq 0 ] \
+	&& { echo "ALL FOUR BEHAVE AS SPECIFIED"; exit 0; }
 echo "SOMETHING DID NOT BEHAVE AS SPECIFIED"
 exit 1

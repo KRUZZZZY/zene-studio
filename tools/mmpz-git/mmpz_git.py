@@ -34,6 +34,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -1153,13 +1154,30 @@ def cmd_merge(args) -> int:
         fh.write(xml)  # stored (clean) form; see note above
 
     if conflicts:
-        sys.stderr.write(render_report(conflicts, meter, args.ours))
+        sys.stderr.write(render_report(conflicts, meter, _worktree_target(args)))
         _conflict_artifacts(args, conflicts, meter)
         return 1
     if getattr(args, "report", None):
         with open(args.report, "w") as fh:
-            fh.write(render_report(conflicts, meter, args.ours))
+            fh.write(render_report(conflicts, meter, _worktree_target(args)))
     return 0
+
+
+def _worktree_target(args):
+    """The file a human will edit: git's %P when git called us, else ours.
+
+    git stages a merge driver's output in a temp file and renames it into the
+    work tree afterwards.  Measured on git 2.43.0, a conflicted `git merge` of
+    a project in a subdirectory invoked the driver with CWD=repo root,
+    %A=.merge_file_RH7wKH and %P=sub/a.mmpz - so %A is NOT the project and
+    anything the driver leaves BESIDE the project (the conflict sidecar) must
+    be named from %P or it lands on a transient path git removes.  Every other
+    caller passes the real file as ours and gets it back unchanged.
+    """
+    path = getattr(args, "path", None)
+    if path and re.match(r"\A\.merge_file_[A-Za-z0-9]+\Z", os.path.basename(args.ours)):
+        return path
+    return args.ours
 
 
 def _conflict_artifacts(args, conflicts, meter):
@@ -1170,17 +1188,18 @@ def _conflict_artifacts(args, conflicts, meter):
     the file instead.  The sidecar is only written when something was
     actually abbreviated, or when --json asked for a report.
     """
+    target = _worktree_target(args)
     big = [r for r in conflicts
            if any(isinstance(r.get(k), str) and len(r[k]) > MAX_INLINE_VALUE
                   for k in ("base", "ours", "theirs"))]
     payload = {
-        "project": args.ours,
+        "project": target,
         "meter": {"ticks_per_bar": meter[0], "beats_per_bar": meter[1]},
         "conflicts": conflicts,
     }
     out = getattr(args, "json", None)
     if not out and big and not getattr(args, "no_sidecar", False):
-        out = args.ours + ".mmpz-git-conflicts.json"
+        out = target + ".mmpz-git-conflicts.json"
     if out:
         with open(out, "w") as fh:
             json.dump(payload, fh, indent=2, ensure_ascii=True)
@@ -1189,7 +1208,7 @@ def _conflict_artifacts(args, conflicts, meter):
                          "full values in %s\n" % (len(big), out))
     if getattr(args, "report", None):
         with open(args.report, "w") as fh:
-            fh.write(render_report(conflicts, meter, args.ours))
+            fh.write(render_report(conflicts, meter, target))
         sys.stderr.write("mmpz-git: text report: %s\n" % args.report)
     return out
 

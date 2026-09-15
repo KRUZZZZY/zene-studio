@@ -44,6 +44,25 @@ def _track(root, name):
     return ts[0]
 
 
+def _set_track_attr(root, args):
+    """Set ATTR on the named track, or on an ELEMENT inside it.
+
+    The embedded-sample case needs the attribute where the engine puts it:
+    `sampledata` lives on the track's <audiofileprocessor>
+    (plugins/AudioFileProcessor/AudioFileProcessor.cpp:199), not on the <track>
+    element itself, and the merge driver reports the conflict at the element it
+    is really on.
+    """
+    host = _track(root, args.track)
+    if args.element:
+        found = host.getElementsByTagName(args.element)
+        if not found:
+            raise SystemExit("element %r not found in track %r"
+                             % (args.element, args.track))
+        host = found[0]
+    host.setAttribute(args.attr, args.value)
+
+
 def _write(path, doc, was_container):
     xml = M.to_bytes(doc, canonical=False)
     data = M.compress(xml) if was_container else xml
@@ -75,6 +94,10 @@ def main():
     e = sub.add_parser("set-track-attr"); e.add_argument("file")
     e.add_argument("--track", required=True); e.add_argument("--attr", required=True)
     e.add_argument("--value", required=True)
+    e.add_argument("--element", default=None,
+                   help="set the attribute on this element INSIDE the track instead of on "
+                        "the <track> element itself (e.g. audiofileprocessor for sampledata, "
+                        "where plugins/AudioFileProcessor/AudioFileProcessor.cpp:199 puts it)")
     f = sub.add_parser("remove-note"); f.add_argument("file")
     f.add_argument("--track", required=True); f.add_argument("--pattern", required=True)
     f.add_argument("--pos", required=True); f.add_argument("--key", required=True)
@@ -129,7 +152,7 @@ def main():
     elif args.cmd == "rename-track":
         _track(root, args.track).setAttribute("name", args.name)
     elif args.cmd == "set-track-attr":
-        _track(root, args.track).setAttribute(args.attr, args.value)
+        _set_track_attr(root, args)
     elif args.cmd in ("remove-note", "move-note"):
         pat = _find_pattern(_track(root, args.track), args.pattern)
         hit = 0

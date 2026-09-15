@@ -17,9 +17,12 @@ suite asserts the properties the git workflow depends on:
 """
 import base64
 import glob
+import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -694,6 +697,92 @@ class LargeAssets(unittest.TestCase):
         self.assertTrue(lines, rc.stdout)
         self.assertLess(max(len(l) for l in lines), 400,
                         "a large attribute must be summarised, not printed")
+
+
+class GitDriverFlow(unittest.TestCase):
+    """The merge driver must behave when GIT calls it, not only when we do.
+
+    Found by the depth proof (tools/mmpz-git/depth-demo.sh, task #612): the
+    sidecar that preserves large values was named from %A, and under a real
+    `git merge` %A is a temp file (`.merge_file_XXXXXX`) that git renames into
+    the work tree and cleans up - so a merge run through git left the full
+    sample values at a transient path nobody would look at.  Measured on git
+    2.43.0 with a project in a subdirectory: CWD=repo root, %A=.merge_file_RH7wKH,
+    %P=sub/a.mmpz.  This test drives the real thing end to end: a throwaway
+    repo, the drivers `mmpz-git install` writes, two branches embedding
+    different samples in the same field, `git merge`, then the sidecar and the
+    document it leaves behind.
+    """
+
+    def setUp(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        self.work = tempfile.mkdtemp(prefix="mmpz-git-flow-")
+        self.addCleanup(shutil.rmtree, self.work, ignore_errors=True)
+        self.project = os.path.join(self.work, "project.mmpz")
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", "-C", self.work, "-c", "user.name=flow",
+             "-c", "user.email=flow@example.invalid"] + list(args),
+            capture_output=True, text=True)
+
+    def _embed(self, blob):
+        """Put `blob` where the engine puts a sample: the audiofileprocessor."""
+        doc = M.parse(M.load_any(self.project))
+        for t in doc.documentElement.getElementsByTagName("track"):
+            if t.getAttribute("name") == "Kick":
+                t.getElementsByTagName("audiofileprocessor")[0].setAttribute(
+                    "sampledata", blob)
+        write(self.project, M.compress(M.to_bytes(doc, canonical=False)))
+
+    def test_git_merge_puts_the_sidecar_beside_the_project(self):
+        src = os.path.join(ROOT, "data", "projects", "shorties", "sv-DnB-Startup.mmpz")
+        blob_a = base64.b64encode(bytes(range(64)) * 32).decode()
+        blob_b = base64.b64encode(bytes(range(63, -1, -1)) * 32).decode()
+
+        self.assertEqual(self.git("init", "-q", "-b", "main", ".").returncode, 0)
+        installed = subprocess.run([sys.executable, TOOL, "install", "--repo", self.work],
+                                   capture_output=True, text=True)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        write(os.path.join(self.work, ".gitattributes"), b"*.mmpz merge=mmpz\n")
+        shutil.copyfile(src, self.project)
+        self.assertEqual(self.git("add", "-A").returncode, 0)
+        self.assertEqual(self.git("commit", "-qm", "base").returncode, 0)
+
+        self.assertEqual(self.git("switch", "-qc", "feat/ours").returncode, 0)
+        self._embed(blob_a)
+        self.assertEqual(self.git("commit", "-qam", "ours: sample A").returncode, 0)
+        self.assertEqual(self.git("switch", "-q", "main").returncode, 0)
+        self.assertEqual(self.git("switch", "-qc", "feat/theirs").returncode, 0)
+        self._embed(blob_b)
+        self.assertEqual(self.git("commit", "-qam", "theirs: sample B").returncode, 0)
+        self.assertEqual(self.git("switch", "-q", "feat/ours").returncode, 0)
+
+        merged = self.git("merge", "--no-edit", "feat/theirs")
+        self.assertEqual(merged.returncode, 1,
+                         "one field edited on both sides must conflict:\n%s%s"
+                         % (merged.stdout, merged.stderr))
+
+        sidecar = self.project + ".mmpz-git-conflicts.json"
+        self.assertTrue(os.path.exists(sidecar),
+                        "the sidecar must be written beside the WORK-TREE file (%s); "
+                        "the work dir holds: %s" % (sidecar, sorted(os.listdir(self.work))))
+        with open(sidecar) as fh:
+            data = json.load(fh)
+        self.assertTrue(any(r.get("theirs") == blob_b and r.get("ours") == blob_a
+                            for r in data["conflicts"]),
+                        "both full values must be recoverable from the sidecar")
+        self.assertEqual(data["project"], "project.mmpz",
+                         "the sidecar must name the file git asked about (%P), "
+                         "not the temp path it stages %A in")
+        leftovers = [f for f in sorted(os.listdir(self.work)) if f.startswith(".merge_file_")]
+        self.assertEqual(leftovers, [], "git's temp files must not keep the sidecar")
+        xml = M.load_any(self.project)
+        self.assertEqual(xml.count(blob_a.encode()), 1,
+                         "ours' sample must be in the merged file once (the attribute)")
+        self.assertEqual(xml.count(blob_b.encode()), 0,
+                         "theirs' sample must not be inlined into the merged file")
 
 
 class PureAudioMaths(unittest.TestCase):
