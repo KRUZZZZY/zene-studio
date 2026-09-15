@@ -1775,6 +1775,28 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 			SKIP_RETURN_CODE 77
 		)
+		# The GROUP's audit proof: one row per id for all ELEVEN session.* ids
+		# (docs/reports/SESSION-API-PROOF-2026-09-15.md). The two tests above
+		# drive the ids their FEATURE needs and between them touch all eleven;
+		# this one drives every id for the id's own sake, because the question
+		# "is this id a registered command that works, or a stub that only
+		# refuses?" is not answered by two feature tests whose coverage of the
+		# group is incidental. Each row carries the live reply, the read-back
+		# that shows the claimed effect, and the A16 class read OUT OF THE
+		# RUNNING INSTANCE (control.transactions), so the table's registered
+		# reference is a measurement and not a grep. Registered under the same
+		# guard as its siblings: a build with the Session View compiled out has
+		# no session.* group and a test that cannot run must not be registered
+		# as one that passed (the transcript reports ctest *Skipped*, exit 77).
+		add_test(NAME ControlSessionApiProof
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-api-proof.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionApiProof PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+			SKIP_RETURN_CODE 77
+		)
 	endif()
 	# The export.* group (render settings): dither and the SRC converter. It had
 	# NO registered proof at all before the 2026-09-13 coverage audit - the only
