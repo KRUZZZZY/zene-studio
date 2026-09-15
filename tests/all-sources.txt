@@ -152,10 +152,10 @@ include/ControllerView.h
 include/Controls.h
 include/CrashReporter.h
 include/DataFile.h
+include/DawProjectInterchange.h
 include/Delay.h
 include/DeprecationHelper.h
 include/DetuningHelper.h
-include/DawProjectInterchange.h
 include/DpiHelper.h
 include/Draggable.h
 include/DrumSynth.h
@@ -1112,11 +1112,6 @@ src/core/Controller.cpp
 src/core/ControllerConnection.cpp
 src/core/CrashReporter.cpp
 src/core/DataFile.cpp
-src/core/DrumSynth.cpp
-src/core/Effect.cpp
-src/core/EffectChain.cpp
-src/core/Engine.cpp
-src/core/EnvelopeAndLfoParameters.cpp
 src/core/DawProjectModel.cpp
 src/core/DawProjectRead.cpp
 src/core/DawProjectReadShared.h
@@ -1124,6 +1119,11 @@ src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
+src/core/DrumSynth.cpp
+src/core/Effect.cpp
+src/core/EffectChain.cpp
+src/core/Engine.cpp
+src/core/EnvelopeAndLfoParameters.cpp
 src/core/ExportDither.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
@@ -1611,6 +1611,8 @@ tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tests/src/wasm/WasmWorkerPoolTest.cpp
+tools/dawproject-a16-histogram.cpp
+tools/dawproject-roundtrip-proof.cpp
 tools/mmpz-git/scratch/qtesc.cpp
 tools/mmpz-git/scratch/qtroundtrip.cpp
 tools/mmpz-git/scratch/qtsave.cpp
