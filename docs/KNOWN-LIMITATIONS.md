@@ -755,9 +755,15 @@ that is this page's fault — report it and it gets added.
   words, and a product decision that would have to be taken deliberately rather than assumed. Both writers are
   `irreversible` and name their fallback: nothing in the module removes the `offered` sentinel (delete the file
   and the report is pending again; the report itself is untouched), and nothing writes a report from a caller's
-  bytes (`re-run the action that crashed`; the discarded report's content is not recoverable). There is also no
-  `crash.enable` / `crash.disable` — `main()` installs the reporter before the control socket exists and the
-  module has no uninstall — and the module is a documented no-op on Windows, where the read reports no
+  bytes (`re-run the action that crashed`; the discarded report's content is not recoverable). **The reporter can
+  be armed and disarmed through the socket since 2026-09-15** — `crash.enable` (with no arguments it arms the
+  report directory the reporter remembers; an explicit `directory` arms that one) and `crash.disable` (which
+  restores the default dispositions and DELETES NOTHING: the report, its directory and the session marker all
+  survive, and `crash.list_reports` still names them while disarmed). Both report `armed`, read back from the
+  kernel's own signal dispositions rather than from a flag, alongside the module's `installed` flag and `agree`;
+  both are `snapshot` rows whose recorded inverse is the paired command, so `control.undo` takes either back.
+  **Nothing in `src/gui/` arms or disarms the reporter** — there is no interface switch, no indicator that it is
+  disarmed, and no dialog that offers the choice — and the module is a documented no-op on Windows, where the read reports no
   directory and the writers refuse, typed. The engine keeps its proof (`tests/src/core/CrashReporterTest.cpp`)
   and the **surface** is proven by `tests/control-crash-reporter.py`.
 

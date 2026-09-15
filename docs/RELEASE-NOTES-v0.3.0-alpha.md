@@ -707,14 +707,31 @@ bound in its own description and contract row instead of pretending to a timeout
   `crashreporter::discardPendingReport()`. `crash.upload_report` is **registered and refuses** every call, by
   name: this build has no upload and no network code of any kind in the reporter — a design property
   `include/CrashReporter.h` states in as many words — so the refusal names the file to attach by hand instead of
-  faking a send. There is no `crash.enable` / `crash.disable`: `main()` installs the reporter before this socket
-  is reachable, and the module has no uninstall.
+  faking a send. **The reporter can also be armed and disarmed**: `crash.enable` arms it (with no arguments, to
+  the report directory the reporter remembers; an explicit `directory` arms that one instead) and
+  `crash.disable` restores the default dispositions — deleting NOTHING, so the report, its directory and the
+  session marker survive and `crash.list_reports` still names them while disarmed. Both report `armed` read off
+  the kernel's own signal dispositions (`handlersArmed()`), not out of a flag, beside the module's `installed`
+  flag and `agree`; a call that reports success but whose read-back says the state did not change FAILS typed
+  instead. Both are `snapshot` rows whose recorded inverse is the paired command, so `control.undo` takes a
+  disarm back with one call (and records its own inverse, so a second undo disarms again). What ships on the
+  POSIX side is the whole feature; on Windows nothing is ever armed and `crash.enable` refuses with that reason.
 - **Proof.** `tests/control-crash-reporter.py` (`ControlCrashReporter`) plants a report exactly where the
   reporter looks for one and then measures the state machine over the socket: `pending` before, `pending: false`
   and `offered: true` after an acknowledge (with the sentinel verified on disk), the discard removing both
   files, and `control.undo` failing typed and naming the fallback for both writers.
-  `tests/src/core/CrashReporterTest.cpp` stays registered and unchanged — the engine did not change, so the proof
-  of the **surface** is the transcript.
+  `tests/src/core/CrashReporterTest.cpp` stays registered and unchanged — the reporter itself did not change — and
+  the **surface** proof is the transcript.
+- **Proof of the arm pair (added 2026-09-15).** `tests/src/core/CrashReporterArmTest.cpp` (ctest
+  `CrashReporterArmTest`) measures the arm state in process with REAL signals: `install()` arms and
+  `handlersArmed()` — which asks the kernel's dispositions, not a flag — agrees, `uninstall()` disarms both, an
+  armed crash writes a report, and **the negative control**: with the reporter disarmed the same SIGSEGV (and
+  SIGABRT) writes NO report, creates not even the `crash-reports` directory, and still kills the child by the
+  signal — so the absence is "the handler is gone" and not "the signal was swallowed". Re-arming is a real
+  arming, and a second `uninstall()` reports that it changed nothing. `tests/control-crash-reporter.py` carries
+  the wire half: the typed refusal to enable an already-armed reporter, the disarm and the state it leaves (with
+  the report file still on disk), the refusal to disarm twice, and `control.undo` re-arming through the recorded
+  paired command and disarming again on a second undo.
 - **Stated bounds.** Both crash writers are `irreversible` and each names its fallback: nothing in the module
   removes the `offered` sentinel (delete the file and the report is pending again; the report itself is
   untouched), and nothing writes a report from a caller's bytes (re-run the action that crashed; the discarded
@@ -724,8 +741,8 @@ bound in its own description and contract row instead of pretending to a timeout
 - **UI absence — two lines, one per row:** the plugin scan cache and its quarantine list are drivable through
   the socket and nothing in the interface shows a scan record, a cache hit or a quarantine entry, nor offers to
   add one; the crash reporter is drivable through the socket and nothing in the interface shows a report, its
-  state or its directory, and there is no way to send one. `docs/KNOWN-LIMITATIONS.md` carries the same two
-  sentences.
+  state or its directory, **arms or disarms it, or says which of the two it is in**, and there is no way to send
+  one. `docs/KNOWN-LIMITATIONS.md` carries the same two sentences.
 
 ## Offline stem separation, made drivable (`stem.*`, feature row 26) — added 2026-09-15
 

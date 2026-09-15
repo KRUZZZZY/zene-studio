@@ -3,6 +3,11 @@
 **Status:** implemented and proven on `post-alpha/crash-report` (first commit
 `98a706dbe`). Scope: the smallest honest version — detect a crash, write one
 bounded local report, offer that file on the next launch.
+**Arm/disarm added 2026-09-15** (`030/crash-enable`, board task #643): the
+reporter can now be disarmed and re-armed — `crashreporter::uninstall()` /
+`handlersArmed()` and the `crash.enable` / `crash.disable` verbs — with the
+engine-level negative control (a crash while disarmed writes NO report and still
+kills the process by the signal) proven in `CrashReporterArmTest`. See §6 and §7.
 
 **There is no upload, no socket, no DNS, no telemetry and no network code of any
 kind in this feature.** The only output is one text file inside the user's own
@@ -473,7 +478,116 @@ none:
 | File | What |
 |---|---|
 | `include/CrashReporter.h` | The API, and the design argument in comments (signals, safety, bounds, re-entrancy). |
-| `src/core/CrashReporter.cpp` | The handler + the bounded writer + the main-thread bookkeeping. |
+| `src/core/CrashReporter.cpp` | The handler + the bounded writer + the main-thread bookkeeping, and the arm/disarm pair (`install()` / `uninstall()` / `handlersArmed()` / `reportDirectory()` / `handledSignalList()`). |
+| `src/core/CrashReporterFormat.cpp`, `include/CrashReporterFormat.h` | The async-signal-safe formatters and the signal-context readers, moved out of `CrashReporter.cpp` so the arm/disarm code had room inside its zero-tolerance line ratchet (§6). |
+| `src/core/CrashReporterWindows.cpp` | The module's Windows no-op half, moved out of the same file's `#else`. |
+| `src/core/ControlCommandsCrash.cpp` | The read (`crash.list_reports`) and the two writers the module really has. |
+| `src/core/ControlCommandsCrashControl.cpp` | The arm pair (`crash.enable` / `crash.disable`). |
 | `src/core/main.cpp` | Install/begin/end session hooks, the headless offer, the GUI offer dialog, the project-path hint. |
 | `tests/src/core/CrashReporterTest.cpp` | The proofs in §3.2, §3.4. |
+| `tests/src/core/CrashReporterArmTest.cpp` | The arm/disarm proof, including the negative control (§7). |
+| `tests/control-crash-reporter.py` | The socket transcript (§3.3 and §7). |
 | `src/core/CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt` | Registration. |
+
+---
+
+## 6. The arm/disarm path (board task #643, 2026-09-15)
+
+`main()` arms the reporter before the control socket exists, and that stays right:
+a crash with no socket must still be reported. What was missing was the other
+direction, and it is now there.
+
+**Engine** (`include/CrashReporter.h`, `src/core/CrashReporter.cpp`):
+
+* `uninstall()` — restores `SIG_DFL` for exactly the signals `install()` claimed,
+  closes the report-directory fd, clears the installed flag. It deletes nothing
+  and KEEPS the remembered directory, which is what lets a re-arm return to the
+  same place rather than guess at one. A second `uninstall()` returns `false`:
+  a no-op is reported as a no-op.
+* `handlersArmed()` — the honest predicate. It asks the kernel
+  (`sigaction(sig, nullptr, &current)`) whether every claimed signal names the
+  crash handler, instead of reporting a flag that says it should. After
+  `uninstall()` it is false; if some later code replaced our handler it is false
+  too, which is the useful answer.
+* `reportDirectory()` and `handledSignalList()` — the remembered directory, and
+  the signal set as text, both built from the one list
+  (`handlerSignals()`) that `install()`, `uninstall()` and `handlersArmed()` read.
+  A second copy of the set is how a surface comes to promise protection from a
+  signal the handler does not catch.
+* **What "disarmed" does not mean.** The handler's alternate stack stays
+  registered (it is inert once no `SA_ONSTACK` handler is installed, and
+  un-registering one another module installed would be a change nobody asked
+  this module for), and no file is touched: the report, the `offered` sentinel
+  and the session marker are all still there and still named by
+  `crash.list_reports`.
+
+**Surface** (`src/core/ControlCommandsCrashControl.cpp`):
+
+* `crash.enable [directory?]` — arms. No arguments: the remembered directory.
+  An explicit `directory`: that one, which is `install()`'s own argument and the
+  only way to arm a directory the process has never been handed. Refused, typed,
+  when the reporter is ALREADY armed (so a success always means a state change,
+  which is what makes the recorded inverse exact) and when the directory does not
+  exist (`install()` never creates it — the reporter must not answer the
+  first-run "create the working directory?" prompt for the user).
+* `crash.disable` — disarms. Refused, typed, when it is not armed. Deletes
+  nothing.
+* Both report `armed` (kernel), `installed` (the module's flag) and `agree`, and
+  both fail typed `Busy` if `install()`/`uninstall()` reported success while the
+  read-back says the state did not change.
+* A16: two `snapshot` rows whose recorded inverse is the PAIRED COMMAND
+  (`applies: command`), the shape `plugin.scan_cache_quarantine_add/remove` carry
+  — a signal disposition is process state, not project state, so no
+  `ProjectJournal` checkpoint can hold it. `control.undo` after a `crash.disable`
+  dispatches `crash.enable` with the directory captured before the write, and
+  that dispatch records its own inverse, so the pair is a faithful toggle.
+
+### 6.1 Proving it, and the negative control
+
+The claim is not "the command returned". It is "a crash while disarmed is not
+reported, and the process still dies of it":
+
+* `tests/src/core/CrashReporterArmTest.cpp` (ctest `CrashReporterArmTest`) — a
+  real `SIGSEGV` and `SIGABRT` raised in forked children: while armed a report is
+  written and the child dies by the signal; DISARMED, the same crash writes no
+  report and creates not even the `crash-reports` directory, and the child STILL
+  dies by the signal — so the absence of a report is "the handler is gone" and
+  not "the signal was swallowed". Re-arming reports again; a second `uninstall()`
+  reports no change.
+* `tests/control-crash-reporter.py` (ctest `ControlCrashReporter`) — the wire
+  half: the typed refusal to enable an armed reporter, the disarm and the state
+  it leaves, the refusal to disarm twice, the report file still on disk after a
+  disarm, and `control.undo` re-arming (`restored_by: crash.enable`) and
+  disarming again on the second undo.
+
+### 6.2 The length ratchet was paid, not moved
+
+`src/core/CrashReporter.cpp` is grandfathered at 564 lines with a zero-line
+tolerance in `tests/file-length-baseline.tsv`, and the arm/disarm code needed
+room. The room came from splitting the file along the seam that was already
+there — the pure async-signal-safe formatters into
+`src/core/CrashReporterFormat.cpp` (`include/CrashReporterFormat.h`), and the
+Windows no-op half into `src/core/CrashReporterWindows.cpp` — after which
+`CrashReporter.cpp` is 490 lines: under the 500-line limit, so its baseline entry
+is one the ratchet retires rather than one it moves.
+
+---
+
+## 7. Feature row 54: the declared ids and the registry
+
+`docs/FEATURE-LIST-0.3.0.md` lives on `030/audit`, not on this lane's branch, so
+the row cannot be edited from here. It must be folded in there, and this is the
+field it must carry:
+
+> **Command group / ids** — `crash.*`, **6 ids**: `crash.list_reports`,
+> `crash.acknowledge_report`, `crash.discard_report`, `crash.upload_report`,
+> `crash.enable`, `crash.disable`.
+
+and its "Stated limits" clause must lose the sentence that reads *"there is no
+`crash.enable` / `crash.disable` (`main()` installs the reporter before the socket
+exists and the module has no uninstall)"* — the module HAS an uninstall since
+2026-09-15, and the pair exists, is registered, and is proven by
+`CrashReporterArmTest` (engine, real signals) and `ControlCrashReporter` (socket).
+
+The registry on this branch declares exactly those six ids. Anything a reader
+checks against the list should compare the six, not the four.
