@@ -530,6 +530,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHostChunking.cpp
+src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsMastering.cpp

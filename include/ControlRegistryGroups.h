@@ -490,6 +490,10 @@ LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
  *  here by the 0.3.0-alpha wave-2 train, whose registrations took that header to 504
  *  lines; it is back to the 502 it inherited. */
 LMMS_EXPORT void registerTrackStructureCommands(ControlRegistry& registry);
+
+//! control.id_contract - the stable-id contract as a readable table (feature row 51).
+//! Split out of ControlCommandsControl.cpp for the file-length ratchet: src/core/ControlCommandsIdContract.cpp.
+LMMS_EXPORT void registerIdContractCommand(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

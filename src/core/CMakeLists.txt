@@ -152,6 +152,7 @@ set(LMMS_SRCS
 	core/ControlCommandsControl.cpp
 	core/ControlCompSupport.cpp
 	core/ControlCommandsDsp.cpp
+	core/ControlCommandsIdContract.cpp
 	core/ControlCommandsMixer.cpp
 	# The mixer group's routing verbs (mixer.route_to / send_to / sidechain_to /
 	# route_remove) and the PDC / routing / bus / port groups - feature rows
