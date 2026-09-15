@@ -8,6 +8,7 @@ base `release/0.3.0` @ `f611c888b`. Three commits, no merge, no push.
 | `2630a13ae` | `fix(host): process exactly the frames asked for, in chunks (CODE-4, feature row 82)` |
 | `2b8a7ac0a` | `feat(wasm): one shared lane pool, real wake-ups, deterministic offline render (CODE-5, feature row 73)` |
 | `cf3ec68ce` | `docs(limits): the CODE-4 and CODE-5 rows get their limitation lines, and the ledgers their entries` |
+| `HEAD` | `docs(lane): LANE-STATE-HOSTCHUNKING …`, then `fix(host): deliver a MIDI event at the end of the request with the last chunk` — the CODE-4 regression described in §3b, fixed after the parent's own test bar found it |
 
 ## What was measured, with the commands and their exit codes
 
@@ -74,7 +75,7 @@ loop, and passed with the pre-fix host (checked by reverting `Vst3Host.{h,cpp}` 
 rebuilding: `PRE_FIX_TEST_EXIT=0`, `Totals: 11 passed`). Cause: the chunk slicer dropped MIDI events
 whose sample offset is at or beyond the end of the request, where the pre-chunking host clamped them
 into the last sample (`std::clamp(frameOffset, 0, frames)`) - a note-off written at the block boundary
-stopped releasing the note. Fixed in `f84f4d168` by delivering those events with the LAST chunk at that
+stopped releasing the note. Fixed by the tip commit, `fix(host): deliver a MIDI event at the end of the request with the last chunk`, by delivering those events with the LAST chunk at that
 chunk's end offset, the same behaviour the clamp had; the rule is now written in
 `Vst3Host.h`'s over-run/tail rule. After the fix, from the same build tree:
 `Vst3InstrumentTest EXIT=0 (11 passed)`, `Vst3HostTest EXIT=0 (9 passed)`,
@@ -118,7 +119,7 @@ wasm/WasmWorkerPool.cpp                        EXIT=0
 wasm/WasmOfflineRender.cpp                     EXIT=0
 ```
 
-### 6. Gates (all unpiped, run on the final tree, after `1771d2bfd`)
+### 6. Gates (all unpiped, run on the final tree, on the final tree)
 
 | gate | exit | result |
 |---|---|---|
