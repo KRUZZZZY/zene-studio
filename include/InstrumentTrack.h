@@ -284,7 +284,7 @@ protected slots:
 	void updateMixerChannel();
 
 
-protected:
+private:
 	void processCCEvent(int controller);
 
 	// MPE capture (task #601). Both run on the MIDI-input thread and only

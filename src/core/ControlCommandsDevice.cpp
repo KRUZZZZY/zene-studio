@@ -178,9 +178,14 @@ void registerDeviceCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("device");
 		cmd.verb = QStringLiteral("mpe_get_state");
 		cmd.description = QStringLiteral("Whether MIDI Polyphonic Expression input is on, and "
-			"what that means in this engine: the flag itself, which axes reach PLAYBACK (pitch, "
-			"pressure and timbre — all three are sent to the instrument as MIDI events on the note's "
-			"own member channel), how a note stores its capture (the optional "
+			"what that means in this engine: the flag itself, which axes reach PLAYBACK and how "
+			"(all three do - pitch as a frequency ratio the engine applies to the note itself, and "
+			"pressure and timbre as MIDI channel pressure and CC74 sent to the instrument on the "
+			"channel the note's own note-on took, which for a note captured from an MPE controller "
+			"is its member channel; the two MIDI axes need an instrument that consumes them - a "
+			"hosted instrument or a MIDI output port - because the built-in synthesisers are "
+			"driven by frequency and volume and never see MIDI), how a note stores its capture "
+			"(the optional "
 			"mpepitch / mpepressure / mpetimbre attributes), the channel count and master channel "
 			"the model assumes, the default bend range and the MPE+ cap on notes per channel. "
 			"Read-only. 'per_stream_settings_reachable' is false and the result says why: the "
@@ -216,7 +221,9 @@ void registerDeviceCommands(ControlRegistry& registry)
 			"instrument; while it is off the input path is exactly what it was before MPE existed "
 			"(the engine's own flag is deliberately NOT serialized, so a project never changes "
 			"meaning because of it). All three axes reach playback: pitch as a frequency ratio, "
-			"pressure and timbre as MIDI events on the note's own member channel. Switching it off "
+			"pressure and timbre as MIDI channel pressure / CC74 on the note's own channel - which "
+			"a hosted instrument or a MIDI output port consumes, and no built-in synthesiser does. "
+			"Switching it off "
 			"does NOT clear what is already stored on the notes: note.expression_get still reads it, "
 			"and note.expression_clear is the verb that removes it. Reversible: a recorded action step "
 			"restores the previous flag, so control.undo and Ctrl+Z are one history.");
