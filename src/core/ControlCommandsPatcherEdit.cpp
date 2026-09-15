@@ -158,7 +158,12 @@ auto wiringReachesOutput(const std::vector<std::pair<int, int>>& ids, int inputI
 
 //! Repeated and self edges. connect() refuses both, but a refusal that names
 //! the edge is worth more than one that says "the graph refused it".
-auto wiringEdgesAreDistinct(const PatchWiring& wiring, QString* reason) -> bool
+//! Kept (and marked unused) by the merge train: PatchWiring::connect's own
+//! refusal currently reports the duplicate, so nothing calls this helper yet -
+//! and -Werror=unused-function made the TU fail to build without this marker.
+//! The check is retained rather than deleted: it is the edge-name diagnostic a
+//! caller would use, and deleting fork-authored code is not the merge's call.
+[[maybe_unused]] auto wiringEdgesAreDistinct(const PatchWiring& wiring, QString* reason) -> bool
 {
 	const std::vector<PatchEdge>& edges = wiring.edges();
 	for (std::size_t i = 0; i < edges.size(); ++i)
