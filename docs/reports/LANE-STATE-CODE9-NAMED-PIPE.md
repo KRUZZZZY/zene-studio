@@ -1,5 +1,14 @@
 # LANE STATE — CODE-9, the Windows named-pipe control transport (task #671, feature row 83)
 
+> **Location (2026-09-15).** Moved from the repository root to `docs/reports/LANE-STATE-CODE9-NAMED-PIPE.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"), the second pass —
+> the 2026-09-13 pass moved `DOCS-NAMING.md`, `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` and
+> left the rule in `docs/reports/README.md`. It is a lane report, not the transport's design document.
+> The lane's own text is unchanged: it is a record of what the lane measured, and editing a
+> record is how a record stops being evidence. A citation that names it by bare name still
+> resolves to this file; the rule is recorded in `docs/reports/README.md` and
+> `docs/CONVENTIONS.md`.
+
 Branch `030/code9-named-pipe`, worktree `…/zene-030/wpipe`. Continuation of `52533045e`; this pass adds
 4 commits on top of it — `241087a03` (the transport and its bookkeeping), `65538174a` (the complexity
 ratchet for this lane's own new file), `835624da3` (manifest registration + the transport split) and

@@ -319,3 +319,6 @@ private slots:
 
 QTEST_GUILESS_MAIN(ControlVerbInverseTest)
 #include "ControlVerbInverseTest.moc"
+
+ * and its result is quoted in docs/reports/LANE-STATE.md. What this file proves is the
+ * positive direction, against the shipped engine.

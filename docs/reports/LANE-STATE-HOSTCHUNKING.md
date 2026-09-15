@@ -1,5 +1,14 @@
 # Lane 030/host-chunking-wasm — board task 657 (feature rows 82 and 73)
 
+> **Location (2026-09-15).** Moved from the repository root to `docs/reports/LANE-STATE-HOSTCHUNKING.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"), the second pass —
+> the 2026-09-13 pass moved `DOCS-NAMING.md`, `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` and
+> left the rule in `docs/reports/README.md`. It is a lane report, not the host-chunking design document.
+> The lane's own text is unchanged: it is a record of what the lane measured, and editing a
+> record is how a record stops being evidence. A citation that names it by bare name still
+> resolves to this file; the rule is recorded in `docs/reports/README.md` and
+> `docs/CONVENTIONS.md`.
+
 Worktree `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/whost`,
 base `release/0.3.0` @ `f611c888b`. Three commits, no merge, no push.
 

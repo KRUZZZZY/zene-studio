@@ -1,5 +1,14 @@
 # LANE-STATE — `030/render-presets` in `zene-030/wrender`
 
+> **Location (2026-09-15).** Moved from the repository root to `docs/reports/LANE-STATE-RENDER-PRESETS.md` by
+> REPO-4 ("move lane reports and transcripts out of the repository root"), the second pass —
+> the 2026-09-13 pass moved `DOCS-NAMING.md`, `CMDN-REPORT.md` and `CMDN-TRANSCRIPT.md` and
+> left the rule in `docs/reports/README.md`. It is a lane report, not the render-preset documentation.
+> The lane's own text is unchanged: it is a record of what the lane measured, and editing a
+> record is how a record stops being evidence. A citation that names it by bare name still
+> resolves to this file; the rule is recorded in `docs/reports/README.md` and
+> `docs/CONVENTIONS.md`.
+
 Feature rows **70** (render/export presets) and **71** (selection-to-audio), board task **#656**.
 Base: `release/0.3.0` @ `f611c888b`; branch `030/render-presets`; **nothing is pushed and nothing is
 merged** — the lane commits on its own branch only.

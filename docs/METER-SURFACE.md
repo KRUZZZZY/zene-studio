@@ -177,9 +177,9 @@ over `--control-socket`, on the real binary, with the tree's own fixtures
   `docs/LUFS-WIRING.md` §4.1 did that for the rendered file (`bs1770_reference.py`); the live
   readings here are checked against the EBU fixture levels and against the file path's own
   measurement of the same material, which is a consistency check, not an independent one.
-* **The build/test state of this lane is in `LANE-STATE-METER-SURFACE.md`**, including anything
-  that had not been run when the lane closed. Nothing here claims a green run that was not
-  observed.
+* **The build/test state of this lane is in `docs/reports/LANE-STATE-METER-SURFACE.md`**,
+  including anything that had not been run when the lane closed. Nothing here claims a green
+  run that was not observed.
 
 ## 7. Verified state of this lane (what was run, with exit codes)
 
@@ -200,8 +200,8 @@ EXIT=0        # the MCP tooling spine now carries meter.arm / meter.get_state / 
 **Not run in this lane:** the rest of the ctest suite, `tests/run-all-gates.sh` and the static gates. The
 lane's worktree was also the site of one unrelated, self-inflicted build interruption
 (`AutomationModesTest`, `undefined reference to 'main'`, from a stale object after this lane killed its own
-build) — its `.o` was removed so it rebuilds; the parent's full build will confirm. `LANE-STATE-METER-SURFACE.md`
-§4 lists exactly what is still open.
+build) — its `.o` was removed so it rebuilds; the parent's full build will confirm.
+`docs/reports/LANE-STATE-METER-SURFACE.md` §4 lists exactly what is still open.
 
 ## 8. How to reproduce
 
