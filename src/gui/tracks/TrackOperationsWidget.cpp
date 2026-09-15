@@ -37,6 +37,7 @@
 #include "AutomationTrackView.h"
 #include "ColorChooser.h"
 #include "ConfigManager.h"
+#include "ControlStructuralSupport.h"
 #include "embed.h"
 #include "Engine.h"
 #include "InstrumentTrackView.h"
@@ -213,6 +214,15 @@ void TrackOperationsWidget::removeTrack()
 {
 	if (confirmRemoval())
 	{
+		// The deletion itself is DEFERRED - the trackRemovalScheduled connection
+		// above is a queued one - and ~Track destroys the track's clips BEFORE
+		// the container forgets the pointer. So the inverse has to be recorded
+		// HERE, while the track and its music are still alive: a checkpoint taken
+		// inside deleteTrackView would restore a track with an empty clip list.
+		// One implementation, shared with the control surface's track.remove
+		// (control::journalTrackRemoval, task #664) - a delete the user can undo
+		// and a delete an agent can undo are the same delete.
+		control::journalTrackRemoval(m_trackView->getTrack());
 		emit trackRemovalScheduled(m_trackView);
 	}
 }

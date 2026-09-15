@@ -131,6 +131,26 @@ public:
 	 */
 	void addJournalAction( std::function<void()> undo, std::function<void()> redo );
 
+	/*! One undo step for a STRUCTURAL operation, carrying a measured document
+	 * (Zene Studio, task #664, feature row 75).
+	 *
+	 * It is the action checkpoint above plus the one thing an action checkpoint
+	 * gets wrong for a structural payload: the BYTES. A captured track (its
+	 * clips and their notes) or a device's state document is a bounded but real
+	 * 64 KiB, and an action step records `bytes = 0` - so a stack of a hundred
+	 * structural deletes would report a retained size of zero and evict nothing,
+	 * making the declared byte budget a suggestion. Here \a payloadBytes is the
+	 * MEASURED size of the document the closure holds and is counted exactly as a
+	 * captured object state is, so the same FIFO bound applies to both kinds of
+	 * step and `control.undo_depth`'s retained_bytes means one thing.
+	 *
+	 * \a payloadBytes may be 0 (a reorder has no document). Counted, never
+	 * stored: the document itself lives in the closure, and measuring it twice
+	 * would let the two disagree.
+	 */
+	void addJournalStructure( std::function<void()> undo, std::function<void()> redo,
+		qint64 payloadBytes );
+
 	bool isJournalling() const
 	{
 		return m_journalling;

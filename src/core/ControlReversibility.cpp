@@ -158,5 +158,17 @@ void addUndoStep(const QVector<JournallingObject*>& journallingObjects)
 	journal->addJournalCheckPoint(journallingObjects);
 }
 
+//! A structural step (task #664): the same recorded pair as addUndoStep()
+//! above, with the document the closure carries MEASURED and counted against
+//! the stack's byte budget - see the declaration for why that is the whole
+//! difference.
+void addStructuralUndoStep(std::function<void()> undo, std::function<void()> redo,
+	qint64 payloadBytes)
+{
+	ProjectJournal* journal = Engine::projectJournal();
+	if (journal == nullptr || !undo) { return; }
+	journal->addJournalStructure(std::move(undo), std::move(redo), payloadBytes);
+}
+
 } // namespace control
 } // namespace lmms

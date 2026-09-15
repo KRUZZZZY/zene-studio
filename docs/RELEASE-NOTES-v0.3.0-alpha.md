@@ -1757,6 +1757,59 @@ unchanged for every project; what is new is the second mode.
   `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/` returns **0**
   hits — there is no clip-context entry, no checkbox and no marker-drag gesture for it.
 
+## Structural undo: add / remove / move a track, add / remove a device (feature row 75, task #664) — added 2026-09-15
+
+- **What was wrong.** The undo stack is one history (`ProjectJournal`, the same stack Ctrl+Z unwinds), but the
+  STRUCTURAL edits - the ones that create or destroy an object rather than change it - were not on it.
+  `track.move` did not exist as a command at all, `plugin.unload` recorded itself `reversible: false` ("snapshot
+  only, rebuild it by hand"), and the reorder a user made by dragging a track, and the delete a user made with the
+  track ✕ button, left **no** undo step: several paths that reach the engine bypassed `addJournalCheckPoint`
+  entirely. The deletion was the worst of them and it is structural in the strict sense: `~Track` deletes the
+  track's clips and **only then** calls `TrackContainer::removeTrack`, so the container never sees the music die -
+  a checkpoint taken there restores a track with an **empty clip list**. The track would come back and the music
+  would not.
+- **What is in now.** `track.add`, `track.remove`, `track.move`, `plugin.load` (the effect branch) and
+  `plugin.unload` are journalled, and ONE `control.undo` restores each of them through the engine's own code paths:
+  - `track.remove` captures the track's own XML (`Track::saveState` - **its clips and their notes included**)
+    *before* the delete, and the recorded step recreates the track with `Track::create(element, song)` - the call
+    the project loader makes - **at the index it was removed from**. The redo removes it again, so the inverse is a
+    pair and not a one-way door.
+  - `track.move` is a NEW command id: the arrangement's order, drivable at last. It refuses an index outside the
+    song rather than clamping it, reports the song's whole order back in the same reply, and is one recorded step
+    (`track.move` + one `control.undo` puts the order back).
+  - `plugin.unload` captures the device's own state document (`controlEffectStateXml`, which carries the
+    sub-plugin key that identifies a **hosted** plugin, not merely its descriptor name) and the recorded step
+    re-instantiates the same plugin **at the same index in the chain** with its settings restored.
+  - The GUI's own two gestures record the **same** steps: the ✕ button (recorded before the deferred delete
+    runs) and a track drag / arrow-key move (recorded inside `TrackContainer::moveTrack`, the one place every
+    reorder passes through). A delete a user can undo and a delete an agent can undo are one implementation.
+- **The new engine piece.** `ProjectJournal::addJournalStructure()` - a structural step is an action checkpoint
+  **plus the byte accounting an action checkpoint gets wrong for a structural payload**: an action step declares
+  `bytes = 0`, so a 64 KiB captured track was free, the declared byte budget never applied to the largest steps on
+  the stack, and `control.undo_depth`'s `retained_bytes` reported nothing. The structural step measures the
+  document it carries and charges it, so the same FIFO bound evicts either kind of step. A replay guard keeps a
+  recorded step's own reorder from being recorded again (otherwise the stack would grow while it unwinds).
+- **The A16 rows.** `track.move` and `plugin.unload` are new `true_inverse` rows and `track.remove`'s mechanism
+  now names the clips and the index; all four structural rows live in their own table file
+  (`src/core/ControlReversibilityTableStructure.cpp`), joined into the action half so `control.transactions` still
+  reads ONE `true_inverse` block with one row count. `plugin.unload` moved out of the `irreversible` block, which
+  is a **disagreement with `A16-STATUS-MEASURED.md`** that the row itself records.
+- **The proof.** `tests/control-undo-structural.py`, registered as ctest **`ControlUndoStructuralTranscript`**,
+  drives the real binary headless and asserts on the CLIPS' CONTENT read back after the undo - position, length,
+  note count, and every note's key / position / length / velocity - because "a track with that name exists again"
+  is satisfied by exactly the lossy undo this work removes. It measures the row-51 interaction (deleting a track
+  shifts every later `clip-<n>`; the undo shifts them back) rather than asserting it away, drives the
+  `track.move` reorder + undo + redo and its out-of-range refusal, drives the device half (load, change a
+  parameter, remove, one undo restores the instance at its index with the parameter), and asserts the accounting:
+  deleting a track must GROW `control.undo_depth`'s `retained_bytes` - a step that counted 0 bytes would print no
+  growth at all.
+- **UI absence — one line: structural undo is drivable through the socket and the two gestures that reach it from
+  the interface are the ones that already existed (the track ✕ and a track drag), which now record the same step;
+  there is still no undo-history panel, nothing lists the structural steps, and no control names or limits the
+  capture bound.** `docs/KNOWN-LIMITATIONS.md` carries the sentence and the three limits above (`clip-<n>` is
+  index-derived; a document over 64 KiB records no inverse and says so; the captured size is charged to the byte
+  budget).
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the

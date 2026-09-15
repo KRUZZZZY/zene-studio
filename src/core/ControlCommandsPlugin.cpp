@@ -32,6 +32,7 @@
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlStructuralSupport.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Instrument.h"
@@ -303,9 +304,11 @@ void registerPluginUnload(ControlRegistry& registry)
 	cmd.group = QStringLiteral("plugin");
 	cmd.verb = QStringLiteral("unload");
 	cmd.description = QStringLiteral("Remove a device instance (fx-<n>) from a track's chain or a "
-		"mixer channel. The removed device's full state XML is recorded in the transaction's "
-		"'before' snapshot so it can be rebuilt: write that XML to a file, load the same dev-<n> "
-		"again and issue plugin.state_load.");
+		"mixer channel. REVERSIBLE: the device's own state document is captured before the "
+		"removal and one control.undo re-instantiates the same plugin at the same index in the "
+		"chain with its settings restored. The transaction's 'before' snapshot still carries the "
+		"state XML, so a client that prefers to rebuild by hand can; a device whose state exceeds "
+		"the capture cap reports itself as snapshot-only instead.");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("plugin"), stringProperty()}},
@@ -313,6 +316,9 @@ void registerPluginUnload(ControlRegistry& registry)
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("removed"), stringProperty()},
+		{QStringLiteral("plugin"), stringProperty()},
+		{QStringLiteral("index"), integerProperty()},
+		{QStringLiteral("reversible"), booleanProperty()},
 		{QStringLiteral("count"), integerProperty()},
 	});
 	cmd.mutating = true;
@@ -327,11 +333,21 @@ void registerPluginUnload(ControlRegistry& registry)
 		Effect* effect = resolveControlEffect(target, pluginId, &error);
 		if (effect == nullptr) { return error; }
 		const QString pluginName = QString::fromUtf8(effect->descriptor()->name);
+		const int index = control::idToIndex(pluginId, QStringLiteral("fx-"));
 		QJsonObject snapshot = stateSnapshot(effect);
 		snapshot.insert(QStringLiteral("target"), target.id);
-		snapshot.insert(QStringLiteral("index"), control::idToIndex(pluginId, QStringLiteral("fx-")));
+		snapshot.insert(QStringLiteral("index"), index);
 		snapshot.insert(QStringLiteral("plugin"), pluginName);
 
+		// SPEC A16 deliverable 5 / task #664: the removal is RECORDED before it
+		// happens, and by the one implementation both this command and the
+		// product's own rack share (control::journalEffectRemoval). The
+		// difference it makes is the point: a removed device used to be
+		// `reversible: false` - "snapshot only, rebuild it by hand from
+		// before.state_xml" - because a deleted Effect has no live object a
+		// checkpoint could restore. The recorded structural step RE-INSTANTIATES
+		// it, at the index it was removed from, with its settings.
+		const bool reversible = control::journalEffectRemoval(target.chain, effect, index);
 		target.chain->removeEffect(effect);
 		// Same lifetime as the rack's own delete: the audio engine may still
 		// hold the pointer for the period in flight.
@@ -341,20 +357,40 @@ void registerPluginUnload(ControlRegistry& registry)
 		result.insert(QStringLiteral("target"), target.id);
 		result.insert(QStringLiteral("removed"), pluginId);
 		result.insert(QStringLiteral("plugin"), pluginName);
+		result.insert(QStringLiteral("index"), index);
+		result.insert(QStringLiteral("reversible"), reversible);
 		result.insert(QStringLiteral("count"), static_cast<int>(target.chain->effects().size()));
 
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"), snapshot);
 		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
-				{QStringLiteral("args"),
-					QJsonObject{{QStringLiteral("target"), target.id},
-						{QStringLiteral("note"), QStringLiteral("reload the same dev-<n>, then "
-							"plugin.state_load from 'before.state_xml' written to a file")}}}});
-		transaction.insert(QStringLiteral("reversible"), false);
+			reversible
+				? QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
+					{QStringLiteral("args"),
+						QJsonObject{{QStringLiteral("target"), target.id},
+							{QStringLiteral("note"), QStringLiteral("the recorded undo step "
+								"re-instantiates the same dev-<n> at index %1 with its "
+								"captured settings, so no reload is needed by hand")
+								.arg(index)}}}}
+				: QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
+					{QStringLiteral("args"),
+						QJsonObject{{QStringLiteral("target"), target.id},
+							{QStringLiteral("note"), QStringLiteral("reload the same dev-<n>, then "
+								"plugin.state_load from 'before.state_xml' written to a file")}}}});
+		transaction.insert(QStringLiteral("reversible"), reversible);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot only: a removed Effect cannot be recreated by the "
-				"ProjectJournal; 'before.state_xml' is the bounded record that allows a rebuild"));
+			reversible
+				? QStringLiteral("action checkpoint (structural step): the device's own state "
+					"document (controlEffectStateXml - including the sub-plugin key that "
+					"identifies a hosted plugin) is captured before the removal, and the "
+					"recorded undo step re-instantiates the device through the chain's own "
+					"instantiate path and puts the settings back, at the index it was removed "
+					"from. The document's measured size is charged to the undo stack's byte "
+					"budget, so a long run of removals is evicted like any other step")
+				: QStringLiteral("snapshot only: this device's state document is over the "
+					"%1-character cap (or the engine's undo stack is not addressable), so no "
+					"inverse was recorded; 'before.state_xml' is the bounded record that allows "
+					"a rebuild by hand").arg(control::StructuralSnapshotLimit));
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};

@@ -1514,6 +1514,30 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 900
 		SKIP_RETURN_CODE 77
 	)
+	# Structural undo (0.3.0, feature row 75 / task #664): track add / remove /
+	# move and effect add / remove are journalled, and ONE control.undo restores
+	# them - INCLUDING a deleted track WITH ITS CLIPS. It is driven END TO END
+	# through --control-socket, and every assertion about the restored music is
+	# made against the CLIPS' CONTENT read back after the undo (position, length
+	# and every note's key/position/length/velocity), because "a track with that
+	# name exists again" is satisfied by exactly the lossy undo the row is about:
+	# ~Track destroys the clips before TrackContainer::removeTrack is reached, so
+	# a checkpoint taken at the container would restore an EMPTY track. It also
+	# MEASURES the row-51 interaction (clip-<n> is an index-derived ordinal, so a
+	# delete shifts every later clip's id and the undo shifts them back), and the
+	# byte accounting that an action step got wrong for a structural payload
+	# (deleting a track must GROW control.undo_depth's retained_bytes; a step that
+	# counted 0 would print no growth). The effect half reports Skipped (exit 77)
+	# when the build offers no loadable effect, never Passed.
+	add_test(NAME ControlUndoStructuralTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-undo-structural.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlUndoStructuralTranscript PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+		SKIP_RETURN_CODE 77
+	)
 	# VCA / mix-and-edit groups (0.3.0, OWNER-31 item 11): the phase-locked
 	# multitrack edit group, driven END TO END through --control-socket. It
 	# asserts the fourteen registered ids and their schemas, that a group can be

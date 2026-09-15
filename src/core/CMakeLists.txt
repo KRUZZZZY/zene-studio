@@ -251,6 +251,10 @@ set(LMMS_SRCS
 	core/LinkUdpTransport.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
+	# track.move: the structural half of track.* (task #664, feature row 75) - the
+	# arrangement's ORDER as a drivable, undoable operation. Its own TU because
+	# ControlCommandsArrangement.cpp is at the file-length ratchet.
+	core/ControlCommandsStructure.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
 	core/ControlCommandsTrackFolder.cpp
@@ -325,6 +329,10 @@ set(LMMS_SRCS
 	core/ControlReversibilityTable.cpp
 	core/ControlReversibilityTableAction.cpp
 	core/ControlReversibilityTableChain.cpp
+	# The STRUCTURAL group's four action rows - created / reordered / deleted
+	# track, removed device (task #664, feature row 75). Its own TU for the same
+	# reason as the chain rows: the action table was at the file ratchet.
+	core/ControlReversibilityTableStructure.cpp
 	core/ControlReversibilityTablePassive.cpp
 	core/ControlReversibilityTableSnapshot.cpp
 	core/ControlReversibilityTableTrackFolder.cpp
@@ -381,6 +389,12 @@ set(LMMS_SRCS
 	core/ControlServer.cpp
 	core/ControlServerSocket.cpp
 	core/ControlSession.cpp
+	# The inverse of a STRUCTURAL operation - a deleted track (with its clips), a
+	# reordered track, a removed device (task #664, feature row 75). Its own TU:
+	# the three paths that build such an inverse must be ONE implementation, and
+	# ControlEditSupport.cpp is the structural-helpers file's neighbour, not its
+	# home.
+	core/ControlStructuralSupport.cpp
 	# Listed so that AUTOMOC sees the Q_OBJECT headers (they live in include/).
 	${CMAKE_SOURCE_DIR}/include/ControlEdit.h
 	${CMAKE_SOURCE_DIR}/include/ControlRegistry.h
@@ -454,6 +468,10 @@ set(LMMS_SRCS
 	# The undo stack's two-sided bound and its coalescing primitive, in their own
 	# translation unit (include/ProjectJournal.h documents both).
 	core/ProjectJournalBounds.cpp
+	# The STRUCTURAL undo step: an inverse carried by a measured document - a
+	# deleted track's own XML, a removed device's state (task #664, row 75). Its
+	# own translation unit for the same reason as the bound above.
+	core/ProjectJournalStructural.cpp
 	core/ProjectRecovery.cpp
 	# The take journal: what makes a recording in progress recoverable after an
 	# abnormal exit (0.3.0, docs/KNOWN-LIMITATIONS.md for the stated bound).

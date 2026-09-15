@@ -132,6 +132,7 @@ include/ControlReversibility.h
 include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlStemSupport.h
+include/ControlStructuralSupport.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -1012,6 +1013,7 @@ src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsStemModel.cpp
 src/core/ControlCommandsStems.cpp
+src/core/ControlCommandsStructure.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackFolder.cpp
@@ -1060,6 +1062,7 @@ src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableStems.cpp
+src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
@@ -1071,6 +1074,7 @@ src/core/ControlSession.cpp
 src/core/ControlStemModel.cpp
 src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
+src/core/ControlStructuralSupport.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -1148,6 +1152,7 @@ src/core/PresetPreviewPlayHandle.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournal.cpp
 src/core/ProjectJournalBounds.cpp
+src/core/ProjectJournalStructural.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp

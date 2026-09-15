@@ -93,16 +93,6 @@ const ReversibilityRow kPassiveRows[] = {
 		"the record is honest about what it can and cannot cover",
 		"run a script that takes its own checkpoint (Lua addCheckPoint()) "
 		"before it edits; control.undo then replays that checkpoint"),
-	R("plugin.unload", RC::Irreversible, false,
-		"the removed Effect's state XML is captured, but recreating the "
-		"instance would need plugin.load by catalogue id plus a state restore, "
-		"and the instance id (fx-<n>) is position-derived - the inverse is not "
-		"one operation the registry can run",
-		"none. before holds the device's full state XML (bounded at 64 KiB) "
-		"plus its plugin name and chain index",
-		"write before.state_xml to a file, plugin.load the same dev-<n> onto "
-		"the same target, then plugin.state_load that file. The chain ORDER "
-		"is not restored"),
 	R("record.recovery_discard", RC::Irreversible, false,
 		"refusing the offer REMOVES the journal file, and the offer is the "
 		"journal: no engine record holds the bytes it carried, and the project "
