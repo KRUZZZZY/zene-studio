@@ -754,3 +754,5 @@ change. Cost: 58.7 ms per second of stretched audio at the default `searchRadius
 The full suite, the coverage/mutation/file-length gates, the socket transcript and CI were not run
 (the owner directive for this pass puts landing the feature ahead of a green build; the parent re-runs
 the suite on the merged tip).
+
+* **Tip sha (recorded at the end of this file):** `3e011c571aa03765d3e8b031246fe6dc797b343c` (6 commits: feat(dsp) d2c83132c, manifests fea559f50 + ba02f2f53, fix(test) 25ff3472d, docs c0d2b3205 + 3e011c571)
