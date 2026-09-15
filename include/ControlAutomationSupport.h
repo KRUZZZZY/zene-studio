@@ -120,7 +120,7 @@ LMMS_EXPORT QJsonObject automationParameterJson(const AutomationParameter& param
  *  automation.get_state reports back per parameter ("read", "touch", "latch",
  *  "write", "off"). ONE definition for both directions, so the command that
  *  sets a mode and the read that observes it cannot drift apart (the round trip
- *  is asserted in tests/src/core/ControlAutomationScriptTest.cpp).
+ *  is asserted in tests/src/core/ControlAutomationModesTest.cpp).
  *
  *  This header includes AutomatableModel.h for the enum, which is why it is
  *  not forward-declared here the way the clip is.

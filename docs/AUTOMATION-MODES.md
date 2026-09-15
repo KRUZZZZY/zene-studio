@@ -314,7 +314,7 @@ mode the post-alpha slice did not have:
 - **The proof, twice.** `tests/src/core/AutomationModesTest.cpp` holds the no-destruction property on the
   engine path (ride a control in Read, assert the clip's time map is bit-identical, paired with a Touch
   pass that must change it) and now also `testOffIgnoresTheAutomationAndWritesNothing`, whose Read leg is
-  its sensitivity control. `tests/src/core/ControlAutomationScriptTest.cpp::modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation`
+  its sensitivity control. `tests/src/core/ControlAutomationModesTest.cpp::readRideThroughTheSocketCannotTouchTheRecordedAutomation`
   holds the same property **through the command surface** — `automation.add_point` records, `mode_set`
   selects `read`, `plugin.param_set` rides while the harness drives `Song::processNextBuffer()`, and the
   clip is compared node for node — with a `write`-mode leg that must change the clip.

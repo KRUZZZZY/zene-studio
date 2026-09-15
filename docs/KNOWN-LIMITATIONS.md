@@ -420,7 +420,7 @@ that is this page's fault — report it and it gets added.
   parameter's `mode` and each clip's `recording` flag, so a set is observable and not only issuable), and are
   proven (`AutomationModesTest` pins the no-destruction property: riding a control in Read cannot alter written
   automation, with a sensitivity control so the comparison cannot pass by being blind;
-  `ControlAutomationScriptTest::modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation` repeats it through
+  `ControlAutomationModesTest::readRideThroughTheSocketCannotTouchTheRecordedAutomation` repeats it through
   the command surface with a write-mode leg that must change the clip). `off` is a mode of its own and not a
   second name for `read`: an off control ignores its written curve — the manual value stands — and writes
   nothing. The mode is runtime state: it is not persisted in the project file and is not journalled, so a reload

@@ -1059,14 +1059,14 @@ reports each parameter's `mode` (one spelling function serves both directions,
 
 The no-destruction property is pinned twice, in `tests/src/core/AutomationModesTest.cpp` (registered at
 `tests/CMakeLists.txt:56`) and through the command surface in
-`tests/src/core/ControlAutomationScriptTest.cpp::modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation`
+`tests/src/core/ControlAutomationModesTest.cpp::readRideThroughTheSocketCannotTouchTheRecordedAutomation`
 — a curve recorded with `automation.add_point`, the mode set to `read`, the control ridden with
 `plugin.param_set` while the harness drives `Song::processNextBuffer()`, and the clip compared node for node
 afterwards — each paired with a leg that runs the identical harness where a write IS expected (a Touch pass
 in the engine test; `write` mode through the socket), so the comparison cannot pass by the harness never
-writing anything. The socket test binary is on `tests/CMakeLists.txt`'s `LMMS_TEST_PLUGIN_DIR` list, because
-the ride needs a real instrument parameter and a build without the modules falls back to a parameterless
-`DummyInstrument`.
+writing anything. Both command-surface binaries are on `tests/CMakeLists.txt`'s `LMMS_TEST_PLUGIN_DIR`
+list, because the ride needs a real instrument parameter and a build without the modules falls back to a
+parameterless `DummyInstrument`.
 
 The mode is runtime state: not persisted in the project file and not journalled, so a reload resets every
 control to Read with no trim and a mode change has no undo. Only the mixer fader is wired to a touch

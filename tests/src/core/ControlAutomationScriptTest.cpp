@@ -238,8 +238,7 @@ private slots:
 			// A mode change is OBSERVABLE, not only accepted: the read-back
 			// reports exactly the string that was set, through the one
 			// spelling function both directions use (ControlAutomationSupport).
-			QCOMPARE(parameterEntry(registry, trackId, paramId).value(QStringLiteral("mode")).toString(),
-				mode);
+			QCOMPARE(modeOf(registry, trackId, paramId), mode);
 			QVERIFY2(!result.result.value(QStringLiteral("mode_before")).toString().isEmpty(),
 				qPrintable(mode + ": the set reported no mode_before"));
 			QCOMPARE(result.result.value(QStringLiteral("changed")).toBool(),
@@ -289,100 +288,12 @@ private slots:
 			qPrintable(result.errorMessage));
 	}
 
-	//! THE no-destruction property, driven through the socket. automation.add_point
-	//! records a curve; automation.mode_set puts the control in read; the control
-	//! is then RIDDEN - plugin.param_set, a manual move of the same model the clip
-	//! automates - while this harness advances the transport through the clip with
-	//! its own calls to Song::processNextBuffer(); and the recorded automation must
-	//! come back exactly as it was.
-	//!
-	//! The sensitivity leg at the end runs the IDENTICAL harness in write mode and
-	//! REQUIRES the clip to change. Without it the assertion above could pass by
-	//! this harness never writing anything at all - the failure a
-	//! comparison-shaped assertion has to rule out.
-	//!
-	//! The comparison is made through the wire, not through the model: the numbers
-	//! in it are the ones a client sees in automation.get_state.
-	void modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation()
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		QString trackId;
-		QString paramId;
-		double minValue = 0.0;
-		double maxValue = 1.0;
-		QVERIFY2(findAutomatableParameter(registry, &trackId, &paramId, &minValue, &maxValue),
-			"this song exposes no automatable device parameter, so the mode commands have nothing "
-			"to drive: the binary needs the instrument modules (LMMS_TEST_PLUGIN_DIR, see "
-			"tests/CMakeLists.txt)");
-		QVERIFY2(maxValue > minValue, "the parameter has no range to ride");
-
-		// 1. Record automation through the surface: three points across the clip.
-		const double mid = minValue + 0.5 * (maxValue - minValue);
-		const double low = minValue + 0.25 * (maxValue - minValue);
-		const double high = minValue + 0.75 * (maxValue - minValue);
-		const QVector<QPair<int, double>> points = {
-			{0, mid}, {96, low}, {192, high},
-		};
-		for (const QPair<int, double>& point : points)
-		{
-			const ControlResult added = registry->invoke(QStringLiteral("automation.add_point"),
-				QJsonObject{{QStringLiteral("track"), trackId},
-					{QStringLiteral("parameter"), paramId},
-					{QStringLiteral("ticks"), point.first},
-					{QStringLiteral("value"), point.second}});
-			QVERIFY2(added.ok, qPrintable(added.errorMessage));
-		}
-
-		const QString recorded = recordedAutomationSignature(registry, trackId, paramId);
-		QVERIFY2(recorded != notAutomated(), qPrintable(recorded));
-		// The legacy per-clip record path must be OFF, or the ride would be
-		// written by IT and this proof would be measuring the wrong mechanism.
-		QCOMPARE(parameterEntry(registry, trackId, paramId).value(QStringLiteral("automation"))
-			.toObject().value(QStringLiteral("recording")).toBool(), false);
-
-		// 2. The mode under test: read (the default, set explicitly so this leg
-		//    tests the command and not an accident of what the default is).
-		const ControlResult readMode = registry->invoke(QStringLiteral("automation.mode_set"),
-			QJsonObject{{QStringLiteral("track"), trackId},
-				{QStringLiteral("parameter"), paramId},
-				{QStringLiteral("mode"), qstr("read")}});
-		QVERIFY2(readMode.ok, qPrintable(readMode.errorMessage));
-		QCOMPARE(readMode.result.value(QStringLiteral("mode")).toString(), qstr("read"));
-		QCOMPARE(parameterEntry(registry, trackId, paramId).value(QStringLiteral("mode")).toString(),
-			qstr("read"));
-
-		// 3. Ride the control while the transport walks over the recorded curve.
-		//    Engine::init() starts the render-only dummy device, and that thread
-		//    renders the same song: this harness drives processNextBuffer() itself
-		//    (two threads walking the automation at once is the race
-		//    AutomationModesTest documents), so the device is stopped here.
-		Song* song = Engine::getSong();
-		Engine::audioEngine()->audioDev()->stopProcessing();
-		rideTheControl(registry, song, trackId, paramId, high, low);
-
-		// 4. THE PROPERTY: not one node added, removed, moved or changed.
-		QCOMPARE(recordedAutomationSignature(registry, trackId, paramId), recorded);
-
-		// 5. SENSITIVITY: the same harness in write must change it.
-		const ControlResult writeMode = registry->invoke(QStringLiteral("automation.mode_set"),
-			QJsonObject{{QStringLiteral("track"), trackId},
-				{QStringLiteral("parameter"), paramId},
-				{QStringLiteral("mode"), qstr("write")}});
-		QVERIFY2(writeMode.ok, qPrintable(writeMode.errorMessage));
-		rideTheControl(registry, song, trackId, paramId, low, high);
-		QVERIFY2(recordedAutomationSignature(registry, trackId, paramId) != recorded,
-			"a write pass through the socket wrote nothing, so the read-mode assertion above "
-			"proves nothing");
-
-		// 6. Leave the session as this test found it: back to read. The mode is
-		//    runtime state; the points the write pass added are this test's own
-		//    automation and stay (they are what the undo stack holds).
-		const ControlResult back = registry->invoke(QStringLiteral("automation.mode_set"),
-			QJsonObject{{QStringLiteral("track"), trackId},
-				{QStringLiteral("parameter"), paramId},
-				{QStringLiteral("mode"), qstr("read")}});
-		QVERIFY2(back.ok, qPrintable(back.errorMessage));
-	}
+	//! The MODES' own proof (the no-destruction property, the mode round trip for all
+	//! five modes and the write-mode sensitivity leg) lives in its own binary,
+	//! tests/src/core/ControlAutomationModesTest.cpp: it drives plugin.param_set and
+	//! Song::processNextBuffer() while the transport walks over a recorded curve,
+	//! which is more machinery than this file's registry contract needs - and the
+	//! file-length ratchet is not moved for a new feature.
 
 	void scriptListShowsTheShippedScripts()
 	{
@@ -506,47 +417,13 @@ private slots:
 private:
 	static QString qstr(const char* text) { return QString::fromLatin1(text); }
 
-	//! The sentinel recordedAutomationSignature() returns for a parameter with no
-	//! clip at all, so a caller can tell "no automation" from "unchanged".
-	static QString notAutomated() { return QStringLiteral("<not automated>"); }
-
-	//! The first automatable device parameter of the song, with its wire id
-	//! (trk-<n> and "<plugin>/<index>") and its range - addressed exactly the way
-	//! automation.get_state reports it. False when the song has none: a build
-	//! that cannot load its instrument modules falls back to a DummyInstrument,
-	//! which exposes no parameter at all.
-	static bool findAutomatableParameter(ControlRegistry* registry, QString* trackId,
-		QString* paramId, double* minValue, double* maxValue)
-	{
-		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"));
-		if (!state.ok) { return false; }
-		for (const QJsonValue& t : state.result.value(QStringLiteral("tracks")).toArray())
-		{
-			const QJsonObject track = t.toObject();
-			for (const QJsonValue& p : track.value(QStringLiteral("parameters")).toArray())
-			{
-				const QJsonObject parameter = p.toObject();
-				const QString id = parameter.value(QStringLiteral("id")).toString();
-				if (id.isEmpty()) { continue; }
-				*trackId = track.value(QStringLiteral("id")).toString();
-				*paramId = id;
-				*minValue = parameter.value(QStringLiteral("min")).toDouble();
-				*maxValue = parameter.value(QStringLiteral("max")).toDouble();
-				return true;
-			}
-		}
-		return false;
-	}
-
-	//! One parameter's entry as automation.get_state reports it (its mode, its
-	//! value, its clip and its clip's record flag), or an empty object when the
-	//! track or the parameter is not in the read-back.
-	static QJsonObject parameterEntry(ControlRegistry* registry, const QString& trackId,
-		const QString& paramId)
+	//! One parameter's "mode" as automation.get_state reports it, or an empty
+	//! string when the track or the parameter is not in the read-back.
+	static QString modeOf(ControlRegistry* registry, const QString& trackId, const QString& paramId)
 	{
 		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"),
 			QJsonObject{{QStringLiteral("track"), trackId}});
-		if (!state.ok) { return QJsonObject(); }
+		if (!state.ok) { return QString(); }
 		for (const QJsonValue& t : state.result.value(QStringLiteral("tracks")).toArray())
 		{
 			const QJsonObject track = t.toObject();
@@ -554,50 +431,15 @@ private:
 			for (const QJsonValue& p : track.value(QStringLiteral("parameters")).toArray())
 			{
 				const QJsonObject parameter = p.toObject();
-				if (parameter.value(QStringLiteral("id")).toString() == paramId) { return parameter; }
+				if (parameter.value(QStringLiteral("id")).toString() == paramId)
+				{
+					return parameter.value(QStringLiteral("mode")).toString();
+				}
 			}
 		}
-		return QJsonObject();
+		return QString();
 	}
 
-	//! A fingerprint of one parameter's RECORDED automation, read back through
-	//! the socket: every number the clip holds (ticks, in/out values, raw values
-	//! and tangents - not a picked subset), serialised canonically because
-	//! QJsonObject sorts its keys. Two identical strings mean no node was added,
-	//! removed, moved or retangented anywhere in the clip.
-	static QString recordedAutomationSignature(ControlRegistry* registry, const QString& trackId,
-		const QString& paramId)
-	{
-		const QJsonObject automation = parameterEntry(registry, trackId, paramId)
-			.value(QStringLiteral("automation")).toObject();
-		if (automation.isEmpty()) { return notAutomated(); }
-		return QString::fromUtf8(QJsonDocument(automation.value(QStringLiteral("points")).toArray())
-			.toJson(QJsonDocument::Compact));
-	}
-
-	//! Ride the control the way a client does: alternate plugin.param_set calls -
-	//! a manual move of the model the clip automates - with rendered periods, so
-	//! the transport walks over the recorded curve while the control is moved.
-	static void rideTheControl(ControlRegistry* registry, Song* song, const QString& trackId,
-		const QString& paramId, double first, double second)
-	{
-		const QString pluginId = paramId.section(QLatin1Char('/'), 0, 0);
-		const int index = paramId.section(QLatin1Char('/'), 1).toInt();
-		song->playSong();
-		song->getTimeline().setTicks(0);
-		for (int i = 0; i < 16; ++i)
-		{
-			const ControlResult rode = registry->invoke(QStringLiteral("plugin.param_set"),
-				QJsonObject{{QStringLiteral("target"), trackId},
-					{QStringLiteral("plugin"), pluginId},
-					{QStringLiteral("index"), index},
-					{QStringLiteral("value"), i % 2 == 0 ? first : second}});
-			QVERIFY2(rode.ok, qPrintable(rode.errorMessage));
-			song->processNextBuffer();
-		}
-		QVERIFY2(song->getPlayPos().getTicks() > 0, "the harness never moved the transport");
-		song->stop();
-	}
 };
 
 QTEST_GUILESS_MAIN(ControlAutomationScriptTest)

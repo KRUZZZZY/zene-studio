@@ -43,7 +43,7 @@
  *  that must observe a change so the comparison cannot pass by being blind), the
  *  Off-vs-Read difference in the READ path (with a Read leg as its sensitivity
  *  control), and the mode-decision table. The command surface's own proof is
- *  ControlAutomationScriptTest::modeReadRideThroughTheSocketCannotTouchTheRecordedAutomation
+ *  ControlAutomationModesTest::readRideThroughTheSocketCannotTouchTheRecordedAutomation
  *  (the same property through automation.add_point / automation.mode_set /
  *  plugin.param_set, with a write-mode leg that must change the clip).
  *
