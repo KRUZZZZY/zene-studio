@@ -88,6 +88,18 @@ that is this page's fault — report it and it gets added.
   scene, and read the launch back through `--control-socket` (`session.get_state`, `session.set_slot`,
   `session.launch_scene`, ...); a user cannot see or hear any of it. A project containing `<session>` data is
   also **preserved across a round trip**, which was already fixed in 0.2.1 and is unchanged.
+- **Follow Actions, Arrangement Record and the Back-to-Arrangement switch are drivable through the
+  socket, not from the interface.** The chain a slot has carried since #594 is now EVALUATED (all ten
+  action types, chance weighting, linked/unlinked timing) and the performance can be recorded into the
+  arrangement ring and landed as timeline clips — through `session.follow_set` /
+  `session.follow_get_state` / `session.arrangement_record_arm` / `_status` / `_land` /
+  `session.back_to_arrangement`, and through nothing else: there is **no Follow Action editor, no
+  Arrangement Record button, no take lane and no Back-to-Arrangement light**, and the clip-launch grid
+  (#598) is **out of 0.3.0**. A landed clip carries the recorded **position and length**, not the
+  session slot's notes (`pattern` reports the reference it names), so the "rendered audio matches the
+  session playback" half of the feature's acceptance is **unmet in this tree** — a launched session slot
+  does not render audio at all (the bullet above). `docs/RELEASE-NOTES-v0.3.0-alpha.md` states the same
+  bounds.
 - **A failed save is now reported rather than silent.** If a project cannot be moved aside on save (an existing
   file the platform refuses to rename over), the save is refused **and you are told**, rather than reporting
   success.

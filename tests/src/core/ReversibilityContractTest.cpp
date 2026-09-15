@@ -122,8 +122,29 @@ DocumentedHistogram documentedHistogram()
 	 *
 	 *  DAWproject (feature row 37, this lane): +4 rows - 3 not_mutating
 	 *  (dawproject.convention, export, read) + 1 true_inverse (import), so the
-	 *  merged tip's base becomes 285 / 152 / 21 / 6 / 106. */
-	DocumentedHistogram out{285, 152, 21, 6, 106};
+	 *  merged tip's base becomes 285 / 152 / 21 / 6 / 106.
+	 *
+	 *  Session View completion (board task #641, the #596 engine halves -
+	 *  Follow Actions and Arrangement Record): +6 rows, all of them carried by
+	 *  src/core/ControlReversibilityTableSessionView.cpp and present exactly
+	 *  when LMMS_HAVE_SESSION_VIEW is (the 11 session.* rows already in the
+	 *  figures above have the same property, and the option defaults ON in the
+	 *  release configuration this histogram describes): 5 not_mutating
+	 *  (session.follow_set, session.follow_get_state,
+	 *  session.arrangement_record_arm, session.arrangement_record_status,
+	 *  session.back_to_arrangement) + 1 true_inverse
+	 *  (session.arrangement_record_land, whose inverse is the Track journal
+	 *  checkpoint the clips are created over). The base becomes
+	 *  291 / 153 / 21 / 6 / 111.
+	 *
+	 *  MEASURED OR SUMMED? This lane had no build (the branch carries the code
+	 *  and its registered ctest; see the lane report), so 291 / 153 / 21 / 6 /
+	 *  111 is the ARITHMETIC of the six rows the table adds, not a measurement
+	 *  taken from a run of this test. The merge tip must MEASURE it - that is
+	 *  what this constant is for - and if a row is off, this assertion names it
+	 *  the moment the suite runs. Do not "fix" it by computing it at runtime:
+	 *  the point of the constant is that it is an independent statement. */
+	DocumentedHistogram out{291, 153, 21, 6, 111};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;

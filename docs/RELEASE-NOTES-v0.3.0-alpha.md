@@ -2200,3 +2200,69 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   thread per connection, retained until the listener closes), no equivalent of the POSIX write
   notifier (a peer that stops reading a reply blocks that connection's thread on the pipe buffer
   instead of queueing), and — for this lane — **no local execution of the Windows half at all**.
+
+## Session View: Follow Actions and Arrangement Record, and milestone M1 (`session.follow_*`, `session.arrangement_record_*`, `session.back_to_arrangement`) — added 2026-09-15
+
+- **New: a Follow Action chain actually RUNS.** `FollowAction` has been part of the session data layer
+  since #594 and is persisted per slot (the `followactions` element of a `<clip>` in the `<session>`
+  block), but **nothing evaluated it**: a chain round-tripped through save and reload and no launch ever
+  consulted it. The engine half is `include/SessionFollow.h` (the decision, a pure function over a
+  fixed-size POD plan: no globals, no threads, no allocation, so every one of the ten action types is
+  driven exhaustively by a test) and `src/core/SessionFollow.cpp` (the audio-thread side, as
+  `SessionScheduler` members). All ten types are implemented — `none`, `stop`, `play_again`,
+  `previous`, `next`, `first`, `last`, `any`, `other`, `jump` — with **chance A/B weighting** (the
+  entries' own weights, normalised over the chain) and **linked/unlinked timing** (the clip's own
+  length, falling back to one bar; or the first entry's `time_bars`).
+- **The chain is delivered on the existing lock-free queue, and evaluated where the launch state
+  lives.** `SessionScheduler::requestFollowPlan` queues one POD (`LaunchCommandType::Follow`) on the
+  same single-producer queue a launch request uses — no second queue, no allocation on either side —
+  and the evaluation runs on the audio thread against the same `SessionClockContext` the launches use,
+  because a Follow Action's whole content is "this slot's own playback state, one clock step later".
+  **A refused action (a `jump` outside the grid) fires ONCE PER ACTION TIME**, not once per audio
+  period, which is what keeps a chain that can do nothing from spinning on the audio path.
+- **New: Arrangement Record.** `include/SessionArrangementRecorder.h` is the performance's own event
+  ring — the audio thread pushes one START per launch and one STOP when a slot ends, at the tick the
+  transition actually fired on; the model thread is the consumer. It is deliberately NOT the launch
+  command queue with the roles swapped (that queue is single-producer by construction). **A reset
+  records the stop of every slot it ends**, so `session.stop_all` / `session.back_to_arrangement`
+  leave no launch open, and `session.arrangement_record_land` writes **one arrangement clip per
+  completed launch/stop pair** onto that column's song track, at the recorded ticks, over **one Track
+  journal checkpoint per touched track** — so ONE `control.undo` takes the whole pass back (the
+  `clip.add` and `midi.retro_capture_to_clip` mechanism). A land pass that finds a launch still open
+  is **REFUSED and consumes nothing**, rather than losing the start or inventing its end.
+- **Control surface:** `session.follow_set`, `session.follow_get_state`,
+  `session.arrangement_record_arm`, `session.arrangement_record_status`,
+  `session.arrangement_record_land` and `session.back_to_arrangement` — each with an argument schema,
+  a result schema and a SPEC A16 row (`src/core/ControlReversibilityTableSessionView.cpp`: five
+  `not_mutating` — a plan install, two reads, an arm/disarm and one atomic reset request — and one
+  `true_inverse`, the land pass). `session.follow_get_state` reports the armed cells as a **bitmask**
+  (bit `track * 8 + scene`, a decimal string because a 64-bit mask does not survive a JSON number) so
+  a client can check WHICH cell is armed and not only how many.
+- **Milestone M1, and its proof.** A saved project launches **4 clips across 2 scenes in sync at the
+  next bar**, driven end to end through `--control-socket` rather than through a grid: the committed
+  transcript is `tests/control-session-m1-transcript.txt` (the binary's sha256, the socket path, every
+  request and reply) and the registered ctest is `ControlSessionLaunch`
+  (`tests/control-session-m1.py`, registered in tests/CMakeLists.txt under `LMMS_HAVE_SESSION_VIEW`).
+  The grid UI itself (#598) is **out of 0.3.0** and is not claimed.
+- **The Follow Action / Arrangement Record engine is proven by `SessionFollowTest`**
+  (`tests/src/core/SessionFollowTest.cpp`, registered under `LMMS_HAVE_SESSION_VIEW`): all ten action
+  types as pure decisions, chance weighting at its boundaries, the packed-fire round trip, the ring
+  (arming, bounded drop, non-destructive snapshot, disarm-keeps-the-performance), a chain running
+  **hands-free across four clips** with one launch request and nothing but the clock afterwards, the
+  reset path that records the stops it ends, and the allocation probe on the audio path this feature
+  added (0 allocations over 20 000 periods with a plan installed and firing).
+- **What this does NOT have, stated rather than implied:**
+  (1) **a landed clip carries its position and length, not the session clip's notes** — `pattern`
+  reports the PatternStore reference the session slot names, and the notes are not copied;
+  (2) therefore the "rendered audio matches the session playback" half of #596's acceptance is
+  **UNMET in this tree**, because a launched session slot does not render audio at all (there is no
+  session-clip playback path, #597) — the render comparison cannot be run against silence;
+  (3) `session.arrangement_record_land` refuses while a recorded launch is still open, so landing
+  mid-performance is a refusal rather than a partial pass;
+  (4) the plan table is a fixed `MaxFollowPlans` (16 cells) and a chain longer than
+  `MaxFollowChainEntries` (8) is **refused, never truncated**.
+- **UI absence — one line: Follow Actions, Arrangement Record and the Back-to-Arrangement switch are
+  drivable through the socket, not from the interface.** There is no Follow Action editor, no
+  Arrangement Record button, no take lane and no Back-to-Arrangement light: `grep -rniI
+  'FollowAction\|follow_action\|back_to_arrangement' src/gui/` returns nothing that reads or edits
+  either feature. `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds.
