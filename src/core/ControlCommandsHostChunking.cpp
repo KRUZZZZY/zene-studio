@@ -98,6 +98,7 @@ ControlResult handleHostChunking(const QJsonObject&)
 }
 
 } // namespace
+} // namespace control
 
 void registerPluginHostChunkingCommands(ControlRegistry& registry)
 {
@@ -121,7 +122,5 @@ void registerPluginHostChunkingCommands(ControlRegistry& registry)
 	cmd.handler = [](const QJsonObject& args) { return handleHostChunking(args); };
 	registry.registerCommand(cmd);
 }
-
-} // namespace control
 
 } // namespace lmms
