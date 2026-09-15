@@ -1,11 +1,14 @@
 # MPE: per-note expression capture, storage, editing (task #601)
 
-**Verdict: the smallest honest slice of MPE landed.** Per-note expression is captured from
+**Verdict: the smallest honest slice of MPE landed, and (task #649) all three axes now reach
+playback.** Per-note expression is captured from
 MPE-style MIDI input, stored on the note backwards-compatibly, readable and editable through a
-headless API, and the **pitch** axis is applied by the playback path. The **pressure** and
-**timbre** axes are captured, stored and readable but *not* applied — there is no per-note
-pressure/timbre path to an instrument in this tree, and this document names the exact lines that
-block it instead of inventing one.
+headless API, and the **pitch** axis is applied by the playback path as a frequency ratio. The
+**pressure** and **timbre** axes are captured, stored and readable, and since task #649 they are
+**applied** too: the note sends them to the instrument as MIDI events (channel pressure, CC74) on
+the channel its own note-on took — §2.5, which replaces the "not applied" verdict this document
+carried for both axes until then. *The original #601 limit is still worth reading: §2.4's blocking
+list is what #649 had to build, and §4's table now records what each axis does at each stage.*
 
 Work is on branch `post-alpha/mpe` (base `post-alpha/v0.2` = `0c23587d2`), worktree
 `projects/lmms-fl-research/zene-pa-mpe`. Nothing was pushed.
@@ -153,6 +156,40 @@ So: a captured bend is audible on frequency-driven instruments and **inaudible o
 (MIDI-forwarding) paths**. That is a real limit of this slice, not a rounding detail, and the
 sensitivity render in §5 uses a frequency-driven instrument (TripleOscillator) for that reason.
 
+### 2.5 Pressure and timbre reach the instrument (task #649)
+
+The blocking list above is a list of what is *missing*, not of what is impossible: a note already
+knows the channel its note-on took (`midiChannel()`, stamped by the track when the handle is
+built), and the instrument-facing path already carries arbitrary MIDI for every other message
+(`InstrumentTrack::processOutEvent` → `m_instrument->handleMidiEvent`, then the track's MIDI port).
+What #649 adds is the sender.
+
+- **`NotePlayHandle::sendMpeExpressionMidi()`** (`src/core/NotePlayHandle.cpp`, declared in
+  `include/NotePlayHandle.h`) sends two events — `MidiChannelPressure` with `mpePressure()`, then
+  `MidiControlChange` with `MpeTimbreController` (74) and `mpeTimbre()` — on `midiChannel()`. A
+  note whose `hasMpeExpression()` is false sends **nothing at all**, so a project that never
+  captured expression reaches the instrument exactly as it did before.
+- **When it runs.** (a) From `NotePlayHandle::play()`, immediately after the note-on and with the
+  note-on's own `TimePos`/offset, so a stored expression arrives with the note it belongs to and
+  sample-aligned inside the block. (b) From
+  `InstrumentTrack::loadMpeExpressionOntoChannelNotes()`, on a sounding note, when the channel's
+  pressure or timbre actually CHANGED — a bend-only update (every pitch gesture, and the common
+  case) sends nothing extra, because the pitch axis reaches playback through
+  `setFrequencyUpdate()` and needs no event.
+- **Why the same channel as the note-on.** For a note captured from an MPE controller that is the
+  note's own member channel, which is the whole point: an MPE instrument tells one note's pressure
+  from another's by the channel it arrives on, and this is what makes the two axes per-note rather
+  than channel-wide. (A note played back from a clip has no stored channel — §6.10 — so it uses the
+  track's output channel, exactly where its note-on went.)
+- **What a consumer is.** `handleMidiEvent` is the interface every instrument implements; the
+  hosted families (Vestige, LV2, CLAP, Carla) forward MIDI to their plug-in, and a MIDI output port
+  carries it to hardware. No *built-in* synthesiser consumes channel pressure or CC74 — they are
+  driven by frequency and volume and inherit the base no-op `handleMidiEvent` — which is why the
+  proof in §5.4 uses a purpose-built test instrument as its subject.
+- **Realtime:** two `MidiEvent` values and a virtual call, on the same thread and the same path as
+  the note-on that precedes them; no allocation, no lock, no growth. A note that carries no
+  expression costs one branch.
+
 ---
 
 ## 3. Where the data reaches the playback path (realtime contract)
@@ -178,12 +215,12 @@ change adds no new class of race; it is noted here rather than silently inherite
 | axis | captured | stored in the project | read back / editable | applied to playback |
 |---|---|---|---|---|
 | pitch bend (per note) | yes | yes (`mpepitch`, cents) | yes | **yes** — frequency ratio in `updateFrequency()` |
-| channel pressure | yes | yes (`mpepressure`, 0..127) | yes | **no** — no per-note pressure path (§2.4 block); the only per-note dynamic the engine sends is integer-key poly key pressure (`NotePlayHandle::setVolume` → `MidiKeyPressure`, `src/core/NotePlayHandle.cpp:162-169`), and MPE uses *channel* pressure, which the engine has no per-note route for |
-| timbre / CC74 | yes | yes (`mpetimbre`, 0..127) | yes | **no** — same reason: the instrument interface receives MIDI events (integer key) or frequency, never a per-note timbre |
+| channel pressure | yes | yes (`mpepressure`, 0..127) | yes | **yes (task #649)** — sent to the instrument as channel pressure on the note's own channel, at the note-on and on every live change (§2.5) |
+| timbre / CC74 | yes | yes (`mpetimbre`, 0..127) | yes | **yes (task #649)** — sent to the instrument as CC74 on the note's own channel, the same way and at the same moments |
 
-A stored-but-unapplied axis is still worth storing: it is what a re-save, an expression editor, or
-a future per-note-timbre instrument path will read, and it is honest about which half landed. It is
-*not* silently discarded.
+*A stored-but-unapplied axis was still worth storing: it is what a re-save, an expression editor,
+or a per-note-timbre instrument path reads, and it was honest about which half had landed. Task
+#649 closed the second half for both axes; the storage, its format and the readback are unchanged.*
 
 ---
 
@@ -329,6 +366,42 @@ Honest caveats about that table:
 - The comparison binaries have identical CMake caches (build type, `USE_WERROR`, `TARGET_UARCH`,
   `WANT_QT6` and the optional features), so the null result is not a compiler-flag artefact.
 
+### 5.4 The pressure/timbre proof (task #649) — an in-tree instrument as the vehicle
+
+A render table cannot prove these two axes: no built-in instrument consumes them (§2.5), so a
+project carrying them renders identically with and without the route. The proof is therefore a
+registered ctest with a purpose-built subject.
+
+- **The subject:** `tests/src/plugins/MpeTestConsumer.cpp` — a minimal MIT-licensed instrument
+  built as a MODULE from `tests/CMakeLists.txt` (never from `plugins/`, never installed). It keeps
+  the channel pressure and CC74 that reached it through `Instrument::handleMidiEvent`, per MIDI
+  channel, resetting both on a note-on, and renders a CONSTANT level for a note:
+  `kBaseLevel * (1 + pressure/127) * (1 + timbre/127)` — +100% per fully pressed axis, exactly 1.0
+  when no expression reached it. **The fixture is the vehicle, and the tree has no other one**: this
+  is the same device `tests/data/vst3-test-instrument` is for the VST3 host and
+  `tests/data/clap-test-plugin` for the CLAP host.
+- **The registration:** `src/core/MpePlaybackTest.cpp` in `tests/CMakeLists.txt`'s `LMMS_TESTS`
+  list, with the fixture directory handed to it as `LMMS_MPE_CONSUMER_DIR` and `LMMS_PLUGIN_DIR`
+  pointed at it in `initTestCase()` (the plugin factory reads its search paths in its
+  constructor), so the instrument arrives through the real `Instrument::instantiate` path.
+- **The measurement, not a smoke test:** one audio block of one note is rendered through the real
+  playback path (`NotePlayHandle::play()` → `InstrumentTrack::processOutEvent()` →
+  `Instrument::handleMidiEvent()` → the fixture's `playNoteImpl()`), once with the expression and
+  once without, and the two levels are compared. `pressure=64` alone, `timbre=64` alone and the two
+  together each have to land on the fixture's own mapping within 1%; a note whose captured axes are
+  both 0 has to render *identically* to a note with no expression, which pins the route to the
+  values and not to the presence of an event. With the route missing every ratio is exactly 1.0 and
+  every one of those assertions fails. The second slot drives the live half: with MPE input on, a
+  `MidiChannelPressure` message arriving on the sounding note's own member channel moves the next
+  block, through `InstrumentTrack::processInEvent()` and the real `MpeExpression` state machine.
+- **What it does NOT prove:** that a *musical* instrument responds the way a musician expects. The
+  fixture's mapping is its own; what is proven is delivery — the two axes, with their values, on the
+  note's own channel, into the instrument's MIDI entry point, and a block that measurably differs
+  because of them.
+- **Status on the 030/mpe-playback branch:** the ctest is registered and the fixture builds into its
+  own directory; this lane's provider window ended before a build was taken, so the suite's own
+  transcript for it is the fix-up pass's to produce. (The commits are named in §7.)
+
 
 ---
 
@@ -341,7 +414,11 @@ Honest caveats about that table:
    serialized into the project (deliberately: a project must never change meaning because of a
    flag), has no settings entry and no persistence. A user cannot yet switch MPE input on from the
    GUI; a lane with a settings surface would wire it (a per-`MidiPort` model is the natural home).
-3. **Pressure and timbre are not applied** (§4) — the blocker is named there, per axis.
+3. **Pressure and timbre are applied** — CLOSED by task #649 (§2.5). They are sent to the instrument
+   as MIDI on the note's own channel; what remains open is not the route but the SUBJECT: no
+   in-tree instrument consumes either axis, so the measurement uses the in-tree MIT test subject
+   `tests/src/plugins/MpeTestConsumer.cpp` (§5.4 below), and a hosted or hardware instrument is
+   still the thing a musician would actually hear.
 4. **No per-note expression *curve*.** What is captured per axis is one value: the channel's state
    at note-on, updated live while the note is held, and frozen at note-off. A bend that sweeps up
    and back down during one note survives only as its final value. Storing the trajectory needs a
@@ -363,6 +440,15 @@ Honest caveats about that table:
 9. **No coverage of a real MPE controller.** Everything was driven by synthetic events and fixtures
    derived from them; no hardware MPE controller was attached, and the LV2/CLAP/VST3 hosting paths
    (integer-key, §2.4) were not exercised with expression at all.
+10. **A note played back from a clip has no stored member channel.** Expression is captured per
+   channel and stored per note, but the CHANNEL is not a serialized property of a note: a clip note
+   is built with `midiEventChannel = -1` (`src/tracks/InstrumentTrack.cpp`, the
+   `NotePlayHandleManager::acquire` call in `play()`), so its note-on — and therefore the two
+   expression events #649 sends with it — go on the track's output channel. For a one-note-per-track
+   performance this is indistinguishable; for a clip that captured two notes on two different member
+   channels, the instrument sees both notes' expression on one channel. Storing the channel (an
+   optional `mpechannel` attribute, the same shape as `mpepitch`) is the honest fix and was left out
+   of this slice deliberately.
 
 ---
 
@@ -370,6 +456,13 @@ Honest caveats about that table:
 
 Branch `post-alpha/mpe`, base `post-alpha/v0.2` = `0c23587d2`. Nothing was pushed, and no PR,
 issue or remote was touched.
+
+**Task #649 (the two axes applied — §2.5, §5.4) is NOT on this branch.** It is the continuation
+lane, branch `030/mpe-playback` off `release/0.3.0`, worktree
+`projects/lmms-fl-research/zene-030/wmpe`: it adds `NotePlayHandle::sendMpeExpressionMidi()`, the
+one live-update call in `InstrumentTrack::loadMpeExpressionOntoChannelNotes()`, the fixture
+`tests/src/plugins/MpeTestConsumer.cpp` and the registered ctest `MpePlaybackTest`. The rest of this
+document is the #601 record and is unchanged.
 
 - `e4f934eea` — `feat(mpe): capture, store and apply per-note MPE expression (#601)`: the module,
   the note storage, the input-path wiring, the playback application, the three test files, the

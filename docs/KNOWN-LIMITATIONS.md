@@ -448,7 +448,14 @@ that is this page's fault — report it and it gets added.
   MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
   and editable through a headless API, with all three axes reaching the instrument through the playback path
   (`src/core/NotePlayHandle.cpp`). `src/core/midi/MpeExpression.cpp` is in the tree, and the lane
-  `post-alpha/mpe` is an ancestor of this tip.
+  `post-alpha/mpe` is an ancestor of this tip. **What consumes the two new axes, stated plainly:** no built-in
+  synthesiser does — they are driven by a note's frequency and volume and never see MIDI — so a hosted
+  instrument (Vestige / LV2 / CLAP / Carla) or a MIDI output port is where a musician hears pressure and timbre,
+  and the *proof* applies them to an in-tree MIT test instrument
+  (`tests/src/plugins/MpeTestConsumer.cpp`, built from `tests/`, never installed), which is the vehicle of the
+  registered ctest `MpePlaybackTest`. That test is a measured comparison, not a smoke test: one audio block
+  rendered with the expression against the same block without it, and the level has to move by the ratio the
+  expression asks for.
 - **Recording is a two-track prototype.** Two input channels captured into two tracks, with the capture path
   hardware-verified. Arbitrary input counts and input monitoring are not implemented, and the default Linux
   ALSA backend has **no capture path at all** — recording needs JACK or SDL.
@@ -946,7 +953,10 @@ line each, because the scope contract asks for one each:
   is off the MIDI input path is what it was before MPE existed; while it is on, a bend / pressure / CC74 on a
   note's own member channel is that note's expression instead of a channel-wide bend. **All three axes reach
   playback** (pitch as a frequency ratio, pressure and timbre as MIDI events on the note's own member channel,
-  task #649); pressure and timbre no longer stay stored-only. Switching the flag off does **not** clear
+  task #649); pressure and timbre no longer stay stored-only, and the measured proof is the registered ctest
+  `MpePlaybackTest` (one block with the expression against the same block without it) against the in-tree test
+  instrument `tests/src/plugins/MpeTestConsumer.cpp` — no built-in synthesiser consumes either axis, so the
+  fixture is the vehicle. Switching the flag off does **not** clear
   expression already stored on notes — `note.expression_clear` is the verb for that. The master channel and
   the bend range are per-MIDI-stream **instance** settings with no object the control surface can reach, so
   `device.mpe_get_state` reports the engine's defaults rather than writing a copy nothing reads.

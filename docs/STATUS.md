@@ -79,9 +79,13 @@ not rounded up.
   patcher GUI (§ PARTIAL).
 - **MIDI learn; MPE** — MIDI learn is Edit ▸ MIDI Learn with the binding saved in the project and the cross-thread
   race fixed by binding on the GUI thread (`src/core/MidiLearn.cpp`, `src/gui/MidiLearnGui.cpp`; `MidiLearnTest`,
-  `MidiLearnThreadTest`, `MidiLearnGuiTest`). MPE captures, stores and edits per-note expression, with pitch applied
-  on playback and pressure/timbre stored but not applied (`src/core/midi/MpeExpression.cpp`,
-  `include/MpeExpression.h`; `MpeExpressionTest`, `MpeInputPathTest`, `MpeNoteStorageTest`).
+  `MidiLearnThreadTest`, `MidiLearnGuiTest`). MPE captures, stores and edits per-note expression, and all three
+  axes are applied on playback — pitch as a frequency ratio, pressure and timbre as channel pressure / CC74 sent
+  to the instrument on the note's own channel (`src/core/midi/MpeExpression.cpp`, `include/MpeExpression.h`,
+  `NotePlayHandle::sendMpeExpressionMidi`; `MpeExpressionTest`, `MpeInputPathTest`, `MpeNoteStorageTest`,
+  `MpePlaybackTest` — the last measured one block with the expression against the same block without it, through
+  the in-tree test instrument `tests/src/plugins/MpeTestConsumer.cpp`, since no built-in synthesiser consumes
+  either axis).
 - **MIDI depth: note probability + velocity jitter** — seeded per note and saved, plus a note search-and-transform
   API; `probability()` serialises as `prob`. `src/core/NoteRandom.cpp`, `NoteTransform.cpp`, `include/NoteRandom.h`;
   `NoteRandomTest`, `NoteTransformTest`, `MidiProbabilityPersistenceTest`. No UI or command reaches it (§ PARTIAL).
