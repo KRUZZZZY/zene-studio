@@ -391,7 +391,10 @@ ControlResult controlApplyChainPreset(EffectChain* chain, const ControlChainPres
 		}
 
 		QJsonObject entry = controlChainPresetDeviceJson(preset.devices.at(i), i);
-		entry.insert(QStringLiteral("id"), control::effectIdOf(target.chain->effects()[static_cast<std::size_t>(i)]));
+		// The id of the instance just instantiated, which is the one this entry
+		// describes: `effect` is that device, and the surface must answer with
+		// fx-<n> rather than the parameter's name for it.
+		entry.insert(QStringLiteral("id"), control::effectIdOf(effect));
 		entry.insert(QStringLiteral("device"), control::deviceId(catalogueIndexes.at(i)));
 		devices.append(entry);
 	}

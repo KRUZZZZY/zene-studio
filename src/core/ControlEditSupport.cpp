@@ -224,7 +224,7 @@ Note* resolveNote(MidiClip* clip, const QString& id, int* index, ControlResult* 
 	// the least stable address in the document - which is why the note family
 	// was deliberately last. `index` is still filled, because callers need the
 	// POSITION for the selection helpers; it is no longer the address.
-	const QVector<Note*>& notes = clip->notes();
+	const NoteVector& notes = clip->notes();
 	for (int i = 0; i < static_cast<int>(notes.size()); ++i)
 	{
 		if (notes[i]->id() == wanted)
@@ -346,6 +346,7 @@ QJsonObject rollState(const ClipRef& ref)
 {
 	QJsonObject out = clipState(ref);
 	out.insert(QStringLiteral("clip"), clipId(ref.id));
+	QJsonArray notes;
 	QJsonArray selected;
 	auto* midiClip = dynamic_cast<MidiClip*>(ref.clip);
 	if (midiClip != nullptr)
@@ -366,7 +367,7 @@ QJsonObject rollState(const ClipRef& ref)
 		// is REPORTED as the ids of the notes at those positions, because an id
 		// is what a client can address. An index the list no longer has (the
 		// note was deleted) is dropped rather than reported as a dangling id.
-		const QVector<Note*>& noteList = midiClip->notes();
+		const NoteVector& noteList = midiClip->notes();
 		for (int selectedIndex : selectedNoteIndices(clipId(ref.id)))
 		{
 			if (selectedIndex >= 0 && selectedIndex < static_cast<int>(noteList.size()))

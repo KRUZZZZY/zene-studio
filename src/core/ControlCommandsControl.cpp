@@ -449,18 +449,27 @@ void registerIdContractCommand(ControlRegistry& registry)
 						noteCount += static_cast<int>(midiClip->notes().size());
 					}
 				}
-				if (track->audioPort() != nullptr && track->audioPort()->effects() != nullptr)
+				// The device count goes through resolveControlTarget, the one
+				// resolver dsp.get_state and plugin.* address a chain with,
+				// instead of reaching into the track's own audio port: one
+				// answer to "which effects does this track carry", never a
+				// second one that can drift from the one the surface acts on.
+				ControlTarget target;
+				ControlResult ignored;
+				if (resolveControlTarget(control::trackIdOf(track), &target, &ignored))
 				{
-					fxCount += static_cast<int>(track->audioPort()->effects()->effects().size());
+					fxCount += static_cast<int>(target.chain->effects().size());
 				}
 			}
 		}
 		Mixer* mixer = Engine::mixer();
-		if (mixer != nullptr)
+		for (int i = 0; mixer != nullptr && i < static_cast<int>(mixer->numChannels()); ++i)
 		{
-			for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+			ControlTarget target;
+			ControlResult ignored;
+			if (resolveControlTarget(control::channelIdOf(mixer->mixerChannel(i)), &target, &ignored))
 			{
-				fxCount += static_cast<int>(mixer->mixerChannel(i)->audioPort()->effects()->effects().size());
+				fxCount += static_cast<int>(target.chain->effects().size());
 			}
 		}
 		const int trackCount = song != nullptr ? static_cast<int>(song->tracks().size()) : 0;

@@ -33,11 +33,16 @@
 #include "AutomatableModel.h"
 #include "ClipEdits.h"
 
+// GLOBAL scope, never inside namespace lmms: a `class QDomDocument;` declared
+// after `namespace lmms {` declares the DIFFERENT type lmms::QDomDocument, and
+// every saveState/saveSettings signature parsed after it silently stops
+// overriding the one SerializingObject declares with the global type - the
+// whole model layer then fails to compile with "'override', but does not
+// override" (measured on the first cut of this slice).
+class QDomDocument;
 
 namespace lmms
 {
-
-class QDomDocument;
 
 class Track;
 
@@ -79,9 +84,13 @@ public:
 	//! SerializingObject: the clip's own element plus the persistent `id`
 	//! attribute. ONE override for all four clip types (midiclip, sampleclip,
 	//! patternclip, automationclip) - none of them overrides saveState, so
-	//! every clip that is written to a project file carries its id.
+	//! every clip that is written to a project file carries its id. It goes
+	//! through JournallingObject::saveState (the journal node every undo step
+	//! is recorded against must stay in the element) and writes the id ONLY
+	//! when the element is part of a document, never in a copy payload - see
+	//! Clip.cpp and ProjectIds::isDocumentElement.
 	QDomElement saveState( QDomDocument & doc, QDomElement & parent ) override;
-	//! SerializingObject: loadSettings() plus the `id` attribute. A file that
+	//! JournallingObject: loadSettings() plus the `id` attribute. A file that
 	//! carries one keeps it; a legacy file that does not keeps the number the
 	//! constructor handed out - deterministic, because the load walks the
 	//! containers and their clips in document order - and the assignment is
