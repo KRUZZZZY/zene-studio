@@ -22,6 +22,11 @@ printing the raw request/response transcript for each claim, in order:
   5. THE REGRESSION: with a clip on each of two tracks, clip.delete on the first
      track's clip leaves every OTHER track's clip ids unchanged (index-derived
      ids shifted down by one), and control.undo restores the SAME clip id;
+  5b. THE OTHER HALF (row 75): track.remove on the first track and control.undo
+     restore the track WITH THE SAME clip- and note- ids it had before the
+     delete - the track is re-loaded from its checkpoint, so this is the ids
+     coming out of the document, and the case an index-derived clip-<n> made
+     lossy (the restored clip answered clip-0 where it had been clip-1);
   6. control.id_contract: registered, both schemas declared, exactly the six
      families trk-/clip-/note-/ch-/fx-/dev- with their persistence;
   7. the same file in a FRESH instance yields the same ids (bounded: one open).
@@ -343,6 +348,57 @@ def check_delete_does_not_renumber(session, first, failures):
              json.dumps(restored, sort_keys=True)))
 
 
+def check_track_undo_keeps_ids(session, fixture, failures):
+    """THE SECOND HALF OF THE REGRESSION, the one row 75 measured (SPEC R5).
+
+    A track is deleted WHOLE - clips and notes with it - and control.undo
+    restores it by RE-LOADING its element: Track::loadTrack deletes every clip
+    and re-creates it, so nothing of the clip survives in memory and every id
+    the restored track reports can only have come from the checkpoint.
+
+    Measured on the merged tip before this slice: the track came back as its
+    trk-<n> (slice 1 was already persistent) while its clip came back as clip-0
+    where it had been clip-1, because a clip-<n> was the clip's ARRANGEMENT
+    ORDINAL and the deletion had renumbered the space - so an id a caller had
+    cached before the delete addressed a different clip after the undo.
+    """
+    first = fixture["first"]
+    before_clips = clips_by_track(clip_entries(session))
+    before_notes = {clip: sorted(ids_in(session, "roll.get_state", "notes", {"clip": clip}))
+                    for clip in before_clips.get(first, [])}
+    before_tracks = sorted(ids_in(session, "track.list", "tracks"))
+
+    removed = session.result("track.remove", {"track": first})
+    print("track.remove %s answered: %s" % (first, json.dumps(removed, sort_keys=True)))
+    during = sorted(ids_in(session, "track.list", "tracks"))
+    if first in during:
+        failures.append("track.remove did not remove %s: %r" % (first, during))
+
+    undone = session.result("control.undo")
+    print("control.undo (the deleted track) answered: %s" % json.dumps(undone, sort_keys=True))
+    if undone.get("undone") is not True:
+        failures.append("control.undo did not undo the track.remove: %r" % (undone,))
+
+    after_tracks = sorted(ids_in(session, "track.list", "tracks"))
+    after_clips = clips_by_track(clip_entries(session))
+    if after_tracks != before_tracks:
+        failures.append("control.undo restored the track list %r, not %r"
+                        % (after_tracks, before_tracks))
+    if after_clips.get(first) != before_clips.get(first):
+        failures.append("control.undo restored %s with different clip ids: %r -> %r - the "
+                        "restored track re-loads its clips, so an index-derived clip-<n> is "
+                        "exactly why row 75's undo was lossy"
+                        % (first, before_clips.get(first), after_clips.get(first)))
+    for clip, ids in before_notes.items():
+        now = sorted(ids_in(session, "roll.get_state", "notes", {"clip": clip}))
+        if now != ids:
+            failures.append("control.undo restored %s with different note ids: %r -> %r"
+                            % (clip, ids, now))
+    print("ids across the track undo: tracks %s -> %s -> %s, clips on %s %r -> %r, notes %s"
+          % (json.dumps(before_tracks), json.dumps(during), json.dumps(after_tracks), first,
+             before_clips.get(first), after_clips.get(first), json.dumps(before_notes)))
+
+
 def check_id_contract(session, failures):
     """control.id_contract: registered, both schemas declared, six families.
 
@@ -475,6 +531,7 @@ def main():
             fixture = build_fixture(session, effect)
             before = check_round_trip(session, saved, fixture, failures)
             check_delete_does_not_renumber(session, fixture["first"], failures)
+            check_track_undo_keeps_ids(session, fixture, failures)
             check_id_contract(session, failures)
         finally:
             session.close()

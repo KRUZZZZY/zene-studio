@@ -117,22 +117,28 @@ Clip::Clip(const Clip& other):
  *  and through a Journal checkpoint - carries its id, and a checkpoint restore
  *  (which re-loads the element) puts the SAME id back on the clip.
  *
- *  It is NOT written when the element is going into a clipboard or a
- *  drag-and-drop payload. Those are not the project document: a pasted clip is
- *  a NEW clip and must get a NEW id rather than a second one wearing the id of
- *  the clip it was copied from. The two parent names are the ones
- *  MidiClip::exportToXML already special-cases when it writes pos = -1, and
- *  neither the piano roll's copy (PianoRoll.cpp, straight into a DataFile) nor
- *  ClipLinks.cpp's content holder goes through saveState at all - so this
- *  guard is the belt to that braces.
+ *  JournallingObject::saveState is called BY NAME, and not SerializingObject's:
+ *  it is the override this class inherited before this feature existed, and it
+ *  is the one that appends the `<journallingObject id=N metadata="true">` child
+ *  every journal checkpoint and every undo step is recorded against. Calling
+ *  SerializingObject::saveState directly - as the first cut of this slice did -
+ *  drops that child from every clip element the build writes, which is the
+ *  defect docs/UNDO-BOUNDS.md records for exactly this reader/writer pair: a
+ *  re-created object carries a NEW journal id, every step recorded before the
+ *  re-load names a dead object, ProjectJournal::undo() skips it and unwinds an
+ *  OLDER one, and ONE control.undo takes back edits the caller never asked for.
+ *
+ *  The id attribute is written only when the clip is going into a DOCUMENT
+ *  (ProjectIds::isDocumentElement): a copy payload carries the source clip's
+ *  attributes verbatim, and a clip built from one is a NEW clip that must keep
+ *  the id its constructor handed out (rule R4), or two live clips would answer
+ *  to one `clip-<n>`.
  */
 QDomElement Clip::saveState( QDomDocument & doc, QDomElement & parent )
 {
-	QDomElement element = SerializingObject::saveState( doc, parent );
+	QDomElement element = JournallingObject::saveState( doc, parent );
 
-	const QString parentName = parent.nodeName();
-	if( parentName != QStringLiteral( "clipboard" )
-		&& parentName != QStringLiteral( "dnddata" ) )
+	if( ProjectIds::isDocumentElement( element ) )
 	{
 		element.setAttribute( QStringLiteral( "id" ), m_id );
 	}
@@ -148,10 +154,25 @@ QDomElement Clip::saveState( QDomDocument & doc, QDomElement & parent )
  *  because the load walks the containers and their clips in that order, and
  *  the assignment is COUNTED - ProjectIds::loadAssignments() - so project.open
  *  reports it as `ids_assigned` instead of upgrading the file silently.
+ *
+ *  JournallingObject::restoreState is called BY NAME for the reason saveState
+ *  above records: it is the reader that hands the clip back the journal id the
+ *  document carries, so the undo steps already recorded against this clip still
+ *  find it after a re-load (a checkpoint restore, a track undo).
+ *
+ *  A clip built from a COPY payload is skipped entirely: it keeps the id its
+ *  constructor handed out, because the payload's id names the clip that was
+ *  copied, which is still alive (rule R4). A skip is not an assignment, so it
+ *  is not counted.
  */
 void Clip::restoreState( const QDomElement & element )
 {
-	SerializingObject::restoreState( element );
+	JournallingObject::restoreState( element );
+
+	if( !ProjectIds::isDocumentElement( element ) )
+	{
+		return;
+	}
 
 	const QString stored = element.attribute( QStringLiteral( "id" ) );
 	bool ok = false;

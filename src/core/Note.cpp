@@ -379,16 +379,29 @@ void Note::loadSettings( const QDomElement & _this )
 	// ProjectIds::loadAssignments() counts it, and project.open reports the
 	// count as `ids_assigned`, so a legacy file's one-time upgrade is stated
 	// rather than silent.
-	if( _this.hasAttribute( "id" ) )
+	//
+	// A note read out of a COPY payload - the piano roll's clipboard, a track
+	// being cloned - keeps the id the constructor handed out instead (rule R4):
+	// the payload's id belongs to the note that was copied, which is still
+	// alive, and two live notes answering to one `note-<n>` would make the id
+	// an ambiguous address. What tells the two apart is the wrapper the element
+	// sits in, not the element itself - a project's notes sit under their clip
+	// element, a clipboard's under <note-list> - which is what
+	// ProjectIds::isDocumentElement reads. Nothing is counted for a copy: it
+	// was never an assignment.
+	if( ProjectIds::isDocumentElement( _this ) )
 	{
-		bool ok = false;
-		const int stored = _this.attribute( "id" ).toInt( &ok );
-		if( ok && stored >= 0 ) { setId( stored ); }
-		else { ProjectIds::noteLoadAssignment(); }
-	}
-	else
-	{
-		ProjectIds::noteLoadAssignment();
+		if( _this.hasAttribute( "id" ) )
+		{
+			bool ok = false;
+			const int stored = _this.attribute( "id" ).toInt( &ok );
+			if( ok && stored >= 0 ) { setId( stored ); }
+			else { ProjectIds::noteLoadAssignment(); }
+		}
+		else
+		{
+			ProjectIds::noteLoadAssignment();
+		}
 	}
 
 	// Absent attributes mean the neutral MIDI-depth values: the note always

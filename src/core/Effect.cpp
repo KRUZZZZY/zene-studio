@@ -132,16 +132,31 @@ void Effect::loadSettings( const QDomElement & _this )
 	// not leaves the number the constructor already handed out, which is
 	// deterministic because EffectChain::loadSettings recreates the effects in
 	// document order. Either way ProjectIds::loadAssignments() counts it.
-	if( _this.hasAttribute( "id" ) )
+	//
+	// An effect element read out of a device-state document KEEPS the id it was
+	// constructed with instead (rule R4). That document - the
+	// <zenepluginstate> root plugin.state_save/state_load, plugin.preset_save/
+	// preset_load and the chain preset's embedded device state all use - is a
+	// snapshot of ONE instance, and it is loaded into an instance that is
+	// already alive and already has an id of its own: taking the snapshot's id
+	// would give that instance the id of the effect the snapshot came from,
+	// which the surface may still be addressing (the defect class the contract
+	// exists to remove). The wrapper decides it, not the element
+	// (ProjectIds::isDocumentElement); a project's effects sit under their
+	// channel's chain and are loaded from <song>.
+	if( ProjectIds::isDocumentElement( _this ) )
 	{
-		bool ok = false;
-		const int stored = _this.attribute( "id" ).toInt( &ok );
-		if( ok && stored >= 0 ) { setId( stored ); }
-		else { ProjectIds::noteLoadAssignment(); }
-	}
-	else
-	{
-		ProjectIds::noteLoadAssignment();
+		if( _this.hasAttribute( "id" ) )
+		{
+			bool ok = false;
+			const int stored = _this.attribute( "id" ).toInt( &ok );
+			if( ok && stored >= 0 ) { setId( stored ); }
+			else { ProjectIds::noteLoadAssignment(); }
+		}
+		else
+		{
+			ProjectIds::noteLoadAssignment();
+		}
 	}
 
 	QDomNode node = _this.firstChild();

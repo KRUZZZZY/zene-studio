@@ -27,6 +27,8 @@
 
 #include "lmms_export.h"
 
+class QDomNode;
+
 namespace lmms
 {
 
@@ -81,6 +83,21 @@ public:
 
 	//! A loader found an element with no id attribute, so it had to assign one.
 	static void noteLoadAssignment();
+
+	/*! True when \a node belongs to a DOCUMENT element tree - a project file, a
+	 *  journal checkpoint - and false when it belongs to a COPY payload (the clip
+	 *  drag/copy DataFile, Track::clone()'s temporary document, an instrument or
+	 *  device preset, a plugin.state_* document).
+	 *
+	 *  This is rule R4 - "a copy is a new object" - made checkable at the one
+	 *  place every reader of a stored id passes through. A copy payload carries
+	 *  the SOURCE object's attributes verbatim, id included; an object built from
+	 *  one is a different object, so its id must not be taken from the payload or
+	 *  two live objects would answer to one `<prefix>-<n>` and the address would
+	 *  be ambiguous. The payload containers are named in ProjectIds.cpp, each with
+	 *  the writer that produces it.
+	 */
+	static bool isDocumentElement(const QDomNode& node);
 };
 
 } // namespace lmms
