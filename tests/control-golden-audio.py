@@ -9,7 +9,8 @@ has therefore had to build the same instrument: render the SAME fixture N times 
 build, measure the run-to-run FLOOR, and judge a candidate by max |delta| in LSB/dB against
 that floor - never sha256 byte-identity, never a single before/after number
 (docs/AUTO-MASTERING.md:251 states the rule; docs/RACKS.md, docs/WARP.md and
-docs/STEM-EXPORT.md each did it ad hoc).  This is that instrument, once, registered.
+docs/STEM-EXPORT.md each did it ad hoc).  This is that instrument, once, registered, with the
+negative control that proves it can still fail.
 
 WHAT IT DOES, in one run of the real binary:
 
@@ -18,20 +19,22 @@ WHAT IT DOES, in one run of the real binary:
   2. for EACH headline path - `render.render` (a render), `render.stems` (a stem export),
      `bounce.in_place` (a freeze/bounce) - renders the fixture RUNS times in its own temp
      directory and measures the same-build run-to-run floor over EVERY pair of those runs;
+     a SECOND fixture, the bundled project the record names as still non-reproducible,
+     carries the render path through a fixture whose floor is not zero;
   3. judges the measured floor against the floor the committed record
      (tests/golden-audio-record.tsv) says this fixture has, and the candidate render's
      FINGERPRINT against the record's golden envelope - every term against its own tolerance
      (max |delta| LSB and dBFS, the level delta, the per-window envelope), never one number;
-  4. NEGATIVE CONTROL: moves the fixture track's own mixer fader by a stated dB through
-     `mixer.set_volume` - a deliberate gain change made by the PRODUCT, not by this script -
-     re-renders, and requires the comparison to FAIL it.  A comparison that cannot fail is
-     not evidence, so this is a check, not a demonstration;
+  4. NEGATIVE CONTROL: moves a fader by a stated dB through `mixer.set_volume` - a deliberate
+     gain change made by the PRODUCT, not by this script - re-renders, and requires the
+     comparison to FAIL it.  A comparison that cannot fail is not evidence, so this is a
+     check, not a demonstration;
   5. BOUND: sweeps the same fader from far below the floor to far above it and reports which
      changes this programme distinguishes - the honest limit of what it can claim.
 
 `--write-record` re-measures the floors with --runs (at least DEEP_RUNS) and rewrites
-tests/golden-audio-record.tsv.  That is a deliberate, reviewable act: the record is the
-baseline, and a lane that rewrites it to make itself green has disabled this programme.
+tests/golden-audio-record.tsv - a deliberate, reviewable act: the record IS the baseline,
+and a lane that rewrites it to make itself green has disabled this programme.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-golden-audio.py <lmms> [--runs N]
        [--write-record] [--record PATH] [--skip-sweep]
@@ -44,14 +47,13 @@ import math
 import os
 import sys
 import time
-from datetime import datetime, timezone
 
 import control_socket_harness as H
 import golden_audio_lib as G
 import golden_audio_record as R
 from freeze_bounce_evidence import (RENDER_TIMEOUT, Recorder, SILENT_DBFS,
                                     load_audible_instrument, report_on_abort,
-                                    report_results, wav_measure)
+                                    report_results)
 
 REQUEST_IDS = iter(range(1, 100000))
 
@@ -62,6 +64,15 @@ CLIP_TICKS = 192                 # one 4/4 bar
 PARTS = ("render", "stems", "bounce")
 COMMANDS = {"render": "render.render", "stems": "render.stems",
             "bounce": "bounce.in_place"}
+
+# The SECOND fixture, and the reason the programme has two.  This one is bundled product
+# content (no new file) and it is the project docs/RENDER-DETERMINISM.md records as still
+# not bit-reproducible after the renderer fix: 3/3 runs distinct, 98.3 % of frames differing,
+# up to 13 758 LSB.  It carries the render path through a fixture that really does jitter,
+# which is what a tolerance model is for.
+DEMO = "bundled-Root84-TrancyLoop"
+DEMO_PROJECT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "data", "projects", "shorties", "Root84-TrancyLoop.mmpz")
 
 RUNS = 3                         # the ctest's floor runs (C(3,2) = 3 pairs per path)
 DEEP_RUNS = 5                    # --write-record: C(5,2) = 10 pairs per path
@@ -131,19 +142,26 @@ def build_fixture(session):
                                     "length": CLIP_TICKS // 2, "velocity": 120})
         clips.append(clip.get("clip"))
     state = session.result("track.get_state", {"track": track})
-    index = state.get("mixer_channel")
     mixer = session.result("mixer.get_state")
     channels = {c.get("id"): c for c in (mixer.get("channels") or [])}
-    channel = "ch-%s" % index if index is not None else None
-    session.check("the fixture track has its own mixer channel on the wire",
-                  channel in channels,
-                  "track.get_state mixer_channel=%r, mixer.get_state ids=%s"
-                  % (index, sorted(channels)))
-    if channel not in channels:
-        H.fail("the fixture's channel is not addressable: %r" % channel)
+    # The track's OWN channel, picked off the wire rather than assumed: ch-0 is the master
+    # (control-pdc-commands.py's check reads the same `is_master` flag) and the track added
+    # above creates the newest channel, so it is the highest-index non-master one.  The
+    # choice is PRINTED and, better, VERIFIED by measurement - the negative control moves
+    # this fader and requires the render to move; a fader that is not in the fixture's path
+    # makes that check fail with the numbers rather than pass quietly.
+    own = sorted((cid for cid, c in channels.items() if not c.get("is_master")),
+                 key=lambda cid: channels[cid].get("index", 0))
+    channel = own[-1] if own else next((cid for cid, c in channels.items()
+                                        if c.get("is_master")), None)
+    session.check("the fixture track has a mixer channel of its own to move",
+                  bool(own), "track.get_state=%r, non-master channels=%s of %s"
+                  % (state.get("id"), own, sorted(channels)))
+    if channel is None:
+        H.fail("no addressable mixer channel: %r" % sorted(channels))
     volume = float(channels[channel]["volume"])
-    print("fixture: track=%s clips=%s channel=%s (fader %.4f)" % (track, clips, channel,
-                                                                 volume))
+    print("fixture: track=%s clips=%s channel=%s (%s) fader %.4f; mixer has %d channel(s)"
+          % (track, clips, channel, channels[channel].get("name"), volume, len(channels)))
     return {"track": track, "clips": clips, "channel": channel, "volume": volume}
 
 
@@ -173,25 +191,26 @@ def render_once(session, part, fixture, run_dir):
     return written
 
 
-def measure_path(session, part, fixture, outdir, runs):
+def measure_path(session, fixture_name, part, fixture, outdir, runs):
     """RUNS renders of one path, the same-build run-to-run floor, and the candidate."""
     renders, levels = [], []
     for index in range(runs):
         produced = render_once(session, part, fixture,
-                               os.path.join(outdir, part, "run-%d" % index))
+                               os.path.join(outdir, fixture_name, part, "run-%d" % index))
         if len(produced) != 1:
             return None
         renders.append(produced[0])
-        frames, measured = wav_measure(produced[0])
+        frames, measured = G.file_dbfs(produced[0])
         levels.append(measured)
         if measured <= SILENT_DBFS:
-            session.check("%s: run %d is AUDIO, not silence" % (part, index), False,
+            session.check("%s %s: run %d is AUDIO, not silence"
+                          % (fixture_name, part, index), False,
                           "%.2f dBFS over %d frames" % (measured, frames))
             return None
     floor = G.measure_floor(renders)
     print("")
-    print("=== %s (%s): %d runs, floor over %d pairs ==="
-          % (part, COMMANDS[part], runs, floor["pairs"]))
+    print("=== %s / %s (%s): %d runs, floor over %d pairs ==="
+          % (fixture_name, part, COMMANDS[part], runs, floor["pairs"]))
     print("  renders              : %s" % ", ".join(os.path.basename(p) for p in renders))
     print("  levels               : %s dBFS" % ", ".join("%.3f" % v for v in levels))
     print("  floor max |delta|    : %.3f LSB (%.2f dBFS)"
@@ -205,31 +224,8 @@ def measure_path(session, part, fixture, outdir, runs):
         print("    runs %s: %.3f LSB, %d frames differ, level %+.6f dB"
               % (pair["pair"], pair["max_delta_lsb"], pair["differing_frames"],
                  pair["level_delta_db"] or 0.0))
-    return {"part": part, "runs": renders, "floor": floor, "levels": levels}
-
-
-def judge_floor(session, part, floor, row):
-    """The measured floor against the floor the record says this fixture has."""
-    recorded = float(row["floor_max_lsb"])
-    limit = max(G.MARGIN * recorded, G.LSB_FLOOR)
-    session.check("%s: the same-build floor is within the recorded one's tolerance" % part,
-                  floor["max_delta_lsb"] <= limit,
-                  "measured %.3f LSB, recorded %.3f LSB (limit %.3f = 2x, floored at 1 LSB)"
-                  % (floor["max_delta_lsb"], recorded, limit))
-    print("  floor vs record      : measured %.3f LSB, recorded %s LSB on build %s"
-          % (floor["max_delta_lsb"], row["floor_max_lsb"],
-             row["binary_sha256"][:16] or "unrecorded"))
-
-
-def judge_golden(session, part, print_, row):
-    """The candidate's fingerprint against the record's golden envelope, term by term."""
-    passed, lines = R.compare_fingerprints(print_, row)
-    print("  golden vs record:")
-    for line in lines:
-        print("  %s" % line)
-    session.check("%s: the render still measures what the record's golden says" % part,
-                  passed, "recorded rms %.4f dBFS, now %.4f dBFS"
-                  % (float(row["rms_dbfs"]), print_["rms_dbfs"]))
+    return {"fixture": fixture_name, "part": part, "runs": renders, "floor": floor,
+            "levels": levels}
 
 
 def set_gain(session, channel, base, delta_db):
@@ -243,12 +239,15 @@ def set_gain(session, channel, base, delta_db):
 def negative_control(session, fixture, measured, outdir):
     """A deliberate gain change the comparison MUST fail.  Returns the measurements."""
     part, row = measured["part"], measured["row"]
+    label = "%s / %s" % (measured["fixture"], part)
     base, channel = fixture["volume"], fixture["channel"]
     applied = set_gain(session, channel, base, CONTROL_DB)
     print("")
-    print("=== %s: NEGATIVE CONTROL, fader %.6f -> %.6f (%+.4f dB) ==="
-          % (part, base, applied, 20.0 * math.log10(applied / base)))
-    produced = render_once(session, part, fixture, os.path.join(outdir, "%s-control" % part))
+    print("=== %s: NEGATIVE CONTROL, fader %s %.6f -> %.6f (%+.4f dB) ==="
+          % (label, channel, base, applied, 20.0 * math.log10(applied / base)))
+    produced = render_once(session, part, fixture,
+                           os.path.join(outdir, measured["fixture"],
+                                        "%s-control" % part))
     set_gain(session, channel, base, 0.0)              # the fader goes back either way
     if len(produced) != 1:
         return None
@@ -262,8 +261,8 @@ def negative_control(session, fixture, measured, outdir):
              control["level_delta_db"] or 0.0, control["envelope"]["max_delta_db"]))
     for line in lines:
         print("  %s" % line)
-    session.check("%s: THE NEGATIVE CONTROL - a %+.2f dB gain change is CAUGHT" % (part,
-                                                                                   CONTROL_DB),
+    session.check("%s: THE NEGATIVE CONTROL - a %+.2f dB gain change is CAUGHT"
+                  % (label, CONTROL_DB),
                   caught is False,
                   "measured %.3f LSB against a %.3f LSB tolerance - a comparison that "
                   "cannot fail is not evidence" % (control["max_delta_lsb"], tol["lsb"]))
@@ -271,7 +270,7 @@ def negative_control(session, fixture, measured, outdir):
     print("  the record's golden term on the same control render:")
     for line in golden_lines:
         print("  %s" % line)
-    session.check("%s: the record's golden term catches the control too" % part,
+    session.check("%s: the record's golden term catches the control too" % label,
                   golden_passed is False,
                   "the record's own tolerance, %s"
                   % ("failed the control" if not golden_passed
@@ -283,11 +282,12 @@ def negative_control(session, fixture, measured, outdir):
 def bound_sweep(session, fixture, measured, outdir):
     """Which gain changes this programme distinguishes - the bound, measured not asserted."""
     part = measured["part"]
+    label = "%s / %s" % (measured["fixture"], part)
     base, channel = fixture["volume"], fixture["channel"]
     reference = measured["runs"][0]
     tol = G.tolerance(measured["floor"])
     print("")
-    print("=== %s: THE BOUND - which fader changes are distinguishable ===" % part)
+    print("=== %s: THE BOUND - which fader changes are distinguishable ===" % label)
     print("  tolerance: %.3f LSB / %.6f dB (twice the measured floor, floored at 1 LSB)"
           % (tol["lsb"], tol["db"]))
     print("  %-11s %-13s %-14s %-11s %s"
@@ -296,7 +296,8 @@ def bound_sweep(session, fixture, measured, outdir):
     for delta in SWEEP_DB:
         set_gain(session, channel, base, delta)
         produced = render_once(session, part, fixture,
-                               os.path.join(outdir, "%s-sweep-%s" % (part, delta)))
+                               os.path.join(outdir, measured["fixture"],
+                                            "%s-sweep-%s" % (part, delta)))
         set_gain(session, channel, base, 0.0)
         if len(produced) != 1:
             continue
@@ -318,33 +319,9 @@ def bound_sweep(session, fixture, measured, outdir):
     return {"caught": caught, "missed": missed}
 
 
-def record_rows(measured_by_part, binary_sha256):
-    """The record rows for this run's measurements, keyed as the record keys them."""
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    rows = []
-    for measured in measured_by_part:
-        part = measured["part"]
-        print_ = G.fingerprint(measured["runs"][0], binary_sha256)
-        rows.append(R.row_from(FIXTURE, part, COMMANDS[part], measured["floor"], print_,
-                               now))
-    return rows
-
-
-def provenance(binary_sha256, runs):
-    return [
-        "golden-audio record - the measured same-build run-to-run floor and the golden",
-        "fingerprint, per fixture and headline path.",
-        "Written by tests/control-golden-audio.py --write-record; judged by the ctest",
-        "ControlGoldenAudio.  NEVER rewrite a row to make a lane green: this record IS the",
-        "baseline the programme compares against, and a floor rewritten to fit a result is",
-        "a disabled test.",
-        "fixture %s = the socket-built session in control-golden-audio.py's build_fixture()"
-        % FIXTURE,
-        "binary sha256 %s, %s" % (binary_sha256,
-                                  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
-        "runs %d per path; each floor is the worst value over every pair of those runs"
-        % runs,
-    ]
+def record_rows(measured_by_key, binary_sha256):
+    """The record rows for this run's measurements (the record module builds them)."""
+    return R.rows_for(list(measured_by_key.values()), COMMANDS, binary_sha256)
 
 
 def try_quit(session, instance, recorder):
@@ -357,6 +334,58 @@ def try_quit(session, instance, recorder):
     exited, code, waited = instance.wait_for_exit(H.QUIT_TIMEOUT)
     recorder.check("control.quit stops the instance", exited and code == 0,
                    "exited=%r code=%r after %.1fs" % (exited, code, waited))
+
+
+def open_demo_fixture(session):
+    """The second fixture: a BUNDLED project that is RECORDED as not bit-reproducible.
+
+    docs/RENDER-DETERMINISM.md's stability table (rows for `shorties/Root84-TrancyLoop.mmpz`)
+    records it as 3/3 runs distinct, 98.3 % of its frames differing, up to 13 758 LSB, and
+    section 10 says the mechanism is in the instruments and survives six falsification
+    experiments.  That is the non-determinism this programme's tolerance model exists to
+    survive, so the model is measured against a fixture that HAS it - a tolerance model
+    demonstrated only on a bit-reproducible fixture has not been demonstrated.
+
+    The fader the control moves is the MASTER channel: it exists in every session, and this
+    fixture's own tracks are not the only path into the mix.  Opening a project REPLACES the
+    session, which is why this fixture is measured after the socket-built one.
+    """
+    if not os.path.exists(DEMO_PROJECT):
+        session.check("the bundled fixture project exists", False, DEMO_PROJECT)
+        return None
+    opened = session.result("project.open", {"path": DEMO_PROJECT})
+    session.check("the bundled fixture opens with no load errors",
+                  opened.get("file") == DEMO_PROJECT
+                  and opened.get("loaded_with_errors") in (False, None),
+                  "file=%r errors=%r count=%r" % (opened.get("file"),
+                                                  opened.get("loaded_with_errors"),
+                                                  opened.get("error_count")))
+    if opened.get("loaded_with_errors"):
+        return None
+    mixer = session.result("mixer.get_state")
+    channels = {c.get("id"): c for c in (mixer.get("channels") or [])}
+    master = next((cid for cid, entry in channels.items() if entry.get("is_master")), None)
+    session.check("the bundled fixture has an addressable master channel", master is not None,
+                  "mixer.get_state ids=%s" % sorted(channels))
+    if master is None:
+        return None
+    volume = float(channels[master]["volume"])
+    print("fixture %s: %d track(s), tempo %r, master %s fader %.4f"
+          % (DEMO, opened.get("track_count", 0), opened.get("tempo"), master, volume))
+    return {"track": None, "clips": [], "channel": master, "volume": volume}
+
+
+def fixture_plan():
+    """Every fixture this programme measures, and the headline paths it measures on each.
+
+    Two fixtures on purpose.  The socket-built one is cheap and covers all THREE headline
+    paths (a render, a stem export, a freeze/bounce); the bundled one is the fixture the
+    recorded non-determinism actually lives in and carries the render path through it.
+    """
+    return (
+        {"name": FIXTURE, "setup": build_fixture, "parts": PARTS},
+        {"name": DEMO, "setup": open_demo_fixture, "parts": ("render",)},
+    )
 
 
 def main(argv):
@@ -376,7 +405,7 @@ def main(argv):
 
     recorder = Recorder()
     transcript = H.Transcript()
-    parts, fixture = {}, None
+    measured_by_key, any_fixture = {}, False
     with H.start_instance(binary) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)
@@ -389,50 +418,72 @@ def main(argv):
         print("mode     : %s, %d run(s) per path"
               % ("WRITE RECORD" if write_record else "verify", runs))
         try:
-            fixture = build_fixture(session)
-            if fixture is not None:
-                for part in PARTS:
-                    measured = measure_path(session, part, fixture, outdir, runs)
+            for plan in fixture_plan():
+                fixture = plan["setup"](session)
+                if fixture is None:
+                    continue
+                any_fixture = True
+                for part in plan["parts"]:
+                    measured = measure_path(session, plan["name"], part, fixture, outdir,
+                                            runs)
                     if measured is None:
                         continue
-                    row = rows.get((FIXTURE, part))
+                    key = (plan["name"], part)
                     if write_record:
-                        parts[part] = measured
+                        measured_by_key[key] = measured
                         continue
+                    row = rows.get(key)
                     if row is None:
-                        recorder.check("%s: the committed record has a golden row" % part,
-                                       False, "no row for (%s, %s) in %s; run --write-record "
-                                       "and commit the record"
-                                       % (FIXTURE, part, R.RECORD_FILE))
+                        recorder.check("%s %s: the committed record has a golden row"
+                                       % (plan["name"], part), False,
+                                       "no row for %r in %s; run --write-record and commit "
+                                       "the record" % (key, R.RECORD_FILE))
                         continue
                     measured["row"] = row
-                    parts[part] = measured
-                    judge_floor(session, part, measured["floor"], row)
-                    judge_golden(session, part, G.fingerprint(measured["runs"][0]), row)
-                if write_record and parts:
-                    new_rows = record_rows(list(parts.values()), binary_sha256)
-                    path = R.write_record(new_rows, provenance(binary_sha256, runs),
-                                          record_path)
-                    print("\nrecord written: %s (%d rows)" % (path, len(new_rows)))
-                elif not write_record:
-                    for part in PARTS:
-                        if part in parts:
-                            negative_control(session, fixture, parts[part], outdir)
-                    if not ("--skip-sweep" in argv) and "render" in parts:
-                        sweep = bound_sweep(session, fixture, parts["render"], outdir)
-                        recorder.check("render: the -2 dB sweep point is caught (so the "
-                                       "sweep has a working end)",
-                                       any(row["delta_db"] == -2.0 for row in sweep["caught"]),
-                                       "caught: %s" % [row["delta_db"]
-                                                       for row in sweep["caught"]])
-                    try_quit(session, instance, recorder)
+                    measured_by_key[key] = measured
+                    label = "%s / %s" % (plan["name"], part)
+                    R.judge_measurement(session.check, label, measured["floor"],
+                                        G.fingerprint(measured["runs"][0]), row)
+                if write_record:
+                    continue
+                for key, measured in measured_by_key.items():
+                    if key[0] == plan["name"]:
+                        negative_control(session, fixture, measured, outdir)
+                if not ("--skip-sweep" in argv) and (plan["name"], "render") \
+                        in measured_by_key:
+                    sweep = bound_sweep(session, fixture, measured_by_key[(plan["name"],
+                                                                           "render")],
+                                        outdir)
+                    recorder.check("%s render: the -2 dB sweep point is caught (so the "
+                                   "sweep has a working end)" % plan["name"],
+                                   any(row["delta_db"] == -2.0 for row in sweep["caught"]),
+                                   "caught: %s" % [row["delta_db"]
+                                                   for row in sweep["caught"]])
+            if write_record and measured_by_key:
+                new_rows = record_rows(list(measured_by_key.values()), binary_sha256)
+                path = R.write_record(new_rows, R.provenance(binary_sha256, runs, (
+                    "fixture %s = the socket-built session in this file's build_fixture()"
+                    % FIXTURE,
+                    "fixture %s = data/projects/shorties/Root84-TrancyLoop.mmpz, the bundled"
+                    % DEMO,
+                    "  project docs/RENDER-DETERMINISM.md records as still not",
+                    "  bit-reproducible: the recorded non-determinism this tolerance model",
+                    "  exists to survive",
+                )), record_path)
+                print("\nrecord written: %s (%d rows)" % (path, len(new_rows)))
+            elif not write_record:
+                try_quit(session, instance, recorder)
         except BaseException:
             report_on_abort(recorder, transcript, instance)
             raise
     report_results(recorder)
-    if fixture is None:
+    if not any_fixture:
         H.ok("no audible instrument in this build: Skipped, never Passed")
         return 77
+    if not measured_by_key:
+        print("")
+        print("FAIL: no fixture produced a complete measurement")
+        return 1
     if recorder.problems:
         print("")
         recorder.problems.report("golden-audio integration programme")

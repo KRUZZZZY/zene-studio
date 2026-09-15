@@ -275,6 +275,18 @@ def compare(path_a, path_b):
     }
 
 
+def file_dbfs(path):
+    """(frames, whole-file RMS in dBFS) for one render, through THIS module's reader.
+
+    The stdlib `wave` module refuses an IEEE-float WAV ("unknown format: 3") and mis-scales
+    anything that is not 8/16/32-bit PCM, and the export presets can change both.  Reading
+    through `read_wav` means a fixture measured here is measured the same way whatever the
+    export settings were.
+    """
+    wav = read_wav(path)
+    return wav["frames"], dbfs(_rms(wav["flat"]))
+
+
 def fingerprint(path, binary_sha256=""):
     """A committable MEASUREMENT of one render - the golden reference is this, not bytes."""
     wav = read_wav(path)

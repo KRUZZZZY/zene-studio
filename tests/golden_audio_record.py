@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
 import golden_audio_lib as G
 
@@ -117,6 +118,66 @@ def record_tolerance(row):
         "level_delta_db": float(row["floor_level_db"]),
         "envelope": {"max_delta_db": float(row["floor_env_db"])},
     })
+
+
+def judge_measurement(check, label, floor, print_, row, echo=print):
+    """Judge ONE (fixture, path) measurement against its record row.  Returns [lines].
+
+    Two checks, both stated with their numbers, never one before/after value:
+
+      * the FLOOR - this run's same-build run-to-run spread against the floor the record
+        says this fixture has.  The limit is the programme's own rule (twice the recorded
+        floor, floored at 1 LSB); a build whose renders are noisier than that is a finding
+        about the build or the box, and it is reported rather than absorbed.
+      * the GOLDEN - the candidate's fingerprint (envelope, peak envelope, level, frame
+        count) against the record's, at the record's own tolerance.
+    """
+    recorded = float(row["floor_max_lsb"])
+    limit = max(G.MARGIN * recorded, G.LSB_FLOOR)
+    check("%s: the same-build floor is within the recorded one's tolerance" % label,
+          floor["max_delta_lsb"] <= limit,
+          "measured %.3f LSB, recorded %.3f LSB (limit %.3f = 2x, floored at 1 LSB)"
+          % (floor["max_delta_lsb"], recorded, limit))
+    echo("  floor vs record      : measured %.3f LSB (%.2f dBFS), recorded %s LSB on "
+         "build %s" % (floor["max_delta_lsb"], floor["max_delta_dbfs"], row["floor_max_lsb"],
+                       row["binary_sha256"][:16] or "unrecorded"))
+    passed, lines = compare_fingerprints(print_, row)
+    echo("  golden vs record:")
+    for line in lines:
+        echo("  %s" % line)
+    check("%s: the render still measures what the record's golden says" % label, passed,
+          "recorded rms %.4f dBFS, now %.4f dBFS" % (float(row["rms_dbfs"]),
+                                                     print_["rms_dbfs"]))
+
+
+def rows_for(measurements, commands, binary_sha256):
+    """The record rows for a run's measurements, keyed as the record keys them.
+
+    `measurements` is a list of the dicts the harness builds per (fixture, path): the runs,
+    the floor and the command.  `commands` maps the path's short name to its command id.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return [row_from(measured["fixture"], measured["part"],
+                     commands[measured["part"]], measured["floor"],
+                     G.fingerprint(measured["runs"][0], binary_sha256), now)
+            for measured in measurements]
+
+
+def provenance(binary_sha256, runs, fixture_lines):
+    """The record's header: what wrote it, what the fixtures are, and on which build."""
+    return [
+        "golden-audio record - the measured same-build run-to-run floor and the golden",
+        "fingerprint, per fixture and headline path.",
+        "Written by tests/control-golden-audio.py --write-record; judged by the ctest",
+        "ControlGoldenAudio.  NEVER rewrite a row to make a lane green: this record IS the",
+        "baseline the programme compares against, and a floor rewritten to fit a result is",
+        "a disabled test.",
+    ] + list(fixture_lines) + [
+        "binary sha256 %s, %s" % (binary_sha256,
+                                  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
+        "runs %d per path; each floor is the worst value over every pair of those runs"
+        % runs,
+    ]
 
 
 def compare_fingerprints(print_, row):
