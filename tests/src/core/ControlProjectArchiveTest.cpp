@@ -2,34 +2,31 @@
  * ControlProjectArchiveTest.cpp - the project.missing_assets /
  *                                 project.hash_assets / project.relink group's
  *                                 SURFACE and its measured effect (feature row
- *                                 38, SPEC A11-A16 and the release contract
- *                                 section 3.1).
+ *                                 38, SPEC A11-A16, release contract 3.1).
  *
  * The ENGINE half is include/ControlProjectAssets.h (the READ TU
  * ControlProjectAssets.cpp and the WRITE TU ControlProjectAssetsRelink.cpp);
  * this file holds the surface to account, in process: the three registered ids
- * with their schemas and their mutating flags, the three contract rows, and -
- * the part that is not optional - the measured effect.
+ * with their schemas and mutating flags, the three contract rows, and the
+ * measured effect.
  *
  * The NEGATIVE CONTROL is anIntactProjectReportsNoMissingAssets(): a project
  * whose every reference is on disk reports an EMPTY missing list. A detector
  * that reported everything, or that counted a reference it never resolved,
  * fails there and not in the positive test. Its twin,
- * eachUnresolvableReferenceIsReportedWithItsStoredValue(), is the positive half:
- * three references whose files are gone, each named by the value the project
- * stores, with the reason it is unusable.
+ * eachUnresolvableReferenceIsReportedWithItsStoredValue(), is the positive half.
  *
  * The relink half proves the inverse for real: relink, read the file back, then
  * control.undo and compare the whole document with the bytes that were there
  * before (not "the attribute looks right again").
  *
- * The registered proof is THIS file, as the ctest ControlProjectArchive
- * (registered in tests/CMakeLists.txt): it drives the three ids through
- * ControlRegistry::invoke, the same entry the socket calls, so the ids,
- * the schemas, the contract rows and the measured effects are one test.
- * A committed --control-socket transcript is NOT provided by this lane -
- * the release contract's third item allows either - and that absence is
- * stated in docs/KNOWN-LIMITATIONS.md rather than implied away.
+ * The registered proof is THIS file, as the ctest ControlProjectArchiveTest
+ * (tests/CMakeLists.txt): it drives the three ids through
+ * ControlRegistry::invoke, the same entry the socket calls, so the ids, the
+ * schemas, the contract rows and the measured effects are one test. A committed
+ * --control-socket transcript is NOT provided by this lane - the contract's
+ * third item allows either - and that absence is stated in
+ * docs/KNOWN-LIMITATIONS.md rather than implied away.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -85,11 +82,8 @@ QStringList archiveIds()
 	};
 }
 
-QByteArray readBytes(const QString& path)
-{
-	QFile file(path);
-	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
-}
+//! readBytes() is revtest::readBytes (ReversibilityTestSupport.h): one
+//! definition, not a second copy that could drift from it.
 
 bool writeBytes(const QString& path, const QByteArray& bytes)
 {
@@ -109,59 +103,44 @@ QString sha256Of(const QString& path)
 //! under test hash what is there; they do not decode it.
 QByteArray fakeWave(int payloadBytes)
 {
-	QByteArray out = QByteArray("RIFF") + QByteArray(4, '\0') + QByteArray("WAVEfmt ");
-	out += QByteArray(16, '\0');
-	out += QByteArray("data");
-	out += QByteArray(payloadBytes, '\1');
-	return out;
+	return QByteArray("RIFF").append(4, '\0').append("WAVEfmt ").append(16, '\0')
+		.append("data").append(payloadBytes, '\1');
 }
 
-/*! The fixture project, written where the references say they are.
- *
- *  Five references, one of them inline:
- *    sampleclip            -> <dir>/clip.wav      (absolute)
- *    audiofileprocessor    -> <dir>/sample.wav    (absolute)
- *    sampleclip            -> gone.wav            (legacy relative, project dir)
- *    sf2player             -> <dir>/sound.sf2     (absolute)
- *    session clip slot     -> <dir>/slot.wav      (absolute)
- *  plus one element whose media is inline (src="" with sampledata), which is
- *  counted, not listed.
- */
+/*! The fixture project. Five references, one of them inline:
+ *    sampleclip          -> <dir>/clip.wav      (absolute)
+ *    audiofileprocessor  -> <dir>/sample.wav    (absolute)
+ *    sampleclip          -> gone.wav            (legacy relative, project dir)
+ *    sf2player           -> <dir>/sound.sf2     (absolute)
+ *    session clip slot   -> <dir>/slot.wav      (absolute)
+ *  plus one element whose media is inline (src="" with sampledata), which the
+ *  scan counts rather than lists. */
 QByteArray fixtureDocument(const QString& dir)
 {
 	const QString quoted = QDir::fromNativeSeparators(dir);
 	QString xml = QStringLiteral(
 		"<?xml version=\"1.0\"?>\n"
-		"<zene-project creator=\"Zene Studio\" version=\"1.0\" type=\"song\" "
-		"creatorversion=\"0.3.0\">\n"
+		"<zene-project creator=\"Zene Studio\" version=\"1.0\" type=\"song\" creatorversion=\"0.3.0\">\n"
 		"  <head bpm=\"120\" timesig_numerator=\"4\" timesig_denominator=\"4\"/>\n"
 		"  <song>\n"
 		"    <trackcontainer type=\"song\">\n"
 		"      <track name=\"Audio\" type=\"0\">\n"
-		"        <instrumenttrack>\n"
-		"          <instrument name=\"audiofileprocessor\">\n"
-		"            <audiofileprocessor src=\"%1/sample.wav\" amp=\"100\"/>\n"
-		"          </instrument>\n"
+		"        <instrumenttrack><instrument name=\"audiofileprocessor\">\n"
+		"          <audiofileprocessor src=\"%1/sample.wav\" amp=\"100\"/></instrument>\n"
 		"          <sampleclip pos=\"0\" len=\"192\" src=\"%1/clip.wav\"/>\n"
 		"          <sampleclip pos=\"192\" len=\"192\" src=\"gone.wav\"/>\n"
 		"        </instrumenttrack>\n"
-		"        <instrumenttrack instrument=\"1\">\n"
-		"          <instrument name=\"sf2player\">\n"
-		"            <sf2player src=\"%1/sound.sf2\" bank=\"0\" patch=\"0\"/>\n"
-		"          </instrument>\n"
+		"        <instrumenttrack instrument=\"1\"><instrument name=\"sf2player\">\n"
+		"          <sf2player src=\"%1/sound.sf2\" bank=\"0\" patch=\"0\"/></instrument>\n"
 		"        </instrumenttrack>\n"
-		"        <instrumenttrack instrument=\"2\">\n"
-		"          <instrument name=\"audiofileprocessor\">\n"
-		"            <audiofileprocessor src=\"\" sampledata=\"AAAA\" amp=\"100\"/>\n"
-		"          </instrument>\n"
+		"        <instrumenttrack instrument=\"2\"><instrument name=\"audiofileprocessor\">\n"
+		"          <audiofileprocessor src=\"\" sampledata=\"AAAA\" amp=\"100\"/></instrument>\n"
 		"        </instrumenttrack>\n"
 		"      </track>\n"
 		"    </trackcontainer>\n"
-		"    <session>\n"
-		"      <clips>\n"
-		"        <clip track=\"0\" scene=\"0\" type=\"1\" src=\"%1/slot.wav\"/>\n"
-		"      </clips>\n"
-		"    </session>\n"
+		"    <session><clips>\n"
+		"      <clip track=\"0\" scene=\"0\" type=\"1\" src=\"%1/slot.wav\"/>\n"
+		"    </clips></session>\n"
 		"  </song>\n"
 		"</zene-project>\n").arg(quoted);
 	return xml.toUtf8();
@@ -183,12 +162,6 @@ QString writeFixture(const QString& dir, const QString& projectName, bool intact
 	return project;
 }
 
-//! The references array of a run, or an empty one when the call failed.
-QJsonArray referencesOf(const ControlResult& result)
-{
-	return result.result.value(QStringLiteral("references")).toArray();
-}
-
 //! The reference whose stored value is \a raw.
 QJsonObject referenceWithRaw(const QJsonArray& references, const QString& raw)
 {
@@ -205,17 +178,6 @@ QJsonObject referenceWithRaw(const QJsonArray& references, const QString& raw)
 QJsonArray missingOf(const ControlResult& result)
 {
 	return result.result.value(QStringLiteral("missing")).toArray();
-}
-
-//! Every raw value the project stores, in document order.
-QStringList rawsOf(const QJsonArray& references)
-{
-	QStringList out;
-	for (const QJsonValue& value : references)
-	{
-		out.append(value.toObject().value(QStringLiteral("raw")).toString());
-	}
-	return out;
 }
 
 } // namespace
@@ -329,7 +291,7 @@ private slots:
 		QVERIFY2(hashed.ok, qPrintable(hashed.errorMessage));
 		QCOMPARE(hashed.result.value(QStringLiteral("hashed_count")).toInt(), 5);
 		QCOMPARE(hashed.result.value(QStringLiteral("unhashed_present")).toInt(), 0);
-		for (const QJsonValue& value : referencesOf(hashed))
+		for (const QJsonValue& value : hashed.result.value(QStringLiteral("references")).toArray())
 		{
 			const QJsonObject ref = value.toObject();
 			const QString path = ref.value(QStringLiteral("path")).toString();
@@ -355,7 +317,10 @@ private slots:
 		QCOMPARE(scanned.result.value(QStringLiteral("missing_count")).toInt(), 1);
 		QCOMPARE(scanned.result.value(QStringLiteral("missing")).toArray().size(), 1);
 
-		const QJsonObject gone = referenceWithRaw(missingOf(scanned), QStringLiteral("gone.wav"));
+		const QJsonArray references = scanned.result.value(QStringLiteral("references")).toArray();
+		QCOMPARE(references.size(), 5);
+		const QJsonObject gone = referenceWithRaw(scanned.result.value(QStringLiteral("missing"))
+			.toArray(), QStringLiteral("gone.wav"));
 		QVERIFY2(!gone.isEmpty(), "the legacy relative reference was not reported");
 		QCOMPARE(gone.value(QStringLiteral("tag")).toString(), QStringLiteral("sampleclip"));
 		QCOMPARE(gone.value(QStringLiteral("resolved_via")).toString(), QStringLiteral("project-dir"));
@@ -367,9 +332,10 @@ private slots:
 
 		// The present ones are still reported, with their type and path: an agent
 		// sees the whole reference set, not only the failures.
-		QCOMPARE(rawsOf(referencesOf(scanned)).size(), 5);
-		QCOMPARE(referenceWithRaw(referencesOf(scanned), QStringLiteral("gone.wav"))
+		QCOMPARE(referenceWithRaw(references, QStringLiteral("gone.wav"))
 			.value(QStringLiteral("missing")).toBool(), true);
+		QCOMPARE(referenceWithRaw(references, QStringLiteral("gone.wav"))
+			.value(QStringLiteral("exists")).toBool(), false);
 	}
 
 	//! Hashing is the identity step: the digest is stable, and relinking
