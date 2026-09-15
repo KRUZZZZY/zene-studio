@@ -41,25 +41,25 @@ are the number of citing files of each class, measured by the sweep on the commi
 
 | file | source (program workspace) | bytes | sha256 | code | docs |
 |---|---|---:|---|---:|---:|
-| `A16-STATUS-MEASURED.md` | `ableton-gap/A16-STATUS-MEASURED.md` | 7,516 | `4631af8220ebb137` | 6 | 9 |
-| `AGENT-SURFACE-INVENTORY.md` | `AGENT-SURFACE-INVENTORY.md` | 78,465 | `319c6350edbf2b49` | 0 | 5 |
-| `AGENT-TOOLING.md` | `ableton-gap/AGENT-TOOLING.md` | 32,394 | `c71ffea13b7634c4` | 26 | 16 |
-| `GIT-FRIENDLY-MMPZ.md` | `GIT-FRIENDLY-MMPZ.md` | 40,213 | `51e9402c9e385dd9` | 5 | 3 |
-| `NEURAL-AMP.md` | `NEURAL-AMP.md` | 32,784 | `f4c747a86beea66b` | 2 | 2 |
-| `PART-D-SIDECHAIN.md` | `PART-D-SIDECHAIN.md` | 21,273 | `8d8c7e75d97b962a` | 3 | 2 |
-| `PATCHER-MVP.md` | `PATCHER-MVP.md` | 13,786 | `91fb1d5014ae7f3a` | 2 | 3 |
-| `RECORDING-PROTOTYPE.md` | `RECORDING-PROTOTYPE.md` | 43,569 | `1c2bf51384aa6945` | 2 | 5 |
-| `SPEC-dynamic-routing.md` | `mixer/SPEC-dynamic-routing.md` | 44,148 | `9fa32752d146f4fa` | 5 | 7 |
-| `SPEC-lua-api-v0.md` | `specs/SPEC-lua-api-v0.md` | 7,937 | `8ffcec1cd6dd5059` | 8 | 8 |
-| `SPEC-neural-amp.md` | `specs/SPEC-neural-amp.md` | 5,649 | `a5a86245138673a8` | 3 | 2 |
+| `A16-STATUS-MEASURED.md` | `ableton-gap/A16-STATUS-MEASURED.md` | 7,516 | `4631af8220ebb137` | 6 | 8 |
+| `AGENT-SURFACE-INVENTORY.md` | `AGENT-SURFACE-INVENTORY.md` | 78,465 | `319c6350edbf2b49` | 0 | 4 |
+| `AGENT-TOOLING.md` | `ableton-gap/AGENT-TOOLING.md` | 32,394 | `c71ffea13b7634c4` | 26 | 15 |
+| `GIT-FRIENDLY-MMPZ.md` | `GIT-FRIENDLY-MMPZ.md` | 40,213 | `51e9402c9e385dd9` | 5 | 2 |
+| `NEURAL-AMP.md` | `NEURAL-AMP.md` | 32,784 | `f4c747a86beea66b` | 2 | 1 |
+| `PART-D-SIDECHAIN.md` | `PART-D-SIDECHAIN.md` | 21,273 | `8d8c7e75d97b962a` | 3 | 1 |
+| `PATCHER-MVP.md` | `PATCHER-MVP.md` | 13,786 | `91fb1d5014ae7f3a` | 2 | 2 |
+| `RECORDING-PROTOTYPE.md` | `RECORDING-PROTOTYPE.md` | 43,569 | `1c2bf51384aa6945` | 2 | 4 |
+| `SPEC-dynamic-routing.md` | `mixer/SPEC-dynamic-routing.md` | 44,148 | `9fa32752d146f4fa` | 5 | 6 |
+| `SPEC-lua-api-v0.md` | `specs/SPEC-lua-api-v0.md` | 7,937 | `8ffcec1cd6dd5059` | 8 | 7 |
+| `SPEC-neural-amp.md` | `specs/SPEC-neural-amp.md` | 5,649 | `a5a86245138673a8` | 3 | 1 |
 | `SPEC-slide-notes.md` | `specs/SPEC-slide-notes.md` | 7,059 | `d958a1b35c1aa327` | 1 | 1 |
-| `SPEC-stable-ids.md` | **live document** — lives here | 4,575 | — | 40 | 7 |
-| `SPEC-stem-split.md` | `specs/SPEC-stem-split.md` | 5,689 | `930492bd8551fff0` | 5 | 4 |
+| `SPEC-stable-ids.md` | **live document** — lives here | 4,575 | — | 40 | 6 |
+| `SPEC-stem-split.md` | `specs/SPEC-stem-split.md` | 5,689 | `930492bd8551fff0` | 5 | 3 |
 | `SPEC-two-track-recording.md` | `specs/SPEC-two-track-recording.md` | 7,371 | `a12afbd648c36417` | 0 | 3 |
-| `SPEC-wasm-sandbox.md` | `specs/SPEC-wasm-sandbox.md` | 5,285 | `cd073153065a65f8` | 7 | 3 |
-| `SPEC-zene-studio.md` | `ableton-gap/SPEC-zene-studio.md` | 16,725 | `fabc0ae8bc97e1cd` | 15 | 24 |
+| `SPEC-wasm-sandbox.md` | `specs/SPEC-wasm-sandbox.md` | 5,285 | `cd073153065a65f8` | 7 | 2 |
+| `SPEC-zene-studio.md` | `ableton-gap/SPEC-zene-studio.md` | 16,725 | `fabc0ae8bc97e1cd` | 15 | 23 |
 | `VST3-LICENSING.md` | `plugin-hosting/VST3-LICENSING.md` | 5,001 | `631a72f01a684e8b` | 1 | 1 |
-| `WASM-SANDBOX.md` | `WASM-SANDBOX.md` | 34,079 | `1d233d09442ce2a1` | 3 | 2 |
+| `WASM-SANDBOX.md` | `WASM-SANDBOX.md` | 34,079 | `1d233d09442ce2a1` | 3 | 1 |
 
 The eleven added on 2026-09-15 are everything the first pass recorded as "cited, not
 committed" and had not meanwhile been committed: `A16-STATUS-MEASURED.md`,
@@ -78,12 +78,12 @@ product repository is a decision larger than DOC-5 carries.
 
 | cited name | where it lives | code | docs | why it is not here |
 |---|---|---:|---:|---|
-| `AGENTS.md` | workspace root | 10 | 12 | program governance (lane rules, board, verified facts), not a product spec |
-| `BACKLOG.md` | workspace root | 2 | 11 | the owner-gated backlog register |
+| `AGENTS.md` | workspace root | 9 | 11 | program governance (lane rules, board, verified facts), not a product spec |
+| `BACKLOG.md` | workspace root | 2 | 10 | the owner-gated backlog register |
 | `findings-ai-dsp.md` | workspace root | 3 | 3 | findings, not a specification; its facts are already carried by `SPEC-neural-amp.md` and `SPEC-stem-split.md` |
-| `feedback/grade-B-recording.md` | workspace `feedback/` | 3 | 3 | an independent audit report |
-| `ableton-gap/PLAN-zene-studio.md` | workspace `ableton-gap/` | 1 | 2 | the wave plan (cited by `SPEC-zene-studio.md` as `PLAN.md`) |
-| `PLANNED-WORK-MASTER-LIST-2026-09-13.md`, `V0.3-ALPHA-PLAN.md`, `WAVE-1-BRIEFS.md`, `NEXT-0.3.0-AGENT-PROMPT.md`, `HANDOFF-0.2.0-RELEASE.md`, `MCP-ZENE-CONTROL.md`, `projects/lmms-fl-research/START-HERE.md`, `projects/lmms-fl-research/STATUS-CORRECTION-2026-09-13.md` | workspace root / `projects/` | 1 each | 0–4 | program handoffs, plans and lane briefs |
+| `feedback/grade-B-recording.md` | workspace `feedback/` | 3 | 1 | an independent audit report |
+| `ableton-gap/PLAN-zene-studio.md` | workspace `ableton-gap/` | 0 | 2 | the wave plan (cited by `SPEC-zene-studio.md` as `PLAN.md`) |
+| `PLANNED-WORK-MASTER-LIST-2026-09-13.md`, `V0.3-ALPHA-PLAN.md`, `WAVE-1-BRIEFS.md`, `NEXT-0.3.0-AGENT-PROMPT.md`, `HANDOFF-0.2.0-RELEASE.md`, `MCP-ZENE-CONTROL.md`, `projects/lmms-fl-research/START-HERE.md`, `projects/lmms-fl-research/STATUS-CORRECTION-2026-09-13.md` | workspace root / `projects/` | 1–2 each | 0–4 | program handoffs, plans and lane briefs |
 | `SPEC-zene-ui-v0.md` | workspace `specs/` | 0 | 0 | **cited by nothing in this tree** — measured, not assumed; the same sweep that found the others does not find it |
 | `SPEC-slide-notes.md` | — | 1 | 1 | committed above |
 
@@ -99,7 +99,7 @@ train brings these in; they are not dangling and nothing was changed for them.
 | cited name | branch that has it | code | docs |
 |---|---|---:|---:|
 | `docs/FEATURE-LIST-0.3.0.md` (and bare `FEATURE-LIST-0.3.0.md`) | `030/audit`, `release/0.3.0` | 56 | 6 |
-| `docs/CONTROL-SURFACE-FUZZ.md` | `audit/control-surface-fuzz` | 1 | 2 |
+| `docs/CONTROL-SURFACE-FUZZ.md` | `audit/control-surface-fuzz` | 1 | 1 |
 | `docs/CI-FIX-AUDIT.md` | `audit/ci-fixes` | 0 | 1 |
 
 The 2026-09-13 pass flagged the second of these as "no such file exists in the tree; either it
