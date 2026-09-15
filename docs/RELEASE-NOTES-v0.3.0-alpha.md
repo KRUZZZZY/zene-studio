@@ -1995,6 +1995,23 @@ The Session View, racks, comping, MPE modulation, Link sync, browser search and 
 0.3.0 scope, plus the release-bar statements, are the responsibility of their own lanes and wave W12. This
 file grows as those land; it is not a summary of 0.3.0 and must not be read as one.
 
+## Session View: eleven ids, measured one at a time (030/session-api-proof, task #642)
+
+- **The scope contract's fourth criterion for this group, in one line: the Session View is drivable through
+  the socket and not from the interface.** The group is `session.get_state`, `session.set_grid`,
+  `session.set_quantisation`, `session.set_scene`, `session.set_slot`, `session.clear`, `session.clear_slot`,
+  `session.launch_slot`, `session.launch_scene`, `session.stop_slot` and `session.stop_all`; `docs/KNOWN-LIMITATIONS.md`
+  carries the same sentence with its bounds (no clip launcher, no scene launcher and no clip grid, and a
+  launched slot renders no audio because `src/core/SessionClip.cpp` is serialisation only).
+- **Each of the eleven was driven over `--control-socket` and measured, not read.** The transcript is
+  `docs/reports/SESSION-API-PROOF-transcript-2026-09-15.txt` and the registered ctest is
+  `ControlSessionApiProof` (`tests/control-session-api-proof.py`), which builds a grid, launches a clip and a
+  whole scene, stops one slot and then all of them, clears a cell and then the grid, and reads each effect
+  back - including the SPEC A16 class read out of the running registry (`control.transactions`), so the
+  table's registered reference is a measurement too. **No id in the group is a refusal stub:** every one
+  answers `ok:true` for a legal call and changes what it claims to, and all eleven also refuse with a typed
+  `invalid_args` the illegal one. The table is `docs/reports/SESSION-API-PROOF-2026-09-15.md`.
+
 ## The recording engine surface: an arbitrary input count, a drivable multi-track recorder, and a retro window
 
 Three feature rows of `docs/FEATURE-LIST-0.3.0.md` that were one chain, landed together: **row 64** (arbitrary
