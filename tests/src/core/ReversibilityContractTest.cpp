@@ -89,26 +89,50 @@ DocumentedHistogram documentedHistogram()
 {
 	/*! telemetry-off, wasm-off base; the guards add the rest.
 	 *
-	 *  THE MERGED TREE'S OWN MEASUREMENT - the 0.3.0-alpha wave-2 five-lane
-	 *  merge train. `ReversibilityContractTest` was run against a build of the
-	 *  merged tip and the table measures 283 rows over the four classes: 151
-	 *  true_inverse, 21 snapshot, 6 irreversible, 105 not_mutating. The release
-	 *  configuration has the telemetry client in and no wasmtime, so the base
-	 *  below is 281 / 151 / 21 / 6 / 103 and the telemetry guard adds the two
-	 *  telemetry.* rows back at the bottom.
+	 *  RE-MEASURED ON THE MERGED TIP, 2026-09-15, by the wave-4 integration
+	 *  train - the constant is a MEASUREMENT and this is the tree's own number,
+	 *  not a sum of anybody's lane report. Measured with
+	 *  `bash .merge-logs-030w4/measure-a16.sh` (part 2 of tools/dawproject-proof.sh
+	 *  on its own: the probe tools/dawproject-a16-histogram.cpp compiled against
+	 *  this tree's src/core/ControlReversibilityTable*.cpp with this build's own
+	 *  flags, the tables assembled the way ReversibilityTable's constructor
+	 *  assembles them). It printed, for this configuration (ZENE_TELEMETRY_ENABLED
+	 *  on, -DLMMS_HAVE_WASM=1, WANT_STEM_SPLIT off):
 	 *
-	 *  EVERY FIGURE A LANE WROTE WHILE IT WAS LANDING WAS BRANCH-LOCAL, measured
-	 *  on the lane's own base - 228 from 030/undo-structural, 236 from
-	 *  030/chord-track, 227 from 030/project-archive - against the 265 / 141 /
-	 *  21 / 7 / 96 the wave-1 eight-lane train's tip carried. None of them is
-	 *  this tree's number, and this constant is not a sum of anybody's report
-	 *  either: it was measured, and the measurement agrees with the five lanes'
-	 *  own deltas exactly. 265 + 4 (interchange: 3 not_mutating + 1
-	 *  true_inverse) + 1 (track.move) + 9 (chord: 3 reads not_mutating, 4 track
-	 *  edits + 2 generators true_inverse) + 3 (project assets: 2 not_mutating +
-	 *  1 true_inverse) + 1 (plugin.host_chunking, not_mutating) = 283 rows.
-	 *  The class columns add up the same way, and the undo lane's one
-	 *  RECLASSIFICATION shows as the irreversible column going DOWN: a removed
+	 *      MEASURED rows=322 true_inverse=156 snapshot=30 irreversible=10 not_mutating=126
+	 *
+	 *  The base below is that measurement with the guards' own additions removed
+	 *  (-2 rows / -2 not_mutating for telemetry, -6 rows / -3 snapshot /
+	 *  -3 not_mutating for wasm; stem is off, so its seven rows are absent from
+	 *  both sides), i.e. 314 / 156 / 27 / 10 / 121 - and the four class columns
+	 *  sum to 314 exactly.
+	 *
+	 *  WHAT MOVED IT SINCE THE WAVE-3 TIP (285 / 152 / 21 / 6 / 106 in the same
+	 *  base): the eight branches this train merged. Their deltas are each named
+	 *  beside their own rows in src/core/ControlReversibilityTable*.cpp, and the
+	 *  merge commits record the per-file union counts; the numbers above are what
+	 *  the TABLE measures, which is the thing this assertion is about.
+	 *
+	 *  DRIFT WARNING, STATED RATHER THAN HIDDEN: the A16 paragraph in
+	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md still carries the wave-3 train's
+	 *  figures (284 rows and the per-lane deltas around it). The two are meant to
+	 *  agree; re-taking that paragraph is the merge point's remaining doc task,
+	 *  named in the train's report rather than silently reconciled here.
+	 *
+	 *  The older history below is kept because each paragraph names a real
+	 *  branch-local figure and why it is not this tree's number.
+	 *
+	 *  THE WAVE-2 FIVE-LANE TRAIN'S MEASUREMENT, as it stood before this merge:
+	 *  the table measured 283 rows over the four classes - 151 true_inverse,
+	 *  21 snapshot, 6 irreversible, 105 not_mutating - so its base was
+	 *  281 / 151 / 21 / 6 / 103 with the telemetry guard adding the two
+	 *  telemetry.* rows back. EVERY FIGURE A LANE WROTE WHILE IT WAS LANDING WAS
+	 *  BRANCH-LOCAL, measured on the lane's own base - 228 from
+	 *  030/undo-structural, 236 from 030/chord-track, 227 from 030/project-archive
+	 *  - against the 265 / 141 / 21 / 7 / 96 the wave-1 eight-lane train's tip
+	 *  carried. None of them is this tree's number, and the constant is not a
+	 *  sum of anybody's report either: it was measured. The undo lane's one
+	 *  RECLASSIFICATION shows as the irreversible column going DOWN - a removed
 	 *  device is re-instantiated with its settings by one `control.undo`, so
 	 *  plugin.unload left the irreversible block for true_inverse (-1
 	 *  irreversible, +1 true_inverse) and its four structural rows
@@ -116,14 +140,8 @@ DocumentedHistogram documentedHistogram()
 	 *  table TU, src/core/ControlReversibilityTableStructure.cpp, joined into
 	 *  the action half so the block still reads as ONE `true_inverse` block with
 	 *  one row count. Each lane's delta is named beside its rows in
-	 *  src/core/ControlReversibilityTable*.cpp. The paragraph in
-	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md carries the same numbers; this
-	 *  assertion's job is that the two cannot drift.
-	 *
-	 *  DAWproject (feature row 37, this lane): +4 rows - 3 not_mutating
-	 *  (dawproject.convention, export, read) + 1 true_inverse (import), so the
-	 *  merged tip's base becomes 285 / 152 / 21 / 6 / 106. */
-	DocumentedHistogram out{285, 152, 21, 6, 106};
+	 *  src/core/ControlReversibilityTable*.cpp. */
+	DocumentedHistogram out{314, 156, 27, 10, 121};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
