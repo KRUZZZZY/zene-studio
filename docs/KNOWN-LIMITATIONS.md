@@ -883,3 +883,27 @@ loudness by design, which is the target axis) and **no pick-log** — which is e
 (wave 3) is not here: it is gated on real user pick-logs, which do not exist yet. Likewise the engine is
 drivable through the socket and **nothing in the interface masters anything**: there is no Export-dialog
 mastering mode, no candidate list panel and no A/B player.
+
+**Import detection (`detect.*`) suggests a tempo and a key, and it is drivable only through the socket.**
+`detect.analyze` reads one audio file and reports a tempo (BPM), the first transient it carries and a key;
+`detect.apply` writes them into the project's own fields — the tempo as ONE integer-BPM tempo-map event at tick 0
+with the map switched on, the key into the project's `<detected-key>` element under a name the pre-existing
+ChordTable scale vocabulary already answers to. **Its accuracy is measured only on synthesised input with a known
+answer** (a click track at 128 BPM and one at 90 BPM — 128.131 and 89.878 BPM measured; an A major scale over an
+A bass — tonic A, major, score 1.160, margin 0.060): **real-world detection accuracy is unverified on this box**,
+no real-music corpus was analysed, and the confidence numbers the commands return are the detector's own scores
+(the envelope's periodicity at the chosen lag; a rank margin for the key) — **not probabilities, and no accuracy
+figure for real music is quoted anywhere in this release.** The bounds, stated because each one is a way the
+answer can be wrong rather than a detail: the tempo band is 40..240 BPM and the choice of lag carries a
+120 BPM-centred log-Gaussian prior, so a metrical relative can still be reported and the prior itself biases
+toward the centre; the tempo map holds an INTEGER bpm, so an applied tempo is rounded to the nearest whole BPM
+(the exact estimate is reported beside it) and a tempo outside the map's own 10..999 is refused rather than
+clamped; at most 60 s (300 s hard maximum) from the START of the file is analysed; the analysis is mono; the
+chroma is 12-tone equal-tempered by construction, so tuning, microtonality and other temperaments are outside it;
+the scale vocabulary is exactly the ChordTable's own `isScale()` set deduplicated by mask (the first name the
+table holds for a mask wins — `Aeolian` before `Minor`), and a detected key with no name in that table is
+REFUSED rather than written. **Nothing in the interface detects, suggests or applies anything**: there is no
+import hook that runs a detection, no suggestion panel and no accept button — the socket is the surface
+(`grep -rniI 'detect\.' src/gui/` finds no call site of these commands) — and the piano roll's OWN key/scale
+combo is **not** moved by this feature: it stays the per-window state it has always been.
+`docs/IMPORT-DETECTION.md` is the full record.

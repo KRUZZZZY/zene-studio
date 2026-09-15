@@ -272,6 +272,7 @@ include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
 include/ControlCompSupport.h
+include/ControlDetectSupport.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlGrooveSupport.h
@@ -451,6 +452,7 @@ src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsDetect.cpp
+src/core/ControlCommandsDetectApply.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsFreeze.cpp
@@ -510,6 +512,7 @@ src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlCommandsWasm.cpp
 src/core/ControlCommandsWasmEdit.cpp
 src/core/ControlCompSupport.cpp
+src/core/ControlDetectSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp

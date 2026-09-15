@@ -1258,6 +1258,74 @@ joins the routing surface's: the passive block and the live block are both at th
   renders in this tree are **not bit-reproducible** run to run, so two runs of the same master are equal only
   to the meter's tolerance (≤ 0.05 LU / 0.01 dB), never byte for byte.
 
+## Import detection: a tempo, a first transient and a key from an audio file (`detect.*`) — added 2026-09-15
+
+Row 34 of `docs/FEATURE-LIST-0.3.0.md` ("Transient / BPM / key detection on import", section 6), whose two
+dependencies — the tempo map and the scale machinery — are both in this line. Three ids, and the split between
+them is the feature's whole design: **`detect.analyze` is the suggestion and `detect.apply` is the acceptance**,
+because `BACKLOG.md` item 10 states the scope this follows rather than exceeds ("shown as SUGGESTIONS the user
+accepts — never applied silently").
+
+- **`detect.analyze`** reads ONE audio file through the engine's OWN decoder (`SampleDecoder`, the same libsndfile
+  path an import takes) and reports the tempo (BPM), the **first transient** (seconds and frames) and the key
+  (tonic pitch class + scale name), each with the detector's own score and the method that produced it. It writes
+  nothing.
+- **`detect.apply`** writes the result into the **project's own fields**: the tempo as ONE tempo-only event at
+  tick 0 with the map switched on (tick 0 is the map's total override, so every tick answers the detected tempo),
+  and the key into the project's `<detected-key>` element. `tempo` and `key` select the halves; a half the
+  analysis found nothing for is **REFUSED** and NEITHER half is written — no half-detection is left behind.
+- **`detect.get_state`** reads back the key field, the map's state and its tempo at tick 0, the two method names,
+  the declared bounds, the published scale vocabulary, and the accuracy sentence the reply carries
+  (`method.accuracy_note`).
+- **The method is named, and there is no new dependency.** Tempo: `spectral-flux-autocorrelation` — a
+  spectral-flux onset envelope, a local-mean subtraction, an autocorrelation over the declared 40–240 BPM band
+  with a log-Gaussian prior centred at 120 BPM and a refinement against the longest in-band harmonic of the
+  winning lag. Key: `chroma-tonic-weighted-set-match` — a 12-bin chroma over 110 Hz–3 kHz scored against the
+  caller's templates by the chroma mass on the tonic plus half the mean mass on the template's other degrees. The
+  FFT is a hand-rolled iterative radix-2 transform, which is how `BACKLOG.md` item 10's licence question ("aubio
+  is GPL-2.0-or-later, Essentia is AGPL-3.0 — a blocker, and a hand-rolled spectral-flux detector needs no
+  dependency at all. **Choose explicitly**") is answered: the feature adds no library, so there is no licence to
+  verify. No published key-profile constants are copied in either — the tonic weighting is this project's own and
+  is declared as such.
+- **The key's vocabulary is the PRE-EXISTING one.** The candidate scales are
+  `InstrumentFunctionNoteStacking::ChordTable` — the table the piano roll's scale combo is filled from — filtered
+  by the table's own `isScale()` rule, deduplicated by pitch-class mask in table order, and filtered by one
+  declared information rule (more than nine of twelve degrees carries no key information). This feature names no
+  new scales, and a scale name the table cannot resolve is refused rather than written.
+- **Reversibility (SPEC A16):** two `not_mutating` inspectors and one `true_inverse` row whose inverse is a
+  recorded ACTION checkpoint — neither half is reachable by a live object checkpoint (the tempo map is not a
+  `JournallingObject` and is not in the Song's own checkpoint; the key is a plain value on the Song). Both states
+  are captured before the first write, so **one `control.undo` takes a whole detection off**, and the record
+  carries the key XML whole.
+- **Proof, all registered:** the QTest `ImportDetectionTest` (registered in `tests/CMakeLists.txt`) writes
+  RIFF/WAVE fixtures **byte by byte**, reads them back through the engine's own decoder, and asserts the answers,
+  the method names, the vocabulary link and the refusals; the socket transcript `ControlDetectCommands`
+  (`tests/control-detect-commands.py`) synthesises the same fixtures with the standard library, drives the real
+  binary over `--control-socket`, and checks that `detect.apply` lands the tempo in the **tempo map** (read back
+  through `transport.tempo_map_get`, a different verb) and the key in the project's own field, that
+  `project.save` carries both into the file, and that ONE `control.undo` takes both off. Both are registered in
+  the tree; the compile evidence this lane measured is per-translation-unit (see the lane report), because the
+  whole-product build for this line is the integration pass's.
+- **The arithmetic is ALSO provable without the product:** `tools/import-detection-proof.cpp` compiles the
+  Qt-free unit with one `g++` command and runs the same synthesised fixtures. Measured on this box, `EXIT=0`: a
+  **128 BPM** click track → **128.131 BPM**; a **90 BPM** click track → **89.878 BPM**; the first transient at
+  **0.499 s** (synthesised at 0.500 s); an **A major** scale over an A bass → tonic **A**, major (score 1.160,
+  margin 0.060); silence, a steady tone and an empty vocabulary all report **nothing**.
+- **ACCURACY, honestly — the sentence the release has to carry:** what is measured above is **synthesised input
+  with a known answer**, and a click track is the easy case for an onset/autocorrelation estimate. **Real-world
+  detection accuracy is unverified on this box.** No real-music corpus was analysed, the confidence numbers are
+  the detector's own scores (periodicity at the chosen lag; a rank margin for the key) and **not probabilities**,
+  no accuracy figure for real music is quoted anywhere, the 40–240 BPM band's half/double ambiguity is resolved
+  only by a 120 BPM-centred prior (which biases toward the centre by construction), the map holds an integer bpm
+  so an applied tempo is **rounded** (the exact estimate is reported beside it), at most 60 s from the start of
+  the file is analysed, the chroma is 12-tone equal-tempered by construction, and pitch detection is deliberately
+  NOT here (item 10 splits it out as "a separate, harder item").
+- **UI absence — one line: import detection is drivable through the control socket (`detect.analyze`,
+  `detect.apply`, `detect.get_state`) and has no interface.** Nothing in the product runs a detection, shows a
+  suggestion or accepts one; `grep -rniI 'detect\.' src/gui/` finds no call site of these commands, and the piano
+  roll's own key/scale combo is not moved by this feature. `docs/KNOWN-LIMITATIONS.md` carries the sentence with
+  the bounds above; `docs/IMPORT-DETECTION.md` is the full record.
+
 ## Not in this draft yet
 
 The Session View, racks, comping, MPE modulation, Link sync, browser search and the engine-gap items of the

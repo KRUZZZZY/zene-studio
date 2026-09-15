@@ -159,7 +159,9 @@ set(LMMS_SRCS
 	# (the acceptance: the tempo into the tempo map and the key into the project's
 	# own field, as ONE undoable step) and detect.get_state. No compile-time
 	# switch.
+	core/ControlDetectSupport.cpp
 	core/ControlCommandsDetect.cpp
+	core/ControlCommandsDetectApply.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp

@@ -305,6 +305,14 @@ LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
  * detect.get_state's own reply and in docs/IMPORT-DETECTION.md.
  */
 LMMS_EXPORT void registerDetectCommands(ControlRegistry& registry);
+//! detect.apply - the group's one WRITING verb, in its own translation unit (the
+//! automation, warp, vca and mastering groups' read/edit split). It is the
+//! ACCEPTANCE half: the tempo into the tempo map and the key into the project's
+//! own field, both captured before the first write and refused wholesale when a
+//! half the analysis found nothing for was asked for. Called by
+//! registerDetectCommands; the registry has exactly one `detect` registration
+//! point.
+LMMS_EXPORT void registerDetectApplyCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
