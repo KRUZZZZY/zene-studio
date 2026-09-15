@@ -33,6 +33,13 @@ MAX_CALL_TIMEOUT = 3600.0
 MIN_CALL_TIMEOUT = 0.1
 MIN_READY_TIMEOUT = 0.5
 
+#: Readiness may consume at most this much of a call's budget: the readiness poll
+#: uses min(ready_timeout, timeout_s) and the command then gets its own timeout_s,
+#: so one call is bounded by ready_timeout + timeout_s. The command-list probe
+#: itself is capped here too — a listing an agent did not ask for must never be
+#: the thing that hangs a diagnostic.
+COMMANDS_LIST_TIMEOUT = 10.0
+
 #: Commands whose group is engine-free in the DAW. Verified against
 #: `src/core/ControlCommandsControl.cpp`: every `control.*` command sets
 #: `requiresEngine = false`; every other registered command keeps the default
@@ -47,6 +54,12 @@ ENGINE_FREE_GROUPS = frozenset({"control"})
 LONG_COMMANDS: dict[str, str] = {
     "render.render": "renders the whole song by shelling out to the CLI; minutes on a long project",
 }
+
+#: The one fix for a stale offline copy, quoted verbatim wherever the bridge
+#: reports one. `commands_snapshot.json` is DERIVED: it is regenerated from a
+#: live instance and committed, never hand-edited.
+SNAPSHOT_FIX = ("python3 tools/mcp-zene-control/snapshot_commands.py --socket <control-socket>"
+                "   # regenerate from a live instance, then commit the file")
 
 
 class ErrorKind:

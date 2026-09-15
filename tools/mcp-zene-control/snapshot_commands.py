@@ -113,8 +113,15 @@ def main(argv: list[str] | None = None) -> int:
 
     bundle = R.bundle_from_result(result, provenance)
     R.save_bundle(str(args.out), bundle)
+    surface = bundle["surface"]
     print(f"wrote {args.out}: {bundle['count']} commands, proto {bundle.get('proto')}, "
           f"version {provenance.get('version')}, lane head {provenance.get('lane_head')}")
+    # The surface is what makes the copy CHECKABLE later: id_count and
+    # group_count are what a reader scans, ids_sha256 is what a check compares.
+    # Regenerating with the same surface is a no-op for every drift report; a
+    # different one is what `zene_status` will name as stale.
+    print(f"surface: {surface['id_count']} id(s) across {surface['group_count']} group(s), "
+          f"ids_sha256 {surface['ids_sha256']}")
     print("ids: " + ", ".join(sorted(c["id"] for c in bundle["commands"])))
     return 0
 
