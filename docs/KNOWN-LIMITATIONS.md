@@ -919,3 +919,51 @@ line each, because the scope contract asks for one each:
   for that. The master channel and the bend range are per-MIDI-stream **instance** settings with no object
   the control surface can reach, so `device.mpe_get_state` reports the engine's defaults rather than writing
   a copy nothing reads.
+## Offline stem separation (`stem.*`, feature row 26) — socket-only, opt-in, and it needs the model
+
+The engine (HTDemucs over ONNX Runtime, one job at a time) was already in the tree with five registered
+tests; what was missing was any way to drive it. Seven ids now do — `stem.get_state`, `stem.job_start`,
+`stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download` —
+and this is the honest half.
+
+- **UI absence — one line: the whole `stem.*` group is drivable through the socket, not from the
+  interface.** The only user-visible gesture that reaches this engine is the sample clip's **"Split to
+  stems"** context action, a *different, pre-existing* path (`src/gui/clips/SampleClipView.cpp:124` →
+  `StemSplitController::splitClipToStems`): it takes its mix from the clip a human selected and exists
+  only when a display does. Nothing in the interface shows an agent's job, its progress or its error,
+  nothing lists or fetches models, and no menu item, toolbar button or keybinding reaches a `stem.*` id.
+- **The feature is OFF in the default release configuration.** `WANT_STEM_SPLIT` defaults to OFF
+  (`CMakeLists.txt:120`), so a default build compiles none of this engine and registers none of these
+  ids — poll `control.commands` and they are simply not there, which is the truth rather than a bug. The
+  A16 rows are guarded by the same macro, so the contract table and the registry cannot disagree. This
+  is the same shape as the `telemetry.*` / `session.*` / `wasm.*` rows above.
+- **It needs the model present, and models are never bundled.** A build with the option ON can still
+  refuse every job: the default spec is deliberately unpinned in v1 (no URL, no SHA-256, no size), so
+  `stem.model_download` refuses to fetch it and names the model card instead; `stem.get_state` reports
+  the path it looked in, whether the file is there, and the reason when it is not. Place the file by
+  hand (or pin a spec with `url` + `sha256` + `size_bytes`) and the group works.
+- **No live mode is claimed, and none exists.** HTDemucs is a hybrid transformer that needs the whole
+  7.8 s segment (343980 frames at 44100 Hz) as context, so no chunk size fits an audio buffer: this is an
+  **offline job only**. `stem.get_state` reports `realtime: false` and the lookahead; the group offers no
+  monitoring, no streaming and no realtime variant.
+- **44100 Hz only.** The input must already be at the model's own rate — there is no resampler
+  (SPEC-stem-split.md OQ-1) — and the refusal names the rate it got. A file `render.render` wrote is
+  already in that format, which is why "bounce the session, then split the bounce" is the composable flow.
+- **The source is a file, not a clip or a bus.** The socket has no way to hand the engine a clip's audio
+  buffer; `stem.job_start` names an absolute path, and the mix is decoded from it.
+- **`stem.job_result` writes files, not tracks.** It produces `<stem>.wav` (drums, bass, other, vocals)
+  as float32 RIFF/WAVE with a sha256 per file, and it does **not** materialise `SampleTrack`s: the GUI's
+  `StemTrackBuilder` gesture is not reachable from the socket in 0.3.0.
+- **Jobs are not project state.** They live in the instance's memory: a reload or a restart loses the id,
+  its progress and its stems, and `control.transactions` shows no record because the whole group is
+  `not_mutating` — a job is not a document and a written stem is an output.
+- **`stem.model_download` carries a DECLARED BOUND.** A performing transfer (an explicitly pinned spec)
+  runs on the control surface's own thread, so the surface does not answer — `control.ping` included —
+  until it finishes or fails. This is the **same** defect `docs/RENDER-CHILD-WAIT.md:120-126` records for
+  `render.render` and the bounce/freeze commands, and the deferred-reply fix that document designs is
+  **not built in this release**. The refusal path (`download_allowed: false`) is all the default build
+  ever reaches. The transfer's performing path is **not exercised by any registered proof**: CI has no
+  pinned artefact to fetch. The proof that IS registered is the ctest `ControlStemCommands`
+  (`tests/control-stem-commands.py`), which drives the real pipeline over `--control-socket` on the
+  committed stub ONNX graph, and which **skips** (exit 77) on a host with no python onnxruntime rather
+  than passing.

@@ -183,6 +183,17 @@ LMMS_EXPORT const ReversibilityRow* reversibilityScanAndCrashRowTable(int* rowCo
 LMMS_EXPORT const ReversibilityRow* reversibilityMasteringRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
+/*! The `stem.*` group's seven not_mutating rows (feature row 26, board task
+ *  #653): the offline stem-separation engine's read verb, its four job verbs and
+ *  its two model-store verbs. A GROUP file on the same seam as the folder, vca,
+ *  routing, scan/crash and mastering files - and, like the passive block itself,
+ *  a file split off a block because the file-length ratchet reads a file as a
+ *  unit. Joined into the passive block's rows by ReversibilityTable's
+ *  constructor. The array is EMPTY without LMMS_HAVE_STEM_SPLIT: the ids do not
+ *  exist in that configuration, and a row naming an unregistered command is a
+ *  failure in the other direction (ReversibilityContractTest).
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
 
 //! One row of the contract table: what the command is, why, and what the
 //! engine actually provides.

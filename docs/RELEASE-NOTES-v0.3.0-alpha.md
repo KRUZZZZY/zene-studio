@@ -642,6 +642,69 @@ bound in its own description and contract row instead of pretending to a timeout
   state or its directory, and there is no way to send one. `docs/KNOWN-LIMITATIONS.md` carries the same two
   sentences.
 
+## Offline stem separation, made drivable (`stem.*`, feature row 26) — added 2026-09-15
+
+The engine landed long before the ids did and was already proven: HTDemucs-over-ONNX-Runtime
+separation with a one-worker job manager (`include/StemSeparation/StemJobManager.h`), a model store
+that never bundles a model and never fetches an unpinned one (`include/StemSeparation/StemModelStore.h`),
+two interchangeable backends (in-process ORT when the SDK was found; `tools/stem_split_cli.py` in a
+child process otherwise) and five registered tests (`OnnxRuntimeStemSeparatorTest`, `StemExportTest`,
+`StemJobManagerTest`, `StemModelStoreTest`, `StemSplitPipelineTest`). What did not exist was any way
+for a client to drive it: the only route was that CLI, outside the socket, plus a GUI-only clip action
+(`src/gui/StemSplitController.cpp`). Seven ids close that gap:
+
+- **`stem.get_state`** answers with the engine's own facts — the backend this build drives, whether it
+  can run right now (and the reason when it cannot), the model file the store resolves, the model
+  contract's constants (44100 Hz, the 343980-frame segment) and the fixed stem order. It reports
+  **`realtime: false` and the 7.8 s lookahead**, because that is the truth: HTDemucs is a hybrid
+  transformer that needs the whole segment as context, so no chunk fits an audio block and there is no
+  live mode to expose. `stem.job_start` / `stem.job_status` / `stem.job_result` / `stem.job_cancel` are
+  the offline job: start queues a separation of an absolute audio file and returns the id immediately,
+  status polls state and progress, result writes `<stem>.wav` (drums, bass, other, vocals) as float32
+  RIFF/WAVE with a sha256 per file, and cancel stops an outstanding job between inference segments.
+  The separation runs on the job manager's own worker thread, so the control surface keeps answering —
+  **including `control.ping` — while a job runs**, which the ctest measures rather than asserts from the
+  source. `stem.model_get_state` and `stem.model_download` are the model store: the resolved path, the
+  spec, whether it is pinned enough to fetch, and a download that **refuses an unpinned spec** — the
+  default spec is deliberately unpinned in v1, so the default call is a typed refusal naming the model
+  card, which is the "never bundled, always verified" policy working rather than a gap.
+- **The feature is OFF in the default release configuration, and the group is honest about it.**
+  `WANT_STEM_SPLIT` defaults to OFF (`CMakeLists.txt:120`), so a default build compiles none of the
+  engine and registers none of these ids — the same rule the `telemetry.*`, `session.*` and `wasm.*`
+  groups follow, and the A16 rows are guarded by the same macro so the registry and the contract table
+  cannot disagree. Even a build with the option ON needs **the model present** before a job can start:
+  models are never bundled with the product, and the refusal names the path it looked in and the model
+  card to fetch from.
+- **Proof.** ctest `ControlStemCommands` (`tests/control-stem-commands.py`), registered only when the
+  feature is compiled in. It drives the REAL pipeline over `--control-socket` on the committed
+  458-byte stub ONNX graph (`tests/data/stub-4stem-linear.onnx`) through the shipped CLI — no 166 MB
+  download — and measures: the engine's own facts, every argument and state refusal (a relative path, a
+  missing file, a 48 kHz file, a non-audio file, an unknown job id, a non-completed job, a format it
+  does not write), the asynchrony (`control.ping` answered while the job runs), the four written stems
+  (float32 RIFF/WAVE, the mix's own length, sha256 verified against the file), a re-write of the same
+  directory, a deterministic cancel of a slowed job (`LMMS_STEM_CHUNK_DELAY_MS`, the separator's own
+  test hook) and the model store's policy, with the reported SHA-256 cross-checked against the hash the
+  script computes locally. A host with no python onnxruntime skips (`SKIP_RETURN_CODE 77`) rather than
+  passing.
+- **Stated limits, all in `docs/KNOWN-LIMITATIONS.md`:** 44100 Hz only (there is no resampler —
+  SPEC-stem-split.md OQ-1 — and the refusal names the rate); the offline job only, never realtime; the
+  source is a file, not a clip or a bus; `stem.job_result` writes output artefacts and does **not**
+  materialise tracks (`StemTrackBuilder`, the GUI's own "split to stems" gesture, is not reachable from
+  the socket in 0.3.0); the jobs live in the instance's memory and do not survive a reload; and
+  `stem.model_download` **carries a declared bound** — a performing transfer runs on the control
+  thread, so the surface does not answer until it finishes or fails (the defect
+  `docs/RENDER-CHILD-WAIT.md:120-126` records for the child-process renders). The transfer's performing
+  path is **not exercised by any registered proof** — CI has no pinned artefact to fetch — and only the
+  refusal path is measured.
+- **UI absence — one line: the whole `stem.*` group is drivable through the socket and only through the
+  socket.** The one user-visible gesture that reaches this engine is the sample clip's **"Split to
+  stems"** context action (`src/gui/clips/SampleClipView.cpp:124` →
+  `StemSplitController::splitClipToStems`), which is a **different, pre-existing** code path: it takes
+  its mix from a `SampleClip` a human selected, is available only when a display is, and no menu item,
+  toolbar button or keybinding reaches a `stem.*` id. There is no job list, no progress surface for an
+  agent-owned job, no model-manager UI, and nothing in the interface says the model is missing —
+  `stem.get_state` is where that answer lives.
+
 ## The A16 contract table, and its histogram
 
 The SPEC A16 classification table holds **227 rows**, measured from the table itself:
@@ -680,6 +743,19 @@ because that window has no reset-on-absence) and `note.probability_set` (`true_i
 per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
 touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
 and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
+**The seven `stem.*` rows are NOT in the 227 above, and that is the point:** the offline
+stem-separation group (feature row 26, board task #653) is compiled only when `WANT_STEM_SPLIT=ON` -
+**OFF in the default release configuration** this page describes - so its seven `not_mutating` rows
+(`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
+`stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
+which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
+on carries **234 rows / 89 `not_mutating`** - measured, not derived: the seven-row guard was added to
+`ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
+against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
+227 + 7 rows and 82 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
+configuration the release does not ship. All seven drive one offline engine, write output artefacts
+(four stem WAVs and a checksum-verified model file) and record no project state: a job is not a
+document, and a written stem is an output.
 The nine rows the folder-tracks merge added are:
 `track.folder_set_collapsed` and `track.set_pinned` are `true_inverse` on a live Track checkpoint (both
 flags are part of the folder's own `<trackfolder>` element and are reset on absence, so the checkpoint

@@ -122,6 +122,14 @@ void registerControlCommands(ControlRegistry& registry)
 	// #ifdef, so the two stay consistent in both directions.
 	registerWasmCommands(registry);
 #endif // LMMS_HAVE_WASM
+	// The stem.* group travels with the offline stem-separation engine, the
+	// same rule again: without LMMS_HAVE_STEM_SPLIT there is no StemJobManager,
+	// no backend and no model store, so a default build (WANT_STEM_SPLIT=OFF,
+	// CMakeLists.txt:120) must not carry these ids. The A16 table guards its
+	// seven stem rows with the same #ifdef.
+#ifdef LMMS_HAVE_STEM_SPLIT
+	registerStemCommands(registry);
+#endif // LMMS_HAVE_STEM_SPLIT
 	// The modulation layer (#602): the layer + LFO half, the route half, and the
 	// per-note expression group. No compile-time switch - the layer is a plain
 	// value on Song and a Note field, so its ids are honest in every

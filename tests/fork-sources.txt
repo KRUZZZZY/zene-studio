@@ -286,6 +286,7 @@ include/ControlRegistryGroups.h
 include/ControlReversibility.h
 include/ControlScaleShared.h
 include/ControlServer.h
+include/ControlStemSupport.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -496,6 +497,8 @@ src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionLaunch.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsStemModel.cpp
+src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackFolder.cpp
@@ -538,6 +541,7 @@ src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
+src/core/ControlReversibilityTableStems.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
@@ -546,6 +550,9 @@ src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlSession.cpp
+src/core/ControlStemModel.cpp
+src/core/ControlStemSupport.cpp
+src/core/ControlStemWav.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -657,6 +664,7 @@ tests/control-session-m1.py
 tests/control-shutdown.py
 tests/control-socket-path-safety.py
 tests/control-stable-ids.py
+tests/control-stem-commands.py
 tests/control-stem-export-verb.py
 tests/control-track-folder.py
 tests/control-vca-commands.py
@@ -701,5 +709,6 @@ tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/stem_commands_lib.py
 tools/local-ci.sh
 tools/ncpu-shim.c

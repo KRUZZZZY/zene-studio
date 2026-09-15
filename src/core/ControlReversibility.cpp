@@ -106,9 +106,15 @@ ReversibilityTable::ReversibilityTable() :
 	const ReversibilityRow* snapshots = reversibilitySnapshotRowTable(&snapshotCount);
 	int passiveCount = 0;
 	const ReversibilityRow* passive = reversibilityPassiveRowTable(&passiveCount);
+	int stemCount = 0;
+	// The stem.* rows live in their own file (ControlReversibilityTableStems.cpp)
+	// and are EMPTY when the feature is compiled out, so the join needs no guard
+	// of its own and the release configuration's row count is untouched.
+	const ReversibilityRow* stems = reversibilityStemRowTable(&stemCount);
 	insertRows(&m_entries, rows, rowCount);
 	insertRows(&m_entries, snapshots, snapshotCount);
 	insertRows(&m_entries, passive, passiveCount);
+	insertRows(&m_entries, stems, stemCount);
 }
 
 const ReversibilityEntry* ReversibilityTable::lookup(const QString& command) const
