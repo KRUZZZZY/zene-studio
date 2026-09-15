@@ -644,18 +644,20 @@ bound in its own description and contract row instead of pretending to a timeout
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **227 rows**, measured from the table itself:
-**120 `true_inverse`, 18 `snapshot`, 7 `irreversible`, 82 `not_mutating`**, in the configuration this
+The SPEC A16 classification table holds **229 rows**, measured from the table itself:
+**120 `true_inverse`, 19 `snapshot`, 7 `irreversible`, 83 `not_mutating`**, in the configuration this
 build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
 compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**225 rows / 80 `not_mutating`** - which is the base
+**227 rows / 81 `not_mutating`** - which is the base
 `ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
 telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
 wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
 what left one of them stale before. **These are the MERGED tree's own measurement, not arithmetic:**
 `ReversibilityContractTest` was run against a build of this merge tip and reports 227 rows over the
 four classes named above (120 + 18 + 7 + 82), and its constant is the telemetry-off/wasm-off base of
-225 / 120 / 18 / 7 / 80. The seventeen rows this train's three merges added are the verb wave's four
+225 / 120 / 18 / 7 / 80. **The patcher node-graph lane (row 69) adds two more rows to this page's
+figures: 229 rows / 120 / 19 / 7 / 83, the telemetry-off base being 227 / 120 / 19 / 7 / 81** - the
+figures above are the wave-1 tip's own measurement and are kept as that number. The seventeen rows this train's three merges added are the verb wave's four
 (`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
 the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
 recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
@@ -776,6 +778,19 @@ one back; nothing removes the reporter's `offered` sentinel; nothing writes a re
 `+2 snapshot / +5 not_mutating / +3 irreversible`. `src/core/ControlReversibilityTableScanAndCrash.cpp` holds
 the rows as one group, whatever their class, and `reversibilityRowTable()` joins them for the same reason it
 joins the routing surface's: the passive block and the live block are both at the file-length cap.
+
+The two rows the patcher node-graph lane (feature row 69) added are `patcher.get_state` - a
+`not_mutating` inspector of the same graph `routing.get_state` reads, in PATCH terms: the role each
+node is addressed by (`"input"`, `"effect:<index>"`), the node's own parameters, the wiring and
+whether an edit can land at all - and `patcher.set_wiring`, a `snapshot` whose inverse **is** a
+command, the `port.set_pin` shape: an `EffectChain` is a `Model` and a `SerializingObject`, never a
+`JournallingObject`, so there is no checkpoint to take, and the wiring (a bounded list of edges plus
+one output node) is not part of the chain's serialized `<fxchain>` form. A chain that WAS on its
+derived wiring comes back to it AS the derivation - an empty edge list - rather than as an authored
+linear patch, so `control.undo` restores the state that was there instead of one that merely renders
+the same - `+1 snapshot / +1 not_mutating`. The rows live at the end of
+`src/core/ControlReversibilityTableRouting.cpp`, because the group drives the routing graph that
+file's rows already cover, and `reversibilityRowTable()` joins them with it.
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 

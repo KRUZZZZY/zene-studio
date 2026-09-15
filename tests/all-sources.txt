@@ -953,6 +953,7 @@ src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsPdc.cpp
+src/core/ControlCommandsPatcher.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginParams.cpp
 src/core/ControlCommandsPluginPreset.cpp

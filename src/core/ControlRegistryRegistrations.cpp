@@ -156,6 +156,11 @@ void registerControlCommands(ControlRegistry& registry)
 	// The routing surface (feature rows 27-29) and the mixer's routing verbs; the
 	// rationale for each group is on its declaration in ControlRegistryGroups.h.
 	registerRoutingSurfaceCommands(registry);
+	// The patcher node graph (feature row 69): the same graph routing.get_state
+	// reads, addressed by ROLE and EDITABLE. Its own group because it writes
+	// where routing.* is an inspector by decision; the rationale, the threading
+	// argument and the bounds are on its declaration and in docs/PATCHER-GRAPH.md.
+	registerPatcherCommands(registry);
 	// The plugin scan cache and its quarantine list (feature row 46): the read
 	// half, then the edit half, each its own translation unit.
 	registerPluginScanCommands(registry);

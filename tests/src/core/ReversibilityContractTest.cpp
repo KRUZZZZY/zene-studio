@@ -60,9 +60,9 @@ namespace
  * on/off x sandbox on/off), and a full set per configuration is how one of them
  * gets left stale.
  *
- * The release notes quote the RELEASE configuration's figures - 227 rows /
- * 120 / 18 / 7 / 82 with the telemetry client compiled in and no wasmtime,
- * 225 / 120 / 18 / 7 / 80 with the client out - which these reduce to. The six
+ * The release notes quote the RELEASE configuration's figures - 229 rows /
+ * 120 / 19 / 7 / 83 with the telemetry client compiled in and no wasmtime,
+ * 227 / 120 / 19 / 7 / 81 with the client out - which these reduce to. The six
  * `wasm.*` rows (item #614: three snapshot, three not_mutating) are present
  * exactly when the wasmtime C API is: without it WANT_WASM degrades to OFF, the
  * group's sources are not compiled, ControlRegistry.cpp's #ifdef removes its
@@ -84,7 +84,7 @@ struct DocumentedHistogram
 
 DocumentedHistogram documentedHistogram()
 {
-	DocumentedHistogram out{225, 120, 18, 7, 80};   // telemetry-off, wasm-off base; the guards add the rest
+	DocumentedHistogram out{227, 120, 19, 7, 81};   // telemetry-off, wasm-off base; the guards add the rest
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
@@ -149,15 +149,18 @@ private slots:
 	//! src/core/ControlReversibilityTable.cpp has 74 rows today, one per registered
 	//! command" (docs/RELEASE-NOTES-v0.2.1-alpha.md, at 0.2.1: 30 `true_inverse`,
 	//! 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`) - and nothing asserted them.
-	//! At 0.3.0 the same four counts read 227 / 120 / 18 / 7 / 82 over 227 rows at
-	//! the three-merge tip this train lands, and the
+	//! At 0.3.0 the same four counts read 229 / 120 / 19 / 7 / 83 over 229 rows at
+	//! the tip this lane lands - the three-merge wave-1 tip's 227 / 120 / 18 / 7 / 82
+	//! plus the patcher group's two rows (row 69: `patcher.get_state`, not_mutating,
+	//! and `patcher.set_wiring`, the train's second snapshot whose inverse is a
+	//! command) - and the
 	//! current figure lives in docs/RELEASE-NOTES-v0.3.0-alpha.md. Two compile-time
 	//! groups move with their option and are ADDED to the invariant part rather
 	//! than written out per configuration: the two `telemetry.*` not_mutating rows
 	//! (ZENE_TELEMETRY_ENABLED) and the six `wasm.*` rows - three snapshot, three
 	//! not_mutating - which are present exactly when the wasmtime C API is
 	//! (LMMS_HAVE_WASM, item #614). The release configuration has the client in and
-	//! no wasmtime, so the notes' own figures are its 227 / 120 / 18 / 7 / 82.
+	//! no wasmtime, so the notes' own figures are its 229 / 120 / 19 / 7 / 83.
 	//! The two tests above hold the table to account for COVERAGE (every registered command
 	//! has a row, every row names a registered command) and for behaviour; a row
 	//! added or moved between classes could therefore ship with the notes still
