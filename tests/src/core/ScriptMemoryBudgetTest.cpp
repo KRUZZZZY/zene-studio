@@ -172,7 +172,7 @@ private slots:
 
 		// In range: accepted, reported, and the record names the previous value.
 		const ControlResult set = registry->invoke(QStringLiteral("script.set_memory_budget"),
-			QJsonObject{{QStringLiteral("bytes"), 2 * OneMiB}});
+			QJsonObject{{QStringLiteral("bytes"), static_cast<int>(2 * OneMiB)}});
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
 		QCOMPARE(set.result.value(QStringLiteral("memory_budget")).toInt(), int(2 * OneMiB));
 		QCOMPARE(engine->memoryBudget(), 2 * OneMiB);
@@ -194,7 +194,7 @@ private slots:
 
 		// And the same report shows the refusal when the budget is too small.
 		QVERIFY(registry->invoke(QStringLiteral("script.set_memory_budget"),
-			QJsonObject{{QStringLiteral("bytes"), OneMiB}}).ok);
+			QJsonObject{{QStringLiteral("bytes"), static_cast<int>(OneMiB)}}).ok);
 		const ControlResult refused = registry->invoke(QStringLiteral("script.run"),
 			QJsonObject{{QStringLiteral("source"), QString::fromUtf8(MemoryHogSource)}});
 		QVERIFY2(!refused.ok, "a script over the budget ran anyway");

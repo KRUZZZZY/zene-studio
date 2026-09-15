@@ -146,7 +146,7 @@ private slots:
 	//! still opens nothing), and no socket is involved.
 	void anUnconfiguredEndpointIsRefused()
 	{
-		TelemetryNetworkTransport transport(QString());
+		TelemetryNetworkTransport transport{QString()};
 		int handedOver = 0;
 		transport.setDeliverer([&handedOver](const QUrl&, const QByteArray&) {
 			++handedOver;
