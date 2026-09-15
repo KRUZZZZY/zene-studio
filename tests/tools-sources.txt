@@ -89,6 +89,7 @@
 tools/auto-mastering-demo.py
 tools/brand/rasterise-placeholders.py
 tools/dawproject-proof.sh
+tools/doc5-citations.py
 tools/make_stub_model.py
 tools/mcp-zene-control/call_tool.py
 tools/mcp-zene-control/server.py
