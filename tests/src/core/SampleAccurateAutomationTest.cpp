@@ -83,7 +83,17 @@ struct CurveNode
 	double value;
 };
 
-const std::vector<CurveNode> kCurve{{0.0, 20.0}, {24.0, 80.0}, {48.0, 35.0}, {72.0, 95.0}};
+/*! A node on EVERY tick of the measured window, and that density is the whole
+ *  point: a block here is 256 frames (one audio period) and a tick is
+ *  55125 / BPM frames (Engine::framesPerTick), so a block is SHORTER than a
+ *  tick. The first version of this curve (nodes on ticks 0 / 24 / 48 / 72) is
+ *  therefore FLAT inside every block it is measured against, and a flat block
+ *  cannot tell a sample-accurate ramp from a block-quantised one - the
+ *  measurement would pass while proving nothing, and its own control half
+ *  (block mode must measure far worse) could not fail it. */
+const std::vector<CurveNode> kCurve{{0.0, 20.0}, {1.0, 80.0}, {2.0, 35.0}, {3.0, 95.0},
+	{4.0, 50.0}, {5.0, 10.0}, {6.0, 70.0}, {7.0, 25.0}, {8.0, 60.0}, {9.0, 40.0},
+	{10.0, 85.0}, {11.0, 30.0}, {12.0, 55.0}};
 
 //! @a discrete picks the shape: Discrete HOLDS a node's value until the next node
 //! (the engine's default, and what `automation.add_point` writes), Linear moves
@@ -107,8 +117,25 @@ double curveModelValue(const std::vector<CurveNode>& nodes, double relTicks, boo
 	return nodes.back().value;
 }
 
-//! "ch-<kChannel>", spelled the way the commands parse it.
-QString channelIdOf() { return QStringLiteral("ch-") + QString::number(kChannel); }
+//! The fixture's channel as the SURFACE spells it: "ch-<n>", where n is the
+//! channel OBJECT's id (MixerChannel::id(), SPEC-stable-ids.md slice 2), not its
+//! INDEX in the mixer.
+//!
+//! kChannel is the index the shared rack fixture builds with
+//! (RackTestSupport.h: `mixer->mixerChannel(kChannel)`), and the two numbers are
+//! different things: an index is a position in the mixer, an id is
+//! `ProjectIds::allocate()`d at construction and shared with the track, clip, note
+//! and effect ids (src/core/Mixer.cpp, MixerChannel's m_id). They happen to
+//! coincide on some trees and not on others, so the test ASKS THE ENGINE for the
+//! channel it built - the same object the fixture appended the effect to - instead
+//! of assuming the two are equal.
+QString channelIdOf()
+{
+	Mixer* mixer = Engine::mixer();
+	MixerChannel* channel = mixer == nullptr ? nullptr : mixer->mixerChannel(kChannel);
+	return QStringLiteral("ch-")
+		+ QString::number(channel == nullptr ? kChannel : channel->id());
+}
 
 //! The channel's own fx-chain device under test: the ONE effect the shared rack
 //! fixture put on the channel's effect chain (RackTestSupport.h,
@@ -252,6 +279,12 @@ Measurement measureRender(Song* song, AutomationClip* clip, AutomatableModel* mo
 	{
 		const double startTicks = static_cast<double>(song->getPlayPos().getTicks());
 		const int frameOffset = static_cast<int>(song->getTimeline().frameOffset());
+		// ONE rendered block is ONE period, and the engine says so itself: this
+		// is the call AudioEngine makes per render stage (AudioEngine.cpp:467).
+		// The device thread is stopped in this fixture, so nothing else makes it,
+		// and AutomatableModel::automationRamp() - "was a ramp published TO THIS
+		// PERIOD" - would answer about a STALE period without it.
+		AutomatableModel::incrementPeriodCounter();
 		song->processNextBuffer();
 
 		// The per-sample source the audio path reads. nullptr means the engine
@@ -335,6 +368,12 @@ RampObservation observeRamp(Song* song, AutomatableModel* model, int periods)
 	RampObservation out;
 	for (int period = 0; period < periods; ++period)
 	{
+		// The same per-render-stage call as in measureRender above, and it is
+		// LOAD-BEARING here: observation is "did the publish happen for THIS
+		// period", so without the increment a ramp published in an earlier period
+		// still counts as current and the Off half would read 4 of 4 for a ramp
+		// that was never published under Off at all.
+		AutomatableModel::incrementPeriodCounter();
 		song->processNextBuffer();
 		++out.periods;
 		if (model->automationRamp() != nullptr) { ++out.periodsWithRamp; }
@@ -375,6 +414,15 @@ private slots:
 	{
 		QString why;
 		QVERIFY2(initRackFixture(&why), qPrintable(why));
+		/*! THE TEMPO IS PART OF THE FIXTURE. At the shipped 140 BPM a tick is
+		 *  55125/140 = 394 frames and a 256-frame block spans 0.65 of one, so a
+		 *  block contains NO tick boundary and the sample-accurate ramp has
+		 *  nothing inside a block to carry - every measurement in this file
+		 *  would then be flat and both the claim and its control would be
+		 *  vacuous. 200 BPM puts a boundary inside a block (55125/200 = 276
+		 *  frames per tick against a 256-frame block and the 37-frame offset
+		 *  the ramp slot uses). */
+		Engine::getSong()->setTempo(200);
 	}
 
 	void cleanupTestCase() { teardownRackFixture(); }
