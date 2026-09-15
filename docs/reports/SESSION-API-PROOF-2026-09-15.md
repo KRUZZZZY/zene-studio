@@ -163,7 +163,7 @@ returns **nothing**, so no file under `src/gui/` reaches the session model.
 `docs/RELEASE-NOTES-v0.3.0-alpha.md`, whose only mention of the group was the "Not in this draft yet" note
 deferring it to wave W12. The scope contract's criterion 4 requires the line in *both* documents, so a
 minimal additive section was added there ("Session View: eleven ids, measured one at a time",
-`docs/RELEASE-NOTES-v0.3.0-alpha.md:1998-2012`). That section is the only release-notes edit in this branch
+`docs/RELEASE-NOTES-v0.3.0-alpha.md:1998-2015`). That section is the only release-notes edit in this branch
 and it is additive: nothing existing was reworded, moved or removed.
 
 ## What this audit does NOT prove
