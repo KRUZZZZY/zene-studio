@@ -500,7 +500,7 @@ that is this page's fault — report it and it gets added.
   and mixer strips can be written as a DAWproject container another DAW reads, and a file can be read back
   and imported, through `--control-socket` (`dawproject.convention` / `dawproject.export` / `dawproject.read` /
   `dawproject.import`) — but **nothing in `src/gui/` writes or reads one**: drivable through the socket, not
-  from the interface. `docs/DAWPROJECT-INTERCHANGE.md` records the format version (1.0), the nine stated
+  from the interface. `docs/DAWPROJECT-INTERCHANGE.md` records the format version (1.0), the eleven stated
   losses (audio clips, automation, device state, sends, fades, loop points, scenes, folder nesting, mixer
   routing and sharing) and the time convention (beats, 48 ticks per quarter).
 - **Session sync has no interface, and it is not Ableton Link — added 2026-09-13.** Two Zene instances on

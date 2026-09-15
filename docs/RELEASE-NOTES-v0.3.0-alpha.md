@@ -363,13 +363,22 @@ that marker is published as-is, and no unverified claim is published without one
 - **Proof:** the registered ctest `DawProjectInterchangeRoundTripTest` (**the round trip the feature list
   names**: a model with tracks, clips, notes, mixer channels and tempo-map points is written, read back and
   compared — model for model, not file for file or hash for hash — then applied to a session, extracted and
-  compared again, and the import's undo is measured).
-- **Stated limits.** Nine losses are recorded, each counted: audio clips and their media, automation clips,
-  device/plugin state, sends, fades and clip gain, loop points, scenes and clip slots, folder nesting (LMMS'
-  track list is flat), mixer routing and sharing, and track types with no format counterpart. The tempo is
-  bounded to the engine's own 10..999 and a file outside them is refused. Time values are beats; a foreign
-  time off LMMS' 48-ticks-per-beat grid is rounded onto it and counted. All of it is in
-  `docs/DAWPROJECT-INTERCHANGE.md`.
+  compared again, and the import's undo is measured). The ids and the track-to-strip IDREF are asserted by
+  name too, so a document that gets renumbered fails with the id it changed rather than only in the blanket
+  comparison. `docs/DAWPROJECT-INTERCHANGE.md` section 9 carries the measured proof output.
+- **The model's own ids survive the trip.** The document's ids are the MODEL's: a mixer strip is written
+  with its `mixer<n>` id, a track with its own, and every IDREF (`destination`, a lane's `track`) points at
+  the id the model carries rather than at one the writer invented, so export → import → export is stable
+  and the track-to-strip join survives a round trip.
+- **Stated limits.** Eleven losses are recorded, each counted: audio clips and their media, automation
+  clips, device/plugin state, sends, fades and clip gain, loop points, scenes and clip slots, folder nesting
+  (LMMS' track list is flat), mixer routing and sharing, and track types with no format counterpart; the
+  track type's NAME is not in the document (it is derived from `contentType`, so a differently-spelled name
+  comes back canonical); and an id the schema would reject or the model repeats is replaced by a generated
+  one (`xs:ID` must be unique and an NCName). The tempo is bounded to the engine's own 10..999 and a file
+  outside them is refused. Time values are beats; a foreign time off LMMS' 48-ticks-per-beat grid is rounded
+  onto it and counted. All of it is in `docs/DAWPROJECT-INTERCHANGE.md`, with the format version read and
+  cited and where each loss is counted.
 
 ## The groove pool and quantise (`groove.*`) — added 2026-09-13
 
