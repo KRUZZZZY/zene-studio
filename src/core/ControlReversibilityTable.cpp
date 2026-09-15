@@ -96,10 +96,18 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 		std::vector<ReversibilityRow> all;
 		// The group files, in the order ReversibilityTable's map wants them: a
 		// repeated id is OVERWRITTEN, so the order is part of the contract.
+		// feature row 77 (board task #666): the safestart.* group's four rows
+		// one not_mutating read and its three irreversible writers.
 		for (const ReversibilityRow* (*rowsFor)(int*) : {reversibilityLiveRowTable,
-				reversibilityActionRowTable,
-				reversibilityTrackFolderRowTable, reversibilityVcaRowTable, reversibilityRoutingRowTable,
-				reversibilityVerbRowTable, reversibilityScanAndCrashRowTable, reversibilityMasteringRowTable, reversibilityNoteScaleRowTable, reversibilityMeterRowTable, reversibilityExportPresetRowTable, reversibilityRecordingRowTable, reversibilityInterchangeRowTable, reversibilityChordRowTable, reversibilityArchiveRowTable, reversibilityHostChunkingRowTable, reversibilityWasmRenderRowTable, reversibilityDawProjectRowTable, reversibilityMmpzGitRowTable, reversibilityAutomationModesRowTable, reversibilityControllerRowTable, reversibilityRevisionsRowTable, reversibilityDetectRowTable, // feature row 77 (board task #666): the safestart.* group's four rows, // one not_mutating read and its three irreversible writers. 				reversibilitySafeStartRowTable, reversibilityAutomationRampRowTable})
+				reversibilityActionRowTable, reversibilityTrackFolderRowTable, reversibilityVcaRowTable,
+				reversibilityRoutingRowTable, reversibilityVerbRowTable, reversibilityScanAndCrashRowTable,
+				reversibilityMasteringRowTable, reversibilityNoteScaleRowTable, reversibilityMeterRowTable,
+				reversibilityExportPresetRowTable, reversibilityRecordingRowTable, reversibilityInterchangeRowTable,
+				reversibilityChordRowTable, reversibilityArchiveRowTable, reversibilityHostChunkingRowTable,
+				reversibilityWasmRenderRowTable, reversibilityDawProjectRowTable, reversibilityMmpzGitRowTable,
+				reversibilityAutomationModesRowTable, reversibilityControllerRowTable,
+				reversibilityRevisionsRowTable, reversibilityDetectRowTable, reversibilitySafeStartRowTable,
+				reversibilityAutomationRampRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);
