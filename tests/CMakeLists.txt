@@ -265,6 +265,13 @@ set(LMMS_TESTS
 	src/core/ModulationLayerTest.cpp
 	src/core/ControlModulatorCommandsTest.cpp
 	src/core/ControlNoteExpressionCommandsTest.cpp
+	# The PROJECT path of the same layer (task #680): modulators authored on the
+	# surface, written by project.save, the session cleared, project.open - and
+	# the reopened layer asserted identical, value by value and document for
+	# document. The three files above cover the layer's own serialiser, the
+	# surface and a hand-authored fixture project; none of them round-trips a
+	# surface-created layer through a real .mmp.
+	src/core/ModulationLayerProjectRoundTripTest.cpp
 	src/core/MultiTrackRecorderTest.cpp
 	# The recording ENGINE surface (0.3.0, feature rows 14/16/64): the arbitrary
 	# input count proved with real takes (N routes, N channels, each take
@@ -614,9 +621,12 @@ set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
 # rack chain, and drive the layer's own save/load, so they need the headless Qt
-# platform for the same reason.
+# platform for the same reason. ModulationLayerProjectRoundTripTest joins them:
+# it drives project.save / project.open through the registry, which is the same
+# dependency.
 set_tests_properties(ModulationLayerValueTest ModulationLayerTest
-	ControlModulatorCommandsTest ControlNoteExpressionCommandsTest PROPERTIES
+	ControlModulatorCommandsTest ControlNoteExpressionCommandsTest
+	ModulationLayerProjectRoundTripTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # SampleAccurateAutomationTest (feature row 9) builds a full Engine and the rack
 # fixture's real Mixer channel, renders real audio periods through
