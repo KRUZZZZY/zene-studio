@@ -168,6 +168,18 @@ QJsonObject inputTo(const QString& to, int toPort = 0)
 	return edge;
 }
 
+//! The same shape between two named nodes, for an edge the chain's input does
+//! not start (the only way to express a feedback path among the effects).
+QJsonObject wire(const QString& from, const QString& to, int fromPort = 0, int toPort = 0)
+{
+	QJsonObject edge;
+	edge.insert(QStringLiteral("from"), from);
+	edge.insert(QStringLiteral("from_port"), fromPort);
+	edge.insert(QStringLiteral("to"), to);
+	edge.insert(QStringLiteral("to_port"), toPort);
+	return edge;
+}
+
 } // namespace
 
 } // namespace lmms
@@ -203,6 +215,15 @@ private slots:
 		chain->appendEffect(new PatcherScaleEffect(chain, 0.5f, 0.25f));
 		QVERIFY2(chain->routesThroughGraph(),
 			"the chain does not render through its graph - every wiring check below would be vacuous");
+
+		// The fixture's own wiring: the id every command below is addressed with
+		// must name THIS channel - the one initTestCase just filled - and the
+		// empty channel must be a different one. Without this the ids could
+		// drift back to a literal `ch-<index>` and every slot below would
+		// measure a sibling channel (the master's empty chain) instead.
+		QCOMPARE(channel(), control::channelId(Engine::mixer()->mixerChannel(kChannel)->id()));
+		QCOMPARE(emptyChannel(), control::channelId(Engine::mixer()->mixerChannel(kEmptyChannel)->id()));
+		QVERIFY2(channel() != emptyChannel(), "the two channels the test drives must be different");
 	}
 
 	void cleanupTestCase()
@@ -363,13 +384,20 @@ private slots:
 		QVERIFY(!missing.ok);
 		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
 
-		// input -> effect:0 -> input: a feedback path, which a DAG cannot carry
-		QJsonObject back;
-		back.insert(QStringLiteral("from"), QStringLiteral("effect:0"));
-		back.insert(QStringLiteral("to"), QStringLiteral("input"));
+		// A feedback path among the effects: effect:0 -> effect:1 -> effect:0.
+		// NOT `effect:0 -> input`: the graph's input node has no input ports
+		// (it is the source of the chain), so that edge is refused by the
+		// port-arity check before the cycle check is ever reached - measured
+		// ("input has 0 input port(s), so to_port 0 is out of range"), and the
+		// order is the documented one in ControlCommandsPatcherShared.h: an
+		// unknown reference, a repeated or self edge, a port outside a node's
+		// arity, a cycle, then an unreachable output. The loop below is a
+		// genuine cycle: refs exist, ports fit, and only the DAG check refuses.
 		const ControlResult cycle = invoke(QStringLiteral("patcher.set_wiring"),
 			{{QStringLiteral("target"), channel()},
-			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), back}}});
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")),
+				wire(QStringLiteral("effect:0"), QStringLiteral("effect:1")),
+				wire(QStringLiteral("effect:1"), QStringLiteral("effect:0"))}}});
 		QVERIFY(!cycle.ok);
 		QVERIFY2(cycle.errorMessage.contains(QStringLiteral("cycle")),
 			qPrintable(cycle.errorMessage));
@@ -392,8 +420,17 @@ private slots:
 	}
 
 	//! The measured normal case for a chain of real devices, stated rather than
-	//! hidden: a chain with nothing to route has no graph, and an edit against
-	//! it is REFUSED, typed, instead of silently stored.
+	//! hidden: a chain with nothing to route has no graph and reports it
+	//! (`editable.editable` false with the reason), and an edit against it is
+	//! REFUSED, typed, instead of silently stored. The kind is InvalidArgs, not
+	//! Refused: the edit path validates the edge list against the CURRENT node
+	//! set before it touches the chain (ControlCommandsPatcherShared.h's
+	//! documented order), and this chain's node set is the input node alone, so
+	//! any edge naming an effect is an unknown reference. The Refused kind is
+	//! for a wiring that IS valid for the node set but cannot be taken by the
+	//! graph (EffectChain::setPatchWiring's m_graphActive/m_patchDropped path),
+	//! which a zero-effect chain cannot reach: its only valid wiring is the
+	//! empty one, and that always means "the derived route".
 	void aChainWithNoGraphRefusesAnEdit()
 	{
 		const QJsonObject state = invoke(QStringLiteral("patcher.get_state"),
@@ -404,11 +441,32 @@ private slots:
 		QVERIFY(!state.value(QStringLiteral("editable")).toObject()
 			.value(QStringLiteral("reason")).toString().isEmpty());
 
+		// (a) An edge list with no explicit `output`: refused before anything is
+		// validated, because a chain with no effects has none for the default
+		// output (the last effect) to name.
 		const ControlResult refused = invoke(QStringLiteral("patcher.set_wiring"),
 			{{QStringLiteral("target"), emptyChannel()},
 			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:1"))}}});
 		QVERIFY(!refused.ok);
-		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(refused.errorMessage.contains(QStringLiteral("this empty")),
+			qPrintable(refused.errorMessage));
+
+		// (b) The same edit with the output NAMED: now the edge's reference is
+		// checked against the node set, which is the input node alone, so
+		// effect:1 is an unknown reference - typed, and still nothing written.
+		const ControlResult named = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), emptyChannel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:1"))}},
+			 {QStringLiteral("output"), QStringLiteral("effect:1")}});
+		QVERIFY(!named.ok);
+		QCOMPARE(named.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(named.errorMessage.contains(QStringLiteral("0 effect")),
+			qPrintable(named.errorMessage));
+
+		// Both refusals left the chain exactly as the read above found it.
+		QCOMPARE(invoke(QStringLiteral("patcher.get_state"),
+			{{QStringLiteral("target"), emptyChannel()}}).result, state);
 	}
 
 	//! Realtime: the audio thread's block through a PATCHED graph allocates
@@ -437,8 +495,32 @@ private slots:
 private:
 	EffectChain* chainUnderTest() { return &Engine::mixer()->mixerChannel(kChannel)->m_fxChain; }
 
-	QString channel() const { return channelId(kChannel); }
-	QString emptyChannel() const { return channelId(kEmptyChannel); }
+	/*! The `ch-<n>` id the ENGINE gives the mixer channel at \a index.
+	 *
+	 *  Asked for, never built from the index. `channelId(<n>)` (the vocabulary
+	 *  formatter, lmms::control::channelId) writes the literal `ch-<n>`, and
+	 *  the number in a real channel id is the channel OBJECT's own ProjectIds
+	 *  id - one project-wide counter shared with tracks, clips, notes and
+	 *  effects - so `ch-<index>` names whatever object was allocated when that
+	 *  number came up. Measured here with gdb: the mixer has three channels
+	 *  with ids 1 (master), 3 and 2, so the fixture's `channel()` used to be
+	 *  `ch-1` and every wiring slot below drove the MASTER's empty fx chain
+	 *  ("effect:1 names no node of this chain: it has 0 effect(s)") while
+	 *  initTestCase appended its two effects to mixerChannel(1) - the chain
+	 *  under test, whose id is ch-3. mixer.get_state publishes each channel's
+	 *  own id in index order, which is the same order mixerChannel() uses.
+	 */
+	QString channelIdAt(int index) const
+	{
+		const QJsonArray channels = ControlRegistry::instance()
+			->invoke(QStringLiteral("mixer.get_state")).result
+			.value(QStringLiteral("channels")).toArray();
+		if (index < 0 || index >= channels.size()) { return QString(); }
+		return channels.at(index).toObject().value(QStringLiteral("id")).toString();
+	}
+
+	QString channel() const { return channelIdAt(kChannel); }
+	QString emptyChannel() const { return channelIdAt(kEmptyChannel); }
 
 	ControlResult invoke(const QString& id, const QJsonObject& args = QJsonObject())
 	{
