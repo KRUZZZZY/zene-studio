@@ -309,7 +309,26 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 				.arg(journal->maxUndoBytes()));
 	}
 
-	const QJsonObject inverse = top->inverse;
+	// The record is COPIED, and never carried by pointer, across the dispatch
+	// below. That is the whole reason this variable exists:
+	//   * ControlRegistry::lastTransaction() hands out &m_transactions.last() - a
+	//     pointer INTO the registry's QVector<Transaction>.
+	//   * A mutating inverse records a transaction of its OWN while it runs
+	//     (ControlRegistry::runHandler -> recordTransactionOf -> recordTransaction ->
+	//     m_transactions.append; ControlCommandsPluginScanEdit registers
+	//     plugin.scan_cache_quarantine_remove as mutating=true), and an append may
+	//     REALLOCATE that vector.
+	//   * So `top` dangles the moment the inverse is dispatched, and every read
+	//     through it afterwards is a use-after-free whose visible outcome belongs to
+	//     the allocator rather than to this code: glibc tends to leave the freed
+	//     bytes readable, while Darwin's allocator may poison or reuse them.
+	// This is the ONE branch that re-enters the registry (applies=command), it is the
+	// first control.undo over such a record that reaches it, and it is where
+	// ControlPluginScanCommands lost its instance on BOTH macOS jobs of run
+	// 34870198514: the engine closed the control socket on that undo, with no reply
+	// and nothing written about the cause. Copying costs a handful of refcounts.
+	const ControlRegistry::Transaction record = *top;
+	const QJsonObject inverse = record.inverse;
 	const QString op = inverse.value(QStringLiteral("op")).toString();
 	const QString applies = inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
 	if (applies == QLatin1String("command") && registry.hasCommand(op))
@@ -318,13 +337,13 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 		if (!applied.ok) { return applied; }
 		QJsonObject result;
 		result.insert(QStringLiteral("undone"), true);
-		result.insert(QStringLiteral("undone_command"), top->command);
-		result.insert(QStringLiteral("class"), top->cls);
+		result.insert(QStringLiteral("undone_command"), record.command);
+		result.insert(QStringLiteral("class"), record.cls);
 		result.insert(QStringLiteral("restored_by"), op);
 		result.insert(QStringLiteral("inverse_result"), applied.result);
 		return ControlResult::success(result);
 	}
-	return undoThroughJournal(top->command);
+	return undoThroughJournal(record.command);
 }
 
 void registerUndoCommand(ControlRegistry& registry)
