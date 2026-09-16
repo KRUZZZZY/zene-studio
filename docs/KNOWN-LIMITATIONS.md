@@ -165,8 +165,14 @@ that is this page's fault — report it and it gets added.
   of the product's VST3 search directory as a `format: "vst3"` entry and `plugin.load` loads one onto an
   instrument track (the class, the bundle and the `(file, class)` key are the same ones the instrument browser
   uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). There is no multi-out, no
-  preset management, no instrument latency compensation, and no out-of-process hosting. **No instrument hosting
-  in CLAP.**
+  preset management, no instrument latency compensation, and no out-of-process hosting. **CLAP instrument
+  hosting is socket-only in the same sense** (feature row 79): a CLAP generator loads onto an instrument
+  track through `plugin.load` — `plugin.list` carries the CLAP classes of the product's plug-in directory as
+  `format: "clap"` entries — its notes reach it through the track's MIDI path, and
+  `plugin.host_notes` reports the note ports and the audio-output configuration the host discovered. It is
+  **drivable through the socket, not from the interface**: the CLAP instrument browser entries lead to a
+  generated parameter view and there is no `clap.gui` support anywhere in this tree, so the instrument's own
+  window does not open (the same limit the VST3 instrument has).
 - **No VCA groups in the interface.** Mix-and-edit groups exist, are tested, and are saved with the project —
   and since 2026-09-14 the **whole group is drivable through `--control-socket`, which is still the only way
   to reach one: nothing in the interface creates a group, names one, assigns a member, locks it or edits

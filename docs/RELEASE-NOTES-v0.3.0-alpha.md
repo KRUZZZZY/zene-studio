@@ -2051,6 +2051,66 @@ is covered by `ControlDeviceCatalogueTest`: with the fixture in the search direc
 format=vst3` lists it and `plugin.load` loads it onto an instrument track. **No third-party VST3 instrument
 has been run** — the witness is the in-tree fixture, on a box where none can be installed.
 
+## CLAP instrument hosting: a CLAP generator on an instrument track, and the note path behind it (feature row 79, board task #669) — added 2026-09-16
+
+Before this, CLAP hosting was **effects only**: there was no CLAP instrument module, so a CLAP generator
+could not be loaded at all — not from the interface either. There is now a `plugins/ClapInstrument` module
+(**`clapinstrument`**), built beside `clapeffect` from the same host sources (the one-descriptor-per-library
+rule, exactly as the VST3 pair shares `Vst3Host.cpp`). It declares `IsSingleStreamed | IsMidiBased`, loads a
+class through the host's `(file, id)` key, and renders its own audio.
+
+**The note ports / input-events path** is the host half, in `plugins/ClapEffect/ClapHost.cpp`:
+`load()` reads `clap.note-ports` while the plug-in is deactivated and remembers the port **index** the plug-in
+declared (the number every `clap_event_note_t` it receives carries back), `setNoteOn` / `setNoteOff` /
+`setNoteChoke` fill a POD and push it into a bounded, lock-free ring
+(`plugins/ClapEffect/ClapNoteQueue.h` — the VST3 lane's queue idiom, since LMMS' MIDI route pushes from the
+audio thread for clips and from the MIDI/GUI thread for live input), and `process()` drains that ring into the
+plug-in's input event list with `header.time` set to the frame offset LMMS already computed. The notes belong
+to the chunk that **starts** a request, exactly as the parameter changes do, so a note is delivered once and
+never once per chunk; a plug-in with no note input port refuses the event (counted, not hidden) instead of
+queueing it, and a full queue drops it and counts that too.
+
+**The audio-output configuration** is the instrument half: `ClapHost::load()` accepts a **generator's** layout
+— an output and no audio input port — which `PortLayout::isValid()`'s "both directions" rule (the *effect*
+rule) had rejected; the instrument module then takes its channel counts from the plug-in's own
+`clap.audio-ports` with a stereo floor. A CLAP synth therefore loads where it previously failed with "no
+usable audio ports".
+
+Drivable through the socket: **`plugin.list`** carries the CLAP classes of the product's plug-in directory as
+`format: "clap"` entries (`(file, id)` — module path plus the plug-in's own CLAP id — and `loadable: true`)
+and **`plugin.load`** loads one onto an instrument track, exactly as the VST3 half does. The enumeration is
+the CLAP host's own (`ClapSubPluginFeatures::listSubPluginKeys`, the call the plug-in browser makes), the
+CLAP block sits **after** the VST3 block in the catalogue so no `dev-<n>` id a client already holds is
+renumbered, and `plugin.load` keeps the A16 row it already had. The one new id is **`plugin.host_notes`**,
+added because the note path and the audio layout have no other socket-observable surface: it reports the note
+input ports (count, delivered-to index, dialects) and the audio layout of the CLAP plug-in loaded last, plus
+the events the route pushed, the ones refused, the ones delivered and the note-ONs among them
+(`include/PluginHostNotes.h` is the engine half and the counters live in the core, the same seam and the same
+reason as `plugin.host_chunking`). One `not_mutating` A16 row
+(`src/core/ControlReversibilityTableClapInstrument.cpp`).
+
+**Stated limit: this is drivable through the socket, not from the interface in the ways that matter.**
+`clap.gui` is not implemented anywhere in this tree, so an instrument's own window does not open — the module
+shows the generated parameter grid plus two lines naming its note ports and its audio output channel count. MPE,
+note expressions, `clap_event_midi` (control change, pitch bend, program change, channel pressure) and SysEx
+are **not** forwarded: only CLAP-dialect notes travel, and a MIDI-dialect-only port is driven with
+`clap_event_note` rather than `clap_event_midi`. There is no multi-out, no per-note id and no instrument
+latency in PDC.
+
+Proven by the in-tree MIT fixture `tests/data/clap-test-plugin/clap-test-instrument.c` (a real CLAP
+generator: one CLAP-dialect note input port, a stereo output port and **no** audio input port, its own
+counters readable through `clap.state`) and two registered tests: `ClapHostTest` gains the note-path case
+(note ports discovered; a note-on reaches the plug-in at the frame offset LMMS computed and produces audio;
+note-off runs the plug-in's release and then falls silent; a choke silences within the same block; a
+256-frame request into a 64-frame block is four plug-in calls and **one** delivered note; the effect fixture
+refuses notes and counts the refusal), and `ControlDeviceCatalogueTest` gains the surface case (with the
+fixture in the search directory, `plugin.list format=clap` lists it, `plugin.load` loads `clapinstrument` onto
+an instrument track, and `plugin.host_notes` reports `ports.count == 1`, `audio.inputs == 0`,
+`audio.outputs == 2`). **No third-party CLAP instrument has been run** — the witness is the in-tree fixture,
+on a box where none is installed; the CLAP headers were not present in this lane's build tree, so the compile
+and ctest evidence for this lane is stated in `docs/reports/CLAP-INSTRUMENT-ROW79.md` rather than claimed
+here.
+
 ## A shared WASM worker pool and a deterministic offline render (`wasm.pool`, `wasm.render_offline`, CODE-5, row 73) — added 2026-09-15
 
 The WASM worker owned a `std::thread` and a `sleep_for(200us)` polling loop, so N hosted modules cost N
