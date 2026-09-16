@@ -58,6 +58,8 @@ struct ScriptCommand;
  *  panning exist), which is the same reason the control surface's
  *  mixer.set_pan refuses rather than inventing one.
  */
+class LuaEffectChain;  // declared below: chain() returns a reference to it
+
 class LuaMixerChannel
 {
 public:
@@ -88,8 +90,10 @@ public:
 	AutomatableModel* muteModel() const;
 	AutomatableModel* soloModel() const;
 
-	//! The channel's effect chain (rack chain 0).
-	EffectChain* chain() const;
+	//! The channel's effect chain (rack chain 0), as the Lua view of it: the
+	//! registered class is LuaEffectChain ("EffectChain"), so a raw
+	//! lmms::EffectChain* could not cross the bridge.
+	LuaEffectChain& chain() const;
 
 	//! Number of outgoing sends, and one send as {to, amount, pre_fader}.
 	int sendCount() const;

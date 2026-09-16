@@ -126,12 +126,15 @@ private slots:
 		QCOMPARE(static_cast<int>(mixer->numChannels()), before + 1);
 
 		// 2. The channel the script addressed is the one the socket addresses:
-		//    the control surface's own resolver must find the same object.
+		//    the control surface's own resolver must find the same object. By the
+		//    id the ENGINE gave it - a ch-<n> id is allocated at construction and
+		//    is not the channel's index (SPEC-stable-ids.md slice 2).
+		MixerChannel* channel = mixer->mixerChannel(before);
+		const QString channelId = control::channelIdOf(channel);
 		ControlTarget target;
 		ControlResult result;
-		QVERIFY2(resolveControlTarget(control::channelId(before), &target, &result),
+		QVERIFY2(resolveControlTarget(channelId, &target, &result),
 			qPrintable(result.errorMessage));
-		MixerChannel* channel = mixer->mixerChannel(before);
 		QCOMPARE(target.chain, &channel->m_fxChain);
 
 		// 3. The engine's own models carry what the script wrote.
@@ -142,7 +145,7 @@ private slots:
 
 		// 4. ... and the script's read-back agrees with the engine, line by line.
 		const QStringList expected = {
-			qstr("created id=ch-%1 gain=0.5 muted=true soloed=true").arg(before),
+			qstr("created id=%1 gain=0.5 muted=true soloed=true").arg(channelId),
 			qstr("readback name=lua-driven index=%1").arg(before),
 			qstr("master=true count=%1").arg(before + 1),
 			qstr("pan is deliberately absent: nil"),
@@ -189,10 +192,11 @@ private slots:
 		MixerChannel* channel = mixer->mixerChannel(index);
 		const int effectsBefore = static_cast<int>(channel->m_fxChain.effects().size());
 
-		// The control surface resolves ch-<index> to this chain and no other.
+		// The control surface resolves the channel's OWN id to this chain and no
+		// other - not ch-<index>, which is a position (SPEC-stable-ids.md slice 2).
 		ControlTarget target;
 		ControlResult result;
-		QVERIFY2(resolveControlTarget(control::channelId(index), &target, &result),
+		QVERIFY2(resolveControlTarget(control::channelIdOf(channel), &target, &result),
 			qPrintable(result.errorMessage));
 		QCOMPARE(target.chain, &channel->m_fxChain);
 
