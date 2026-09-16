@@ -39,6 +39,22 @@ namespace
 int s_next = 0;
 int s_loadAssignments = 0;
 
+/*! The highest number this session has handed out to a surviving object or read
+ *  from a document, +1 - the floor restoreFromDocument() may never go below.
+ *
+ *  The distinction that makes the round trip byte-identical: a walk's
+ *  placeholders (allocate() while a load pass is open) do NOT count, because the
+ *  element's own id overwrites them; the ids the document carries (observe(),
+ *  from setUp) and the ones an id-less element KEEPS (noteLoadAssignment())
+ *  do. Without it, a max-merge kept the walk's placeholders in the counter
+ *  forever and every save/load/save round trip wrote a larger `next-id` than
+ *  the file it came from.
+ */
+int s_documentFloor = 0;
+
+//! True between beginLoad() and endLoad(): allocate() is handing out placeholders.
+bool s_inLoad = false;
+
 /*! The containers a COPY payload puts an object element in, i.e. everything
  *  `ProjectIds::isDocumentElement` must answer false for. EVERY entry is the
  *  name of an element a writer in this tree produces, measured - never a guess
@@ -92,24 +108,43 @@ int ProjectIds::next()
 void ProjectIds::observeNext(int next)
 {
 	if (next > s_next) { s_next = next; }
+	if (s_next > s_documentFloor) { s_documentFloor = s_next; }
+}
+
+void ProjectIds::restoreFromDocument(int next)
+{
+	// The document's own counter, floored by what that document carries or kept:
+	// never below the floor, so an id in the file (or a placeholder an id-less
+	// element kept) can never be handed out again.
+	s_next = next > s_documentFloor ? next : s_documentFloor;
 }
 
 void ProjectIds::observe(int id)
 {
+	// A document's id, read back by setId: it names a live object, so it is a
+	// floor the counter may not sink below.
 	if (id >= s_next) { s_next = id + 1; }
+	if (s_next > s_documentFloor) { s_documentFloor = s_next; }
 }
 
 int ProjectIds::allocate()
 {
 	const int id = s_next;
-	observe(id);
+	s_next = id + 1;
+	// A load pass's allocations are PLACEHOLDERS: the element's own id overwrites
+	// them a moment later, and one that is KEPT reports itself through
+	// noteLoadAssignment(). Counting them here is what made every round trip
+	// write a larger next-id than the file it was loaded from.
+	if (!s_inLoad && s_next > s_documentFloor) { s_documentFloor = s_next; }
 	return id;
 }
 
 void ProjectIds::reset()
 {
 	s_next = 0;
+	s_documentFloor = 0;
 	s_loadAssignments = 0;
+	s_inLoad = false;
 }
 
 int ProjectIds::loadAssignments()
@@ -120,11 +155,20 @@ int ProjectIds::loadAssignments()
 void ProjectIds::beginLoad()
 {
 	s_loadAssignments = 0;
+	s_inLoad = true;
 }
 
-void ProjectIds::noteLoadAssignment()
+void ProjectIds::endLoad()
+{
+	s_inLoad = false;
+}
+
+void ProjectIds::noteLoadAssignment(int id)
 {
 	++s_loadAssignments;
+	// The object KEEPS this id, so it is live from now on.
+	if (id + 1 > s_documentFloor) { s_documentFloor = id + 1; }
+	if (id >= s_next) { s_next = id + 1; }
 }
 
 bool ProjectIds::isDocumentElement(const QDomNode& node)

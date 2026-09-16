@@ -521,11 +521,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			bool ok = false;
 			const int stored = element.attribute("id").toInt(&ok);
 			if (ok && stored >= 0) { setId(stored); }
-			else { ProjectIds::noteLoadAssignment(); }
+			else { ProjectIds::noteLoadAssignment(id()); }
 		}
 		else
 		{
-			ProjectIds::noteLoadAssignment();
+			ProjectIds::noteLoadAssignment(id());
 		}
 	}
 

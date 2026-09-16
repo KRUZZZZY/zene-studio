@@ -102,6 +102,20 @@ def channel_volume(session, channel):
     return None
 
 
+def channel_ids(session):
+    """The mixer's OWN channel ids, in the mixer's order (index 0 is master).
+
+    ASKED FOR, never predicted. A ch-<n> id is a ProjectIds allocation shared by
+    every id family (SPEC-stable-ids.md R1, one monotonic counter per project),
+    so "ch-1" names whatever was allocated when that number came up - in this
+    transcript the master is ch-1 and the created channels are not ch-2/ch-3.
+    The literal ids this replaced failed with "no mixer channel ch-2 (the mixer
+    has 4)" and turned the master into an accepted group member.
+    """
+    return [entry.get("id")
+            for entry in session.result("mixer.get_state").get("channels", [])]
+
+
 def ensure_channels(session, recorder, wanted):
     """The group commands need channels to assign; a fresh instance has few."""
     count = session.result("mixer.get_state").get("count", 0)
@@ -176,8 +190,10 @@ def check_create(session, recorder):
 
 def check_fader(session, recorder, group):
     """The fader SCALES: members are never written, and the undo puts it back."""
-    before_volume = channel_volume(session, "ch-1")
-    for channel in ("ch-1", "ch-2"):
+    channels = channel_ids(session)
+    member_a, member_b = channels[1], channels[2]
+    before_volume = channel_volume(session, member_a)
+    for channel in (member_a, member_b):
         assigned = session.result("vca.assign", {"group": group, "channel": channel})
         recorder.check("vca.assign puts %s in the group" % channel,
                        channel in [m.get("channel") for m in assigned.get("members") or []],
@@ -188,7 +204,7 @@ def check_fader(session, recorder, group):
                    "moved=%s" % moved)
     state = group_state(session, group)
     recorder.check("both members are scaled by the group's gain",
-                   member_gain(state, "ch-1") == 0.5 and member_gain(state, "ch-2") == 0.5,
+                   member_gain(state, member_a) == 0.5 and member_gain(state, member_b) == 0.5,
                    "members=%r" % state.get("members"))
     after_volume = session.result("mixer.get_state").get("channels", [{}])[1].get("volume")
     recorder.check("no member's OWN fader was written (the scaling is relative)",
@@ -201,17 +217,18 @@ def check_fader(session, recorder, group):
                    and group_state(session, group).get("volume") == 1.0,
                    "undone=%s state=%s" % (undone, group_state(session, group)))
     recorder.check("the members are back at unity after the undo",
-                   member_gain(group_state(session, group), "ch-1") == 1.0,
+                   member_gain(group_state(session, group), member_a) == 1.0,
                    "state=%s" % group_state(session, group))
 
 
 def check_mute_and_solo(session, recorder, group):
     """Mute is a published gain of zero; solo is the product's exclusive solo."""
+    member, other = channel_ids(session)[1], channel_ids(session)[3]
     muted = session.result("vca.set_mute", {"group": group, "muted": True})
     recorder.check("a muted group publishes a gain of zero",
                    muted.get("gain") == 0.0 and muted.get("muted") is True, "muted=%s" % muted)
     recorder.check("the members are scaled to zero while the group is muted",
-                   member_gain(muted, "ch-1") == 0.0, "members=%r" % muted.get("members"))
+                   member_gain(muted, member) == 0.0, "members=%r" % muted.get("members"))
     session.result("vca.set_mute", {"group": group, "muted": False})
 
     soloed = session.result("vca.set_solo", {"group": group, "soloed": True})
@@ -222,7 +239,7 @@ def check_mute_and_solo(session, recorder, group):
     mutes = {entry.get("id"): entry.get("muted")
              for entry in session.result("mixer.get_state").get("channels", [])}
     recorder.check("soloing the group unmutes its members and mutes the rest",
-                   mutes.get("ch-1") is False and mutes.get("ch-3") is True, "mutes=%r" % mutes)
+                   mutes.get(member) is False and mutes.get(other) is True, "mutes=%r" % mutes)
     resumed = session.result("vca.set_solo", {"group": group, "soloed": False})
     recorder.check("clearing the flag restores the pre-solo mute state",
                    resumed.get("soloed") is False, "resumed=%s" % resumed)
@@ -308,6 +325,8 @@ def check_lock_refusals(session, recorder, fixture):
 
 def check_junk(session, recorder, group):
     """Junk arguments are TYPED refusals - never a crash, never a success."""
+    channels = channel_ids(session)
+    master, non_member = channels[0], channels[3]
     cases = [
         ("vca.get_state", {}, "invalid_args"),
         ("vca.get_state", {"group": ""}, "invalid_args"),
@@ -315,11 +334,14 @@ def check_junk(session, recorder, group):
         ("vca.get_state", {"group": "ch-0"}, "invalid_args"),
         ("vca.remove", {"group": "nonsense"}, "invalid_args"),
         ("vca.set_gain", {"group": group, "gain": 9.5}, "invalid_args"),
-        ("vca.assign", {"group": group, "channel": "ch-0"}, "refused"),
+        # The master channel, by the id the ENGINE gave it: a group scales the
+        # channels that feed the master, so the master itself is refused.
+        ("vca.assign", {"group": group, "channel": master}, "refused"),
         ("vca.assign", {"group": group, "channel": "ch-9999"}, "not_found"),
         ("vca.track_add", {"group": group, "track": "trk-9999"}, "not_found"),
         ("vca.rename", {"group": group, "name": ""}, "invalid_args"),
-        ("vca.unassign", {"group": group, "channel": "ch-3"}, "refused"),
+        # A real channel that is not a member: unassigning it is refused.
+        ("vca.unassign", {"group": group, "channel": non_member}, "refused"),
     ]
     wrong = []
     for command, args, expected in cases:

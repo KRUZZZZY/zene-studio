@@ -183,7 +183,8 @@ void Clip::restoreState( const QDomElement & element )
 	}
 	else
 	{
-		ProjectIds::noteLoadAssignment();
+		// m_id, not id(): the local above is named `id` and shadows the accessor.
+		ProjectIds::noteLoadAssignment( m_id );
 	}
 }
 

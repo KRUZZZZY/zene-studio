@@ -394,7 +394,11 @@ private slots:
 			QJsonObject{{QStringLiteral("target"), source},
 				{QStringLiteral("plugin"), parameterised},
 				{QStringLiteral("index"), 0}, {QStringLiteral("value"), wanted}}).ok);
-		const QString parameterisedId = QStringLiteral("fx-%1").arg(ids.indexOf(parameterised));
+		// The device's POSITION on the source. chain.apply creates NEW devices on
+		// the target, so the id to read the value back with is the target's own,
+		// asked for at the same position (line 419 asserts the same devices in
+		// the same order) - never "fx-<position>" (SPEC-stable-ids.md R1).
+		const int parameterisedIndex = ids.indexOf(parameterised);
 
 		const QStringList sourcePlugins = livePlugins(source);
 		const QString sourceValues = liveValues(source);
@@ -420,7 +424,10 @@ private slots:
 		QCOMPARE(liveValues(target), sourceValues);
 		// A device parameter is a float, so the value that comes back is the float
 		// the engine stored: compare within float precision, not bit for bit.
-		QVERIFY(qAbs(deviceParameterValue(target, parameterisedId, 0) - wanted) < 1e-6);
+		const QString targetParameterised = deviceIdAt(target, parameterisedIndex);
+		QVERIFY2(!targetParameterised.isEmpty(),
+			"the target's chain has no device at the parameterised position");
+		QVERIFY(qAbs(deviceParameterValue(target, targetParameterised, 0) - wanted) < 1e-6);
 
 		// The A16 record classes it as the table says, and the undo really
 		// reverses it: the target is empty again.

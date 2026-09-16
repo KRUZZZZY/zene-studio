@@ -272,7 +272,16 @@ private slots:
 		QCOMPARE(extracted.mixerChannels.size(), authored.mixerChannels.size());
 		for (int i = 0; i < extracted.mixerChannels.size(); ++i)
 		{
-			QCOMPARE(extracted.mixerChannels[i].volume, authored.mixerChannels[i].volume);
+			// Compared as FLOATS: a mixer channel's fader is a FloatModel
+			// (DawProjectSession.cpp reads it back as
+			// static_cast<double>(m_volumeModel.value())), so the value that
+			// comes out of the session is the nearest FLOAT to the authored
+			// double. QCOMPARE on the doubles fuzzy-compares at ~1e-12 relative
+			// and cannot hold for a value that went through a float - measured:
+			// extracted 0.800000011921 vs authored 0.8. The comparison is still
+			// exact at the precision the engine's model has.
+			QCOMPARE(static_cast<float>(extracted.mixerChannels[i].volume),
+				static_cast<float>(authored.mixerChannels[i].volume));
 			QCOMPARE(extracted.mixerChannels[i].mute, authored.mixerChannels[i].mute);
 			QCOMPARE(extracted.mixerChannels[i].solo, authored.mixerChannels[i].solo);
 		}

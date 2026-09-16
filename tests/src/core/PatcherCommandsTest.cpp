@@ -183,6 +183,13 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		// The registry's own readiness gate: ControlRegistry::isReady() is
+		// s_ready && Song && Mixer, and s_ready is false until main() flips it
+		// when the engine is up (src/core/ControlRegistry.cpp:47/173). A test
+		// binary has no main() worth speaking of, so every invoke below would be
+		// refused with `engine_starting` - "the engine is not addressable yet
+		// [engine_starting]" is what this file measured before the two calls.
+		ControlRegistry::setReady(true);
 		// The dummy device thread renders in the background; this test drives
 		// the mixer synchronously, so stop it to keep the buffers stable.
 		Engine::audioEngine()->audioDev()->stopProcessing();
@@ -198,7 +205,11 @@ private slots:
 			"the chain does not render through its graph - every wiring check below would be vacuous");
 	}
 
-	void cleanupTestCase() { Engine::destroy(); }
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
 
 	//! The ids, the schemas and the contract rows: a group is in only when all
 	//! three exist, which is what the release contract's 3.1 says.

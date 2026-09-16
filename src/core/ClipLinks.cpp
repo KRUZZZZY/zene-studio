@@ -139,6 +139,16 @@ QString contentFingerprint(Clip* clip)
 	for (QDomElement note = holder.firstChildElement(); !note.isNull();
 			note = note.nextSiblingElement())
 	{
+		// The note's IDENTITY is not part of its content. Every note element
+		// carries `id` since SPEC-stable-ids.md slice 2 (Note::saveSettings
+		// writes it unconditionally), and R4 makes a copy a NEW object - so a
+		// member that writeContent() just filled from the source carries the
+		// same notes under DIFFERENT ids. Fingerprinting those ids reported
+		// every synced member as `divergent` forever (measured: a group of two
+		// in-sync members came back with one entry in `divergent` after a
+		// save/reload), while the ids themselves are exactly what the contract
+		// requires them to be. What is compared here is the content channel.
+		note.removeAttribute(QStringLiteral("id"));
 		QString text;
 		QTextStream stream(&text);
 		note.save(stream, 0);

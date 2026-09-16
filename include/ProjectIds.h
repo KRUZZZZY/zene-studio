@@ -62,6 +62,22 @@ public:
 	 */
 	static void observeNext(int next);
 
+	/*! The load pass's own counter: \a next is the `next-id` attribute of the
+	 *  document that was just loaded, and it IS the counter for that document.
+	 *
+	 *  NOT observeNext(): a load walks the document and every object's
+	 *  constructor calls allocate() for a placeholder before the element's own
+	 *  `id` is read, so the counter arrives here ABOVE the document's value -
+	 *  and a max-merge keeps it there, which made a save/load/save round trip
+	 *  write a different `next-id` every time (measured by StableTrackIdsTest
+	 *  and TempoMapPersistenceTest: round1 `next-id="3"`, round2 `next-id="5"`
+	 *  for a three-object project, so the second file was not byte-identical to
+	 *  the first). This restores the document's value, but never below an id the
+	 *  document actually carries or a placeholder an object KEPT - so nothing
+	 *  in the loaded document can be handed out again (R3).
+	 */
+	static void restoreFromDocument(int next);
+
 	//! Raises the counter above \a id, so \a id can never be allocated again.
 	static void observe(int id);
 
@@ -81,8 +97,19 @@ public:
 	//! Starts a load pass: clears loadAssignments(). Does not touch the counter.
 	static void beginLoad();
 
-	//! A loader found an element with no id attribute, so it had to assign one.
-	static void noteLoadAssignment();
+	/*! Ends a load pass. Until it is called, allocate()'s ids are the walk's
+	 *  PLACEHOLDERS - a number every object takes in its constructor and that
+	 *  the element's own `id` attribute overwrites a moment later - so they are
+	 *  not counted as "handed out" and the document's own counter can be
+	 *  restored over them. An object that KEEPS its placeholder says so through
+	 *  noteLoadAssignment(), which does count it.
+	 */
+	static void endLoad();
+
+	/*! A loader found an element with no usable id attribute, so the object
+	 *  KEEPS the id it was constructed with: it is a live id from now on, and
+	 *  \\a id is the one the caller passed to noteLoadAssignment(). */
+	static void noteLoadAssignment(int id);
 
 	/*! True when \a node belongs to a DOCUMENT element tree - a project file, a
 	 *  journal checkpoint - and false when it belongs to a COPY payload (the clip

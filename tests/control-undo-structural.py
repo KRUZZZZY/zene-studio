@@ -349,10 +349,22 @@ def check_effect_removal_is_undoable(session, recorder, fixture):
 
     session.result("control.undo")
     ids, _chain = devices_of(session, target)
+    # The restored device is the SAME device at the SAME index with its settings
+    # back - that is the A16 row's claim ("RE-INSTANTIATES the device through the
+    # chain's own instantiate path and puts the settings back, AT the index it
+    # was removed from"). Its fx-<n> id is a NEW one, and that is the contract,
+    # not a shortfall: the captured state document is a payload, Effect::
+    # loadSettings deliberately ignores the id of an element that is not a
+    # document element (src/core/Effect.cpp, ProjectIds::isDocumentElement -
+    # SPEC-stable-ids.md R5 "a copy payload carries no identity"), and the
+    # retired id can never be reborn (R3). The check this replaced asserted
+    # ids == [effect] - an id PREDICTION, measured as
+    # "chain ids=['fx-40'] (expected ['fx-39'])".
+    restored = ids[0] if len(ids) == 1 else None
     recorder.check("control.undo RE-INSTANTIATES the removed device at its index",
-                   ids == [effect], "chain ids=%s (expected [%r])" % (ids, effect))
-    if ids:
-        value = (session.result("plugin.param_get", {"target": target, "plugin": effect,
+                   restored is not None and restored != effect, "chain ids=%s" % ids)
+    if restored:
+        value = (session.result("plugin.param_get", {"target": target, "plugin": restored,
                                                     "name": name}).get("parameter") or {})
         recorder.check("...with its parameter restored, not a default device of the same name",
                        value.get("value") is not None

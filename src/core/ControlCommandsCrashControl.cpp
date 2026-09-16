@@ -125,6 +125,26 @@ std::string armDirectory(const QJsonObject& args)
 	return clean(ConfigManager::inst()->workingDir().toStdString());
 }
 
+/*! The directory the result's `report_directory` publishes: the REPORT directory
+ *  the files land in, `<installed root>/crash-reports`.
+ *
+ *  CrashReporter composes it itself - "Report files live one level down, in
+ *  <dir>/crash-reports/" (src/core/CrashReporter.cpp, reportFileInDir), and
+ *  crashPaths() in ControlCommandsCrash.cpp publishes exactly this directory
+ *  under this same key for crash.list_reports. Publishing install()'s own
+ *  argument here instead made one key name two different directories in one
+ *  group, one level above the result's own `report_path`; the crash-reporter
+ *  transcript measured it as "must still name its report directory:
+ *  '/tmp/.../workspace'" where the reports live in
+ *  '/tmp/.../workspace/crash-reports'. The install() argument stays the ROOT
+ *  everywhere it is used (install(), the recorded inverse, the refusal text).
+ */
+std::string publishedReportDirectory(const std::string& root)
+{
+	if (root.empty()) { return root; }
+	return clean(root + "/" + crashreporter::kReportDirName);
+}
+
 //! The reporter's state as the two verbs (and their refusals) report it.
 QJsonObject armState(const std::string& directory)
 {
@@ -137,7 +157,7 @@ QJsonObject armState(const std::string& directory)
 	// A disagreement is not a number to hide: it means something replaced the
 	// handler we installed, and the honest predicate is the one that says so.
 	out.insert(QStringLiteral("agree"), armed == installed);
-	out.insert(QStringLiteral("report_directory"), wire(clean(directory)));
+	out.insert(QStringLiteral("report_directory"), wire(publishedReportDirectory(directory)));
 	out.insert(QStringLiteral("report_path"),
 		wire(clean(crashreporter::pendingReportPath())));
 	out.insert(QStringLiteral("signals"), wire(crashreporter::handledSignalList()));
@@ -152,7 +172,7 @@ QJsonObject armBeforeState(const std::string& directory)
 	out.insert(QStringLiteral("enabled"), crashreporter::handlersArmed());
 	out.insert(QStringLiteral("armed"), crashreporter::handlersArmed());
 	out.insert(QStringLiteral("installed"), crashreporter::isInstalled());
-	out.insert(QStringLiteral("report_directory"), wire(clean(directory)));
+	out.insert(QStringLiteral("report_directory"), wire(publishedReportDirectory(directory)));
 	return out;
 }
 

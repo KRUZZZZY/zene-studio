@@ -145,7 +145,10 @@ private slots:
 	void cleanupTestCase() { Engine::destroy(); }
 
 	//! I9 (additive serialisation): a clip with no warp writes no <warp>
-	//! element and the exact attribute set task #611 left behind.
+	//! element and the exact attribute set task #611 left behind, plus the one
+	//! attribute every clip element carries since slice 2: the clip's stable id
+	//! (Clip::saveState -> `id` on the document element, SPEC-stable-ids.md R2).
+	//! The list stays EXACT, so a second unexpected attribute still fails here.
 	void aClipWithNoWarpSerialisesExactlyAsBefore()
 	{
 		SampleTrack track(Engine::getSong());
@@ -157,7 +160,7 @@ private slots:
 		QCOMPARE(element.nodeName(), QString("sampleclip"));
 		QVERIFY(element.firstChildElement("warp").isNull());
 		QCOMPARE(attributeNames(element),
-			QStringList({ "autoresize", "data", "len", "muted", "off", "pos", "sample_rate", "src" }));
+			QStringList({ "autoresize", "data", "id", "len", "muted", "off", "pos", "sample_rate", "src" }));
 
 		// load and re-save: identical authored state, byte for byte once the
 		// per-object journalling id is neutralised
