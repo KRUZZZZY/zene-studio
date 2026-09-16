@@ -108,6 +108,12 @@ set(LMMS_TESTS
 	# registry - including, where this build ships both executables, a real
 	# client process hosted, SIGKILLed, counted, restarted and finally refused.
 	src/core/OutOfProcessHostTest.cpp
+	# The same feature's other binary: the whole loop on a REAL client process
+	# (hosted through oop.set_mode, SIGKILLed, counted, restarted, refused at the
+	# crash-loop bound and drivable again after oop.reset_crashes). A second
+	# binary because the file-length ratchet is not moved for a new feature - the
+	# ClipLink / SmfInterchange pairs in this directory are the same shape.
+	src/core/OutOfProcessHostClientLoopTest.cpp
 	# The chord track, its detection and its generators (feature row 35,
 	# docs/CHORD-TRACK.md): the engine half (the track's ordering, bounds and
 	# <chord-track> element; the detection on known note sets; the catalogue and
@@ -548,7 +554,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# The hosting test loads the build's own plugin modules to get devices with
 		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
 		# client - see the OUTOFPROC_ZYN_* definitions below).
-		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostTest")
+		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostTest"
+		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -573,7 +580,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# them compiles the same test and its Zyn case reports ctest *Skipped* (the
 	# module path defines are simply absent) rather than the suite failing to
 	# build. No other test's definitions, environment or dependencies change.
-	if(LMMS_TEST_NAME STREQUAL "OutOfProcessHostTest")
+	if(LMMS_TEST_NAME STREQUAL "OutOfProcessHostTest"
+			OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest")
 		if(TARGET zynaddsubfx AND TARGET RemoteZynAddSubFx)
 			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 				OUTOFPROC_ZYN_PLUGIN_PATH="$<TARGET_FILE:zynaddsubfx>"

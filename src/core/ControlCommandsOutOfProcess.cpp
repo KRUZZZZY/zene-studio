@@ -8,36 +8,23 @@
  * table (what each plugin family's out-of-process story IS in this build, with
  * the reason when it has none) and the client-process record (what the client
  * executables have done this session, which is what a crash-loop refusal is
- * measured against). This file is the surface: `oop.get_state` (every device
- * chain in the song, each device's hosting resolved) and `oop.list_families`
- * (the table itself). The group's three WRITERS are in
- * ControlCommandsOutOfProcessEdit.cpp.
+ * measured against). This file is the surface's two READS - `oop.get_state`
+ * (every device chain in the song, each device's hosting resolved) and
+ * `oop.list_families` (the table itself) - plus the group's one registration
+ * point. The three WRITERS are in ControlCommandsOutOfProcessEdit.cpp and the
+ * shared helpers are in ControlCommandsOutOfProcessSupport.cpp.
  *
  * The surface is the ONLY way the choice is made in a headless instance, and it
  * is the only place the crash accounting is readable at all. There is no
  * out-of-process page, dialog or column in the interface
  * (docs/KNOWN-LIMITATIONS.md and docs/RELEASE-NOTES-v0.3.0-alpha.md carry the
- * absence line).
+ * absence line; docs/OUT-OF-PROCESS-BEYOND-ZYN.md is the feature's document).
  *
- * HOW A DEVICE'S HOSTING IS ANSWERED, and why it is not a lookup: four sources
- * are read in order and the FIRST one that speaks decides -
- *
- *   1. a live client process (the plugin's own `hostingProcessId()`, or the
- *      RemotePlugin's QProcess when the device plugin IS one) - it is running,
- *      so "separate-process" is a fact about a pid;
- *   2. this session's record for the family's client executable: a count of
- *      deaths at or over the bound is `refused-crash-loop` (the refusal
- *      oop.set_mode and oop.restart obey), any death at all is
- *      `client-exited`, and the crash is still named in the object;
- *   3. the plugin's own `hostingState()` (the invokable convention in
- *      include/OutOfProcessHosting.h);
- *   4. the family table: a family with no client executable in this build is
- *      `refused-no-client` - reported, not hidden, which is the whole point of
- *      the row beyond ZynAddSubFx.
- *
- * The order matters: the record outranks the plugin's own answer because a
- * plugin that has been re-instantiated after a crash reports a healthy
- * `in-process`/`separate-process` and would otherwise hide the crash that
+ * The resolution order a device's state is answered by, and why, is documented
+ * where it is implemented (`hostedDeviceState`, in the support file): a live
+ * pid, then this session's record, then the plugin's own answer, then the family
+ * table. The record outranking the plugin matters: a plugin re-instantiated
+ * after a crash reports a healthy mode and would otherwise hide the crash that
  * emptied the slot.
  *
  * Copyright (c) 2026 Zene Studio contributors
@@ -73,7 +60,6 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "Plugin.h"
-#include "RemotePlugin.h"
 #include "Song.h"
 
 namespace lmms
@@ -93,261 +79,6 @@ const QString OutOfProcessResetCrashesId = QStringLiteral("oop.reset_crashes");
 const QString HostingModeInProcess = QStringLiteral("in-process");
 const QString HostingModeSeparate = QStringLiteral("separate-process");
 
-Plugin* HostedDevice::plugin() const
-{
-	return effect != nullptr ? static_cast<Plugin*>(effect) : static_cast<Plugin*>(instrument);
-}
-
-QString outOfProcessNote()
-{
-	return QStringLiteral("Out-of-process hosting is a per-family property of the BUILD, not a wish: "
-		"`oop.list_families` reports what each family's story is here, and a family with no client "
-		"executable is refused with that reason rather than silently run in-process. A client that dies "
-		"does not take this process down (RemotePlugin zero-fills the slot's output planes); the death is "
-		"counted under the CLIENT EXECUTABLE's name, and at the bound `oop.set_mode`/`oop.restart` refuse "
-		"that family's out-of-process path until oop.reset_crashes clears it. No auto-restart: a slot that "
-		"lost its client stays silent until a caller asks for it, which is the honest behaviour for a "
-		"plugin that is crashing.");
-}
-
-namespace
-{
-
-//! The invokable-method probes. Each one asks the meta-object and answers
-//! "does this plugin implement the convention", so the call sites below are
-//! three lines each and a plugin that implements the convention is drivable
-//! with nothing in this file changing (include/OutOfProcessHosting.h).
-bool hasInvokable(Plugin* plugin, const char* name)
-{
-	return plugin != nullptr && plugin->metaObject()->indexOfMethod(
-		QMetaObject::normalizedSignature(name).constData()) >= 0;
-}
-
-QString invokeHostingState(Plugin* plugin)
-{
-	if (!hasInvokable(plugin, "hostingState()"))
-	{
-		return {};
-	}
-	QString state;
-	if (!QMetaObject::invokeMethod(plugin, HostingStateInvokable, Q_RETURN_ARG(QString, state)))
-	{
-		return {};
-	}
-	return state;
-}
-
-qint64 invokeHostingProcessId(Plugin* plugin)
-{
-	if (!hasInvokable(plugin, "hostingProcessId()"))
-	{
-		return 0;
-	}
-	qint64 pid = 0;
-	if (!QMetaObject::invokeMethod(plugin, "hostingProcessId", Q_RETURN_ARG(qint64, pid)))
-	{
-		return 0;
-	}
-	return pid;
-}
-
-QJsonObject familyObject(const Family& family)
-{
-	QJsonObject out;
-	out.insert(QStringLiteral("key"), family.key);
-	out.insert(QStringLiteral("label"), family.label);
-	out.insert(QStringLiteral("availability"), availabilityName(family.availability));
-	out.insert(QStringLiteral("client"), family.client);
-	out.insert(QStringLiteral("reason"), family.reason);
-	return out;
-}
-
-} // namespace
-
-bool resolveHostedDevice(const QJsonObject& args, HostedDevice* device, ControlResult* error)
-{
-	const QString targetId = args.value(QStringLiteral("target")).toString();
-	const QString deviceId = args.value(QStringLiteral("plugin")).toString();
-
-	ControlTarget target;
-	if (!resolveControlTarget(targetId, &target, error)) { return false; }
-
-	device->targetId = target.id;
-	device->deviceId = deviceId;
-
-	if (deviceId == QLatin1String("inst"))
-	{
-		if (target.instrumentTrack == nullptr || target.instrumentTrack->instrument() == nullptr)
-		{
-			*error = ControlResult::failure(ControlErrorKind::NotFound,
-				QStringLiteral("target %1 carries no instrument").arg(target.id));
-			return false;
-		}
-		device->isInstrument = true;
-		device->instrument = target.instrumentTrack->instrument();
-	}
-	else
-	{
-		device->effect = resolveControlEffect(target, deviceId, error);
-		if (device->effect == nullptr) { return false; }
-	}
-
-	Plugin* plugin = device->plugin();
-	if (plugin == nullptr || plugin->descriptor() == nullptr)
-	{
-		*error = ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("%1/%2 has no plugin behind it").arg(target.id, deviceId));
-		return false;
-	}
-	device->pluginKey = QString::fromUtf8(plugin->descriptor()->name);
-	device->pluginLabel = QString::fromUtf8(plugin->descriptor()->displayName);
-	return true;
-}
-
-QString deviceHostingState(const HostedDevice& device)
-{
-	return invokeHostingState(device.plugin());
-}
-
-qint64 deviceHostingProcessId(const HostedDevice& device)
-{
-	const qint64 invited = invokeHostingProcessId(device.plugin());
-	if (invited != 0) { return invited; }
-
-	// A device whose plugin IS a RemotePlugin (the VST2 halves) has no need of
-	// the convention: its client is the plugin's own QProcess.
-	if (auto* remote = dynamic_cast<RemotePlugin*>(device.plugin()))
-	{
-		return remote->isRunning() ? remote->hostProcessId() : 0;
-	}
-	return 0;
-}
-
-bool deviceCanChooseHostingMode(const HostedDevice& device)
-{
-	return hasInvokable(device.plugin(), "setHostingMode(bool)");
-}
-
-bool chooseDeviceHostingMode(const HostedDevice& device, bool separate, bool* changed)
-{
-	if (changed != nullptr) { *changed = false; }
-	Plugin* plugin = device.plugin();
-	if (!deviceCanChooseHostingMode(device)) { return false; }
-	bool moved = false;
-	if (!QMetaObject::invokeMethod(plugin, SetHostingModeInvokable, Q_RETURN_ARG(bool, moved),
-			Q_ARG(bool, separate)))
-	{
-		return false;
-	}
-	if (changed != nullptr) { *changed = moved; }
-	return true;
-}
-
-bool reloadHostedDevice(const HostedDevice& device)
-{
-	Plugin* plugin = device.plugin();
-	if (!hasInvokable(plugin, "reloadPlugin()")) { return false; }
-	// Directly, like the instrument view's own reload: the call re-instantiates
-	// the plugin through the plugin's own path, and a queued call would leave
-	// the caller reading a state that has not changed yet.
-	return QMetaObject::invokeMethod(plugin, ReloadInvokable, Qt::DirectConnection);
-}
-
-QString deviceClientExecutable(const HostedDevice& device)
-{
-	return familyFor(device.pluginKey).client;
-}
-
-State hostedDeviceState(const HostedDevice& device)
-{
-	const Family family = familyFor(device.pluginKey);
-
-	if (deviceHostingProcessId(device) > 0) { return State::SeparateProcess; }
-
-	if (!family.client.isEmpty())
-	{
-		HostTracker& tracker = HostTracker::instance();
-		const ClientRecord record = tracker.record(family.client);
-		QString refusal;
-		if (tracker.refusedByCrashLoop(family.client, &refusal)) { return State::RefusedCrashLoop; }
-		if (record.exits > 0) { return State::ClientExited; }
-	}
-
-	const QString reported = deviceHostingState(device);
-	if (reported == HostingModeSeparate) { return State::SeparateProcess; }
-	if (reported == QStringLiteral("separate-process-exited")) { return State::ClientExited; }
-	if (reported.isEmpty() && family.availability == Availability::NoClientInBuild)
-	{
-		return State::RefusedNoClient;
-	}
-	return State::InProcess;
-}
-
-QJsonObject hostedDeviceJson(const HostedDevice& device)
-{
-	const Family family = familyFor(device.pluginKey);
-	HostTracker& tracker = HostTracker::instance();
-	const ClientRecord record = family.client.isEmpty() ? ClientRecord{} : tracker.record(family.client);
-	QString refusal;
-	const bool refused = !family.client.isEmpty()
-		&& tracker.refusedByCrashLoop(family.client, &refusal);
-	const State state = hostedDeviceState(device);
-
-	QJsonObject hosting;
-	hosting.insert(QStringLiteral("state"), stateName(state));
-	hosting.insert(QStringLiteral("family"), familyObject(family));
-	hosting.insert(QStringLiteral("client"), family.client);
-	hosting.insert(QStringLiteral("client_process_id"), deviceHostingProcessId(device));
-	hosting.insert(QStringLiteral("plugin_reports"), deviceHostingState(device));
-	// What this device can be DRIVEN with, asked of the plugin rather than
-	// assumed: a family in the table has a client, not necessarily an
-	// implementation of the convention.
-	hosting.insert(QStringLiteral("can_choose_mode"), deviceCanChooseHostingMode(device));
-	hosting.insert(QStringLiteral("can_restart"), hasInvokable(device.plugin(), "reloadPlugin()"));
-	hosting.insert(QStringLiteral("refused"), refused);
-	hosting.insert(QStringLiteral("refused_reason"), refused ? refusal : QString());
-	hosting.insert(QStringLiteral("record"), clientRecordJson(record));
-
-	QJsonObject out;
-	out.insert(QStringLiteral("target"), device.targetId);
-	out.insert(QStringLiteral("device"), device.deviceId);
-	out.insert(QStringLiteral("kind"), device.isInstrument
-		? QStringLiteral("instrument") : QStringLiteral("effect"));
-	out.insert(QStringLiteral("plugin"), device.pluginKey);
-	out.insert(QStringLiteral("label"), device.pluginLabel);
-	out.insert(QStringLiteral("hosting"), hosting);
-	return out;
-}
-
-QJsonObject familyJson(const Family& family)
-{
-	QJsonObject out = familyObject(family);
-	HostTracker& tracker = HostTracker::instance();
-	QString refusal;
-	const bool refused = !family.client.isEmpty() && tracker.refusedByCrashLoop(family.client, &refusal);
-	out.insert(QStringLiteral("hostable"), family.availability != Availability::NoClientInBuild);
-	out.insert(QStringLiteral("refused"), refused);
-	out.insert(QStringLiteral("refused_reason"), refused ? refusal : QString());
-	out.insert(QStringLiteral("record"), family.client.isEmpty()
-		? clientRecordJson(ClientRecord{}) : clientRecordJson(tracker.record(family.client)));
-	return out;
-}
-
-QJsonObject clientRecordJson(const ClientRecord& record)
-{
-	QJsonObject out;
-	out.insert(QStringLiteral("client"), record.client);
-	out.insert(QStringLiteral("starts"), record.starts);
-	out.insert(QStringLiteral("exits"), record.exits);
-	out.insert(QStringLiteral("crashes"), record.crashes);
-	out.insert(QStringLiteral("restarts"), record.restarts);
-	out.insert(QStringLiteral("last_process_id"), record.lastPid);
-	out.insert(QStringLiteral("last_exit_code"), record.lastExitCode);
-	out.insert(QStringLiteral("last_exit_was_crash"), record.lastExitWasCrash);
-	out.insert(QStringLiteral("last_state"), record.lastState);
-	return out;
-}
-
 namespace
 {
 
@@ -357,15 +88,15 @@ QJsonObject chainJson(const ControlTarget& target)
 {
 	QJsonArray devices;
 	const std::vector<Effect*>& chain = target.chain->effects();
-	for (int i = 0; i < static_cast<int>(chain.size()); ++i)
+	for (std::size_t index = 0; index < chain.size(); ++index)
 	{
-		std::vector<Effect*>::size_type index = static_cast<std::vector<Effect*>::size_type>(i);
+		Effect* effect = chain[index];
 		HostedDevice device;
 		device.targetId = target.id;
-		device.deviceId = effectIdOf(chain[index]);
-		device.effect = chain[index];
-		device.pluginKey = QString::fromUtf8(chain[index]->descriptor()->name);
-		device.pluginLabel = QString::fromUtf8(chain[index]->descriptor()->displayName);
+		device.deviceId = effectIdOf(effect);
+		device.effect = effect;
+		device.pluginKey = QString::fromUtf8(effect->descriptor()->name);
+		device.pluginLabel = QString::fromUtf8(effect->descriptor()->displayName);
 		devices.append(hostedDeviceJson(device));
 	}
 
@@ -391,24 +122,26 @@ QJsonObject chainJson(const ControlTarget& target)
 	return out;
 }
 
-void appendChain(QJsonArray* chains, const ControlTarget& target)
+//! Appends one chain, resolving its id through the control vocabulary the way
+//! plugin.* addresses it; a target that does not resolve is skipped.
+void appendChain(QJsonArray* chains, const QString& targetId)
 {
+	ControlTarget target;
+	ControlResult ignored;
+	if (!resolveControlTarget(targetId, &target, &ignored)) { return; }
 	chains->append(chainJson(target));
 }
 
-//! Every track's chain, then every mixer channel's - the same walk dsp.get_state
-//! makes, so `oop.get_state` answers for exactly the devices `plugin.*` can
-//! address.
-QJsonArray allChains(int* separateCount, int* refusedCount)
+//! Every track's chain, then every mixer channel's - the same walk
+//! dsp.get_state makes, so `oop.get_state` answers for exactly the devices
+//! `plugin.*` can address.
+QJsonArray allChains()
 {
 	QJsonArray chains;
 	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
 	for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
 	{
-		ControlTarget target;
-		ControlResult ignored;
-		if (!resolveControlTarget(control::trackIdOf(tracks[i]), &target, &ignored)) { continue; }
-		appendChain(&chains, target);
+		appendChain(&chains, control::trackIdOf(tracks[i]));
 	}
 
 	Mixer* mixer = Engine::mixer();
@@ -416,35 +149,39 @@ QJsonArray allChains(int* separateCount, int* refusedCount)
 	{
 		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
 		{
-			ControlTarget target;
-			ControlResult ignored;
-			if (!resolveControlTarget(control::channelIdOf(mixer->mixerChannel(i)), &target, &ignored))
-			{
-				continue;
-			}
-			appendChain(&chains, target);
+			appendChain(&chains, control::channelIdOf(mixer->mixerChannel(i)));
 		}
 	}
+	return chains;
+}
 
-	// The two counters are derived from the chain objects just built rather
-	// than from a second walk: one source of truth for what is out of process.
+//! The devices of one chain: its effect instances plus, on an instrument track,
+//! the instrument itself (reported under the "inst" address).
+QJsonArray chainDevices(const QJsonObject& chain)
+{
+	QJsonArray devices = chain.value(QStringLiteral("devices")).toArray();
+	if (chain.contains(QStringLiteral("instrument")))
+	{
+		devices.append(chain.value(QStringLiteral("instrument")));
+	}
+	return devices;
+}
+
+//! How many devices are out of process and how many are refused, derived from
+//! the chain objects just built rather than from a second walk: one source of
+//! truth for what the surface reported.
+void countHostedDevices(const QJsonArray& chains, int* separateCount, int* refusedCount)
+{
 	for (const QJsonValue& chain : chains)
 	{
-		const QJsonObject object = chain.toObject();
-		QJsonArray devices = object.value(QStringLiteral("devices")).toArray();
-		if (object.contains(QStringLiteral("instrument")))
+		for (const QJsonValue& device : chainDevices(chain.toObject()))
 		{
-			devices.append(object.value(QStringLiteral("instrument")));
-		}
-		for (const QJsonValue& device : devices)
-		{
-			const QJsonObject hosting = device.toObject().value(QStringLiteral("hosting")).toObject();
-			const QString state = hosting.value(QStringLiteral("state")).toString();
+			const QString state = device.toObject().value(QStringLiteral("hosting")).toObject()
+				.value(QStringLiteral("state")).toString();
 			if (state == stateName(State::SeparateProcess)) { ++(*separateCount); }
 			if (state.startsWith(QStringLiteral("refused"))) { ++(*refusedCount); }
 		}
 	}
-	return chains;
 }
 
 QJsonArray familiesJson()
@@ -464,6 +201,15 @@ QJsonArray clientRecordsJson()
 	return out;
 }
 
+QJsonObject boundsJson()
+{
+	QJsonObject bounds;
+	bounds.insert(QStringLiteral("max_crashes_per_client"), HostTracker::maxCrashesPerClient());
+	return bounds;
+}
+
+//! The invokable-method convention, on the wire, so a client can tell what makes
+//! a family drivable without reading this repository.
 QJsonObject conventionJson()
 {
 	QJsonObject out;
@@ -478,18 +224,15 @@ QJsonObject conventionJson()
 }
 
 /*! oop.get_state - every device chain in the song, each device's hosting
- *  resolved (see the header note for the order the four sources are read in),
- *  the build's family table, and every client executable this session has
- *  started. Read-only, and it answers in every configuration.
+ *  resolved, the build's family table and every client executable this session
+ *  has started. Read-only, and it answers in every configuration.
  */
 ControlResult handleGetState()
 {
 	int separateCount = 0;
 	int refusedCount = 0;
-	const QJsonArray chains = allChains(&separateCount, &refusedCount);
-
-	QJsonObject bounds;
-	bounds.insert(QStringLiteral("max_crashes_per_client"), HostTracker::maxCrashesPerClient());
+	const QJsonArray chains = allChains();
+	countHostedDevices(chains, &separateCount, &refusedCount);
 
 	QJsonObject result;
 	result.insert(QStringLiteral("chains"), chains);
@@ -499,15 +242,15 @@ ControlResult handleGetState()
 	result.insert(QStringLiteral("separate_process_count"), separateCount);
 	result.insert(QStringLiteral("refused_count"), refusedCount);
 	result.insert(QStringLiteral("convention"), conventionJson());
-	result.insert(QStringLiteral("bounds"), bounds);
+	result.insert(QStringLiteral("bounds"), boundsJson());
 	result.insert(QStringLiteral("realtime_safe"), true);
 	result.insert(QStringLiteral("note"), outOfProcessNote());
 	return ControlResult::success(result);
 }
 
 /*! oop.list_families - the family table on its own: what each family's
- *  out-of-process story is in THIS build, the client executable when it has
- *  one, and the reason when it does not. Read-only.
+ *  out-of-process story is in THIS build, the client executable when it has one,
+ *  and the reason when it does not. Read-only.
  */
 ControlResult handleListFamilies()
 {
@@ -515,9 +258,7 @@ ControlResult handleListFamilies()
 	result.insert(QStringLiteral("families"), familiesJson());
 	result.insert(QStringLiteral("family_count"), families().size());
 	result.insert(QStringLiteral("clients"), clientRecordsJson());
-	QJsonObject bounds;
-	bounds.insert(QStringLiteral("max_crashes_per_client"), HostTracker::maxCrashesPerClient());
-	result.insert(QStringLiteral("bounds"), bounds);
+	result.insert(QStringLiteral("bounds"), boundsJson());
 	result.insert(QStringLiteral("convention"), conventionJson());
 	result.insert(QStringLiteral("note"), outOfProcessNote());
 	return ControlResult::success(result);
@@ -531,8 +272,8 @@ ControlResult handleListFamilies()
  *  include/ControlRegistryGroups.h, beside the other groups that outgrew
  *  include/ControlRegistry.h). Defined in namespace lmms, like every other
  *  register*Commands - the definition has to match the declaration the header
- *  makes, or the link fails with an undefined reference at the composition
- *  site (registerControlCommands).
+ *  makes, or the link fails with an undefined reference at the composition site
+ *  (registerControlCommands).
  */
 void registerOutOfProcessCommands(ControlRegistry& registry)
 {

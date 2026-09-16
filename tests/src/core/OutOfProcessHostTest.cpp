@@ -6,35 +6,32 @@
  * Feature row 80 of docs/FEATURE-LIST-0.3.0.md (board card #670). The engine
  * half is include/OutOfProcessHosting.h + src/core/OutOfProcessHosting.cpp (the
  * family table and HostTracker), the surface is
- * src/core/ControlCommandsOutOfProcess{,Edit}.cpp, and this file is the proof:
- * the five ids, the table's classification, the lifecycle the record holds, and
- * - when this build ships the two executables - the whole loop on a real client:
- * a device hosted out of process through oop.set_mode, killed, noticed, counted,
- * restarted through oop.restart, and finally REFUSED once the count reaches the
- * build's bound, with oop.reset_crashes the only thing that lifts it.
+ * src/core/ControlCommandsOutOfProcess{,Edit,Support}.cpp, and this file is the
+ * proof of everything except the real client process - the five ids and their
+ * A16 rows, the classification, the lifecycle the record holds, the reads on a
+ * live song, and the typed refusals. The whole loop on a REAL client (hosted,
+ * SIGKILLed, counted, restarted, refused at the bound, cleared) is the sibling
+ * ctest OutOfProcessHostClientLoopTest, in its own binary because the
+ * file-length ratchet is not moved for a new feature.
  *
  * WHAT IS PROVEN, and what a green run does NOT say:
  *
  *   - The classification is read off the tree's own facts (a family with BOTH an
  *     in-process and a client implementation; a family whose only path is a
  *     client process; families with neither), not off a list this test keeps.
- *   - The crash accounting is exercised twice: as a UNIT (the tracker's own
- *     calls, in the order RemotePlugin makes them) and, when the ZynAddSubFx
- *     module and its client are part of this build, END TO END through the
- *     surface with a real SIGKILL - the process running this test is the host,
- *     so "the host survived" is not an assertion this test can fail silently.
- *   - NO PLUGIN IS CRASHED BY ITS OWN BUG. The client is SIGKILLed from outside,
- *     so what is shown is "a dead client cannot take the host down, and the
- *     build notices, counts and stops re-hosting it" - the mechanism a real
- *     crash trips, with an external trigger. Same caveat the prior art's
- *     ZynSeparateProcessTest states.
- *   - The audio of a killed slot is NOT compared here (that is
- *     docs/OOP-HOSTING.md's render comparison and the registered
- *     ZynSeparateProcessTest); this test never renders.
- *   - Where this build has no loadable instrument module, `Plugin::instantiate`
- *     hands back the engine's DummyPlugin and the per-device cases assert about
- *     THAT plugin's family, which is what the build actually contains. The Zyn
- *     cases SKIP (never pass) without the module and the client executable.
+ *   - The crash accounting is exercised as a UNIT, in the order RemotePlugin's
+ *     own call sites make it - including the case that matters most for
+ *     ordinary use: a DELIBERATE shutdown is an exit and never a crash.
+ *   - A device whose family ships no client executable in this build is REFUSED
+ *     by name, through the surface, with the family's own reason.
+ *   - NO PLUGIN IS CRASHED BY ITS OWN BUG anywhere in this pair of tests: the
+ *     client is SIGKILLed from outside, so what is shown is "a dead client
+ *     cannot take the host down, and the build notices, counts and refuses to
+ *     keep re-hosting it" - the mechanism a real crash trips, with an external
+ *     trigger. Same caveat the prior art's ZynSeparateProcessTest states.
+ *   - Where this build has no loadable instrument module for a case,
+ *     `Plugin::instantiate` hands back the engine's DummyPlugin and the case
+ *     asserts about THAT plugin's family, which is what the build contains.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -56,20 +53,12 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
 #include <QtTest>
 
 #include <memory>
-
-#ifndef Q_OS_WIN
-#include <signal.h>
-#include <unistd.h>
-#endif
 
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
@@ -78,6 +67,7 @@
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "OutOfProcessHostSupport.h"
 #include "OutOfProcessHosting.h"
 #include "Plugin.h"
 #include "Song.h"
@@ -85,57 +75,7 @@
 
 using namespace lmms;
 using namespace lmms::oop;
-
-namespace
-{
-
-//! The five ids of the group, in the order the registry registers them
-QStringList oopIds()
-{
-	return {
-		QStringLiteral("oop.get_state"),
-		QStringLiteral("oop.list_families"),
-		QStringLiteral("oop.set_mode"),
-		QStringLiteral("oop.restart"),
-		QStringLiteral("oop.reset_crashes"),
-	};
-}
-
-//! The two reads; the other three write.
-QStringList oopReads()
-{
-	return {QStringLiteral("oop.get_state"), QStringLiteral("oop.list_families")};
-}
-
-//! The client executable the table gives the ZynAddSubFx family
-constexpr auto ZynClient = "RemoteZynAddSubFx";
-//! The client executable the table gives the VST2 family
-constexpr auto Vst2Client = "RemoteVstPlugin";
-
-#ifdef OUTOFPROC_ZYN_PLUGIN_PATH
-inline auto zynModulePath() -> QString { return QStringLiteral(OUTOFPROC_ZYN_PLUGIN_PATH); }
-#else
-inline auto zynModulePath() -> QString { return {}; }
-#endif
-
-#ifdef OUTOFPROC_ZYN_CLIENT_PATH
-inline auto zynClientPath() -> QString { return QStringLiteral(OUTOFPROC_ZYN_CLIENT_PATH); }
-#else
-inline auto zynClientPath() -> QString { return {}; }
-#endif
-
-//! The family of one key, as a JSON object out of a command result
-QJsonObject familyOf(const QJsonArray& families, const QString& key)
-{
-	for (const QJsonValue& value : families)
-	{
-		const QJsonObject family = value.toObject();
-		if (family.value(QStringLiteral("key")).toString() == key) { return family; }
-	}
-	return {};
-}
-
-} // namespace
+using namespace ooptest;
 
 class OutOfProcessHostTest : public QObject
 {
@@ -195,7 +135,7 @@ private slots:
 			}
 			QCOMPARE(found, 1);
 		}
-		qInfo("oop: %lld ids registered, %d A16 rows in the joined table",
+		qInfo("oop: %lld ids registered, each with one A16 row, in a table of %d rows",
 			static_cast<long long>(oopIds().size()), rows);
 	}
 
@@ -245,7 +185,7 @@ private slots:
 		QVERIFY2(unknown.reason.contains(QStringLiteral("some-plugin-that-does-not-exist")),
 			"the fallback family does not name the key it was asked about");
 
-		qInfo("families: %lld classified, %s hostable in this build",
+		qInfo("families: %lld classified, %s the one this build can host on request",
 			static_cast<long long>(table.size()), zyn.client.toUtf8().constData());
 	}
 
@@ -352,8 +292,7 @@ private slots:
 	void aFamilyWithNoClientIsRefusedTyped()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
-		Song* song = Engine::getSong();
-		auto track = std::make_unique<InstrumentTrack>(song);
+		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
 		const QString target = control::trackIdOf(track.get());
 
 		// The instrument the engine gives a fresh track (the build's own module
@@ -379,20 +318,14 @@ private slots:
 
 		// The read side reports the same device, in the refused state, without
 		// being told to look for it.
-		const ControlResult state = registry->invoke(QStringLiteral("oop.get_state"), QJsonObject());
-		QVERIFY2(state.ok, qPrintable(state.errorMessage));
-		bool sawDevice = false;
-		for (const QJsonValue& chain : state.result.value(QStringLiteral("chains")).toArray())
-		{
-			const QJsonObject instrument = chain.toObject().value(QStringLiteral("instrument")).toObject();
-			if (instrument.value(QStringLiteral("device")).toString() != QLatin1String("inst")) { continue; }
-			const QJsonObject hosting = instrument.value(QStringLiteral("hosting")).toObject();
-			sawDevice = true;
-			QCOMPARE(hosting.value(QStringLiteral("state")).toString(),
-				QStringLiteral("refused-no-client"));
-			QCOMPARE(hosting.value(QStringLiteral("can_choose_mode")).toBool(), false);
-		}
-		QVERIFY2(sawDevice, "oop.get_state did not report the track's instrument at all");
+		const QJsonObject address{
+			{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}};
+		const QJsonObject hosting = deviceHosting(registry, address);
+		QVERIFY2(!hosting.isEmpty(), "oop.get_state did not report the track's instrument at all");
+		QCOMPARE(hosting.value(QStringLiteral("state")).toString(),
+			QStringLiteral("refused-no-client"));
+		QCOMPARE(hosting.value(QStringLiteral("can_choose_mode")).toBool(), false);
 
 		// A bad mode name is refused as an ARGUMENT, before anything is looked up.
 		const ControlResult junk = registry->invoke(QStringLiteral("oop.set_mode"), QJsonObject{
@@ -419,202 +352,15 @@ private slots:
 			QSKIP("this build's test host can instantiate no instrument at all (no plugin module "
 				"is loadable here), so there is no device to refuse: UNEXERCISED by this run");
 		}
-		const QString target = control::trackIdOf(track.get());
 
 		const ControlResult refused = registry->invoke(QStringLiteral("oop.restart"), QJsonObject{
-			{QStringLiteral("target"), target},
+			{QStringLiteral("target"), control::trackIdOf(track.get())},
 			{QStringLiteral("plugin"), QStringLiteral("inst")}});
 		QVERIFY2(!refused.ok, "a family with no client executable was restarted");
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 	}
 
-	// ------------------------------------------------- 5. the real client loop
-
-	//! The whole loop on a real client process, when this build ships one: host
-	//! it out of process through the surface, kill it, read the death off the
-	//! record through the SAME surface, restart it, and be refused at the bound.
-	void aRealClientIsHostedKilledNoticedAndRefused()
-	{
-#ifdef Q_OS_WIN
-		QSKIP("cannot load a plugin module from a Windows test host (plugin modules link the zene "
-			"executable, so their import descriptor names zene.exe - see AudioPluginTest.cpp), and "
-			"::kill is not available: the client loop is UNEXERCISED by this run");
-#else
-		const QString module = zynModulePath();
-		const QString client = zynClientPath();
-		if (module.isEmpty() || !QFile::exists(module) || client.isEmpty() || !QFile::exists(client))
-		{
-			QSKIP("this build has no ZynAddSubFx module or no RemoteZynAddSubFx client: the "
-				"out-of-process loop through the surface is UNEXERCISED by this run");
-		}
-
-		// RemotePlugin::init() resolves the client through the "plugins:" search
-		// path, so the build's plugin directory is where the client is found.
-		qputenv("LMMS_PLUGIN_DIR", QFileInfo{client}.absolutePath().toUtf8());
-
-		// The REAL load path (PluginFactory -> the module's descriptor), the same
-		// one a project load takes - not a hand-rolled lmms_plugin_main call,
-		// because this case has to end up with an instrument the track's own
-		// `inst` address resolves to.
-		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
-		track->loadInstrument(QStringLiteral("zynaddsubfx"));
-		Instrument* instrument = track->instrument();
-		if (instrument == nullptr
-			|| QLatin1String(instrument->descriptor()->name) != QLatin1String("zynaddsubfx"))
-		{
-			QSKIP("the ZynAddSubFx module could not be loaded into this test host: the "
-				"out-of-process loop through the surface is UNEXERCISED by this run");
-		}
-		const QString target = control::trackIdOf(track.get());
-
-		ControlRegistry* registry = ControlRegistry::instance();
-		const QJsonObject address{
-			{QStringLiteral("target"), target},
-			{QStringLiteral("plugin"), QStringLiteral("inst")}};
-
-		// --- host it out of process ---------------------------------------
-		ControlResult mode = registry->invoke(QStringLiteral("oop.set_mode"), QJsonObject{
-			{QStringLiteral("target"), target},
-			{QStringLiteral("plugin"), QStringLiteral("inst")},
-			{QStringLiteral("mode"), QStringLiteral("separate-process")}});
-		QVERIFY2(mode.ok, qPrintable(mode.errorMessage));
-		QCOMPARE(mode.result.value(QStringLiteral("mode_after")).toString(),
-			QStringLiteral("separate-process"));
-		QCOMPARE(mode.result.value(QStringLiteral("changed")).toBool(), true);
-
-		// The pid comes off the surface, not out of a second mechanism: the
-		// claim and the observation are the same object.
-		QTRY_VERIFY_WITH_TIMEOUT(liveClientPid(registry, address) > 0, 15000);
-		const qint64 firstPid = liveClientPid(registry, address);
-		QVERIFY2(firstPid != static_cast<qint64>(QCoreApplication::applicationPid()),
-			"the client pid is this process's own: it is not a separate process");
-		qInfo("hosted out of process: client pid %lld, host pid %lld",
-			static_cast<long long>(firstPid),
-			static_cast<long long>(QCoreApplication::applicationPid()));
-
-		// --- kill it, and survive -----------------------------------------
-		const int bound = HostTracker::maxCrashesPerClient();
-		qint64 pid = firstPid;
-		for (int round = 0; round < bound; ++round)
-		{
-			QCOMPARE(::kill(static_cast<pid_t>(pid), SIGKILL), 0);
-			// The host is still running here - it is running this loop - and the
-			// surface notices: the slot stops reporting a live client.
-			QTRY_COMPARE_WITH_TIMEOUT(liveClientPid(registry, address), qint64(0), 15000);
-			QTRY_VERIFY_WITH_TIMEOUT(clientRecord(registry, QString::fromLatin1(ZynClient))
-					.value(QStringLiteral("crashes")).toInt() >= round + 1, 15000);
-			qInfo("round %d: client pid %lld killed; the host kept running and counted the death",
-				round + 1, static_cast<long long>(pid));
-
-			if (round + 1 == bound) { break; }
-
-			// --- restart it through the surface ----------------------------
-			const ControlResult restarted = registry->invoke(QStringLiteral("oop.restart"), address);
-			QVERIFY2(restarted.ok, qPrintable(restarted.errorMessage));
-			QCOMPARE(restarted.result.value(QStringLiteral("restarted")).toBool(), true);
-			QTRY_VERIFY_WITH_TIMEOUT(liveClientPid(registry, address) > 0, 15000);
-			pid = liveClientPid(registry, address);
-			QVERIFY2(pid != 0 && pid != firstPid, "the restart did not produce a new client pid");
-		}
-
-		// --- the bound: the path is refused, typed ------------------------
-		QString refusal;
-		QVERIFY2(HostTracker::instance().refusedByCrashLoop(QString::fromLatin1(ZynClient), &refusal),
-			"the bound was reached and the client executable is still allowed");
-
-		const ControlResult refusedRestart = registry->invoke(QStringLiteral("oop.restart"), address);
-		QVERIFY2(!refusedRestart.ok, "a restart fed the crash loop");
-		QCOMPARE(refusedRestart.errorKind, ControlErrorKind::Refused);
-		QVERIFY2(refusedRestart.errorMessage.contains(QString::fromLatin1(ZynClient)),
-			qPrintable(QStringLiteral("the refusal does not name the client: ") + refusedRestart.errorMessage));
-
-		const ControlResult refusedMode = registry->invoke(QStringLiteral("oop.set_mode"), QJsonObject{
-			{QStringLiteral("target"), target},
-			{QStringLiteral("plugin"), QStringLiteral("inst")},
-			{QStringLiteral("mode"), QStringLiteral("separate-process")}});
-		QVERIFY2(!refusedMode.ok, "the crash loop was re-hosted through set_mode");
-		QCOMPARE(refusedMode.errorKind, ControlErrorKind::Refused);
-		qInfo("bound reached: %s", refusal.toUtf8().constData());
-
-		// The device still REPORTS the crash rather than looking healthy.
-		QCOMPARE(stringField(registry, address, QStringLiteral("state")),
-			QStringLiteral("refused-crash-loop"));
-
-		// --- and only reset_crashes lifts it ------------------------------
-		const ControlResult reset = registry->invoke(QStringLiteral("oop.reset_crashes"), QJsonObject{
-			{QStringLiteral("client"), QString::fromLatin1(ZynClient)}});
-		QVERIFY2(reset.ok, qPrintable(reset.errorMessage));
-		QVERIFY(reset.result.value(QStringLiteral("cleared_count")).toInt() >= 1);
-		QVERIFY2(!HostTracker::instance().refusedByCrashLoop(QString::fromLatin1(ZynClient), nullptr),
-			"reset_crashes did not lift the refusal");
-
-		// oop.restart is the verb the refusal blocked, and it is allowed again.
-		// (oop.set_mode would answer ok with changed=false here: the mode is
-		// already separate-process, which is exactly the semantic it declares.)
-		const ControlResult hostedAgain = registry->invoke(QStringLiteral("oop.restart"), address);
-		QVERIFY2(hostedAgain.ok, qPrintable(hostedAgain.errorMessage));
-		QCOMPARE(hostedAgain.result.value(QStringLiteral("restarted")).toBool(), true);
-		QTRY_VERIFY_WITH_TIMEOUT(liveClientPid(registry, address) > 0, 15000);
-		qInfo("after oop.reset_crashes the slot is drivable again: client pid %lld",
-			static_cast<long long>(liveClientPid(registry, address)));
-
-		// The track (and with it the instrument, and with THAT the client through
-		// RemotePlugin's own destructor) is released here.
-#endif
-	}
-
 private:
-	//! The pid the SURFACE reports for the addressed device, 0 when none
-	auto liveClientPid(ControlRegistry* registry, const QJsonObject& address) -> qint64
-	{
-		const ControlResult state = registry->invoke(QStringLiteral("oop.get_state"), QJsonObject());
-		if (!state.ok) { return -1; }
-		QJsonObject device;
-		for (const QJsonValue& chain : state.result.value(QStringLiteral("chains")).toArray())
-		{
-			const QJsonObject object = chain.toObject();
-			if (object.value(QStringLiteral("id")).toString() != address.value(QStringLiteral("target")).toString())
-			{
-				continue;
-			}
-			device = object.value(QStringLiteral("instrument")).toObject();
-		}
-		return device.value(QStringLiteral("hosting")).toObject()
-			.value(QStringLiteral("client_process_id")).toVariant().toLongLong();
-	}
-
-	//! The record the surface keeps for one client executable
-	auto clientRecord(ControlRegistry* registry, const QString& client) -> QJsonObject
-	{
-		const ControlResult state = registry->invoke(QStringLiteral("oop.get_state"), QJsonObject());
-		if (!state.ok) { return {}; }
-		for (const QJsonValue& value : state.result.value(QStringLiteral("clients")).toArray())
-		{
-			const QJsonObject record = value.toObject();
-			if (record.value(QStringLiteral("client")).toString() == client) { return record; }
-		}
-		return {};
-	}
-
-	//! One string field of the addressed device's resolved hosting state
-	auto stringField(ControlRegistry* registry, const QJsonObject& address, const QString& field)
-		-> QString
-	{
-		const ControlResult state = registry->invoke(QStringLiteral("oop.get_state"), QJsonObject());
-		if (!state.ok) { return {}; }
-		for (const QJsonValue& chain : state.result.value(QStringLiteral("chains")).toArray())
-		{
-			const QJsonObject object = chain.toObject();
-			if (object.value(QStringLiteral("id")).toString() != address.value(QStringLiteral("target")).toString())
-			{
-				continue;
-			}
-			return object.value(QStringLiteral("instrument")).toObject()
-				.value(QStringLiteral("hosting")).toObject().value(field).toString();
-		}
-		return {};
-	}
-
 	bool m_engineInitialised = false;
 };
 

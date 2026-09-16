@@ -306,6 +306,10 @@ set(LMMS_SRCS
 	# to say what THIS build can and cannot host out of process.
 	core/ControlCommandsOutOfProcess.cpp
 	core/ControlCommandsOutOfProcessEdit.cpp
+	# ... and its helper half (the device resolution, the four-source state
+	# resolution and the wire shapes), split off when the reads file crossed the
+	# 500-line file ratchet with them in it.
+	core/ControlCommandsOutOfProcessSupport.cpp
 	core/OutOfProcessHosting.cpp
 	# plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
 	# host paths keep and the counters their audio paths increment. In the core
