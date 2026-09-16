@@ -306,6 +306,13 @@ set(LMMS_SRCS
 	# host sources) and the command itself.
 	core/PluginHostChunking.cpp
 	core/ControlCommandsHostChunking.cpp
+	# plugin.host_notes (feature row 79, board task #669): the CLAP note path's
+	# contract and the counters it increments - the note ports and audio layout
+	# of the plug-in loaded last, and the events the MIDI route pushed,
+	# delivered and had refused. The same seam as the chunking pair above, and
+	# for the same reason: the host is a plugin module and the command is not.
+	core/PluginHostNotes.cpp
+	core/ControlCommandsHostNotes.cpp
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
@@ -406,6 +413,11 @@ set(LMMS_SRCS
 	# (core/ControlDeviceHosted.cpp). Its own translation unit so neither of
 	# those files grows for a format they do not own.
 	core/ControlDeviceVst3.cpp
+	# The CLAP half of the device catalogue (feature row 79, board task #669):
+	# plugin.list enumerates the CLAP hosts' own classes - the effect host's and
+	# the instrument host's this lane adds - and plugin.load loads one onto a
+	# track. Its own translation unit, the same rule as the VST3 half above.
+	core/ControlDeviceClap.cpp
 	# The chain PRESET store and the chain.* group (the 0.3.0 ladder's
 	# "plugin-chain presets", OWNER-31 item 2): the store, its read/capture half
 	# and its edit half. A chain preset is NOT a rack chain - see
@@ -550,6 +562,11 @@ set(LMMS_SRCS
 	# The plugin.host_chunking row (feature row 82, CODE-4). One row in its own
 	# file for the same reason: a file-length cap, not a group boundary.
 	core/ControlReversibilityTableHostChunking.cpp
+	# The plugin.host_notes row (feature row 79, board task #669): the CLAP note
+	# path and the instrument's audio-output configuration. One row in its own
+	# file for the same reason as the row above - a file-length cap, not a group
+	# boundary.
+	core/ControlReversibilityTableClapInstrument.cpp
 	# The wasm.pool / wasm.render_offline rows (feature row 73, CODE-5), for the
 	# same reason: the passive block that holds the rest of the wasm.* rows is at
 	# the file-length cap.

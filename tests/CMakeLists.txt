@@ -1292,6 +1292,9 @@ if(TARGET lmms_clap)
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
+		# the note-path counters and ports (feature row 79, board task #669),
+		# core-owned for the same reason: the host writes into them.
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostNotes.cpp
 	)
 	add_test(NAME ClapHostTest COMMAND ClapHostTest)
 	target_include_directories(ClapHostTest PRIVATE
@@ -1309,8 +1312,10 @@ if(TARGET lmms_clap)
 		${CMAKE_DL_LIBS}
 	)
 	target_compile_definitions(ClapHostTest PRIVATE
-		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>")
-	add_dependencies(ClapHostTest clap-test-gain)
+		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>"
+		# The instrument subject of the note-path case (feature row 79).
+		CLAP_TEST_INSTRUMENT_PATH="$<TARGET_FILE:clap-test-instrument>")
+	add_dependencies(ClapHostTest clap-test-gain clap-test-instrument)
 
 	# The TYPED error path of the module loader (ClapLoader.h). Subjects: the
 	# four one-fault modules built above -- each fails in exactly one way, so a
@@ -1333,6 +1338,9 @@ if(TARGET lmms_clap)
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
+		# the note-path counters and ports (feature row 79, board task #669),
+		# core-owned for the same reason: the host writes into them.
+		${CMAKE_SOURCE_DIR}/src/core/PluginHostNotes.cpp
 	)
 	add_test(NAME ClapLoaderErrorTest COMMAND ClapLoaderErrorTest)
 	target_include_directories(ClapLoaderErrorTest PRIVATE
@@ -1399,6 +1407,22 @@ if(TARGET lmms_clap)
 		PLUGIN_NAME=clapeffect
 		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>"
 	)
+
+	# The CLAP instrument half on the control surface (feature row 79, board
+	# task #669). The catalogue case points the product's plug-in search
+	# directory at the directory holding clap-test-instrument.clap, so
+	# plugin.list enumerates a real CLAP instrument class and plugin.load loads
+	# it onto an instrument track through the registry - the same shape the VST3
+	# half gets below (VST3_TEST_INSTRUMENT_DIR), and for the same reason: the
+	# acceptance contract (CHARTER 3.1) counts a feature only when it can be
+	# driven through the socket. The CLAP fixture needs no opt-in option: it is
+	# built from the pinned headers, not from a third-party SDK checkout.
+	if(TARGET clap-test-instrument AND TARGET ControlDeviceCatalogueTest)
+		target_compile_definitions(ControlDeviceCatalogueTest PRIVATE
+			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>"
+		)
+		add_dependencies(ControlDeviceCatalogueTest clap-test-instrument)
+	endif()
 endif()
 
 # Native VST3 hosting tests — the twins of the CLAP block above, and the reason

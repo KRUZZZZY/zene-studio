@@ -166,6 +166,12 @@ bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 		// a format they do not own.
 		return controlVst3DeviceModule(entry, pluginName, key, useKey, error);
 	}
+	if (entry.format == QLatin1String("clap"))
+	{
+		// Same rule as the VST3 branch: the CLAP half is its own translation
+		// unit (ControlDeviceClap.cpp).
+		return controlClapDeviceModule(entry, pluginName, key, useKey, error);
+	}
 	return true; // a built-in module is addressed by its plugin name alone
 }
 

@@ -26,6 +26,7 @@
 
 #include "ClapLoader.h"
 #include "PluginHostChunking.h"
+#include "PluginHostNotes.h"
 
 #include <algorithm>
 #include <atomic>
@@ -89,11 +90,20 @@ auto describe(const clap_plugin_descriptor_t& descriptor) -> ClassInfo
 } // namespace
 
 //! The input event list handed to the plug-in: a flat, preallocated array of
-//! parameter change events, rebuilt every block. No allocation, no locking.
+//! parameter change events - plus, for a plug-in with note input ports, the
+//! notes this block carries - rebuilt every block. No allocation, no locking.
+//!
+//! The two arrays are served as ONE list, parameter changes first (they are
+//! the events the host generates) and notes after them, so a plug-in that
+//! reads `size()`/`get()` in order sees every event of the block. Both counts
+//! are zero outside a process() call.
 struct EventListState
 {
 	const clap_event_param_value_t* events = nullptr;
 	std::uint32_t count = 0;
+	//! The note events of this block (feature row 79), served after `events`.
+	const clap_event_note_t* notes = nullptr;
+	std::uint32_t noteCount = 0;
 };
 
 struct HostedPlugin::Impl
@@ -122,8 +132,26 @@ struct HostedPlugin::Impl
 	std::vector<PortDescriptor> ports;
 	PortLayout layout;
 
+	// --- note input (clap.note-ports, feature row 79) ---------------------
+	//! The note INPUT ports the plug-in declares, in its own index order.
+	//! Empty for a plug-in without the extension, which is a fact and not a
+	//! failure (every effect).
+	std::vector<NotePortDescriptor> notePorts;
+	//! The plug-in's own index of the port notes are delivered to.
+	std::uint32_t notePortIndex = 0;
+	//! The notes this block carries, sized once in prepare() and filled from
+	//! noteQueue by drainNoteQueue(); eventState.notes/noteCount hand them to
+	//! the plug-in after the parameter events.
+	std::vector<clap_event_note_t> noteEvents;
+	NoteQueue noteQueue;
+	std::atomic<std::uint32_t> notesPushed{0};
+	std::atomic<std::uint32_t> notesDropped{0};
+	std::atomic<std::uint32_t> notesDelivered{0};
+	std::atomic<std::uint32_t> notesPlayed{0};
+
 	const clap_plugin_params_t* paramsExt = nullptr;
 	const clap_plugin_audio_ports_t* audioPortsExt = nullptr;
+	const clap_plugin_note_ports_t* notePortsExt = nullptr;
 	const clap_plugin_state_t* stateExt = nullptr;
 	const clap_plugin_latency_t* latencyExt = nullptr;
 
@@ -140,6 +168,12 @@ struct HostedPlugin::Impl
 	EventListState eventState;
 	clap_input_events_t inEvents{};
 	clap_output_events_t outEvents{};
+
+	//! The queue-draining half of the note path: pops what the MIDI route
+	//! pushed into `noteQueue` and turns each event into a clap_event_note_t
+	//! at the front of `noteEvents`. Real-time safe, and a no-op for a
+	//! plug-in with no note input port.
+	void drainNoteQueue();
 
 	std::vector<const float*> inPtrs;
 	std::vector<float*> outPtrs;
@@ -239,15 +273,18 @@ struct HostedPlugin::Impl
 	// --- event lists ------------------------------------------------------
 	static auto CLAP_ABI inEventsSize(const clap_input_events_t* list) -> std::uint32_t
 	{
-		return static_cast<const EventListState*>(list->ctx)->count;
+		const auto* state = static_cast<const EventListState*>(list->ctx);
+		return state->count + state->noteCount;
 	}
 
 	static auto CLAP_ABI inEventsGet(const clap_input_events_t* list, std::uint32_t index)
 		-> const clap_event_header_t*
 	{
 		const auto* state = static_cast<const EventListState*>(list->ctx);
-		if (index >= state->count) { return nullptr; }
-		return &state->events[index].header;
+		if (index < state->count) { return &state->events[index].header; }
+		index -= state->count;
+		if (index >= state->noteCount) { return nullptr; }
+		return &state->notes[index].header;
 	}
 
 	static auto CLAP_ABI outEventsTryPush(const clap_output_events_t* list,
@@ -305,6 +342,7 @@ struct HostedPlugin::Impl
 		silence.clear();
 		outputScratch.clear();
 		paramEvents.clear();
+		noteEvents.clear();
 		lastSeenRevision.clear();
 		eventState = {};
 		inEvents = {};
@@ -344,6 +382,138 @@ auto HostedPlugin::latency() const -> std::uint32_t
 {
 	const auto& impl = *m_impl;
 	return impl.latencyExt ? impl.latencyExt->get(impl.plugin) : 0;
+}
+
+auto HostedPlugin::noteInputPorts() const -> const std::vector<NotePortDescriptor>&
+{
+	return m_impl->notePorts;
+}
+
+auto HostedPlugin::acceptsNotes() const -> bool
+{
+	// No extension at all, or an extension that declares no input port: both
+	// mean "this plug-in takes no notes", and both are refused the same way.
+	return !m_impl->notePorts.empty();
+}
+
+auto HostedPlugin::preferredNotePort() const -> std::uint32_t
+{
+	return m_impl->notePortIndex;
+}
+
+auto HostedPlugin::noteCounters() const -> NoteCounters
+{
+	NoteCounters counters;
+	counters.pushed = m_impl->notesPushed.load(std::memory_order_relaxed);
+	counters.dropped = m_impl->notesDropped.load(std::memory_order_relaxed);
+	counters.delivered = m_impl->notesDelivered.load(std::memory_order_relaxed);
+	counters.ports = static_cast<std::uint32_t>(m_impl->notePorts.size());
+	counters.played = m_impl->notesPlayed.load(std::memory_order_relaxed);
+	return counters;
+}
+
+void HostedPlugin::setNoteOn(std::uint8_t channel, std::int16_t key, double velocity,
+	std::int32_t frameOffset)
+{
+	// Audio thread. The clamp is CLAP's own 0..1 velocity scale, not MIDI's
+	// 0..127: clap_event_note_t::velocity is a double in [0, 1].
+	NoteEventIn event;
+	event.type = CLAP_EVENT_NOTE_ON;
+	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
+	event.key = static_cast<std::int16_t>(std::clamp<int>(key, 0, 127));
+	event.velocity = static_cast<std::int16_t>(std::clamp(velocity, 0.0, 1.0) * 127.0);
+	event.frameOffset = frameOffset;
+	pushNote(event);
+}
+
+void HostedPlugin::setNoteOff(std::uint8_t channel, std::int16_t key, std::int32_t frameOffset)
+{
+	NoteEventIn event;
+	event.type = CLAP_EVENT_NOTE_OFF;
+	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
+	event.key = static_cast<std::int16_t>(std::clamp<int>(key, 0, 127));
+	event.velocity = 0;
+	event.frameOffset = frameOffset;
+	pushNote(event);
+}
+
+void HostedPlugin::setNoteChoke(std::uint8_t channel, std::int16_t key, std::int32_t frameOffset)
+{
+	NoteEventIn event;
+	event.type = CLAP_EVENT_NOTE_CHOKE;
+	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
+	event.key = static_cast<std::int16_t>(std::clamp<int>(key, 0, 127));
+	event.velocity = 0;
+	event.frameOffset = frameOffset;
+	pushNote(event);
+}
+
+void HostedPlugin::pushNote(const NoteEventIn& event)
+{
+	auto& impl = *m_impl;
+	if (!acceptsNotes())
+	{
+		// Not a queue overflow: the plug-in has no note input port, so the
+		// event has nowhere to go. Counted as a drop so `plugin.host_notes`
+		// shows it rather than hiding it.
+		impl.notesDropped.fetch_add(1, std::memory_order_relaxed);
+		control::clapHostNoteCounters().recordDrop();
+		return;
+	}
+	impl.notesPushed.fetch_add(1, std::memory_order_relaxed);
+	control::clapHostNoteCounters().recordPush();
+	if (!impl.noteQueue.push(event))
+	{
+		impl.notesDropped.fetch_add(1, std::memory_order_relaxed);
+		control::clapHostNoteCounters().recordDrop();
+	}
+}
+
+void HostedPlugin::Impl::drainNoteQueue()
+{
+	// Real-time safe: bounded pops from a fixed ring into an array sized in
+	// prepare(). A no-op for a plug-in with no note input port and a no-op
+	// for a block with no notes - no allocation on either path.
+	std::uint32_t count = 0;
+	NoteEventIn queued;
+	while (count < static_cast<std::uint32_t>(kMaxNoteEventsPerBlock) &&
+		noteQueue.pop(&queued))
+	{
+		auto& event = noteEvents[count];
+		event = {};
+		event.header.size = sizeof(clap_event_note_t);
+		// The frame offset is where LMMS' own MIDI route put the event, in
+		// frames from the start of this request; the plug-in applies it at
+		// that frame of the chunk it is handed.
+		event.header.time = static_cast<std::uint32_t>(std::max(queued.frameOffset, 0));
+		event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+		event.header.type = queued.type;
+		event.header.flags = 0;
+		event.note_id = -1; // this host carries no per-note id
+		// The plug-in's OWN port index: clap_event_note_t::port_index is an
+		// index into the plug-in's note input ports, not a port id.
+		event.port_index = static_cast<std::int16_t>(notePortIndex);
+		event.channel = static_cast<std::int16_t>(queued.channel);
+		event.key = queued.key;
+		event.velocity = queued.type == CLAP_EVENT_NOTE_ON
+			? static_cast<double>(queued.velocity) / 127.0
+			: 0.0;
+		++count;
+	}
+	eventState.noteCount = count;
+	notesDelivered.fetch_add(count, std::memory_order_relaxed);
+	std::uint32_t played = 0;
+	if (count > 0)
+	{
+		// One "played" count per note-ON delivered, so a caller can tell
+		// notes that started voices from note-offs and chokes.
+		for (std::uint32_t i = 0; i < count; ++i)
+		{
+			if (noteEvents[i].header.type == CLAP_EVENT_NOTE_ON) { ++played; }
+		}
+		notesPlayed.fetch_add(played, std::memory_order_relaxed);
+	}
+	control::clapHostNoteCounters().recordDelivered(count, played);
 }
 
 auto HostedPlugin::paramIndex(std::uint32_t id) const -> int { return m_impl->indexOfParam(id); }
@@ -543,6 +713,8 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 		static_cast<const clap_plugin_params_t*>(impl.plugin->get_extension(impl.plugin, CLAP_EXT_PARAMS));
 	impl.audioPortsExt = static_cast<const clap_plugin_audio_ports_t*>(
 		impl.plugin->get_extension(impl.plugin, CLAP_EXT_AUDIO_PORTS));
+	impl.notePortsExt = static_cast<const clap_plugin_note_ports_t*>(
+		impl.plugin->get_extension(impl.plugin, CLAP_EXT_NOTE_PORTS));
 	impl.stateExt =
 		static_cast<const clap_plugin_state_t*>(impl.plugin->get_extension(impl.plugin, CLAP_EXT_STATE));
 	impl.latencyExt =
@@ -574,13 +746,76 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 		}
 	}
 	impl.layout = mapPorts(impl.ports);
-	if (!impl.layout.isValid())
+	// A GENERATOR is output-only: an instrument that produces its audio from
+	// notes declares no audio input port, so PortLayout::isValid()'s
+	// "both directions" rule is the EFFECT rule and cannot be the gate here
+	// (feature row 79). What must hold either way is a usable output: a
+	// plug-in with nowhere to write its audio is the failure this rejects.
+	const bool usableAudio = impl.layout.outputs > 0 &&
+		(impl.layout.inputs > 0 || impl.info.isInstrument);
+	if (!usableAudio)
 	{
 		impl.status = {loader::Code::NoAudioPorts,
 			QStringLiteral("'%1' has no usable audio ports").arg(pluginId)};
 		setError(error, impl.status.message());
 		unload();
 		return false;
+	}
+
+	// --- note input ports (clap.note-ports, feature row 79) ---------------
+	// Read while the plug-in is deactivated, which is where load() is: the
+	// extension's contract is that a port scan happens in that state. Their
+	// ABSENCE is not a failure - a host must not require note ports of a
+	// plug-in that takes no notes (every effect) - so nothing here can fail
+	// the load. The scan reads INPUT ports only: this host delivers notes and
+	// has no use for a note output port in this release.
+	if (impl.notePortsExt)
+	{
+		// The counters describe THIS instance, so a reload starts them over.
+		impl.notesPushed.store(0, std::memory_order_relaxed);
+		impl.notesDropped.store(0, std::memory_order_relaxed);
+		impl.notesDelivered.store(0, std::memory_order_relaxed);
+		impl.notesPlayed.store(0, std::memory_order_relaxed);
+		const auto portCount = impl.notePortsExt->count(impl.plugin, true);
+		impl.notePorts.reserve(portCount);
+		for (std::uint32_t i = 0; i < portCount; ++i)
+		{
+			clap_note_port_info_t info{};
+			// The index is the PLUG-IN's, and it is what clap_event_note_t's
+			// port_index carries, so this is the number the host must send
+			// back - never a re-numbered one.
+			if (!impl.notePortsExt->get(impl.plugin, i, true, &info)) { continue; }
+			NotePortDescriptor port;
+			port.id = info.id;
+			port.name = QString::fromUtf8(info.name);
+			port.supportedDialects = info.supported_dialects;
+			port.preferredDialect = info.preferred_dialect;
+			impl.notePorts.push_back(port);
+		}
+		// Deliver to a port that speaks the CLAP dialect when one declares
+		// it; otherwise the first port (a MIDI-dialect port still receives
+		// clap_event_note events - the dialect says what the plug-in can
+		// additionally accept, not what the host must send).
+		for (std::uint32_t i = 0; i < impl.notePorts.size(); ++i)
+		{
+			if ((impl.notePorts[i].preferredDialect & NoteDialectClap) != 0 ||
+				(impl.notePorts[i].supportedDialects & NoteDialectClap) != 0)
+			{
+				impl.notePortIndex = i;
+				break;
+			}
+		}
+		if (!impl.notePorts.empty()) { impl.notePorts[impl.notePortIndex].preferred = true; }
+	}
+	// The process-wide half of the same facts, for `plugin.host_notes`: what
+	// this host just discovered about the plug-in (feature row 79).
+	{
+		control::PluginHostNoteCounters& notes = control::clapHostNoteCounters();
+		notes.recordLoad(static_cast<std::uint32_t>(impl.notePorts.size()),
+			impl.notePortIndex,
+			impl.notePorts.empty() ? 0u : impl.notePorts[impl.notePortIndex].supportedDialects,
+			static_cast<std::uint32_t>(std::max(0, impl.layout.inputs)),
+			static_cast<std::uint32_t>(std::max(0, impl.layout.outputs)));
 	}
 
 	if (impl.paramsExt)
@@ -641,12 +876,15 @@ void HostedPlugin::unload()
 	impl.loaded.reset();
 	impl.paramsExt = nullptr;
 	impl.audioPortsExt = nullptr;
+	impl.notePortsExt = nullptr;
 	impl.stateExt = nullptr;
 	impl.latencyExt = nullptr;
 	impl.params.clear();
 	impl.paramIds.clear();
 	impl.paramCookies.clear();
 	impl.ports.clear();
+	impl.notePorts.clear();
+	impl.notePortIndex = 0;
 	impl.layout = {};
 	impl.info = {};
 	impl.paramSlots.reset();
@@ -681,10 +919,17 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	impl.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.0f);
 	impl.outputScratch.assign(static_cast<std::size_t>(impl.layout.outputs) * maxBlockSize, 0.0f);
 	impl.paramEvents.assign(impl.params.size(), clap_event_param_value_t{});
+	impl.noteEvents.assign(static_cast<std::size_t>(kMaxNoteEventsPerBlock), clap_event_note_t{});
 	impl.lastSeenRevision.assign(impl.params.size(), 0);
+	// The note queue is emptied here: prepare() is main-thread and the audio
+	// thread cannot be popping yet (the transport setup calls it before the
+	// plug-in is activated and processing starts).
+	impl.noteQueue.reset();
 
 	impl.eventState.events = impl.paramEvents.data();
 	impl.eventState.count = 0;
+	impl.eventState.notes = impl.noteEvents.data();
+	impl.eventState.noteCount = 0;
 	impl.inEvents.ctx = &impl.eventState;
 	impl.inEvents.size = &Impl::inEventsSize;
 	impl.inEvents.get = &Impl::inEventsGet;
@@ -763,6 +1008,12 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	}
 	impl.eventState.count = eventCount;
 
+	// --- notes -> the same event list -------------------------------------
+	// Drained once per request: the notes belong to the chunk that starts it,
+	// like the parameter changes, so an event at frame N of the block affects
+	// frame N of that chunk.
+	impl.drainNoteQueue();
+
 	// --- chunks -----------------------------------------------------------
 	// As many chunks of at most the activated block size as the request needs;
 	// the last one carries the remainder. No frame is dropped and no chunk is
@@ -773,8 +1024,10 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	{
 		const int chunk = std::min(frames - offset, impl.maxFrames);
 		ok = impl.runChunk(inputs, outputs, inputChannels, outputChannels, offset, chunk);
-		// The parameter events belong to the chunk that starts the request.
+		// The parameter events and the notes belong to the chunk that starts
+		// the request; the later chunks are handed an empty list.
 		impl.eventState.count = 0;
+		impl.eventState.noteCount = 0;
 		counters.recordChunk();
 		offset += chunk;
 	}

@@ -360,6 +360,7 @@ include/PluginAudioPorts.h
 include/PluginBrowser.h
 include/PluginFactory.h
 include/PluginHostChunking.h
+include/PluginHostNotes.h
 include/PluginIssue.h
 include/PluginScanCache.h
 include/PluginView.h
@@ -554,11 +555,16 @@ plugins/ClapEffect/ClapHost.cpp
 plugins/ClapEffect/ClapHost.h
 plugins/ClapEffect/ClapLoader.cpp
 plugins/ClapEffect/ClapLoader.h
+plugins/ClapEffect/ClapNoteQueue.h
 plugins/ClapEffect/ClapParamDescriptor.h
 plugins/ClapEffect/ClapParameter.cpp
 plugins/ClapEffect/ClapParameter.h
 plugins/ClapEffect/ClapSubPluginFeatures.cpp
 plugins/ClapEffect/ClapSubPluginFeatures.h
+plugins/ClapInstrument/ClapInstrument.cpp
+plugins/ClapInstrument/ClapInstrument.h
+plugins/ClapInstrument/ClapInstrumentView.cpp
+plugins/ClapInstrument/ClapInstrumentView.h
 plugins/Compressor/Compressor.cpp
 plugins/Compressor/Compressor.h
 plugins/Compressor/CompressorControlDialog.cpp
@@ -1022,6 +1028,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHostChunking.cpp
+src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
@@ -1109,6 +1116,7 @@ src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDetectSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
+src/core/ControlDeviceClap.cpp
 src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
@@ -1135,6 +1143,7 @@ src/core/ControlReversibilityTableAutomationModes.cpp
 src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
+src/core/ControlReversibilityTableClapInstrument.cpp
 src/core/ControlReversibilityTableController.cpp
 src/core/ControlReversibilityTableDawProject.cpp
 src/core/ControlReversibilityTableDetect.cpp
@@ -1260,6 +1269,7 @@ src/core/PlayHandle.cpp
 src/core/Plugin.cpp
 src/core/PluginFactory.cpp
 src/core/PluginHostChunking.cpp
+src/core/PluginHostNotes.cpp
 src/core/PluginIssue.cpp
 src/core/PluginScanCache.cpp
 src/core/PresetPreviewPlayHandle.cpp
@@ -1533,6 +1543,7 @@ tests/control-detect-commands.py
 tests/control_detect_fixtures.py
 tests/data/clap-test-plugin/clap-test-broken.c
 tests/data/clap-test-plugin/clap-test-gain.c
+tests/data/clap-test-plugin/clap-test-instrument.c
 tests/data/gigproof/make_gig.cpp
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp

@@ -34,6 +34,7 @@
 
 #include "ClapBusMap.h"
 #include "ClapLoader.h"
+#include "ClapNoteQueue.h"
 #include "ClapParamDescriptor.h"
 #include "PluginHostChunking.h"
 
@@ -111,6 +112,21 @@ public:
 	auto busLayout() const -> const PortLayout&;
 	auto latency() const -> std::uint32_t;
 
+	//! The plug-in's note INPUT ports (clap.note-ports), in the plug-in's own
+	//! index order. Empty for a plug-in that does not implement the extension
+	//! - which is every effect, and an instrument that takes no notes - so an
+	//! empty list is a fact about the plug-in, not a failure.
+	auto noteInputPorts() const -> const std::vector<NotePortDescriptor>&;
+	//! True when the plug-in declared at least one note input port. What
+	//! tells the instrument host whether a track's MIDI is worth queueing.
+	auto acceptsNotes() const -> bool;
+	//! The index (into noteInputPorts(), i.e. the plug-in's own port index)
+	//! notes are delivered to: the port that declared it prefers the CLAP
+	//! dialect, else the first one.
+	auto preferredNotePort() const -> std::uint32_t;
+	//! What the note path has done so far. Any thread.
+	auto noteCounters() const -> NoteCounters;
+
 	auto paramIndex(std::uint32_t id) const -> int;
 	auto paramPlain(std::uint32_t id) const -> double;
 	auto paramNormalized(std::uint32_t id) const -> float;
@@ -140,6 +156,25 @@ public:
 	//! process() call.
 	void setParamPlain(std::uint32_t id, double value);
 	void setParamNormalized(std::uint32_t id, float normalized);
+
+	/*!
+	 * Queues one note for the plug-in's note input port. Audio thread safe:
+	 * it fills a POD and pushes it into a bounded lock-free queue, so nothing
+	 * allocates and nothing locks; the event is delivered with the chunk that
+	 * starts the next process() call, at `frameOffset` frames into it.
+	 *
+	 * A plug-in with no note input port (acceptsNotes() false) refuses the
+	 * event rather than queue it, and counts the refusal - see
+	 * noteCounters(). A full queue drops the event and counts it too.
+	 *
+	 * @param velocity for a note-on: 0..1 (CLAP's own scale), 0 is silent
+	 */
+	void setNoteOn(std::uint8_t channel, std::int16_t key, double velocity,
+		std::int32_t frameOffset = 0);
+	void setNoteOff(std::uint8_t channel, std::int16_t key, std::int32_t frameOffset = 0);
+	//! A note choke: silence `key` without a release stage (clap_event_note's
+	//! CLAP_EVENT_NOTE_CHOKE). Ignored in velocity terms.
+	void setNoteChoke(std::uint8_t channel, std::int16_t key, std::int32_t frameOffset = 0);
 
 	/*!
 	 * Processes one block. inputs/outputs are planar channel pointer arrays;
@@ -175,6 +210,10 @@ public:
 		int outputChannels, int frames) -> bool;
 
 private:
+	//! The one insertion point into the note queue: refuses (and counts) an
+	//! event when the plug-in has no note input port, and counts a full queue.
+	void pushNote(const NoteEventIn& event);
+
 	struct Impl;
 	std::unique_ptr<Impl> m_impl;
 };

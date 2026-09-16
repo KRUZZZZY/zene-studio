@@ -132,10 +132,11 @@ QList<ControlDeviceEntry> controlDeviceCatalogue()
 	appendBuiltinDevices(Plugin::Type::Instrument, QStringLiteral("instrument"), &out);
 	appendLadspaDevices(&out);
 	// The hosted formats are appended in a fixed order (LADSPA, then LV2, then
-	// VST3) so a build that gains a host keeps the dev-<n> ids of the ones
-	// already there.
+	// VST3, then CLAP) so a build that gains a host keeps the dev-<n> ids of
+	// the ones already there.
 	controlLv2DeviceEntries(&out);
 	controlVst3DeviceEntries(&out);
+	controlClapDeviceEntries(&out);
 	return out;
 }
 
@@ -185,6 +186,14 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 		// what a saved project stores in the plug-in key.
 		out.insert(QStringLiteral("file"), entry.file);
 		out.insert(QStringLiteral("class"), entry.className);
+	}
+	if (entry.format == QLatin1String("clap"))
+	{
+		// The module and the plug-in's own CLAP id: the (file, id) pair
+		// ClapSubPluginFeatures builds and the host's load() matches on. The
+		// id is also the entry's name, exactly as an LV2 entry's URI is.
+		out.insert(QStringLiteral("file"), entry.file);
+		out.insert(QStringLiteral("id"), entry.name);
 	}
 	return out;
 }

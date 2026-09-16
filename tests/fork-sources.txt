@@ -518,6 +518,7 @@ include/PatchWiring.h
 include/PinConnector.h
 include/PluginAudioPorts.h
 include/PluginHostChunking.h
+include/PluginHostNotes.h
 include/PluginScanCache.h
 include/ProjectIds.h
 include/ProjectKey.h
@@ -589,11 +590,16 @@ plugins/ClapEffect/ClapHost.cpp
 plugins/ClapEffect/ClapHost.h
 plugins/ClapEffect/ClapLoader.cpp
 plugins/ClapEffect/ClapLoader.h
+plugins/ClapEffect/ClapNoteQueue.h
 plugins/ClapEffect/ClapParamDescriptor.h
 plugins/ClapEffect/ClapParameter.cpp
 plugins/ClapEffect/ClapParameter.h
 plugins/ClapEffect/ClapSubPluginFeatures.cpp
 plugins/ClapEffect/ClapSubPluginFeatures.h
+plugins/ClapInstrument/ClapInstrument.cpp
+plugins/ClapInstrument/ClapInstrument.h
+plugins/ClapInstrument/ClapInstrumentView.cpp
+plugins/ClapInstrument/ClapInstrumentView.h
 plugins/NeuralAmp/NeuralAmpControlDialog.cpp
 plugins/NeuralAmp/NeuralAmpControlDialog.h
 plugins/NeuralAmp/NeuralAmpControls.cpp
@@ -695,6 +701,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHostChunking.cpp
+src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
@@ -782,6 +789,7 @@ src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDetectSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
+src/core/ControlDeviceClap.cpp
 src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
@@ -808,6 +816,7 @@ src/core/ControlReversibilityTableAutomationModes.cpp
 src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
+src/core/ControlReversibilityTableClapInstrument.cpp
 src/core/ControlReversibilityTableController.cpp
 src/core/ControlReversibilityTableDawProject.cpp
 src/core/ControlReversibilityTableDetect.cpp
@@ -890,6 +899,7 @@ src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/PatchWiring.cpp
 src/core/PluginHostChunking.cpp
+src/core/PluginHostNotes.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournalBounds.cpp
