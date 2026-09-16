@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Info.plist of the vst3-chunk-probe.vst3 CFBundle.
+
+  It exists because the SDK's macOS loader IS CoreFoundation's bundle loader
+  (public.sdk/source/vst/hosting/module_mac.mm):
+
+      CFBundleCreate(url)  +  CFBundleLoadExecutableAndReturnError(bundle)
+
+  and CFBundle resolves the module through CFBundleExecutable, which has to name
+  the file under Contents/MacOS. Without this file the fixture is a directory
+  CoreFoundation will not treat as a bundle of that layout, which is what BOTH
+  macOS jobs reported in run 35126160372 (104895806458 arm64, 104895806868
+  x86_64):
+
+      FAIL!  : lmms::vst3::Vst3ChunkProbeTest::initTestCase()
+      'm_plugin.load(path, ...)' returned FALSE. (The bundle "vst3-chunk-probe.vst3"
+      couldn't be loaded because its executable couldn't be located.)
+
+  The layout AND the entry symbol are the contract, and the two failures are
+  distinguishable: a wrong layout fails inside CFBundle (this message), while a
+  present-but-symbol-less Mach-O gets past the load and reports "Bundle does not
+  export the required 'bundleEntry' function" - which is why
+  tests/data/vst3-chunk-probe/CMakeLists.txt also selects macmain.cpp as the
+  entry point on APPLE.
+
+  The keys are the ones the SDK's own SMTG_Bundle.cmake has CMake generate for
+  its samples (CFBundleExecutable = the bundle stem, CFBundleIdentifier, BNDL),
+  written out here so the fixture carries the contract it depends on rather than
+  inheriting it from a target property. @...@ is substituted by configure_file()
+  in CMakeLists.txt, with the same variable the bundle directory is named from -
+  so the two cannot drift apart.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>@LMMS_VST3_CHUNK_PROBE_NAME@</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.lmms.tests.@LMMS_VST3_CHUNK_PROBE_NAME@</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>@LMMS_VST3_CHUNK_PROBE_NAME@</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+</dict>
+</plist>
