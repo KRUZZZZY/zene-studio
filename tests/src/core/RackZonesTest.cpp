@@ -127,7 +127,7 @@ private slots:
 	//! is the order the first-match rule reads.
 	void theZoneSurfaceAddsResolvesAndUndoes()
 	{
-		const QString channel = revtest::channelId(kChannel);
+		const QString channel = underTestChannel();  // the id the fixture's channel carries, not kChannel
 
 		const ControlResult added = revtest::run(QStringLiteral("rack.zone_add"),
 			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 24},

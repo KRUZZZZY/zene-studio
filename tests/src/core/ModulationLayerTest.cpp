@@ -335,7 +335,7 @@ private slots:
 		QCOMPARE(reloaded.modulator(0)->routes[0].parameter, QStringLiteral("Gain"));
 		QCOMPARE(reloaded.modulator(0)->routes[0].depth, 0.75f);
 		QCOMPARE(reloaded.modulator(0)->routes[1].depth, -0.5f);
-		QCOMPARE(reloaded.modulator(0)->routes[0].channel, kChannel);
+		QCOMPARE(reloaded.modulator(0)->routes[0].channel, underTestChannelId());
 		QCOMPARE(reloaded.modulator(0)->routes[0].chain, kDrivenChain);
 
 		// Re-save is stable: the round trip is not lossy in either direction.

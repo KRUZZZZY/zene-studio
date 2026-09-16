@@ -90,7 +90,12 @@ inline ModulatorSource sineAt(float rateHz, float phase, bool unipolar)
 inline ModulationRoute routeOf(const char* parameter, float depth)
 {
 	ModulationRoute route;
-	route.channel = kChannel;
+	// The channel under test's own id, not its index: a route stores the
+	// persistent ch-<n> id, and the fixture's channel is not ch-<kChannel> (see
+	// underTestChannelId()). A route built from the index resolves to whatever
+	// channel carries that number - the master in a fresh session - and then
+	// fails to find the rack chain the fixture put on the real channel.
+	route.channel = underTestChannelId();
 	route.chain = kDrivenChain;
 	route.effect = 0;
 	route.parameter = QString::fromLatin1(parameter);
@@ -104,10 +109,12 @@ inline ControlResult run(const QString& id, const QJsonObject& args = QJsonObjec
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
-//! "ch-<kChannel>", spelled through the vocabulary the commands parse.
+//! "ch-<n>" for the fixture's channel under test, in the form the commands
+//! parse - the id the ENGINE gave that channel, never "ch-<kChannel>"
+//! (RackTestSupport.h's underTestChannelId() says why).
 inline QString channelIdOf()
 {
-	return QStringLiteral("ch-") + QString::number(kChannel);
+	return underTestChannel();
 }
 
 //! Every test starts from a layer nobody has edited.
