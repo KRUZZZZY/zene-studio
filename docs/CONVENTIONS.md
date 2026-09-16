@@ -136,35 +136,69 @@ Until a whole-tree run has been made green, a statement like "the codebase passe
 true only of the fork scope — say which scope you mean, and for coverage say which *measured subset*
 of it (the capture measured 119 of the 175 entries the scope then held; see the scope note above).
 
-**The whole-tree scope is GREEN as of 2026-09-13** (checked on the `030/w2-process` tree): it was
-**not** green at the 0.2.1-alpha tip — `bash tests/complexity-gate.sh --check --scope all` exited **1**
-with **28** regression lines and `bash tests/file-length-gate.sh --check --scope all` exited **1** with
-**34**, 62 lines over 35 files, while this document and two others said otherwise — and the 0.3.0
-process lane took the decision the paragraph below named. It executed it as **49 recorded per-path
-`--reanchor-file <path> "<reason>"` invocations** on the two `-all` baselines (36 entries in 24
-upstream-inherited files declared in `tests/upstream-modifications.txt`, 4 in 3 fork-authored product
-sources, 9 in 8 fork-authored test sources), and then regenerated `tests/all-sources.txt` from its own
-command — which found `src/core/ControlServerSocket.cpp` missing from it entirely, a file registered in
-`tests/fork-sources.txt` and measured by no whole-tree gate. Every reason names the class, the file and
-the measured growth; the per-path list is in `tests/QA-GATES.md` "Scope policy". Measured after:
+**The whole-tree scope is an ADVISORY SCOPE, and the 2026-09-15 decision (REPO-58) records it as
+one: it is a monitoring ratchet, not a release gate.** The release gates are the **fork** scope
+(`tests/fork-sources.txt`) and the **tools** scope (`tests/tools-sources.txt`) — what a bare
+`bash tests/run-all-gates.sh` runs and what CI's `static-gates` job runs. Nothing runs the whole-tree
+scope by default and it stays out of CI; a red fork or tools scope blocks a tag, a red whole-tree scope
+is a report that the release record must carry with its exit codes. The evidence and the per-path
+disposition of every open advisory are in `tests/QA-GATES.md` "The whole-tree scope's status: ADVISORY
+SCOPE". The obligation is not softened by the decision: the scope is measured before every freeze and
+its exit codes are recorded, and its ratchet still moves only per path by a recorded reason.
 
-```sh
-bash tests/complexity-gate.sh  --check --scope all       # EXIT=0
-bash tests/file-length-gate.sh --check --scope all       # EXIT=0
-bash tests/duplication-gate.sh --scope all               # EXIT=0
-bash tests/run-all-gates.sh --whole-tree --no-mutation   # EXIT=3 (1/2/5 skipped: no build)
-```
+The history this decision closes, because the scope's status was never written down as a decision and
+two documents said different things: the scope was red at the 0.2.1-alpha tip (`complexity --scope all`
+exit **1**, 28 regression lines; `file-length --scope all` exit **1**, 34) while this document and two
+others said otherwise, was reconciled on 2026-09-13 by **49 recorded per-path `--reanchor-file`
+invocations** (36 entries in 24 upstream-inherited files, 4 in 3 fork-authored product sources, 9 in 8
+fork-authored test sources) and by regenerating `tests/all-sources.txt`, which found
+`src/core/ControlServerSocket.cpp` missing from it entirely — and went red again within two days, at the
+wave-3/4/5 merged tip, where the measurement is **complexity exit 1 with 59 regression lines over 42
+paths, file-length exit 1 with 34 over 34, duplication exit 0 (0.64 %)**, and
+`run-all-gates.sh --whole-tree --no-mutation` exits **1** rather than the expected 3.
 
-The two scopes disagreed because the fork manifest holds 244 files and the all manifest 1,263, and 55
-of the 62 failing lines were in files `tests/fork-sources.txt` does not list at all; the rest were in
-files both scopes list, where the fork-scope baseline entry was current and the all-scope one stale. So
-it was a stale whole-tree baseline — and now it is a current one.
+**The continuation of that lane finished the job rather than restating it.** Re-measured on 2026-09-16
+at `a6e1b62ae`, the same tree held **complexity exit 1 with 49 regression lines over 37 paths and
+file-length exit 1 with 23 over 23** — the disposal list is that measurement, not an earlier report —
+and every open line was then disposed of individually: `tests/control-detect-commands.py`'s
+`run_checks` (CCN 75, the worst fork-authored function in the tree) was **fixed by splitting** and now
+needs no entry in either scope, and the other 60 paths are grandfathered by **60 single-path
+`--reanchor-file` records**, each reason naming the path, its class and the measured growth and quoted
+verbatim in `tests/QA-GATES.md` (never a scope-wide move, never a baseline edited by hand). After them:
+**complexity `--scope all` exit 0, file-length `--scope all` exit 0, duplication `--scope all` exit 0**,
+and `run-all-gates.sh --whole-tree --no-mutation` exits **3** — pass-with-skips, the shape a tag is cut
+from, with gates 1/2/5 skipping for want of a build. The enforced scope's own reds (51 complexity, 10
+file-length lines on the same tree) are untouched by this and remain the fix-up pass's.
+
 **A re-anchor is a recorded act, never a silencer:** one
 `--reanchor-file <path> "<reason>"` per file on the scope's own baseline — the reason naming the
 growth accepted and citing `tests/upstream-modifications.txt` where the growth is in inherited code, or
-naming the class where it is not — or a whole-scope `--reanchor "<reason>"` at an integration point.
-An unrecorded re-anchor exits 2 and a blank reason is refused. `tests/QA-GATES.md` "Scope policy"
-carries the per-gate detail and the full path list; no baseline file is edited by hand anywhere.
+naming the class where it is not. A scope-wide `--reanchor "<reason>"` is an integration-point act; on
+this scope it has been refused since 2026-09-13 precisely because it grandfathers every open entry
+unreviewed. An unrecorded re-anchor exits 2 and a blank reason is refused. `tests/QA-GATES.md` "Scope
+policy" carries the per-gate detail and the full path list; no baseline file is edited by hand anywhere.
+
+**The manifest that carries this scope is now checked by a gate, not by memory.** `tests/all-sources.txt`
+had lost five tracked C/C++ sources by 2026-09-15 (`include/CrashReporterFormat.h`,
+`src/core/CrashReporterFormat.cpp`, `src/core/CrashReporterWindows.cpp`,
+`src/core/ControlCommandsCrashControl.cpp`, `tools/import-detection-proof.cpp`) — all four of the first
+group fork-NEW and already registered in `tests/fork-sources.txt`, so Gate 9 was green while no
+whole-tree gate measured them. `tests/all-sources-reproduce.sh` is the manifest's own "Verify it" step
+run rather than trusted; Gate 9 runs it on every run and has a `--self-test` control (a dropped path and
+an underivable path are each refused). Registration and derivation are two different questions; the gate
+asks both. The decision lives in `tests/QA-GATES.md` — the file is under `tests/`, and there is no
+`docs/QA-GATES.md` (a merge record from wave 3 names one; the name is wrong).
+
+**The sibling manifest was checked the same way for the first time on 2026-09-16 and did not
+reproduce.** `tests/fork-sources.txt`'s own verify step listed ten entries its recipe could not derive:
+seven fork-NEW `tests/*.py` drivers added after `69123e2f1` were never named in a pathspec, and two
+fork-NEW test sources are dropped by the recipe's awk allowlist. A pathspec naming them (and this
+lane's new `tests/control_detect_fixtures.py`) is added to both blocks of its header, so the recipe and
+the list agree again; no entry changed and no file that was not already registered entered a scope.
+Two facts are recorded rather than resolved: **nothing runs the fork manifest's recipe** (Gate 9 runs
+the all-sources one), and a general pathspec over `tests/*.py` would derive twelve fork-NEW files that
+are in no manifest at all — nine of which report over-target functions or files over 500 lines, so
+registering them is a scope decision for the merge train, not for one lane.
 
 ## Running it
 

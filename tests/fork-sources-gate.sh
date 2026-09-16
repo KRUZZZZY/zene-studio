@@ -54,7 +54,16 @@
 #   bash tests/fork-sources-gate.sh            # report violations only
 #   bash tests/fork-sources-gate.sh --verbose  # print the verdict for every file
 #
-# Exit codes: 0 = every file is registered, 1 = unregistered file(s) found, 2 = setup error.
+# Both modes also RUN the whole-tree manifest's own recipe (tests/all-sources-reproduce.sh).
+# A path registered in tests/fork-sources.txt but missing from tests/all-sources.txt is
+# invisible to the registration check below — the file has a home, so this gate stays green
+# while the whole-tree scope measures neither it nor its entries. That is not hypothetical:
+# 20 paths were lost on 2026-09-12 and 5 more on 2026-09-15 (see tests/all-sources.txt's own
+# header). The recipe check is what sees it; the manifest's recipe is the single source of
+# truth for its own derivation, so the command and the list cannot drift apart.
+#
+# Exit codes: 0 = every file is registered AND every manifest reproduces from its own recipe,
+# 1 = unregistered file(s), or a manifest that does not reproduce, 2 = setup error.
 
 set -uo pipefail
 
@@ -176,6 +185,29 @@ list_stale "$FORK_FILE" "fork-sources.txt"
 list_stale "$ALL_FILE" "all-sources.txt"
 if [[ $TOOLS_AVAILABLE -eq 1 ]]; then
 	list_stale "$TOOLS_FILE" "tools-sources.txt"
+fi
+
+# The manifests' own recipes, RUN rather than trusted. A manifest that carries a recipe
+# nobody executes is a claim, not a check: tests/all-sources.txt lost twenty paths silently
+# on 2026-09-12 and five more on 2026-09-15 — all of them fork-NEW, all of them already
+# registered in tests/fork-sources.txt — so the registration check above was green while the
+# whole-tree scope measured none of them. A file in fork-sources.txt and missing from
+# all-sources.txt is invisible to every other check in this script; the manifest's own
+# "Verify it" step is the only thing that sees it. Added 2026-09-15 with REPO-58.
+echo
+if [[ -f "$HERE/all-sources-reproduce.sh" ]]; then
+	bash "$HERE/all-sources-reproduce.sh"
+	reproduce_rc=$?
+	if [[ $reproduce_rc -ne 0 ]]; then
+		echo
+		echo "FAIL: a scope manifest does not reproduce from its own header recipe (exit $reproduce_rc)."
+		echo "      Registration and derivation are two different questions; this gate now asks both."
+		exit 1
+	fi
+else
+	echo "FAIL: tests/all-sources-reproduce.sh is missing — the whole-tree manifest's recipe"
+	echo "      would be unchecked."
+	exit 2
 fi
 
 echo
