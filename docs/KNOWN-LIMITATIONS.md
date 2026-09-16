@@ -88,6 +88,15 @@ that is this page's fault — report it and it gets added.
   scene, and read the launch back through `--control-socket` (`session.get_state`, `session.set_slot`,
   `session.launch_scene`, ...); a user cannot see or hear any of it. A project containing `<session>` data is
   also **preserved across a round trip**, which was already fixed in 0.2.1 and is unchanged.
+- **UI absence — one line: the clip-launch grid is drivable through the socket, not from the
+  interface.** The grid, its scenes and its slots ARE the `session.*` command group's objects
+  (`session.set_grid`, `session.set_scene`, `session.set_slot`, `session.launch_scene`,
+  `session.get_state`), and the interface draws none of them:
+  `grep -rniIE "session\.(set_|launch_|stop_|clear|get_state|follow_|arrangement_|back_to_)" src/gui/`
+  returns **zero** matches, and so does the same grep for the session classes (`SessionView`,
+  `SessionModel`, `SessionClip`, `SessionScheduler`, `SessionFollow`) — the only `session` spellings
+  in `src/gui/` are `MainWindow`'s crash-recovery `SessionState` and one telemetry-consent string.
+  The clip-launch grid UI itself (#598) is **out of 0.3.0**.
 - **Follow Actions, Arrangement Record and the Back-to-Arrangement switch are drivable through the
   socket, not from the interface.** The chain a slot has carried since #594 is now EVALUATED (all ten
   action types, chance weighting, linked/unlinked timing) and the performance can be recorded into the
