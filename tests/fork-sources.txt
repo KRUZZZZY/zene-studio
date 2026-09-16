@@ -23,6 +23,8 @@
 #   tests/control-mcp-group-coverage.py tests/control-midi-reconnect.py tests/lua-api-surface.py \
 #   tests/mcp_stdio_session.py tests/midi_reconnect_flows.py tests/midi_reconnect_probe.py \
 #   tests/control_detect_fixtures.py tests/src/core/ImportDetectionTest.cpp \
+#   tests/session_api_proof_lib.py tests/session_api_proof_rows.py \
+#   tests/control_vendor_libs.py \
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
@@ -46,8 +48,18 @@
 #   tests/control-mcp-group-coverage.py tests/control-midi-reconnect.py tests/lua-api-surface.py \
 #   tests/mcp_stdio_session.py tests/midi_reconnect_flows.py tests/midi_reconnect_probe.py \
 #   tests/control_detect_fixtures.py tests/src/core/ImportDetectionTest.cpp \
+#   tests/session_api_proof_lib.py tests/session_api_proof_rows.py \
+#   tests/control_vendor_libs.py \
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
+# 2026-09-16 (the 0.3.0 fix-up pass, lane 030/fixup-hygiene): three fork-NEW modules enter this
+# scope, each named in the pathspec lines above so the recipe derives them and each registered
+# here so the fork ratchets measure it instead of leaving a new file invisible:
+#   * tests/session_api_proof_lib.py and tests/session_api_proof_rows.py - the Gate 7 / Gate 4
+#     split of tests/control-session-api-proof.py (889 lines with five functions over CCN 10,
+#     now 235 + 346 + 457 lines with none over CCN 10);
+#   * tests/control_vendor_libs.py - the vendored-wasmtime runtime-path hook the socket harness
+#     uses (the harness is AT its Gate 7 cap, so the code lives in its own file).
 # 2026-09-16 (the wave-9 merge train, release/0.3.0): this block is the UNION of the two
 # lanes' pathspec additions - this train's `ImportDetectionTest|ScriptDawBindingTest`
 # keep-list fix in the awk line above, and 030/ratchet-decision's named-pathspec line
@@ -1042,6 +1054,7 @@ tests/control_instance_diagnosis.py
 tests/control_pipe_client.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
+tests/control_vendor_libs.py
 tests/freeze_bounce_evidence.py
 tests/golden_audio_lib.py
 tests/golden_audio_record.py
@@ -1057,6 +1070,8 @@ tests/rt-safety-sweep.py
 tests/rt_safety_lib.py
 tests/rt_safety_selftest.py
 tests/rt_safety_source.py
+tests/session_api_proof_lib.py
+tests/session_api_proof_rows.py
 
 #       | awk '/^tests\// && !/^tests\/src\/core\/(AudioResamplerRatioTest|BrowserCatalogTest|ClipSerialisationTest|ControlAutomationScriptTest|ControlBrowserCommandsTest|ControlDeviceCatalogueTest|ControlEditCommandsTest|ControlLinkCommandsTest|ControlRegistryTest|ControlSurfaceReferenceTest|ControlVerbInverseTest|ControlWarpCommandsTest|DataFileSaveIntegrityTest|ExportDitherTest|ExportWavDitherTest|LufsMeterTest|MidiClockTest|MidiLearnTest|MixerConcurrencyTest|ModulationLayerProjectRoundTripTest|ProjectOpenIntegrityTest|RackMacrosTest|RackZonesTest|ReversibilityContractTest|ReversibilityUndoTest|ScriptDawBindingTest|SessionModelTest|StableTrackIdsTest|StemExportTest|UndoBoundsTest)\.(cpp|h)$/ && !/^tests\/src\/core\/(BrowserTestSupport|RackTestSupport|ReversibilityTestSupport|StemExportTestSupport)\.h$/ && !/^tests\/src\/tracks\/SampleClipWindowTest\.cpp$/ { next } { print }' ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-freeze-commands-transcript.py tests/control-headless-no-audio-device.py tests/freeze_bounce_evidence.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-lifecycle-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py tests/control-punch-transcript.py tests/control-recording-recovery.py tests/control-track-folder.py tests/control-retro-capture.py tests/control-chain-presets.py tests/control-render-presets.py tests/control-vca-commands.py tests/control-pdc-commands.py tests/control-routing-commands.py tests/control-bus-commands.py tests/control-ports-commands.py tests/control-stem-export-verb.py tests/control-plugin-scan-commands.py tests/control-crash-reporter.py tests/control-mastering-commands.py tests/mastering_probe_lib.py tests/control-stem-commands.py tests/stem_commands_lib.py tests/control-pitch-stretch-transcript.py tests/control-undo-structural.py tests/lua-api-surface.py tests/control-session-api-proof.py ; \

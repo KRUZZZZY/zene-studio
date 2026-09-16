@@ -27,10 +27,9 @@ reporting helpers (`dump`, `finish`). The per-case payloads - the pure `check_*`
 "evidence -> problems" checkers and the multi-instance flow helpers - live in
 `control_socket_flows.py`, which imports their plumbing from here (Gate 7 split).
 
-The diagnostic that says why a frozen instance stopped answering - liveness, the
-kernel's wait channel, a debugger backtrace - lives in `control_instance_diagnosis.py`
-for the same Gate 7 reason: `spawn()` records the instance with `register_instance()` and the
-bounded reads print `instance_diagnosis()`, exactly the text they printed before.
+The diagnostic that says why a frozen instance stopped answering - liveness, the kernel's wait
+channel, a debugger backtrace - lives in `control_instance_diagnosis.py` for the same Gate 7
+reason: `spawn()` records the instance and the bounded reads print `instance_diagnosis()`.
 
 Usage (each test script owns its own argv):
     QT_QPA_PLATFORM=offscreen python3 <test>.py <lmms> [...]
@@ -47,6 +46,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+from control_vendor_libs import with_vendor_library_path
 from typing import NoReturn
 
 from control_instance_diagnosis import instance_diagnosis, register_instance
@@ -234,7 +235,7 @@ class Instance:
             handle.write(config_xml(self.workspace, audiodev, configured, autosave, extra_xml))
 
     def env(self):
-        env = dict(os.environ)
+        env = with_vendor_library_path(self.binary, dict(os.environ))
         env["QT_QPA_PLATFORM"] = "offscreen"
         env["HOME"] = self.tmp
         env["XDG_CONFIG_HOME"] = os.path.join(self.tmp, "config")
