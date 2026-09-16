@@ -49,6 +49,7 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ReversibilityTestSupport.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -61,8 +62,25 @@ private slots:
 
 	void initTestCase()
 	{
+		// The built-in device modules live in the build tree, and the plugin
+		// factory finds them through LMMS_PLUGIN_DIR - the preamble
+		// ReversibilityUndoTest and ControlDeviceCatalogueTest use, and the
+		// reason tests/CMakeLists.txt puts this target on the LMMS_TEST_PLUGIN_DIR
+		// list. Without it, a device cannot be loaded at all.
+#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
 		Engine::init(true);
 		ControlRegistry::setReady(true);
+		// THE DEVICE THE MODES DRIVE, built through the surface the way a client
+		// builds one. A bare Engine::init song has NO track at all - the default
+		// project is loaded by main(), which a test binary never runs - and
+		// automation.get_state reports the parameters of the devices that EXIST
+		// (measured on this build: 27 for a track carrying the triple
+		// oscillator, an empty `tracks` array in a song with none). The modules
+		// alone are not enough, which is what the README of this list said: the
+		// fixture has to make the track.
+		m_devicedTrack = revtest::addInstrumentTrack();
 	}
 
 	void cleanupTestCase()
@@ -316,6 +334,12 @@ private:
 		QVERIFY2(song->getPlayPos().getTicks() > 0, "the harness never moved the transport");
 		song->stop();
 	}
+
+private:
+	//! The track initTestCase put a real device on (empty when this build
+	//! exposes no loadable instrument module - the slots' own QVERIFY2 says so
+	//! with the reason, rather than skipping silently).
+	QString m_devicedTrack;
 };
 
 QTEST_GUILESS_MAIN(ControlAutomationModesTest)

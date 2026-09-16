@@ -75,6 +75,25 @@ QStringList upstreamAttributeNames()
 	return QStringList{ "autoresize", "len", "muted", "off", "pos", "sample_rate", "src" };
 }
 
+/*! The set this build writes: the upstream set PLUS the clip's stable id.
+ *
+ *  Clip::saveState() sets `id` on the clip's own element whenever that element
+ *  is a DOCUMENT element (src/core/Clip.cpp, `ProjectIds::isDocumentElement` -
+ *  SPEC-stable-ids.md R2, slice 2: "the id is written into the project file as
+ *  an `id` attribute on the object's own element"), and a save into a track
+ *  element is one. So `id` is part of the clip's on-disk shape now, which is
+ *  what the size-8-vs-7 failure at the I9 assertion below measured - the
+ *  additive-only guard is unchanged: this list is still exact, so any OTHER
+ *  attribute the engine grows still fails the test.
+ */
+QStringList engineAttributeNames()
+{
+	QStringList names = upstreamAttributeNames();
+	names << QStringLiteral("id");
+	names.sort();
+	return names;
+}
+
 QStringList attributeNames(const QDomElement& element)
 {
 	QStringList names;
@@ -223,7 +242,7 @@ private slots:
 		QDomElement parent = doc.createElement("track");
 		const QDomElement element = clip->saveState(doc, parent);
 		QCOMPARE(element.nodeName(), QString("sampleclip"));
-		QCOMPARE(attributeNames(element), upstreamAttributeNames());
+		QCOMPARE(attributeNames(element), engineAttributeNames());
 		QVERIFY(!element.hasAttribute("srcin"));
 		QVERIFY(!element.hasAttribute("srcout"));
 		QCOMPARE(element.attribute("autoresize"), QString("1"));
@@ -236,7 +255,7 @@ private slots:
 		QDomDocument doc2;
 		QDomElement parent2 = doc2.createElement("track");
 		const QDomElement element2 = reloaded->saveState(doc2, parent2);
-		QCOMPARE(attributeNames(element2), upstreamAttributeNames());
+		QCOMPARE(attributeNames(element2), engineAttributeNames());
 		QCOMPARE(withoutJournallingIds(nodeToString(element2)), withoutJournallingIds(nodeToString(element)));
 	}
 

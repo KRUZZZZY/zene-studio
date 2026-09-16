@@ -202,15 +202,22 @@ private slots:
 				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
 		QVERIFY2(note.ok, qPrintable(note.errorMessage));
 		QCOMPARE(rollNoteCount(clipId), 1);
+		// The note's OWN id, from note.add's own result - not the "note-0"
+		// literal this slot used before: the number is a project-wide
+		// ProjectIds allocation shared by every id family (SPEC-stable-ids.md
+		// R1), so it is not the note's index and not 0 in a binary that has
+		// already built anything.
+		const QString noteId = note.result.value(QStringLiteral("note")).toString();
+		QVERIFY2(!noteId.isEmpty(), "note.add must report the added note's own id");
 
 		QVERIFY(run(QStringLiteral("note.move"),
-			{{QStringLiteral("clip"), clipId}, {QStringLiteral("note"), QStringLiteral("note-0")},
+			{{QStringLiteral("clip"), clipId}, {QStringLiteral("note"), noteId},
 				{QStringLiteral("position"), 48}}).ok);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(notePosition(clipId, 0), 0);
 
 		QVERIFY(run(QStringLiteral("note.velocity_set"),
-			{{QStringLiteral("clip"), clipId}, {QStringLiteral("note"), QStringLiteral("note-0")},
+			{{QStringLiteral("clip"), clipId}, {QStringLiteral("note"), noteId},
 				{QStringLiteral("velocity"), 42}}).ok);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(noteVelocity(clipId, 0), 100.0);

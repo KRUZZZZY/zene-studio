@@ -164,29 +164,41 @@ private slots:
 		QCOMPARE(noteCount(b), 2);
 		QCOMPARE(noteKeyAt(a, 1), 67);
 
+		// The two notes' OWN ids AS CLIP A CARRIES THEM, read back through
+		// roll.get_state (noteIdAt). note.add's result names the note of the clip
+		// the call was made on, and a link group mirrors content as each
+		// member's OWN Note objects (SPEC-stable-ids.md R4: a copy is a new
+		// object) - so B's copy of the 67-note does not carry A's id, which is
+		// what the literal-and-result version of this slot measured as
+		// "no note note-12 (the clip has 2)".
+		const QString firstNote = noteIdAt(a, 0);
+		const QString secondNote = noteIdAt(a, 1);
+		QVERIFY2(!firstNote.isEmpty() && !secondNote.isEmpty() && firstNote != secondNote,
+			"roll.get_state must report both of clip A's notes with their own ids");
+
 		// (c) every content verb propagates, not just add: move, resize, velocity,
 		//     remove - each one through the surface, each one checked on the OTHER
 		//     member.
 		const ControlResult moved = registry->invoke(QStringLiteral("note.move"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), QStringLiteral("note-1")},
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), secondNote},
 				{QStringLiteral("position"), 48}});
 		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
 		QCOMPARE(notePositionAt(b, 1), 48);
 
 		const ControlResult resized = registry->invoke(QStringLiteral("note.resize"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), QStringLiteral("note-0")},
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), firstNote},
 				{QStringLiteral("length"), 48}});
 		QVERIFY2(resized.ok, qPrintable(resized.errorMessage));
 		QCOMPARE(noteLengthAt(b, 0), 48);
 
 		const ControlResult velocity = registry->invoke(QStringLiteral("note.velocity_set"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), QStringLiteral("note-0")},
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), firstNote},
 				{QStringLiteral("velocity"), 77}});
 		QVERIFY2(velocity.ok, qPrintable(velocity.errorMessage));
 		QCOMPARE(noteVelocityAt(b, 0), 77);
 
 		const ControlResult removed = registry->invoke(QStringLiteral("note.remove"),
-			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), QStringLiteral("note-0")}});
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), firstNote}});
 		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
 		QCOMPARE(noteCount(b), 1);
 		QCOMPARE(noteKeyAt(b, 0), 67);

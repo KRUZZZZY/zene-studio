@@ -77,13 +77,27 @@ QStringList attributeNames( const QDomElement& element )
 }
 
 
-//! The attribute set an upstream note has always had, i.e. every attribute a
-//! build without this feature would find (and read) on a note.
-
-
+//! The attribute set a note ELEMENT FROM A DOCUMENT carries when the document
+//! was written without this build: the six attributes a pre-MPE build writes.
+//! This is the LEGACY set, deliberately without `id` - the fixture projects are
+//! hand-written text with no ids, and noteWithoutExpressionIsUnchanged() checks a
+//! parsed document against it. What this build WRITES is the other set, below.
 QStringList upstreamNoteAttributes()
 {
 	return { "key", "len", "pan", "pos", "type", "vol" };
+}
+
+//! The set this build writes for a note it serialises: upstream + the note's
+//! stable id. Note::saveSettings writes `id` UNCONDITIONALLY (src/core/Note.cpp,
+//! SPEC-stable-ids.md R2, slice 2: "an identity is not a feature that can be
+//! switched off"), so every note this build saves carries it. Still exact: an
+//! attribute beyond these still fails.
+QStringList savedNoteAttributes()
+{
+	QStringList names = upstreamNoteAttributes();
+	names << QStringLiteral("id");
+	names.sort();
+	return names;
 }
 
 
@@ -95,6 +109,17 @@ QStringList mpeNoteAttributes()
 {
 	QStringList names = upstreamNoteAttributes();
 	names << "mpepitch" << "mpepressure" << "mpetimbre";
+	names.sort();
+	return names;
+}
+
+//! The same set as this build WRITES it: the legacy three-attribute addition plus
+//! the note's stable id, which every saved note carries (savedNoteAttributes()
+//! above says why).
+QStringList savedMpeNoteAttributes()
+{
+	QStringList names = mpeNoteAttributes();
+	names << QStringLiteral("id");
 	names.sort();
 	return names;
 }
@@ -171,7 +196,7 @@ private slots:
 		QCOMPARE( element.attribute( "mpepitch" ).toInt(), -1200 );
 		QCOMPARE( element.attribute( "mpepressure" ).toInt(), 111 );
 		QCOMPARE( element.attribute( "mpetimbre" ).toInt(), 22 );
-		QCOMPARE( attributeNames( element ), mpeNoteAttributes() );
+		QCOMPARE( attributeNames( element ), savedMpeNoteAttributes() );
 
 		const QString first = nodeToString( element );
 
@@ -240,7 +265,7 @@ private slots:
 		QDomDocument doc5;
 		QDomElement parent5 = doc5.createElement( "notes" );
 		QDomElement cleared = original.saveState( doc5, parent5 );
-		QCOMPARE( attributeNames( cleared ), upstreamNoteAttributes() );
+		QCOMPARE( attributeNames( cleared ), savedNoteAttributes() );
 	}
 
 	//! (e) A note with no expression serializes exactly as it did before this
@@ -254,7 +279,7 @@ private slots:
 		QDomDocument doc;
 		QDomElement parent = doc.createElement( "notes" );
 		QDomElement element = plain.saveState( doc, parent );
-		QCOMPARE( attributeNames( element ), upstreamNoteAttributes() );
+		QCOMPARE( attributeNames( element ), savedNoteAttributes() );
 
 		// ... and so does a whole project: no note in it grows an attribute.
 		const QString version = DataFile( DataFile::Type::SongProject )

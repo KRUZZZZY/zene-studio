@@ -173,9 +173,27 @@ inline int mixerChannelCount()
 	return run(QStringLiteral("mixer.get_state")).result.value(QStringLiteral("count")).toInt();
 }
 
+/*! The id of the mixer channel at @a index in the mixer's OWN list, as
+ *  `mixer.get_state` publishes it - index 0 is the master (include/Mixer.h:
+ *  "the mixer channels in the mixer. index 0 is always master").
+ *
+ *  ASKED FOR, never predicted. The number in a `ch-<n>` id comes from the
+ *  project-wide ProjectIds counter, which every id family shares
+ *  (SPEC-stable-ids.md R1), so ch-<index> names whatever object was allocated
+ *  when that number came up - NOT the channel at that position. In this test
+ *  binary the counter has already moved on by the first slot, so "ch-1" is
+ *  not the first mixer channel (it is the master, or a clip); the failure this
+ *  replaced read "no mixer channel ch-2 (the mixer has 4)".
+ *
+ *  Empty when @a index is outside the list, so a caller's assertion fails
+ *  honestly instead of addressing a channel that does not exist.
+ */
 inline QString channelId(int index)
 {
-	return QStringLiteral("ch-") + QString::number(index);
+	const QJsonArray channels = run(QStringLiteral("mixer.get_state"))
+		.result.value(QStringLiteral("channels")).toArray();
+	if (index < 0 || index >= channels.size()) { return QString(); }
+	return channels.at(index).toObject().value(QStringLiteral("id")).toString();
 }
 
 inline double channelVolume(const QString& channel)
@@ -271,6 +289,20 @@ inline QJsonArray deviceChain(const QString& target)
 }
 
 inline int deviceCount(const QString& target) { return deviceChain(target).size(); }
+
+//! The id of the device at @a index of a live target's chain, straight out of
+//! dsp.get_state - the engine's own fx-<n>. Never "fx-<index>": the number in an
+//! fx-<n> id is a project-wide ProjectIds allocation that every id family shares
+//! (SPEC-stable-ids.md R1), NOT the device's position in the chain, so a
+//! position-derived id addresses a device that does not exist (the call this
+//! replaced read a value of 0.0 back for a parameter that was never touched).
+//! Empty when @a index is outside the chain.
+inline QString deviceIdAt(const QString& target, int index)
+{
+	const QJsonArray chain = deviceChain(target);
+	if (index < 0 || index >= chain.size()) { return QString(); }
+	return chain.at(index).toObject().value(QStringLiteral("id")).toString();
+}
 
 inline QJsonObject deviceEntry(const QString& target, const QString& fx)
 {

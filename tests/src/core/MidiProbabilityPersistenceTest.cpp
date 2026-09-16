@@ -120,7 +120,13 @@ private slots:
 		QVERIFY( !element.hasAttribute( "prob" ) );
 		QVERIFY( !element.hasAttribute( "veljit" ) );
 
-		const QStringList upstreamAttributes{ "key", "len", "pan", "pos", "type", "vol" };
+		// The upstream set plus the one attribute every note element has carried
+		// since slice 2: the note's stable id, which Note::saveSettings writes
+		// UNCONDITIONALLY (src/core/Note.cpp, SPEC-stable-ids.md R2 - "an
+		// identity is not a feature that can be switched off"). The list is
+		// still exact: the two new OPTIONAL attributes must be absent, and any
+		// further addition fails here.
+		const QStringList upstreamAttributes{ "id", "key", "len", "pan", "pos", "type", "vol" };
 		QCOMPARE( attributeNames( element ), upstreamAttributes );
 
 		// loading such an element gives the old behaviour back
@@ -150,7 +156,10 @@ private slots:
 		QCOMPARE( element.attribute( "key" ).toInt(), 61 );
 		QCOMPARE( element.attribute( "vol" ).toInt(), 80 );
 
-		const QStringList expectedAttributes{ "key", "len", "pan", "pos", "prob", "type", "veljit", "vol" };
+		// ...and the id, which every note element carries (Note::saveSettings,
+		// SPEC-stable-ids.md R2): the exact set, sorted.
+		const QStringList expectedAttributes{ "id", "key", "len", "pan", "pos", "prob", "type",
+			"veljit", "vol" };
 		QCOMPARE( attributeNames( element ), expectedAttributes );
 
 		const QString first = nodeToString( element );

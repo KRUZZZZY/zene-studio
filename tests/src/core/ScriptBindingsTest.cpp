@@ -40,6 +40,7 @@
 #include "PatternStore.h"
 #include "SampleTrack.h"
 #include "ScriptBindings.h"
+#include "ScriptApiVersion.h"
 #include "ScriptEngine.h"
 #include "Song.h"
 #include "Track.h"
@@ -710,8 +711,16 @@ private slots:
 		QTemporaryDir projectDir;
 		QVERIFY(projectDir.isValid());
 		engine->setProjectDir(projectDir.path());
-		QVERIFY(engine->runString(QStringLiteral(R"(
-assert(lmms.version() == '0.1')
+		// The version the engine reports is the BUILD's own, from one place
+		// (CMakeLists' ZENE_LUA_API_VERSION_*, passed to this test binary too -
+		// docs/LUA-COMPATIBILITY-POLICY.md §1, "where the version comes from").
+		// The `0.1` literal this replaced was the pre-DAW-binding value: adding
+		// zene.mixer()/zene.apiSurface() bumped MINOR to 0.2, which is that
+		// policy's own rule ("an addition bumps MINOR"), so the expectation is
+		// re-derived from the build rather than pinned to either number.
+		const QString source =
+			QStringLiteral(R"(
+assert(lmms.version() == '%1')
 assert(lmms.ticksPerBar() == 192)
 assert(lmms.stepsPerBar() == 16)
 assert(lmms.song() ~= nil)
@@ -730,7 +739,9 @@ assert(#files == 0)
 lmms.log():info('namespace ok')
 local budget = lmms.instructionBudget()
 lmms.setInstructionBudget(budget)
-)"), nullptr, QStringLiteral("=(namespace)")) == ScriptEngine::RunResult::Ok);
+)").arg(QString::fromLatin1(ZENE_LUA_API_MAJOR_MINOR_STRING));
+		QVERIFY(engine->runString(source, nullptr, QStringLiteral("=(namespace)"))
+			== ScriptEngine::RunResult::Ok);
 		QVERIFY2(engine->lastError().isEmpty(), qPrintable(engine->lastError()));
 		QVERIFY(engine->takeLogMessages().contains(QStringLiteral("[info] namespace ok")));
 		QCOMPARE(engine->instructionBudget(), quint64(5000000));

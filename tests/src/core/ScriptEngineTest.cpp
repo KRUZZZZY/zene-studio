@@ -39,6 +39,7 @@
 #include "PatternTrack.h"
 #include "ProjectJournal.h"
 #include "ScriptEngine.h"
+#include "ScriptApiVersion.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -117,17 +118,34 @@ private slots:
 		QTest::addColumn<int>("expected");
 
 		using Result = lmms::ScriptEngine::RunResult;
+		// The versions are DERIVED from the build (include/ScriptApiVersion.h,
+		// which this test binary gets from the same CMake variables as the
+		// engine - docs/LUA-COMPATIBILITY-POLICY.md §1). They were spelled
+		// 1.0 / 0.1 / 0.0 / 0.2 until the DAW-control binding bumped MINOR to
+		// 0.2, at which point the "too-new" row named the CURRENT version and
+		// the row could only pass by pinning a stale number. The gate is
+		// ScriptEngine::isCompatibleVersion: the major must match the build's,
+		// and the minor must not exceed it.
+		const QString major = QString::number(ZENE_LUA_API_VERSION_MAJOR);
+		const QString minor = QString::number(ZENE_LUA_API_VERSION_MINOR);
+		const QString nextMajor = QString::number(ZENE_LUA_API_VERSION_MAJOR + 1);
+		const QString nextMinor = QString::number(ZENE_LUA_API_VERSION_MINOR + 1);
+
 		QTest::newRow("missing") << "print('x')" << int(Result::VersionError);
 		QTest::newRow("too-new-major")
-			<< "--! lmms-api 1.0\nprint('x')" << int(Result::VersionError);
+			<< QStringLiteral("--! lmms-api %1.0\nprint('x')").arg(nextMajor)
+			<< int(Result::VersionError);
+		QTest::newRow("too-new-minor")
+			<< QStringLiteral("--! lmms-api %1.%2\nprint('x')").arg(major, nextMinor)
+			<< int(Result::VersionError);
 		QTest::newRow("malformed")
 			<< "--! lmms-api nonsense\nprint('x')" << int(Result::VersionError);
-		QTest::newRow("v0.1-ok")
-			<< "--! lmms-api 0.1\nprint('x')" << int(Result::Ok);
-		QTest::newRow("v0.0-ok")
-			<< "--! lmms-api 0.0\nprint('x')" << int(Result::Ok);
-		QTest::newRow("v0.2-too-new")
-			<< "--! lmms-api 0.2\nprint('x')" << int(Result::VersionError);
+		QTest::newRow("current-ok")
+			<< QStringLiteral("--! lmms-api %1.%2\nprint('x')").arg(major, minor)
+			<< int(Result::Ok);
+		QTest::newRow("older-minor-ok")
+			<< QStringLiteral("--! lmms-api %1.0\nprint('x')").arg(major)
+			<< int(Result::Ok);
 	}
 
 	void testVersionHeader()
@@ -181,7 +199,13 @@ private slots:
 		for (const QString& line : log) { qInfo().noquote() << "lua:" << line; }
 		QVERIFY2(log.filter("Hello from Lua Lua 5.4").size() == 1,
 			qPrintable(log.join('|')));
-		QVERIFY2(log.filter("Zene Studio Lua API 0.1").size() == 1,
+		// hello.lua greets with `zene.version()` (data/scripts/hello.lua), so the
+		// expectation is the version THIS build reports - derived from the same
+		// CMake variables the engine is compiled with (docs/LUA-COMPATIBILITY-
+		// POLICY.md §1). The 0.1 literal this replaced was the pre-DAW-binding
+		// value; MINOR moved to 0.2 when zene.mixer() was added.
+		QVERIFY2(log.filter(QStringLiteral("Zene Studio Lua API %1")
+				.arg(QString::fromLatin1(ZENE_LUA_API_MAJOR_MINOR_STRING))).size() == 1,
 			qPrintable(log.join('|')));
 		QVERIFY2(log.contains("hello.lua finished"), qPrintable(log.join('|')));
 	}

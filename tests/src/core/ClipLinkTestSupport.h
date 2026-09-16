@@ -133,6 +133,22 @@ inline QJsonArray notesOf(const QString& clipId)
 }
 
 inline int noteCount(const QString& clipId) { return notesOf(clipId).size(); }
+
+//! The id of the note at @a index of @a clipId's list, from roll.get_state -
+//! the id the ENGINE gave THAT clip's note object.
+//!
+//! Asked for per clip, and that is the point: a link group's members mirror each
+//! other's content as their OWN Note objects (ClipLinks::writeContent copies the
+//! note list), and R4 of SPEC-stable-ids.md makes a copy a NEW object with a new
+//! id - so the id a note.add to clip B returned names B's object, never A's
+//! mirror of it. Addressing A with B's id is what this file measured as
+//! "no note note-12 (the clip has 2)". Empty when the index is outside the list.
+inline QString noteIdAt(const QString& clipId, int index)
+{
+	const QJsonArray notes = notesOf(clipId);
+	if (index < 0 || index >= notes.size()) { return QString(); }
+	return notes.at(index).toObject().value(QStringLiteral("id")).toString();
+}
 inline int noteKeyAt(const QString& clipId, int index)
 {
 	const QJsonArray notes = notesOf(clipId);

@@ -140,7 +140,11 @@ private slots:
 		QDomElement parent3 = doc3.createElement( "notes" );
 		QDomElement element3 = plain.saveState( doc3, parent3 );
 		QVERIFY( !element3.hasAttribute( "slide" ) );
-		const QStringList upstreamAttributes{ "key", "len", "pan", "pos", "type", "vol" };
+		// The upstream set plus the one attribute every saved note carries since
+		// slice 2: the note's stable id, written UNCONDITIONALLY by
+		// Note::saveSettings (src/core/Note.cpp, SPEC-stable-ids.md R2). The
+		// "slide" attribute must still be ABSENT - that is what this slot is for.
+		const QStringList upstreamAttributes{ "id", "key", "len", "pan", "pos", "type", "vol" };
 		QCOMPARE( attributeNames( element3 ), upstreamAttributes );
 
 		Note plainLoaded;

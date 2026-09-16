@@ -1866,10 +1866,13 @@ def main():
         typed_error(client.call(5, "transport.seek", {"ticks": "not-a-number"}), 5, "invalid_args")
         typed_error(client.call(6, "mixer.set_volume", {"channel": "ch-9999", "volume": 0.5}), 6, "not_found")
         typed_error(client.call(7, "control.version", proto=99), 7, "refused")
-        # mixer.set_pan is an honest refusal: this tree has no pan on a mixer channel.
-        typed_error(client.call(8, "mixer.set_pan", {"channel": "ch-0", "pan": 0.5}), 8, "refused")
-        # the master channel cannot be removed.
-        typed_error(client.call(9, "mixer.remove_channel", {"channel": "ch-0"}), 9, "refused")
+        # Two CHANNEL-addressed refusals (mixer.set_pan's honest refusal, and the
+        # master that cannot be removed) are checked below `mixer.get_state`, not
+        # here: they must name a channel that EXISTS, and its ch-<n> id is the
+        # engine's own answer. "ch-0" is not the master - a ch-<n> id is a
+        # project-wide ProjectIds allocation shared by every id family
+        # (SPEC-stable-ids.md R1), which this leg measured as
+        # "no mixer channel ch-0 (the mixer has 1)".
 
         # --- the full flow: open -> mixer -> set volume -> render -> save ---
         opened = ok_result(client.call(10, "project.open", {"path": project}), 10)
@@ -1880,6 +1883,18 @@ def main():
         channels = mixer_before.get("channels", [])
         if not channels:
             fail("the fixture project loaded no mixer channels", process, log_path)
+
+        # The master by the id mixer.get_state just published: index 0 is always
+        # the master (include/Mixer.h), and the NUMBER is a ProjectIds allocation,
+        # never the index (SPEC-stable-ids.md R1).
+        master = channels[0].get("id")
+        if not master or not master.startswith("ch-"):
+            fail("mixer.get_state reported %r as the first channel" % master, process, log_path)
+        # mixer.set_pan is an honest, TYPED refusal about the pan - not a not_found
+        # about a channel that does not exist, so it addresses the real master.
+        typed_error(client.call(81, "mixer.set_pan", {"channel": master, "pan": 0.5}), 81, "refused")
+        # ...and the master channel cannot be removed.
+        typed_error(client.call(82, "mixer.remove_channel", {"channel": master}), 82, "refused")
 
         # The fixture ships one (master) channel; make a second one to address.
         added = ok_result(client.call(12, "mixer.add_channel"), 12)
