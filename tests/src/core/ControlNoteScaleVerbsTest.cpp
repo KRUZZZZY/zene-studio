@@ -431,7 +431,7 @@ private slots:
 		QVERIFY2(second.ok, qPrintable(second.errorMessage));
 		QVERIFY2(run(QStringLiteral("note.select"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip},
-				{QStringLiteral("notes"), QJsonArray{QStringLiteral("note-0")}}}).ok,
+				{QStringLiteral("notes"), QJsonArray{added.result.value(QStringLiteral("note"))}}}).ok,
 			"could not select the first note");
 		const ControlResult selected = run(QStringLiteral("note.transpose"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("semitones"), 3},
@@ -465,9 +465,9 @@ private slots:
 			}
 			sawMajor = true;
 			QCOMPARE(entry.value(QStringLiteral("degrees")).toArray().size(), 7);
-			// Index 0 = C: the major scale is C, D, E, F, G, A, B.
+			// Index 0 = C: the major scale is C, D, E, F, G, A, B = ChordTable's own scale row {0,2,4,5,7,9,11} (InstrumentFunctions.cpp, the isScale() entries), so bits 5 and 7 are set; "101010110101" is the LYDIAN row {0,2,4,6,7,9,11} and was this expectation until 2026-09-16.
 			QCOMPARE(entry.value(QStringLiteral("mask")).toString(),
-				QStringLiteral("101010110101"));
+				QStringLiteral("101011010101"));
 		}
 		QVERIFY2(sawMajor, "the engine's own scale vocabulary must carry Major");
 		QCOMPARE(listed.result.value(QStringLiteral("roots")).toArray().size(), 12);
@@ -493,8 +493,8 @@ private slots:
 		QCOMPARE(badRoot.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
-	//! W8: the context writers, their inverses, and the refusal a snap makes when no
-	//! scale is set at all.
+	//! W8: the scale context writers, their inverses, and the refusal a snap makes when
+	//! no scale is set at all. The mask is the same ChordTable Major row as above.
 	void theScaleContextIsReversibleAndSnapRefusesWithoutOne()
 	{
 		// Clear the context first, so this test's starting point is known whatever ran
@@ -516,7 +516,7 @@ private slots:
 			QStringLiteral("Major"));
 		QCOMPARE(setScale.result.value(QStringLiteral("scale_set")).toBool(), true);
 		QCOMPARE(setScale.result.value(QStringLiteral("mask")).toString(),
-			QStringLiteral("101010110101"));
+			QStringLiteral("101011010101"));
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(run(QStringLiteral("scale.get_state")).result
 			.value(QStringLiteral("scale_set")).toBool(), false);

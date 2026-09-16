@@ -166,9 +166,15 @@ def check_baseline(session, recorder):
         H.fail("pdc.report returned no channels: %r" % report, None, None)
     master = channels_of(report)[0]
     sidechain = report.get("sidechain") or {}
+    # The master's ID IS NOT PREDICTED, it is read: an id is allocated at
+    # construction from the project's counter (SPEC-stable-ids.md slice 2/4.2 -
+    # "it never parses, derives, or predicts an id"), so the master is ch-<n>
+    # for whatever the counter held when the channel was built. Measured on this
+    # binary: ch-1 in a fresh session, with `mixer.add_channel` handing out ch-7.
+    # This check asserted "ch-0" and was wrong about the engine.
     recorder.check("the master is the first channel and carries its own flags",
-                   master.get("id") == "ch-0" and master.get("is_master") is True
-                   and master.get("is_bus") is False,
+                   master.get("is_master") is True and master.get("is_bus") is False
+                   and str(master.get("id") or "").startswith("ch-"),
                    "master=%r" % master)
     recorder.check("a fresh mixer publishes zero latency and no clamp",
                    report.get("total_latency_frames") == 0

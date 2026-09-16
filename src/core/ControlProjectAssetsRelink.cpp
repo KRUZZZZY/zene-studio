@@ -75,17 +75,14 @@ QString forwardPath(const QString& value)
 
 /*! Resolves `to` and, when the caller passed `expect_sha256`, refuses unless
  *  the file really is that media. The check happens BEFORE the document is
- *  read, so a refusal writes nothing and leaves no undo step behind. */
+ *  read, so a refusal writes nothing and leaves no undo step behind.
+ *
+ *  `to`'s emptiness is checked by controlRelinkAddressOk() - one place for both
+ *  addresses, because the command layer runs the same check before it reads the
+ *  project file for the recorded inverse. */
 bool resolveRelinkTarget(const QString& to, const QString& expectSha256, QString* target,
 	ControlResult* error)
 {
-	if (to.isEmpty())
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'to' is the file the reference should point at; it cannot be "
-				"empty"));
-		return false;
-	}
 	const QFileInfo info(to);
 	if (!info.exists() || !info.isFile())
 	{
@@ -161,6 +158,26 @@ bool commitRelink(const QString& projectPath, bool dryRun, ProjectAssetRelink* o
 
 } // namespace
 
+bool controlRelinkAddressOk(const QString& from, const QString& to, ControlResult* error)
+{
+	if (from.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'from' is the reference to point at a new file: it is the value "
+				"project.missing_assets reported in 'raw' (or the path it resolved to), and it "
+				"cannot be empty"));
+		return false;
+	}
+	if (to.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'to' is the file the reference should point at; it cannot be "
+				"empty"));
+		return false;
+	}
+	return true;
+}
+
 bool controlRelinkProjectAsset(const QString& projectPath, const QString& from, const QString& to,
 	const QString& expectSha256, bool dryRun, ProjectAssetRelink* out, ControlResult* error)
 {
@@ -171,14 +188,7 @@ bool controlRelinkProjectAsset(const QString& projectPath, const QString& from, 
 	out->sha256.clear();
 	out->bytes.clear();
 
-	if (from.isEmpty())
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'from' is the reference to point at a new file: it is the value "
-				"project.missing_assets reported in 'raw' (or the path it resolved to), and it "
-				"cannot be empty"));
-		return false;
-	}
+	if (!controlRelinkAddressOk(from, to, error)) { return false; }
 	QString target;
 	if (!resolveRelinkTarget(to, expectSha256, &target, error)) { return false; }
 

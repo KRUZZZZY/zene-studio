@@ -184,8 +184,9 @@ private slots:
 				{QStringLiteral( "phase" ), 0.125},
 				{QStringLiteral( "unipolar" ), true}} ).ok,
 			"the source edit was refused" );
-		QVERIFY2( run( QStringLiteral( "modulator.target_set" ),
-			routeArgs( wobbleId, kGainName, 0.75 ) ).ok, "binding Gain was refused" );
+		const ControlResult gain = run( QStringLiteral( "modulator.target_set" ),
+			routeArgs( wobbleId, kGainName, 0.75 ) );
+		QVERIFY2( gain.ok, qPrintable( gain.errorMessage ) );
 
 		const ControlResult ramp = run( QStringLiteral( "modulator.create" ),
 			{{QStringLiteral( "name" ), QStringLiteral( "Ramp" )},
@@ -197,8 +198,9 @@ private slots:
 		QVERIFY2( run( QStringLiteral( "modulator.rate_set" ),
 			{{QStringLiteral( "modulator" ), rampId}, {QStringLiteral( "phase" ), 0.5}} ).ok,
 			"the source edit was refused" );
-		QVERIFY2( run( QStringLiteral( "modulator.target_set" ),
-			routeArgs( rampId, kPanName, -0.5 ) ).ok, "binding Panning was refused" );
+		const ControlResult pan = run( QStringLiteral( "modulator.target_set" ),
+			routeArgs( rampId, kPanName, -0.5 ) );
+		QVERIFY2( pan.ok, qPrintable( pan.errorMessage ) );
 
 		verifyModulator( layer(), 0, QStringLiteral( "Wobble" ), ModulationShape::Sine, 2.5f,
 			0.125f, true );
@@ -243,7 +245,7 @@ private slots:
 			0.5f, false );
 
 		QCOMPARE( layer().modulator( 0 )->routeCount(), 1 );
-		QCOMPARE( layer().modulator( 0 )->routes[0].channel, kChannel );
+		QCOMPARE( layer().modulator( 0 )->routes[0].channel, underTestChannelId() );
 		QCOMPARE( layer().modulator( 0 )->routes[0].chain, kDrivenChain );
 		QCOMPARE( layer().modulator( 0 )->routes[0].effect, 0 );
 		QCOMPARE( layer().modulator( 0 )->routes[0].parameter, QStringLiteral( "Gain" ) );

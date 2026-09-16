@@ -49,6 +49,12 @@
 #include "Mixer.h"
 #include "ScriptApiVersion.h"
 #include "ScriptEngine.h"
+// Stack<QString>/Stack<QStringList>. WITHOUT this include every function here
+// that returns a QString instantiates LuaBridge's GENERIC Stack and raises
+// "The class is not registered in LuaBridge" at the first call (measured on a
+// real instance). ScriptBindings.cpp includes it for the same reason; this is a
+// second translation unit over the same bridge.
+#include "ScriptLuaQtTypes.h"
 
 extern "C"
 {
@@ -167,6 +173,7 @@ QStringList namespaceFunctionNames(lua_State* L)
 	return names;
 }
 
+//! The `functions` array: every name in @a names, 1-based, in the order given.
 void pushFunctionTable(lua_State* L, const QStringList& names)
 {
 	lua_newtable(L);
@@ -177,8 +184,6 @@ void pushFunctionTable(lua_State* L, const QStringList& names)
 		lua_rawseti(L, -2, index);
 		++index;
 	}
-	lua_pushinteger(L, names.size());
-	lua_setfield(L, -2, "function_count");
 }
 
 //! `zene.apiSurface()` -> { version, full_version, major, minor, stability,
@@ -192,6 +197,12 @@ int luaApiSurface(lua_State* L)
 	pushVersionFacts(L);                                        // .version, ...
 	pushFunctionTable(L, names);                                // .functions
 	lua_setfield(L, -2, "functions");
+	// function_count belongs to the SURFACE, not to the nested array: written
+	// inside `functions` it was nil at the documented read
+	// (`zene.apiSurface().function_count`), which raised the Lua error
+	// "attempt to concatenate a nil value (field 'function_count')".
+	lua_pushinteger(L, names.size());
+	lua_setfield(L, -2, "function_count");
 	lua_pushinteger(L, names.contains(QStringLiteral("mixer")) ? 1 : 0);
 	lua_setfield(L, -2, "has_mixer_binding");                   // .has_mixer_binding
 	return 1;
@@ -300,11 +311,18 @@ void registerAll(lua_State* L)
 	// `zene.apiSurface` is a plain C closure rather than a LuaBridge function:
 	// it walks the namespace table it is being registered into, which is a
 	// stack operation, not a wrapped C++ call.
+	//
+	// RAW write, on purpose: beginNamespace installs `__newindex` on the `zene`
+	// table and lua_setfield takes the metamethod, so a plain lua_setfield here
+	// raised `No writable member 'apiSurface'` out of the script worker and
+	// aborted the process (SIGABRT) before a script ran. LuaBridge registers its
+	// own members with a raw write for the same reason. Do not "tidy" this.
 	lua_getglobal(L, "zene");
 	if (lua_istable(L, -1))
 	{
+		lua_pushstring(L, "apiSurface");
 		lua_pushcfunction(L, luaApiSurface);
-		lua_setfield(L, -2, "apiSurface");
+		lua_rawset(L, -3);
 	}
 	lua_pop(L, 1);
 }
@@ -335,7 +353,26 @@ LuaMixerChannel& LuaMixer::channel(int index) const
 
 LuaMixerChannel& LuaMixer::channelById(const QString& id) const
 {
-	return channel(control::idToIndex(id, QStringLiteral("ch-")));
+	ScriptDawBindings::syncForRead();
+	const int wanted = control::idToIndex(id, QStringLiteral("ch-"));
+	Mixer* mixer = liveMixer();
+	// BY ID, never by position: ch-<n> names the channel OBJECT (SPEC-stable-ids
+	// slice 2) - measured, the master is ch-1 and the first added channel ch-7.
+	// Passing the parsed number to channel() read it as a POSITION, so
+	// `mixer:channelById(channel:id())` answered an invalid view. The surface's
+	// resolveChannel looks it up the same way.
+	if (mixer != nullptr && wanted >= 0)
+	{
+		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+		{
+			MixerChannel* candidate = mixer->mixerChannel(i);
+			if (candidate != nullptr && candidate->id() == wanted)
+			{
+				return ScriptDawBindings::newMixerChannel(candidate);
+			}
+		}
+	}
+	return ScriptDawBindings::newMixerChannel(nullptr);
 }
 
 LuaMixerChannel& LuaMixer::master() const
@@ -365,8 +402,11 @@ int LuaMixerChannel::index() const
 
 QString LuaMixerChannel::id() const
 {
-	const int at = index();
-	return at < 0 ? QString() : control::channelId(at);
+	// The channel OBJECT's own id, the same number `mixer.get_state` publishes -
+	// not channelId(index). Measured on a live session: the master is ch-1 and
+	// the first added channel ch-7, so `mixer:channelById(channel:id())` used to
+	// be answered with an id no channel carries.
+	return m_channel == nullptr ? QString() : control::channelIdOf(m_channel);
 }
 
 QString LuaMixerChannel::name() const
@@ -421,9 +461,14 @@ AutomatableModel* LuaMixerChannel::soloModel() const
 	return m_channel == nullptr ? nullptr : &m_channel->m_soloModel;
 }
 
-EffectChain* LuaMixerChannel::chain() const
+LuaEffectChain& LuaMixerChannel::chain() const
 {
-	return m_channel == nullptr ? nullptr : &m_channel->m_fxChain;
+	// The Lua VIEW: lmms::EffectChain is not a registered class (the registered
+	// name "EffectChain" is LuaEffectChain), so the raw EffectChain* this used
+	// to return raised "The class is not registered in LuaBridge" and
+	// `channel:chain():effectCount()` was unreachable from a script.
+	ScriptDawBindings::syncForRead();
+	return ScriptDawBindings::newEffectChain(m_channel == nullptr ? nullptr : &m_channel->m_fxChain);
 }
 
 int LuaMixerChannel::sendCount() const
@@ -434,7 +479,9 @@ int LuaMixerChannel::sendCount() const
 QString LuaMixerChannel::sendTarget(int index) const
 {
 	if (m_channel == nullptr || index < 0 || index >= sendCount()) { return QString(); }
-	return control::channelId(m_channel->m_sends[index]->receiverIndex());
+	// The RECEIVER's own id - never channelId(receiverIndex()), which names a
+	// mixer POSITION, not the object's id the surface resolves.
+	return control::channelIdOf(m_channel->m_sends[index]->receiver());
 }
 
 float LuaMixerChannel::sendAmount(int index) const

@@ -263,8 +263,8 @@ void registerScaleCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("list");
 		cmd.description = QStringLiteral("Every scale this engine knows and the twelve keys, with "
 			"each scale's degrees (semitone offsets from the root), its pitch classes, its "
-			"twelve-character membership mask (index 0 = C, so \"101010110101\" is the major "
-			"scale) and its size. The vocabulary is ChordTable's own - 95 named entries, of which "
+			"twelve-character membership mask (index 0 = C, so \"101011010101\" is the major "
+			"scale: C D E F G A B, ChordTable's own scale row) and its size. The vocabulary is "
 			"the scales are the ones with more than six degrees; 'include_chords' adds the chord "
 			"entries too. 'root' (a key index 0..11 or a name such as \"C#\"/\"Db\") shifts every "
 			"pitch class and every mask; absent, the group's own context root answers. Read-only.");

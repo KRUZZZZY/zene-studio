@@ -256,7 +256,7 @@ private slots:
 		FloatModel* const gain = gainModel();
 		QVERIFY2(gain != nullptr, "the driven chain's 0..100 parameter was not found");
 		gain->setValue(kGainMaximum);
-		const QString channel = revtest::channelId(kChannel);
+		const QString channel = underTestChannel();  // the id the fixture's channel carries, not kChannel
 
 		const ControlResult state = revtest::run(QStringLiteral("rack.get_state"),
 			QJsonObject{{QStringLiteral("channel"), channel}});
@@ -316,7 +316,7 @@ private slots:
 	//! selection or a bind that cannot exist.
 	void theSurfaceRefusesWhatCannotExist()
 	{
-		const QString channel = revtest::channelId(kChannel);
+		const QString channel = underTestChannel();  // the id the fixture's channel carries, not kChannel
 
 		const ControlResult noChannel = revtest::run(QStringLiteral("rack.macro_add"),
 			{{QStringLiteral("channel"), QStringLiteral("ch-99")},

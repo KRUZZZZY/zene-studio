@@ -102,7 +102,11 @@ private slots:
 				{QStringLiteral("pitch"), 99999}});
 		QCOMPARE(bad.errorKind, ControlErrorKind::InvalidArgs);
 		bad = run(QStringLiteral("note.expression_get"),
-			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), QStringLiteral("note-9")}});
+			// An id no note carries. NOT "note-9": a note id is allocated from the
+			// project's counter (SPEC-stable-ids.md slice 2), so a small number is
+			// not "absent" - the fixture's own note happened to carry note-9 in
+			// this binary, and the slot read the wrong failure for it.
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), QStringLiteral("note-99999")}});
 		QCOMPARE(bad.errorKind, ControlErrorKind::NotFound);
 
 		// One undo takes the last set back - axis by axis, not the whole note.

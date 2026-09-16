@@ -96,6 +96,43 @@ constexpr int kChannel = 1;
 //! The rack chain the macros drive (1 = the first parallel chain).
 constexpr int kDrivenChain = 1;
 
+/*! The id the ENGINE gave the channel under test - MixerChannel::id(), asked of
+ *  the engine for the same object initRackFixture built.
+ *
+ *  NOT kChannel, and not the channel's index in the mixer. Since
+ *  SPEC-stable-ids.md slice 2 a `ch-<n>` id names the channel OBJECT and is
+ *  allocated from the project's id counter at creation, so a session's ids are
+ *  not its indexes: measured on the shipped binary, a fresh session's master
+ *  channel is ch-1 and the first channel `mixer.add_channel` creates is ch-7
+ *  (the counter also carries the hidden automation track's trk id and every
+ *  effect id). A fixture that addresses its channel as "ch-<kChannel>"
+ *  therefore names whichever channel happens to carry that number - the MASTER,
+ *  which is why every modulator route bound here was refused with "the rack has
+ *  no chain 1 (it has 1)". Read the id off the object, exactly as the engine's
+ *  own resolvers do - the same rule SampleAccurateAutomationTest's
+ *  channelIdOf() states.
+ *
+ *  -1 when the fixture's channel is not there (no engine, or a mixer that does
+ *  not reach kChannel): a caller then fails on a value no channel can carry
+ *  rather than on someone else's channel. */
+inline int underTestChannelId()
+{
+	Mixer* mixer = Engine::mixer();
+	if (mixer == nullptr || kChannel < 0 || kChannel >= static_cast<int>(mixer->numChannels()))
+	{
+		return -1;
+	}
+	MixerChannel* channel = mixer->mixerChannel(kChannel);
+	return channel != nullptr ? channel->id() : -1;
+}
+
+//! "ch-<id>" for the channel under test, or "" while the fixture is not up.
+inline QString underTestChannel()
+{
+	return underTestChannelId() < 0 ? QString()
+		: QStringLiteral("ch-") + QString::number(underTestChannelId());
+}
+
 class RackParamControls : public EffectControls
 {
 public:

@@ -275,7 +275,7 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("mixer.remove_channel");
 		cmd.group = QStringLiteral("mixer");
 		cmd.verb = QStringLiteral("remove_channel");
-		cmd.description = QStringLiteral("Delete a channel (master ch-0 is refused).");
+		cmd.description = QStringLiteral("Delete a channel (the master channel is refused).");
 		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("channel"), stringProperty()}}, {QStringLiteral("channel")});
 		cmd.resultSchema = objectSchema({
