@@ -866,6 +866,19 @@ the post-alpha merges and 141 at `a4fe66c4f` — see `docs/CONVENTIONS.md`); an 
 `ScriptEngine::applyCommand`'s figure and does not describe the current tree. Baselines can only be moved deliberately now: `--reanchor "reason"` (an unrecorded re-anchor
 is refused with exit 2).
 
+**Re-measured on the wave-10 merged tip (2026-09-16, `release/0.3.0`):** `bash
+tests/complexity-gate.sh --check` → **EXIT=1**, `6005 functions in the fork scope; 77 exceed
+CCN 10`, **57 REGRESSION lines** and 3 improved lines (`HostedPlugin::process` in the CLAP and
+VST3 hosts, `WasmWorker::run`). **No one of the 57 names a path any wave-10 lane touched** —
+the files are the dawproject/import-detection/session/golden-audio/`tests/control-*.py` set the
+2026-09-15 fix-up list already carries (`dawProjectXmlFromModel` CCN 42, `parseDocument` 41,
+`dawProjectZipRead` 36, `applyDawProjectModel` 33, `check_result` 31, …), so there is no new
+line to dispose of and no re-anchor was taken. The CLAP lane's own contribution IMPROVED its
+function: `HostedPlugin::load` was CCN 31 at the base and 28 here, because the note-port scan is
+an `Impl::scanNotePorts()` member rather than inline. Both new Python programmes (the rt-safety
+four files and the CLAP-free helpers) are CCN ≤ 10, which is what let them be registered without
+moving a baseline.
+
 ## Gate 5: Mutation testing (`mutation-gate.sh`) — WIRED 2026-09-09
 
 The ruleset target is **>= 80% kill score on core modules**. No packaged C++
@@ -1234,6 +1247,22 @@ The nine pre-existing entries are unchanged, and any *other* new fork file over 
 `file-length-gate.sh --check` → EXIT=0 afterwards, `--check --scope tools` and
 `--check --scope all` are untouched by this change.
 
+**Re-measured on the wave-10 merged tip (2026-09-16, `release/0.3.0`):** `bash
+tests/file-length-gate.sh` → **EXIT=1**, `642 fork-scope sources measured; 21 exceed 500 lines`,
+12 REGRESSION lines and 1 improved line — **the same 12-path set the gate reported at
+`d7a402041`**, so no line is new. Eleven of the twelve are byte-for-byte the same size as at the
+base; three moved, all three by wave-10 work, and none of them is a widened scope:
+
+| path | base | tip | class |
+|---|---|---|---|
+| `plugins/ClapEffect/ClapHost.cpp` | 890 (baseline 953) | **1158** | the CLAP note path; the one TRACKED growth (`grew 953 -> 1158`). KNOWN and assigned to the fix-up pass — the honest fix is splitting the note path and the `Impl` note state into their own TU, **not** a re-anchor |
+| `include/ControlRegistryGroups.h` | 671 (already over the cap) | 684 | the CLAP instrument group's ONE declaration block, the file LANE-BRIEF §5 designates for a new group |
+| `include/ControlReversibility.h` | 518 (already over the cap) | 528 | the one `reversibilityClapInstrumentRowTable` declaration |
+
+No `--reanchor-file` was taken for any of the three: the first is the fix-up pass's, and the two
+headers were already red lines at the base (their class is unchanged, and re-anchoring them would
+entrench an over-cap file instead of splitting it). The `tools` scope stays EXIT=0.
+
 ## Gate 8: Token duplication (`duplication-gate.sh`) — 2026-09-09
 
 Source: the adopted code-quality ruleset requires "token duplication < 5% (jscpd)". The
@@ -1492,6 +1521,18 @@ macro or include**; it checks **no cost, no syscall and no I/O** and no lock-fre
 proof that it runs on the audio thread); and its declared frontier is the **render
 thread**, not the capture thread (whose own paths carry their runtime probes).
 
+
+**Re-measured on the wave-10 merged tip (2026-09-16, `release/0.3.0`):** `python3
+tests/rt-safety-sweep.py --check` → **EXIT=0**, and the four wave-10 merges moved **no digit**:
+`27 declared path:symbol pair(s)`, `918 region line(s); 4 hit(s) in 3 key(s)`, `3 line(s)
+allowlisted, 0 key(s) fresh` — the same figures the lane measured on its own branch, because
+none of the merged lanes adds an allocating/locking/growing construct to a declared path. The
+new CLAP instrument module (`plugins/ClapInstrument/ClapInstrument.cpp`) and the note ring
+(`plugins/ClapEffect/ClapNoteQueue.h`) are deliberately **not** in the declared scope — the
+scope is declared, not discovered, and `RtSafetySelfTest`'s BOUND control asserts exactly that
+silence; widening the frontier is a one-line act with a reason (see the lane report's next
+action), not something a merge may do silently. As ctests, both run and pass on the merged tip:
+`ctest -R RtSafety` → `2/2 Passed`, EXIT=0.
 
 ## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
 
