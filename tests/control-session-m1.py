@@ -53,6 +53,7 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -104,6 +105,36 @@ def sha256_of(path):
             return hashlib.sha256(handle.read()).hexdigest()
     except OSError:
         return ""
+
+
+def source_commit():
+    """The revision of the tree this file lives in, with its dirty state.
+
+    Best effort on purpose. The binary's sha256 says WHICH BINARY passed, not
+    which source it was built from - a reader who wants to reproduce the run
+    needs the revision too. But the ctest may run in a build tree that is a git
+    checkout or an unpacked tarball, and a transcript that refuses to be written
+    because `git` is absent or the directory is not a repository would be a
+    worse proof than one that says so.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        head = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=30)
+        if head.returncode != 0 or not head.stdout.strip():
+            return "unknown (not a git checkout)"
+        revision = head.stdout.strip()
+        # Tracked modifications only: the build tree is gitignored, so its
+        # thousands of files are not a statement about the source.
+        dirty = subprocess.run(["git", "-C", root, "status", "--porcelain",
+                                "--untracked-files=no"],
+                               capture_output=True, text=True, timeout=30)
+        changed = [line for line in dirty.stdout.splitlines() if line.strip()]
+    except (OSError, subprocess.SubprocessError):
+        return "unknown (git unavailable)"
+    if not changed:
+        return revision
+    return "%s (worktree dirty: %d tracked path(s) modified)" % (revision, len(changed))
 
 
 def session_block(text):
@@ -372,6 +403,7 @@ class Milestone:
         self.evidence.section("Zene Studio 0.3.0-alpha - Session View milestone M1")
         self.finding("binary", self.binary)
         self.finding("binary sha256", sha256_of(self.binary))
+        self.finding("source commit", source_commit())
         self.finding("claim", "a saved project launches 4 clips across 2 scenes in sync at the "
                               "next bar, driven end to end through --control-socket")
         self.instance = H.start_instance(self.binary)
