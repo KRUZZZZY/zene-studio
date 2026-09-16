@@ -278,6 +278,7 @@ lmms::AudioAlsa::setHWParams@src/core/audio/AudioAlsa.cpp	12
 lmms::automationRampGet@src/core/ControlCommandsAutomationRamp.cpp	12
 lmms::sessionrecord::landPairEvents@src/core/ControlCommandsSessionRecordInternal.h	12
 lmms::handleRenderOffline@src/core/ControlCommandsWasmRender.cpp	12
+lmms::control::addressableParameterForModel@src/core/ControlAutomationSupport.cpp	12
 AmpV::one_cycle@plugins/LadspaEffect/caps/Amp.cc	11
 AudioBufferTest::CrossProcess_TwoProcessesWithSameSharedMemory@tests/src/core/AudioBufferTest.cpp	11
 lmms::AudioOss::AudioOss@src/core/audio/AudioOss.cpp	11
