@@ -25,7 +25,11 @@ an anti-drift test (`tests/src/core/ReversibilityContractTest.cpp`) can compare 
 registry in both directions: every registered command has a row, and every row names a registered
 command.
 
-The wire names are `true_inverse`, `snapshot`, `irreversible` and `not_mutating`. **Re-measured on the
+The wire names are `true_inverse`, `snapshot`, `irreversible` and `not_mutating`. This page is the
+CONTRACT's argument; the table's SIZE is published in exactly one place - the `A16-HISTOGRAM` block in
+`docs/RELEASE-NOTES-v0.3.0-alpha.md`, which the registered ctest re-checks against the live table on
+every run (board card #677). The measurement below is the one this lane took of its own tree and is kept
+as that record, not as the release's figure. **Re-measured on the
 `030/w11-undo-depth` tree (2026-09-13, base `8effd96ae`): 111 commands are registered and the table has
 111 rows, one per command** — 108 at the base plus the three this lane adds (`control.undo_depth`,
 `control.set_undo_depth`, `control.set_undo_coalescing`, §10). The counts in the original version of

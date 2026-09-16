@@ -498,6 +498,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Test fixtures (stub ONNX model) and the reference CLI path.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LMMS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+	# The A16 contract table's histogram is a SELF-CHECKING derivation (board card
+	# #677): ReversibilityContractTest::theTableHistogramIsTheDocumentedOne() reads
+	# the ONE published figure straight out of the release notes and fails when the
+	# table and it disagree, so neither can go stale alone. The path is passed the
+	# same way LMMS_TEST_DATA_DIR is; the test runs from build/tests, so it must be
+	# absolute. No other test target gets it.
+	if(LMMS_TEST_NAME STREQUAL "ReversibilityContractTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			A16_HISTOGRAM_DOC="${CMAKE_SOURCE_DIR}/docs/RELEASE-NOTES-v0.3.0-alpha.md")
+	endif()
 	IF(LMMS_HAVE_STEM_SPLIT)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_STEM_CLI_DEFAULT="${CMAKE_SOURCE_DIR}/tools/stem_split_cli.py")

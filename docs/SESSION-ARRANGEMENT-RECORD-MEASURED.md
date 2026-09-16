@@ -54,6 +54,9 @@ The run above MEASURED the contract table rather than assuming it (this is the a
 that failed first and the value the constant now carries):
 
   the table has 306 rows (telemetry client in, no wasmtime, WANT_SESSION_VIEW=ON)
+  -> THIS LANE'S OWN MEASUREMENT of its own tree (2026-09-15), kept as that record: the
+     release's figure - and the only one in circulation - is the A16-HISTOGRAM block in
+     docs/RELEASE-NOTES-v0.3.0-alpha.md, which the registered ctest re-checks on every run
   the table's classes measure 154 true_inverse, 26 snapshot, 7 irreversible, 119 not_mutating
   -> documentedHistogram() base (telemetry out, wasm out): 304 / 154 / 26 / 7 / 117
 

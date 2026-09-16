@@ -47,6 +47,8 @@
 #include <QCoreApplication>
 #include <QHash>
 #include <QString>
+#include <QStringList>
+#include <QVector>
 
 #include <functional>
 
@@ -111,6 +113,32 @@ void printBlock(const char* name, const ReversibilityRow* rows, int rowCount)
 		name, rowCount, trueInverse, snapshot, irreversible, notMutating);
 }
 
+//! The commands declared MORE THAN ONCE across the blocks, sorted. Each block is
+//! a raw literal array, so the same command in two of them is two declarations
+//! and - because the constructor inserts into one keyed map - ONE entry: the
+//! difference is the duplicate count, and until 2026-09-16 it was a hand-kept
+//! note (24 rows in the live block, retired by board card #677) rather than a
+//! measured invariant. Named here so the count can be a refusal and not a
+//! number a reader has to remember.
+QStringList declaredTwice(const QVector<QPair<const ReversibilityRow*, int>>& blocks)
+{
+	QHash<QString, int> declarations;
+	for (const QPair<const ReversibilityRow*, int>& block : blocks)
+	{
+		for (int index = 0; index < block.second; index++)
+		{
+			++declarations[QString::fromUtf8(block.first[index].command)];
+		}
+	}
+	QStringList duplicates;
+	for (auto it = declarations.constBegin(); it != declarations.constEnd(); ++it)
+	{
+		if (it.value() > 1) { duplicates.append(it.key()); }
+	}
+	duplicates.sort();
+	return duplicates;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -162,6 +190,24 @@ int main(int argc, char** argv)
 	std::printf("MEASURED rows=%d true_inverse=%d snapshot=%d irreversible=%d not_mutating=%d\n",
 		static_cast<int>(entries.size()), trueInverse, snapshot, irreversible, notMutating);
 
+	// The table's integrity derivation, and the reason this probe is worth
+	// running before quoting the line above: the four blocks are RAW literal
+	// arrays, the constructor inserts them into ONE keyed map, and a command
+	// declared in two blocks is one entry - so a duplicate is invisible in every
+	// figure above and visible only as declared > entries. It is a refusal
+	// (exit 1) rather than a footnote, because the count of these was a hand-kept
+	// note for three waves ("24 pre-existing cross-file duplicates").
+	const QVector<QPair<const ReversibilityRow*, int>> blocks = {
+		{rows, joined}, {snapshotRows, snapshots}, {passiveRows, passive}, {stemRows, stems}};
+	const QStringList duplicates = declaredTwice(blocks);
+	const int declared = joined + snapshots + passive + stems;
+	std::printf("DECLARED rows=%d entries=%d duplicates=%d\n", declared,
+		static_cast<int>(entries.size()), static_cast<int>(duplicates.size()));
+	for (const QString& duplicate : duplicates)
+	{
+		std::printf("  DECLARED TWICE: %s\n", qPrintable(duplicate));
+	}
+
 	for (int index = 0; index < joined; index++)
 	{
 		const QString command = QString::fromUtf8(rows[index].command);
@@ -171,5 +217,7 @@ int main(int argc, char** argv)
 				static_cast<int>(rows[index].cls), rows[index].reversible ? 1 : 0);
 		}
 	}
-	return entries.isEmpty() ? 1 : 0;
+	// 1 = the probe could not measure a table (nothing declared), or the table
+	// declares a command twice: either way the figures above must not be quoted.
+	return (entries.isEmpty() || !duplicates.isEmpty()) ? 1 : 0;
 }
