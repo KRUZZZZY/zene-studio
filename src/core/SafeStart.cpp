@@ -171,7 +171,15 @@ SessionRecord parseMarker(const std::string& text)
 				if (key == "pid") { record.processId = std::stoull(value); }
 				else if (key == "time_unix") { record.unixTime = std::stoull(value); }
 				else if (key == "safe_start_runs") { record.safeStartRuns = std::stoull(value); }
-				else if (key == "project") { record.projectPath = value; }
+				// Bounded HERE, not only when the marker is written: the file
+				// on disk is not necessarily one this build wrote (an older
+				// build, a packager's wrapper, a hand-edited marker), and
+				// SessionRecord promises strings bounded on read as well as on
+				// write (include/SafeStart.h). Measured by
+				// SafeStartTest::boundsTheMarkerCannotExceedItsCap, which
+				// plants an 8 KiB project= line: readMarker()'s byte cap alone
+				// still admitted a hint larger than kMaxProjectPathBytes.
+				else if (key == "project") { record.projectPath = bounded(value, kMaxProjectPathBytes); }
 			}
 			catch (const std::exception&)
 			{

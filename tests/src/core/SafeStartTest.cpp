@@ -193,9 +193,25 @@ private slots:
 		QVERIFY2(!previousRunExitedCleanly(),
 			"a signal death must leave the marker, so the next launch can tell it from a quit");
 		QVERIFY2(safeStartActive(), "the launch after a crash must start safe");
-		QCOMPARE(safeStartRunCount(), 1ULL);
 		const SessionRecord previous = lastSession();
 		QVERIFY2(previous.present, "the marker's own record must be readable");
+		// The count is "How many consecutive sessions have started safe; 1 for
+		// the first" (include/SafeStart.h), counted by the engine as
+		// previous.safeStartRuns + 1 whenever a session starts over an
+		// unacknowledged marker. The sequence THIS test builds is:
+		//   1. the parent's session  - idle working directory, runs 0, normal;
+		//   2. the child's session   - starts over the parent's marker, so the
+		//                              engine counts it as safe start 1, and
+		//                              then dies by SIGSEGV;
+		//   3. this session          - starts over the child's marker, safe
+		//                              start 2.
+		// The child HAS to run beginSession() to write its own pid into the
+		// marker (the assertion below), and that is exactly what makes it a
+		// safe start - so 2 consecutive safe starts is the engine's own
+		// answer, and 1 would describe a sequence where the crashing session
+		// started with no marker on disk at all.
+		QCOMPARE(safeStartRunCount(), previous.safeStartRuns + 1);
+		QCOMPARE(safeStartRunCount(), 2ULL);
 		QVERIFY2(previous.processId == static_cast<unsigned long long>(pid),
 			"the record must be the CRASHED session's, not a leftover of the test process");
 		QCOMPARE(QString::fromStdString(previous.projectPath), QString::fromStdString(project));
@@ -346,9 +362,22 @@ private slots:
 		QVERIFY2(!isThirdPartyPluginFile(""),
 			"an empty path is not third-party: a plugin that resolved to no file at all is the "
 			"missing-plugin case Plugin::instantiate already handles");
-		// The component-wise rule: a SIBLING with a shared prefix is not inside.
-		QVERIFY2(isThirdPartyPluginFile(own + "/sibling/libtripleoscillator.so"),
-			"a subdirectory of an own directory is not itself an own directory");
+		// The component-wise rule. A SIBLING whose name merely starts with the
+		// own directory's name is not inside it ("/a/lib" does not own
+		// "/a/lib-sibling/x.so"), which a bare startsWith() on the directory
+		// string would get wrong.
+		QVERIFY2(isThirdPartyPluginFile(own + "-sibling/libtripleoscillator.so"),
+			"a sibling directory with a shared name prefix is not inside an own directory");
+		// And a file in a SUBdirectory of an own directory IS under it, so it
+		// is not third-party: "A plugin file under one of these is a file this
+		// build ships" (the ownPluginDirectories() comment above), which is the
+		// rule the predicate is built on - a directory rule, not a file list.
+		// (The factory's own discovery scan is flat - PluginFactory.cpp reads
+		// each search path with QDir::entryInfoList - so such a file is not
+		// reachable through the search paths either way; the tree rule is what
+		// the absence of a per-file list has to mean.)
+		QVERIFY2(!isThirdPartyPluginFile(own + "/subdir/libtripleoscillator.so"),
+			"a module under an own plugin directory is a file this build ships");
 
 		if (saved.isEmpty()) { qunsetenv("LMMS_PLUGIN_DIR"); }
 		else { qputenv("LMMS_PLUGIN_DIR", saved); }
