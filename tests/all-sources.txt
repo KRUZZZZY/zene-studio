@@ -1054,6 +1054,7 @@ src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsOutOfProcess.cpp
 src/core/ControlCommandsOutOfProcessEdit.cpp
 src/core/ControlCommandsOutOfProcessShared.h
+src/core/ControlCommandsOutOfProcessSupport.cpp
 src/core/ControlCommandsPatcher.cpp
 src/core/ControlCommandsPatcherEdit.cpp
 src/core/ControlCommandsPatcherShared.h
@@ -1640,6 +1641,8 @@ tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp
+tests/src/core/OutOfProcessHostClientLoopTest.cpp
+tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PatcherCommandsTest.cpp
 tests/src/core/PdcMixerTest.cpp
