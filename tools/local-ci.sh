@@ -217,6 +217,34 @@ elif [ "$MODE" = "configure-only" ]; then
 	echo "--- [2/3] build skipped (--configure-only) ---"
 fi
 
+# --- the vendored wasmtime C API, for the ctest step -------------------------
+# build/zene has NO rpath. `src/CMakeLists.txt` sets CMAKE_BUILD_WITH_INSTALL_RPATH TRUE
+# (upstream, so the build tree uses the install rpath for non-standard Qt prefixes) and
+# CMake IGNORES BUILD_RPATH under it - verified with a six-line CMake project that emitted
+# no RUNPATH. A build made with the C API on the find path therefore links libwasmtime.so
+# with nothing to find it at run time: `env -u LD_LIBRARY_PATH build/zene --version`
+# answers "error while loading shared libraries: libwasmtime.so" (exit 127). The CI job
+# never fetches wasmtime (FindWasmtime then degrades WANT_WASM to OFF), so this is a
+# LOCAL-runner trap only, and an unexported bar reports a red suite the CI job cannot see
+# (the wave-9 trains measured 11/13 vs 7/13 proof results on exactly this). The directory
+# is resolved from the tree; when it is absent (a build without the vendored C API) the
+# variable stays empty and nothing is exported.
+WASMTIME_CANDIDATES=("$REPO_ROOT/third_party/wasmtime/lib"
+	"$(cd "$BUILD_DIR" 2>/dev/null && pwd || echo "$BUILD_DIR")/../third_party/wasmtime/lib")
+if [ -n "${WASMTIME_ROOT:-}" ]; then
+	WASMTIME_CANDIDATES=("$WASMTIME_ROOT/lib" "${WASMTIME_CANDIDATES[@]}")
+fi
+WASMTIME_LIB_DIR=""
+for _candidate in "${WASMTIME_CANDIDATES[@]}"; do
+	if [ -d "$_candidate" ] && ls "$_candidate"/libwasmtime.* > /dev/null 2>&1; then
+		WASMTIME_LIB_DIR="$(cd "$_candidate" && pwd)"
+		break
+	fi
+done
+if [ -n "$WASMTIME_LIB_DIR" ]; then
+	DEVIATIONS+=("LD_LIBRARY_PATH=$WASMTIME_LIB_DIR for the ctest step: the build tree has no rpath for the vendored libwasmtime.so (CI never fetches wasmtime, so no CI binary carries that NEEDED entry)")
+fi
+
 # --- step 3: ctest from <build>/tests (never from the top level) ------------
 if [ "$OVERALL" -eq 0 ] && [ "$MODE" != "configure-only" ]; then
 	if [ ! -f "$BUILD_DIR/tests/CTestTestfile.cmake" ]; then
@@ -225,8 +253,14 @@ if [ "$OVERALL" -eq 0 ] && [ "$MODE" != "configure-only" ]; then
 		OVERALL=1
 	else
 		echo "--- [3/3] ctest (from $BUILD_DIR/tests, -j$CTEST_JOBS) ---"
+		if [ -n "$WASMTIME_LIB_DIR" ]; then
+			echo "    LD_LIBRARY_PATH=$WASMTIME_LIB_DIR (vendored wasmtime C API; see the note above)"
+		fi
 		(
 			cd "$BUILD_DIR/tests" || exit 2
+			if [ -n "$WASMTIME_LIB_DIR" ]; then
+				export LD_LIBRARY_PATH="$WASMTIME_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+			fi
 			ctest --output-on-failure -j "$CTEST_JOBS"
 		) > "$BUILD_DIR/ctest.log" 2>&1
 		RC_CTEST=$?

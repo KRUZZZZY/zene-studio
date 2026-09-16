@@ -1,14 +1,23 @@
 # per-file line-count baseline (files over 500 lines only)
 # maintained by tests/file-length-gate.sh; do not edit by hand
 src/core/ScriptBindings.cpp	1174
+plugins/ClapEffect/ClapHost.cpp	1158
 include/AudioPorts.h	992
-plugins/ClapEffect/ClapHost.cpp	953
+plugins/Vst3Effect/Vst3Host.cpp	891
 src/core/ScriptEngine.cpp	880
-plugins/Vst3Effect/Vst3Host.cpp	800
+include/ControlRegistryGroups.h	684
 src/wasm/WasmSandbox.cpp	597
 tests/control-socket-path-safety.py	574
 src/core/CrashReporter.cpp	564
 src/core/AudioPortsModel.cpp	549
+tests/control-stable-ids-slice2.py	549
 src/gui/PinConnector.cpp	529
-tests/control_socket_harness.py	511
+include/ControlReversibility.h	528
+src/core/ControlReversibilityTablePassive.cpp	518
+src/core/ControlCommandsNotes.cpp	512
+tests/control_socket_harness.py	512
 tests/src/tracks/SampleClipWindowTest.cpp	511
+src/core/ControlCommandsProject.cpp	510
+src/core/ControlCommandsWarpEdit.cpp	510
+include/ControlRegistry.h	509
+tests/src/core/ControlRegistryTest.cpp	505
