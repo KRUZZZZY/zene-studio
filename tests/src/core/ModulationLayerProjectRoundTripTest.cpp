@@ -70,6 +70,16 @@ using namespace modtest;
 namespace
 {
 
+//! The song's authored layer - the value the surface edits and the project
+//! file carries. The same accessor ControlModulatorCommandsTest uses; it is not
+//! in ModulationTestSupport.h because that header carries what several files
+//! share, and this is two lines.
+ModulationLayer& layer()
+{
+	return Engine::getSong()->modulationLayer().layer();
+}
+
+
 QString readText( const QString& path )
 {
 	QFile file( path );
