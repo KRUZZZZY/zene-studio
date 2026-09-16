@@ -335,6 +335,7 @@ include/NoteTransform.h
 include/Oscillator.h
 include/OscillatorConstants.h
 include/Oscilloscope.h
+include/OutOfProcessHosting.h
 include/OutputSettings.h
 include/OversamplingHelpers.h
 include/PatchWiring.h
@@ -1050,6 +1051,9 @@ src/core/ControlCommandsNoteRandom.cpp
 src/core/ControlCommandsNoteSlide.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsOutOfProcess.cpp
+src/core/ControlCommandsOutOfProcessEdit.cpp
+src/core/ControlCommandsOutOfProcessShared.h
 src/core/ControlCommandsPatcher.cpp
 src/core/ControlCommandsPatcherEdit.cpp
 src/core/ControlCommandsPatcherShared.h
@@ -1156,6 +1160,7 @@ src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableMidiReconnect.cpp
 src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
+src/core/ControlReversibilityTableOutOfProcess.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp
 src/core/ControlReversibilityTableRevisions.cpp
@@ -1258,6 +1263,7 @@ src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/Oscillator.cpp
+src/core/OutOfProcessHosting.cpp
 src/core/PatchWiring.cpp
 src/core/PathUtil.cpp
 src/core/PatternClip.cpp
@@ -1634,6 +1640,7 @@ tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp
+tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PatcherCommandsTest.cpp
 tests/src/core/PdcMixerTest.cpp
 tests/src/core/PhaseDMixerTestSupport.h

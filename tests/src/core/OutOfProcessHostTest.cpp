@@ -548,11 +548,12 @@ private slots:
 		QVERIFY2(!HostTracker::instance().refusedByCrashLoop(QString::fromLatin1(ZynClient), nullptr),
 			"reset_crashes did not lift the refusal");
 
-		const ControlResult hostedAgain = registry->invoke(QStringLiteral("oop.set_mode"), QJsonObject{
-			{QStringLiteral("target"), target},
-			{QStringLiteral("plugin"), QStringLiteral("inst")},
-			{QStringLiteral("mode"), QStringLiteral("separate-process")}});
+		// oop.restart is the verb the refusal blocked, and it is allowed again.
+		// (oop.set_mode would answer ok with changed=false here: the mode is
+		// already separate-process, which is exactly the semantic it declares.)
+		const ControlResult hostedAgain = registry->invoke(QStringLiteral("oop.restart"), address);
 		QVERIFY2(hostedAgain.ok, qPrintable(hostedAgain.errorMessage));
+		QCOMPARE(hostedAgain.result.value(QStringLiteral("restarted")).toBool(), true);
 		QTRY_VERIFY_WITH_TIMEOUT(liveClientPid(registry, address) > 0, 15000);
 		qInfo("after oop.reset_crashes the slot is drivable again: client pid %lld",
 			static_cast<long long>(liveClientPid(registry, address)));
