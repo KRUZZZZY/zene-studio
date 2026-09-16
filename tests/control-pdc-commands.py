@@ -166,6 +166,17 @@ def check_baseline(session, recorder):
         H.fail("pdc.report returned no channels: %r" % report, None, None)
     master = channels_of(report)[0]
     sidechain = report.get("sidechain") or {}
+    baseline_master_flags(recorder, master)
+    baseline_fresh_mixer(recorder, report)
+    baseline_channel_count(recorder, report)
+    baseline_sidechain(recorder, sidechain)
+
+
+# One report-area per helper: the four checks together carried eleven branch
+# points, and the gate's budget counts a function's boolean operators. Same
+# checks, same order, same messages as the single-function form.
+def baseline_master_flags(recorder, master):
+    """The master is whatever the counter allocated, and it says so."""
     # The master's ID IS NOT PREDICTED, it is read: an id is allocated at
     # construction from the project's counter (SPEC-stable-ids.md slice 2/4.2 -
     # "it never parses, derives, or predicts an id"), so the master is ch-<n>
@@ -176,6 +187,10 @@ def check_baseline(session, recorder):
                    master.get("is_master") is True and master.get("is_bus") is False
                    and str(master.get("id") or "").startswith("ch-"),
                    "master=%r" % master)
+
+
+def baseline_fresh_mixer(recorder, report):
+    """Zero latency, an unclamped delay line, the engine's own capacity."""
     recorder.check("a fresh mixer publishes zero latency and no clamp",
                    report.get("total_latency_frames") == 0
                    and report.get("delay_line_capacity_frames") == DELAY_LINE_CAPACITY
@@ -184,9 +199,17 @@ def check_baseline(session, recorder):
                    % (report.get("total_latency_frames"),
                       report.get("delay_line_capacity_frames"),
                       report.get("delay_line_clamped")))
+
+
+def baseline_channel_count(recorder, report):
+    """channel_count agrees with the channel list."""
     recorder.check("channel_count agrees with the channel list",
                    report.get("channel_count") == len(channels_of(report)),
                    "count=%r list=%r" % (report.get("channel_count"), len(channels_of(report))))
+
+
+def baseline_sidechain(recorder, sidechain):
+    """Sidechain routing exists with its four named tap points."""
     recorder.check("sidechain routing EXISTS and its four tap points are named",
                    sidechain.get("supported") is True and sidechain.get("count") == 0
                    and tuple(sidechain.get("tap_points") or ()) == TAP_POINTS,

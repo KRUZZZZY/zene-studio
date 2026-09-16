@@ -117,29 +117,13 @@ private slots:
 			"executable, so their import descriptor names zene.exe - see AudioPluginTest.cpp), and "
 			"::kill is not available: the client loop is UNEXERCISED by this run");
 #else
-		const QString module = zynModulePath();
-		const QString client = zynClientPath();
-		if (module.isEmpty() || !QFile::exists(module) || client.isEmpty() || !QFile::exists(client))
+		// The load path and its two QSKIP reasons live in the helper above, so
+		// this case carries the loop rather than the preamble.
+		std::unique_ptr<InstrumentTrack> track;
+		const QString skipReason = loadZynClientOrSkipReason(&track);
+		if (!skipReason.isEmpty())
 		{
-			QSKIP("this build has no ZynAddSubFx module or no RemoteZynAddSubFx client: the "
-				"out-of-process loop through the surface is UNEXERCISED by this run");
-		}
-
-		// RemotePlugin::init() resolves the client through the "plugins:" search
-		// path, so the build's plugin directory is where the client is found.
-		qputenv("LMMS_PLUGIN_DIR", QFileInfo{client}.absolutePath().toUtf8());
-
-		// The REAL load path (PluginFactory -> the module's descriptor), the same
-		// one a project load takes, because this case has to end up with an
-		// instrument the track's own `inst` address resolves to.
-		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
-		track->loadInstrument(QStringLiteral("zynaddsubfx"));
-		Instrument* instrument = track->instrument();
-		if (instrument == nullptr
-			|| QLatin1String(instrument->descriptor()->name) != QLatin1String("zynaddsubfx"))
-		{
-			QSKIP("the ZynAddSubFx module could not be loaded into this test host: the "
-				"out-of-process loop through the surface is UNEXERCISED by this run");
+			QSKIP(qPrintable(skipReason));
 		}
 
 		ControlRegistry* registry = ControlRegistry::instance();
@@ -166,24 +150,7 @@ private slots:
 			static_cast<long long>(QCoreApplication::applicationPid()));
 
 		// --- kill it once per crash the bound allows -----------------------
-		const int bound = HostTracker::maxCrashesPerClient();
-		qint64 pid = firstPid;
-		for (int round = 1; round <= bound; ++round)
-		{
-			killAndCount(registry, address, pid, round);
-			if (round == bound) { break; }
-
-			// oop.restart through the surface, and the new pid it produced. The
-			// assertions stay in this slot: QVERIFY/QCOMPARE expand to a bare
-			// `return;`, which a helper returning qint64 cannot compile.
-			const ControlResult restarted = registry->invoke(QStringLiteral("oop.restart"), address);
-			QVERIFY2(restarted.ok, qPrintable(restarted.errorMessage));
-			QCOMPARE(restarted.result.value(QStringLiteral("restarted")).toBool(), true);
-			QTRY_VERIFY_WITH_TIMEOUT(liveClientPid(registry, address) > 0, 15000);
-			const qint64 next = liveClientPid(registry, address);
-			QVERIFY2(next != 0 && next != pid, "the restart did not produce a new client pid");
-			pid = next;
-		}
+		killThroughTheBoundAndRestart(registry, address, firstPid);
 
 		// --- the bound: the path is refused, typed -------------------------
 		QString refusal;
@@ -247,6 +214,63 @@ private:
 			expectedAtLeast, static_cast<long long>(pid));
 	}
 
+#endif
+
+#ifndef Q_OS_WIN
+	//! Kill the client once per crash the bound allows, restarting through the
+	//! surface between the deaths and asserting each new pid. Split out of the
+	//! case so the case carries the story and this one carries the loop.
+	void killThroughTheBoundAndRestart(ControlRegistry* registry, const QJsonObject& address,
+		qint64 firstPid)
+	{
+		const int bound = HostTracker::maxCrashesPerClient();
+		qint64 pid = firstPid;
+		for (int round = 1; round <= bound; ++round)
+		{
+			killAndCount(registry, address, pid, round);
+			if (round == bound) { break; }
+
+			const ControlResult restarted = registry->invoke(QStringLiteral("oop.restart"), address);
+			QVERIFY2(restarted.ok, qPrintable(restarted.errorMessage));
+			QCOMPARE(restarted.result.value(QStringLiteral("restarted")).toBool(), true);
+			QTRY_VERIFY_WITH_TIMEOUT(liveClientPid(registry, address) > 0, 15000);
+			const qint64 next = liveClientPid(registry, address);
+			QVERIFY2(next != 0 && next != pid, "the restart did not produce a new client pid");
+			pid = next;
+		}
+	}
+
+	//! Empty when the closed loop can run; otherwise the QSKIP the case makes.
+	//! Split out of the case for the same reason killAndCount was.
+	QString loadZynClientOrSkipReason(std::unique_ptr<InstrumentTrack>* trackOut)
+	{
+		const QString module = zynModulePath();
+		const QString client = zynClientPath();
+		if (module.isEmpty() || !QFile::exists(module) || client.isEmpty() || !QFile::exists(client))
+		{
+			return QStringLiteral("this build has no ZynAddSubFx module or no RemoteZynAddSubFx client: the "
+				"out-of-process loop through the surface is UNEXERCISED by this run");
+		}
+
+		// RemotePlugin::init() resolves the client through the "plugins:" search
+		// path, so the build's plugin directory is where the client is found.
+		qputenv("LMMS_PLUGIN_DIR", QFileInfo{client}.absolutePath().toUtf8());
+
+		// The REAL load path (PluginFactory -> the module's descriptor), the same
+		// one a project load takes, because this case has to end up with an
+		// instrument the track's own `inst` address resolves to.
+		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
+		track->loadInstrument(QStringLiteral("zynaddsubfx"));
+		Instrument* instrument = track->instrument();
+		if (instrument == nullptr
+			|| QLatin1String(instrument->descriptor()->name) != QLatin1String("zynaddsubfx"))
+		{
+			return QStringLiteral("the ZynAddSubFx module could not be loaded into this test host: the "
+				"out-of-process loop through the surface is UNEXERCISED by this run");
+		}
+		*trackOut = std::move(track);
+		return QString();
+	}
 #endif
 
 	bool m_engineInitialised = false;
