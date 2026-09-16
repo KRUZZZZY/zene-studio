@@ -1577,6 +1577,7 @@ tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
+tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp
 tests/src/core/ControlVcaEditGroupsTest.cpp
@@ -1609,6 +1610,7 @@ tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
+tests/src/core/ModulationLayerProjectRoundTripTest.cpp
 tests/src/core/ModulationLayerTest.cpp
 tests/src/core/ModulationLayerValueTest.cpp
 tests/src/core/ModulationTestSupport.h
