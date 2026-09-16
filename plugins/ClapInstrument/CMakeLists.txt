@@ -38,6 +38,9 @@ SET(LMMS_CLAP_INSTRUMENT_SOURCES
 	ClapInstrumentView.cpp
 	${LMMS_CLAP_HOST_DIR}/ClapBusMap.cpp
 	${LMMS_CLAP_HOST_DIR}/ClapHost.cpp
+	${LMMS_CLAP_HOST_DIR}/ClapHostLifecycle.cpp
+	${LMMS_CLAP_HOST_DIR}/ClapHostNotes.cpp
+	${LMMS_CLAP_HOST_DIR}/ClapHostParams.cpp
 	${LMMS_CLAP_HOST_DIR}/ClapLoader.cpp
 	${LMMS_CLAP_HOST_DIR}/ClapParameter.cpp
 	${LMMS_CLAP_HOST_DIR}/ClapSubPluginFeatures.cpp
