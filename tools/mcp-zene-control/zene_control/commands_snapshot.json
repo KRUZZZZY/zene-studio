@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-16T08:51:05Z",
+  "captured_at": "2026-09-16T09:42:20Z",
   "commands": [
     {
       "args_schema": {
@@ -9520,7 +9520,8 @@
             "enum": [
               "builtin",
               "ladspa",
-              "lv2"
+              "lv2",
+              "vst3"
             ],
             "type": "string"
           },
@@ -9540,7 +9541,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA and LV2), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, so adding a host does not renumber the ids of the formats that were already there.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2 and VST3), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, then VST3, so adding a host does not renumber the ids of the formats that were already there.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -17324,8 +17325,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-_dy89528/zene.sock",
-    "version": "0.2.1-alpha.450+cf39690"
+    "source_socket": "/tmp/w9train/snap/zene.sock",
+    "version": "0.2.1-alpha.484+6d8ddde"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
