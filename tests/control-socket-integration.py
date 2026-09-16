@@ -881,6 +881,30 @@ def plugin_and_settings_flow(client, process, log_path, tmp, last_id):
           % (instrument_device["name"], inst_param["name"]))
 
     # --- plugin.bypass ---------------------------------------------------
+    # The effect's id is re-read HERE, not carried down from the plugin.load
+    # above: the instrument section between them ends in plugin.state_load, and
+    # for an instrument that command goes through the product's own track-preset
+    # path (controlRestoreDeviceState -> Track::loadPreset -> loadTrack in preset
+    # mode), which RE-CREATES the track's device chain exactly as it already
+    # re-creates its clips. A re-created effect is a new object and carries a new
+    # fx-<n> id (rule R4: a preset document is one of the copy containers
+    # ProjectIds::isCopyContainer names - "instrumenttracksettings" - so the
+    # device built from it takes its own id). Measured on this fixture: the
+    # amplifier is fx-29 before the instrument's plugin.state_load and fx-30
+    # after it, and the pre-load id is then legitimately not_found.
+    fx_now = None
+    _state_now = flow.ok("dsp.get_state", {"target": instrument_track})
+    for _device in (_state_now.get("chains") or [{}])[0].get("devices", []):
+        if _device.get("plugin") == "amplifier":
+            fx_now = _device.get("id")
+    if fx_now is None:
+        fail("the amplifier disappeared from %s across the instrument flow: %r"
+             % (instrument_track, _state_now), process, log_path)
+    if fx_now != fx:
+        print("note: plugin.state_load on the instrument re-created the chain: %s is now %s"
+              % (fx, fx_now))
+    fx = fx_now
+
     bypassed = flow.ok("plugin.bypass", {"target": instrument_track, "plugin": fx, "bypass": True})
     if bypassed.get("enabled") is not False or bypassed.get("processing") is not False:
         fail("plugin.bypass did not switch the device off: %r" % bypassed, process, log_path)
@@ -1267,21 +1291,36 @@ def automation_flow(client, process, log_path, tmp, project, last_id):
              {"track": target, "parameter": parameter, "ticks": 0, "value": high + 1000.0})
     flow.err("automation.add_point", "invalid_args",
              {"track": target, "parameter": parameter, "ticks": 0})
-    # automation.mode_set: this tree has no modes, and says which fact is missing.
-    refused = flow.err("automation.mode_set", "refused",
-                       {"track": target, "parameter": parameter, "mode": "write"})
-    if "KNOWN-LIMITATIONS" not in (refused.get("message") or ""):
-        fail("automation.mode_set's refusal does not cite its source: %r" % refused,
+    # automation.mode_set: this tree HAS the mode vocabulary (off / read / touch
+    # / latch / write - it landed with the automation-modes work, so the older
+    # "this tree has no modes, here is the refusal" expectation no longer
+    # describes it). The mode is RUNTIME state: not persisted, not journalled,
+    # so the only proof the command did anything is reading it back through
+    # automation.get_state - which is what this pair of calls asserts.
+    moved = flow.ok("automation.mode_set",
+                    {"track": target, "parameter": parameter, "mode": "write"})
+    if moved.get("mode") != "write" or not moved.get("changed"):
+        fail("automation.mode_set did not report the new mode: %r" % moved, process, log_path)
+    if moved.get("mode_before") == "write":
+        fail("automation.mode_set reported the same mode before and after: %r" % moved,
              process, log_path)
-    if "select or persist" not in (refused.get("message") or ""):
-        fail("automation.mode_set's refusal does not name what is missing: %r" % refused,
-             process, log_path)
+    after_mode = automation_parameter(flow.ok("automation.get_state", {"track": target}),
+                                      target, parameter) or {}
+    if after_mode.get("mode") != "write":
+        fail("automation.get_state does not report the mode automation.mode_set set: %r"
+             % after_mode, process, log_path)
+    # ... and back, so the render leg below measures the default (read) engine.
+    back = flow.ok("automation.mode_set",
+                   {"track": target, "parameter": parameter, "mode": "read"})
+    if back.get("mode") != "read" or back.get("mode_before") != "write":
+        fail("automation.mode_set did not move the mode back: %r" % back, process, log_path)
     flow.err("automation.mode_set", "invalid_args",
              {"track": target, "parameter": parameter, "mode": "bogus"})
     flow.err("automation.remove_point", "not_found",
              {"track": target, "parameter": parameter, "ticks": 192})
     flow.err("automation.clear", "not_found", {"track": target, "parameter": parameter})
-    print("automation.mode_set refused: %s" % refused.get("message"))
+    print("automation.mode_set: %s write, read back through automation.get_state, then read"
+          % parameter)
 
     # --- render A: no automation (the parameter's default) ----------------
     window = note_region_frames()
@@ -1966,9 +2005,13 @@ def main():
         # roll refuses it by type instead of pretending it is empty.
         arrangement = ok_result(client.call(24, "arrangement.get_state"), 24)
         # The shared fixture has grown since this leg was written (the plugin lane added an
-        # instrument track to it), so assert the SHAPE this leg depends on - trk-0 is the
-        # pattern track and carries clip-0, the PatternClip - rather than exact totals that
-        # belong to no single lane. Repaired by the integrating parent, 2026-09-12.
+        # instrument track to it), so assert the SHAPE this leg depends on - a pattern
+        # track carrying a PatternClip - rather than exact totals that belong to no single
+        # lane. Repaired by the integrating parent, 2026-09-12; the clip id is the ENGINE's
+        # (clip-<n>, allocated from the project-wide ProjectIds counter, shared with every
+        # other id family), so it is read from the state above and never written as a
+        # literal here: "clip-0" was the id the FIRST object of a fresh counter gets, and
+        # this fixture's clip is clip-26 (fix-up round 2, 2026-09-16).
         if arrangement.get("track_count", 0) < 1 or arrangement.get("clip_count", 0) < 1:
             fail("the fixture's arrangement is %r" % arrangement, process, log_path)
         pattern_tracks = [t for t in arrangement["tracks"] if t.get("type") == "pattern"]
@@ -1979,11 +2022,12 @@ def main():
                              if c.get("track") == fixture_track.get("id")), None)
         if fixture_clip is None:
             fail("the pattern track carries no clip: %r" % arrangement, process, log_path)
-        if not str(fixture_track.get("id", "")).startswith("trk-") or fixture_clip.get("id") != "clip-0":
+        if not str(fixture_track.get("id", "")).startswith("trk-") \
+                or not str(fixture_clip.get("id", "")).startswith("clip-"):
             fail("stable ids are not trk-<n>/clip-<n>: %r %r" % (fixture_track, fixture_clip), process, log_path)
         if fixture_clip.get("note_count") is not None:
             fail("a PatternClip must report note_count null, got %r" % fixture_clip, process, log_path)
-        typed_error(client.call(25, "roll.get_state", {"clip": "clip-0"}), 25, "refused")
+        typed_error(client.call(25, "roll.get_state", {"clip": fixture_clip["id"]}), 25, "refused")
 
         # A new instrument track and a clip on it.
         added_track = ok_result(client.call(26, "track.add", {"type": "instrument"}), 26)
