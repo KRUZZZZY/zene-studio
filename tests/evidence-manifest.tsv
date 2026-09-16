@@ -1424,3 +1424,27 @@ c47a5eb14acbfa8d8977659cca83dba331a65aa33728bd0c0add298d4fe925d3	457	tests/integ
 80aad2fd5d1cacad91ee1b3880769988fe30f16b770f7560f91f6b283d17f217	6792	tests/integration-logs-ver021/08a-configure-internal.log
 e34062294f7095f5ab561fe16d9ebaed5d6a4de3e51132fe54a793338af16022	6811	tests/integration-logs-ver021/08b-configure-restore.log
 f190a668ee7a5ad1bcb7b6e31efd796e25f4e5bd2554be0e73303f42a2f3dd4a	3202	tests/integration-logs-ver021/README.md
+#
+# ---------------------------------------------------------------------------
+# 2026-09-16 (030/repo2-gate, board card #683 — the evidence-class pass): the
+# wave-9 VST3 lane committed ONE more run log on 2026-09-16, after the deletion
+# above, as the RAW evidence behind docs/reports/LANE-STATE-VST3-INSTRUMENT-ROW78.md:
+#   docs/reports/VST3-INSTRUMENT-ROW78-EVIDENCE.log — a verbatim ctest + fixture
+#   probe transcript ("ctest -R '^Vst3Instrument'" output, the probe's [PASS]
+#   lines, 12559 bytes), i.e. the output of a run. It was the first file Gate 11
+#   ever refused on the release line, and it was simultaneously that line's ONLY
+#   Gate 6 violation: `docs/` admits `*.md` only, and a run log has no class Gate 6
+#   allows — the same finding commit 3fe5addb9 recorded for the 22
+#   release-verification logs, and on it the 22 were moved out of docs/ first and
+#   deleted second. The owner's CP-1 decision applies unchanged — the evidence FILE
+#   goes, its HASH stays — so this is the same treatment as the 1395 above, not a
+#   new policy, and the gate keeps refusing the class so it cannot come back.
+#   Why not re-home it as a .md transcript (the SESSION-API-PROOF precedent,
+#   727f73da5)? Because that artefact was a lane's transcript OF ITS OWN PROOF and
+#   the report's citations pointed at it; this one is a copy of ctest output whose
+#   cases are registered tests (Vst3Instrument* in tests/CMakeLists.txt), so the
+#   claim stays reproducible without shipping the log. Re-classing run output to
+#   `*.md` is also how a suffix list gets hollowed out one file at a time.
+#   The lane report's prose stays in the tree. Removed: 1 file, 12559 bytes.
+# ---------------------------------------------------------------------------
+21694c1ad9e18d542c0c8a883114b1c085c460bdbf4924ed0841431d32ddad14	12559	docs/reports/VST3-INSTRUMENT-ROW78-EVIDENCE.log
