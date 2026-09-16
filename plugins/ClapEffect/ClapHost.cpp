@@ -175,6 +175,12 @@ struct HostedPlugin::Impl
 	//! plug-in with no note input port.
 	void drainNoteQueue();
 
+	//! The discovery half (feature row 79): reads clap.note-ports while the
+	//! plug-in is deactivated, remembers the plug-in's own delivery port
+	//! index, and records the ports and the audio layout in the process-wide
+	//! note counters `plugin.host_notes` reports. Main thread, from load().
+	void scanNotePorts();
+
 	std::vector<const float*> inPtrs;
 	std::vector<float*> outPtrs;
 	std::vector<clap_audio_buffer_t> inBuffers;
@@ -467,6 +473,63 @@ void HostedPlugin::pushNote(const NoteEventIn& event)
 		impl.notesDropped.fetch_add(1, std::memory_order_relaxed);
 		control::clapHostNoteCounters().recordDrop();
 	}
+}
+
+void HostedPlugin::Impl::scanNotePorts()
+{
+	// Main thread, from load(), with the plug-in deactivated - the state
+	// clap.note-ports' contract requires for a port scan. A plug-in WITHOUT
+	// the extension is not an error: a host must not require note ports of a
+	// plug-in that takes no notes (every effect), so nothing here can fail
+	// the load. INPUT ports only: this host delivers notes and has no use for
+	// a note output port in this release.
+	if (!notePortsExt) { return; }
+
+	// The per-instance counters describe THIS instance, so a reload starts
+	// them over.
+	notesPushed.store(0, std::memory_order_relaxed);
+	notesDropped.store(0, std::memory_order_relaxed);
+	notesDelivered.store(0, std::memory_order_relaxed);
+	notesPlayed.store(0, std::memory_order_relaxed);
+
+	const auto portCount = notePortsExt->count(plugin, true);
+	notePorts.reserve(portCount);
+	for (std::uint32_t i = 0; i < portCount; ++i)
+	{
+		clap_note_port_info_t info{};
+		// The index is the PLUG-IN's, and it is what clap_event_note_t's
+		// port_index carries, so this is the number the host must send back
+		// - never a re-numbered one.
+		if (!notePortsExt->get(plugin, i, true, &info)) { continue; }
+		NotePortDescriptor port;
+		port.id = info.id;
+		port.name = QString::fromUtf8(info.name);
+		port.supportedDialects = info.supported_dialects;
+		port.preferredDialect = info.preferred_dialect;
+		notePorts.push_back(port);
+	}
+	// Deliver to a port that speaks the CLAP dialect when one declares it;
+	// otherwise the first port (a MIDI-dialect port still receives
+	// clap_event_note events - the dialect says what the plug-in can
+	// additionally accept, not what the host must send).
+	for (std::uint32_t i = 0; i < notePorts.size(); ++i)
+	{
+		if ((notePorts[i].preferredDialect & NoteDialectClap) != 0 ||
+			(notePorts[i].supportedDialects & NoteDialectClap) != 0)
+		{
+			notePortIndex = i;
+			break;
+		}
+	}
+	if (!notePorts.empty()) { notePorts[notePortIndex].preferred = true; }
+
+	// The process-wide half of the same facts, for `plugin.host_notes`: the
+	// note ports and the audio layout of the plug-in just loaded.
+	control::clapHostNoteCounters().recordLoad(static_cast<std::uint32_t>(notePorts.size()),
+		notePortIndex,
+		notePorts.empty() ? 0u : notePorts[notePortIndex].supportedDialects,
+		static_cast<std::uint32_t>(std::max(0, layout.inputs)),
+		static_cast<std::uint32_t>(std::max(0, layout.outputs)));
 }
 
 void HostedPlugin::Impl::drainNoteQueue()
@@ -763,60 +826,12 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	}
 
 	// --- note input ports (clap.note-ports, feature row 79) ---------------
-	// Read while the plug-in is deactivated, which is where load() is: the
-	// extension's contract is that a port scan happens in that state. Their
+	// Read while the plug-in is deactivated, which is where load() is. Their
 	// ABSENCE is not a failure - a host must not require note ports of a
-	// plug-in that takes no notes (every effect) - so nothing here can fail
-	// the load. The scan reads INPUT ports only: this host delivers notes and
-	// has no use for a note output port in this release.
-	if (impl.notePortsExt)
-	{
-		// The counters describe THIS instance, so a reload starts them over.
-		impl.notesPushed.store(0, std::memory_order_relaxed);
-		impl.notesDropped.store(0, std::memory_order_relaxed);
-		impl.notesDelivered.store(0, std::memory_order_relaxed);
-		impl.notesPlayed.store(0, std::memory_order_relaxed);
-		const auto portCount = impl.notePortsExt->count(impl.plugin, true);
-		impl.notePorts.reserve(portCount);
-		for (std::uint32_t i = 0; i < portCount; ++i)
-		{
-			clap_note_port_info_t info{};
-			// The index is the PLUG-IN's, and it is what clap_event_note_t's
-			// port_index carries, so this is the number the host must send
-			// back - never a re-numbered one.
-			if (!impl.notePortsExt->get(impl.plugin, i, true, &info)) { continue; }
-			NotePortDescriptor port;
-			port.id = info.id;
-			port.name = QString::fromUtf8(info.name);
-			port.supportedDialects = info.supported_dialects;
-			port.preferredDialect = info.preferred_dialect;
-			impl.notePorts.push_back(port);
-		}
-		// Deliver to a port that speaks the CLAP dialect when one declares
-		// it; otherwise the first port (a MIDI-dialect port still receives
-		// clap_event_note events - the dialect says what the plug-in can
-		// additionally accept, not what the host must send).
-		for (std::uint32_t i = 0; i < impl.notePorts.size(); ++i)
-		{
-			if ((impl.notePorts[i].preferredDialect & NoteDialectClap) != 0 ||
-				(impl.notePorts[i].supportedDialects & NoteDialectClap) != 0)
-			{
-				impl.notePortIndex = i;
-				break;
-			}
-		}
-		if (!impl.notePorts.empty()) { impl.notePorts[impl.notePortIndex].preferred = true; }
-	}
-	// The process-wide half of the same facts, for `plugin.host_notes`: what
-	// this host just discovered about the plug-in (feature row 79).
-	{
-		control::PluginHostNoteCounters& notes = control::clapHostNoteCounters();
-		notes.recordLoad(static_cast<std::uint32_t>(impl.notePorts.size()),
-			impl.notePortIndex,
-			impl.notePorts.empty() ? 0u : impl.notePorts[impl.notePortIndex].supportedDialects,
-			static_cast<std::uint32_t>(std::max(0, impl.layout.inputs)),
-			static_cast<std::uint32_t>(std::max(0, impl.layout.outputs)));
-	}
+	// plug-in that takes no notes (every effect). Kept as a member of Impl
+	// rather than inline here so load()'s own complexity does not grow for
+	// the note path (tests/complexity-gate.sh measures it).
+	impl.scanNotePorts();
 
 	if (impl.paramsExt)
 	{
