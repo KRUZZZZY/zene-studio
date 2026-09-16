@@ -127,6 +127,31 @@ parent's fix-up list already carries (`FIXUP-LIST-MERGED-TIP-2026-09-15.md` item
 `luabridge::LuaException: No writable member 'apiSurface'` at `src/core/ScriptDawBindings.cpp:307`) — not
 this lane's, and reproducible without it.
 
+**The gate suite** (`bash tests/run-all-gates.sh --no-mutation`, run twice — once before the file split
+and once after — on the same tree):
+
+```
+gate 1 ctest               FAIL  43 of 198 failed      <- IDENTICAL to the pre-split run's 43 of 197
+gate 3 no-tautology        PASS
+gate 4 complexity          FAIL  (57 regressions, none in an OutOfProcess file)
+gate 6 upstream-regression PASS  422 changed paths declared; the ledger holds 460 entries
+gate 7 file-length         FAIL  (21 files over 500; NONE of them this lane's)
+gate 8 duplication         PASS  0.51% of 653 fork sources
+gate 9 fork-sources        PASS  653 fork-NEW, 1104 inherited, 40 tooling, REPRODUCES
+gate 10 unregistered-tests PASS  171 test sources scanned, 169 registered, 2 declared-not-built
+gate 11 evidence           PASS
+gate 12 rt-safety          PASS
+RESULT: FAIL — gate 1, 4 and 7 are the merged tip's own reds, and this lane's two tests pass:
+ 25/198 Test #25: OutOfProcessHostTest ..................  Passed  1.49 sec
+ 26/198 Test #26: OutOfProcessHostClientLoopTest ........  Passed  2.74 sec
+```
+
+The before/after counts are the evidence that none of the 43 is this lane's: the pre-split run had 43 of
+**197**, the post-split run 43 of **198** — the one test this lane added PASSES, and no test that was
+passing stopped passing. The 43 are the merged tip's (the LuaBridge abort on `zene.apiSurface`,
+`ClipLinkTest`/`ClipSerialisationTest`/`ControlChainPresetTest`/`ControlRegistryTest` … — the parent's
+`FIXUP-LIST-MERGED-TIP-2026-09-15.md` and the wave-9/10 trains name them).
+
 **The two ratchets this lane does NOT inherit.** After the shape the first draft had
 (`ControlCommandsOutOfProcess.cpp` 597 lines, `OutOfProcessHostTest.cpp` 623, `allChains` CCN 11) the
 files were split along the seam that was already there, and the gates were re-run:
