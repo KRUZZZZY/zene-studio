@@ -396,11 +396,11 @@ void Note::loadSettings( const QDomElement & _this )
 			bool ok = false;
 			const int stored = _this.attribute( "id" ).toInt( &ok );
 			if( ok && stored >= 0 ) { setId( stored ); }
-			else { ProjectIds::noteLoadAssignment(); }
+			else { ProjectIds::noteLoadAssignment( id() ); }
 		}
 		else
 		{
-			ProjectIds::noteLoadAssignment();
+			ProjectIds::noteLoadAssignment( id() );
 		}
 	}
 

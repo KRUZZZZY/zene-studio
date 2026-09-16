@@ -1645,7 +1645,15 @@ void Song::loadProject( const QString & fileName )
 	{
 		bool ok = false;
 		const int stored = dataFile.documentElement().attribute(QStringLiteral("next-id")).toInt(&ok);
-		if (ok) { ProjectIds::observeNext(stored); }
+		// restoreFromDocument, NOT observeNext: the walk above allocated a
+		// placeholder for every object it constructed, so the counter is ABOVE
+		// the document's own value here, and a max-merge would keep it there -
+		// which made every save/load/save round trip write a larger `next-id`
+		// than the file it was loaded from (round1 `next-id="3"`, round2
+		// `next-id="5"`, StableTrackIdsTest / TempoMapPersistenceTest). The
+		// document's counter is restored, floored by the ids the document
+		// carries and the ones an id-less element kept (R3).
+		if (ok) { ProjectIds::restoreFromDocument(stored); }
 	}
 	{
 		QSet<int> seen;
@@ -1656,7 +1664,7 @@ void Song::loadProject( const QString & fileName )
 			if (seen.contains(track->id()))
 			{
 				track->setId(ProjectIds::allocate());
-				ProjectIds::noteLoadAssignment();
+				ProjectIds::noteLoadAssignment(track->id());
 			}
 			else
 			{
@@ -1664,6 +1672,10 @@ void Song::loadProject( const QString & fileName )
 			}
 		}
 	}
+
+	// The walk is over: from here on allocate() hands out ids to objects that
+	// really keep them, so it counts against the counter again.
+	ProjectIds::endLoad();
 
 	// Connect controller links to their controllers
 	// now that everything is loaded

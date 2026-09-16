@@ -2035,11 +2035,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 			bool ok = false;
 			const int stored = mixch.attribute( "id" ).toInt( &ok );
 			if( ok && stored >= 0 ) { m_mixerChannels[num]->setId( stored ); }
-			else { ProjectIds::noteLoadAssignment(); }
+			else { ProjectIds::noteLoadAssignment( m_mixerChannels[num]->id() ); }
 		}
 		else
 		{
-			ProjectIds::noteLoadAssignment();
+			ProjectIds::noteLoadAssignment( m_mixerChannels[num]->id() );
 		}
 
 		m_mixerChannels[num]->m_volumeModel.loadSettings( mixch, "volume" );
