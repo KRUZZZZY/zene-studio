@@ -133,6 +133,16 @@ set(LMMS_TESTS
 	# real Engine (the recorded action checkpoint goes on the project journal).
 	src/core/ControlProjectArchiveTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# The coverage closure's reference (board task #680): the ids the
+	# 2026-09-16 pass measured as named by no other registered test artefact
+	# (controller.* surfaces/templates, dawproject.convention, the two
+	# midi.reconnect/clients ids, plugin.host_chunking, the four mmpz-git
+	# merge ids and the three session follow/record ids). It asserts the
+	# command contract and the A16 row for each, and that each ANSWERS with a
+	# typed reply - reachability and contract, not behaviour; the behavioural
+	# proofs are named per group in
+	# docs/reports/COVERAGE-CLOSURE-2026-09-16.md.
+	src/core/ControlSurfaceReferenceTest.cpp
 	# The controller surface (feature row 19, board task #651): soft-takeover
 	# (a hardware control is ignored until a synthetic control-change crosses
 	# the stored value, with the take-over-off case as its negative control),
