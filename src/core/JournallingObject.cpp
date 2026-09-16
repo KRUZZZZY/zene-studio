@@ -35,7 +35,19 @@ namespace lmms
 
 JournallingObject::JournallingObject() :
 	SerializingObject(),
-	m_id( Engine::projectJournal()->allocID( this ) ),
+	// Engine::projectJournal() is null before Engine::init() and after
+	// Engine::destroy() - the destructor below has always guarded for that
+	// state, this constructor never did, so any JournallingObject built
+	// outside a live engine dereferenced a null journal and died inside
+	// ProjectJournal::allocID() (measured: SIGSEGV at lmms::fastRand(),
+	// address 0x8, reached from DummyPlugin's constructor through
+	// Plugin::instantiate() in SafeStartLoadPathTest - a binary that never
+	// runs Engine::init, because it is about the load-time predicate alone).
+	// id() 0 means "no journal saw this object": every id allocID() hands out
+	// carries EO_ID_MSB (ProjectJournal.cpp), so 0 cannot be mistaken for a
+	// registered one, and the destructor's freeID() is skipped for the same
+	// reason it was reached here.
+	m_id( Engine::projectJournal() != nullptr ? Engine::projectJournal()->allocID( this ) : 0 ),
 	m_journalling( true ),
 	m_journallingStateStack()
 {
