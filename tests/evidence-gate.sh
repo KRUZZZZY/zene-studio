@@ -150,6 +150,36 @@ is_binary_name() { # <repo-relative path> -> 0 if the NAME alone is a compiled a
 	suffix_in "${ext,,}" "$BINARY_SUFFIXES"
 }
 
+# One place where the five refusal CLASSES and their wording live, so scan_tree stays a
+# loop and not a ladder: the four by-name classes plus the size cap, in that order.
+# Returns 0 when the file is refused, and prints the same `[REFUSED] <path>  (<why>)`
+# line the gate has always printed — the path is in it deliberately (the self-test
+# asserts it, and a refusal that does not name the file is a count, not a verdict).
+refusal_of() { # <path> <bytes> -> prints the refusal line, 0 when refused
+	local f="$1" size="$2"
+	if is_evidence_name "$f"; then
+		printf '  [REFUSED] %s  (evidence file type: the output of a run)\n' "$f"
+		return 0
+	fi
+	if is_render_name "$f"; then
+		printf '  [REFUSED] %s  (a render; audio belongs in data/, not beside a test)\n' "$f"
+		return 0
+	fi
+	if is_archive_name "$f"; then
+		printf '  [REFUSED] %s  (an archive or package: a container is evidence, not source)\n' "$f"
+		return 0
+	fi
+	if is_binary_name "$f"; then
+		printf '  [REFUSED] %s  (a compiled artefact: a source tree reproduces a build, it does not carry one)\n' "$f"
+		return 0
+	fi
+	if [ "$size" -gt "$CAP" ]; then
+		printf '  [REFUSED] %s  (%s bytes > %s cap)\n' "$f" "$size" "$CAP"
+		return 0
+	fi
+	return 1
+}
+
 # ---- exemptions: required input, fail-closed --------------------------------
 if [ ! -f "$EXEMPT" ]; then
 	echo "error: $EXEMPT is missing - it is this gate's exemption home, and its absence" >&2
@@ -221,28 +251,7 @@ scan_tree() { # <bytes> <path> ... -> 0 clean, 1 refused; prints what it refused
 			[ "$VERBOSE" -eq 1 ] && printf '  [exempt] %s  (%s)\n' "$f" "$why"
 			continue
 		fi
-		if is_evidence_name "$f"; then
-			printf '  [REFUSED] %s  (evidence file type: the output of a run)\n' "$f"
-			refused=$((refused + 1))
-			continue
-		fi
-		if is_render_name "$f"; then
-			printf '  [REFUSED] %s  (a render; audio belongs in data/, not beside a test)\n' "$f"
-			refused=$((refused + 1))
-			continue
-		fi
-		if is_archive_name "$f"; then
-			printf '  [REFUSED] %s  (an archive or package: a container is evidence, not source)\n' "$f"
-			refused=$((refused + 1))
-			continue
-		fi
-		if is_binary_name "$f"; then
-			printf '  [REFUSED] %s  (a compiled artefact: a source tree reproduces a build, it does not carry one)\n' "$f"
-			refused=$((refused + 1))
-			continue
-		fi
-		if [ "$size" -gt "$CAP" ]; then
-			printf '  [REFUSED] %s  (%s bytes > %s cap)\n' "$f" "$size" "$CAP"
+		if refusal_of "$f" "$size"; then
 			refused=$((refused + 1))
 			continue
 		fi
