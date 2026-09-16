@@ -22,9 +22,9 @@ record**, and makes both drivable and observable through the control socket.
 | the family table + `HostTracker` | `include/OutOfProcessHosting.h`, `src/core/OutOfProcessHosting.cpp` (fork-NEW) |
 | the `oop.*` group (reads) | `src/core/ControlCommandsOutOfProcess.cpp` (fork-NEW) |
 | the `oop.*` group (writers) | `src/core/ControlCommandsOutOfProcessEdit.cpp` (fork-NEW) |
-| their shared vocabulary | `src/core/ControlCommandsOutOfProcessShared.h` (fork-NEW) |
+| their helpers + vocabulary | `src/core/ControlCommandsOutOfProcessSupport.cpp`, `…Shared.h` (fork-NEW) |
 | the A16 rows (5) | `src/core/ControlReversibilityTableOutOfProcess.cpp` (fork-NEW), joined by ONE entry |
-| the proof | `tests/src/core/OutOfProcessHostTest.cpp` (fork-NEW), registered ctest `OutOfProcessHostTest` |
+| the proof (2 registered ctests) | `tests/src/core/OutOfProcessHostTest.cpp` + `…ClientLoopTest.cpp`, shared `…Support.h` (fork-NEW) |
 
 **Ids (group `oop`):** `oop.get_state`, `oop.list_families` (reads, `not_mutating`);
 `oop.set_mode`, `oop.restart`, `oop.reset_crashes` (writers, `irreversible`, each with its reason and
@@ -72,20 +72,23 @@ $ cmake --build build -j4
 FULL_BUILD_EXIT=0                      # whole tree, 0 errors
 ```
 
-**The registered ctest** (run from the build tree's `tests/`, the workspace rule):
+**The registered ctests** (run from the build tree's `tests/`, the workspace rule):
 
 ```
-$ cd build/tests && ctest -R OutOfProcessHostTest --output-on-failure
+$ cd build/tests && ctest -R "OutOfProcessHost" --output-on-failure
     Start 25: OutOfProcessHostTest
-1/1 Test #25: OutOfProcessHostTest .............   Passed    2.39 sec
-100% tests passed, 0 tests failed out of 1
+1/2 Test #25: OutOfProcessHostTest .............   Passed    1.46 sec
+    Start 26: OutOfProcessHostClientLoopTest
+2/2 Test #26: OutOfProcessHostClientLoopTest ...   Passed    2.38 sec
+100% tests passed, 0 tests failed out of 2
 CTEST_EXIT=0
 ```
 
-**The test's own run, all ten cases** (`QT_QPA_PLATFORM=offscreen ./OutOfProcessHostTest`, EXIT=0):
+**The two binaries' own runs** (`QT_QPA_PLATFORM=offscreen ./<name>`, both EXIT=0):
 
 ```
-Totals: 10 passed, 0 failed, 0 skipped, 0 blacklisted, 2451ms
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 1404ms      # OutOfProcessHostTest
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 2346ms      # OutOfProcessHostClientLoopTest
 ```
 
 including the whole loop on a REAL client process — the interesting lines, verbatim:
@@ -123,6 +126,19 @@ figure this tree measures. The test's NEXT case then aborts in the **pre-existin
 parent's fix-up list already carries (`FIXUP-LIST-MERGED-TIP-2026-09-15.md` item 1:
 `luabridge::LuaException: No writable member 'apiSurface'` at `src/core/ScriptDawBindings.cpp:307`) — not
 this lane's, and reproducible without it.
+
+**The two ratchets this lane does NOT inherit.** After the shape the first draft had
+(`ControlCommandsOutOfProcess.cpp` 597 lines, `OutOfProcessHostTest.cpp` 623, `allChains` CCN 11) the
+files were split along the seam that was already there, and the gates were re-run:
+
+```
+$ bash tests/file-length-gate.sh     # EXIT=1: the remaining regressions are inherited
+                                     # (ControlRegistryGroups.h 684, ControlRegistry.h 509,
+                                     #  ControlReversibility.h 528, ControlRegistryTest.cpp 505 …)
+                                     # — NO OutOfProcess file appears
+$ bash tests/complexity-gate.sh      # EXIT=1: 57 regressions, all other lanes'
+                                     # — NO OutOfProcess function appears
+```
 
 **The manifests.** `bash tests/fork-sources-gate.sh` (Gate 9, the whole-tree scope): `GATE_FORK_EXIT=0`,
 "REPRODUCES: the entry list in all-sources.txt is the recipe's own output", "PASS: every tracked source in
