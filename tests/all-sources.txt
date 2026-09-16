@@ -1094,6 +1094,7 @@ src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceHosted.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
+src/core/ControlDeviceVst3.cpp
 src/core/ControlEditSupport.cpp
 src/core/ControlExportPresetSupport.cpp
 src/core/ControlGrooveSupport.cpp

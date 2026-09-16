@@ -81,15 +81,15 @@ void registerPluginList(ControlRegistry& registry)
 	cmd.group = QStringLiteral("plugin");
 	cmd.verb = QStringLiteral("list");
 	cmd.description = QStringLiteral("Every device this build can load: built-in effect and "
-		"instrument modules plus the devices of the shipped hosting formats (LADSPA and LV2), "
-		"each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue "
-		"index, not a persisted project id, and 'loadable' says whether plugin.load accepts the "
-		"entry. Format order is built-in, then LADSPA, then LV2, so adding a host does not "
-		"renumber the ids of the formats that were already there.");
+		"instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2 and "
+		"VST3), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a "
+		"catalogue index, not a persisted project id, and 'loadable' says whether plugin.load "
+		"accepts the entry. Format order is built-in, then LADSPA, then LV2, then VST3, so "
+		"adding a host does not renumber the ids of the formats that were already there.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("builtin"), QStringLiteral("ladspa"),
-				QStringLiteral("lv2")}}}},
+				QStringLiteral("lv2"), QStringLiteral("vst3")}}}},
 		{QStringLiteral("kind"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("effect"),
 				QStringLiteral("instrument"), QStringLiteral("tool"), QStringLiteral("other")}}}},
