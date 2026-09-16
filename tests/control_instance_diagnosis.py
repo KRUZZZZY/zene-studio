@@ -231,6 +231,32 @@ def _crash_reports(root):
     return lines
 
 
+def closed_connection_reason():
+    """The harness's EOF message: "closed the connection", plus the DIAGNOSIS.
+
+    WHY THIS FUNCTION EXISTS, and why the harness's raise site is one unadorned call.
+    The EOF branch used to say exactly one sentence - "the server closed the
+    connection without answering" - and nothing else, which made it the only failure
+    mode of the control suite that explained NOTHING: a timeout already appends
+    instance_diagnosis() (see _read_bounded), but a DYING instance is the one that
+    produces EOF, and it is the one where the exit status and the product's own crash
+    report are the whole answer. It cost a matrix cycle: on run 34870198514 both macOS
+    jobs' test 129 ControlPluginScanCommands lost the engine on control.undo, and all
+    the job log could say was that sentence - no exit status, no signal, no report, so
+    the cause could not be told from a clean exit, a signal death or a hang.
+
+    The text is built HERE rather than at the raise site because
+    tests/control_socket_harness.py is grandfathered in tests/file-length-baseline.tsv
+    at its exact length: Gate 7's tolerance is 0, so a line added there is a line the
+    ratchet refuses. The harness calls this instead, at no cost in lines.
+
+    The instance's temp directory still exists when this runs - Instance.close()
+    removes it on the way out, and close() has not run yet - so the report the product
+    writes under it is still readable here.
+    """
+    return "the server closed the connection without answering\n%s" % instance_diagnosis()
+
+
 def instance_diagnosis():
     """One string explaining the last-launched instance's state. Never raises."""
     instance = _LAST_INSTANCE

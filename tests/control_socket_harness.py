@@ -49,7 +49,7 @@ import tempfile
 import time
 from typing import NoReturn
 
-from control_instance_diagnosis import instance_diagnosis, register_instance
+from control_instance_diagnosis import closed_connection_reason, instance_diagnosis, register_instance
 
 # ---------------------------------------------------------------------------
 # bounds and constants
@@ -414,7 +414,7 @@ class Client:
                 raise Blocked("no response line inside %.1fs (%s) (last transcript: %r)\n%s"
                               % (timeout, exc, self.transcript[-2:], instance_diagnosis())) from exc
             if not chunk:
-                raise Blocked("the server closed the connection without answering")
+                raise Blocked(closed_connection_reason())
             self.buffer += chunk
         line, self.buffer = self.buffer.split(b"\n", 1)
         return line
