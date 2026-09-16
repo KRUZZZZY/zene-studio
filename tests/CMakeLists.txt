@@ -1868,6 +1868,40 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(GoldenAudioSelfTest PROPERTIES TIMEOUT 300)
 endif()
 
+# The real-time-safety WHOLE-TREE SWEEP (2026-09-16, lane 030/rt-safety, board task #678,
+# feature row 52). AGENTS.md's realtime rule - "no allocation, no locking, no unbounded
+# growth on audio-thread paths" - was held per feature until now: an allocation-counter
+# test proved one path at a time and nothing measured the rule across the tree
+# (docs/CONVENTIONS.md row 9 said so: "partially enforced"). tests/rt-safety-sweep.py
+# walks every path:symbol pair the tree DECLARES in tests/rt-safety-scope.txt, scans the
+# bodies it resolves for allocating, locking and container-growing constructs, and judges
+# them against tests/rt-safety-allowlist.txt - a ledger of accepted hits with a reason and
+# a COUNT that is a ratchet: it may only fall.
+#
+# Two tests, because the programme has two claims. RtSafetySweep is the gate over THIS
+# tree: it needs no binary, no engine and no socket (it reads sources), so it is
+# registered wherever a python3 is - a sweep that only runs on one platform is a claim,
+# not a gate. RtSafetySelfTest is the control that makes the sweep believable: it plants
+# a deliberate allocation, lock and container growth on fixture audio-thread paths and
+# requires the same code the gate runs to fail on each one, name it, pass a clean path,
+# and stay silent about a violation outside the declared scope. A sweep that cannot fail
+# proves nothing (row 52's own words), and the real tree's copy of that control is
+# recorded in docs/RT-SAFETY-SWEEP.md.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME RtSafetySweep
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/rt-safety-sweep.py
+			--tree ${CMAKE_SOURCE_DIR}
+			--scope ${CMAKE_CURRENT_SOURCE_DIR}/rt-safety-scope.txt
+			--allowlist ${CMAKE_CURRENT_SOURCE_DIR}/rt-safety-allowlist.txt
+			--check)
+	set_tests_properties(RtSafetySweep PROPERTIES TIMEOUT 120)
+	add_test(NAME RtSafetySelfTest
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/rt_safety_selftest.py)
+	set_tests_properties(RtSafetySelfTest PROPERTIES TIMEOUT 300)
+endif()
+
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketIntegration
 		COMMAND ${PYTHON3_EXECUTABLE}
