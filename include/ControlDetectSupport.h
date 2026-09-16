@@ -35,7 +35,7 @@
 namespace lmms
 {
 
-class ImportDetectionResult;
+struct ImportDetectionResult;
 class ProjectKey;
 class Song;
 class TempoMap;

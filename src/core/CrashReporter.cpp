@@ -485,6 +485,6 @@ void setReentrancyGuardForTest(bool active)
 	s_active = active ? 1 : 0;
 }
 
-#endif // !LMMS_BUILD_WIN32
+#endif // LMMS_BUILD_WIN32
 
 } // namespace lmms::crashreporter

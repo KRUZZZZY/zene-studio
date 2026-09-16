@@ -53,6 +53,9 @@
 
 using namespace lmms::detection;
 
+namespace lmms
+{
+
 namespace
 {
 
@@ -140,6 +143,10 @@ std::vector<std::uint32_t> candidateMasks()
 }
 
 } // namespace
+
+} // namespace lmms
+
+using namespace lmms;
 
 int main()
 {

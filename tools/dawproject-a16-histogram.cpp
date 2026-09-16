@@ -89,7 +89,7 @@ void addUndoStep(const QList<JournallingObject*>&) {}
 
 } // namespace control
 } // namespace lmms
-#endif
+#endif // DAWPROJECT_PROOF_LINK
 
 using namespace lmms::control;
 

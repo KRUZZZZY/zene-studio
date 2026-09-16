@@ -49,6 +49,9 @@
 using namespace lmms;
 using namespace lmms::interchange;
 
+namespace lmms
+{
+
 static QTextStream out(stdout);
 
 //! The model the ctest authors, verbatim - including the canonical lowercase
@@ -331,6 +334,10 @@ static int idsAndRefusals(const DawProjectModel& read)
 	failures += refusals(&scratch);
 	return failures;
 }
+
+} // namespace lmms
+
+using namespace lmms;
 
 int main(int argc, char** argv)
 {
