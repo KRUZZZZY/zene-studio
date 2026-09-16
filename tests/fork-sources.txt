@@ -1043,7 +1043,6 @@ tests/control-stem-export-verb.py
 tests/control-track-folder.py
 tests/control-undo-structural.py
 tests/control-vca-commands.py
-tests/control_vendor_libs.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py
 tests/control_detect_fixtures.py
@@ -1051,6 +1050,7 @@ tests/control_instance_diagnosis.py
 tests/control_pipe_client.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
+tests/control_vendor_libs.py
 tests/freeze_bounce_evidence.py
 tests/golden_audio_lib.py
 tests/golden_audio_record.py
