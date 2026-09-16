@@ -199,8 +199,14 @@ failure path that printed no diagnosis — the two timeout branches append
 `instance_diagnosis()`, and the branch a DYING instance takes did not. It now raises
 `closed_connection_reason()` — the same sentence plus the diagnosis ("the instance EXITED with
 -11 - a crash or a refusal, not a hang", and any crash report under the instance's temp dir,
-which still exists at that point because `Instance.close()` rmtree's it — the same rmtree that
-makes the workflow's own crash-evidence step find nothing). The text is built in
+which still exists at that point because `Instance.close()` rmtree's it). That is also where the
+product's own crash reporter writes: `src/core/main.cpp:1003` installs it at startup with
+`ConfigManager::inst()->workingDir()` as its root, and the harness gives the instance a working
+dir inside that temp directory (`<tmp>/workspace`), so a signal death leaves
+`<tmp>/workspace/crash-reports/zene-crash-report.txt` there — the file the workflow's
+crash-evidence step can no longer find, because `Instance.close()` has removed the whole
+directory long before that step runs. The diagnosis reads it at the failure point, while it
+still exists. The text is built in
 `tests/control_instance_diagnosis.py` because `tests/control_socket_harness.py` is grandfathered
 at its exact 511 lines in `tests/file-length-baseline.tsv` and Gate 7's tolerance is 0; the
 harness's change is net-zero lines.
