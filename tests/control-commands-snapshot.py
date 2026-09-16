@@ -57,14 +57,16 @@ declare is a failure rather than a silent blindfold.
 There is ONE option in the other direction, and it needs both directions checked
 for the same reason: `WANT_WASM=ON` with the wasmtime C API on the find path
 compiles the `wasm.*` group in (item #614, src/core/ControlCommandsWasm.cpp), so
-such a build has a LONGER live list than the release snapshot - six ids the
-offline list cannot carry, because the snapshot is one file and a configuration
-is not. `--compiled-in <prefix>` declares that, is checked in both directions
-too (declared but the binary registers none of them -> failure; declared and the
-snapshot carries them -> failure, because then the flag is not describing a
-difference), and `tests/CMakeLists.txt` passes `--compiled-in wasm.` exactly when
-it configured the sandbox in. The two offline comparisons are made against the
-snapshot's own id set, so a configuration difference cannot make them red.
+such a build has a LONGER live list than the release snapshot - the eight ids the
+group registers today (six at #614; the shared pool and the deterministic offline
+render added two in CODE-5), which the offline list cannot carry, because the
+snapshot is one file and a configuration is not. `--compiled-in <prefix>` declares
+that, and it is checked in both directions too (declared but the binary registers
+none of them -> failure; declared and the snapshot carries them -> failure,
+because then the flag is not describing a difference), and `tests/CMakeLists.txt`
+passes `--compiled-in wasm.` exactly when it configured the sandbox in. The two
+offline comparisons are made against the snapshot's own id set, so a
+configuration difference cannot make them red.
 
 SKIP, NOT PASS. Exit 77 (ctest reports "Skipped" through SKIP_RETURN_CODE) when
 the bridge package cannot be imported at all: that is the one condition under

@@ -159,7 +159,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// The wasm.* group travels with the WASM DSP sandbox: without LMMS_HAVE_WASM
 	// there is no wasmtime to host a module in, and the registry must not carry
 	// ids whose handler could not exist (the rule the telemetry.* and session.*
-	// groups above follow). The A16 table guards its six rows with the same
+	// groups above follow). The A16 table guards its eight rows with the same
 	// #ifdef, so the two stay consistent in both directions.
 	registerWasmCommands(registry);
 #endif // LMMS_HAVE_WASM
