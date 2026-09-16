@@ -60,11 +60,20 @@ from landing a sample early.
 | id | args | result | A16 |
 | --- | --- | --- | --- |
 | `automation.ramp_set` | `track`, `parameter`, `mode` = `sample` \| `block` | `track`, `parameter`, `mode`, `mode_before`, `changed`, `automation` | `true_inverse` — a LIVE checkpoint on the automation clip (`addJournalCheckPoint()` before the flag moves) |
-| `automation.ramp_get` | `track` (optional filter), `include_block_mode` | `parameters[]` (`track`, `parameter`, `clip`, `mode`, `ramp_live`, `knots`, `frames`, `moves_inside_block`, `refused_knots`, `automation`), `count`, `sample_accurate_count`, `live_ramp_count`, `ramp_capacity` | `not_mutating` |
+| `automation.ramp_get` | `track` (optional filter: the `ch-<n>`/`trk-<n>` target), `include_block_mode` | `parameters[]` (`track`, `parameter`, `clip`, `mode`, `ramp_live`, `knots`, `frames`, `moves_inside_block`, `refused_knots`, `automation`), `count`, `sample_accurate_count`, `live_ramp_count`, `unaddressable_object_count`, `ramp_capacity` | `not_mutating` |
 
 `automation.ramp_get` reports what the **audio thread** did, not what the project asked for: a clip in
 `sample` mode whose `ramp_live` is `false` after a render is a bug report, and a `refused_knots` above
 zero is the capacity fallback the limitation section below names.
+
+It enumerates the **clips**, not the tracks that hold them: every automation track the engine plays
+automation from — the song's own, the pattern store's and the hidden **global** automation track — and then
+each clip's own objects. A clip that holds no device parameter the surface can name (the song's tempo, a
+pattern-internal control) is counted in `unaddressable_object_count` rather than dropped silently. An entry's
+`track` is the target the parameter is addressed by (`ch-<n>` / `trk-<n>`, the pair
+`automation.ramp_set` and `automation.add_point` take), `parameter` its `<plugin>/<index>` id, so the
+reported id addresses the parameter back; the clip's own holder track is in the nested `automation.track`,
+empty for the hidden global track.
 
 The flag is serialized **only when it is on** (`<automationclip ... sample_accurate="1">`), so a project
 that never asked for it saves the bytes it always saved, and `AutomationClip::loadSettings()` **resets
