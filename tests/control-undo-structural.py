@@ -324,6 +324,22 @@ def check_effect_removal_is_undoable(session, recorder, fixture):
     effect = session.result("plugin.load", {"target": target, "device": device}).get("id")
     if not effect:
         H.fail("plugin.load returned no instance id")
+    name, changed = change_effect_parameter(session, recorder, target, effect)
+    check_effect_removal_and_restore(session, recorder, target, effect, name, changed)
+    session.result("control.redo")
+    ids, _chain = devices_of(session, target)
+    recorder.check("the redo removes it again", effect not in ids, "chain ids=%s" % ids)
+    session.result("control.undo")
+    return True
+
+
+# The two halves: the write half (a non-default parameter, proven changed) and
+# the removal half (unload -> undo -> the same device back at its index). One
+# helper per report-area: the single function carried twelve branch points and
+# the gate's budget counts every boolean operator. Same checks, same order,
+# same messages.
+def change_effect_parameter(session, recorder, target, effect):
+    """Write a non-default value and prove it landed. Returns (name, changed)."""
     # A non-default parameter: "the device is back" is not "an empty device with
     # the same name is back".
     param = (session.result("plugin.param_get", {"target": target, "plugin": effect,
@@ -338,7 +354,11 @@ def check_effect_removal_is_undoable(session, recorder, fixture):
                    read_back.get("value") is not None
                    and abs(float(read_back.get("value")) - changed) < 1e-6,
                    "value=%r expected=%r" % (read_back.get("value"), changed))
+    return name, changed
 
+
+def check_effect_removal_and_restore(session, recorder, target, effect, name, changed):
+    """Unload it, undo, and hold the restored device to the A16 row's claim."""
     removed = session.result("plugin.unload", {"target": target, "plugin": effect})
     recorder.check("plugin.unload removed the device, and records itself as reversible",
                    removed.get("removed") == effect and removed.get("reversible") is True,
@@ -370,11 +390,6 @@ def check_effect_removal_is_undoable(session, recorder, fixture):
                        value.get("value") is not None
                        and abs(float(value.get("value")) - changed) < 1e-6,
                        "param=%s got=%r expected=%r" % (name, value.get("value"), changed))
-    session.result("control.redo")
-    ids, _chain = devices_of(session, target)
-    recorder.check("the redo removes it again", effect not in ids, "chain ids=%s" % ids)
-    session.result("control.undo")
-    return True
 
 def check_the_payload_is_counted(session, recorder, fixture):
     victim = fixture["tracks"][2]

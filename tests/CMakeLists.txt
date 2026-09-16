@@ -1348,9 +1348,10 @@ if(TARGET lmms_clap)
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostNotes.cpp
 	)
 	add_test(NAME ClapHostTest COMMAND ClapHostTest)
-	# Compiles core sources directly (the counters above): building those objects,
-	# not importing them - the export header must take its static branch.
-	target_static_definitions(ClapHostTest LMMS_STATIC_DEFINE)
+	# Compiles core sources directly (built into THIS test, not linked as a
+	# library): its own compilation must see the export header's static branch -
+	# STATIC_COMPILE_DEFINITIONS only reaches targets that LINK the library.
+	target_compile_definitions(ClapHostTest PRIVATE LMMS_STATIC_DEFINE)
 	target_include_directories(ClapHostTest PRIVATE
 		${CMAKE_BINARY_DIR}
 		# the generated lmms_export.h, which the core headers carry
@@ -1400,8 +1401,9 @@ if(TARGET lmms_clap)
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostNotes.cpp
 	)
 	add_test(NAME ClapLoaderErrorTest COMMAND ClapLoaderErrorTest)
-	# Compiles core sources directly: building those objects, not importing them.
-	target_static_definitions(ClapLoaderErrorTest LMMS_STATIC_DEFINE)
+	# Compiles core sources directly: the define must apply to THIS target's own
+	# compilation - STATIC_COMPILE_DEFINITIONS only reaches linking targets.
+	target_compile_definitions(ClapLoaderErrorTest PRIVATE LMMS_STATIC_DEFINE)
 	target_include_directories(ClapLoaderErrorTest PRIVATE
 		${CMAKE_BINARY_DIR}
 		${CMAKE_BINARY_DIR}/src
@@ -1541,9 +1543,10 @@ if(TARGET lmms_vst3_sdk)
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
 	add_test(NAME Vst3HostTest COMMAND Vst3HostTest)
-	# Compiles core sources directly (the counters above): building those objects,
-	# not importing them - the export header must take its static branch.
-	target_static_definitions(Vst3HostTest LMMS_STATIC_DEFINE)
+	# Compiles core sources directly (built into THIS test, not linked as a
+	# library): its own compilation must see the export header's static branch -
+	# STATIC_COMPILE_DEFINITIONS only reaches targets that LINK the library.
+	target_compile_definitions(Vst3HostTest PRIVATE LMMS_STATIC_DEFINE)
 	target_include_directories(Vst3HostTest PRIVATE
 		${CMAKE_BINARY_DIR}
 		# the generated lmms_export.h, which the core headers carry
@@ -1579,8 +1582,9 @@ if(TARGET lmms_vst3_sdk)
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
 	add_test(NAME Vst3ChunkProbeTest COMMAND Vst3ChunkProbeTest)
-	# Compiles core sources directly: building those objects, not importing them.
-	target_static_definitions(Vst3ChunkProbeTest LMMS_STATIC_DEFINE)
+	# Compiles core sources directly: the define must apply to THIS target's own
+	# compilation - STATIC_COMPILE_DEFINITIONS only reaches linking targets.
+	target_compile_definitions(Vst3ChunkProbeTest PRIVATE LMMS_STATIC_DEFINE)
 	target_include_directories(Vst3ChunkProbeTest PRIVATE
 		${CMAKE_BINARY_DIR}
 		# the generated lmms_export.h, which the core headers carry
@@ -1793,8 +1797,9 @@ if(TARGET lmms_vst3_sdk)
 			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 		)
 		add_test(NAME Vst3InstrumentTest COMMAND Vst3InstrumentTest)
-		# Compiles core sources directly: building those objects, not importing them.
-		target_static_definitions(Vst3InstrumentTest LMMS_STATIC_DEFINE)
+		# Compiles core sources directly: the define must apply to THIS target's
+		# own compilation - STATIC_COMPILE_DEFINITIONS only reaches linking targets.
+		target_compile_definitions(Vst3InstrumentTest PRIVATE LMMS_STATIC_DEFINE)
 		target_include_directories(Vst3InstrumentTest PRIVATE
 			# the generated lmms_export.h, which the core headers carry
 			${CMAKE_BINARY_DIR}/src
